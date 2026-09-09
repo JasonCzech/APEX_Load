@@ -71,7 +71,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   const commitResponsePromise = page.waitForResponse(response => (
     isImportResponse(response, '/api/v1/scripts/import/openapi/commit')
   ))
-  await importControls.getByRole('button', { name: 'Save To Script Library' }).click()
+  await importControls.getByRole('button', { name: 'Save and Continue Importing' }).click()
   const commitResponse = await commitResponsePromise
   const commitText = await commitResponse.text()
   expect(commitResponse.ok(), commitText).toBeTruthy()
@@ -82,11 +82,12 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   expect(stored.name).toBe('Tier_0_Orders_API')
   expect(typeof stored.id).toBe('string')
 
-  // The import callback opens the new script for editing. Return through the
+  await expect(importControls.getByRole('button', { name: 'Import More Files', exact: true })).toBeVisible()
+  // Save and continue keeps the importer open. Return through the
   // actual Scripts navigation so the final assertion covers the user-facing
   // library refresh, not only the commit response.
   // Clicking the already-active Scripts destination intentionally preserves
-  // its editor state. Leave the section first, then return as a user would.
+  // its import state. Leave the section first, then return as a user would.
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
   await page.getByRole('button', { name: 'Scripts', exact: true }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Script Library' })).toBeVisible({ timeout: 15_000 })

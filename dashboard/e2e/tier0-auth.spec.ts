@@ -18,7 +18,7 @@ test('lands in the explicit dev-admin workspace with a live connection', async (
   await expect(page.getByRole('group', { name: 'Development dashboard view' }).getByRole('button', { name: 'Admin' })).toHaveAttribute('aria-pressed', 'true')
 
   const navigation = page.locator('nav.sidebar-nav')
-  for (const name of ['Dashboard', 'New Test', 'Command Center', 'Results', 'Scripts', 'Scenarios', 'Repository', 'Monitoring', 'API Guide', 'Access', 'Settings']) {
+  for (const name of ['Dashboard', 'New Test', 'Command Center', 'Results', 'Scripts', 'Scenarios', 'Repository', 'Monitoring', 'Help & documentation', 'Access', 'Settings']) {
     await expect(navigation.getByRole('button', { name, exact: true })).toBeVisible()
   }
   await expect(navigation.getByRole('button', { name: 'Dashboard', exact: true })).toHaveAttribute('aria-current', 'page')

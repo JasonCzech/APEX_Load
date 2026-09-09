@@ -1737,6 +1737,31 @@ export interface operations {
               "status"?: string;
               "suggested_dashboards"?: Array<string>;
             }) | null;
+            "outcome"?: ({
+              "assessment"?: {
+                "criteria_revision"?: (string) | null;
+                "explanation"?: string;
+                "reason_code"?: string;
+                "status"?: string;
+              };
+              "evidence"?: {
+                "coverage_percent"?: (number) | null;
+                "status"?: string;
+              };
+              "execution"?: {
+                "observed_duration_seconds"?: (number) | null;
+                "planned_duration_seconds"?: (number) | null;
+                "termination_reason"?: string;
+              };
+              "execution_id"?: string;
+              "observed_at"?: string;
+              "schema_version"?: number;
+              "scope"?: {
+                "application_id"?: string;
+                "project_id"?: string;
+                "release_id"?: string;
+              };
+            }) | null;
             "overview"?: {
               "avg_response_ms"?: number;
               "browser"?: ({
@@ -38727,6 +38752,31 @@ export interface operations {
               "samples": number;
               "status": string;
               "suggested_dashboards"?: Array<string>;
+            }) | null;
+            "outcome"?: ({
+              "assessment": {
+                "criteria_revision": (string) | null;
+                "explanation": string;
+                "reason_code": string;
+                "status": string;
+              };
+              "evidence": {
+                "coverage_percent": (number) | null;
+                "status": string;
+              };
+              "execution": {
+                "observed_duration_seconds": (number) | null;
+                "planned_duration_seconds": (number) | null;
+                "termination_reason": string;
+              };
+              "execution_id": string;
+              "observed_at": string;
+              "schema_version": number;
+              "scope": {
+                "application_id"?: string;
+                "project_id"?: string;
+                "release_id"?: string;
+              };
             }) | null;
             "overview": {
               "avg_response_ms": number;

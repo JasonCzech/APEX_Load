@@ -1,0 +1,290 @@
+[
+  {
+    "name": "01-dashboard",
+    "note": "Dashboard entry: inspect result discoverability, recent activity and the operations snapshot. Default narrow viewport.",
+    "url": "http://localhost:4000/#/dashboard?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 1,
+    "title": "Dashboard",
+    "health": "Needs work"
+  },
+  {
+    "name": "02-script-library",
+    "note": "Script discovery: source selector, filters, health counts, row actions and authoring review sessions.",
+    "url": "http://localhost:4000/#/scripts?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 2,
+    "title": "Script library",
+    "health": "Needs work"
+  },
+  {
+    "name": "03-create-entry",
+    "note": "Create script opens Use existing rather than Create. The next action is called Model; copy language says original unchanged until save, which may imply overwrite.",
+    "url": "http://localhost:4000/#/scripts?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 3,
+    "title": "Create-script entry",
+    "health": "Needs work"
+  },
+  {
+    "name": "04-import-form",
+    "note": "Import presents destination setup before the source file, plus an Agentforce-specific checkbox on generic OpenAPI flow. Validate and Convert disabled until a file is supplied; no conversion performed.",
+    "url": "http://localhost:4000/#/scripts?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 4,
+    "title": "OpenAPI import",
+    "health": "Needs work"
+  },
+  {
+    "name": "05-expanded-script",
+    "note": "Expanding Checkout HTTP changes pagination total from 27 to 28 although health-filter total stays 27. Detail rows appear to count as library items.",
+    "url": "http://localhost:4000/#/scripts?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 5,
+    "title": "Expanded script",
+    "health": "Needs work"
+  },
+  {
+    "name": "06-script-editor",
+    "note": "Library marks Checkout HTTP Ready 100; editor shows Validation evidence not yet, Debugged missing and Approval readiness needs evidence. Distinguish static validity from execution/approval readiness.",
+    "url": "http://localhost:4000/#/scripts?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 6,
+    "title": "Script editor",
+    "health": "Needs work"
+  },
+  {
+    "name": "07-scenario-library",
+    "note": "Scenario library shares table controls but has a wide set of default columns. Assess ability to find and act on a scenario at narrow width.",
+    "url": "http://localhost:4000/#/tests?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 7,
+    "title": "Empty scenario library",
+    "health": "Needs work"
+  },
+  {
+    "name": "08-scenario-start",
+    "note": "Empty library creation offers Copy existing first despite no scenarios; five technical model choices precede script selection. Save draft is enabled on an untouched start.",
+    "url": "http://localhost:4000/#/tests?view=builder&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 8,
+    "title": "Scenario start",
+    "health": "Needs work"
+  },
+  {
+    "name": "09-script-picker",
+    "note": "Opening the picker pushes its table and surrounding content behind the sidebar at 923px. Focused search is visible far to the right; table geometry corroborates overflow. A future source-step warning appears early.",
+    "url": "http://localhost:4000/#/tests?view=builder&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 9,
+    "title": "Scenario script picker",
+    "health": "High priority"
+  },
+  {
+    "name": "10-run-settings",
+    "note": "Guided VUser worksheet explains totals and phases clearly. Review compact layout and defaults; Run Settings is marked complete on first arrival.",
+    "url": "http://localhost:4000/#/tests?view=builder&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 10,
+    "title": "Run settings",
+    "health": "Mostly sound"
+  },
+  {
+    "name": "11-data",
+    "note": "Advancing to Data preserves a lower scroll position instead of revealing the new heading. Snapshot semantics are clear; disabled fields take space before a pool is selected.",
+    "url": "http://localhost:4000/#/tests?view=builder&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 11,
+    "title": "Optional data",
+    "health": "Needs work"
+  },
+  {
+    "name": "12-scenario-validation",
+    "note": "Model validation gives explicit capacity, data, placement, demand and runtime results. Save & Create Test Run coexists with text saying saving does not launch; clarify next step.",
+    "url": "http://localhost:4000/#/tests?view=builder&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 12,
+    "title": "Model validation",
+    "health": "Mostly sound"
+  },
+  {
+    "name": "13-unsaved-dialog",
+    "note": "Unsaved-change guard provides Keep editing, Discard and Save; initial focus lands on safe Keep editing. Draft is audit-only and will be discarded.",
+    "url": "http://localhost:4000/#/tests?view=builder&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 13,
+    "title": "Unsaved-change dialog",
+    "health": "Sound"
+  },
+  {
+    "name": "14-new-test",
+    "note": "No scenarios available. Clear builder detour exists, but downstream run setup, scheduling and lengthy empty summary remain visible. No run was launched.",
+    "url": "http://localhost:4000/#/new-test?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 14,
+    "title": "New Test prerequisites",
+    "health": "Needs work"
+  },
+  {
+    "name": "15-schedules",
+    "note": "Recurring schedule defaults to UTC while one-off Scheduled Start uses America/New_York. Timezone is visible but defaults differ; use one explicit scheduling convention and show next occurrences.",
+    "url": "http://localhost:4000/#/new-test?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 15,
+    "title": "Recurring schedules",
+    "health": "Needs work"
+  },
+  {
+    "name": "16-command-entry",
+    "note": "Active-run selector includes duplicate names with identical statuses, with no date or reference to disambiguate them. Queued and Reserved are mixed under active.",
+    "url": "http://localhost:4000/#/command-center?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 16,
+    "title": "Run selector",
+    "health": "Needs work"
+  },
+  {
+    "name": "17-reserved-run",
+    "note": "Reserved run has Start Test, yet Current/Actual Load says 1 VU and reports zero errors/latency as values. Separate planned allocation from measured active load before execution.",
+    "url": "http://localhost:4000/#/command-center?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 17,
+    "title": "Reserved run",
+    "health": "High priority"
+  },
+  {
+    "name": "18-results",
+    "note": "Completed results mix Complete/Failed lifecycle, assessment labels, and archive Pending; long-failed runs still say Pending without visible expiry/recovery explanation.",
+    "url": "http://localhost:4000/#/results?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 18,
+    "title": "Results library",
+    "health": "Mostly sound"
+  },
+  {
+    "name": "19-report-summary",
+    "note": "Summary correctly separates execution, acceptance and evidence. However nine samples, unknown termination/elapsed time and 1 peak VUser versus 22 planned merit a prominent insufficient-evidence conclusion above numeric KPIs.",
+    "url": "http://localhost:4000/#/report/050812b4-8883-422f-b383-ca966bcb491d?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 19,
+    "title": "Report summary",
+    "health": "High priority"
+  },
+  {
+    "name": "20-baseline-compare",
+    "note": "The selected baseline shows large latency/throughput/VUser deltas without an explicit comparability qualification for the current sparse run.",
+    "url": "http://localhost:4000/#/report/050812b4-8883-422f-b383-ca966bcb491d?lens=executive&compare=e484fd1a-1ee3-4677-87fb-35d0e42ca221&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 20,
+    "title": "Baseline comparison",
+    "health": "High priority"
+  },
+  {
+    "name": "21-evidence",
+    "note": "Evidence exposes critical telemetry breaches and missing tiers, but summary only gives 85% coverage. Make critical quality warnings and recommended recovery prominent in Summary.",
+    "url": "http://localhost:4000/#/report/050812b4-8883-422f-b383-ca966bcb491d?lens=executive&compare=e484fd1a-1ee3-4677-87fb-35d0e42ca221&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 21,
+    "title": "Evidence details",
+    "health": "Mostly sound"
+  },
+  {
+    "name": "22-export-preview",
+    "note": "The light export document is intentional print presentation, not a dark-theme defect. It retains outcome/acceptance caveats and distinguishes transaction and request populations. No export was saved.",
+    "url": "http://localhost:4000/#/report/050812b4-8883-422f-b383-ca966bcb491d?lens=executive&compare=e484fd1a-1ee3-4677-87fb-35d0e42ca221&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 22,
+    "title": "Export preview",
+    "health": "Mostly sound"
+  },
+  {
+    "name": "23-export-risks",
+    "note": "Export Top Risks says no significant error patterns despite critical telemetry gaps and sparse samples; Business Impact is generic metric prose. Findings heading is empty.",
+    "url": "http://localhost:4000/#/report/050812b4-8883-422f-b383-ca966bcb491d?lens=executive&compare=e484fd1a-1ee3-4677-87fb-35d0e42ca221&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 23,
+    "title": "Export risk narrative",
+    "health": "High priority"
+  },
+  {
+    "name": "24-monitoring",
+    "note": "Monitoring states deployment-wide health explicitly and distinguishes optional Kubernetes from blockers. Local auth bypass appears as an advisory.",
+    "url": "http://localhost:4000/#/monitoring?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 24,
+    "title": "Monitoring",
+    "health": "Mostly sound"
+  },
+  {
+    "name": "25-repository",
+    "note": "Repository explicitly says its domain/project/release filters are independent of sidebar workspace. This is useful disclosure but adds a second scope model.",
+    "url": "http://localhost:4000/#/repository?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 25,
+    "title": "Repository",
+    "health": "Needs work"
+  },
+  {
+    "name": "26-access",
+    "note": "Access combines global tabs, related-admin links, user subtabs, filters, wide table and a details panel. User row action cell is named Service account actions in DOM; verify screen-reader semantics.",
+    "url": "http://localhost:4000/#/access?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 26,
+    "title": "Access",
+    "health": "Needs work"
+  },
+  {
+    "name": "27-admin-settings",
+    "note": "Admin Settings provides search, grouped destinations, shared panel collapse, explicit deployment scope and restart-required labels. Narrow navigation adds a separate scroll region.",
+    "url": "http://localhost:4000/#/settings?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 27,
+    "title": "Admin Settings",
+    "health": "Mostly sound"
+  },
+  {
+    "name": "28-settings-search",
+    "note": "Typing theme into Find settings yields No settings match even though Personal preferences contains Dashboard Theme. Search needs field names and synonyms, not destination titles alone.",
+    "url": "http://localhost:4000/#/settings?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 28,
+    "title": "Settings search",
+    "health": "Needs work"
+  },
+  {
+    "name": "29-user-settings",
+    "note": "Non-admin Settings exposes appearance with browser-local persistence and no administrative form; matches shared visual language. Other sections require expanding navigation at narrow width.",
+    "url": "http://localhost:4000/#/settings?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 29,
+    "title": "User Settings",
+    "health": "Sound"
+  },
+  {
+    "name": "30-user-admin-link",
+    "note": "In User preview, Monitoring \u2192 Controller settings opens personal Appearance with no explanation and no visible return-to-monitoring control. Access is restricted, but the link promises the wrong destination.",
+    "url": "http://localhost:4000/#/settings?setting=platform&returnTo=%23%2Fmonitoring%3FprojectId%3Dunassigned%26applicationId%3Dlegacy%26releaseId%3Dlegacy-imported&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 30,
+    "title": "User-to-admin link",
+    "health": "Needs work"
+  },
+  {
+    "name": "31-help-entry",
+    "note": "Operator User Guide and Quick Start are nested under API Guide, whose default page leads with REST responses and dev headers. Rename/reorganize as Help & documentation with task-led entry.",
+    "url": "http://localhost:4000/#/docs?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 31,
+    "title": "Help entry",
+    "health": "Needs work"
+  },
+  {
+    "name": "32-import-wide",
+    "note": "At 1440px, New script folder name uses a native gray 360\u00d720px input while adjacent fields use theme styling. At 923px the same control stretches to a tall block. Keyboard Tab proceeds to Back.",
+    "url": "http://localhost:4000/#/scripts?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 32,
+    "title": "Import at desktop width",
+    "health": "Needs work"
+  },
+  {
+    "name": "33-expanded-pagination-wide",
+    "note": "Desktop reproduction: health filter All 27 but pagination Showing 1\u201310 of 28 after expanding one script. Expanded detail row consumes an item slot.",
+    "url": "http://localhost:4000/#/scripts?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 33,
+    "title": "Expanded pagination at desktop width",
+    "health": "Needs work"
+  },
+  {
+    "name": "34-missing-archive",
+    "note": "Failed jms-rel-run results open No archive available, with generic this run is complete and no run name/status/reference. Execution snapshot is the sole recovery action. Preserve identity/failure status and distinguish unavailable from pending archives.",
+    "url": "http://localhost:4000/#/report/2299fc5b-0491-4c8a-9346-7bcc8df0ef53?projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 34,
+    "title": "Missing archive",
+    "health": "High priority"
+  },
+  {
+    "name": "35-failed-snapshot",
+    "note": "The snapshot recovery action initially opens Archive, whose visible panel contains only Archive Report. A publication-delay banner appears in the subsequent diagnostics view, so recovery is incomplete rather than wholly absent.",
+    "url": "http://localhost:4000/#/test/2299fc5b-0491-4c8a-9346-7bcc8df0ef53?tab=archive&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 35,
+    "title": "Execution snapshot fallback",
+    "health": "High priority"
+  },
+  {
+    "name": "36-failed-diagnostics",
+    "note": "Historical failed-run diagnostics retain Live Summary and Healthy telemetry labels; timestamp context is unclear and no failure cause is surfaced here. A delayed-publication banner appears, but the initial snapshot fallback landed on an empty Archive panel.",
+    "url": "http://localhost:4000/#/test/2299fc5b-0491-4c8a-9346-7bcc8df0ef53?tab=diagnostics&projectId=unassigned&applicationId=legacy&releaseId=legacy-imported",
+    "step": 36,
+    "title": "Failed-run diagnostics",
+    "health": "High priority"
+  }
+]

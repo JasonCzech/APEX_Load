@@ -792,7 +792,7 @@ describe('ApplicationRepositoryPage', () => {
     expect(container.textContent).toContain('1 item selected')
     expect(container.textContent).toContain('Delete selected (1)')
 
-    await act(async () => findButton(container, 'All', false)?.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(button => button.textContent?.startsWith('All'))?.click())
     await flushPromises()
     expect(findCheckbox(container, 'Select Checkout Smoke')?.checked).toBe(true)
     expect(findCheckbox(container, 'Select Checkout Run')?.checked).toBe(false)

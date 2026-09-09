@@ -50,7 +50,7 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'schedules':
       return 'Schedules'
     case 'docs':
-      return 'API Guide'
+      return 'Help & documentation'
     case 'swagger':
       return 'Swagger Docs'
     case 'repository-guide':

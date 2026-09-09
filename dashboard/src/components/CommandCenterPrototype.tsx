@@ -1,6 +1,6 @@
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Area,
@@ -88,6 +88,7 @@ interface CommandCenterPrototypeProps {
   onOpenArchive?: (testId: string) => void
   onOpenResults?: () => void
   prototypeMode?: boolean
+  active?: boolean
 }
 
 export interface ErrorPattern {
@@ -267,13 +268,19 @@ function wholeTestErrorPercent(metrics: LiveMetrics | undefined, groups: Command
 
 function highestGroupErrorRate(groups: CommandGroup[]) {
   if (groups.length <= 1) return undefined
-  return groups.reduce((highest, group) => {
+  const highest = groups.reduce((current, group) => {
+    if (group.errors <= 0) return current
     const attempts = group.transactions + group.errors
-    const errorPct = attempts > 0 ? group.errors / attempts * 100 : 0
-    return !highest || errorPct > highest.errorPct
-      ? { name: group.name, errorPct }
-      : highest
-  }, undefined as { name: string; errorPct: number } | undefined)
+    const errorPct = group.errors / attempts * 100
+    if (current && errorPct === current.errorPct) return { ...current, names: [...current.names, group.name] }
+    return !current || errorPct > current.errorPct
+      ? { names: [group.name], errorPct }
+      : current
+  }, undefined as { names: string[]; errorPct: number } | undefined)
+  return highest ? {
+    name: `${highest.names.join(', ')}${highest.names.length > 1 ? ' (tied)' : ''}`,
+    errorPct: highest.errorPct,
+  } : undefined
 }
 
 function isGoalOrientedRun(test: TestSummary) {
@@ -345,7 +352,7 @@ function buildLiveGroups(test: TestSummary, targetDrafts: Record<string, number>
     const liveTargetVusers = activeVuserRamp?.target_vusers ?? group.vusers
     const liveTarget = targetMode === 'tps' ? goalTargets[group.name] : liveTargetVusers
     const target = targetDrafts[group.name] ?? liveTarget
-    const current = metrics?.vusers ?? aggregateFallback?.active_vusers ?? group.vusers
+    const current = metrics?.vusers ?? aggregateFallback?.active_vusers ?? 0
     const targetTps = targetMode === 'tps' ? target : metrics?.target_tps ?? aggregateFallback?.target_tps
     return {
       key: group.name,
@@ -431,9 +438,16 @@ export default function CommandCenterPrototype({
   onOpenArchive,
   onOpenResults,
   prototypeMode = false,
+  active = true,
 }: CommandCenterPrototypeProps = {}) {
   const [experienceVersion, setExperienceVersion] = useState<'original' | 'v2'>('original')
   const api = useTestApi()
+  const pageRef = useRef<HTMLDivElement>(null)
+  const wasActive = useRef(active)
+  useEffect(() => {
+    if (active && !wasActive.current) pageRef.current?.querySelector<HTMLButtonElement>('[data-command-details]')?.focus()
+    wasActive.current = active
+  }, [active])
   // When the Command Center is opened without an explicit run on the route
   // (e.g. via the sidebar nav rather than from a run chip), we discover the
   // live runs in scope and pick one. `testId` below is the effective run the
@@ -453,6 +467,25 @@ export default function CommandCenterPrototype({
   const discoveringRuns = runDiscoveryState.scopeKey === discoveryScopeKey && runDiscoveryState.discovering
   const discoveryGenerationRef = useRef(0)
   const testId = testIdProp || autoSelectedTestId || undefined
+  useEffect(() => {
+    const page = pageRef.current
+    const scroller = page?.closest<HTMLElement>('.main-content')
+    const header = scroller?.querySelector<HTMLElement>('.main-topbar')
+    if (!page || !header || typeof ResizeObserver === 'undefined') return
+    const shelf = page.querySelector<HTMLElement>('.command-control-shelf')
+    const update = () => {
+      page.style.setProperty('--command-header-offset', `${header.offsetHeight}px`)
+      page.style.setProperty('--command-shelf-height', `${page.querySelector<HTMLElement>('.command-control-shelf')?.offsetHeight || 0}px`)
+      page.style.setProperty('--command-scroll-inset', scroller ? getComputedStyle(scroller).paddingTop : '0px')
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(header)
+    observer.observe(page)
+    if (shelf) observer.observe(shelf)
+    return () => observer.disconnect()
+  }, [active, testId])
+  const viewMemory = useMemo(() => ({ testId, values: new Map<string, unknown>() }), [testId])
   const [variant, setVariant] = useState<VariantId>('ops')
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
   const [loadError, setLoadError] = useState('')
@@ -887,6 +920,7 @@ export default function CommandCenterPrototype({
     liveMode ? chartData : [],
     liveMode ? (displayTest.project_id || projectId) : undefined,
   )
+  const noRequestSamples = liveMode && (!displayTest.live_metrics || displayTest.live_metrics.total_transactions === 0) && archiveSummaryHistory.length === 0 && !localMetricsHistory.some(point => point.tps > 0 || point.avgMs > 0 || point.errorPct > 0)
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
@@ -1271,8 +1305,9 @@ export default function CommandCenterPrototype({
     : document.querySelector<HTMLElement>('.main-topbar-page')
 
   return (
-    <div className={`page command-center-page ${experienceVersion === 'v2' ? 'command-center-v2' : 'command-center-original'}`}>
-      {commandCenterTopbarTarget ? createPortal(experienceSwitch, commandCenterTopbarTarget) : experienceSwitch}
+    <CommandViewMemoryContext.Provider key={viewMemory.testId} value={viewMemory.values}>
+    <div ref={pageRef} className={`page command-center-page ${experienceVersion === 'v2' ? 'command-center-v2' : 'command-center-original'}`}>
+      {active && (commandCenterTopbarTarget ? createPortal(experienceSwitch, commandCenterTopbarTarget) : experienceSwitch)}
       {emptyMode ? (
         <CommandCenterEmptyState
           onOpenResults={onOpenResults}
@@ -1289,9 +1324,10 @@ export default function CommandCenterPrototype({
         totalCurrent={totalCurrent}
         totalTarget={totalTarget}
         targetMode={targetMode}
-        errorPct={wholeTestErrorPercent(displayTest.live_metrics, groups)}
-        highestErrorGroup={highestGroupErrorRate(groups)}
-        tps={variant === 'ops' && experienceVersion === 'original' ? runSummaryTps : undefined}
+        errorPct={noRequestSamples ? undefined : wholeTestErrorPercent(displayTest.live_metrics, groups)}
+        noRequestSamples={noRequestSamples}
+        highestErrorGroup={noRequestSamples ? undefined : highestGroupErrorRate(groups)}
+        tps={runSummaryTps}
         tpsHint={runSummaryAverages.tps !== undefined ? '10s avg' : undefined}
         feedback={feedback}
         historicalRun={historicalRun || (hasLiveRoute && !liveMode)}
@@ -1302,7 +1338,7 @@ export default function CommandCenterPrototype({
         onAbort={confirmRunAction('abort', abortRun)}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
         onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
-        onChangeDuration={variant === 'ops' && liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
+        onChangeDuration={liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         changeDurationDisabled={showRuntimeAdjustment || pendingAction !== null}
       />
       {pendingAction && (
@@ -1397,7 +1433,8 @@ export default function CommandCenterPrototype({
       )}
       <ThresholdAlertStrip alerts={scopedThresholdAlerts} onAcknowledge={onAcknowledgeThresholdAlert} />
 
-      {variant === 'ops' && (
+      {noRequestSamples && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && <section className="command-panel" aria-label="No request samples"><h3>No request samples</h3><p>Response times, throughput and error rates are unavailable until requests are captured. Load values describe VUser allocation; they do not establish workload execution.</p><LoadModelPanel groups={groups} testGroups={displayTest.groups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} /></section>}
+      {(!noRequestSamples || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (variant === 'ops' || runStatus === 'RESERVED' || runStatus === 'QUEUED') && (
         <OpsCockpitView
           experienceVersion={experienceVersion}
           variant={variant}
@@ -1427,10 +1464,10 @@ export default function CommandCenterPrototype({
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
           onOpenGroupSettings={liveMode && testId ? openGroupSettings : undefined}
-          onChangeDuration={variant === 'ops' && liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
+          onChangeDuration={liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         />
       )}
-      {variant === 'grafana' && (
+      {!noRequestSamples && variant === 'grafana' && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && (
         <GrafanaWallView
           variant={variant}
           onVariantChange={changeVariant}
@@ -1474,7 +1511,18 @@ export default function CommandCenterPrototype({
         </>
       )}
     </div>
+    </CommandViewMemoryContext.Provider>
   )
+}
+
+type CommandViewMemory = Map<string, unknown>
+const CommandViewMemoryContext = createContext<CommandViewMemory | null>(null)
+
+function useCommandViewState<T,>(key: string, initial: T) {
+  const memory = useContext(CommandViewMemoryContext)
+  const [value, setValue] = useState<T>(() => memory?.has(key) ? memory.get(key) as T : initial)
+  useEffect(() => { memory?.set(key, value) }, [key, memory, value])
+  return [value, setValue] as const
 }
 
 function CommandCenterEmptyState({
@@ -1506,7 +1554,7 @@ function CommandCenterEmptyState({
                     className="command-empty-run-option"
                     onClick={() => onSelectRun?.(run.id)}
                   >
-                    <span className="command-empty-run-name">{run.name || run.ref_key || run.id}</span>
+                    <span className="command-empty-run-name">{run.name || run.ref_key || run.id}<small>{run.ref_key || run.id} · {run.created_at ? new Date(run.created_at).toLocaleString() : "Creation time unavailable"}</small></span>
                     <StatusBadge status={run.status} />
                   </button>
                 </li>
@@ -1533,6 +1581,7 @@ function CommandCenterEmptyState({
 }
 
 interface RunControlShelfProps {
+  noRequestSamples?: boolean
   test: TestSummary
   status: TestStatus
   remainingSeconds: number
@@ -1576,6 +1625,7 @@ function RunControlShelf({
   onOpenTestNotes,
   onChangeDuration,
   changeDurationDisabled = false,
+  noRequestSamples = false,
 }: RunControlShelfProps) {
   const terminal = status === 'ABORTED' || status === 'STOPPING' || status === 'COMPLETE' || status === 'FAILED'
   // Abort must stay available during STOPPING so a wedged graceful stop can still be escalated.
@@ -1593,30 +1643,30 @@ function RunControlShelf({
         </div>
       </div>
 
-      <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}${highestErrorGroup ? ' with-highest-error' : ''}`} aria-label="Run summary">
+      <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}${test.groups.length > 1 ? ' with-highest-error' : ''}`} aria-label="Run summary">
         <MetricPill
-          label="Current / Target Load"
-          value={targetMode === 'tps'
+          label={canStart ? "Planned load" : "Current / Target Load"}
+          value={canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
             ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
             : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
           tone="info"
         />
         <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />
-        {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={formatNumber(tps, 1)} tone="accent" />}
-        <MetricPill label="Overall Error Rate" value={formatOptionalPercent(errorPct)} tone="danger" />
-        {highestErrorGroup && (
+        {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
+        <MetricPill label="Overall Error Rate" value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
+        {test.groups.length > 1 && (
           <MetricPill
             label="Highest Error Rate"
-            value={`${formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}`}
-            tone="danger"
+            value={canStart || noRequestSamples ? "No samples" : highestErrorGroup ? `${highestErrorGroup.errorPct < 0.005 ? "<0.01%" : formatOptionalPercent(highestErrorGroup.errorPct)} · ${highestErrorGroup.name}` : errorPct && errorPct > 0 ? "No group data" : "No errors"}
+            tone={highestErrorGroup ? "danger" : "default"}
           />
         )}
       </div>
 
       <div className="command-run-actions">
         {onOpenExecution && !historicalRun && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={onOpenExecution}>
-            Details
+          <button type="button" data-command-details className="btn btn-sm btn-ghost" onClick={onOpenExecution}>
+            Advanced run details
           </button>
         )}
         {onOpenTestNotes && (
@@ -1699,7 +1749,7 @@ function CommandCenterHistoricalBanner({
           {archiveReady
             ? ' Open the results archive for saved evidence and reports.'
             : archiveFinalizationTimedOut
-              ? ' Archive publication is taking longer than expected. Check again to discover a late archive without leaving this page.'
+              ? ' No saved archive is available and publication progress is unknown. Check again without leaving this snapshot.'
               : ' Historical results can be opened from the Results folder when no Command Center snapshot is available.'}
         </p>
         {archiveCheckError && <p className="command-history-retry-error" role="alert">{archiveCheckError}</p>}
@@ -1729,7 +1779,7 @@ function MetricPill({ label, value, tone = 'default' }: { label: string; value: 
   return (
     <div className={`command-metric-pill ${tone}`}>
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong title={value}>{value}</strong>
     </div>
   )
 }
@@ -1840,6 +1890,9 @@ function OpsCockpitView({
   onOpenGroupSettings,
   onChangeDuration,
 }: OpsCockpitViewProps) {
+  if (runStatus === 'RESERVED' || runStatus === 'QUEUED') {
+    return <section className="command-panel" aria-label="Planned run"><h3>Run not started</h3><p>Load targets describe the plan. Throughput, errors and response times will appear after execution produces samples.</p><LoadModelPanel groups={groups} testGroups={testGroups} runStatus={runStatus} totalDurationSeconds={totalDurationSeconds} remainingSeconds={remainingSeconds} /></section>
+  }
   if (experienceVersion === 'v2') {
     return (
       <OpsCockpitV2View
@@ -2132,16 +2185,12 @@ function GrafanaWallView({
   selectedError,
   onErrorSelect,
 }: GrafanaWallViewProps) {
-  const [graphOptionsTarget, setGraphOptionsTarget] = useState<HTMLDivElement | null>(null)
-  const [activeGraphGroupTab, setActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
-  const [underLoadDisplayMode, setUnderLoadDisplayMode] = useState<UnderLoadDisplayMode>('graphs')
-  const bindGraphOptionsTarget = useCallback((node: HTMLDivElement | null) => {
-    setGraphOptionsTarget(node)
-  }, [])
+  const [activeGraphGroupTab, setActiveGraphGroupTab] = useCommandViewState<GraphGroupTabId>('graphTab', 'test_results')
+  const [underLoadDisplayMode, setUnderLoadDisplayMode] = useCommandViewState<UnderLoadDisplayMode>('underLoadMode', 'graphs')
   const showUnderLoadDisplaySwitch = activeGraphGroupTab === 'under_load'
 
   return (
-    <section className="command-layout command-layout-grafana" aria-label="Grafana wall mockup">
+    <section className="command-layout command-layout-grafana" aria-label="Runtime graph wall">
       <div className="command-grafana-grid">
         <CommandRuntimeGraphs
           variant="grafana"
@@ -2172,7 +2221,6 @@ function GrafanaWallView({
           activeGraphGroupTab={activeGraphGroupTab}
           onActiveGraphGroupTabChange={setActiveGraphGroupTab}
           underLoadDisplayMode={underLoadDisplayMode}
-          externalControlsTarget={graphOptionsTarget}
         />
         <div className="command-grafana-side">
           <CommandViewSwitchPanel variant={variant} onVariantChange={onVariantChange} />
@@ -2184,7 +2232,6 @@ function GrafanaWallView({
           )}
           <GroupSelectionPanel groups={groups} groupVisibility={groupVisibility} onToggle={onGroupVisibilityToggle} />
           <ErrorDrilldown patterns={errorPatterns} selectedError={selectedError} onErrorSelect={onErrorSelect} compact />
-          <div className="command-graph-options-slot" ref={bindGraphOptionsTarget} />
         </div>
       </div>
     </section>
@@ -2326,8 +2373,10 @@ function CommandRunTables({
   evidenceLoading,
   evidenceError,
 }: CommandRunTablesProps) {
-  const [filter, setFilter] = useState('')
-  const [sorts, setSorts] = useState<Record<CommandTableTab, CommandSortState>>({
+  const [filters, setFilters] = useCommandViewState<Record<CommandTableTab, string>>('tableFilters', { scenario: '', errors: '', infrastructure: '' })
+  const filter = filters[activeTab]
+  const setFilter = (value: string) => setFilters(previous => ({ ...previous, [activeTab]: value }))
+  const [sorts, setSorts] = useCommandViewState<Record<CommandTableTab, CommandSortState>>('tableSorts', {
     scenario: { key: 'type', direction: 'asc' },
     errors: { key: 'count', direction: 'desc' },
     infrastructure: { key: 'type', direction: 'asc' },
@@ -2344,9 +2393,7 @@ function CommandRunTables({
   const infrastructureRows = useMemo(() => buildInfrastructureRows(groups, metrics), [groups, metrics])
   const activeEvidence = selectedEvidence.find(item => item.id === selectedEvidenceId) || selectedEvidence[0]
 
-  useEffect(() => {
-    setFilter('')
-  }, [activeTab])
+
 
   const updateSort = (key: string) => {
     setSorts(prev => {
@@ -2374,8 +2421,8 @@ function CommandRunTables({
 
   return (
     <section className="command-run-tables" aria-label="Command center run tables">
-      <TabList className="command-table-tabs" role="tablist" aria-label="OPS data tables" onKeyDown={handleTabKey}>
-        <div className="command-table-tab-buttons">
+      <div className="command-table-tabs">
+        <TabList className="command-table-tab-buttons" role="tablist" aria-label="OPS data tables" onKeyDown={handleTabKey}>
           {COMMAND_TABLE_TABS.map(tab => (
             <button
               key={tab.id}
@@ -2388,7 +2435,7 @@ function CommandRunTables({
               {tab.label}
             </button>
           ))}
-        </div>
+        </TabList>
         <label className="command-table-filter">
           <span>Filter</span>
           <input
@@ -2399,7 +2446,7 @@ function CommandRunTables({
             onChange={(event) => setFilter(event.target.value)}
           />
         </label>
-      </TabList>
+      </div>
 
       <div className="command-table-surface">
         {activeTab === 'scenario' && (
@@ -2408,6 +2455,8 @@ function CommandRunTables({
         {activeTab === 'errors' && (
           <ErrorDetailsTable
             rows={filteredErrorRows}
+            hasErrors={patterns.length > 0}
+            recordedErrors={metrics?.total_errors || 0}
             sort={activeSort}
             selectedError={selectedError}
             selectedEvidence={selectedEvidence}
@@ -2455,53 +2504,61 @@ function ScenarioRunTable({
   sort: CommandSortState
   onSort: (key: string) => void
 }) {
+  const essentialColumns = [0, 1, 4, 5, 6, 11, 15]
+  const labels = ['Name', 'Group', 'Type', 'Protocol', 'Current VU', 'Target VU', 'TPS', 'Target TPS', 'Gap', 'Tx', 'Errors', 'Error %', 'ART', 'p50', 'p90', 'p95', 'p99']
+  const [columns, setColumns] = useCommandViewState('scenarioColumns', essentialColumns)
+  const fullMetrics = columns.length === labels.length
   return (
     <div className="command-data-table-wrap" role="tabpanel" aria-label="Scenario run metrics">
-      <table className="command-data-table command-scenario-table">
+      <label className="command-column-preset"><input type="checkbox" checked={fullMetrics} onChange={event => setColumns(event.target.checked ? labels.map((_, index) => index) : essentialColumns)} /> Show all 17 metrics</label>
+      <details className="command-column-picker"><summary>Choose columns</summary>
+        <div>{labels.map((label, index) => <label key={label}><input type="checkbox" checked={columns.includes(index)} disabled={index < 2} onChange={event => setColumns(previous => event.target.checked ? [...previous, index] : previous.filter(column => column !== index))} />{label}</label>)}</div>
+      </details>
+      <table className={`command-data-table command-scenario-table ${fullMetrics ? 'full-metrics' : 'essential-metrics'}`}>
         <thead>
           <tr>
-            <SortableHeader label="Type" sortKey="type" sort={sort} onSort={onSort} />
-            <SortableHeader label="Name" sortKey="name" sort={sort} onSort={onSort} />
-            <SortableHeader label="Group" sortKey="group" sort={sort} onSort={onSort} />
-            <SortableHeader label="Protocol" sortKey="protocol" sort={sort} onSort={onSort} />
-            <SortableHeader label="Current VU" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Target VU" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Tx" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
-            <SortableHeader label="p99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(0)} label="Name" sortKey="name" sort={sort} onSort={onSort} />
+            <SortableHeader hidden={!columns.includes(1)} label="Group" sortKey="group" sort={sort} onSort={onSort} />
+            <SortableHeader hidden={!columns.includes(2)} label="Type" sortKey="type" sort={sort} onSort={onSort} />
+            <SortableHeader hidden={!columns.includes(3)} label="Protocol" sortKey="protocol" sort={sort} onSort={onSort} />
+            <SortableHeader hidden={!columns.includes(4)} label="Current VU" sortKey="currentVusers" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(5)} label="Target VU" sortKey="targetVusers" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(6)} label="TPS" sortKey="tps" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(7)} label="Target TPS" sortKey="targetTps" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(8)} label="Gap" sortKey="throughputGap" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(9)} label="Tx" sortKey="transactions" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(10)} label="Errors" sortKey="errors" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(11)} label="Error %" sortKey="errorPct" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(12)} label="ART" sortKey="art" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(13)} label="p50" sortKey="p50" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(14)} label="p90" sortKey="p90" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(15)} label="p95" sortKey="p95" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader hidden={!columns.includes(16)} label="p99" sortKey="p99" sort={sort} onSort={onSort} align="right" />
           </tr>
         </thead>
         <tbody>
           {rows.map(row => (
             <tr key={row.id} className={row.type === 'Group' ? 'command-table-group-row' : ''}>
-              <td>{row.type}</td>
-              <td><strong>{row.name}</strong></td>
-              <td>{row.group}</td>
-              <td>{row.protocol}</td>
-              <td className="numeric">{formatOptionalNumber(row.currentVusers)}</td>
-              <td className="numeric">{formatOptionalNumber(row.targetVusers)}</td>
-              <td className="numeric">{formatOptionalNumber(row.tps, 1)}</td>
-              <td className="numeric">{formatOptionalNumber(row.targetTps, 1)}</td>
-              <td className={`numeric ${typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : ''}`}>{formatOptionalPercent(row.throughputGap)}</td>
-              <td className="numeric">{formatOptionalNumber(row.transactions)}</td>
-              <td className="numeric">{formatOptionalNumber(row.errors)}</td>
-              <td className={`numeric ${metricTone(row.errorPct, 0.75, 1.5)}`}>{formatPercent(row.errorPct)}</td>
-              <td className="numeric">{formatOptionalMs(row.art)}</td>
-              <td className="numeric">{formatOptionalMs(row.p50)}</td>
-              <td className="numeric">{formatOptionalMs(row.p90)}</td>
-              <td className="numeric">{formatOptionalMs(row.p95)}</td>
-              <td className="numeric">{formatOptionalMs(row.p99)}</td>
+              <td hidden={!columns.includes(0)}><strong>{row.name}</strong></td>
+              <td hidden={!columns.includes(1)}>{row.group}</td>
+              <td hidden={!columns.includes(2)}>{row.type}</td>
+              <td hidden={!columns.includes(3)}>{row.protocol}</td>
+              <td hidden={!columns.includes(4)} className="numeric">{formatOptionalNumber(row.currentVusers)}</td>
+              <td hidden={!columns.includes(5)} className="numeric">{formatOptionalNumber(row.targetVusers)}</td>
+              <td hidden={!columns.includes(6)} className="numeric">{formatOptionalNumber(row.tps, 1)}</td>
+              <td hidden={!columns.includes(7)} className="numeric">{formatOptionalNumber(row.targetTps, 1)}</td>
+              <td hidden={!columns.includes(8)} className={`numeric ${typeof row.throughputGap === 'number' ? metricTone(Math.abs(row.throughputGap), 5, 15) : ''}`}>{formatOptionalPercent(row.throughputGap)}</td>
+              <td hidden={!columns.includes(9)} className="numeric">{formatOptionalNumber(row.transactions)}</td>
+              <td hidden={!columns.includes(10)} className="numeric">{formatOptionalNumber(row.errors)}</td>
+              <td hidden={!columns.includes(11)} className={`numeric ${metricTone(row.errorPct, 0.75, 1.5)}`}>{formatPercent(row.errorPct)}</td>
+              <td hidden={!columns.includes(12)} className="numeric">{formatOptionalMs(row.art)}</td>
+              <td hidden={!columns.includes(13)} className="numeric">{formatOptionalMs(row.p50)}</td>
+              <td hidden={!columns.includes(14)} className="numeric">{formatOptionalMs(row.p90)}</td>
+              <td hidden={!columns.includes(15)} className="numeric">{formatOptionalMs(row.p95)}</td>
+              <td hidden={!columns.includes(16)} className="numeric">{formatOptionalMs(row.p99)}</td>
             </tr>
           ))}
-          {rows.length === 0 && <EmptyTableRow colSpan={17} message="No scenario metrics match the current filter." />}
+          {rows.length === 0 && <EmptyTableRow colSpan={columns.length} message="No scenario metrics match the current filter." />}
         </tbody>
       </table>
     </div>
@@ -2510,6 +2567,8 @@ function ScenarioRunTable({
 
 function ErrorDetailsTable({
   rows,
+  hasErrors,
+  recordedErrors,
   sort,
   selectedError,
   selectedEvidence,
@@ -2521,6 +2580,8 @@ function ErrorDetailsTable({
   onEvidenceSelect,
 }: {
   rows: ErrorPattern[]
+  hasErrors: boolean
+  recordedErrors: number
   sort: CommandSortState
   selectedError?: ErrorPattern
   selectedEvidence: LiveErrorEvidence[]
@@ -2569,18 +2630,18 @@ function ErrorDetailsTable({
                 <td className="numeric">{row.evidenceCount ?? selectedEvidence.length}</td>
               </tr>
             ))}
-            {rows.length === 0 && <EmptyTableRow colSpan={9} message="No error patterns match the current filter." />}
+            {rows.length === 0 && <EmptyTableRow colSpan={9} message={hasErrors ? "No matching errors. Try clearing the filter." : recordedErrors > 0 ? "Errors recorded; signatures are not available yet." : "No errors recorded."} />}
           </tbody>
         </table>
       </div>
-      <ErrorEvidencePanel
+      {selectedError && rows.some(row => row.id === selectedError.id) && <ErrorEvidencePanel
         selectedError={selectedError}
         evidence={selectedEvidence}
         activeEvidence={activeEvidence}
         loading={evidenceLoading}
         error={evidenceError}
         onEvidenceSelect={onEvidenceSelect}
-      />
+      />}
     </div>
   )
 }
@@ -2764,7 +2825,7 @@ function InfrastructureTable({
               <td className={`numeric ${metricTone(row.errorPct || 0, 0.75, 1.5)}`}>{formatOptionalPercent(row.errorPct)}</td>
               <td className="numeric">{formatOptionalMs(row.p95)}</td>
               <td className="numeric">{formatOptionalMs(row.p99)}</td>
-              <td><span className={`command-state-chip ${row.saturation}`}>{row.saturation}</span></td>
+              <td><span className={`command-state-chip ${row.saturation}`}>{row.saturation}</span><span className="command-table-subtext">{row.saturation === 'unknown' ? 'Telemetry unavailable' : row.impact}</span></td>
               <td className="numeric">{formatOptionalPercent(row.cpu)}</td>
               <td className="numeric">{formatOptionalPercent(row.memory)}</td>
               <td className="numeric">{formatOptionalNumber(row.network, 1)}</td>
@@ -2786,16 +2847,18 @@ function SortableHeader({
   sort,
   onSort,
   align,
+  hidden,
 }: {
   label: string
   sortKey: string
   sort: CommandSortState
   onSort: (key: string) => void
   align?: 'right'
+  hidden?: boolean
 }) {
   const active = sort.key === sortKey
   return (
-      <th className={align === 'right' ? 'numeric' : undefined} aria-label={`${label} sort`} aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <th hidden={hidden} className={align === 'right' ? 'numeric' : undefined} aria-label={`${label} sort`} aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <button type="button" onClick={() => onSort(sortKey)}>
         <span>{label}</span>
         <small>{active ? (sort.direction === 'asc' ? '▲' : '▼') : '·'}</small>
@@ -2833,7 +2896,7 @@ function buildInfrastructureRows(groups: CommandGroup[], metrics?: LiveMetrics):
       network: (resources?.net_sent_kbps || 0) + (resources?.net_recv_kbps || 0) || resources?.tcp_retransmits_per_sec,
       disk: resources?.disk_io_time_pct,
       gc: resources?.gc_pause_ms,
-      impact: generator.impact_reasons?.join(', ') || 'clear',
+      impact: generator.impact_reasons?.join(', ') || (generator.saturation_state && generator.saturation_state !== 'unknown' ? (generator.saturation_state === 'clear' ? 'No pressure reported' : 'Generator reported pressure; no reason supplied') : 'Telemetry unavailable'),
     })
   })
 
@@ -2875,7 +2938,7 @@ function buildInfrastructureRows(groups: CommandGroup[], metrics?: LiveMetrics):
       p99: target.latency_ms + (target.jitter_ms || 0),
       saturation: target.last_success ? target.route_status || 'clear' : 'danger',
       network: target.latency_ms,
-      impact: `dns ${formatOptionalMs(target.dns_ms)} / connect ${formatOptionalMs(target.connect_ms)} / ttfb ${formatOptionalMs(target.ttfb_ms)}`,
+      impact: `${!target.last_success ? 'Probe failed · ' : target.route_status && target.route_status !== 'clear' ? 'Route probe reported ' + target.route_status + ' · ' : ''}dns ${formatOptionalMs(target.dns_ms)} / connect ${formatOptionalMs(target.connect_ms)} / ttfb ${formatOptionalMs(target.ttfb_ms)}`,
     })
   })
 
@@ -3465,12 +3528,14 @@ function LoadModelPanel({
         <span className="command-load-model-badge">{formatNumber(progressPct, 0)}% elapsed</span>
       </div>
 
+      <details className="command-load-comparison"><summary>Load comparison</summary>
       <div className="command-load-model-stats">
         <MetricPill label="Planned VU" value={formatNumber(plannedNow)} tone="accent" />
-        <MetricPill label="Actual VU" value={formatNumber(totalCurrent)} tone="info" />
-        <MetricPill label="Delta VU" value={`${delta >= 0 ? '+' : ''}${formatNumber(delta)}`} tone={Math.abs(delta) > Math.max(60, totalTarget * 0.05) ? 'warning' : 'default'} />
+        <MetricPill label="Actual VU" value={runStatus === "RESERVED" || runStatus === "QUEUED" ? "Not started" : formatNumber(totalCurrent)} tone="info" />
+        <MetricPill label="Delta VU" value={runStatus === "RESERVED" || runStatus === "QUEUED" ? "No samples" : `${delta >= 0 ? '+' : ''}${formatNumber(delta)}`} tone={Math.abs(delta) > Math.max(60, totalTarget * 0.05) ? 'warning' : 'default'} />
       </div>
 
+      </details>
       <div className="command-load-model-chart" aria-hidden="true">
         <ResponsiveContainer width="100%" height={132} minWidth={240}>
           <AreaChart data={profile} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -3733,7 +3798,7 @@ function GroupLoadTable({
                   >
                     <i style={{ background: group.color }} />
                     <span>
-                      <strong>{group.name}</strong>
+                      <strong>{group.name} <span aria-hidden="true">⌄</span></strong>
                       <small>{goalContext || group.protocol}</small>
                     </span>
                   </button>
@@ -3747,8 +3812,8 @@ function GroupLoadTable({
                   </span>
                 )}
               </span>
-              <span role="cell">{formatNumber(group.current)}</span>
-              <span role="cell" className="command-target-cell">
+              <span role="cell" data-label="Current VU">{formatNumber(group.current)}</span>
+              <span role="cell" className="command-target-cell" data-label={isGoalTarget ? "Target TPS" : "Target VU"}>
                 {readOnly ? (
                   <span className="command-target-readout">
                     <strong>{formatTargetValue(group.target, group.targetMode)}</strong>
@@ -3791,14 +3856,14 @@ function GroupLoadTable({
                   </>
                 )}
               </span>
-              <span role="cell" className={group.throughputTargetMissed ? 'warning' : undefined}>
+              <span role="cell" data-label="TPS" className={group.throughputTargetMissed ? 'warning' : undefined}>
                 <span className="command-tps-stack">
                   <strong>{formatNumber(group.tps, 1)}</strong>
                   {isGoalTarget && <small>target {formatNumber(group.targetTps ?? group.target, 1)} TPS{gapText ? ` / ${gapText}` : ''}</small>}
                 </span>
               </span>
-              <span role="cell">{formatNumber(group.art)} ms</span>
-              <span role="cell" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
+              <span role="cell" data-label="ART">{formatNumber(group.art)} ms</span>
+              <span role="cell" data-label="Error %" className={metricTone(group.errorPct, 0.75, 1.5)}>{formatPercent(group.errorPct)}</span>
             </div>
           )
         })}
@@ -3970,25 +4035,17 @@ function ErrorDrilldown({
 function CapacitySnapshot({ groups, metrics }: { groups: CommandGroup[]; metrics?: LiveMetrics }) {
   const capacity = metrics?.capacity_status
   const allocated = capacity?.allocated_vusers ?? groups.reduce((sum, group) => sum + group.current, 0)
-  const projected = groups.reduce((sum, group) => sum + group.target, 0)
-  const availableGenerators = capacity?.available_generators ?? 12
-  const recommendedGenerators = capacity?.recommended_generators ?? 10
+  const projected = groups.reduce((sum, group) => sum + (group.targetMode === 'tps' ? group.targetVusers : group.target), 0)
+  const availableGenerators = capacity?.available_generators
+  const recommendedGenerators = capacity?.recommended_generators
   return (
-    <section className="command-panel command-capacity-snapshot" aria-label="Capacity snapshot">
-      <div className="command-panel-header">
-        <div>
-          <h3>Capacity</h3>
-          <p>Generator demand and staged target pressure.</p>
-        </div>
-      </div>
-      <div className="command-capacity-meter">
-        <span style={{ width: `${Math.min(100, allocated / Math.max(projected, 1) * 100)}%` }} />
-      </div>
+    <details className="command-panel command-capacity-snapshot" aria-label="Capacity snapshot" open={capacity?.saturated}>
+      <summary>Capacity · {capacity?.saturated ? 'Capacity pressure' : !capacity ? 'Telemetry unavailable' : 'Available'}</summary>
       <div className="command-capacity-stats">
         <MetricPill label="Allocated" value={`${formatNumber(allocated)} VU`} tone="info" />
         <MetricPill label="Projected" value={`${formatNumber(projected)} VU`} tone="accent" />
-        <MetricPill label="Generators" value={`${recommendedGenerators} / ${availableGenerators}`} tone={capacity?.saturated ? 'danger' : 'default'} />
+        <MetricPill label="Generators" value={`${formatOptionalNumber(recommendedGenerators)} / ${formatOptionalNumber(availableGenerators)}`} tone={capacity?.saturated ? 'danger' : 'default'} />
       </div>
-    </section>
+    </details>
   )
 }

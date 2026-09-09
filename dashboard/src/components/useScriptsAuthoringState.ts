@@ -39,8 +39,8 @@ export interface ImportedSaveResult {
   scripts: StoredScript[]
   scenario?: StoredScenario | null
   /**
-   * The import surface still owns unsaved generated drafts. Refresh library
-   * data for these saved scripts without replacing the importer with an editor.
+   * The operator chose to continue importing, or unsaved drafts remain. Refresh
+   * library data without replacing the importer with an editor.
    */
   stayInImportReview?: boolean
 }

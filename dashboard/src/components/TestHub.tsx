@@ -1090,6 +1090,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [initialView])
   const [planSeedScenarioId, setPlanSeedScenarioId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const wizardPanelRef = useRef<HTMLDivElement>(null)
   const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
   const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(0)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
@@ -1516,6 +1517,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const sourcePendingMessage = 'Choose and apply a workload source before continuing. Previous settings are retained until you apply a replacement.'
   const scriptReadiness = useMemo(() => new Map(scripts.map(script => [script.id, scenarioScriptReadiness(script)])), [scripts])
   const blockedScriptGroups = formGroups.filter(group => scriptReadiness.get(group.script_id)?.blocked)
+  useEffect(() => {
+    if (!showForm) return
+    const panel = wizardPanelRef.current
+    panel?.focus({ preventScroll: true })
+    panel?.scrollIntoView?.({ block: 'start' })
+  }, [wizardStep, showForm])
+
   const showScriptLibrary = showForm && wizardStep === 'scripts'
   const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts' && !sourcePending
 
@@ -2775,7 +2783,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setScriptSelectionTargetIndex(index)
     window.setTimeout(() => {
       scriptLibraryRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
-      scriptLibrarySearchRef.current?.focus()
+      scriptLibrarySearchRef.current?.focus({ preventScroll: true })
     }, 0)
   }
 
@@ -3160,7 +3168,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const saveScenario = async () => {
     const saved = await persistScenario()
     if (saved) {
-      resetScenarioBuilder()
+      setEditingId(saved.id)
+      editingBaselineFormRef.current = JSON.stringify(form)
+      clearScenarioBuilderDraft()
       refresh()
     }
   }
@@ -3936,15 +3946,15 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <p>Choose whether this scenario should inherit a known workload or start from a supported load shape.</p>
           </div>
           <div className="scenario-source-grid">
-            <button type="button" aria-pressed={scenarioStartChoice === 'existing'} className={`scenario-source-card ${scenarioStartChoice === 'existing' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('existing')}>
-              <span>Model from Existing Scenario</span>
-              <strong>Copy an existing scenario</strong>
-              <small>Search the scenario library, copy its scripts, run settings, data pool, and generator defaults, then save as a new scenario.</small>
-            </button>
             <button type="button" aria-pressed={scenarioStartChoice === 'shape'} className={`scenario-source-card ${scenarioStartChoice === 'shape' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('shape')}>
               <span>Build from Workload Shape</span>
               <strong>Fixed users and advanced shapes</strong>
               <small>Select a supported workload model and optionally apply one of its starter templates.</small>
+            </button>
+            <button type="button" disabled={scenarios.length === 0} aria-pressed={scenarioStartChoice === 'existing'} className={`scenario-source-card ${scenarioStartChoice === 'existing' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('existing')}>
+              <span>Model from Existing Scenario</span>
+              <strong>Copy an existing scenario</strong>{scenarios.length === 0 && <small>No saved scenarios in this workspace yet.</small>}
+              <small>Search the scenario library, copy its scripts, run settings, data pool, and generator defaults, then save as a new scenario.</small>
             </button>
             {trafficProfileShapeEnabled && <button type="button" aria-pressed={scenarioStartChoice === 'traffic_profile'} className={`scenario-source-card ${scenarioStartChoice === 'traffic_profile' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('traffic_profile')}>
               <span>Production Traffic Profile</span>
@@ -4991,7 +5001,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       )}
 
       {error && <div ref={errorRef} tabIndex={-1} className="settings-error-inline page-error-banner" role="alert">{error}</div>}
-      {!showForm && savedNotice && <p className="scenario-save-notice" role="status">{savedNotice}</p>}
+      {savedNotice && <p className="scenario-save-notice" role="status">{savedNotice}</p>}
 
       {showPlans && (
         <div className="page-section">
@@ -5021,7 +5031,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </div>
           </div>
 
-          <div className="scenario-wizard-stepper" aria-label="Scenario builder steps">
+          <p className="setting-desc">Checkmarks indicate valid fields, including defaults; they do not indicate an operator review.</p><div className="scenario-wizard-stepper" aria-label="Scenario builder steps">
             {scenarioWizardSteps.map((step, index) => {
               const stepComplete = index <= maxVisitedWizardIndex && wizardStepCompletion[step.id]
               return (
@@ -5031,7 +5041,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   className={`scenario-wizard-step ${wizardStep === step.id ? 'active' : ''} ${stepComplete ? 'complete' : ''}`}
                   onClick={() => setWizardStep(step.id)}
                   aria-current={wizardStep === step.id ? 'step' : undefined}
-                  aria-label={`${step.label}${stepComplete ? ' complete' : ''}`}
+                  aria-label={`${step.label}${stepComplete ? ' valid' : ''}`}
                 >
                   <span className="scenario-wizard-step-marker" aria-hidden="true">{stepComplete ? '✓' : index + 1}</span>
                   <span className="scenario-wizard-step-label">{step.label}</span>
@@ -5041,8 +5051,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           </div>
 
 		  <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp || isGuidedClosedVUser || isGoalDriven ? 'stepped-ramp-layout' : ''}`}>
-            <div className="scenario-builder-main">
-              {sourcePending && wizardStep !== 'start' && <p role="status" className="scenario-source-pending">{sourcePendingMessage}</p>}
+            <div className="scenario-builder-main" ref={wizardPanelRef} tabIndex={-1} role="region" aria-label={`Scenario step: ${wizardStep}`}>
+              {sourcePending && wizardStep === 'source' && <p role="status" className="scenario-source-pending">{sourcePendingMessage}</p>}
               {renderWizardStep()}
             </div>
 
@@ -5137,9 +5147,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               Next
             </button>}
             {wizardStep === 'review' && onCreateTestFromScenario && (
-              <button className="btn btn-primary" onClick={saveScenarioAndCreateTest} disabled={savePending || sourcePending || loadModelValidationLoading || !!loadModelValidationError || loadModelValidation?.status === 'blocked' || blockedScriptGroups.length > 0 || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save &amp; Create Test Run</button>
+              <button className="btn btn-primary" onClick={saveScenarioAndCreateTest} disabled={savePending || sourcePending || loadModelValidationLoading || !!loadModelValidationError || loadModelValidation?.status === 'blocked' || blockedScriptGroups.length > 0 || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>Save and configure run</button>
             )}
-            <button className="btn btn-secondary" onClick={saveScenario} disabled={savePending || sourcePending || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>{savePending ? 'Saving…' : 'Save draft'}</button>
+            <button className="btn btn-secondary" onClick={saveScenario} disabled={(wizardStep === 'start' && !scenarioStartChoice && !editingId) || savePending || sourcePending || Boolean(blockingStageTimelineMessage || steppedRampBlockingMessage || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError || scenarioGroupNameError)}>{savePending ? 'Saving…' : 'Save draft'}</button>
           </div>
 
         </fieldset>

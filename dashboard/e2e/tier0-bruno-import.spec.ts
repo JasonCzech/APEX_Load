@@ -124,7 +124,7 @@ http:
   for (let index = 0; index < 2; index += 1) await acknowledgements.nth(index).check()
 
   const savePromise = page.waitForResponse(response => isImportResponse(response, '/api/v1/scripts/import/bruno/commit'))
-  await controls.getByRole('button', { name: /Save 2 native scripts/ }).click()
+  await controls.getByRole('button', { name: /Save and Continue Importing/ }).click()
   const save = await savePromise
   expect(save.ok(), await save.text()).toBeTruthy()
 

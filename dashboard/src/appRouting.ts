@@ -13,7 +13,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID }
   | { page: 'command-center'; testId?: string }
-  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string }
+  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; section?: ReportSection }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
@@ -43,6 +43,8 @@ const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
+export const REPORT_SECTIONS = ['summary', 'performance', 'diagnostics', 'evidence'] as const
+export type ReportSection = typeof REPORT_SECTIONS[number]
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
 export type TestWorkspaceTabID = typeof TEST_WORKSPACE_TABS[number]
@@ -179,12 +181,14 @@ export function parseAppViewFromHash(hash: string): AppView {
   }
 
   if (page === 'report' && segments[1]) {
+    const section = params.get('section') as ReportSection | null
     const lens = params.get('lens')
     const compare = params.get('compare') || undefined
     return {
       page: 'report',
       testId: segments[1],
       ...(isReportLens(lens) ? { lens } : {}),
+      ...(section && REPORT_SECTIONS.includes(section) ? { section } : {}),
       ...(compare ? { compare } : {}),
       ...workspaceScope,
     }
@@ -348,6 +352,7 @@ export function viewToLocationHash(view: AppView): string {
 
   if (view.page === 'report') {
     const params = new URLSearchParams()
+    if (view.section) params.set('section', view.section)
     if (view.lens) params.set('lens', view.lens)
     if (view.compare) params.set('compare', view.compare)
     appendWorkspaceScope(params, view)

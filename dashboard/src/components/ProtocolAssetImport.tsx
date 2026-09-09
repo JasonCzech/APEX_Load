@@ -1,3 +1,5 @@
+import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -744,6 +746,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     reviewGenerationRef.current += 1
   }, [reviewGenerationRef])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
+  const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [selectedScriptIndex, setSelectedScriptIndex] = useState(0)
@@ -1395,7 +1398,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     commitReviewMutation(nextResult, 'Replay suggestion applied to the draft. Run replay validation again before saving normally.')
   }
 
-  const handleSave = async () => {
+  const handleSave = async (destination: ImportSaveDestination = 'stay') => {
+    if (savedResult && !asyncAPIMultiScript) return
+    const publish = (result: ImportedSaveResult) => publishSaved(result, destination)
     const sourceGeneration = reviewGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const sourceScriptIndex = selectedScriptIndexRef.current
@@ -1491,7 +1496,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!storedScript) throw new Error('OpenAPI import commit did not return a stored script')
           return storedScript
         })
-        onImported?.({
+        publish({
           scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)],
           ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
         })
@@ -1527,7 +1532,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!storedScript) throw new Error('Postman import save did not return a stored script')
           return storedScript
         })
-        onImported?.({
+        publish({
           scripts: [withFallbackPersistedScript(savedScript, currentReviewedScript)],
           ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
         })
@@ -1547,7 +1552,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         })
         const persisted = withFallbackPersistedScript(savedScript, currentReviewedScript)
         if (!requestIsCurrent()) {
-          onImported?.({ scripts: [persisted], stayInImportReview: true })
+          publish({ scripts: [persisted], stayInImportReview: true })
         } else {
           if (currentGeneratedScripts.length > 1) {
             const nextSavedScripts = {
@@ -1562,15 +1567,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               advanceReviewGeneration()
               selectedScriptIndexRef.current = nextPendingIndex
               setSelectedScriptIndex(nextPendingIndex)
-              onImported?.({ scripts: [persisted], stayInImportReview: true })
+              publish({ scripts: [persisted], stayInImportReview: true })
             } else {
               const orderedScripts = currentGeneratedScripts
                 .map((_script, index) => nextSavedScripts[index])
                 .filter((script): script is StoredScript => !!script)
-              onImported?.({ scripts: orderedScripts })
+              publish({ scripts: orderedScripts })
             }
           } else {
-            onImported?.({ scripts: [persisted] })
+            publish({ scripts: [persisted] })
           }
         }
         return
@@ -1615,7 +1620,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           return response.scripts[0]
         })
         genericImportBatchSaveOperationRef.current = null
-        onImported?.({
+        publish({
           scripts: storedBatch.map((stored, index) => withFallbackPersistedScript(stored, batchScripts[index])),
           ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
         })
@@ -1656,7 +1661,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         return response.scripts[0]
       })
       genericImportBatchSaveOperationRef.current = null
-      onImported?.({
+      publish({
         scripts: [withFallbackPersistedScript(savedScript, scriptToSave)],
         ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
       })
@@ -1696,7 +1701,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           setMessageError('Save this credential-preserving import before opening it in the Visual Editor.')
           return
         }
-        void handleSave()
+        void handleSave('editor')
         return
       }
       const compatibilityResult = invalidateProtectedImportCandidate(currentResult)
@@ -1835,7 +1840,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         [scriptIndex, batchResponseScripts[index]]
       ))) as Record<number, StoredScript>
       if (!requestIsCurrent() || latestResultRef.current !== sourceResult) {
-        onImported?.({ scripts: batchResponseScripts, stayInImportReview: true })
+        publishSaved({ scripts: batchResponseScripts, stayInImportReview: true })
         return
       }
       asyncAPIBatchSaveOperationRef.current = null
@@ -1849,7 +1854,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         const orderedScripts = scriptsToSave
           .map((_script, index) => allSavedScriptsByIndex[index])
           .filter((script): script is StoredScript => !!script)
-        onImported?.({ scripts: orderedScripts })
+        publishSaved({ scripts: orderedScripts })
       }
     } catch (error: unknown) {
       if (requestIsCurrent()) {
@@ -2124,6 +2129,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
   return (
     <div className="sample-import">
+      <ImportSaveConfirmation result={asyncAPIMultiScript ? { scripts: generatedScripts.flatMap((_, index) => asyncAPISavedScripts[index] ? [asyncAPISavedScripts[index]] : []) } : savedResult} onImportMore={() => { invalidateConversionSource(); setFile(null) }} onOpen={openSaved} disabled={sourceMutationLocked} />
       <div className="sample-import-header">
         <div>
           <h2>{labels.title}</h2>
@@ -2288,7 +2294,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               </label>
             </>
           )}
-          {supportsAgentforceTransform && (
+          {supportsAgentforceTransform && file && (
             <label className="sample-toggle sample-import-span-2" title="If an Agentforce Agent API conversation is detected, rewrite the script to acquire an OAuth2 token, correlate the session id, consume SSE, and end the session.">
               <input type="checkbox" checked={agentforceReplayReady} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setAgentforceReplayReady(event.target.checked) }} />
               Make Agentforce replay-ready (if an Agent API flow is detected)
@@ -2319,8 +2325,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
-            subtitle={`${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
-            saveLabel={asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script' : reviewMode === 'validation' ? 'Save script and open editor' : 'Save To Script Library')}
+            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the Script Library. Open a saved script above or import more files.' : `${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
+            saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to Script Library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script and Continue Importing' : 'Save and Continue Importing')}
             script={reviewedScript}
             warnings={result.warnings}
             unsupportedElements={result.unsupported_elements}
@@ -2348,15 +2354,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             onCredentialActionStart={captureProtectedSaveTarget}
             saving={saveTask.pending || persistenceInProgress}
             reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress}
-            saveDisabled={asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId)}
-            saveDisabledReason={scriptImportSaveDisabledReason}
+            saveDisabled={(Boolean(savedResult) && !asyncAPIMultiScript) || asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId)}
+            saveDisabledReason={savedResult && !asyncAPIMultiScript ? 'This import is already saved. Open it above or import more files.' : scriptImportSaveDisabledReason}
             onSave={asyncAPIPrepareSelectedForBatch
               ? handlePrepareAsyncAPICredentialsForBatch
               : asyncAPIFinalCredentialBatchSave
                 ? handleSaveAllAsyncAPIScripts
                 : handleSave}
-            onEdit={onEdit && !asyncAPISelectedScriptSaved ? handleEditReviewedScript : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
+            onEdit={onEdit && !savedResult && !asyncAPISelectedScriptSaved && generatedScripts.length === 1 ? handleEditReviewedScript : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
             previewAside={kind === 'recorder-export'
               ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
               : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}

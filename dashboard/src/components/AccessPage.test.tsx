@@ -1161,10 +1161,16 @@ describe('AccessPage', () => {
     expect(aliceButton).toBeDefined()
     if (!aliceButton) return
     await act(async () => {
+      aliceButton.focus()
       aliceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     const inspector = container.querySelector('aside[aria-label="Selected user details"]') as HTMLElement | null
     expect(inspector?.textContent).toContain('User Details')
+    expect(document.activeElement).toBe(inspector?.querySelector('h3'))
+    expect(aliceButton.closest('td')?.hasAttribute('aria-label')).toBe(false)
+    await act(async () => inspector?.querySelector<HTMLButtonElement>('[aria-label="Collapse user details"]')?.click())
+    expect(container.querySelector('[aria-label="Expand user details"]')).not.toBeNull()
+    await act(async () => aliceButton.click())
     if (!inspector) return
     expect(inspector.querySelectorAll('input, select').length).toBe(0)
     expect(inspector.textContent).not.toContain('Save Changes')

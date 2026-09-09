@@ -19,6 +19,7 @@ describe('UserSettingsPage', () => {
     act(() => { select.value = 'solarized-dark'; select.dispatchEvent(new Event('change', { bubbles: true })) })
     expect(change).toHaveBeenCalledWith('solarized-dark')
     expect(host.textContent).not.toContain('Authentication')
+    expect(host.querySelector('[role=note]')?.textContent).toContain('requires administrator access')
   })
   it('links sections and presents the signed-in account without editable identity fields', () => {
     const navigate = vi.fn()

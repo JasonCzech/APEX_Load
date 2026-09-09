@@ -727,7 +727,7 @@ describe('ScriptsPage', () => {
     await clickButton('Script Builder')
 
     expect(container.textContent).toContain('Create Script')
-    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Start New Script')
 
     await clickButton('Create')
     await clickButton('Blank & Assisted Editors')
@@ -792,7 +792,7 @@ describe('ScriptsPage', () => {
     expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('false')
     expect(container.textContent).toContain('Script Library')
     expect(container.textContent).not.toContain('Script Library (')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Start New Script')
     expect(container.textContent).toContain('Library Sources')
     expect(container.textContent).toContain('Associated Release')
     expect(container.textContent).toContain('Search scripts')
@@ -804,8 +804,9 @@ describe('ScriptsPage', () => {
     toggleButtons = Array.from(container.querySelectorAll('.script-page-toggle button'))
     expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
     expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Start New Script')
     expect(container.textContent).not.toContain('Script Library (')
+    await clickButton('Use existing')
     const builderHeaders = Array.from(container.querySelectorAll('.script-create-existing-table th')).map(header => header.textContent || '')
     expect(builderHeaders.some(header => header.includes('Source'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Script'))).toBe(true)
@@ -823,7 +824,7 @@ describe('ScriptsPage', () => {
     expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('false')
     expect(container.textContent).toContain('Script Library')
     expect(container.textContent).not.toContain('Script Library (')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Start New Script')
   })
 
   it('renders only one script library/builder toggle when the title bar provider is present', async () => {
@@ -854,7 +855,7 @@ describe('ScriptsPage', () => {
     expect(toggleButtons).toHaveLength(2)
     expect(toggleButtons.find(button => button.textContent?.includes('Script Library'))?.getAttribute('aria-pressed')).toBe('false')
     expect(toggleButtons.find(button => button.textContent?.includes('Script Builder'))?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Start New Script')
     expect(container.querySelectorAll('[data-testid="topbar-contribution"] .script-page-toggle')).toHaveLength(1)
   })
 
@@ -1001,8 +1002,9 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
+    await clickButton('Use existing')
 
-    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Copy an Existing Script')
     await clickButton('Existing Script')
     await flushPromises()
 
@@ -1033,11 +1035,12 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
+    await clickButton('Use existing')
 
     await clickButton('Existing Script')
     expect(apiMock.cloneScriptDraft).toHaveBeenCalledTimes(1)
     await clickButton('Script Library')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Copy an Existing Script')
 
     await act(async () => {
       resolveClone?.({
@@ -1128,6 +1131,7 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
+    await clickButton('Use existing')
 
     const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
     expect(migrateToggle).not.toBeNull()
@@ -1195,6 +1199,7 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
+    await clickButton('Use existing')
     const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
     await act(async () => migrateToggle?.click())
     await clickButton('Existing Script')
@@ -1265,6 +1270,7 @@ describe('ScriptsPage', () => {
       root.render(<ScriptsPage initialMode="create-options" />)
     })
     await flushPromises()
+    await clickButton('Use existing')
 
     const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
     await act(async () => migrateToggle?.click())
@@ -1287,8 +1293,9 @@ describe('ScriptsPage', () => {
     })
 
     await flushPromises()
+    await clickButton('Use existing')
 
-    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Copy an Existing Script')
     await clickButton('Existing Script')
     await flushPromises()
 
@@ -1327,7 +1334,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('New draft authoring')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Copy an Existing Script')
   })
 
   it('surfaces authoring-session load failures', async () => {
@@ -1956,7 +1963,7 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[data-testid="jmeter-import"]')).toBeNull()
     expect(container.textContent).toContain('Create Script')
     expect(container.textContent).toContain('Source-driven authoring')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Start New Script')
     expect(container.textContent).toContain('Import Loadrunner Script Archive')
   })
 

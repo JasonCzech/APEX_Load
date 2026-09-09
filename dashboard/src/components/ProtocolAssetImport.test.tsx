@@ -980,7 +980,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save with 1 secret to configure'))
+      .find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1067,7 +1067,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Preserved in script')
     expect(container.textContent).toContain('0 to configure later')
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Save To Script Library')
+      .find(button => button.textContent?.trim() === 'Save and Continue Importing')
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1166,7 +1166,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Save And Open In Visual Editor')
+      .find(button => button.textContent?.trim() === 'Save and Open in Visual Editor')
     expect(edit).toBeDefined()
     await act(async () => edit?.click())
     await flushPromises()
@@ -1250,7 +1250,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save with 1 secret to configure'))
+      .find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1347,7 +1347,7 @@ describe('ProtocolAssetImport', () => {
       targetSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Replace Script with 1 secret to configure'))!
+      .find(button => button.textContent?.includes('Replace Script and Continue Importing with 1 secret to configure'))!
     act(() => save.click())
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
@@ -1479,7 +1479,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save To Script Library'))
+      .find(button => button.textContent?.includes('Save and Continue Importing'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1512,7 +1512,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const findSave = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save To Script Library'))
+      .find(button => button.textContent?.includes('Save and Continue Importing'))
     await act(async () => findSave()?.click())
     await flushPromises()
     await flushPromises()
@@ -1556,7 +1556,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save To Script Library'))
+      .find(button => button.textContent?.includes('Save and Continue Importing'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1589,7 +1589,7 @@ describe('ProtocolAssetImport', () => {
       if (thinkTimeInput) setInputValue(thinkTimeInput, '1750')
     })
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save To Script Library'))
+      .find(button => button.textContent?.includes('Save and Continue Importing'))
     await act(async () => save?.click())
     await flushPromises()
 
@@ -2555,8 +2555,10 @@ describe('ProtocolAssetImport', () => {
     expect(tabsAfterFirstSave[0].textContent).toContain('Saved')
     expect(tabsAfterFirstSave[1].getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Save Remaining 1 Script')
+    expect(container.textContent).toContain('Open Orders Kafka in Visual Editor')
 
     await act(async () => tabsAfterFirstSave[0].click())
+    expect(container.textContent).toContain('Open Orders Kafka in Visual Editor')
     expect(saveSelected()?.disabled).toBe(true)
     await act(async () => saveSelected()?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(apiMock.commitAsyncAPIImport).toHaveBeenCalledTimes(1)
@@ -2574,12 +2576,13 @@ describe('ProtocolAssetImport', () => {
     }))
     expect(onImported).toHaveBeenCalledTimes(2)
     expect(onImported.mock.calls[1][0]).toEqual({
+      stayInImportReview: true,
       scripts: [
         expect.objectContaining({ id: 'saved-kafka-lane' }),
         expect.objectContaining({ id: 'saved-jms-lane' }),
       ],
     })
-    expect(onImported.mock.calls[1][0].stayInImportReview).toBeUndefined()
+    expect(onImported.mock.calls[1][0].stayInImportReview).toBe(true)
   })
 
   it('blocks every AsyncAPI draft mutation and save after the credential-preserving draft expires', async () => {
@@ -3333,7 +3336,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -3452,7 +3455,7 @@ describe('ProtocolAssetImport', () => {
     })
     expect(container.textContent).toContain('Selector updated in the draft')
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -3757,7 +3760,7 @@ describe('ProtocolAssetImport', () => {
     await act(async () => complete.click())
     expect(container.textContent).toContain('Replay validation passed')
 
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save with 1 secret to configure'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))!
     await act(async () => save.click())
     await flushPromises()
     await flushPromises()
@@ -3809,7 +3812,7 @@ describe('ProtocolAssetImport', () => {
     const draftToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(input => input.parentElement?.textContent?.includes('Save as draft needing replay review'))!
     await act(async () => draftToggle.click())
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save with 1 secret to configure'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))!
     await act(async () => save.click())
     await flushPromises()
     await flushPromises()
@@ -3824,7 +3827,7 @@ describe('ProtocolAssetImport', () => {
     const resolvedDraftToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(input => input.parentElement?.textContent?.includes('Save as draft needing replay review'))!
     await act(async () => resolvedDraftToggle.click())
-    const resolvedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))!
+    const resolvedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
     await act(async () => resolvedSave.click())
     await flushPromises()
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
@@ -3862,7 +3865,7 @@ describe('ProtocolAssetImport', () => {
     const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert k6 Script'))!
     await act(async () => convert.click())
     await flushPromises()
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
     act(() => save.click())
     await flushPromises()
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(1)
@@ -3873,7 +3876,7 @@ describe('ProtocolAssetImport', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))!
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
     await act(async () => retry.click())
     await flushPromises()
 
@@ -3895,7 +3898,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
     const useFallback = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Use')!
     await act(async () => useFallback.click())
-    const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Open In Visual Editor'))!
+    const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Open Draft in Visual Editor'))!
     await act(async () => edit.click())
 
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
@@ -4163,7 +4166,7 @@ describe('ProtocolAssetImport', () => {
     const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert k6 Script'))!
     await act(async () => convertButton.click())
     await flushPromises()
-    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save with 1 secret to configure'))!
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))!
     act(() => saveButton.click())
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)

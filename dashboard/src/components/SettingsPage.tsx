@@ -10,7 +10,7 @@ import ConnectionDiagnostics from './ConnectionDiagnostics'
 import RedactionPreview from './RedactionPreview'
 import NotificationDiagnostics from './NotificationDiagnostics'
 import { handleTabKey } from './tabKeyboard'
-import { SETTINGS_DESTINATIONS, settingsDestination, settingsOwner } from './settingsNavigation'
+import { SETTINGS_DESTINATIONS, matchesSettingsSearch, settingsSearchControl, settingsDestination, settingsOwner } from './settingsNavigation'
 import ComputeInfrastructureCard from './ComputeInfrastructureCard'
 import ClustersCard from './ClustersCard'
 import FleetPoolsCard from './FleetPoolsCard'
@@ -23,6 +23,7 @@ import { useApplicationApi } from '../hooks/api/useApplicationApi'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
 import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
+import type { DeleteEntityResponse } from '../hooks/api/useProjectApi'
 import type { ProjectMutation } from '../hooks/projectContext'
 import { useApi } from '../hooks/useApi'
 import { Application, ApplicationRepository, ArchiveRetentionPlanResponse, CapacityReservation, DashboardAuditEvent, DashboardAuthAccessResource, DashboardAuthDiagnostics, DashboardAuthDiagnosticsCheck, DashboardAuthEffectiveAccessResource, DashboardAuthRoleDefinition, DashboardAuthStatus, DashboardServiceAccount, DashboardSystemSettings, Domain, GitHubProjectPolicy, HealthResponse, Project, Release, SharedDataPool, SharedDataPoolRow, SystemReadinessResponse, UsageAccountingResponse, UsageAccountingSnapshot } from '../types'
@@ -284,7 +285,7 @@ function SettingsConfirmDialog({
       >
         <div className="modal-header">
           <h3 id={titleId}>{title}</h3>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onCancel} aria-label="Close dialog">Close</button>
         </div>
         <div className="monitor-body" id={descriptionId}>
           {children}
@@ -301,7 +302,9 @@ function SettingsConfirmDialog({
 
 interface SettingsPageProps {
   destinationId?: string
-  onDestinationChange?: (id: string) => void
+  onDestinationChange?: (id: string, focusControl?: string) => void
+  focusRequest?: { destination: string; control: string } | null
+  onFocusHandled?: () => void
   theme: DashboardThemePreference
   onThemeChange: (theme: DashboardThemePreference) => void
   authStatus?: DashboardAuthStatus
@@ -325,6 +328,8 @@ type SettingsSubsectionDefinition<SubsectionId extends string> = {
 export default function SettingsPage({
   destinationId,
   onDestinationChange,
+  focusRequest,
+  onFocusHandled,
   theme,
   onThemeChange,
   authStatus,
@@ -370,6 +375,7 @@ export default function SettingsPage({
     setActiveProject,
     createAndSelectProject,
     updateProject: updateProjectInContext,
+    deleteProject: deleteProjectInContext,
   } = useProject()
   const updateProject = onProjectUpdate || updateProjectInContext
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
@@ -424,6 +430,8 @@ export default function SettingsPage({
   const [domainDraftName, setDomainDraftName] = useState('')
   const [domainDraftDescription, setDomainDraftDescription] = useState('')
   const [domainActionError, setDomainActionError] = useState('')
+  const [domainDeleteBusy, setDomainDeleteBusy] = useState(false)
+  const domainDeleteBusyRef = useRef(false)
   // Creating or deleting a domain switches the workspace scope, which remounts
   // this page; the outcome message and any "the mutation succeeded, do not
   // retry" warning are re-read from breadcrumbs so they survive the remount.
@@ -461,6 +469,9 @@ export default function SettingsPage({
   const [renamingReleaseOriginalName, setRenamingReleaseOriginalName] = useState<string | null>(null)
   const [renamingReleaseApplicationId, setRenamingReleaseApplicationId] = useState<string | null>(null)
   const [renamingReleaseUpdatedAt, setRenamingReleaseUpdatedAt] = useState('')
+  const [confirmDeleteProject, setConfirmDeleteProject] = useState<Project | null>(null)
+  const [projectDeleteBusy, setProjectDeleteBusy] = useState(false)
+  const projectDeleteBusyRef = useRef(false)
   const [confirmDeleteApp, setConfirmDeleteApp] = useState(false)
   const [confirmDeleteRelease, setConfirmDeleteRelease] = useState<{ id: string; name: string } | null>(null)
   const [confirmArchiveRelease, setConfirmArchiveRelease] = useState<{ id: string; name: string } | null>(null)
@@ -2078,6 +2089,7 @@ export default function SettingsPage({
   }
 
   const deleteDomain = async (domain: Domain) => {
+    if (domainDeleteBusyRef.current) return
     if (!canManageDomains) {
       setDomainActionError('Current session cannot manage domains.')
       setDomainActionMessage('')
@@ -2097,13 +2109,18 @@ export default function SettingsPage({
       setConfirmDeleteDomain(null)
       return
     }
+    domainDeleteBusyRef.current = true
+    setDomainDeleteBusy(true)
+    setDomainActionError('')
     try {
       await repositoryApi.deleteDomain(domain.id)
     } catch (error: unknown) {
       setDomainActionError(getErrorMessage(error, 'Unable to delete domain'))
       setDomainActionMessage('')
-      setConfirmDeleteDomain(null)
       return
+    } finally {
+      domainDeleteBusyRef.current = false
+      setDomainDeleteBusy(false)
     }
 
     const fallbackDomain = domains.find(candidate => candidate.id !== domain.id) || null
@@ -3135,8 +3152,26 @@ export default function SettingsPage({
   useEffect(() => {
     if (window.innerWidth <= 1100) setNavigationOpen(false)
   }, [currentDestination.id])
+  const [searchFocusTarget, setSearchFocusTarget] = useState<{ destination: string; control: string } | null>(null)
+  useEffect(() => {
+    const target = focusRequest || searchFocusTarget
+    if (!target || currentDestination.id !== target.destination) return
+    const frame = requestAnimationFrame(() => {
+      const control = document.getElementById(target.control)
+      if (control && !control.closest('[hidden]')) {
+        control.focus({ preventScroll: true })
+        control.scrollIntoView?.({ block: 'center' })
+        setSearchFocusTarget(null)
+        onFocusHandled?.()
+      }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [currentDestination.id, searchFocusTarget, focusRequest, onFocusHandled])
   const selectDestination = (id: string) => {
-    if (onDestinationChange) onDestinationChange(id)
+    const control = settingsSearchControl(id, navigationSearch)
+    if (!onDestinationChange) setSearchFocusTarget({ destination: id, control: control || 'settings-destination-title' })
+    if (control && window.innerWidth <= 1100) setNavigationOpen(false)
+    if (onDestinationChange) onDestinationChange(id, control)
     else {
       const item = settingsDestination(id)
       if (!item) return
@@ -3223,14 +3258,14 @@ export default function SettingsPage({
         <nav id="settings-task-navigation" className={`settings-task-navigation ${navigationOpen ? 'is-open' : ''}`} aria-label="Settings sections">
           <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
           {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
-            const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && `${item.group} ${item.title}`.toLowerCase().includes(navigationSearch.toLowerCase()))
+            const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && matchesSettingsSearch(item, navigationSearch))
             return entries.length ? <div key={group}><h3>{group}</h3>{entries.map(item => <button type="button" key={item.id} aria-current={currentDestination.id === item.id ? 'page' : undefined} onClick={() => selectDestination(item.id)}>{item.title}{issuesBySection[item.section]?.length ? <span aria-label="Validation issues"> •</span> : null}</button>)}</div> : null
           })}
-          {navigationSearch && !SETTINGS_DESTINATIONS.some(item => `${item.group} ${item.title}`.toLowerCase().includes(navigationSearch.toLowerCase())) && <p role="status">No settings match.</p>}
+          {navigationSearch && !SETTINGS_DESTINATIONS.some(item => matchesSettingsSearch(item, navigationSearch)) && <p role="status">No settings match.</p>}
           <button type="button" onClick={() => onNavigate?.('access')}>Manage users & service accounts</button>
         </nav>
         <div className="settings-main">
-          <header className="settings-task-heading"><p>{currentDestination.group}</p><h2>{currentDestination.title}</h2><p>Applies to: {currentDestination.scope === 'browser' ? 'This browser only' : currentDestination.scope === 'deployment' ? 'Entire deployment' : currentDestination.scope === 'domain' ? `Domain: ${activeDomain?.name || 'Select a domain'}` : `Project: ${(currentDestination.section === 'projects' ? selectedProject?.name : activeProject?.name) || 'Select a project'}`}</p><p className="setting-desc">{currentDestination.scope === 'browser' ? 'Preferences apply immediately in this browser.' : currentDestination.resource ? 'Changes are saved by the resource editor below.' : 'Save pending settings commits pending configuration and policy edits listed below. Resource actions have their own Save controls.'}</p>{hasAnyUnsavedChanges && <p role="status">Pending: {[
+          <header className="settings-task-heading"><p>{currentDestination.group}</p><h2 id="settings-destination-title" tabIndex={-1}>{currentDestination.title}</h2><p>Applies to: {currentDestination.scope === 'browser' ? 'This browser only' : currentDestination.scope === 'deployment' ? 'Entire deployment' : currentDestination.scope === 'domain' ? `Domain: ${activeDomain?.name || 'Select a domain'}` : `Project: ${(currentDestination.section === 'projects' ? selectedProject?.name : activeProject?.name) || 'Select a project'}`}</p><p className="setting-desc">{currentDestination.scope === 'browser' ? 'Preferences apply immediately in this browser.' : currentDestination.resource ? 'Changes are saved by the resource editor below.' : 'Save pending settings commits pending configuration and policy edits listed below. Resource actions have their own Save controls.'}</p>{hasAnyUnsavedChanges && <p role="status">Pending: {[
         hasUnsavedChanges ? 'deployment configuration' : '',
         projectHasUnsavedChanges ? `governance for ${selectedProject?.name || 'selected project'}` : '',
       ].filter(Boolean).join('; ') || 'resource edits — review the editor’s save controls'}</p>}</header>
@@ -5107,7 +5142,7 @@ export default function SettingsPage({
               </div>
               {selectedDomain ? (
                 <>
-                  <input aria-label="Selected Domain"
+                  <input id="settings-domain-edit-name" aria-label="Selected Domain"
                     className="settings-input"
                     value={domainDraftName}
                     onChange={event => {
@@ -5133,14 +5168,16 @@ export default function SettingsPage({
                   {domainDraftValidationError && <p className="settings-error-inline">{domainDraftValidationError}</p>}
                   {!canManageDomains && <p className="settings-error-inline">Current session can view domains but cannot change them.</p>}
                   <div className="settings-inline-actions">
+                    <button className="btn btn-secondary" type="button" disabled={!canManageDomains || policySaving} onClick={() => document.getElementById('settings-domain-edit-name')?.focus()}>Edit</button>
                     <button
                       className="btn btn-primary"
                       type="button"
                       onClick={saveDomain}
                       disabled={!domainHasUnsavedChanges || policySaving || Boolean(domainDraftValidationError) || !canManageDomains}
                     >
-                      Save Domain
+                      Save
                     </button>
+                    <button className="btn btn-secondary" type="button" disabled={!domainHasUnsavedChanges || policySaving} onClick={discardDomainChanges}>Cancel</button>
                   </div>
                 </>
               ) : (
@@ -5156,8 +5193,7 @@ export default function SettingsPage({
               <div className="settings-inline-actions">
                 <span className="setting-value">{selectedDomain?.name || 'No domain selected'}</span>
                 <button
-                  className="btn btn-ghost"
-                  style={{ color: 'var(--danger)' }}
+                  className="btn btn-danger-outline"
                   type="button"
                   onClick={() => selectedDomain && setConfirmDeleteDomain(selectedDomain)}
                   disabled={!selectedDomain || selectedDomain.id === 'default' || selectedDomainProjectCount > 0 || !canManageDomains}
@@ -5171,17 +5207,7 @@ export default function SettingsPage({
                   {selectedDomainProjectCount} project{selectedDomainProjectCount === 1 ? '' : 's'} must be moved or deleted first.
                 </p>
               )}
-              {confirmDeleteDomain && (
-                <div className="settings-inline-actions">
-                  <span className="settings-error-inline">Delete {confirmDeleteDomain.name}?</span>
-                  <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => deleteDomain(confirmDeleteDomain)}>
-                    Confirm Delete
-                  </button>
-                  <button className="btn btn-secondary" type="button" onClick={() => setConfirmDeleteDomain(null)}>
-                    Cancel
-                  </button>
-                </div>
-              )}
+
             </div>
           </div>
           </fieldset>
@@ -5295,7 +5321,7 @@ export default function SettingsPage({
                   <>
                     <input aria-label="Current Application"
                       type="text"
-                      className="input"
+                      className="settings-input"
                       value={renamingApplicationName}
                       onChange={e => setRenamingApplicationName(e.target.value)}
                       onKeyDown={e => {
@@ -5314,10 +5340,10 @@ export default function SettingsPage({
                 ) : (
                   <>
                     <span className="setting-value">{activeApplication?.name || 'No application selected'}</span>
-                    <button className="btn btn-secondary" type="button" onClick={startRenamingApplication} disabled={!activeApplication}>
-                      Rename
+                    <button className="btn btn-secondary" type="button" onClick={startRenamingApplication} disabled={!activeApplication || !canManageProjects}>
+                      Edit
                     </button>
-                    <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteApp(true)} disabled={!activeApplication}>
+                    <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteApp(true)} disabled={!activeApplication || !canManageProjects}>
                       Delete
                     </button>
                   </>
@@ -5357,7 +5383,8 @@ export default function SettingsPage({
                           <>
                             <input
                               type="text"
-                              className="input"
+                              className="settings-input"
+                              aria-label={`Edit release ${release.name}`}
                               value={renamingReleaseName}
                               onChange={e => setRenamingReleaseName(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') confirmRenameRelease(); if (e.key === 'Escape') { setRenamingReleaseId(null); setRenamingReleaseName(''); setRenamingReleaseOriginalName(null); setRenamingReleaseApplicationId(null); setRenamingReleaseUpdatedAt(''); } }}
@@ -5367,15 +5394,15 @@ export default function SettingsPage({
                           </>
                         ) : (
                           <>
-                            <button className="btn btn-secondary" type="button" onClick={() => runGuarded(() => startRenamingRelease(release))}>
-                              Rename
+                            <button className="btn btn-secondary" type="button" disabled={!canManageProjects} onClick={() => runGuarded(() => startRenamingRelease(release))}>
+                              Edit
                             </button>
                             {!release.archived_at && (
                               <button className="btn btn-secondary" type="button" onClick={() => setConfirmArchiveRelease({ id: release.id, name: release.name })}>
                                 Archive
                               </button>
                             )}
-                            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" onClick={() => setConfirmDeleteRelease({ id: release.id, name: release.name })}>
+                            <button className="btn btn-ghost" style={{ color: 'var(--danger)' }} type="button" disabled={!canManageProjects} onClick={() => setConfirmDeleteRelease({ id: release.id, name: release.name })}>
                               Delete
                             </button>
                           </>
@@ -5419,7 +5446,7 @@ export default function SettingsPage({
               <div className="settings-manager-summary">
                 <div>
                   <span className="setting-label">Projects</span>
-                  <span className="setting-desc">Compliance defaults apply automatically to tests and replay sessions that resolve this project by `project_id`.</span>
+                  <span className="setting-desc">Select a project to edit its name, manage its defaults, or delete it.</span>
                 </div>
                 <strong>{projects.length}</strong>
               </div>
@@ -5435,14 +5462,14 @@ export default function SettingsPage({
                       <span>{project.name}</span>
                       <small>
                         {selectedProject?.id === project.id
-                          ? 'Editing compliance defaults'
+                          ? 'Selected project · Edit below'
                           : `${project.settings?.redaction_rules?.length || 0} custom rule${project.settings?.redaction_rules?.length === 1 ? '' : 's'}`}
                       </small>
                     </button>
                   ))}
                 </div>
               ) : (
-                <p className="new-test-inline-note">No projects yet. Create one to define project-specific redaction defaults.</p>
+                <p className="new-test-inline-note">No projects yet. Create one to organize applications, scripts and test runs.</p>
               )}
               <div className="inline-create-row">
                 <FormField label="Project name" htmlFor="SettingsPage-newProjectName"><input
@@ -5461,6 +5488,17 @@ export default function SettingsPage({
                 </button>
               </div>
             </div>
+            {selectedProject && <section className="settings-subsection" aria-label="Edit selected project">
+              <div className="setting-info"><span className="setting-label">Selected Project</span><span className="setting-desc">Edit the project name. Deleting a project also removes its applications, releases and associated assets.</span></div>
+              <label className="scenario-field"><span>Project name</span><input id="settings-project-edit-name" aria-label="Edit project name" className="settings-input" value={projectDraftName} disabled={!canManageProjects || projectDeleteBusy} onChange={event => { setProjectDraftName(event.target.value); setProjectActionError(''); setProjectActionMessage('') }} /></label>
+              {projectDraftValidationError && <p className="settings-error-inline" role="alert">{projectDraftValidationError}</p>}
+              <div className="settings-inline-actions">
+                <button className="btn btn-secondary" type="button" disabled={!canManageProjects || projectDeleteBusy} onClick={() => document.getElementById('settings-project-edit-name')?.focus()}>Edit</button>
+                <button className="btn btn-primary" type="button" disabled={!canManageProjects || !projectHasUnsavedChanges || !!projectDraftValidationError || policySaving || projectDeleteBusy} onClick={() => void saveProjectCompliance()}>Save</button>
+                <button className="btn btn-secondary" type="button" disabled={!projectHasUnsavedChanges || policySaving || projectDeleteBusy} onClick={discardProjectChanges}>Cancel</button>
+                <button className="btn btn-danger-outline" type="button" disabled={!canManageProjects || projectDeleteBusy} onClick={() => runGuarded(() => setConfirmDeleteProject(selectedProject))}>Delete</button>
+              </div>
+            </section>}
               </div>
             </section>
 
@@ -5479,7 +5517,7 @@ export default function SettingsPage({
                     <span className="setting-label">Selected Project</span>
                     <span className="setting-desc">Built-in token and PII scrubbing still runs globally. Add regex rules here only for project-specific payload shapes.</span>
                   </div>
-                  <input aria-label="Selected Project"
+                  <input aria-label="Selected Project" disabled={!canManageProjects}
                     className="settings-input"
                     value={projectDraftName}
                     onChange={event => {
@@ -6550,6 +6588,36 @@ export default function SettingsPage({
         </div>
       </div>
 
+      <SettingsConfirmDialog open={Boolean(confirmDeleteDomain)} title="Delete Domain" confirmLabel={domainDeleteBusy ? 'Deleting…' : 'Delete Domain'} confirmDisabled={domainDeleteBusy || !canManageDomains} onCancel={() => { if (!domainDeleteBusy) setConfirmDeleteDomain(null) }} onConfirm={() => { if (confirmDeleteDomain) void deleteDomain(confirmDeleteDomain) }}>
+        <p>Permanently delete domain <strong>{confirmDeleteDomain?.name}</strong>? Only empty, non-default domains can be deleted.</p>
+        {domainActionError && <p role="alert">{domainActionError}</p>}
+      </SettingsConfirmDialog>
+      <SettingsConfirmDialog open={Boolean(confirmDeleteProject)} title="Delete Project" confirmLabel={projectDeleteBusy ? 'Deleting…' : 'Delete Project'} confirmDisabled={projectDeleteBusy || !canManageProjects} onCancel={() => { if (!projectDeleteBusy) setConfirmDeleteProject(null) }} onConfirm={() => {
+        if (!confirmDeleteProject || projectDeleteBusyRef.current || !canManageProjects) return
+        const target = confirmDeleteProject
+        projectDeleteBusyRef.current = true
+        setProjectDeleteBusy(true)
+        setProjectActionError('')
+        const removeDeletedProject = (result: DeleteEntityResponse) => {
+          committedProjectsRef.current.delete(target.id)
+          setProjects(previous => previous.filter(project => project.id !== target.id))
+          setConfirmDeleteProject(null)
+          setProjectActionMessage(`Deleted project ${target.name}.${result.external_secret_cleanup_required ? ' External secrets were retained and require administrator cleanup.' : ''}`)
+        }
+        void deleteProjectInContext(target.id).then(result => {
+          removeDeletedProject(result)
+        /* The provider reconciles active workspace selection after deletion. */
+        }).catch(error => {
+          const partial = error instanceof ApiError ? error.payload as Partial<DeleteEntityResponse> | undefined : undefined
+          if (partial?.deleted === target.id) removeDeletedProject(partial as DeleteEntityResponse)
+          setProjectActionError(getErrorMessage(error, 'Unable to delete project'))
+        }).finally(() => { projectDeleteBusyRef.current = false; setProjectDeleteBusy(false) })
+
+      }}>
+        <p>Permanently delete project <strong>{confirmDeleteProject?.name}</strong>, including its applications, releases, scripts, scenarios and test results?</p>
+        <p>This action cannot be undone. Active runs may prevent deletion.</p>
+        {projectActionError && <p role="alert" className="settings-error-inline">{projectActionError}</p>}
+      </SettingsConfirmDialog>
       <SettingsConfirmDialog
         open={confirmDeleteApp}
         title="Delete Application"

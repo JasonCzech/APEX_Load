@@ -1,3 +1,5 @@
+import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
@@ -468,6 +470,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     advance: advanceReviewGeneration,
   } = useImportReviewGeneration()
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
+  const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const resetConvertTask = convertTask.reset
@@ -830,7 +833,9 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (destination: ImportSaveDestination = 'stay') => {
+    if (savedResult) return
+    const publish = (result: ImportedSaveResult) => publishSaved(result, destination)
     const sourceGeneration = reviewGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const sourceResult = latestResultRef.current
@@ -874,7 +879,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
         }
         return response.scripts[0]
       })
-      onImported?.({
+      publish({
         scripts: [withFallbackPersistedScript(savedScript, scriptToSave)],
         ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
       })
@@ -896,7 +901,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
         setMessageError('Save this credential-preserving import before opening it in the Visual Editor.')
         return
       }
-      void handleSave()
+      void handleSave('editor')
       return
     }
     onEdit?.(currentScript)
@@ -1009,6 +1014,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
 
   return (
     <div className="sample-import">
+      <ImportSaveConfirmation result={savedResult} onImportMore={() => handleBrowseSample('primary')} onOpen={openSaved} disabled={operationBusy} />
       <div className="sample-import-header">
         <div>
           <h2>{isJavaHttpPreset ? 'Import Java over HTTP Samples' : 'Build Script From Sample'}</h2>
@@ -1267,13 +1273,14 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             credentialReviewRef={credentialReviewRef}
             saving={saving}
             onReviewBusyChange={setInternalReviewBusy}
-            saveDisabled={hasMissingFileAssets}
-            saveDisabledReason={hasMissingFileAssets
+            saveDisabled={Boolean(savedResult) || hasMissingFileAssets}
+            saveLabel={savedResult ? 'Saved to Script Library' : 'Save and Continue Importing'}
+            saveDisabledReason={savedResult ? 'This script is already saved. Open it above or import more files.' : hasMissingFileAssets
               ? 'Upload every missing imported file asset before saving this script.'
               : undefined}
             onSave={handleSave}
-            onEdit={onEdit ? handleEdit : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
+            onEdit={onEdit && !savedResult ? handleEdit : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
             {replayPreflight && (

@@ -353,6 +353,7 @@ type transactionEventFilter struct {
 }
 
 type RunArchiveReport struct {
+	Outcome             *IntegrationOutcome                    `json:"outcome,omitempty"`
 	ByTransaction       map[string]RunArchiveActionStats       `json:"by_transaction,omitempty"`
 	ByRequest           map[string]RunArchiveActionStats       `json:"by_request,omitempty"`
 	MetricPopulations   map[string]ArchiveMetricPopulation     `json:"metric_populations,omitempty"`

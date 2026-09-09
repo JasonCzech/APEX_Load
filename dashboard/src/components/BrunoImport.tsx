@@ -1,3 +1,4 @@
+import ImportSaveConfirmation from './ImportSaveConfirmation'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import DialogLayer from './ux/DialogLayer'
@@ -1033,8 +1034,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   }
   const canCommit = Boolean(inspection) && saveBlockers.length === 0
   const commitActionLabel = outputMode === 'native_requests'
-    ? `Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`
-    : syncScriptId ? 'Synchronize Bruno source' : 'Import Bruno collection'
+    ? 'Save and Continue Importing'
+    : syncScriptId ? 'Synchronize Bruno source and Continue Importing' : 'Save and Continue Importing'
   const commitButtonLabel = loading
     ? 'Committing…'
     : deferredSecretCount > 0
@@ -1319,8 +1320,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       setCommittedDeferredSecretCount(deferredSecretCount)
       if (outputMode === 'native_requests') {
         setNotice(`${importedScripts!.length} native APEX script${importedScripts!.length === 1 ? '' : 's'} saved atomically.`)
-        onImported?.({ scripts: importedScripts! })
+        onImported?.({ scripts: importedScripts!, stayInImportReview: true })
       } else {
+        if (isCanonicalCommitResponse(response)) onImported?.({ scripts: [storedScriptFromDefinition(response.script)], stayInImportReview: true })
         setNotice(syncScriptId ? 'Bruno source synchronized as a new immutable revision.' : 'Bruno collection imported as a canonical APEX script.')
       }
       if (outputMode === 'canonical' && isCanonicalCommitResponse(response) && response.script.id) {
@@ -2392,6 +2394,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         </>
       )}
 
+      <ImportSaveConfirmation
+        result={committed ? { scripts: isCanonicalCommitResponse(committed)
+          ? [storedScriptFromDefinition(committed.script)]
+          : isNativeCommitResponse(committed) ? committed.scripts.map(storedScriptFromDefinition) : [] } : null}
+        onImportMore={() => { selectFiles([]); fileInputRef.current?.click() }}
+        onOpen={saved => onImported?.(saved)}
+        disabled={operationBusy}
+      />
       {committed && outputMode === 'canonical' && isCanonicalCommitResponse(committed) && (
         <section className="bruno-card bruno-committed">
           <div className="bruno-card-heading">

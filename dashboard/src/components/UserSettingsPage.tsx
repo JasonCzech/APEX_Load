@@ -19,6 +19,9 @@ export default function UserSettingsPage({ destinationId, onDestinationChange, .
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 1100)
   const headingRef = useRef<HTMLHeadingElement>(null)
   const requested = destinationId?.replace(/^personal-/, '')
+  const administrativeDestination = !!destinationId && !destinationId.startsWith('personal-') && destinationId !== 'preferences'
+  const requestedReturn = new URLSearchParams(window.location.hash.split('?')[1] || '').get('returnTo') || ''
+  const returnTo = /^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
   const destination = PERSONAL_SECTIONS.find(item => item.id === requested) || PERSONAL_SECTIONS[0]
   const contribution = useMemo(() => ({
     id: 'personal-settings',
@@ -29,6 +32,7 @@ export default function UserSettingsPage({ destinationId, onDestinationChange, .
   useTopbarContribution(contribution)
 
   return <div className="page settings-page personal-settings-page">
+    {administrativeDestination && <section className="settings-subsection" role="note"><h2>Administrator settings</h2><p>Your account can manage personal preferences here. The requested setting requires administrator access.</p>{returnTo && <a className="btn btn-secondary" href={returnTo}>Return to previous page</a>}</section>}
     <div className={`settings-tabbed-layout ${navigationOpen ? '' : 'navigation-collapsed'}`}>
       <PanelToggle
         expanded={navigationOpen}

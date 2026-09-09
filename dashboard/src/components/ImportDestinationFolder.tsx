@@ -224,6 +224,7 @@ export default function ImportDestinationFolder({ projectId, value, onChange, di
           <label>
             <span>New script folder name</span>
             <input
+              className="settings-input"
               value={newFolderName}
               disabled={disabled || creatingFolder}
               onChange={event => {

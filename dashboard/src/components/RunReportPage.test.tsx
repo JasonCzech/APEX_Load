@@ -232,6 +232,27 @@ describe('RunReportPage', () => {
     vi.clearAllMocks()
   })
 
+  it('restores the requested report section when navigation changes', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    const render = (section: 'diagnostics' | 'evidence') => <NavigationGuardProvider><RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onOpenLegacyArchive={onOpenLegacyArchive} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>
+    await act(async () => { root.render(render('diagnostics')) })
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Diagnostics')
+    await act(async () => { root.render(render('evidence')) })
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Evidence')
+  })
+
+  it('keeps the current section until guarded navigation commits', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    const render = (section: 'summary' | 'evidence') => <NavigationGuardProvider><RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onOpenLegacyArchive={onOpenLegacyArchive} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>
+    await act(async () => { root.render(render('summary')) })
+    await act(async () => { (container.querySelector('#result-tab-Evidence') as HTMLButtonElement).click() })
+    expect(onNavigateReport).toHaveBeenCalledWith(expect.objectContaining({ section: 'evidence' }))
+    // A canceled guard leaves the route prop unchanged.
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Summary')
+    await act(async () => { root.render(render('evidence')) })
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Evidence')
+  })
+
   it('bounces live runs to the command center', async () => {
     mocks.polling.test = buildTest('RUNNING')
 
@@ -478,7 +499,7 @@ describe('RunReportPage', () => {
     })
     await flush()
     expect(container.querySelector('[data-testid="lens"]')?.textContent).toContain('engineer')
-    expect(onNavigateReport).toHaveBeenCalledWith({ lens: 'engineer', compare: undefined })
+    expect(onNavigateReport).toHaveBeenCalledWith({ lens: 'engineer', compare: undefined, section: 'summary' })
   })
 
   it('does not apply an old-lens verdict save after the report lens changes', async () => {
@@ -602,7 +623,7 @@ describe('RunReportPage', () => {
     })
     await flush()
 
-    expect(onNavigateReport).toHaveBeenCalledWith({ lens: 'engineer', compare: undefined })
+    expect(onNavigateReport).toHaveBeenCalledWith({ lens: 'engineer', compare: undefined, section: 'summary' })
   })
 
   it('reloads and merges the latest commentary after a verdict revision conflict', async () => {

@@ -1429,7 +1429,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         <td className="cell-muted">{row.duration || '-'}</td>
         <td className="cell-muted">
           {test
-            ? (test.archive ? `${test.archive.transaction_count} archive records` : 'Pending')
+            ? (test.archive ? `${test.archive.transaction_count} archive records` : 'Unavailable')
             : (externalImport && row.archiveCount !== undefined ? `${row.archiveCount} tx` : (row.hasArchive ? 'Ready' : '-'))}
           {test?.baseline_pinned && (
             <>
@@ -1928,7 +1928,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                   <select className="settings-input library-source-select" value={archiveFilter} onChange={event => setArchiveFilter(event.target.value as ArchiveFilter)}>
                     <option value="all">All archive states</option>
                     <option value="ready">Archive ready</option>
-                    <option value="pending">Archive pending</option>
+                    <option value="pending">Archive unavailable</option>
                   </select>
                 </label>
               </>

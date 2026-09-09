@@ -51,7 +51,7 @@ function createOptionsSurface(
 ) {
   return (
     <div className="page" hidden={hidden}>
-      {destination}
+      {destination && <details className="import-destination-disclosure"><summary>Save destination — review folder before saving</summary>{destination}</details>}
       <fieldset
         className="import-operation-gate"
         disabled={destinationOperationBusy}

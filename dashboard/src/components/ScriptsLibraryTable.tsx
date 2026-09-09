@@ -98,7 +98,7 @@ function formatScenarioCount(script: StoredScript) {
 function authoringHealthLabel(script: StoredScript) {
   const health = script.authoring_health
   if (!health) return 'Unknown'
-  const status = health.status === 'needs_review' ? 'Needs Review' : health.status === 'ready' ? 'Ready' : health.status.charAt(0).toUpperCase() + health.status.slice(1)
+  const status = health.status === 'needs_review' ? 'Needs Review' : health.status === 'ready' ? 'Static checks passed' : health.status.charAt(0).toUpperCase() + health.status.slice(1)
   return `${status} · ${health.score}`
 }
 
@@ -469,7 +469,7 @@ export default function ScriptsLibraryTable({
                             {healthSummary.warnings} warning{healthSummary.warnings === 1 ? '' : 's'}
                           </button>
                         )}
-                        {!secretStatusUnknown && script.authoring_health && healthSummary.blockers === 0 && healthSummary.warnings === 0 && <span className="script-health-token healthy">ready</span>}
+                        {!secretStatusUnknown && script.authoring_health && healthSummary.blockers === 0 && healthSummary.warnings === 0 && <span className="script-health-token healthy">static checks passed</span>}
                         {secretStatusUnknown && (
                           <button
                             type="button"
@@ -582,7 +582,7 @@ export default function ScriptsLibraryTable({
                   </td>
                 </tr>
                 {scriptAddressable && expandedScriptId === scriptId && (
-                  <tr className="no-hover" id={`script-runs-${scriptId}`}>
+                  <tr data-table-detail="true" className="no-hover" id={`script-runs-${scriptId}`}>
                     <td colSpan={columnCount} style={{ background: 'var(--bg-primary)' }}>
                       <div style={{ padding: '10px 4px' }}>
                         <div className="cell-muted" style={{ marginBottom: 8 }}>

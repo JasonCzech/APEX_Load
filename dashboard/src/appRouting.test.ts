@@ -131,7 +131,7 @@ describe('appRouting', () => {
     }))).toEqual({ page: 'command-center', testId: 'run/1', projectId: 'project/2' })
     expect(viewToLocationHash({ page: 'swagger' })).toBe('#/swagger')
     expect(viewToLocationHash({ page: 'docs' })).toBe('#/docs')
-    expect(viewToLocationHash({ page: 'docs', guidePage: 'general' })).toBe('#/docs')
+    expect(viewToLocationHash({ page: 'docs', guidePage: 'general' })).toBe('#/docs?guide=general')
     expect(viewToLocationHash({ page: 'docs', guidePage: 'mcp' })).toBe('#/docs?guide=mcp')
     expect(viewToLocationHash({ page: 'fleet' })).toBe('#/fleet')
     expect(viewToLocationHash({ page: 'monitoring', category: 'telemetry' })).toBe('#/monitoring?category=telemetry')
@@ -378,4 +378,11 @@ describe('appRouting', () => {
     proceed?.()
     expect(applied).toEqual([{ page: 'results' }])
   })
+})
+
+it('round trips report evidence sections and rejects unknown section names', () => {
+  const view = parseAppViewFromHash('#/report/run-1?section=evidence&lens=audit')
+  expect(view).toMatchObject({ page: 'report', testId: 'run-1', section: 'evidence', lens: 'audit' })
+  expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+  expect(parseAppViewFromHash('#/report/run-1?section=unknown')).not.toHaveProperty('section')
 })

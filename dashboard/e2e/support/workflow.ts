@@ -181,8 +181,10 @@ export async function importOpenAPI(page: Page, name: string, target: string) {
   await controls.getByRole('button', { name: 'Convert OpenAPI' }).click()
   await expect(controls.getByRole('heading', { name: 'Review Generated Script' })).toBeVisible()
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/openapi/commit')
-  await controls.getByRole('button', { name: 'Save To Script Library' }).click()
-  return idOf(await json(await saved), 'stored_script')
+  await controls.getByRole('button', { name: 'Save and Continue Importing' }).click()
+  const scriptId = idOf(await json(await saved), 'stored_script')
+  await controls.getByRole('button', { name: `Open ${name} in Visual Editor`, exact: true }).click()
+  return scriptId
 }
 export async function buildScenarioUI(page: Page, scriptName: string, name: string) {
   await page.getByRole('button', { name: 'New Test', exact: true }).first().click()
@@ -205,7 +207,7 @@ export async function buildScenarioUI(page: Page, scriptName: string, name: stri
   await page.getByRole('button', { name: 'Next', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Review And Validate' })).toBeVisible()
   const saved = mutation(page, 'POST', '/api/v1/scenarios')
-  await page.getByRole('button', { name: 'Save & Create Test Run' }).click()
+  await page.getByRole('button', { name: 'Save and configure run' }).click()
   const payload = await json(await saved)
   return idOf(payload)
 }

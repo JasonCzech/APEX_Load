@@ -1530,7 +1530,18 @@ export interface RunArchiveSLARollup {
   worst_kind: 'pass' | 'warn' | 'fail' | 'na' | string
 }
 
+export interface IntegrationOutcome {
+  scope?: { project_id?: string; application_id?: string; release_id?: string }
+  schema_version: 1
+  execution_id: string
+  observed_at: string
+  assessment: { status: 'passed' | 'failed' | 'inconclusive' | 'not_assessed' | 'unavailable'; reason_code: string; explanation: string; criteria_revision: string | null }
+  execution: { termination_reason: string; planned_duration_seconds: number | null; observed_duration_seconds: number | null }
+  evidence: { status: 'complete' | 'partial' | 'unavailable'; coverage_percent: number | null }
+}
+
 export interface RunArchiveReport {
+  outcome?: IntegrationOutcome
   by_request?: Record<string, RunArchiveActionStats>
   by_transaction?: Record<string, RunArchiveActionStats>
   metric_populations?: Record<string, RunArchiveActionStats & { average_rate_per_second?: number }>

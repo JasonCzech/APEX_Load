@@ -4821,6 +4821,61 @@ paths:
                           items:
                             type: string
                       nullable: true
+                    outcome:
+                      type: object
+                      properties:
+                        assessment:
+                          type: object
+                          properties:
+                            criteria_revision:
+                              type: string
+                              nullable: true
+                            explanation:
+                              type: string
+                            reason_code:
+                              type: string
+                            status:
+                              type: string
+                        evidence:
+                          type: object
+                          properties:
+                            coverage_percent:
+                              type: number
+                              format: double
+                              nullable: true
+                            status:
+                              type: string
+                        execution:
+                          type: object
+                          properties:
+                            observed_duration_seconds:
+                              type: number
+                              format: double
+                              nullable: true
+                            planned_duration_seconds:
+                              type: number
+                              format: double
+                              nullable: true
+                            termination_reason:
+                              type: string
+                        execution_id:
+                          type: string
+                        observed_at:
+                          type: string
+                          format: date-time
+                        schema_version:
+                          type: integer
+                          format: int64
+                        scope:
+                          type: object
+                          properties:
+                            application_id:
+                              type: string
+                            project_id:
+                              type: string
+                            release_id:
+                              type: string
+                      nullable: true
                     overview:
                       type: object
                       properties:
@@ -212191,6 +212246,81 @@ paths:
                     required:
                       - samples
                       - status
+                    nullable: true
+                  outcome:
+                    type: object
+                    properties:
+                      assessment:
+                        type: object
+                        properties:
+                          criteria_revision:
+                            type: string
+                            nullable: true
+                          explanation:
+                            type: string
+                          reason_code:
+                            type: string
+                          status:
+                            type: string
+                        required:
+                          - criteria_revision
+                          - explanation
+                          - reason_code
+                          - status
+                      evidence:
+                        type: object
+                        properties:
+                          coverage_percent:
+                            type: number
+                            format: double
+                            nullable: true
+                          status:
+                            type: string
+                        required:
+                          - coverage_percent
+                          - status
+                      execution:
+                        type: object
+                        properties:
+                          observed_duration_seconds:
+                            type: number
+                            format: double
+                            nullable: true
+                          planned_duration_seconds:
+                            type: number
+                            format: double
+                            nullable: true
+                          termination_reason:
+                            type: string
+                        required:
+                          - observed_duration_seconds
+                          - planned_duration_seconds
+                          - termination_reason
+                      execution_id:
+                        type: string
+                      observed_at:
+                        type: string
+                        format: date-time
+                      schema_version:
+                        type: integer
+                        format: int64
+                      scope:
+                        type: object
+                        properties:
+                          application_id:
+                            type: string
+                          project_id:
+                            type: string
+                          release_id:
+                            type: string
+                    required:
+                      - assessment
+                      - evidence
+                      - execution
+                      - execution_id
+                      - observed_at
+                      - schema_version
+                      - scope
                     nullable: true
                   overview:
                     type: object

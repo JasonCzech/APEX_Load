@@ -239,7 +239,7 @@ describe('ScriptsAuthoringShell', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('New draft authoring')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Copy an Existing Script')
     expect(Array.from(container.querySelectorAll('.script-workflow-card')).find(button => button.textContent?.includes('Create'))?.classList.contains('active')).toBe(true)
   })
 
@@ -267,7 +267,9 @@ describe('ScriptsAuthoringShell', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Create Script')
-    expect(container.textContent).toContain('Model From Existing Script')
+    expect(container.textContent).toContain('Start New Script')
+    await clickButton('Use existing')
+    expect(container.textContent).toContain('Copy an Existing Script')
     expect(container.textContent).toContain('Checkout Model')
     expect(container.textContent).toContain('Create')
     expect(container.textContent).not.toContain('Use Template')
@@ -386,6 +388,7 @@ describe('ScriptsAuthoringShell', () => {
       }))
     })
 
+    await clickButton('Use existing')
     expect(container.querySelector('.script-create-existing-table')).not.toBeNull()
     expect(container.textContent).toContain('3 of 3 scripts')
     expect(container.textContent).toContain('PI30')
@@ -466,7 +469,7 @@ describe('ScriptsAuthoringShell', () => {
 
     await clickButton('Import')
     expect(container.textContent).toContain('Contracts & Collections')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Copy an Existing Script')
 
     await clickButton('OpenAPI / Swagger')
     expect(container.textContent).toContain('subview:protocol-import')
@@ -476,7 +479,7 @@ describe('ScriptsAuthoringShell', () => {
 
     expect(container.textContent).toContain('Contracts & Collections')
     expect(container.textContent).toContain('OpenAPI / Swagger')
-    expect(container.textContent).not.toContain('Model From Existing Script')
+    expect(container.textContent).not.toContain('Copy an Existing Script')
   })
 
   it('renders backend starter templates and delegates template drafts', async () => {

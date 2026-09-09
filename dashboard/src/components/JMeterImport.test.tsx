@@ -184,7 +184,7 @@ describe('JMeterImport', () => {
     await flushPromises()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save Reviewed 1 Script'))?.click()
+        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
     })
     const includeAssertions = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))[0]
     expect(includeAssertions.disabled).toBe(true)
@@ -210,7 +210,7 @@ describe('JMeterImport', () => {
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ id: 'jmeter-saved-after-change' })],
     }))
-    expect(onImported.mock.calls[0]?.[0]).not.toHaveProperty('stayInImportReview')
+    expect(onImported.mock.calls[0]?.[0]).toHaveProperty('stayInImportReview', true)
   })
 
   it('reports a deferred batch save as busy until its persistence response settles', async () => {
@@ -238,7 +238,7 @@ describe('JMeterImport', () => {
 
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save Reviewed 1 Script'))?.click()
+        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
       await Promise.resolve()
     })
     expect(onOperationBusyChange).toHaveBeenLastCalledWith(true)
@@ -284,7 +284,7 @@ describe('JMeterImport', () => {
     await flushPromises()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save Reviewed 1 Script'))?.click()
+        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -408,7 +408,7 @@ describe('JMeterImport', () => {
     expect(container.textContent).toContain('Source Comparison')
     expect(container.textContent).toContain('HTTPSamplerProxy')
     expect(container.textContent).toContain('actions[0]')
-    expect(container.textContent).toContain('Save Reviewed 1 Script')
+    expect(container.textContent).toContain('Save and Continue Importing')
     const stats = Array.from(container.querySelectorAll('.lr-stat')).map(item => item.textContent)
     expect(stats).toContain('1HTTP Samplers')
     expect(stats).toContain('2Total Samplers')
@@ -487,7 +487,7 @@ describe('JMeterImport', () => {
 
     await flushPromises()
 
-    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open In Visual Editor'))
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Draft in Visual Editor'))
     expect(editButton).toBeDefined()
     if (!editButton) {
       return
@@ -591,7 +591,7 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Save And Open In Visual Editor')
+      .find(button => button.textContent?.trim() === 'Save and Open in Visual Editor')
     expect(editButton).toBeDefined()
     await act(async () => editButton?.click())
     await flushPromises()
@@ -686,7 +686,7 @@ describe('JMeterImport', () => {
     await act(async () => validateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts with 1 secret to configure'))
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))
     expect(saveButton?.disabled).toBe(false)
     await act(async () => saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
@@ -856,7 +856,7 @@ describe('JMeterImport', () => {
     const secondApply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Selected'))!
     await act(async () => secondApply.click())
     await flushPromises()
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
     await act(async () => save.click())
     await flushPromises()
 
@@ -958,7 +958,7 @@ describe('JMeterImport', () => {
 
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed 1 Script'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return
@@ -1047,7 +1047,7 @@ describe('JMeterImport', () => {
 
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save Reviewed 1 Script'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return

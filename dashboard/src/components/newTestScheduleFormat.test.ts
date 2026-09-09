@@ -13,6 +13,7 @@ import {
   formatLaunchWindow,
   formatReservationWindow,
   formatScheduleToken,
+  formatScheduleTimestampInZone,
   formatScheduleWindow,
   formatTimeslotLabel,
   formatTimeZoneOffset,
@@ -187,4 +188,12 @@ describe('timezone helpers', () => {
     expect(COMMON_TIMEZONES[0]).toBe('UTC')
     expect(COMMON_TIMEZONES).toContain('Asia/Tokyo')
   })
+})
+
+it('keeps recurring wall-clock labels stable across the daylight-saving boundary', () => {
+  const zone = 'America/New_York'
+  expect(formatTimeZoneOffset(new Date('2026-03-07T14:00:00Z'), zone)).toBe('UTC-05:00')
+  expect(formatTimeZoneOffset(new Date('2026-03-08T13:00:00Z'), zone)).toBe('UTC-04:00')
+  expect(formatScheduleTimestampInZone('2026-03-07T14:00:00Z', zone)).toContain('9:00')
+  expect(formatScheduleTimestampInZone('2026-03-08T13:00:00Z', zone)).toContain('9:00')
 })

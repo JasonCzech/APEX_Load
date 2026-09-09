@@ -1,3 +1,5 @@
+import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
@@ -91,6 +93,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     advance: advanceReviewGeneration,
   } = useImportReviewGeneration()
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
+  const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [parameterizationApplyingByScript, setParameterizationApplyingByScript] = useState<Record<string, boolean>>({})
@@ -383,7 +386,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     setNotice('Collection values updated every generated script. Review the changes before saving.')
   }
 
-  const handleSaveConverted = async () => {
+  const handleSaveConverted = async (destination: ImportSaveDestination = 'stay') => {
+    if (savedResult) return
+    const publish = (result: ImportedSaveResult) => publishSaved(result, destination)
     const resultToSave = latestResultRef.current
     if (!resultToSave?.scripts?.length || saveInFlightRef.current) return
     const sourceGeneration = reviewGenerationRef.current
@@ -411,7 +416,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       const savedScripts = withFallbackPersistedScripts(response.scripts, resultToSave.scripts)
       const scenarioText = response.scenario ? ' and scenario draft' : ''
       if (savedScripts.length) {
-        onImported?.({
+        publish({
           scripts: savedScripts,
           scenario: response.scenario,
           ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
@@ -442,7 +447,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         setError('Save this credential-preserving import before opening it in the Visual Editor.')
         return
       }
-      void handleSaveConverted()
+      void handleSaveConverted('editor')
       return
     }
     onEdit?.(currentScript)
@@ -517,6 +522,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
   return (
     <div className="lr-import">
+      <ImportSaveConfirmation result={savedResult} onImportMore={handleBrowse} onOpen={openSaved} disabled={sourceMutationLocked} />
       <div className="lr-import-header">
         <div>
           <h2>Import JMeter Test Plan</h2>
@@ -683,7 +689,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
             reviewGeneration={reviewScope}
-            subtitle={reviewMode === 'validation'
+            subtitle={savedResult ? 'Saved to the Script Library. Open a saved script above or import more files.' : reviewMode === 'validation'
               ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
               : 'This preview came from the converter and is ready for final review before saving.'}
             script={primaryScript || buildFallbackPrimaryScript(result.summary?.file_name || file?.name || 'Imported JMeter Plan')}
@@ -706,12 +712,12 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             saving={saving}
             reviewBusy={parameterizationApplying}
             onReviewBusyChange={setCredentialActionInProgress}
-            saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
+            saveDisabled={Boolean(savedResult)}
+            saveDisabledReason={savedResult ? 'These scripts are already saved. Open them above or import more files.' : undefined}
+            saveLabel={savedResult ? 'Saved to Script Library' : 'Save and Continue Importing'}
             onSave={handleSaveConverted}
-            onEdit={onEdit && primaryScript ? handleEditConverted : undefined}
-            editLabel={editRequiresCredentialPreservingSave
-              ? (result.scripts.length > 1 ? 'Save All And Open First Script In Visual Editor' : 'Save And Open In Visual Editor')
-              : (result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor')}
+            onEdit={onEdit && primaryScript && result.scripts.length === 1 && !savedResult ? handleEditConverted : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
             previewTitle="Import Preview"
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
           >

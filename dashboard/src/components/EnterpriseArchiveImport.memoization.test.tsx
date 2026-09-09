@@ -195,7 +195,7 @@ describe('EnterpriseArchiveImport review derivations', () => {
     const validateButton = findButton(container, 'Validate Only') || findButton(container, 'Validate')
     expect(validateButton).toBeDefined()
     await clickButton(validateButton!)
-    await clickButton(findButton(container, 'Continue reviewed import')!)
+    await clickButton(findButton(container, 'Save and Continue Importing')!)
 
     expect(container.textContent).toContain('Review')
     const summaryCallsAfterConversion = derivationCounts.importSummary

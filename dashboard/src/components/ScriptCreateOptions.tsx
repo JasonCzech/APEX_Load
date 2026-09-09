@@ -416,7 +416,7 @@ export default function ScriptCreateOptions({
   const [importSurfacesError, setImportSurfacesError] = useState('')
   const [featurePolicy, setFeaturePolicy] = useState<{ features: Array<{ id: string; effective_enabled: boolean }> } | null>(null)
   const [featurePolicyResolved, setFeaturePolicyResolved] = useState(!projectId)
-  const [internalWorkflow, setInternalWorkflow] = useState<CreateWorkflow>('existing')
+  const [internalWorkflow, setInternalWorkflow] = useState<CreateWorkflow>('start-new')
   const [existingScriptQuery, setExistingScriptQuery] = useState('')
   const [existingScriptProtocol, setExistingScriptProtocol] = useState('all')
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
@@ -747,8 +747,8 @@ export default function ScriptCreateOptions({
           <section className="script-create-lane api full">
             <div className="script-create-lane-header">
               <span className="script-create-kicker">Script library</span>
-              <h3>Model From Existing Script</h3>
-              <p>Choose a saved script to open a new editable copy. The original script remains unchanged until you save the draft.</p>
+              <h3>Copy an Existing Script</h3>
+              <p>Choose a saved script to open a new editable copy. Saving creates a separate script; the original remains unchanged.</p>
             </div>
             <div className="script-create-existing-toolbar">
               <label>

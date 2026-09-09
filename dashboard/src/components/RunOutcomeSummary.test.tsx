@@ -26,3 +26,41 @@ it('separates early termination, unevaluated acceptance, and complete captured e
   expect(container.textContent).toContain('Acceptance assessmentUnknown')
   act(() => root.unmount())
 })
+
+it('renders missing legacy metadata and null rates without crashing or inventing a rate', () => {
+ const container = document.createElement('div')
+ const root = createRoot(container)
+ const report = { metric_populations: { action: { transactions: 1, errors: 0, average_rate_per_second: null } } } as unknown as RunArchiveReport
+ act(() => root.render(<RunOutcomeSummary report={report} />))
+ expect(container.textContent).toContain('Elapsed-run average unavailable')
+ expect(container.textContent).toContain('Unknown termination reason')
+ act(() => root.unmount())
+})
+
+it('uses the shared computed assessment instead of a contradictory legacy verdict', () => {
+ const container = document.createElement('div')
+ const root = createRoot(container)
+ const report = { manifest: { test_id: 'run-1' }, verdict: { status: 'Pass' }, outcome: {
+   schema_version: 1, execution_id: 'run-1', observed_at: '2026-09-09T12:00:00Z',
+   assessment: { status: 'not_assessed', explanation: 'No criteria configured', reason_code: 'no_criteria', criteria_revision: null },
+   execution: { termination_reason: 'completed', planned_duration_seconds: null, observed_duration_seconds: null },
+   evidence: { status: 'unavailable', coverage_percent: null },
+ } } as unknown as RunArchiveReport
+ act(() => root.render(<RunOutcomeSummary report={report} />))
+ expect(container.textContent).toContain('Acceptance assessmentNot assessed')
+ expect(container.textContent).toContain('No criteria configured')
+ expect(container.textContent).not.toContain('Acceptance assessmentPass')
+ act(() => root.unmount())
+})
+
+it('ignores computed outcomes when the manifest cannot establish their execution identity', () => {
+ const container = document.createElement('div')
+ const root = createRoot(container)
+ for (const manifest of [undefined, {}]) {
+   const report = { manifest, outcome: { schema_version: 1, execution_id: undefined, assessment: { status: 'passed' } } } as unknown as RunArchiveReport
+   act(() => root.render(<RunOutcomeSummary report={report} />))
+   expect(container.textContent).toContain('Acceptance assessmentUnknown')
+   expect(container.textContent).toContain('Unknown termination reason')
+ }
+ act(() => root.unmount())
+})

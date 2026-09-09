@@ -109,3 +109,7 @@
     width: 100%;
   }
 }
+
+@container import-destination-folder (max-width: 620px) {
+  .import-destination-folder-create > label { flex: 0 0 auto; }
+}

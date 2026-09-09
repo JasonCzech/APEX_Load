@@ -1244,7 +1244,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-card);
+  background: var(--bg-primary);
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
   pointer-events: auto;
 }
@@ -4178,3 +4178,7 @@
   color: var(--accent);
   font-weight: 800;
 }
+
+.chart-inline-options > summary { cursor: pointer; padding: 5px 8px; color: var(--text-secondary); font-size: 12px; }
+.chart-inline-options[open] { display: flex; flex-direction: column; padding: 6px; border: 1px solid var(--border); border-radius: 6px; }
+.chart-inline-options .chart-card-checkbox { margin: 6px; }

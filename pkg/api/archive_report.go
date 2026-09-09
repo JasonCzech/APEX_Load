@@ -518,6 +518,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	goalOverview := report.Overview
 	goalOverview.Transactions = report.MetricPopulations["transaction"].Transactions
 	report.Overview.LoadModelGoals, report.Overview.GoalCompletion = buildRunArchiveGoalCompletion(manifest.Provenance, goalOverview)
+	report.Outcome = buildIntegrationOutcome(report)
 	return report, nil
 }
 

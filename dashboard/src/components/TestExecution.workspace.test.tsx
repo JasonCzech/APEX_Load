@@ -287,6 +287,18 @@ describe('TestExecution workspace layout', () => {
     expect(onWorkspaceTabChange).toHaveBeenLastCalledWith(undefined, { replace: true })
   })
 
+  it.each(['RUNNING', 'COMPLETE'] as const)('returns directly to the same Command Center for a %s run', async status => {
+    configureHooks(makeTest(status))
+    const onBack = vi.fn()
+    const onOpenCommandCenter = vi.fn()
+    await renderExecution({ onBack, onOpenCommandCenter })
+    const back = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Back to Command Center')!
+    expect(back).toBeDefined()
+    await act(async () => back.click())
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-1')
+    expect(onBack).not.toHaveBeenCalled()
+  })
+
   it('publishes queued and active run controls to the contextual topbar', async () => {
     await renderExecution()
 
@@ -444,7 +456,7 @@ describe('TestExecution workspace layout', () => {
 
     await renderExecution()
 
-    expect(container.textContent).toContain('Archive publication is taking longer than expected')
+    expect(container.textContent).toContain('Saved archive unavailable')
     const checkAgainButton = Array.from(container.querySelectorAll('button'))
       .find(button => button.textContent?.trim() === 'Check again')
     expect(checkAgainButton).toBeDefined()

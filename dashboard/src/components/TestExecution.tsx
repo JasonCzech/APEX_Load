@@ -1,3 +1,4 @@
+import { OrchestrationReturn } from './OrchestrationReturn'
 import { settingsHref } from './settingsNavigation'
 import RunOutcomeSummary from './RunOutcomeSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -388,7 +389,7 @@ export default function TestExecution({
 
   const topbarActionHandlers = useRef({
     onAbort: onConfirmAbort,
-    onBack,
+    onBack: onOpenCommandCenter ? () => onOpenCommandCenter(testId) : onBack,
     onDownloadArchive,
     onPause: onConfirmPause,
     onResume: onConfirmResume,
@@ -398,7 +399,7 @@ export default function TestExecution({
   })
   topbarActionHandlers.current = {
     onAbort: onConfirmAbort,
-    onBack,
+    onBack: onOpenCommandCenter ? () => onOpenCommandCenter(testId) : onBack,
     onDownloadArchive,
     onPause: onConfirmPause,
     onResume: onConfirmResume,
@@ -465,9 +466,9 @@ export default function TestExecution({
     secondaryActions: [
       {
         id: 'back',
-        label: 'Back',
-        compactLabel: 'Back',
-        tone: 'ghost',
+        label: onOpenCommandCenter ? 'Back to Command Center' : 'Back',
+        compactLabel: onOpenCommandCenter ? 'Back to Command Center' : 'Back',
+        tone: 'secondary',
         onClick: () => topbarActionHandlers.current.onBack(),
       },
       {
@@ -563,6 +564,7 @@ export default function TestExecution({
     ],
   }) : null, [
     currentVUsers,
+    onOpenCommandCenter,
     executionStatusTone,
     groupCount,
     hasActiveVUsers,
@@ -584,14 +586,16 @@ export default function TestExecution({
   if (error) {
     return (
       <div className="execution">
-        <button className="btn btn-secondary" onClick={onBack}>Back</button>
+      <OrchestrationReturn testId={testId} />
+        <button className="btn btn-secondary" onClick={() => onOpenCommandCenter ? onOpenCommandCenter(testId) : onBack()}>{onOpenCommandCenter ? 'Back to Command Center' : 'Back'}</button>
         <ErrorDiagnostic error={error} fallback="Unable to load test execution details" className="execution-error-diagnostic" />
       </div>
     )
   }
 
   if (!test) {
-    return <div className="execution"><p className="loading">Loading...</p></div>
+    return <div className="execution">
+      <OrchestrationReturn testId={testId} /><p className="loading">Loading...</p></div>
   }
 
   const {
@@ -907,7 +911,7 @@ export default function TestExecution({
     },
     {
       id: 'live-summary',
-      title: 'Live Summary',
+      title: ['COMPLETE', 'FAILED', 'ABORTED'].includes(test.status) ? 'Captured Summary' : 'Live Summary',
       category: 'Run Overview',
       description: 'Current transaction and baseline summary.',
       defaultWidth: 'full',
@@ -1077,6 +1081,7 @@ export default function TestExecution({
 
   return (
     <div className="execution">
+      <OrchestrationReturn testId={testId} />
       <nav aria-label="Run configuration"><a href={settingsHref('thresholds')}>Alert and stop policies</a> · <a href={settingsHref('notifications')}>Notification routes</a> · <a href={settingsHref('capacity')}>Admission capacity</a>{test.assignment?.pool_id && <> · <a href={settingsHref('pools', window.location.hash, test.assignment.pool_id)}>Configure assigned pool</a></>}</nav>
       <TestExecutionScenarioEditor
         open={showScenarioEditor}
@@ -1126,8 +1131,8 @@ export default function TestExecution({
       {archiveFinalizationTimedOut && !hasArchive && (
         <section className="execution-archive-retry" aria-label="Archive publication status" role="status">
           <div>
-            <strong>Archive publication is taking longer than expected</strong>
-            <p>The run is complete, but its saved archive is not available yet. Check again without leaving this run dashboard.</p>
+            <strong>Saved archive unavailable</strong>
+            <p>This run has ended, but no saved archive is available. Publication progress is unknown. Check again or inspect retained details in this snapshot.</p>
             {archiveCheckError && <p className="execution-archive-retry-error" role="alert">{archiveCheckError}</p>}
           </div>
           <button

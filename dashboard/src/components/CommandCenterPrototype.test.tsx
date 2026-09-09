@@ -711,7 +711,7 @@ describe('CommandCenterPrototype', () => {
       await vi.advanceTimersByTimeAsync(EXECUTION_ARCHIVE_FINALIZATION_TIMEOUT_MS)
     })
 
-    expect(container.textContent).toContain('Archive publication is taking longer than expected')
+    expect(container.textContent).toContain('No saved archive is available and publication progress is unknown')
     const callsAtTimeout = testPollCalls
     archiveReady = true
     const checkAgain = buttonNamed('Check again')
@@ -844,7 +844,7 @@ describe('CommandCenterPrototype', () => {
 
     await click(buttonNamed('GRAPH WALL'))
 
-    expect(container.querySelector('[aria-label="Grafana wall mockup"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Runtime graph wall"]')).not.toBeNull()
     expect(buttonNamed('GRAPH WALL').getAttribute('aria-pressed')).toBe('true')
 
     await click(buttonNamed('Back to operations'))
@@ -896,16 +896,16 @@ describe('CommandCenterPrototype', () => {
 
     await click(buttonNamed('Graph Wall'))
 
-    expect(container.querySelector('[aria-label="Grafana wall mockup"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Runtime graph wall"]')).not.toBeNull()
     expect(container.querySelector('[aria-label="Group filters"]')).toBeNull()
     expect(container.textContent).not.toContain('Graph-heavy view')
 
     const graphSidebar = container.querySelector('.command-grafana-side')
     const graphSwitchPanel = graphSidebar?.querySelector('.command-view-switch-panel')
     const graphSelectionPanel = graphSidebar?.querySelector('[aria-label="Group selection"]')
-    const graphErrorPanel = graphSidebar?.querySelector('[aria-label="Error drill-down"]')
-    const graphOptionsSlot = graphSidebar?.querySelector('.command-graph-options-slot')
-    const graphOptionsPanel = graphOptionsSlot?.querySelector('[aria-label="Graph display options"]')
+    expect(graphSidebar?.querySelector('[aria-label="Graph display options"]')).toBeNull()
+    await click(buttonNamed('Configure Graphs'))
+    let graphOptionsPanel = container.querySelector('.charts-config-drawer')
 
     expect(graphSwitchPanel).not.toBeNull()
     expect(graphSidebar?.querySelector('.command-group-panel')).toBeNull()
@@ -918,7 +918,7 @@ describe('CommandCenterPrototype', () => {
     expect(selectedGroupButtons?.[0].querySelector('.command-group-select-status-dot')).not.toBeNull()
     expect(Array.from(graphSidebar!.children).indexOf(graphSwitchPanel!)).toBeLessThan(Array.from(graphSidebar!.children).indexOf(graphSelectionPanel!))
     expect(graphOptionsPanel).not.toBeNull()
-    expect(graphOptionsPanel?.textContent).toContain('Graph Options')
+    expect(graphOptionsPanel?.textContent).toContain('Graph Configuration')
     expect(graphOptionsPanel?.textContent).toContain('Display Window')
     expect(graphOptionsPanel?.textContent).toContain('Layout')
     expect(graphOptionsPanel?.textContent).toContain('2x2')
@@ -935,8 +935,8 @@ describe('CommandCenterPrototype', () => {
     expect(graphOptionsPanel?.textContent).not.toContain('Graph density')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph preset')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph x-axis labels')
-    expect(Array.from(graphSidebar!.children).indexOf(graphOptionsSlot!)).toBeGreaterThan(Array.from(graphSidebar!.children).indexOf(graphErrorPanel!))
 
+    await click(buttonWithin(graphOptionsPanel!, 'Close'))
     const runtimeGraphs = container.querySelector('.command-runtime-graphs')
     expect(runtimeGraphs?.classList.contains('command-runtime-graphs-grafana')).toBe(true)
     expect(runtimeGraphs?.querySelector('.charts-toolbar-title-row')?.textContent).toContain('Runtime Graphs')
@@ -1004,6 +1004,8 @@ describe('CommandCenterPrototype', () => {
     expect(runtimeGraphs?.getAttribute('data-visible-groups')).toContain('checkout')
     expect(runtimeGraphs?.getAttribute('data-load-impact-vuser-range')).not.toBe(initialLoadImpactRange)
 
+    await click(buttonNamed('Configure Graphs'))
+    graphOptionsPanel = container.querySelector('.charts-config-drawer')
     await click(buttonWithin(graphOptionsPanel!, 'Relative Time'))
 
     expect(buttonWithin(graphOptionsPanel!, 'Relative Time').getAttribute('aria-pressed')).toBe('true')
@@ -1457,7 +1459,7 @@ describe('CommandCenterPrototype', () => {
     const vuserToggle = inputByLabel('Show Virtual Users')
     expect(vuserToggle.checked).toBe(true)
     expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Graph Cards')
-    expect(container.querySelector('.charts-config-drawer')?.textContent).not.toContain('Display Window')
+    expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Display Window')
 
     await click(vuserToggle)
 
@@ -1810,6 +1812,80 @@ describe('CommandCenterPrototype', () => {
     const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')
     expect(overall?.querySelector('strong')?.textContent).toBe('10.00%')
     expect(highest?.querySelector('strong')?.textContent).toBe('20.00% · Search')
+  })
+
+  it.each([
+    { label: 'zero errors', transactions: 100, errors: 0, expected: 'No errors', danger: false },
+    { label: 'no samples', transactions: 0, errors: 0, expected: 'No samples', danger: false },
+    { label: 'positive ties', transactions: 99, errors: 1, expected: '1.00% · Live Checkout, Search (tied)', danger: true },
+    { label: 'small nonzero errors', transactions: 100000, errors: 1, expected: '<0.01% · Live Checkout, Search (tied)', danger: true },
+  ])('reports $label without misleading group attribution', async ({ transactions, errors, expected, danger }) => {
+    const liveTest = buildLiveVuserTest()
+    liveTest.groups = [liveTest.groups[0], { ...liveTest.groups[0], name: 'Search' }]
+    const groupMetrics = liveTest.live_metrics!.groups!['Live Checkout']
+    liveTest.live_metrics = {
+      ...liveTest.live_metrics!, total_transactions: transactions * 2, total_errors: errors * 2,
+      groups: Object.fromEntries(['Live Checkout', 'Search'].map(name => [name, { ...groupMetrics, name, transactions, errors }])),
+    }
+    await act(async () => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} />))
+    const highest = Array.from(container.querySelectorAll('.command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')!
+    expect(highest.querySelector('strong')?.textContent).toBe(expected)
+    expect(highest.classList.contains('danger')).toBe(danger)
+    if (!errors) expect(highest.textContent).not.toMatch(/Live Checkout|Search/)
+  })
+
+  it('retains table filters, full metrics and staged targets across view changes', async () => {
+    await renderPrototype()
+    const preset = container.querySelector<HTMLInputElement>('.command-column-preset input')!
+    expect(container.querySelector('.command-scenario-table.essential-metrics')).not.toBeNull()
+    const p99 = Array.from(container.querySelectorAll<HTMLInputElement>('.command-column-picker input')).find(input => input.parentElement?.textContent === 'p99')!
+    await click(p99)
+    expect(container.querySelector<HTMLTableCellElement>('th[aria-label="p99 sort"]')?.hidden).toBe(false)
+    expect(container.querySelectorAll('thead th:not([hidden])').length).toBe(8)
+    await click(preset)
+    await changeTextInput(inputByLabel('Filter command center table rows'), 'Checkout')
+    await click(buttonNamed('Graph Wall'))
+    await click(buttonNamed('OPS View'))
+    expect(inputByLabel('Filter command center table rows').value).toBe('Checkout')
+    expect(container.querySelector<HTMLInputElement>('.command-column-preset input')?.checked).toBe(true)
+    await click(tabNamed('Error Details'))
+    expect(inputByLabel('Filter command center table rows').value).toBe('')
+    await changeTextInput(inputByLabel('Filter command center table rows'), 'not-an-error')
+    expect(container.textContent).toContain('No matching errors')
+    expect(container.querySelector('.command-evidence-panel')).toBeNull()
+    await click(tabNamed('Scenario Run'))
+    expect(inputByLabel('Filter command center table rows').value).toBe('Checkout')
+  })
+
+  it('reports absent capacity telemetry and a genuinely empty error table', async () => {
+    const run = buildLiveVuserTest()
+    run.live_metrics = { ...run.live_metrics!, total_errors: 0, error_patterns: [], capacity_status: undefined }
+    await act(async () => root.render(<CommandCenterPrototype testId={run.id} initialTest={run} />))
+    expect(container.querySelector('[aria-label="Capacity snapshot"]')?.textContent).toContain('Telemetry unavailable')
+    expect(container.querySelector('[aria-label="Capacity snapshot"]')?.textContent).not.toContain('10 / 12')
+    await click(tabNamed('Error Details'))
+    expect(container.textContent).toContain('No errors recorded.')
+    expect(container.querySelector('.command-evidence-panel')).toBeNull()
+    const pending = { ...run, live_metrics: { ...run.live_metrics!, total_errors: 3 } }
+    await act(async () => root.render(<CommandCenterPrototype testId={pending.id} initialTest={pending} />))
+    expect(container.textContent).toContain('Errors recorded; signatures are not available yet.')
+    await click(buttonNamed('Graph Wall'))
+    expect(buttonNamed('Change duration')).toBeDefined()
+    expect(container.querySelector('[aria-label="Run summary"]')?.textContent).toContain('TPS')
+  })
+
+  it('labels advanced navigation and restores focus after a retained details visit', async () => {
+    const liveTest = buildLiveVuserTest()
+    const onOpenExecution = vi.fn()
+    const render = (active: boolean) => root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} active={active} onOpenExecution={onOpenExecution} />)
+    await act(async () => render(true))
+    const trigger = buttonNamed('Advanced run details')
+    await click(trigger)
+    expect(onOpenExecution).toHaveBeenCalledWith(liveTest.id)
+    await act(async () => render(false))
+    expect(container.textContent).not.toContain('Open analysis')
+    await act(async () => render(true))
+    expect(document.activeElement).toBe(trigger)
   })
 
   it('never reuses same-signature evidence across routed runs', async () => {
@@ -2238,6 +2314,8 @@ describe('CommandCenterPrototype', () => {
     const combinedLoad = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
       .find(metric => metric.querySelector('span')?.textContent === 'Current / Target Load')
     expect(combinedLoad?.querySelector('strong')?.textContent).toBe('42 VU / 90.0 TPS')
+    const projected = Array.from(container.querySelectorAll('.command-capacity-snapshot .command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Projected')
+    expect(projected?.querySelector('strong')?.textContent).toBe('50 VU')
 
     const targetInput = inputByLabel('Live Checkout target TPS')
     const targetSlider = inputByLabel('Live Checkout target TPS slider')
@@ -2508,6 +2586,16 @@ describe('CommandCenterPrototype', () => {
   async function changeTextInput(input: HTMLInputElement, value: string) {
     await changeNumberInput(input, value)
   }
+
+  it.each(['zero', 'missing'])('keeps %s pre-sample response metrics unavailable on a running workload', async mode => {
+    const liveTest = buildLiveVuserTest()
+    liveTest.live_metrics = mode === 'missing' ? undefined : { ...liveTest.live_metrics!, total_transactions: 0, total_errors: 0, tps: 0, error_pct: 0 }
+    vi.spyOn(window, 'fetch').mockImplementation(() => Promise.resolve(jsonResponse({})))
+    await act(async () => { root.render(<CommandCenterPrototype testId={liveTest.id} initialTest={liveTest} history={[]} />) })
+    expect(container.querySelector('[aria-label="No request samples"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Run summary"]')?.textContent).toContain('No samples')
+    expect(container.querySelector('[aria-label="Run summary"]')?.textContent).not.toContain('0.0%')
+  })
 
   function buildLiveVuserTest(): TestSummary {
     return {

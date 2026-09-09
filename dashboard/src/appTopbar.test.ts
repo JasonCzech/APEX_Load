@@ -14,6 +14,7 @@ import type { TestSummary } from './types'
 describe('app topbar helpers', () => {
   it('maps app routes to stable topbar page titles', () => {
     expect(pageTitleForView({ page: 'dashboard' })).toBe('Dashboard')
+    expect(pageTitleForView({ page: 'docs' })).toBe('Help & documentation')
     expect(pageTitleForView({ page: 'command-center' })).toBe('Command Center')
     expect(pageTitleForView({ page: 'tests' })).toBe('Scenario Library')
     expect(pageTitleForView({ page: 'tests', scenarioView: 'builder' })).toBe('Scenario Builder')

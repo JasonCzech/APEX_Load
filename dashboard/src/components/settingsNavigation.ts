@@ -86,3 +86,27 @@ export function workspaceHref(page: 'fleet' | 'schedules', currentHash = typeof 
   }
   return `#/${page}${params.size ? `?${params}` : ''}`
 }
+
+const SETTINGS_SEARCH_TERMS: Record<string, string> = {
+  preferences: 'theme dark light system appearance word wrap editor rows table motion accessibility start page landing',
+  platform: 'endpoint concurrency metrics interval runtime downloads desktop',
+  authentication: 'login sso oidc password session users security',
+  retention: 'archive har cleanup storage delete expiration',
+  scheduling: 'timezone time zone recurring calendar cron',
+}
+
+export function matchesSettingsSearch(item: SettingsDestination, query: string): boolean {
+  const terms = `${item.group} ${item.title} ${SETTINGS_SEARCH_TERMS[item.id] || ''}`.toLowerCase()
+  return query.toLowerCase().trim().split(/\s+/).every(word => terms.includes(word))
+}
+
+/** Resolve common personal-setting searches to the actual accessible control. */
+export function settingsSearchControl(destinationId: string, query: string): string | undefined {
+  if (destinationId !== 'preferences') return undefined
+  const value = query.toLowerCase().trim()
+  if (/\b(theme|dark|light|appearance)\b/.test(value)) return 'personal-theme'
+  if (/\b(wrap|editor)\b/.test(value)) return 'personal-word-wrap'
+  if (/\b(rows|table)\b/.test(value)) return 'personal-table-rows'
+  if (/\b(motion|accessibility)\b/.test(value)) return 'personal-motion'
+  return undefined
+}

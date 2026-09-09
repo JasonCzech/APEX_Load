@@ -19,9 +19,13 @@ type PortalEntry = Pick<ManagedTable, 'id' | 'container' | 'totalRows'>
 
 const DEFAULT_TABLE_PAGE_LIMIT = 10
 
-function getTableRows(table: HTMLTableElement): HTMLTableRowElement[] {
+function getAllTableRows(table: HTMLTableElement): HTMLTableRowElement[] {
   if (table.tBodies.length === 0) return []
   return Array.from(table.tBodies).flatMap(body => Array.from(body.rows))
+}
+
+function getTableRows(table: HTMLTableElement): HTMLTableRowElement[] {
+  return getAllTableRows(table).filter(row => row.dataset.tableDetail !== 'true')
 }
 
 function shouldManageTable(table: HTMLTableElement): boolean {
@@ -70,7 +74,9 @@ function pageBounds(totalRows: number, state: TablePageState) {
 function applyTablePageState(table: HTMLTableElement, state: TablePageState) {
   const rows = getTableRows(table)
   const { startIndex, endIndex } = pageBounds(rows.length, normalizePageState(state, rows.length))
-  rows.forEach((row, index) => {
+  let index = -1
+  getAllTableRows(table).forEach(row => {
+    if (row.dataset.tableDetail !== 'true') index += 1
     const hiddenByManager = index < startIndex || index >= endIndex
     row.hidden = hiddenByManager
     if (hiddenByManager) {
@@ -100,7 +106,7 @@ export default function TablePaginationManager() {
   const cleanupManagedTable = useCallback((id: number) => {
     const managed = managedTablesRef.current.get(id)
     if (!managed) return
-    getTableRows(managed.table).forEach(row => {
+    getAllTableRows(managed.table).forEach(row => {
       if (row.dataset.tablePaginationHidden === 'true') {
         row.hidden = false
         delete row.dataset.tablePaginationHidden

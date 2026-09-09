@@ -866,14 +866,14 @@ describe('DashboardPage', () => {
     await flushDashboard()
 
     const recentRow = tableRowContaining('Release Smoke')
-    expect(recentRow.textContent).toContain('Command Center')
+    expect(recentRow.textContent).toContain('View results')
 
     clickButtonInRow(recentRow, 'Release Smoke')
     expect(onSelectTest).toHaveBeenCalledWith('test-complete')
     onSelectTest.mockClear()
 
-    clickButtonInRow(recentRow, 'Command Center')
-    expect(onOpenCommandCenter).toHaveBeenCalledWith('test-complete')
+    clickButtonInRow(recentRow, 'View results')
+    expect(onOpenTestArchive).toHaveBeenCalledWith('test-complete')
     expect(onSelectTest).not.toHaveBeenCalled()
 
     clickButtonByText('Performance Trend')

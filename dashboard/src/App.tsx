@@ -363,6 +363,17 @@ function AppShell({
           isRunReportEnabled(),
         ),
   );
+  // Keep the cockpit mounted during a same-run details visit so staged load,
+  // filters, and graph choices survive the return. Release it on other routes.
+  const [detailsOrigin, setDetailsOrigin] = useState<{ testId: string; projectId?: string; routeKey: string } | null>(null);
+  const retainedCommandCenter = view.page === "test" && detailsOrigin?.testId === view.testId
+    && detailsOrigin.projectId === view.projectId;
+  const commandCenterTestId = view.page === "command-center" ? view.testId : retainedCommandCenter ? detailsOrigin.testId : undefined;
+  const returningCommandCenter = view.page === "command-center" && detailsOrigin
+    && (!view.testId || view.testId === detailsOrigin.testId) && view.projectId === detailsOrigin.projectId;
+  useEffect(() => {
+    if (!returningCommandCenter && !retainedCommandCenter) setDetailsOrigin(null);
+  }, [returningCommandCenter, retainedCommandCenter]);
   const viewRef = useRef(view);
   const routeSyncInitialized = useRef(false);
   const appHistoryIndex = useRef(
@@ -377,6 +388,8 @@ function AppShell({
     pending: PendingGuardedHistoryTraversal;
   } | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
+  const [settingsFocusRequest, setSettingsFocusRequest] = useState<{ destination: string; control: string } | null>(null);
+  const clearSettingsFocusRequest = useCallback(() => setSettingsFocusRequest(null), []);
   const metricsHistoryRef = useRef<Record<string, MetricsHistoryPoint[]>>({});
   const [, setMetricsHistoryVersion] = useState(0);
   const [testStatuses, setTestStatuses] = useState<Record<string, string>>({});
@@ -3004,7 +3017,9 @@ function AppShell({
   // wipe state the operator is already typing into, so the boundary identity
   // excludes them: page changes, project switches, and asset navigation still
   // remount; child-scope appends do not.
-  const routeBoundaryKey = viewToLocationHash({
+  const routeBoundaryKey = (retainedCommandCenter || returningCommandCenter) && detailsOrigin
+    ? detailsOrigin.routeKey
+    : viewToLocationHash({
     ...view,
     // Scenario subviews share one editor instance. Re-keying on its own view
     // toggle loses the selected saved scenario and the save confirmation.
@@ -3027,8 +3042,11 @@ function AppShell({
   }, [effectiveTopbarTitle]);
 
   useEffect(() => {
-    mainContentRef.current?.focus({ preventScroll: true });
-  }, [routeBoundaryKey]);
+    const returnTarget = returningCommandCenter
+      ? mainContentRef.current?.querySelector<HTMLElement>("[data-command-details]")
+      : null;
+    (returnTarget || mainContentRef.current)?.focus({ preventScroll: true });
+  }, [routeBoundaryKey, view.page, returningCommandCenter]);
 
   const topbarActionShortcuts = useMemo(
     () =>
@@ -3346,21 +3364,27 @@ function AppShell({
                   snapshotAudience={snapshotAudience}
                 />
               )}
-              {view.page === "command-center" && !routeAssetScopeBlocked && (
+              {(view.page === "command-center" || retainedCommandCenter) && !routeAssetScopeBlocked && (
+                <div hidden={view.page !== "command-center"}>
                 <CommandCenterPrototype
-                  testId={view.testId}
-                  history={view.testId ? metricsHistory[view.testId] || [] : []}
+                  testId={commandCenterTestId}
+                  active={view.page === "command-center"}
+                  history={commandCenterTestId ? metricsHistory[commandCenterTestId] || [] : []}
                   statusOverride={
-                    view.testId ? testStatuses[view.testId] : undefined
+                    commandCenterTestId ? testStatuses[commandCenterTestId] : undefined
                   }
                   applicationId={activeApplication?.id}
                   projectId={activeProject?.id}
                   thresholdAlerts={thresholdAlerts}
                   onAcknowledgeThresholdAlert={acknowledgeThresholdAlertByKey}
-                  onOpenExecution={navigateToTest}
+                  onOpenExecution={id => {
+                    setDetailsOrigin({ testId: id, projectId: activeProject?.id, routeKey: routeBoundaryKey });
+                    navigateToTest(id, "overview");
+                  }}
                   onOpenArchive={openCompletedRun}
                   onOpenResults={() => handleNavigate("results")}
                 />
+                </div>
               )}
               {view.page === "tests" && !routeAssetScopeBlocked && (
                 <TestHub
@@ -3410,16 +3434,19 @@ function AppShell({
               {view.page === "report" && !routeAssetScopeBlocked && (
                 <RunReportPage
                   testId={view.testId}
+                  initialSection={view.section}
                   initialLens={view.lens}
                   initialCompare={view.compare}
                   statusOverride={testStatuses[view.testId]}
                   onOpenCommandCenter={navigateToCommandCenter}
-                  onOpenLegacyArchive={navigateToTestArchive}
+                  onOpenLegacyArchive={id => navigateToTest(id, "overview")}
                   onNavigateReport={(next) =>
                     setGuardedView({
                       page: "report",
                       testId: view.testId,
                       ...(view.projectId ? { projectId: view.projectId } : {}),
+                      ...(view.applicationId ? { applicationId: view.applicationId } : {}),
+                      ...(view.releaseId ? { releaseId: view.releaseId } : {}),
                       ...next,
                     })
                   }
@@ -3535,7 +3562,9 @@ function AppShell({
                 (!isDevUserPreview && effectiveAccessLoaded && !effectiveAccessError &&
                   (["manage_system", "manage_domains", "manage_projects"] as const).some(operation => isEffectiveOperationAllowed(effectiveAccessResources, operation, false)) && !view.setting?.startsWith("personal-")) ? <SettingsPage
                   destinationId={view.setting}
-                  onDestinationChange={setting => setGuardedView({ page: settingsOwner(setting), setting, returnTo: "returnTo" in view ? view.returnTo : undefined })}
+                  focusRequest={settingsFocusRequest}
+                  onFocusHandled={clearSettingsFocusRequest}
+                  onDestinationChange={(setting, control) => setGuardedView({ page: settingsOwner(setting), setting, returnTo: "returnTo" in view ? view.returnTo : undefined }, () => setSettingsFocusRequest(control ? { destination: setting, control } : null))}
                   theme={theme}
                   onThemeChange={setTheme}
                   authStatus={authStatus}

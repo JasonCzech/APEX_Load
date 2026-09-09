@@ -382,9 +382,30 @@ func defaultSLAComment(slaBreached bool, slaDetails []string) string {
 }
 
 func defaultRiskComment(report *RunArchiveReport) string {
-	if report != nil && len(report.ErrorPatterns) > 0 {
-		top := report.ErrorPatterns[0]
-		return fmt.Sprintf("%d distinct error pattern(s) were observed; the most frequent was %q (%d occurrence(s)).", len(report.ErrorPatterns), top.Sample, top.Count)
+	if report == nil {
+		return "Run evidence is unavailable; performance risk cannot be assessed."
 	}
-	return "No significant error patterns were recorded during the run."
+	var risks []string
+	for _, finding := range report.Completeness.Findings {
+		if finding.Severity == "critical" || finding.Severity == "high" || finding.Severity == "warning" {
+			risks = append(risks, finding.Message)
+		}
+	}
+	if report.Manifest == nil || report.Manifest.TerminationReason == "" || report.Manifest.Provenance.StartedAt == nil || report.Manifest.CompletedAt.IsZero() {
+		risks = append(risks, "Run timing or termination evidence is incomplete; completion of the planned workload is unverified.")
+	}
+	if report.Manifest != nil && report.Manifest.Provenance.TotalVUsers > 0 && report.Overview.PeakActiveVUsers < int64(report.Manifest.Provenance.TotalVUsers) {
+		planned := report.Manifest.Provenance.TotalVUsers
+		risks = append(risks, fmt.Sprintf("Observed peak load was %d of %d planned VUsers; workload coverage needs review.", report.Overview.PeakActiveVUsers, planned))
+	}
+	if report.Overview.Transactions < 100 {
+		risks = append(risks, fmt.Sprintf("Only %d archive records were captured; this small sample does not establish representative performance.", report.Overview.Transactions))
+	}
+	if len(report.ErrorPatterns) > 0 {
+		top := report.ErrorPatterns[0]
+		risks = append(risks, fmt.Sprintf("%d distinct error pattern(s) were observed; the most frequent was %q (%d occurrence(s)).", len(report.ErrorPatterns), top.Sample, top.Count))
+	} else {
+		risks = append(risks, "No significant error patterns were recorded during the run. Absence of recorded errors does not establish low risk.")
+	}
+	return strings.Join(risks, " ")
 }

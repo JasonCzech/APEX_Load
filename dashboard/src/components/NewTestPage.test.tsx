@@ -810,12 +810,12 @@ describe('NewTestPage', () => {
     expect(apiMock.createScenarioSchedule).toHaveBeenCalledWith('scenario-1', expect.objectContaining({
       name: 'Multi-group (3 groups) Schedule',
       cron_expr: '0 9 * * 1-5',
-      timezone: 'UTC',
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       enabled: true,
       approval_policy: 'production',
       missed_run_policy: 'catch_up_once',
-      blackout_windows: [expect.objectContaining({ start_time: '00:00', end_time: '06:00', timezone: 'UTC' })],
-      availability_windows: [expect.objectContaining({ start_time: '09:00', end_time: '17:00', timezone: 'UTC' })],
+      blackout_windows: [expect.objectContaining({ start_time: '00:00', end_time: '06:00', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })],
+      availability_windows: [expect.objectContaining({ start_time: '09:00', end_time: '17:00', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })],
     }))
   })
 

@@ -1725,7 +1725,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               </div>
             ) : (
               <div className="trend-table-wrap" ref={activityTableBounds.ref} style={activityTableBounds.style}>
-                <table className="trend-table">
+                <table className="trend-table dash-activity-table">
                   <thead>
                     <tr>
                       {renderActivitySortHeader('run', 'Run')}
@@ -1768,11 +1768,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                                 type="button"
                                 className="btn btn-sm btn-ghost"
                                 onClick={event => {
-                                  event.stopPropagation()
-                                  onOpenCommandCenter(test.id)
+                                  event.stopPropagation();
+                                  (['COMPLETE', 'FAILED', 'ABORTED'].includes(test.status) && onOpenTestArchive ? onOpenTestArchive : onOpenCommandCenter)(test.id)
                                 }}
                               >
-                                Command Center
+                                {['COMPLETE', 'FAILED', 'ABORTED'].includes(test.status) && onOpenTestArchive ? 'View results' : 'Command Center'}
                               </button>
                             </td>
                           )}

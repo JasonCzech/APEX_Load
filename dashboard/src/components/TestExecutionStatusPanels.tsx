@@ -46,7 +46,7 @@ function formatTelemetryTime(value?: string): string {
   if (!value) return 'unknown'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'unknown'
-  return date.toLocaleTimeString()
+  return date.toLocaleString()
 }
 
 function formatBrowserMetric(value: number | undefined, suffix = '', digits = 1): string {
@@ -316,7 +316,7 @@ export default function TestExecutionStatusPanels({
           <div className="goal-status-header">
             <div>
               <h3 className="goal-status-title">Telemetry Health</h3>
-              <p className="goal-status-subtitle">Freshness and delivery pressure for the live metrics pipeline.</p>
+              <p className="goal-status-subtitle">{['COMPLETE', 'FAILED', 'ABORTED'].includes(test.status) ? 'Historical telemetry snapshot. Health describes the captured sample, not the current connection.' : 'Freshness and delivery pressure for the live metrics pipeline.'}</p>
             </div>
             <div className={`goal-status-badge ${telemetryBadgeClass(metrics)}`}>
               {telemetryBadgeLabel(metrics)}

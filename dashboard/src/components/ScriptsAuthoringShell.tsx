@@ -49,12 +49,12 @@ export default function ScriptsAuthoringShell({
   canMigrateSecrets = false,
   children,
 }: Props) {
-  const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>(initialCreateWorkflow || 'existing')
+  const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>(initialCreateWorkflow || 'start-new')
   const workflowChosenByUserRef = useRef(false)
 
   useEffect(() => {
     if (authoringState.subView === 'create-options' && !workflowChosenByUserRef.current) {
-      setCreateOptionsWorkflow(initialCreateWorkflow || (scripts.length === 0 ? 'start-new' : 'existing'))
+      setCreateOptionsWorkflow(initialCreateWorkflow || 'start-new')
     }
   }, [authoringState.subView, scripts.length, initialCreateWorkflow])
 

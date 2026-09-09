@@ -214,6 +214,15 @@ export default function AccessPage({
   const [selectedAccountID, setSelectedAccountID] = useState('')
   const [selectedActivityID, setSelectedActivityID] = useState('')
   const [userInspectorCollapsed, setUserInspectorCollapsed] = useState(false)
+  const userInspectorHeadingRef = useRef<HTMLHeadingElement>(null)
+  const [userInspectorFocusRequest, setUserInspectorFocusRequest] = useState(0)
+  useEffect(() => {
+    if (userInspectorFocusRequest && !userInspectorCollapsed) {
+      userInspectorHeadingRef.current?.focus({ preventScroll: true })
+      userInspectorHeadingRef.current?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [userInspectorFocusRequest, userInspectorCollapsed])
+
   const [accountInspectorCollapsed, setAccountInspectorCollapsed] = useState(false)
   const [activityInspectorCollapsed, setActivityInspectorCollapsed] = useState(false)
   const [userFilters, setUserFilters] = useState<UserFilterState>({ query: '', status: '', role: '', domainID: '', projectID: '' })
@@ -1418,6 +1427,7 @@ export default function AccessPage({
 
   const selectUser = (user: DashboardUser) => {
     runGuarded(() => {
+      setUserInspectorFocusRequest(value => value + 1)
       editingUserIDRef.current = ''
       editingUserSnapshotRef.current = null
       setSelectedUserID(user.id)
@@ -1433,6 +1443,7 @@ export default function AccessPage({
       return
     }
     runGuarded(() => {
+      setUserInspectorFocusRequest(value => value + 1)
       editingUserIDRef.current = user.id
       editingUserSnapshotRef.current = user
       setSelectedUserID(user.id)
@@ -1696,7 +1707,7 @@ export default function AccessPage({
       <aside className="access-inspector access-panel" id="access-user-details" aria-label="Selected user details">
         <div className="access-panel-header">
           <div>
-            <h3>User Details</h3>
+            <h3 ref={userInspectorHeadingRef} tabIndex={-1}>User Details: {selectedUser.display_name || selectedUser.email || selectedUser.subject}</h3>
             <p>{selectedUser.display_name || selectedUser.email || selectedUser.subject}</p>
           </div>
           <PanelToggle expanded={true} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(true)} />
@@ -2214,7 +2225,7 @@ export default function AccessPage({
                         const selected = selectedUserID === user.id && !userInspectorCollapsed
                         return (
                           <tr key={user.id} className={selected ? 'selected' : ''} onClick={() => selectUser(user)}>
-                        <td aria-label="User actions">
+                        <td>
                               <button
                                 type="button"
                                 className="access-row-primary"
@@ -2235,7 +2246,7 @@ export default function AccessPage({
                             <td>{formatTimestamp(user.created_at)}</td>
                             <td>{formatTimestamp(user.updated_at)}</td>
                             <td className="num">{canViewUserActivity ? usageSummary(usage) : 'Unavailable'}</td>
-                        <td aria-label="Service account actions">
+                        <td aria-label="User actions">
                               <div className="access-table-actions">
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); selectUser(user) }}>Inspect</button>
                                 <button className="btn btn-secondary btn-sm" type="button" onClick={event => { event.stopPropagation(); editUser(user) }} disabled={accessMutationBusy || !canManageUserBindings}>Edit</button>
@@ -2424,7 +2435,7 @@ export default function AccessPage({
                         const accessLabels = accountAccessLabels(account, projects, domains)
                         return (
                           <tr key={account.id} className={selected ? 'selected' : ''} onClick={() => selectAccount(account)}>
-                            <td aria-label="Service account actions">
+                            <td>
                               <button type="button" className="access-row-primary" onClick={event => { event.stopPropagation(); selectAccount(account) }}>
                                 {account.name}
                               </button>

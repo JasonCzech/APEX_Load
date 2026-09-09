@@ -78,6 +78,21 @@ describe('TablePaginationManager', () => {
     expect(JSON.parse(localStorage.getItem('apexload.personal-preferences')!).tableRows).toBe(25)
   })
 
+  it('keeps expanded details with their parent without counting them', async () => {
+    const { table } = buildTable(30)
+    const detail = document.createElement('tr')
+    detail.dataset.tableDetail = 'true'
+    detail.innerHTML = '<td>Expanded details</td>'
+    table.tBodies[0].rows[0].after(detail)
+    act(() => root.render(<TablePaginationManager />))
+    await flushTableScan()
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-10 of 30')
+    expect(detail.hidden).toBe(false)
+    act(() => (Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Next') as HTMLButtonElement).click())
+    expect(detail.hidden).toBe(true)
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 11-20 of 30')
+  })
+
   it('shows 10 rows by default, pages forward and backward, and supports 25 and all', async () => {
     const { table } = buildTable(30)
 

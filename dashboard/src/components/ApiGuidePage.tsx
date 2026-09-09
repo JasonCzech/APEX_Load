@@ -104,7 +104,7 @@ export default function ApiGuidePage({
   const handleContentPageChange = useCallback((page: ApiGuideContentPageID) => {
     setActiveGuideSection(page)
   }, [])
-  useApiGuideTopbarContribution(activeGuideSection, 'API Guide', handleContentPageChange, isAdmin)
+  useApiGuideTopbarContribution(activeGuideSection, 'Help & documentation', handleContentPageChange, isAdmin)
 
   useEffect(() => {
     setActiveGuideSection(activePage)

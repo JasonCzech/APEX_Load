@@ -1,3 +1,5 @@
+import ImportSaveConfirmation from './ImportSaveConfirmation'
+import { type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import DialogLayer from './ux/DialogLayer'
@@ -336,12 +338,13 @@ function reserveEnterpriseArchiveScriptName(
 function uniquifyEnterpriseArchiveResultScriptNames(
   result: EnterpriseArchiveImportResult,
   registry: EnterpriseArchiveScriptNameRegistry,
+  retainedNames?: string[],
 ): EnterpriseArchiveImportResult {
   const sourceScripts = getEnterpriseArchiveResultScripts(result)
   if (sourceScripts.length === 0) return result
-  const scripts = sourceScripts.map(script => ({
+  const scripts = sourceScripts.map((script, index) => ({
     ...script,
-    name: reserveEnterpriseArchiveScriptName(script.name || '', registry),
+    name: retainedNames?.[index] ?? reserveEnterpriseArchiveScriptName(script.name || '', registry),
   }))
   const renamedByIndex = scripts.map((script, index) => ({
     prior: sourceScripts[index]?.name || '',
@@ -625,8 +628,8 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   include_assertions: true,
   preserve_transactions: true,
   salesforce_native: false,
-  block_partial: true,
-  block_compatibility_only: true,
+  block_partial: false,
+  block_compatibility_only: false,
   block_non_applicable: false,
 }
 const EMPTY_REPLAY_VALIDATION_WARNINGS: string[] = []
@@ -1198,8 +1201,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const validatedFileCount = validatedItems.length
   const validatedItemIds = validatedItems.map(item => item.id)
   const convertedFileCount = importItems.filter(item => item.status === 'converted').length
+  const savedArchiveScripts = collectSavedEnterpriseArchiveScripts(importItems)
+  const pendingReviewScriptCount = importItems.reduce((count, item) => count + (item.status === 'converted'
+    ? getEnterpriseArchiveResultScripts(item.result).filter((_script, index) => !enterpriseArchiveResultScriptIsSaved(item, index)).length
+    : 0), 0)
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
-  const allQueuedArchivesValidated = queuedFileCount > 0 && importItems.every(item => item.status === 'validated')
   const allValidatedReviewsMatchOptions = validatedItems.every(item => item.reviewOptionsIdentity === importOptionsIdentity(options))
   const selectedItemValidated = selectedItem?.status === 'validated'
   const activeImportFileCount = runningFileCount || queuedFileCount
@@ -1212,17 +1218,17 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
-  const convertButtonLabel = queuedFileCount > 1 ? `Process ${queuedFileCount} reviewed archives` : 'Continue reviewed import'
+  const convertButtonLabel = queuedFileCount > 1 ? 'Save Ready Scripts and Continue Importing' : 'Save and Continue Importing'
   const conversionGateMessage = workingMode === 'convert'
     ? 'Saving eligible scripts. Archives that need repair, replay, or approval remain in this queue.'
     : queuedFileCount === 0
       ? 'Add an enterprise script archive before validating or converting.'
-      : allQueuedArchivesValidated
+      : (validatedFileCount > 0)
         ? (allValidatedReviewsMatchOptions
             ? 'Import checks complete. This action saves eligible scripts; archives needing repair, replay, or approval stay in the queue for the next action shown in their review.'
             : 'Conversion options changed. Validate the queued archive again before conversion.')
         : convertedFileCount === queuedFileCount
-          ? 'Conversion complete.'
+          ? 'Review the save results below. Converted drafts still require saving to appear in the library.'
           : `${pendingValidationFileCount} archive${pendingValidationFileCount === 1 ? '' : 's'} must pass validation before conversion.`
   const resultScripts = useMemo(() => getEnterpriseArchiveResultScripts(result), [result])
   const activeResultScriptIndex = resultScripts.length > 0
@@ -1513,7 +1519,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
       : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
     : (reviewMode === 'validation'
-      ? (validatedFileCount > 1 ? `Process ${validatedFileCount} reviewed archives` : browserImport ? 'Continue to browser replay' : 'Save and open script')
+      ? (queuedFileCount > 1 ? 'Save Ready Scripts and Continue Importing' : browserImport ? 'Continue to browser replay' : 'Save and Continue Importing')
       : (selectedResultScriptSaved
       ? 'Saved to Script Library'
       : enterprisePrepareSelectedForBatch
@@ -1526,7 +1532,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
           ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
-          : 'Save to Script Library'))))
+          : 'Save and Continue Importing'))))
   const replayActionLabel = replayValidationLoading
     ? 'Starting Draft Browser Replay...'
     : (browserReplayInProgress
@@ -1621,6 +1627,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     pendingNotice: string,
     completedNotice: string,
     requestIsCurrent: () => boolean,
+    destination: ImportSaveDestination = 'stay',
   ) => {
     // Keep the ref in lockstep with the committed snapshot because the caller
     // may immediately choose the next pending generated lane before React
@@ -1648,8 +1655,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       // cleanup endpoint cannot hide a confirmed save from the library.
       onImported({
         scripts: allSavedScripts,
-        ...(!requestIsCurrent() ? { stayInImportReview: true } : {}),
+        ...(destination === 'stay' || allSavedScripts.length > 1 || !requestIsCurrent() ? { stayInImportReview: true } : {}),
       })
+      if (requestIsCurrent()) setNotice(completedNotice)
       void discardQueuedSourceSecretSessions(nextItems)
       return
     }
@@ -1736,9 +1744,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         return
       }
       if (reviewMode === 'validation') {
-        void convertValidatedItems(validatedItemIds)
+        void convertValidatedItems(validatedItemIds, 'editor')
       } else {
-        void handleSaveConverted()
+        void handleSaveConverted('editor')
       }
       return
     }
@@ -1801,7 +1809,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     }))
   }
 
-  const restoreRecommendedMigrationPolicy = () => {
+  const restoreDefaultMigrationPolicy = () => {
     const nextOptions = {
       ...options,
       block_partial: DEFAULT_IMPORT_OPTIONS.block_partial,
@@ -2354,7 +2362,15 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     completionNotice?: string,
     itemIds?: string[],
   ) => {
-    const targetItems = importItems.filter(item => !itemIds || itemIds.includes(item.id))
+    const eligibleItems = importItems.filter(item => (!itemIds || itemIds.includes(item.id))
+      && (Object.keys(item.savedResultScripts || {}).length === 0
+        || getEnterpriseArchiveResultScripts(item.result).some((_, index) => !enterpriseArchiveResultScriptIsSaved(item, index))))
+    const addingFiles = eligibleItems.some(item => item.status === 'queued')
+    // Adding files preserves existing reviews; an explicit refresh with no new work
+    // renews the selected review, including an expired protected draft.
+    const targetItems = eligibleItems.filter(item => itemIds || item.status !== 'converted'
+      || item.reviewOptionsIdentity !== importOptionsIdentity(reviewOptions)
+      || (!addingFiles && item.id === selectedItemId))
     if (targetItems.length === 0) return
     clearRetainedAtomicSave(targetItems.map(item => item.id))
     void discardQueuedSourceSecretSessions(targetItems)
@@ -2381,7 +2397,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     const targetIds = new Set(targetItems.map(item => item.id))
     const scriptNameRegistry: EnterpriseArchiveScriptNameRegistry = new Map()
     importItems
-      .filter(item => !targetIds.has(item.id))
+      .filter(item => !targetIds.has(item.id) || Object.keys(item.savedResultScripts || {}).length > 0)
       .flatMap(item => getEnterpriseArchiveResultScripts(item.result))
       .forEach(script => { reserveEnterpriseArchiveScriptName(script.name || '', scriptNameRegistry) })
 
@@ -2394,7 +2410,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       ? {
           ...item,
           status: runningStatus,
-          result: null,
+          result: Object.keys(item.savedResultScripts || {}).length > 0 ? item.result : null,
           reviewMode: null,
           error: '',
           notice: '',
@@ -2406,18 +2422,19 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           replayScriptIndex: -1,
           replayProjectId: '',
           reviewGeneration: item.reviewGeneration + 1,
-          savedResultScripts: {},
+          savedResultScripts: item.savedResultScripts,
           sourceSecretProjectId: '',
         }
       : item))
 
     let successCount = 0
     let failureCount = 0
-    const request = mode === 'validate' ? api.validateEnterpriseArchiveImport : api.importEnterpriseArchive
     const useNameOverride = targetItems.length === 1
 
     for (const item of targetItems) {
       if (!requestIsCurrent(item)) break
+      const partiallySaved = Object.keys(item.savedResultScripts || {}).length > 0
+      const request = mode === 'validate' && !partiallySaved ? api.validateEnterpriseArchiveImport : api.importEnterpriseArchive
       try {
         const rawResult = await request(item.file, {
           name: useNameOverride ? reviewOptions.name || undefined : undefined,
@@ -2436,14 +2453,27 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           }
           continue
         }
-        const res = uniquifyEnterpriseArchiveResultScriptNames(rawResult, scriptNameRegistry)
+        const previousScripts = getEnterpriseArchiveResultScripts(item.result)
+        const refreshedScripts = getEnterpriseArchiveResultScripts(rawResult)
+        if (partiallySaved && (previousScripts.length !== refreshedScripts.length
+          || previousScripts.some((script, index) => script.protocol !== refreshedScripts[index].protocol))) {
+          if (sourceProjectId && rawResult.source_secret_session_id) {
+            await discardSourceSecretSession(sourceProjectId, rawResult.source_secret_session_id)
+          }
+          throw new Error('The generated script lanes changed. Keep the saved scripts and import the changed archive separately to review its new lanes.')
+        }
+        const res = uniquifyEnterpriseArchiveResultScriptNames(rawResult, scriptNameRegistry,
+          partiallySaved ? previousScripts.map(script => script.name || '') : undefined)
+        if (partiallySaved && item.id === (targetIds.has(selectedItemId) ? selectedItemId : targetItems[0].id)) {
+          setSelectedResultScriptIndex(refreshedScripts.findIndex((_, index) => !enterpriseArchiveResultScriptIsSaved(item, index)))
+        }
         successCount += 1
         updateImportItem(item.id, {
-          status: completeStatus,
+          status: partiallySaved ? 'converted' : completeStatus,
           result: res,
-          reviewMode: mode === 'validate' ? 'validation' : 'conversion',
+          reviewMode: mode === 'validate' && !partiallySaved ? 'validation' : 'conversion',
           reviewOptionsIdentity: sourceOptionsIdentity,
-          savedResultScripts: {},
+          savedResultScripts: item.savedResultScripts,
           sourceSecretProjectId: sourceProjectId || '',
           error: '',
           notice: completionNotice || (mode === 'validate'
@@ -2469,12 +2499,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     }
   }
 
-  const convertValidatedItems = async (itemIds?: string[]) => {
+  const convertValidatedItems = async (itemIds?: string[], destination: ImportSaveDestination = 'stay') => {
     const targetItems = importItems.filter(item => (!itemIds || itemIds.includes(item.id)) && item.status === 'validated')
-    const requestedItems = importItems.filter(item => !itemIds || itemIds.includes(item.id))
-    if (requestedItems.length === 0) return
-
-    if (targetItems.length !== requestedItems.length) {
+    if (targetItems.length === 0) {
       setError('Validate the queued enterprise script archive before converting it.')
       return
     }
@@ -2855,6 +2882,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         savedNotice,
         () => operationGenerationRef.current === operationGeneration
           && reviewProjectIdRef.current === sourceProjectId,
+        destination,
       )
       currentReadySaves.forEach(entry => {
         if (sourceProjectId && entry.result.source_secret_session_id) {
@@ -2983,7 +3011,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     }
   }
 
-  const handleSaveConverted = async () => {
+  const handleSaveConverted = async (destination: ImportSaveDestination = 'stay') => {
     const preparedReview = latestPreparedReviewRef.current
     const currentImportedScript = preparedReview.importedScript
     if (!currentImportedScript || !selectedItem) return
@@ -3141,6 +3169,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         `Saved ${persistedScript.name} to the script library. Continue reviewing the remaining generated scripts before leaving this import.`,
         `Saved ${persistedScript.name} to the script library.`,
         requestIsCurrent,
+        destination,
       )
       const updatedSourceItem = nextItems.find(item => item.id === sourceItemId)
       const sourceScriptCount = getEnterpriseArchiveResultScripts(updatedSourceItem?.result || null).length
@@ -3883,6 +3912,16 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         )}
       </div>
 
+      {queuedFileCount > 0 && (
+        <p role="status">{savedArchiveScripts.length} script{savedArchiveScripts.length === 1 ? '' : 's'} saved · {pendingReviewScriptCount} script{pendingReviewScriptCount === 1 ? ' requires' : 's require'} review · {validatedFileCount} archive{validatedFileCount === 1 ? '' : 's'} validated, awaiting save · {failedFileCount} archive{failedFileCount === 1 ? '' : 's'} failed</p>
+      )}
+      <ImportSaveConfirmation
+        result={savedArchiveScripts.length ? { scripts: savedArchiveScripts } : null}
+        onImportMore={handleBrowseArchives}
+        onOpen={saved => onImported?.(saved)}
+        disabled={sourceMutationLocked}
+      />
+
       {destinationControl}
 
       {/* Options */}
@@ -3944,8 +3983,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           )}
           {hasCustomMigrationBlockPolicy(options) && (
             <div className="replay-panel-actions" style={actionWrapStyle}>
-              <button className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={restoreRecommendedMigrationPolicy}>
-                Restore Recommended Block Policy
+              <button className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={restoreDefaultMigrationPolicy}>
+                Restore Default Policy
               </button>
             </div>
           )}
@@ -4045,9 +4084,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || operationBusy}>
               {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
             </button>
-            <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={!allQueuedArchivesValidated || !allValidatedReviewsMatchOptions || operationBusy}>
+            {(queuedFileCount > 1 || reviewMode !== 'conversion') && <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={validatedFileCount === 0 || !allValidatedReviewsMatchOptions || operationBusy}>
               {workingMode === 'convert' ? <><span className="spinner" /> Converting And Saving...</> : convertButtonLabel}
-            </button>
+            </button>}
           </div>
           <p className="lr-subtitle">{conversionGateMessage}</p>
         </div>
@@ -4377,8 +4416,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   : enterpriseCredentialBatchFlow
                     ? handleSaveCredentialBatch
                     : handleSaveConverted}
-            onEdit={importedEditorAvailable ? () => { openImportedScriptInEditor() } : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save And Open In Visual Editor' : undefined}
+            onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1)) ? () => { openImportedScriptInEditor() } : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
             previewTitle="DSL Preview"
             previewAside={sourceReview
               ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} />

@@ -57,7 +57,7 @@ function emptyDraft(): ScheduleDraft {
 	return withScheduleDraftBaseline({
     name: '',
     cron_expr: '0 2 * * *',
-    timezone: 'UTC',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     run_name_template: '',
     enabled: true,
     missed_run_policy: 'skip',

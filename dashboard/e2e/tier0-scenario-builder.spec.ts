@@ -176,18 +176,20 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
     if (route.request().method() === 'POST') await route.fulfill({ status: 503, json: { error: 'Fixture: scenario save unavailable' } })
     else await route.continue()
   })
-  await page.getByRole('button', { name: 'Save & Create Test Run', exact: true }).click()
+  await page.getByRole('button', { name: 'Save and configure run', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('Fixture: scenario save unavailable')
   await expect(page.getByRole('alert')).toBeFocused()
   await expect(page.getByRole('alert')).not.toContainText('Scenario was saved')
   await expect(page.getByRole('textbox', { name: 'Scenario name', exact: true })).toHaveValue('Scenario audit regression')
   await page.unroute('**/api/v1/scenarios')
   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Scenario Library', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Scenario Builder', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Review And Validate', level: 4 })).toBeVisible()
   await expect(page.locator('.scenario-save-notice')).toContainText('Saved Scenario audit regression')
-  const row = page.getByRole('row').filter({ hasText: 'Scenario audit regression' })
-  await row.getByRole('button', { name: 'Edit', exact: true }).click()
   await steps.getByRole('button', { name: /^Run Settings/ }).click()
+  await expect(page.getByRole('tab', { name: 'Browser/Script Runtime', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByLabel('Runtime scope', { exact: true })).toHaveValue('0')
+  await page.getByRole('tab', { name: 'Scenario Settings', exact: true }).click()
   await expect(page.getByLabel('Peak VUsers', { exact: true })).toHaveValue('5')
   await expect(page.getByLabel('Sustained load', { exact: true })).toHaveValue('3')
   await page.setViewportSize({ width: 600, height: 900 })
@@ -209,4 +211,39 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await steps.getByRole('button', { name: /^Scripts/ }).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('')
   await expect(page.getByRole('button', { name: 'Choose script for Group 1' })).toContainText('Add Script')
+})
+
+
+test('[U09] script groups fill horizontal rows and stack on narrow screens', async ({ page, request }) => {
+  const workspace = await createWorkspace(request)
+  await createScript(request, workspace)
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
+  await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
+  const groups = page.locator('.scenario-script-group-list-spacious .scenario-script-group-card')
+  for (let index = 1; index <= 5; index++) {
+    if (index > 1) await page.locator('.scenario-add-group-card').click()
+    await page.getByRole('button', { name: `Choose script for Group ${index}`, exact: true }).click()
+    await page.getByRole('row').filter({ hasText: 'Tier_0_Checkout_Script' })
+      .getByRole('button', { name: `Use for Group ${index}`, exact: true }).click()
+  }
+  await expect(groups).toHaveCount(5)
+  const boxes = await groups.evaluateAll(elements => elements.map(element => {
+    const { x, y, width, height } = element.getBoundingClientRect()
+    return { x, y, width, height }
+  }))
+  expect(boxes[1].y).toBe(boxes[0].y)
+  expect(boxes[1].x).toBeGreaterThanOrEqual(boxes[0].x + boxes[0].width)
+  expect(boxes[4].y).toBeGreaterThanOrEqual(boxes[0].y + boxes[0].height)
+  await page.screenshot({ path: 'test-results/scenario-builder-horizontal-groups.png', fullPage: true })
+  await page.setViewportSize({ width: 600, height: 900 })
+  const narrow = await groups.evaluateAll(elements => elements.map(element => {
+    const { x, y, width, height } = element.getBoundingClientRect()
+    return { x, y, width, height }
+  }))
+  for (let index = 0; index < narrow.length; index++) {
+    expect(narrow[index].x).toBeGreaterThanOrEqual(0)
+    expect(narrow[index].x + narrow[index].width).toBeLessThanOrEqual(600)
+    if (index > 0) expect(narrow[index].y).toBeGreaterThanOrEqual(narrow[index - 1].y + narrow[index - 1].height)
+  }
 })

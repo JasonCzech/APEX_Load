@@ -1,5 +1,8 @@
 import { defineConfig } from '@playwright/test'
 
+// Isolate artifacts when multiple local validation jobs share this checkout.
+const outputRoot = process.env.APEXLOAD_E2E_OUTPUT_ROOT || 'test-results'
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: process.env.APEXLOAD_E2E_PROFILE === 'local-auth'
@@ -12,9 +15,9 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   reporter: process.env.CI
-    ? [['line'], ['junit', { outputFile: `test-results/${process.env.APEXLOAD_E2E_PROFILE || 'dev-admin'}/playwright-junit.xml` }]]
+    ? [['line'], ['junit', { outputFile: `${outputRoot}/${process.env.APEXLOAD_E2E_PROFILE || 'dev-admin'}/playwright-junit.xml` }]]
     : 'list',
-  outputDir: `test-results/${process.env.APEXLOAD_E2E_PROFILE || 'dev-admin'}`,
+  outputDir: `${outputRoot}/${process.env.APEXLOAD_E2E_PROFILE || 'dev-admin'}`,
   expect: { timeout: 15_000 },
   use: {
     actionTimeout: 15_000,

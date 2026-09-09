@@ -2531,7 +2531,7 @@ export default function TestExecutionCharts({
         externalControlsTarget,
       )}
 
-      <div className={`charts-toolbar${commandCenterSurface ? ' command-center-charts-toolbar' : ''}`} aria-label="Final graph controls">
+      <div className={`charts-toolbar${commandCenterSurface ? ' command-center-charts-toolbar' : ''}`} aria-label="Runtime graph controls">
         <div className="charts-toolbar-heading">
           <div className="charts-toolbar-title-row">
             <h3 className="chart-title">Runtime Graphs</h3>
@@ -2792,6 +2792,7 @@ export default function TestExecutionCharts({
                     <h3 className="chart-title">{chartTitle}</h3>
                   </div>
                   <div className="chart-card-actions">
+                    {(chart.id === 'latency' || (chart.id === 'network_latency' && latencyKeys.length > 0)) && <details className="chart-inline-options"><summary>Chart options</summary>
                     {chart.id === 'latency' && (
                       <>
                         <label
@@ -2848,6 +2849,7 @@ export default function TestExecutionCharts({
                         )}
                       </div>
                     )}
+                    </details>}
                     <button
                       className="btn btn-sm btn-ghost chart-actions-button"
                       type="button"
@@ -3287,11 +3289,11 @@ export default function TestExecutionCharts({
             aria-label="Close graph configuration"
             onClick={() => setChartDrawerOpen(false)}
           />
-          <aside ref={chartDrawerRef} className="charts-config-drawer" role="dialog" aria-modal="true" aria-label="Final graph configuration">
+          <aside ref={chartDrawerRef} className="charts-config-drawer" role="dialog" aria-modal="true" aria-label="Graph configuration">
             <div className="charts-config-drawer-header">
               <div>
                 <h3>Graph Configuration</h3>
-                <p>{externalControlsTarget ? 'Choose graph cards for the final graph area.' : 'Choose graph cards, presets, density, and time display for the final graph area.'}</p>
+                <p>{externalControlsTarget ? 'Choose graph cards for runtime graphs.' : 'Choose graph cards, presets, density, and time display for runtime graphs.'}</p>
               </div>
               <button ref={chartDrawerCloseButtonRef} type="button" className="btn btn-secondary btn-sm" onClick={() => setChartDrawerOpen(false)}>Close</button>
             </div>

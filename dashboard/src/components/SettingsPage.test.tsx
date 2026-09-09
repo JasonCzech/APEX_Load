@@ -114,6 +114,7 @@ const projectContextMock = {
   setActiveProject: vi.fn(),
   createAndSelectProject: vi.fn(),
   updateProject: vi.fn(),
+  deleteProject: vi.fn(),
 }
 
 // Seeds the project catalog SettingsPage renders. It reads ProjectContext, which
@@ -272,6 +273,7 @@ describe('SettingsPage', () => {
     projectContextMock.setActiveProject.mockReset()
     projectContextMock.createAndSelectProject.mockReset()
     projectContextMock.updateProject.mockReset()
+    projectContextMock.deleteProject.mockReset()
     projectContextMock.updateProject.mockImplementation(
       (projectID: string, project: unknown) => projectApiMock.updateProject(projectID, project),
     )
@@ -781,6 +783,50 @@ describe('SettingsPage', () => {
     delete (window as BridgeWindow).go
   })
 
+  it('edits and deletes a project from the catalog with confirmation', async () => {
+    projectContextMock.deleteProject.mockResolvedValue({ deleted: 'project-1' })
+    projectApiMock.updateProject.mockResolvedValue({ id: 'project-1', name: 'Checkout renamed', created_at: '', updated_at: '' })
+    await act(async () => root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />))
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects')
+    const editor = container.querySelector('[aria-label="Edit selected project"]')!
+    expect(editor).not.toBeNull()
+    const input = editor.querySelector('input')!
+    await setFieldValue(input, 'Checkout renamed')
+    await act(async () => (Array.from(editor.querySelectorAll('button')).find(button => button.textContent === 'Save') as HTMLButtonElement).click())
+    expect(projectApiMock.updateProject).toHaveBeenCalledWith('project-1', expect.objectContaining({ name: 'Checkout renamed' }))
+    await act(async () => (Array.from(editor.querySelectorAll('button')).find(button => button.textContent === 'Delete') as HTMLButtonElement).click())
+    expect(projectContextMock.deleteProject).not.toHaveBeenCalled()
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('Checkout renamed')
+    await act(async () => (Array.from(dialog.querySelectorAll('button')).find(button => button.textContent === 'Delete Project') as HTMLButtonElement).click())
+    expect(projectContextMock.deleteProject).toHaveBeenCalledWith('project-1')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('locks duplicate project deletion requests and unlocks retry after failure', async () => {
+    let rejectDelete!: (error: Error) => void
+    projectContextMock.deleteProject.mockImplementationOnce(() => new Promise((_, reject) => { rejectDelete = reject }))
+    await act(async () => root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} />))
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects')
+    const editor = container.querySelector('[aria-label="Edit selected project"]')!
+    await act(async () => (Array.from(editor.querySelectorAll('button')).find(button => button.textContent === 'Delete') as HTMLButtonElement).click())
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    const confirm = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent === 'Delete Project') as HTMLButtonElement
+    await act(async () => { confirm.click(); confirm.click() })
+    expect(projectContextMock.deleteProject).toHaveBeenCalledTimes(1)
+    expect(confirm.disabled).toBe(true)
+    await act(async () => rejectDelete(new Error('Project has active runs')))
+    expect(dialog.textContent).toContain('Project has active runs')
+    expect(confirm.disabled).toBe(false)
+    expect(document.body.textContent).not.toContain('Deleted project Checkout')
+    projectContextMock.deleteProject.mockResolvedValueOnce({ deleted: 'project-1' })
+    await act(async () => confirm.click())
+    expect(projectContextMock.deleteProject).toHaveBeenCalledTimes(2)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+  })
+
   it('defaults General to the Platform panel and switches panels accessibly', async () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
@@ -1286,7 +1332,7 @@ describe('SettingsPage', () => {
     await setFieldValue(nameInput, 'Retail Banking')
     await setFieldValue(descriptionInput, 'Digital banking journeys')
 
-    const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save Domain') as HTMLButtonElement | undefined
+    const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save') as HTMLButtonElement | undefined
     expect(saveButton?.disabled).toBe(false)
     if (!saveButton) return
     await act(async () => {
@@ -1385,7 +1431,7 @@ describe('SettingsPage', () => {
       deleteButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const confirmButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Confirm Delete') as HTMLButtonElement | undefined
+    const confirmButton = Array.from(container.querySelectorAll('[role="dialog"] button')).find(button => button.textContent?.trim() === 'Delete Domain') as HTMLButtonElement | undefined
     expect(confirmButton).toBeTruthy()
     if (!confirmButton) return
     await act(async () => {
@@ -1396,6 +1442,27 @@ describe('SettingsPage', () => {
     expect(repositoryApiMock.deleteDomain).toHaveBeenCalledWith(retailDomain.id)
     expect(container.textContent).toContain('Domain "Retail" deleted.')
     expect(domainSection.querySelector('.settings-app-card.active')?.textContent).toContain('Default Domain')
+  })
+
+  it('keeps failed domain deletion reviewable and prevents duplicate pending requests', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValue({ enabled: true, authenticated: true, resources: domainAccessResources(true) })
+    let rejectDelete!: (error: Error) => void
+    repositoryApiMock.deleteDomain.mockImplementationOnce(() => new Promise((_, reject) => { rejectDelete = reject }))
+    await act(async () => { renderWithSettingsTopbar(root, <SettingsPageDomainHarness />) })
+    await flushPromises()
+    await selectTopLevelSettingsTab('Domains')
+    const section = container.querySelector('#settings-section-domains')!
+    const retail = Array.from(section.querySelectorAll<HTMLButtonElement>('.settings-app-card')).find(button => button.textContent?.includes('Retail'))!
+    await act(async () => retail.click())
+    await act(async () => Array.from(section.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Delete')!.click())
+    const confirm = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent === 'Delete Domain')!
+    await act(async () => { confirm.click(); confirm.click() })
+    expect(repositoryApiMock.deleteDomain).toHaveBeenCalledTimes(1)
+    expect(confirm.disabled).toBe(true)
+    await act(async () => rejectDelete(new Error('Domain service unavailable')))
+    expect(container.querySelector('[role="dialog"] [role="alert"]')?.textContent).toContain('Domain service unavailable')
+    expect(confirm.disabled).toBe(false)
+    expect(confirm.textContent).toBe('Delete Domain')
   })
 
   it('disables domain write controls when manage_domains is denied', async () => {
@@ -1422,7 +1489,7 @@ describe('SettingsPage', () => {
     await setFieldValue(createInput, 'Restricted')
 
     const addButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Add Domain') as HTMLButtonElement | undefined
-    const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save Domain') as HTMLButtonElement | undefined
+    const saveButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save') as HTMLButtonElement | undefined
     const deleteButton = Array.from(domainSection.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Delete') as HTMLButtonElement | undefined
 
     expect(addButton?.disabled).toBe(true)
@@ -3640,7 +3707,8 @@ describe('SettingsPage', () => {
     const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog).toBeTruthy()
     expect(dialog?.getAttribute('aria-labelledby')).toBeTruthy()
-    expect(document.activeElement?.textContent).toBe('Cancel')
+    expect(document.activeElement?.textContent).toBe('Close')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Close dialog')
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -4760,7 +4828,7 @@ describe('SettingsPage', () => {
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+      .find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
     await act(async () => rename?.click())
     const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
     expect(renameInput).toBeTruthy()
@@ -4864,7 +4932,7 @@ describe('SettingsPage', () => {
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+      .find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
     await act(async () => rename?.click())
     const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
     expect(renameInput).toBeTruthy()
@@ -4904,7 +4972,7 @@ describe('SettingsPage', () => {
     await selectTopLevelSettingsTab('Applications & Releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     if (!applicationSection) return
-    await act(async () => findButton('Rename')?.click())
+    await act(async () => findButton('Edit')?.click())
 
     const currentRow = Array.from(applicationSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Current Application'))
     const renameInput = currentRow?.querySelector('input') as HTMLInputElement | null
@@ -4945,7 +5013,7 @@ describe('SettingsPage', () => {
     expect(applicationSection).toBeTruthy()
     if (!applicationSection) return
 
-    await act(async () => findButton('Rename')?.click())
+    await act(async () => findButton('Edit')?.click())
     const currentRow = Array.from(applicationSection.querySelectorAll('.setting-row')).find(row => row.textContent?.includes('Current Application'))
     const renameInput = currentRow?.querySelector('input') as HTMLInputElement | null
     expect(renameInput).toBeTruthy()
@@ -5030,7 +5098,7 @@ describe('SettingsPage', () => {
     await selectTopLevelSettingsTab('Applications & Releases')
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
-    const renameButton = Array.from(releaseRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+    const renameButton = Array.from(releaseRow?.querySelectorAll('button') || []).find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
     expect(renameButton).toBeTruthy()
     if (!renameButton || !releaseRow || !applicationSection) return
     await act(async () => renameButton.click())
@@ -5082,7 +5150,7 @@ describe('SettingsPage', () => {
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+      .find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
     await act(async () => rename?.click())
     const renameInput = releaseRow?.querySelector('input') as HTMLInputElement | null
     expect(renameInput).toBeTruthy()
@@ -5206,7 +5274,7 @@ describe('SettingsPage', () => {
     const currentRow = Array.from(applicationSection?.querySelectorAll('.setting-row') || [])
       .find(row => row.textContent?.includes('Current Application'))
     const rename = Array.from(currentRow?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+      .find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
     await act(async () => rename?.click())
     const input = currentRow?.querySelector('input') as HTMLInputElement | null
     expect(input).toBeTruthy()
@@ -5259,7 +5327,7 @@ describe('SettingsPage', () => {
     const applicationSection = container.querySelector('#settings-section-applications')
     const releaseRow = applicationSection?.querySelector('.settings-release-row')
     const rename = Array.from(releaseRow?.querySelectorAll('button') || [])
-      .find(button => button.textContent === 'Rename') as HTMLButtonElement | undefined
+      .find(button => button.textContent === 'Edit') as HTMLButtonElement | undefined
     await act(async () => rename?.click())
     const input = releaseRow?.querySelector('input') as HTMLInputElement | null
     expect(input).toBeTruthy()

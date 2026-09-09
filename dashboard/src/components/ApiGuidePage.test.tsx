@@ -118,13 +118,13 @@ describe('ApiGuidePage', () => {
     return button
   }
 
-  it('renders the API guide title toggle and General page by default', async () => {
-    await renderApiGuidePage({ effectiveAccessResources: allGuideOperations })
+  it('renders the Help title and the explicitly selected API General page', async () => {
+    await renderApiGuidePage({ activePage: 'general', effectiveAccessResources: allGuideOperations })
 
     expect(container.textContent).toContain('API Guide')
     expect(container.textContent).toContain('localhost:4000')
     expect(container.textContent).not.toContain('localhost:3000')
-    expect(topbarText()).toContain('API Guide')
+    expect(topbarText()).toContain('Help & documentation')
     expect(topbarText()).toContain('General')
     expect(topbarText()).toContain('MCP Server')
     expect(topbarText()).toContain('Quick Start')
@@ -332,14 +332,14 @@ describe('ApiGuidePage', () => {
   })
 
   it('shows the User Guide tab to everyone and renders its content', async () => {
-    await renderApiGuidePage({ effectiveAccessResources: accessResources(['view_scripts']) })
+    await renderApiGuidePage({ activePage: 'general', effectiveAccessResources: accessResources(['view_scripts']) })
 
     expect(topbarText()).toContain('User Guide')
     expect(findTopbarButton('Admin Guide')).toBeUndefined()
 
     const userGuideButton = await selectTopbarPage('User Guide')
     expect(userGuideButton?.getAttribute('aria-pressed')).toBe('true')
-    expect(window.location.hash).toBe('#/docs?guide=user-guide')
+    expect(window.location.hash).toBe('#/docs')
     expect(container.textContent).toContain('What APEX Load Does')
     expect(container.textContent).not.toContain('Responses And Errors')
   })
@@ -349,7 +349,7 @@ describe('ApiGuidePage', () => {
 
     expect(findTopbarButton('Admin Guide')).toBeUndefined()
     // Direct navigation to the admin guide falls back to the default General page.
-    expect(container.textContent).toContain('Responses And Errors')
+    expect(container.textContent).toContain('What APEX Load Does')
     expect(container.textContent).not.toContain('The Access Console')
   })
 

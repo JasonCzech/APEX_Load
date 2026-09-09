@@ -1,3 +1,7 @@
+import { reportComparisonQualification } from './reportComparisonQualification'
+import { OrchestrationReturn } from './OrchestrationReturn'
+import type { ReportSection } from '../appRouting'
+import { runOutcomeLabels } from './runOutcomeLabels'
 import TabList from './ux/TabList'
 import TestExecutionArchive from './TestExecutionArchive'
 import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
@@ -38,10 +42,11 @@ interface Props {
   testId: string
   initialLens?: ReportLens
   initialCompare?: string
+  initialSection?: ReportSection
   statusOverride?: string
   onOpenCommandCenter: (id?: string) => void
   onOpenLegacyArchive: (id: string) => void
-  onNavigateReport: (next: { lens?: ReportLens; compare?: string }) => void
+  onNavigateReport: (next: { lens?: ReportLens; compare?: string; section?: ReportSection }) => void
 }
 
 function archiveReadyTest(test: TestSummary | null, status: string): TestSummary | null {
@@ -66,6 +71,7 @@ export default function RunReportPage({
   testId,
   initialLens,
   initialCompare,
+  initialSection,
   statusOverride,
   onOpenCommandCenter,
   onOpenLegacyArchive,
@@ -74,7 +80,7 @@ export default function RunReportPage({
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const [activeLens, setActiveLens] = useState<ReportLens>(initialLens || 'executive')
-  const [area, setArea] = useState<'Summary' | 'Performance' | 'Diagnostics' | 'Evidence'>('Summary')
+  const [area, setAreaState] = useState<'Summary' | 'Performance' | 'Diagnostics' | 'Evidence'>('Summary')
   const [showExport, setShowExport] = useState(false)
   const [showCompare, setShowCompare] = useState(Boolean(initialCompare))
   const [showComposer, setShowComposer] = useState(false)
@@ -161,7 +167,8 @@ export default function RunReportPage({
     setCompareId(initialCompare || '')
     if (initialCompare) setShowCompare(true)
   }, [initialCompare, testId])
-  useEffect(() => { setArea('Summary'); setPopulationChoice(null); setShowComposer(false) }, [testId])
+  useEffect(() => { setAreaState('Summary'); setPopulationChoice(null); setShowComposer(false) }, [testId])
+  useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', diagnostics: 'Diagnostics', evidence: 'Evidence' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
   useEffect(() => {
     pinCompareStamp.current += 1
   }, [effectiveCompareId])
@@ -255,7 +262,7 @@ export default function RunReportPage({
     if (lens === activeLens) return
     runGuarded(() => {
       setActiveLens(lens)
-      onNavigateReport({ lens, compare: compareId || undefined })
+      onNavigateReport({ section: area.toLowerCase() as ReportSection, lens, compare: compareId || undefined })
     })
   }
 
@@ -265,7 +272,7 @@ export default function RunReportPage({
     if (normalized === testId) { setBaselineError('Choose a different run as the baseline.'); return }
     runGuarded(() => {
       setCompareId(normalized)
-      onNavigateReport({ lens: activeLens, compare: normalized || undefined })
+      onNavigateReport({ section: area.toLowerCase() as ReportSection, lens: activeLens, compare: normalized || undefined })
     })
   }
 
@@ -403,7 +410,7 @@ export default function RunReportPage({
       <div className="page run-report-page">
         <section className="run-report-panel">
           <h1>No archive available</h1>
-          <p>This run is complete, but no archive was recorded for report rendering.</p>
+          <p><strong>{test.name}</strong> · {test.ref_key || test.id} · {test.status}</p><p>No saved archive is available. Open the execution snapshot to inspect retained run details. Archive publication progress is unknown.</p>
           <button className="btn btn-secondary" type="button" onClick={() => onOpenLegacyArchive(testId)}>View execution snapshot</button>
         </section>
       </div>
@@ -411,17 +418,22 @@ export default function RunReportPage({
   }
 
   const report = archiveModel.archiveReport
-  const comparisonContextDiffers = baselineTest && (baselineTest.scenario_id !== test.scenario_id || baselineTest.total_vusers !== test.total_vusers || baselineTest.duration !== test.duration || baselineTest.project_id !== test.project_id || baselineTest.application_id !== test.application_id)
+  const comparison = report && baselineReport ? reportComparisonQualification(report, baselineReport, test, baselineTest, population) : null
   const renderEvidence = (view: React.ComponentProps<typeof TestExecutionArchive>['view']) => <TestExecutionArchive
     {...archiveModel} test={test} view={view} hideReportExports
     loadImpactData={timelineHistory} loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
     loadImpactError={archiveSummaryError || archiveResourceError}
   />
+  const setArea = (next: 'Summary' | 'Performance' | 'Diagnostics' | 'Evidence') => {
+    // The route changes only after the navigation guard accepts. Keep the
+    // current section visible if the user cancels an unsaved-assessment prompt.
+    onNavigateReport({ lens: activeLens, compare: compareId || undefined, section: next.toLowerCase() as ReportSection })
+  }
   const areas = ['Summary', 'Performance', 'Diagnostics', 'Evidence'] as const
   return (
     <div className="page run-report-page">
       <div className="run-report-toolbar">
-        <div><p className="run-report-kicker">Completed run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p>{resolvedStatus} · Planned {test.total_vusers} VUsers · {test.duration}</p></div>
+        <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p>{runOutcomeLabels(report?.manifest).execution} · Planned {test.total_vusers} VUsers for {test.duration} · Observed elapsed {runOutcomeLabels(report?.manifest).elapsed}</p></div>
         <div className="run-report-toolbar-actions">
           <button className="btn btn-secondary" type="button" aria-expanded={showCompare} onClick={() => setShowCompare(v => !v)}>Compare</button>
           <button className="btn btn-primary" type="button" aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
@@ -443,7 +455,14 @@ export default function RunReportPage({
         deltas={baselineDiff} loading={baselineLoading} error={baselineError || baselineOptionsError || (effectiveCompareId && report && baselineReport && (!reportPopulationOverview(report, population) || !reportPopulationOverview(baselineReport, population)) ? 'No comparable samples for the selected population.' : '')}
         onCompareChange={setCompare} onPinBaseline={pinBaseline} />}
       {effectiveCompareId && !showCompare && <p className="run-report-muted">Comparing with {baselineTest?.name || effectiveCompareId}. Open Compare to change or clear the baseline.{baselineError ? ` ${baselineError}` : ''}</p>}
-      {comparisonContextDiffers && <p className="run-report-muted">Baseline scenario, scope, or planned load differs from this run. Interpret metric deltas in that context; curves align by elapsed time.</p>}
+      {effectiveCompareId && comparison && <section className="run-report-panel" role="note" aria-label="Comparison qualification">
+        <h3>Comparison qualification</h3><p>{comparison.summary}</p>
+        {comparison.missing.length > 0 && <p>Unverified metadata: {comparison.missing.join(', ')}.</p>}
+        <p>{populationLabels[population]} records: {comparison.currentRecords ?? 'Unavailable'} versus {comparison.baselineRecords ?? 'Unavailable'}. Observed peak VUsers: {report?.overview?.peak_active_vusers ?? 'Unavailable'} versus {baselineReport?.overview?.peak_active_vusers ?? 'Unavailable'}.</p>
+        <p>{comparison.revisions} These are descriptive deltas, not proof of a performance regression.</p>
+        {(comparison.limitedSamples || comparison.differentObservedLoad || comparison.observedLoadUnknown) && <strong>Limited comparability: {[comparison.limitedSamples && 'insufficient sample evidence', comparison.differentObservedLoad && 'different observed load', comparison.observedLoadUnknown && 'observed load unavailable'].filter(Boolean).join('; ')}. Do not use the deltas alone as acceptance evidence.</strong>}
+      </section>}
+      <OrchestrationReturn testId={testId} />
       <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={`result-panel-${name}`} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
         onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%4 : e.key === 'ArrowLeft' ? (index+3)%4 : e.key === 'Home' ? 0 : e.key === 'End' ? 3 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">

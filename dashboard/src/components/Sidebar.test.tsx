@@ -477,7 +477,7 @@ describe('Sidebar', () => {
       )
     })
 
-    const guideButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('API Guide'))
+    const guideButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Help & documentation'))
     expect(guideButton).toBeDefined()
     if (!guideButton) {
       return
@@ -667,7 +667,7 @@ describe('Sidebar', () => {
     expect(container.textContent).toContain('Admin')
     expect(container.textContent).toContain('User')
     expect(container.textContent).toContain('New Test')
-    expect(container.textContent).toContain('API Guide')
+    expect(container.textContent).toContain('Help & documentation')
     expect(container.textContent).toContain('Settings')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
 
@@ -684,7 +684,7 @@ describe('Sidebar', () => {
     expect(window.localStorage.getItem('apexload.devViewMode')).toBe('user')
     expect(container.textContent).toContain('Editor preview')
     expect(container.textContent).toContain('New Test')
-    expect(container.textContent).toContain('API Guide')
+    expect(container.textContent).toContain('Help & documentation')
     expect(container.textContent).toContain('Settings')
     expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => button.textContent?.trim() === 'Sign out')).toBe(true)
   })

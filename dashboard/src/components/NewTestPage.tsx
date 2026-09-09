@@ -326,7 +326,7 @@ function buildDefaultScheduleDraft(
   return {
     name: scenario ? `${scenario.name} Schedule` : '',
     cron_expr: '0 9 * * 1-5',
-    timezone: 'UTC',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     release_id: releaseId || '',
     timeslot_id: '',
     run_name_template: scenario?.name || '',
@@ -3098,11 +3098,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
             </div>
           </section>
 
-          <div className="new-test-run-only-callout" role="note">
+          <div className="new-test-run-only-callout" role="note" hidden={!scenario}>
             Note: Changes on this page only override the default settings for the current run. To change scenario defaults, edit the scenario through the Scenario Editor.
           </div>
 
-          <div className="new-test-run-config-row">
+          <div className="new-test-run-config-row" hidden={!scenario}>
             <section className="new-test-step">
               <div className="new-test-step-header">
                 <span className={`new-test-step-index${step2Complete ? ' complete' : ''}`}>{step2Complete ? '✓' : '2'}</span>
@@ -3217,7 +3217,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
         </div>
 
-        <aside className="new-test-sidebar-column">
+        <aside className="new-test-sidebar-column" hidden={!scenario}>
           <section className="new-test-profile-card" aria-label="Modeled Load Profile">
             <div className="new-test-profile-header">
               <div>

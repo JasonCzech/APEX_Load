@@ -23,7 +23,7 @@
   top: 0;
   z-index: 22;
   display: grid;
-  grid-template-columns: minmax(250px, 1.25fr) minmax(360px, 1.8fr) auto;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.8fr);
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -256,7 +256,9 @@
 }
 
 .command-run-actions {
+  grid-column: 1 / -1;
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 7px;
 }
@@ -2429,4 +2431,62 @@ button.command-group-name:focus-visible {
     grid-column: 2;
     grid-row: 1;
   }
+}
+
+.command-empty-run-name small { display: block; font-weight: 400; overflow-wrap: anywhere; }
+
+/* Keep run controls below the measured, wrapping application header. */
+.command-control-shelf { top: var(--command-header-offset, 0px); background: var(--bg-primary); }
+.command-center-page :is(button, input, summary, [tabindex]) { scroll-margin-top: calc(var(--command-header-offset, 0px) + var(--command-shelf-height, 190px) + var(--command-scroll-inset, 0px) + 12px); }
+.command-table-surface { min-height: 0; }
+.command-error-table-layout { min-height: 0; grid-template-rows: auto auto; }
+.command-column-preset { display: flex; align-items: center; gap: 8px; padding: 12px; }
+.command-scenario-table :is(th, td):nth-child(1) { position: sticky; left: 0; min-width: 170px; max-width: 170px; overflow-wrap: anywhere; white-space: normal; background: var(--bg-primary); z-index: 2; }
+.command-scenario-table :is(th, td):nth-child(2) { position: sticky; left: 170px; min-width: 120px; background: var(--bg-primary); z-index: 2; }
+.command-scenario-table { border-collapse: separate; border-spacing: 0; }
+.command-load-model-row { grid-template-columns: minmax(0, 1fr); }
+.command-load-comparison summary { cursor: pointer; padding: 8px 0; color: var(--text-secondary); }
+.command-load-model-stats { margin-top: 8px; }
+.command-capacity-snapshot { padding: 12px; }
+.command-capacity-snapshot .command-panel-header p { display: none; }
+.command-capacity-stats { gap: 6px; }
+.command-group-select-toggle.active { background: var(--accent-soft); box-shadow: none; }
+.command-runtime-graphs .chart-card-header { flex-wrap: wrap; align-items: flex-start; }
+.command-runtime-graphs .chart-title-wrap { flex: 1 0 100%; }
+.command-runtime-graphs .chart-title { white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.command-runtime-graphs .chart-card-actions { flex-wrap: wrap; margin-left: auto; }
+.command-runtime-graphs .chart-series-legend-item { white-space: normal; overflow-wrap: anywhere; }
+.command-runtime-graphs .chart-series-legend { max-height: 112px; }
+.command-runtime-graphs { container-type: inline-size; }
+@container (max-width: 1050px) {
+  .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container (max-width: 620px) {
+  .command-layout-grafana .charts-grid.command-center-graphs.command-center-compact,
+  .command-layout-grafana .charts-grid.command-center-graphs { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1024px) {
+  .command-group-row [data-label]::before { content: attr(data-label); display: block; font-size: 10px; color: var(--text-muted); font-weight: 600; }
+  .command-group-row [data-label] { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+  .command-group-row .command-target-cell { flex-direction: row; flex-wrap: wrap; }
+  .command-group-row .command-target-cell::before { flex-basis: 100%; }
+}
+.command-runtime-graphs .charts-grid { align-items: start; }
+
+.command-scenario-table.essential-metrics { min-width: 760px; }
+.command-scenario-table :is(th, td)[hidden] { display: none; }
+.command-scenario-table :is(th, td):nth-child(1) { width: 170px; }
+.command-scenario-table thead th:nth-child(-n+2) { z-index: 3; }
+.command-column-picker { padding: 0 12px 12px; }
+.command-column-picker summary { cursor: pointer; }
+.command-column-picker > div { display: flex; flex-wrap: wrap; gap: 10px 16px; padding-top: 12px; }
+.command-column-picker label { display: flex; align-items: center; gap: 5px; }
+.command-capacity-snapshot > summary { cursor: pointer; color: var(--text-secondary); }
+.command-capacity-snapshot[open] .command-capacity-stats { margin-top: 10px; }
+.command-group-name strong > span { display: inline; }
+@media (max-width: 1024px) {
+  .command-group-panel.paired .command-group-row:not(.header) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .command-group-panel.paired .command-group-row > :nth-child(1) { grid-column: 1 / 3; }
+  .command-group-panel.paired .command-group-row > :nth-child(3) { grid-column: 1 / -1; display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; }
+  .command-group-panel.paired .command-target-cell::before { grid-column: 1 / -1; }
 }

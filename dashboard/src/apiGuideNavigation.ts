@@ -4,7 +4,7 @@ export type ApiGuideToggleID = ApiGuideContentPageID | ApiGuideRouteID
 
 export type ApiGuideToggleOption = { value: ApiGuideToggleID; label: string }
 
-export const API_GUIDE_DEFAULT_PAGE: ApiGuideContentPageID = 'general'
+export const API_GUIDE_DEFAULT_PAGE: ApiGuideContentPageID = 'user-guide'
 
 export const API_GUIDE_CONTENT_PAGE_IDS: ApiGuideContentPageID[] = [
   'general',

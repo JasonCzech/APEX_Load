@@ -2640,6 +2640,7 @@ describe('TestHub', () => {
     // Re-open the same durable weighted assignment. The root editor must expose
     // and persist the weights and loss-tolerance policy instead of showing them
     // as read-only preservation text.
+    await clickButton('Cancel')
     const editAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
     expect(editAgain).toBeDefined()
     await act(async () => {
@@ -2681,6 +2682,7 @@ describe('TestHub', () => {
 
     // Re-open once more and explicitly choose automatic placement. The hidden
     // weighted section must be removed from the serialized assignment.
+    await clickButton('Cancel')
     const editForAuto = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
     expect(editForAuto).toBeDefined()
     await act(async () => {
@@ -3269,7 +3271,7 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Failure recovery'))
     await clickWizardStep('Review')
-    await clickButton('Save & Create Test Run')
+    await clickButton('Save and configure run')
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(message)
     expect(document.activeElement).toBe(container.querySelector('[role="alert"]'))
     expect(container.textContent).not.toContain('Scenario was saved')
@@ -3293,6 +3295,30 @@ describe('TestHub', () => {
     expect(container.querySelector('fieldset')?.disabled).toBe(true)
     await act(async () => finish({ id: 'saved-once' }))
     expect(container.textContent).toContain('Saved Single save')
+  })
+
+  it('stays on the current step after saving and updates the same scenario on later saves', async () => {
+    const changeView = vi.fn()
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={() => {}} onScenarioViewChange={changeView} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Keep editing'))
+    await clickWizardStep('Review')
+    changeView.mockClear()
+    await clickButton('Save draft')
+    expect(container.querySelector('.scenario-builder')).not.toBeNull()
+    expect(container.textContent).toContain('Review And Validate')
+    expect(changeView).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Editing · Saved')
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Scenario name"]')?.value).toBe('Keep editing')
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[aria-label="Scenario name"]')!, 'Updated draft'))
+    expect(container.textContent).toContain('Editing · Unsaved changes')
+    await clickButton('Save draft')
+    expect(apiMock.createScenario).toHaveBeenCalledTimes(1)
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-1', expect.objectContaining({ name: 'Updated draft' }))
+    expect(container.textContent).toContain('Review And Validate')
+    expect(container.querySelector('.scenario-save-notice')?.textContent).toContain('Saved Updated draft')
+    expect(changeView).not.toHaveBeenCalled()
   })
 
   it('does not claim success when a successful save response has no id', async () => {
@@ -3362,7 +3388,7 @@ describe('TestHub', () => {
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Review')
 
-    const saveAndCreateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save & Create Test Run'))
+    const saveAndCreateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and configure run'))
     expect(saveAndCreateButton).toBeDefined()
     if (!saveAndCreateButton) return
 

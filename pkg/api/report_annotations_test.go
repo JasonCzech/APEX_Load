@@ -180,3 +180,23 @@ func TestDefaultNarrativeUsesComputedFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultRiskCommentIncludesEvidenceLimitations(t *testing.T) {
+	report := &RunArchiveReport{Manifest: &RunArchiveManifest{}}
+	report.Completeness.Findings = []RunArchiveCompletenessFinding{{Severity: "critical", Message: "Telemetry delivery gaps"}}
+	report.Overview.Transactions = 9
+	report.Overview.PeakActiveVUsers = 1
+	report.Manifest.Provenance.TotalVUsers = 22
+	got := defaultRiskComment(report)
+	for _, want := range []string{"Telemetry delivery gaps", "9 archive records", "1 of 22", "termination evidence", "Absence of recorded errors"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("risk comment %q missing %q", got, want)
+		}
+	}
+	if got := defaultRiskComment(&RunArchiveReport{}); !strings.Contains(got, "unverified") {
+		t.Fatalf("missing manifest: %s", got)
+	}
+	if got := defaultRiskComment(nil); !strings.Contains(got, "unavailable") {
+		t.Fatalf("nil report: %s", got)
+	}
+}
