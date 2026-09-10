@@ -1,3 +1,4 @@
+import { terminalRunReportView } from './appRouting';
 import PageHeader from './components/ux/PageHeader'
 import { settingsOwner } from "./components/settingsNavigation";
 import {
@@ -2138,6 +2139,19 @@ function AppShell({
       if (request === openRunRequestRef.current && sourceView === viewRef.current) navigateToTest(id, undefined, projectID);
     });
   }, [activeProject?.id, navigateToTest, openCompletedRun, testApi]);
+  const terminalRouteStatus = routeTestScopeResolution?.key === routeTestScopeKey
+    ? testStatuses[routeTestID || ""] || routeTestScopeResolution?.test?.status || ""
+    : "";
+  useEffect(() => {
+    if (routeAssetScopeBlocked) return;
+    const next = terminalRunReportView(view, terminalRouteStatus, runReportEnabled);
+    if (next === view) return;
+    runGuarded(() => {
+      replaceRouteOnNextViewSync.current = true;
+      setDetailsOrigin(null);
+      setView(next);
+    });
+  }, [view, terminalRouteStatus, routeAssetScopeBlocked, runReportEnabled, runGuarded]);
   const activePage = navPageForAppView(view);
 
   const navigateToScriptEdit = (scriptId: string, projectID = activeProject?.id) => {
@@ -3024,6 +3038,9 @@ function AppShell({
     // Scenario subviews share one editor instance. Re-keying on its own view
     // toggle loses the selected saved scenario and the save confirmation.
     ...(view.page === "tests" ? { scenarioView: undefined } : {}),
+    // Report sections/lenses belong to the same run. Keep focus and population
+    // selection while their controlled route props update inside that page.
+    ...(view.page === "report" ? { section: undefined, lens: undefined, compare: undefined } : {}),
     applicationId: undefined,
     releaseId: undefined,
   });
@@ -3439,7 +3456,6 @@ function AppShell({
                   initialCompare={view.compare}
                   statusOverride={testStatuses[view.testId]}
                   onOpenCommandCenter={navigateToCommandCenter}
-                  onOpenLegacyArchive={id => navigateToTest(id, "overview")}
                   onNavigateReport={(next) =>
                     setGuardedView({
                       page: "report",

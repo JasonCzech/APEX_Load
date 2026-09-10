@@ -105,7 +105,7 @@ test('[U16] a finished run produces a report and stays findable in results', asy
   await expect(page).toHaveURL(new RegExp(`#/report/${run.testId}`))
   await expect(page.getByRole('tab', { name: 'Summary', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('region', { name: 'Run outcome' })).toBeVisible({ timeout: 30_000 })
-  for (const area of ['Performance', 'Diagnostics', 'Evidence', 'Summary']) {
+  for (const area of ['Performance', 'Diagnostics', 'Evidence', 'Execution', 'Summary']) {
     await page.getByRole('tab', { name: area, exact: true }).click()
     await expect(page.getByRole('tabpanel', { name: area, exact: true })).toBeVisible()
   }

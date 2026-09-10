@@ -141,6 +141,8 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     expect(report.mismatched, 'no artifact may fail its recorded checksum').toBe(0)
 
     await page.goto(`/#/test/${testId}?tab=archive`)
+    await expect(page.getByRole('tab', { name: 'Evidence', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await page.getByText('Raw evidence downloads', { exact: true }).click()
     const downloadButton = page.getByRole('button', { name: 'Download Transactions JSONL' }).first()
     await expect(downloadButton).toBeVisible({ timeout: 30_000 })
     const downloadPromise = page.waitForEvent('download')

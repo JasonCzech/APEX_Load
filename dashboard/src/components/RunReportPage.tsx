@@ -1,7 +1,11 @@
+import { useExecutionTestManifest } from './useExecutionTestManifest'
+import RunExecutionDetails, { RunExecutionFacts, RetainedRunMetrics, RetainedRunDiagnostics } from './runReport/RunExecutionDetails'
+import { executionFacts, recordedNumber } from './runReport/executionPresentation'
+import StatusBadge from './StatusBadge'
+import TestNotesDialog from './TestNotesDialog'
 import { reportComparisonQualification } from './reportComparisonQualification'
 import { OrchestrationReturn } from './OrchestrationReturn'
 import type { ReportSection } from '../appRouting'
-import { runOutcomeLabels } from './runOutcomeLabels'
 import TabList from './ux/TabList'
 import TestExecutionArchive from './TestExecutionArchive'
 import RunOutcomeSummary, { RunMetricPopulations } from './RunOutcomeSummary'
@@ -45,7 +49,6 @@ interface Props {
   initialSection?: ReportSection
   statusOverride?: string
   onOpenCommandCenter: (id?: string) => void
-  onOpenLegacyArchive: (id: string) => void
   onNavigateReport: (next: { lens?: ReportLens; compare?: string; section?: ReportSection }) => void
 }
 
@@ -74,24 +77,25 @@ export default function RunReportPage({
   initialSection,
   statusOverride,
   onOpenCommandCenter,
-  onOpenLegacyArchive,
   onNavigateReport,
 }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const [activeLens, setActiveLens] = useState<ReportLens>(initialLens || 'executive')
-  const [area, setAreaState] = useState<'Summary' | 'Performance' | 'Diagnostics' | 'Evidence'>('Summary')
+  const [area, setAreaState] = useState<'Summary' | 'Performance' | 'Diagnostics' | 'Evidence' | 'Execution'>('Summary')
   const [showExport, setShowExport] = useState(false)
+  const [showNotes, setShowNotes] = useState(false)
   const [showCompare, setShowCompare] = useState(Boolean(initialCompare))
   const [showComposer, setShowComposer] = useState(false)
   const [populationChoice, setPopulationChoice] = useState<MetricPopulation | null>(null)
   const [baselineOptions, setBaselineOptions] = useState<TestSummary[]>([])
   const [baselineOptionsError, setBaselineOptionsError] = useState('')
   const [compareId, setCompareId] = useState(initialCompare || '')
-  const { test, setTest, error: testError } = useExecutionTestPolling(testId, { stopOnTerminal: true })
+  const { test, setTest, error: testError, archiveCheckPending, archiveCheckError, checkArchiveAgain } = useExecutionTestPolling(testId, { stopOnTerminal: true })
   const resolvedStatus = test ? resolveTestStatus(test, statusOverride ? { [test.id]: statusOverride } : {}) : ''
   const completed = isCompletedTestStatus(resolvedStatus)
   const archivedTest = useMemo(() => archiveReadyTest(test, resolvedStatus), [resolvedStatus, test])
+  const manifestModel = useExecutionTestManifest(archivedTest)
   const archiveModel = useExecutionArchiveModel(archivedTest, false, compareId)
   const { archiveSummaryHistory, archiveSummaryError, archiveSummariesLoading } = useExecutionArchiveSummaryHistory(archivedTest)
   const { archiveResourceHistory, archiveResourceError, archiveResourcesLoading } = useExecutionArchiveResourceHistory(archivedTest)
@@ -168,7 +172,7 @@ export default function RunReportPage({
     if (initialCompare) setShowCompare(true)
   }, [initialCompare, testId])
   useEffect(() => { setAreaState('Summary'); setPopulationChoice(null); setShowComposer(false) }, [testId])
-  useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', diagnostics: 'Diagnostics', evidence: 'Evidence' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
+  useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', diagnostics: 'Diagnostics', evidence: 'Evidence', execution: 'Execution' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
   useEffect(() => {
     pinCompareStamp.current += 1
   }, [effectiveCompareId])
@@ -405,18 +409,6 @@ export default function RunReportPage({
     return <div className="page run-report-page"><p role="status">Opening command center...</p></div>
   }
 
-  if (!test.archive) {
-    return (
-      <div className="page run-report-page">
-        <section className="run-report-panel">
-          <h1>No archive available</h1>
-          <p><strong>{test.name}</strong> · {test.ref_key || test.id} · {test.status}</p><p>No saved archive is available. Open the execution snapshot to inspect retained run details. Archive publication progress is unknown.</p>
-          <button className="btn btn-secondary" type="button" onClick={() => onOpenLegacyArchive(testId)}>View execution snapshot</button>
-        </section>
-      </div>
-    )
-  }
-
   const report = archiveModel.archiveReport
   const comparison = report && baselineReport ? reportComparisonQualification(report, baselineReport, test, baselineTest, population) : null
   const renderEvidence = (view: React.ComponentProps<typeof TestExecutionArchive>['view']) => <TestExecutionArchive
@@ -424,34 +416,47 @@ export default function RunReportPage({
     loadImpactData={timelineHistory} loadImpactLoading={archiveSummariesLoading || archiveResourcesLoading}
     loadImpactError={archiveSummaryError || archiveResourceError}
   />
-  const setArea = (next: 'Summary' | 'Performance' | 'Diagnostics' | 'Evidence') => {
+  const setArea = (next: 'Summary' | 'Performance' | 'Diagnostics' | 'Evidence' | 'Execution') => {
     // The route changes only after the navigation guard accepts. Keep the
     // current section visible if the user cancels an unsaved-assessment prompt.
     onNavigateReport({ lens: activeLens, compare: compareId || undefined, section: next.toLowerCase() as ReportSection })
   }
-  const areas = ['Summary', 'Performance', 'Diagnostics', 'Evidence'] as const
+  const areas = ['Summary', 'Performance', 'Diagnostics', 'Evidence', 'Execution'] as const
+  const facts = executionFacts(test, report, manifestModel.manifest)
+  const failed = resolvedStatus === 'FAILED'
+  const hasArchive = Boolean(test.archive)
   return (
     <div className="page run-report-page">
       <div className="run-report-toolbar">
-        <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p>{runOutcomeLabels(report?.manifest).execution} · Planned {test.total_vusers} VUsers for {test.duration} · Observed elapsed {runOutcomeLabels(report?.manifest).elapsed}</p></div>
+        <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p><StatusBadge status={resolvedStatus} stoppedByOperator={report?.manifest?.termination_reason === 'operator_stopped'} /> · Configured {recordedNumber(facts.vusers)} VUsers for {facts.duration || 'Not recorded'} · Observed elapsed {facts.elapsed}</p></div>
         <div className="run-report-toolbar-actions">
-          <button className="btn btn-secondary" type="button" aria-expanded={showCompare} onClick={() => setShowCompare(v => !v)}>Compare</button>
-          <button className="btn btn-primary" type="button" aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
-          <button className="btn btn-ghost" type="button" onClick={() => onOpenCommandCenter(testId)}>Execution snapshot</button>
+          <button className="btn btn-secondary" type="button" disabled={!hasArchive} aria-expanded={showCompare} onClick={() => setShowCompare(v => !v)}>Compare</button>
+          <button className="btn btn-primary" type="button" disabled={!hasArchive} aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
+          <button className="btn btn-ghost" type="button" onClick={() => setShowNotes(true)}>Test notes</button>
         </div>
       </div>
-      {showExport && <section className="run-report-panel" aria-label="Report export options">
+      {(failed || resolvedStatus === 'ABORTED' || facts.reason) && <section className={`run-report-panel run-execution-outcome${failed ? ' run-execution-outcome-failed' : ''}`} aria-label="Execution outcome">
+        <h2>{failed ? 'Execution failed' : resolvedStatus === 'ABORTED' ? 'Execution aborted' : 'Recorded execution outcome'}</h2>
+        <p>{facts.reason || 'No termination detail was recorded.'}</p>
+        <p className="run-report-muted">Execution status is separate from sampled transaction success and performance acceptance.</p>
+      </section>}
+      {!hasArchive && <section className="run-report-panel run-evidence-notice" aria-label="Evidence availability">
+        <div><h2>Saved archive unavailable</h2><p>Retained controller records are available below. Archive publication progress is unknown; these records do not establish complete workload or performance evidence.</p></div>
+        <button type="button" className="btn btn-secondary" disabled={archiveCheckPending} onClick={() => void checkArchiveAgain()}>{archiveCheckPending ? 'Checking…' : 'Check again'}</button>
+        {archiveCheckError && <p role="alert" className="run-report-error">{archiveCheckError}</p>}
+      </section>}
+      {showExport && hasArchive && <section className="run-report-panel" aria-label="Report export options">
         <h2>Export report</h2><p>Choose an audience. Outputs cover the whole run, independent of the population selector below. Any release trend in an output uses the prior release run and names that reference.</p>
         <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />
         <button className="btn btn-secondary" type="button" onClick={() => setShowComposer(true)}>Preview / edit commentary</button>
         <RunReportExportActions testId={testId} lens={activeLens} testName={test.name} downloadHTML={api.downloadTestReport} downloadFormat={api.downloadTestReportFormat} />
         <details><summary>Publish to Power BI</summary><RunReportPowerBIPublish testId={testId} publish={api.publishTestToPowerBI} getStatus={api.getPowerBIPublishStatus} /></details>
       </section>}
-      <section className="run-report-context" aria-label="Analysis context">
+      {hasArchive && area !== 'Execution' && <section className="run-report-context" aria-label="Analysis context">
         <label>Metric population <select value={population} onChange={e => setPopulationChoice(e.target.value as MetricPopulation)}>{Object.entries(populationLabels).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>
         <p>{populationLabels[population]} · {report?.metric_populations?.[population]?.transactions ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>
-      </section>
-      {showCompare && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions}
+      </section>}
+      {showCompare && hasArchive && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions}
         deltas={baselineDiff} loading={baselineLoading} error={baselineError || baselineOptionsError || (effectiveCompareId && report && baselineReport && (!reportPopulationOverview(report, population) || !reportPopulationOverview(baselineReport, population)) ? 'No comparable samples for the selected population.' : '')}
         onCompareChange={setCompare} onPinBaseline={pinBaseline} />}
       {effectiveCompareId && !showCompare && <p className="run-report-muted">Comparing with {baselineTest?.name || effectiveCompareId}. Open Compare to change or clear the baseline.{baselineError ? ` ${baselineError}` : ''}</p>}
@@ -464,11 +469,11 @@ export default function RunReportPage({
       </section>}
       <OrchestrationReturn testId={testId} />
       <TabList className="run-report-areas" role="tablist" aria-label="Result sections">{areas.map((name,index) => <button key={name} type="button" role="tab" id={`result-tab-${name}`} aria-controls={`result-panel-${name}`} aria-selected={area === name} tabIndex={area === name ? 0 : -1}
-        onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%4 : e.key === 'ArrowLeft' ? (index+3)%4 : e.key === 'Home' ? 0 : e.key === 'End' ? 3 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name}</button>)}</TabList>
+        onClick={() => setArea(name)} onKeyDown={e => { const next = e.key === 'ArrowRight' ? (index+1)%areas.length : e.key === 'ArrowLeft' ? (index+areas.length-1)%areas.length : e.key === 'Home' ? 0 : e.key === 'End' ? areas.length-1 : -1; if(next >= 0){e.preventDefault();setArea(areas[next]);document.getElementById(`result-tab-${areas[next]}`)?.focus()} }}>{name}</button>)}</TabList>
       <section role="tabpanel" id={`result-panel-${area}`} aria-labelledby={`result-tab-${area}`} className="run-report-area-content">
         {archiveModel.archiveLoading && <p role="status">Loading archived results...</p>}
         {archiveModel.archiveError && <p role="alert" className="run-report-error">{archiveModel.archiveError}</p>}
-        {area === 'Summary' && <>
+        {area === 'Summary' && hasArchive && <>
           {report && <RunOutcomeSummary report={report} showPopulations={false} />}
           <RunReportKpiScorecard kpis={kpis} />
           <section className="run-report-panel"><h2>Findings and next steps</h2>
@@ -478,7 +483,7 @@ export default function RunReportPage({
           {annotationsError && <p className="run-report-error" role="alert">{annotationsError}</p>}
           <details><summary>Analyst assessment ({activeLens} output)</summary><RunReportVerdictBanner report={report} annotations={annotations} status={verdictDraft.status} explanation={verdictDraft.explanation} saving={savingAnnotations || annotationsLoading} disabled={!annotations} onStatusChange={updateVerdictStatus} onExplanationChange={updateVerdictExplanation} onSaveOverride={saveOverride} /></details>
         </>}
-        {area === 'Performance' && <>
+        {area === 'Performance' && hasArchive && <>
           <RunReportKpiScorecard kpis={kpis} />
           <SynchronizedTimeline data={timelineHistory} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
           <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
@@ -486,21 +491,33 @@ export default function RunReportPage({
           {renderEvidence('action-summary')}
           <details><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
         </>}
-        {area === 'Diagnostics' && <>
+        {area === 'Diagnostics' && hasArchive && <>
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           {renderEvidence('transactions')}
           <details><summary>Browser evidence</summary>{renderEvidence('report-browser-summary')}{renderEvidence('report-browser-resources')}</details>
           <details><summary>Execution path analysis</summary>{renderEvidence('report-analysis')}</details>
         </>}
-        {area === 'Evidence' && <>
+        {area === 'Evidence' && hasArchive && <>
           {renderEvidence('report-completeness')}
           {report && <section className="run-outcome-summary"><h2>Metric populations</h2><RunMetricPopulations report={report} /></section>}
           {renderEvidence('report-metadata')}
           <details><summary>Raw evidence downloads</summary><button className="btn btn-secondary" onClick={() => void archiveModel.onDownloadArchive()}>Download evidence bundle</button>{renderEvidence('report-assets')}</details>
           <details><summary>Archived intervals</summary>{renderEvidence('report-summary-timeline')}</details>
         </>}
+        {area === 'Execution' && <RunExecutionDetails manifestModel={manifestModel} test={test} report={report} history={timelineHistory} historyLoading={archiveSummariesLoading} historyError={archiveSummaryError} />}
+        {!hasArchive && area === 'Summary' && <>
+          <RunExecutionFacts test={test} report={null} manifest={manifestModel.manifest} />
+          <section className="run-report-panel"><h2>Investigate this run</h2>
+            <p>Performance acceptance is not assessed here. Review the recorded reason, lifecycle events, and available evidence before deciding whether to rerun.</p>
+            <div className="run-report-toolbar-actions"><button type="button" className="btn btn-primary" onClick={() => setArea('Execution')}>Review execution events</button><button type="button" className="btn btn-secondary" onClick={() => setArea('Evidence')}>View retained evidence</button></div>
+          </section>
+        </>}
+        {!hasArchive && area === 'Performance' && <RetainedRunMetrics test={test} />}
+        {!hasArchive && area === 'Diagnostics' && <><RetainedRunDiagnostics test={test} /><RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly /></>}
+        {!hasArchive && area === 'Evidence' && <RunExecutionDetails manifestModel={manifestModel} test={test} report={null} evidenceOnly />}
       </section>
+      {showNotes && <TestNotesDialog testId={testId} testName={test.name} onClose={() => setShowNotes(false)} />}
       {showComposer && <ReportComposer testId={testId} testName={test.name} profile={activeLens} onClose={() => setShowComposer(false)} />}
     </div>
   )

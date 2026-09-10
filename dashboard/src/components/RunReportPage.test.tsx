@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   api: {
     getTestReportAnnotations: vi.fn(),
     getTest: vi.fn(),
+    getTestManifest: vi.fn().mockResolvedValue(null),
     listTests: vi.fn().mockResolvedValue({ tests: [] }),
     getTestArchiveReport: vi.fn(),
     getTestArchiveAnalysis: vi.fn(),
@@ -26,6 +27,9 @@ const mocks = vi.hoisted(() => ({
     test: null as TestSummary | null,
     setTest: vi.fn(),
     error: '',
+    archiveCheckPending: false,
+    archiveCheckError: '',
+    checkArchiveAgain: vi.fn().mockResolvedValue(undefined),
   },
   compareBar: {
     pinResult: undefined as boolean | undefined,
@@ -177,7 +181,6 @@ describe('RunReportPage', () => {
   let container: HTMLDivElement
   let root: Root
   let onOpenCommandCenter: Mock<(id?: string) => void>
-  let onOpenLegacyArchive: Mock<(id: string) => void>
   let onNavigateReport: Mock<(next: { lens?: 'executive' | 'engineer' | 'audit'; compare?: string }) => void>
 
   beforeEach(() => {
@@ -213,6 +216,7 @@ describe('RunReportPage', () => {
       },
       sections: [],
     })
+    mocks.api.getTestManifest.mockResolvedValue({ runtime_changes: [] })
     mocks.polling.test = null
     mocks.polling.error = ''
     mocks.archiveModel.archiveReport = null
@@ -220,7 +224,6 @@ describe('RunReportPage', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     onOpenCommandCenter = vi.fn<(id?: string) => void>()
-    onOpenLegacyArchive = vi.fn<(id: string) => void>()
     onNavigateReport = vi.fn<(next: { lens?: 'executive' | 'engineer' | 'audit'; compare?: string }) => void>()
     mocks.compareBar.pinResult = undefined
     mocks.compareBar.pinError = undefined
@@ -232,9 +235,64 @@ describe('RunReportPage', () => {
     vi.clearAllMocks()
   })
 
+  it.each(['FAILED', 'COMPLETE', 'ABORTED'] as const)('keeps an unarchived %s run in the shared Results shell', async status => {
+    mocks.polling.test = { ...buildTest(status, false), error: status === 'FAILED' ? 'Controller restarted before completion' : undefined }
+    const render = (section: 'summary' | 'performance' | 'execution' | 'evidence') => <RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
+    await act(async () => root.render(render('summary')))
+    expect(container.querySelector('h1')?.textContent).toBe('Checkout Run')
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(5)
+    expect(container.textContent).toContain('Saved archive unavailable')
+    if (status === 'FAILED') expect(container.textContent).toContain('Controller restarted before completion')
+    expect(container.textContent).not.toContain('Customize view')
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Check again')!.click() })
+    expect(mocks.polling.checkArchiveAgain).toHaveBeenCalled()
+    await act(async () => root.render(render('performance')))
+    expect(container.textContent).toContain('No controller metric sample was retained')
+    expect(container.querySelector('[data-testid="kpis"]')).toBeNull()
+    await act(async () => root.render(render('execution')))
+    expect(container.textContent).toContain('No interval history was retained')
+    expect(container.textContent).toContain('No group configuration was retained')
+    await act(async () => root.render(render('evidence')))
+    expect(container.textContent).toContain('No lifecycle event history was retained')
+    expect(onOpenCommandCenter).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes an event retrieval error from an empty retained history and retries', async () => {
+    mocks.polling.test = buildTest('FAILED', false)
+    mocks.api.getTestManifest.mockRejectedValueOnce(new Error('Manifest service unavailable'))
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="execution" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.textContent).toContain('Manifest service unavailable')
+    expect(container.textContent).not.toContain('No lifecycle event history was retained')
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry records')!.click() })
+    expect(container.textContent).not.toContain('Manifest service unavailable')
+    expect(container.textContent).toContain('No lifecycle event history was retained')
+  })
+
+  it('keeps Execution selected when a missing archive becomes available', async () => {
+    mocks.polling.test = buildTest('FAILED', false)
+    const render = () => <RunReportPage testId="run-1" initialSection="execution" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
+    await act(async () => root.render(render()))
+    mocks.polling.test = buildTest('FAILED', true)
+    await act(async () => root.render(render()))
+    expect(container.querySelector('[aria-selected="true"]')?.textContent).toBe('Execution')
+    expect(container.textContent).not.toContain('Saved archive unavailable')
+    expect(container.querySelector('h1')?.textContent).toBe('Checkout Run')
+  })
+
+  it('includes Execution in keyboard navigation without navigating away', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    await act(async () => container.querySelector('#result-tab-Summary')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })))
+    expect(onNavigateReport).toHaveBeenCalledWith(expect.objectContaining({ section: 'execution' }))
+    expect(document.activeElement?.id).toBe('result-tab-Execution')
+    await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'summary' }))
+    expect(onOpenCommandCenter).not.toHaveBeenCalled()
+  })
+
   it('restores the requested report section when navigation changes', async () => {
     mocks.polling.test = buildTest('COMPLETE')
-    const render = (section: 'diagnostics' | 'evidence') => <NavigationGuardProvider><RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onOpenLegacyArchive={onOpenLegacyArchive} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>
+    const render = (section: 'diagnostics' | 'evidence') => <NavigationGuardProvider><RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>
     await act(async () => { root.render(render('diagnostics')) })
     expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('Diagnostics')
     await act(async () => { root.render(render('evidence')) })
@@ -243,7 +301,7 @@ describe('RunReportPage', () => {
 
   it('keeps the current section until guarded navigation commits', async () => {
     mocks.polling.test = buildTest('COMPLETE')
-    const render = (section: 'summary' | 'evidence') => <NavigationGuardProvider><RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onOpenLegacyArchive={onOpenLegacyArchive} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>
+    const render = (section: 'summary' | 'evidence') => <NavigationGuardProvider><RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} /></NavigationGuardProvider>
     await act(async () => { root.render(render('summary')) })
     await act(async () => { (container.querySelector('#result-tab-Evidence') as HTMLButtonElement).click() })
     expect(onNavigateReport).toHaveBeenCalledWith(expect.objectContaining({ section: 'evidence' }))
@@ -261,7 +319,7 @@ describe('RunReportPage', () => {
         <RunReportPage
           testId="run-1"
           onOpenCommandCenter={onOpenCommandCenter}
-          onOpenLegacyArchive={onOpenLegacyArchive}
+
           onNavigateReport={onNavigateReport}
         />,
       )
@@ -278,13 +336,13 @@ describe('RunReportPage', () => {
         <RunReportPage
           testId="run-1"
           onOpenCommandCenter={onOpenCommandCenter}
-          onOpenLegacyArchive={onOpenLegacyArchive}
+
           onNavigateReport={onNavigateReport}
         />,
       )
     })
 
-    expect(container.textContent).toContain('No archive available')
+    expect(container.textContent).toContain('Saved archive unavailable')
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
   })
 
@@ -304,7 +362,7 @@ describe('RunReportPage', () => {
         testId="run-1"
         initialCompare="baseline-1"
         onOpenCommandCenter={onOpenCommandCenter}
-        onOpenLegacyArchive={onOpenLegacyArchive}
+
         onNavigateReport={onNavigateReport}
       />)
     })
@@ -336,7 +394,7 @@ describe('RunReportPage', () => {
         testId="run-1"
         initialCompare={initialCompare}
         onOpenCommandCenter={onOpenCommandCenter}
-        onOpenLegacyArchive={onOpenLegacyArchive}
+
         onNavigateReport={onNavigateReport}
       />
     )
@@ -383,7 +441,7 @@ describe('RunReportPage', () => {
         testId="run-1"
         initialCompare={initialCompare}
         onOpenCommandCenter={onOpenCommandCenter}
-        onOpenLegacyArchive={onOpenLegacyArchive}
+
         onNavigateReport={onNavigateReport}
       />
     )
@@ -410,7 +468,7 @@ describe('RunReportPage', () => {
       root.render(<RunReportPage
         testId="run-1"
         onOpenCommandCenter={onOpenCommandCenter}
-        onOpenLegacyArchive={onOpenLegacyArchive}
+
         onNavigateReport={onNavigateReport}
       />)
     })
@@ -455,7 +513,7 @@ describe('RunReportPage', () => {
           <RunReportPage
             testId="run-1"
             onOpenCommandCenter={onOpenCommandCenter}
-            onOpenLegacyArchive={onOpenLegacyArchive}
+
             onNavigateReport={onNavigateReport}
           />
         </NavigationGuardProvider>,
@@ -531,7 +589,7 @@ describe('RunReportPage', () => {
           testId="run-1"
           initialLens={initialLens}
           onOpenCommandCenter={onOpenCommandCenter}
-          onOpenLegacyArchive={onOpenLegacyArchive}
+
           onNavigateReport={onNavigateReport}
         />
       </NavigationGuardProvider>
@@ -584,7 +642,7 @@ describe('RunReportPage', () => {
           <RunReportPage
             testId="run-1"
             onOpenCommandCenter={onOpenCommandCenter}
-            onOpenLegacyArchive={onOpenLegacyArchive}
+
             onNavigateReport={onNavigateReport}
           />
         </NavigationGuardProvider>,
@@ -661,7 +719,7 @@ describe('RunReportPage', () => {
         <RunReportPage
           testId="run-1"
           onOpenCommandCenter={onOpenCommandCenter}
-          onOpenLegacyArchive={onOpenLegacyArchive}
+
           onNavigateReport={onNavigateReport}
         />,
       )

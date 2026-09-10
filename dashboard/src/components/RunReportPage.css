@@ -561,3 +561,32 @@
 .run-report-page .archive-dimension-filter-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .run-report-page .archive-dimension-filter-bar input, .run-report-page .archive-dimension-filter-bar select { width: 100%; min-width: 0; }
 .run-report-page .archive-action-section .tx-table { table-layout: auto; min-width: 560px; }
+
+.run-execution-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.run-execution-facts > div { padding: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); min-width: 0; }
+.run-execution-facts dt { color: var(--text-secondary); font-size: 13px; margin-bottom: 8px; }
+.run-execution-facts dd { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.run-report-panel h2 { margin: 0 0 10px; font-size: 18px; }
+.run-report-panel p { line-height: 1.55; overflow-wrap: anywhere; }
+.run-execution-outcome { border-left: 3px solid var(--border); }
+.run-execution-outcome-failed { border-left-color: var(--danger-text); }
+.run-execution-outcome-failed h2 { color: var(--danger-text); }
+.run-evidence-notice { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.run-evidence-notice > div { flex: 1 1 480px; }
+.run-evidence-notice h2 { font-size: 16px; }
+.run-evidence-notice p { margin: 0; color: var(--text-secondary); }
+.run-execution-events { list-style: none; padding: 0; margin: 16px 0 0; }
+.run-execution-events li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); }
+.run-execution-events span { color: var(--text-secondary); }
+.run-execution-groups :is(td, th) { white-space: normal; overflow-wrap: anywhere; }
+.run-execution-groups tbody th { position: static; background: transparent; }
+.run-execution-groups { min-width: 560px; }
+.run-execution-groups dd { margin: 0 0 8px; }
+.run-execution-records pre { max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.run-report-page button:focus-visible, .run-report-page summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.run-report-areas { flex-wrap: wrap; }

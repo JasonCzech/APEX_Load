@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
+import { terminalRunReportView, APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
 
 describe('appRouting', () => {
   it('maps run workspaces to the sidebar area that owns their current flow', () => {
@@ -385,4 +385,26 @@ it('round trips report evidence sections and rejects unknown section names', () 
   expect(view).toMatchObject({ page: 'report', testId: 'run-1', section: 'evidence', lens: 'audit' })
   expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
   expect(parseAppViewFromHash('#/report/run-1?section=unknown')).not.toHaveProperty('section')
+})
+
+describe('terminal run route compatibility', () => {
+  it.each(['COMPLETE', 'FAILED', 'ABORTED'])('keeps %s runs inside Results regardless of legacy entry point', status => {
+    const scope = { projectId: 'p', applicationId: 'a', releaseId: 'r' }
+    expect(terminalRunReportView({ page: 'command-center', testId: 'run', ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section: 'execution' })
+    for (const [tab, section] of [['overview', 'execution'], ['control', 'execution'], ['graphs', 'performance'], ['diagnostics', 'diagnostics'], ['archive', 'evidence'], ['action-summary', 'performance'], ['load-impact', 'performance'], ['transaction-drilldown', 'diagnostics']] as const) {
+      expect(terminalRunReportView({ page: 'test', testId: 'run', tab, ...scope }, status, true)).toEqual({ page: 'report', testId: 'run', ...scope, section })
+    }
+  })
+  it('preserves live controls, the command-center landing page, and the explicit feature flag', () => {
+    const view: AppView = { page: 'command-center', testId: 'live' }
+    for (const status of ['RUNNING', 'PAUSED', 'STOPPING', 'QUEUED', 'UNKNOWN']) expect(terminalRunReportView(view, status, true)).toBe(view)
+    expect(terminalRunReportView(view, 'FAILED', false)).toBe(view)
+    const landing: AppView = { page: 'command-center' }
+    expect(terminalRunReportView(landing, 'COMPLETE', true)).toBe(landing)
+  })
+  it('round trips the Execution section and keeps Results selected', () => {
+    const view: AppView = { page: 'report', testId: 'run', section: 'execution' }
+    expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+    expect(navPageForAppView(view)).toBe('results')
+  })
 })

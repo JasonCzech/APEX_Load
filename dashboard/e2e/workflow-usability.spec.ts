@@ -37,11 +37,13 @@ test('an operator-stopped run without SLAs never produces a passing executive re
   expect(html).not.toContain('met its SLA targets')
   expect(html).not.toContain('State the recommended release decision')
   await page.goto(`/#/test/${id}?tab=archive&${scopeQuery(workspace)}`)
+  await page.getByRole('tab',{name:'Summary',exact:true}).click()
   await expect(page.getByRole('region',{name:'Run outcome'})).toContainText('Stopped by operator')
   await expect(page.getByRole('region',{name:'Run outcome'})).toContainText('Not assessed')
   await expect(page.getByRole('textbox',{name:'Test execution workspace profile name'})).toBeHidden()
-  await page.getByRole('button',{name:'Customize view',exact:true}).click()
-  await expect(page.getByRole('textbox',{name:'Test execution workspace profile name'})).toBeVisible()
+  await expect(page.getByRole('button',{name:'Customize view',exact:true})).toBeHidden()
+  await page.getByRole('tab',{name:'Execution',exact:true}).click()
+  await expect(page.getByRole('region',{name:'Execution groups'})).toBeVisible()
 })
 
 test('missing-script detour preserves the scenario draft on cancellation',async({page,request})=>{

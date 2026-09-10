@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -68,6 +68,13 @@ describe('useExecutionTestManifest', () => {
     await act(async () => root.unmount())
     container.remove()
     vi.useRealTimers()
+  })
+
+  it('settles a terminal manifest when mounted with an existing test in StrictMode', async () => {
+    apiMocks.getTestManifest.mockResolvedValue(manifest('ended-run'))
+    await act(async () => root.render(<StrictMode><Harness test={testSummary('ended-run', 'FAILED')} /></StrictMode>))
+    expect(container.querySelector('[data-testid="manifest"]')?.textContent).toBe('ended-run')
+    expect(container.querySelector('[data-testid="loading"]')?.textContent).toBe('false')
   })
 
   it('does not let a manual reload from the previous test overwrite the current manifest', async () => {

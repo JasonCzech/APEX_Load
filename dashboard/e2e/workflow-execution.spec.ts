@@ -100,6 +100,8 @@ test('[U17 U16] archive read failure is visible and retry restores the same run 
   await page.unroute(pattern)
   await page.reload()
   await expect(page.getByText('Archive temporarily unavailable')).toBeHidden()
+  await expect(page.getByRole('tab', { name: 'Evidence', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await page.getByText('Raw evidence downloads', { exact: true }).click()
   await expect(page.getByRole('button', { name: 'Download Transactions JSONL' }).first()).toBeVisible()
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download Transactions JSONL' }).first().click()

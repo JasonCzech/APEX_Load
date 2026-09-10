@@ -45,6 +45,9 @@ export function useExecutionTestManifest(test: TestSummary | null): {
 
   useLayoutEffect(() => {
     requestGenerationRef.current += 1
+    // A new layout scope (including StrictMode's remount) must not reuse a
+    // request whose generation was just invalidated, or loading never settles.
+    inFlightRequestRef.current = null
     setManifest(null)
     setManifestError('')
     setManifestLoading(Boolean(testID))

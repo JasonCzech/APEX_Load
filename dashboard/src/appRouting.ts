@@ -43,7 +43,7 @@ const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
-export const REPORT_SECTIONS = ['summary', 'performance', 'diagnostics', 'evidence'] as const
+export const REPORT_SECTIONS = ['summary', 'performance', 'diagnostics', 'evidence', 'execution'] as const
 export type ReportSection = typeof REPORT_SECTIONS[number]
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
@@ -571,4 +571,17 @@ export function handleGuardedRouteChange({
     restoreHash(currentHash)
   }
   runGuarded(proceed)
+}
+
+/** Preserve old bookmarks while keeping ended runs in the Results workspace. */
+export function terminalRunReportView(view: AppView, status: string, enabled: boolean): AppView {
+  if (!enabled || !['COMPLETE', 'FAILED', 'ABORTED'].includes(status)) return view
+  if (view.page !== 'test' && view.page !== 'command-center') return view
+  if (!view.testId) return view
+  const sections: Partial<Record<TestWorkspaceTabID, ReportSection>> = {
+    overview: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
+    archive: 'evidence', 'action-summary': 'performance', 'load-impact': 'performance', 'transaction-drilldown': 'diagnostics',
+  }
+  return { page: 'report', testId: view.testId, ...workspaceScopeForAppView(view),
+    section: view.page === 'test' && view.tab ? sections[view.tab] || 'execution' : 'execution' }
 }
