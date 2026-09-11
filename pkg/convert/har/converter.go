@@ -78,26 +78,11 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
-	redactionEnabled := convertutil.BoolOption(opts.RedactSensitive, true)
+	redactionEnabled := false
 	governanceWarnings := []string{}
 	sensitivity := scrub.SensitivityRaw
-	if redactionEnabled {
-		scrubbed, err := scrub.HAR(data, scrub.Policy{})
-		if err != nil {
-			return nil, err
-		}
-		sensitivity = scrub.HARSensitivity(scrubbed)
-		if sensitivity != scrub.SensitivityScrubbed {
-			governanceWarnings = append(governanceWarnings, "HAR scrub-on-write did not produce a scrubbed sensitivity marker.")
-		}
-	}
-	// Correlation detection deliberately runs against the raw HAR so dynamic
-	// values (which scrubbing would either redact or preserve inconsistently) are
-	// caught and parameterized out of the generated script. But the detected
-	// sample values ride along in the response (result.Correlations[].SampleValue
-	// and the parameterization suggestions), so when redaction is enabled they
-	// must be scrubbed before returning — otherwise a live token surfaces in a
-	// payload whose governance block claims Sensitivity="scrubbed".
+	// Correlation detection and its review samples retain the imported values.
+	// Run and debug output are responsible for masking values they emit.
 	result, err := sample.Convert(sample.ImportRequest{
 		Name:    convertutil.FirstNonEmpty(opts.ScriptName, "Imported_HAR_Script"),
 		Format:  "har",
@@ -106,22 +91,12 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			BaseURL:             opts.BaseURL,
 			IncludeAssertions:   opts.IncludeAssertions,
 			InferExtractors:     opts.InferExtractors,
-			SanitizeSensitive:   opts.SanitizeSensitive,
+			SanitizeSensitive:   boolPointer(false),
 			IncludeStaticAssets: opts.IncludeStaticAssets,
 		},
 	})
 	if err != nil {
 		return nil, err
-	}
-	if redactionEnabled {
-		// The script and source review are already parameterized/scrubbed by the
-		// converter; the detected correlation sample values are the last raw
-		// secrets riding in the response. Re-run value scrubbing for HAR-specific
-		// artifact governance after script generation. The internal (json:"-")
-		// raw Value used for diff classification is unaffected.
-		for i := range result.Correlations {
-			result.Correlations[i].SampleValue = scrub.Value(result.Correlations[i].SampleValue, scrub.Policy{})
-		}
 	}
 	warnings := append([]string{}, result.Warnings...)
 	warnings = append(warnings, governanceWarnings...)
@@ -157,6 +132,10 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		protectedRequirements[index].Value = ""
 	}
 	return converted, nil
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }
 
 func normalizeArtifactMode(value string) string {

@@ -576,6 +576,18 @@ export default function TestExecutionScenarioPreview({
                 <span className="scenario-setting-value">{formatGoalNumber(test.goal_config.p95_latency_ms, ' ms')}</span>
               </div>
             )}
+            {test.goal_config?.transaction_response_time_sla_ms !== undefined && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">Transaction SLA default</span>
+                <span className="scenario-setting-value">{formatGoalNumber(test.goal_config.transaction_response_time_sla_ms, ' ms')} · 95% required</span>
+              </div>
+            )}
+            {test.groups.some(group => group.transaction_response_time_sla_ms !== undefined) && (
+              <div className="scenario-setting-card">
+                <span className="scenario-setting-label">Transaction SLA overrides</span>
+                <span className="scenario-setting-value">{test.groups.filter(group => group.transaction_response_time_sla_ms !== undefined).map(group => `${group.name}: ${formatGoalNumber(group.transaction_response_time_sla_ms!, ' ms')}`).join(' · ')}</span>
+              </div>
+            )}
             {test.scenario_mode === 'goal_oriented' && test.goal_config?.max_error_pct !== undefined && (
               <div className="scenario-setting-card">
                 <span className="scenario-setting-label">Max Error %</span>

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestHandleImportHARPairNeverDisclosesCredentialDiffValues(t *testing.T) {
+func TestHandleImportHARPairPreservesCredentialDiffValues(t *testing.T) {
 	const (
 		baselineToken   = "api-har-baseline-secret-token-123456"
 		comparisonToken = "api-har-comparison-secret-token-654321"
@@ -36,8 +36,8 @@ func TestHandleImportHARPairNeverDisclosesCredentialDiffValues(t *testing.T) {
 		t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusOK, response.Body.String())
 	}
 	for _, token := range []string{baselineToken, comparisonToken} {
-		if bytes.Contains(response.Body.Bytes(), []byte(token)) {
-			t.Fatalf("HAR pair response disclosed credential diff value %q", token)
+		if !bytes.Contains(response.Body.Bytes(), []byte(token)) {
+			t.Fatalf("HAR pair response did not preserve credential diff value %q", token)
 		}
 	}
 	var decoded struct {
@@ -59,9 +59,9 @@ func TestHandleImportHARPairNeverDisclosesCredentialDiffValues(t *testing.T) {
 		t.Fatalf("HAR diff = %#v, want one dynamic credential candidate", decoded.Summary.HARDiff)
 	}
 	classification := decoded.Summary.HARDiff.Classifications[0]
-	if classification.BaselineValue != "[REDACTED]" ||
-		classification.ComparisonValue != "[REDACTED]" {
-		t.Fatalf("classification values = %#v, want disclosure-safe placeholders", classification)
+	if classification.BaselineValue != baselineToken ||
+		classification.ComparisonValue != comparisonToken {
+		t.Fatalf("classification values = %#v, want exact imported values", classification)
 	}
 }
 

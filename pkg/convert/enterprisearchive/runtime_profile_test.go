@@ -1,10 +1,10 @@
 package enterprisearchive
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -869,7 +869,7 @@ OnErrorOnly=1`,
 	}
 }
 
-func TestRuntimeCfgProxyConflictEvidenceDoesNotLeakURLCredentials(t *testing.T) {
+func TestRuntimeCfgProxyConflictEvidencePreservesURLCredentials(t *testing.T) {
 	for _, content := range []string{
 		`[Proxy]
 Mode=custom
@@ -883,29 +883,27 @@ proxyurl=user-two:pass-two@proxy-two.example/?token=secret-two`,
 		if rc.ProxyMode != "none" || rc.ProxyURL != "" || rc.ProxyUser != "" || rc.ProxyPass != "" {
 			t.Fatalf("proxy conflict retained executable proxy settings: %#v", rc)
 		}
-		foundRedactedConflict := false
+		foundConflict := false
 		var proxyIssues []RuntimeMigrationIssue
 		for _, issue := range rc.RuntimeIssues {
 			if issue.ID != "proxy" {
 				continue
 			}
 			proxyIssues = append(proxyIssues, issue)
-			if strings.Contains(issue.Notes, credential.Redacted) &&
-				strings.Contains(issue.Notes, "Conflicting") {
-				foundRedactedConflict = true
+			if strings.Contains(issue.Notes, "Conflicting") {
+				foundConflict = true
 			}
 		}
-		if !foundRedactedConflict {
-			t.Fatalf("proxy issues = %#v, conflicts=%#v content=%q, want redacted conflict evidence", proxyIssues, runtimeConfigCaseFoldConflicts(content), content)
+		if !foundConflict {
+			t.Fatalf("proxy issues = %#v, conflicts=%#v content=%q, want conflict evidence", proxyIssues, runtimeConfigCaseFoldConflicts(content), content)
 		}
+		combined := fmt.Sprintf("%#v", proxyIssues)
 		for _, secret := range []string{
 			"user-one", "pass-one", "secret-one",
 			"user-two", "pass-two", "secret-two",
 		} {
-			for _, issue := range proxyIssues {
-				if strings.Contains(issue.Notes, secret) {
-					t.Fatalf("proxy issue leaked %q: %s", secret, issue.Notes)
-				}
+			if !strings.Contains(combined, secret) {
+				t.Fatalf("proxy issues lost %q: %s", secret, combined)
 			}
 		}
 	}
@@ -1674,9 +1672,8 @@ ProxyPassword=stale-password
 			}
 			if test.wantIssue && (len(issue.RuntimeFiles) != 1 ||
 				issue.RuntimeFiles[0] != "profiles/proxy.cfg" ||
-				!strings.Contains(issue.Notes, credential.Redacted) ||
-				strings.Contains(issue.Notes, `automatic`)) {
-				t.Fatalf("proxy issue = %#v, want redacted mode evidence and cfg provenance", issue)
+				!strings.Contains(issue.Notes, `automatic`)) {
+				t.Fatalf("proxy issue = %#v, want exact mode evidence and cfg provenance", issue)
 			}
 		})
 	}

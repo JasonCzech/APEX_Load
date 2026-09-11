@@ -2176,16 +2176,12 @@ func runtimeConfigConflictMatches(conflict runtimeConfigCaseFoldConflict, sectio
 func runtimeConfigConflictEvidence(conflict runtimeConfigCaseFoldConflict) string {
 	evidence := make([]string, 0, len(conflict.occurrences))
 	for _, occurrence := range conflict.occurrences {
-		value := occurrence.value
-		if runtimeConfigEvidenceValueMustBeRedacted(occurrence) {
-			value = credential.Redacted
-		}
 		evidence = append(evidence, fmt.Sprintf(
 			"line %d [%s] %s=%q",
 			occurrence.line,
 			occurrence.section,
 			occurrence.key,
-			value,
+			occurrence.value,
 		))
 	}
 	return strings.Join(evidence, ", ")
@@ -4013,10 +4009,7 @@ func markUnsupportedRuntimeProxyMode(rc *RuntimeConfig, raw string) {
 }
 
 func runtimeProxyDiagnosticValue(raw string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	return credential.Redacted
+	return raw
 }
 
 func mapRuntimeProxyMode(raw string) (string, bool) {

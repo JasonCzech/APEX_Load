@@ -82,9 +82,9 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	if len(result.SecretBindingRequirements) == 0 {
 		t.Fatalf("preview secret requirements = %#v", result.SecretBindingRequirements)
 	}
-	if strings.Contains(resp.Body.String(), "preview-secret") ||
-		result.Script.Actions[0].Headers["Authorization"] != "Bearer "+maskedScriptSecret {
-		t.Fatalf("recording preview disclosed or failed to represent its protected credential: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "preview-secret") ||
+		result.Script.Actions[0].Headers["Authorization"] != "Bearer preview-secret" {
+		t.Fatalf("recording preview did not preserve its protected credential: %s", resp.Body.String())
 	}
 	if got := len(server.runner.ListScripts()); got != 0 {
 		t.Fatalf("preview stored %d scripts, want 0", got)
@@ -111,8 +111,8 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	if saveResp.Code != http.StatusCreated {
 		t.Fatalf("preview save status = %d body=%s", saveResp.Code, saveResp.Body.String())
 	}
-	if strings.Contains(saveResp.Body.String(), "preview-secret") {
-		t.Fatalf("stored-script response disclosed preview credential: %s", saveResp.Body.String())
+	if !strings.Contains(saveResp.Body.String(), "preview-secret") {
+		t.Fatalf("stored-script response did not preserve preview credential: %s", saveResp.Body.String())
 	}
 	stored := server.runner.ListScripts()
 	if len(stored) != 1 || stored[0] == nil || stored[0].Script == nil ||
@@ -236,8 +236,8 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if len(payload.SecretBindingRequirements) < 2 {
 		t.Fatalf("stored conversion requirements = %#v", payload.SecretBindingRequirements)
 	}
-	if strings.Contains(resp.Body.String(), "recorded-secret") || strings.Contains(resp.Body.String(), "hunter2") {
-		t.Fatalf("stored conversion response disclosed source credentials: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "recorded-secret") || !strings.Contains(resp.Body.String(), "hunter2") {
+		t.Fatalf("stored conversion response did not preserve source credentials: %s", resp.Body.String())
 	}
 	server.importDraftAttestationMu.Lock()
 	attestationCount := len(server.importDraftAttestations)
@@ -268,8 +268,8 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	if readResp.Code != http.StatusOK {
 		t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
 	}
-	if strings.Contains(readResp.Body.String(), "recorded-secret") || strings.Contains(readResp.Body.String(), "hunter2") {
-		t.Fatalf("ordinary stored-script read disclosed recorded credentials: %s", readResp.Body.String())
+	if !strings.Contains(readResp.Body.String(), "recorded-secret") || !strings.Contains(readResp.Body.String(), "hunter2") {
+		t.Fatalf("ordinary stored-script read did not preserve recorded credentials: %s", readResp.Body.String())
 	}
 	record, err := server.store.GetScriptRecording(payload.Script.ID)
 	if err != nil {
@@ -338,8 +338,8 @@ func TestHandleConvertRecordingParameterizationPreservesCapturedPassword(t *test
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if strings.Contains(resp.Body.String(), "parameterized-captured-password") {
-		t.Fatalf("saved-import response disclosed captured password: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "parameterized-captured-password") {
+		t.Fatalf("saved-import response did not preserve captured password: %s", resp.Body.String())
 	}
 
 	var payload struct {

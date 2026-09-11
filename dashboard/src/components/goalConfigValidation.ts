@@ -14,6 +14,7 @@ function isInvalidNumber(value: number | undefined | null, invalidRange: (value:
 const goalNumericFields = [
   'target_average_tps',
   'p95_latency_ms',
+  'transaction_response_time_sla_ms',
   'max_error_pct',
   'max_avg_server_processing_ms',
   'max_avg_transfer_ms',
@@ -73,6 +74,9 @@ export function validateGoalConfig(goalConfig: GoalConfig): string | null {
   }
   if (isInvalidNumber(goalConfig.p95_latency_ms, value => value <= 0)) {
     return 'Goal-oriented scenarios require P95 latency ceiling to be greater than 0 ms'
+  }
+  if (isInvalidNumber(goalConfig.transaction_response_time_sla_ms, value => value <= 0)) {
+    return 'Transaction response-time SLA must be a finite duration greater than 0 ms'
   }
   if (isInvalidNumber(goalConfig.max_error_pct, value => value < 0 || value > 100)) {
     return 'Goal-oriented scenarios require max error % to be between 0 and 100'
@@ -139,4 +143,11 @@ export function validateGoalConfig(goalConfig: GoalConfig): string | null {
     return 'Goal-oriented scenarios require max error count when stop on max errors is enabled'
   }
   return null
+}
+
+export function validateTransactionResponseTimeSLAOverrides(
+  groups: Array<{ transactionResponseTimeSlaMs?: number }>,
+): string | null {
+  const invalidIndex = groups.findIndex(group => isInvalidNumber(group.transactionResponseTimeSlaMs, value => value <= 0))
+  return invalidIndex < 0 ? null : `Group ${invalidIndex + 1} transaction response-time SLA must be a finite duration greater than 0 ms`
 }

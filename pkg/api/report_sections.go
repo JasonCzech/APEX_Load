@@ -178,6 +178,29 @@ func csvSLARows(write reportCSVWriteFunc, section string, rows []SLAComplianceRo
 	return nil
 }
 
+func csvTransactionResponseTimeSLARows(write reportCSVWriteFunc, section string, rows []TransactionResponseTimeSLAResult) error {
+	for _, row := range rows {
+		key := row.Group + " / " + firstNonEmptyReportText(row.Transaction, "not_evaluated")
+		entries := [][2]string{
+			{"transaction_response_time_threshold_ms", formatCSVFloat(row.ThresholdMs)},
+			{"transaction_response_time_total_count", formatCSVInt(row.TotalCount)},
+			{"transaction_response_time_eligible_success_count", formatCSVInt(row.EligibleSuccessCount)},
+			{"transaction_response_time_excluded_error_count", formatCSVInt(row.ExcludedErrorCount)},
+			{"transaction_response_time_missed_count", formatCSVInt(row.MissedCount)},
+			{"transaction_response_time_missed_pct", formatCSVFloat(row.MissedPct)},
+			{"transaction_response_time_met_pct", formatCSVFloat(row.MetPct)},
+			{"transaction_response_time_required_met_pct", formatCSVFloat(row.RequiredMetPct)},
+			{"transaction_response_time_status", row.Status},
+		}
+		for _, entry := range entries {
+			if err := write(section, key, entry[0], entry[1]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func csvTransactionSLARules(write reportCSVWriteFunc, section string, results []TransactionSLARuleResult) error {
 	for _, result := range results {
 		observed := "n/a"
@@ -234,6 +257,18 @@ func pdfSLALines(lines *[]string, rows []SLAComplianceRow) {
 		}
 		*lines = append(*lines, fmt.Sprintf("- %s: %s tx, p95 %.0f ms, SLA %s, %s errors - %s",
 			row.Name, formatPDFInt(row.Volume), row.P95Ms, sla, formatReportPercentage(row.ErrorPct), row.Result))
+	}
+}
+
+func pdfTransactionResponseTimeSLALines(lines *[]string, rows []TransactionResponseTimeSLAResult) {
+	if len(rows) == 0 {
+		return
+	}
+	*lines = append(*lines, "Transaction response-time SLA (95% of successful samples required)")
+	for _, row := range rows {
+		transaction := firstNonEmptyReportText(row.Transaction, "No named transaction observed")
+		*lines = append(*lines, fmt.Sprintf("- %s / %s: %d total, %d eligible, %d excluded errors, %d missed (%.2f%%); %.2f%% met, %.2f%% required; threshold %.0f ms - %s",
+			row.Group, transaction, row.TotalCount, row.EligibleSuccessCount, row.ExcludedErrorCount, row.MissedCount, row.MissedPct, row.MetPct, row.RequiredMetPct, row.ThresholdMs, row.Status))
 	}
 }
 
@@ -372,11 +407,15 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "SLA Scorecard")
 			pdfSLALines(lines, d.SLARows)
+			pdfTransactionResponseTimeSLALines(lines, d.TransactionResponseTimeSLAResults)
 			pdfTransactionSLARuleLines(lines, d.TransactionRuleResults)
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if err := csvSLARows(write, "sla", d.SLARows); err != nil {
+				return err
+			}
+			if err := csvTransactionResponseTimeSLARows(write, "sla", d.TransactionResponseTimeSLAResults); err != nil {
 				return err
 			}
 			return csvTransactionSLARules(write, "sla", d.TransactionRuleResults)
@@ -385,11 +424,15 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "SLA Compliance")
 			pdfSLALines(lines, d.SLARows)
+			pdfTransactionResponseTimeSLALines(lines, d.TransactionResponseTimeSLAResults)
 			pdfTransactionSLARuleLines(lines, d.TransactionRuleResults)
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			if err := csvSLARows(write, "sla", d.SLARows); err != nil {
+				return err
+			}
+			if err := csvTransactionResponseTimeSLARows(write, "sla", d.TransactionResponseTimeSLAResults); err != nil {
 				return err
 			}
 			return csvTransactionSLARules(write, "sla", d.TransactionRuleResults)

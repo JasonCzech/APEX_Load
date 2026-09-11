@@ -8,7 +8,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestConvertRedactsCredentialEquivalentsFromReviewSurfacesOnly(t *testing.T) {
+func TestConvertPreservesCredentialEquivalentsInReviewSurfaces(t *testing.T) {
 	const canary = "openapi-review-surface-password-8f31"
 	result, err := Convert(ImportRequest{Content: `{
   "openapi":"3.0.3",
@@ -66,8 +66,8 @@ func TestConvertRedactsCredentialEquivalentsFromReviewSurfacesOnly(t *testing.T)
 	if err != nil {
 		t.Fatalf("json.Marshal review surfaces: %v", err)
 	}
-	if strings.Contains(string(payload), canary) {
-		t.Fatalf("review surfaces disclosed retained credential: %s", payload)
+	if !strings.Contains(string(payload), canary) {
+		t.Fatalf("review surfaces lost retained credential: %s", payload)
 	}
 }
 

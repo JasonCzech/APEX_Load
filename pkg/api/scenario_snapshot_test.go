@@ -15,17 +15,20 @@ func TestGetScenarioReturnsDeepSnapshot(t *testing.T) {
 	iterations := 3
 	targetTPS := 25.0
 	goalTPS := 20.0
+	defaultTransactionSLA := 3000.0
+	groupTransactionSLA := 1500.0
 	runner.mu.Lock()
 	runner.scenarios["scenario-snapshot"] = &StoredScenario{
 		ID: "scenario-snapshot", ProjectID: storage.DefaultProjectID, Name: "Snapshot", Duration: "1m",
 		Assignment:      &GeneratorAssignmentSettings{SelectedTargets: []string{"generator-a"}, RegionWeights: map[string]int{"east": 1}},
-		GoalConfig:      &GoalConfig{TargetAverageTPS: &goalTPS},
+		GoalConfig:      &GoalConfig{TargetAverageTPS: &goalTPS, TransactionResponseTimeSLAMs: &defaultTransactionSLA},
 		RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"BASE_URL": "https://before.example"}},
 		Scripts: []ScenarioScriptRef{{
 			ScriptID: "script-a", Iterations: &iterations,
-			Stages:          []storage.LoadStage{{Type: "steady", Duration: "1m", TargetTPS: &targetTPS}},
-			RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"TOKEN": "before"}},
-			Assignment:      &GeneratorAssignmentSettings{RequiredLabels: map[string]string{"zone": "a"}},
+			Stages:                       []storage.LoadStage{{Type: "steady", Duration: "1m", TargetTPS: &targetTPS}},
+			RuntimeSettings:              &RuntimeSettingsOverride{Env: map[string]string{"TOKEN": "before"}},
+			Assignment:                   &GeneratorAssignmentSettings{RequiredLabels: map[string]string{"zone": "a"}},
+			TransactionResponseTimeSLAMs: &groupTransactionSLA,
 		}},
 		Schedules: []*storage.ScenarioSchedule{{
 			ID: "schedule-a", ScenarioID: "scenario-snapshot", Name: "Daily", NextRunAt: &nextRun,
@@ -44,8 +47,10 @@ func TestGetScenarioReturnsDeepSnapshot(t *testing.T) {
 	snapshot.Assignment.SelectedTargets[0] = "generator-b"
 	snapshot.Assignment.RegionWeights["east"] = 9
 	*snapshot.GoalConfig.TargetAverageTPS = 999
+	*snapshot.GoalConfig.TransactionResponseTimeSLAMs = 999
 	snapshot.RuntimeSettings.Env["BASE_URL"] = "https://after.example"
 	*snapshot.Scripts[0].Iterations = 99
+	*snapshot.Scripts[0].TransactionResponseTimeSLAMs = 999
 	*snapshot.Scripts[0].Stages[0].TargetTPS = 999
 	snapshot.Scripts[0].RuntimeSettings.Env["TOKEN"] = "after"
 	snapshot.Scripts[0].Assignment.RequiredLabels["zone"] = "b"
@@ -57,10 +62,10 @@ func TestGetScenarioReturnsDeepSnapshot(t *testing.T) {
 	snapshot.DataPools[0].Alias = "tampered"
 
 	again, _ := runner.GetScenario("scenario-snapshot")
-	if again.Assignment.SelectedTargets[0] != "generator-a" || again.Assignment.RegionWeights["east"] != 1 || *again.GoalConfig.TargetAverageTPS != goalTPS {
+	if again.Assignment.SelectedTargets[0] != "generator-a" || again.Assignment.RegionWeights["east"] != 1 || *again.GoalConfig.TargetAverageTPS != goalTPS || *again.GoalConfig.TransactionResponseTimeSLAMs != defaultTransactionSLA {
 		t.Fatalf("top-level scenario pointers alias runner state: %+v", again)
 	}
-	if again.RuntimeSettings.Env["BASE_URL"] != "https://before.example" || *again.Scripts[0].Iterations != iterations || *again.Scripts[0].Stages[0].TargetTPS != targetTPS {
+	if again.RuntimeSettings.Env["BASE_URL"] != "https://before.example" || *again.Scripts[0].Iterations != iterations || *again.Scripts[0].Stages[0].TargetTPS != targetTPS || *again.Scripts[0].TransactionResponseTimeSLAMs != groupTransactionSLA {
 		t.Fatalf("script/runtime snapshot aliases runner state: %+v", again.Scripts[0])
 	}
 	if again.Scripts[0].RuntimeSettings.Env["TOKEN"] != "before" || again.Scripts[0].Assignment.RequiredLabels["zone"] != "a" {

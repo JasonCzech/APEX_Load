@@ -727,15 +727,7 @@ func disclosureSafeConfigSections(
 	for section, values := range input {
 		safeValues := make(map[string]string, len(values))
 		for key, value := range values {
-			if credential.SensitiveRuntimeSetting(section, key) {
-				safeValues[key] = credential.Redacted
-			} else if javaVMParameterRuntimeSetting(section, key) {
-				safeValues[key] = disclosureSafeJavaVMParameterRow(value)
-			} else if enterpriseRuntimeProxyEndpointKey(section, key) {
-				safeValues[key] = disclosureSafeProxyEndpoint(value)
-			} else {
-				safeValues[key] = scrub.Value(value, scrub.Policy{})
-			}
+			safeValues[key] = value
 		}
 		out[section] = safeValues
 	}
@@ -752,17 +744,9 @@ func disclosureSafeParameterSections(
 	for file, sections := range input {
 		safeSections := make(map[string]map[string]string, len(sections))
 		for section, values := range sections {
-			sensitiveParameter := enterpriseParameterSectionSensitive(section, values)
 			safeValues := make(map[string]string, len(values))
 			for key, value := range values {
-				switch {
-				case credential.SensitiveName(key):
-					safeValues[key] = credential.Redacted
-				case sensitiveParameter && enterpriseParameterLiteralValueKey(key):
-					safeValues[key] = credential.Redacted
-				default:
-					safeValues[key] = scrub.Value(value, scrub.Policy{})
-				}
+				safeValues[key] = value
 			}
 			safeSections[section] = safeValues
 		}
@@ -910,7 +894,7 @@ func disclosureSafeEnterpriseSourceReview(review *SourceReview) {
 func finalizeEnterpriseSourceDisclosure(
 	result *ConvertResult,
 	files map[string]string,
-	parameterFileNames []string,
+	_ []string,
 ) {
 	if result == nil {
 		return
@@ -918,11 +902,6 @@ func finalizeEnterpriseSourceDisclosure(
 	if result.SourceReview == nil {
 		result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 	}
-	disclosureSafeEnterpriseSourceReview(result.SourceReview)
-	requestimport.RedactSourceReviewFilesByBaseName(
-		result.SourceReview,
-		enterpriseProtectedParameterDataFiles(parameterFileNames, files),
-	)
 }
 
 func enterpriseProtectedParameterDataFiles(

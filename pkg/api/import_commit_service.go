@@ -846,7 +846,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 		s.recordAuditEvent(r, "script.import."+spec.auditProfile+"."+auditOutcome, "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": disclosureSafeScriptName(stored.Name, stored.Script)})
 		spec.writeResponse(w, status, map[string]any{
 			"scripts":           maskStoredScripts([]*StoredScript{stored}),
-			"script":            maskScriptSecrets(stored.Script),
+			"script":            maskStoredScript(stored).Script,
 			"stored_script":     maskStoredScript(stored),
 			"replaced":          false,
 			"created":           createdNow,
@@ -1154,7 +1154,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 	})
 	spec.writeResponse(w, http.StatusOK, map[string]any{
 		"scripts":       maskStoredScripts([]*StoredScript{updated}),
-		"script":        maskScriptSecrets(updated.Script),
+		"script":        maskStoredScript(updated).Script,
 		"stored_script": maskStoredScript(updated),
 		"replaced":      true,
 		"dry_run":       false,

@@ -529,12 +529,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		)
 	}
 	sourceFileName := openAPISourceFileName(content)
-	sensitiveSourceValues, sensitiveTypedSourceValue := sensitiveOpenAPISourceValues(doc)
-	reviewContent := openAPISourceReviewCredentialOmission
-	if !sensitiveTypedSourceValue {
-		reviewContent = scrub.Value(content, scrub.Policy{})
-		reviewContent = redactOpenAPISourceValues(reviewContent, sensitiveSourceValues)
-	}
+	reviewContent := req.Content
 	sourceMappings := make([]sourceview.Mapping, 0)
 	res := resolver{doc: doc, diagnostics: &diagnostics}
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL)
@@ -679,29 +674,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, fmt.Errorf("describe generated OpenAPI credentials: %w", err)
 	}
 	finalized.Requirements = append(finalized.Requirements, generatedRequirements...)
-	protectedSourceValues := make([]string, 0, len(finalized.Requirements))
-	for _, requirement := range finalized.Requirements {
-		if requirement.Value != "" {
-			protectedSourceValues = append(protectedSourceValues, requirement.Value)
-		}
-	}
-	reviewContent = redactOpenAPISourceValues(reviewContent, protectedSourceValues)
-	sourceReviewOmitted := sensitiveTypedSourceValue
-	if !sourceReviewOmitted {
-		reviewContent, sourceReviewOmitted = disclosureSafeOpenAPISourceReview(
-			reviewContent,
-			append(append([]string(nil), sensitiveSourceValues...), protectedSourceValues...),
-		)
-	}
 	result.ProtectedRequirements.Store(finalized.Requirements)
 	for index := range finalized.Requirements {
 		finalized.Requirements[index].Value = ""
 	}
 	result.Script = finalized.Script
 	result.Summary.BaseURL = result.Script.Config.BaseURL
-	for index := range result.Summary.Servers {
-		result.Summary.Servers[index] = scrub.ValueURL(result.Summary.Servers[index], scrub.Policy{})
-	}
 	for _, item := range finalized.Diagnostics {
 		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 	}
@@ -713,12 +691,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	result.Unsupported = diagnostics.Items()
 	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: reviewContent}, sourceMappings)
-	if sourceReviewOmitted && result.SourceReview != nil {
-		for index := range result.SourceReview.SourceFiles {
-			result.SourceReview.SourceFiles[index].Redacted = true
-		}
-	}
-	sanitizeOpenAPIResultReviewText(result)
 	return result, nil
 }
 

@@ -297,6 +297,7 @@ function scenarioFormGroupFromStored(
     initialization: group.initialization || 'at_runtime',
     runtimeSettings: scenarioGroupRuntimeDraftFromStored(group),
     assignment: cloneAssignment(group.assignment),
+		transactionResponseTimeSlaMs: group.transaction_response_time_sla_ms,
   }
 }
 

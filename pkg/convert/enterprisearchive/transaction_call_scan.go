@@ -310,13 +310,20 @@ func newReviewOnlyTransactionParsedFunction(
 		sourceOffset:    startOffset,
 		sourceEndOffset: endOffset,
 	}
-	for index := 0; index < argCount; index++ {
-		fn.Args[fmt.Sprintf("arg%d", index+1)] = "[REDACTED]"
-		fn.RawArgs[index] = "[REDACTED]"
-		fn.CallArgs[index] = ParsedArgument{
-			Kind:  "expression",
-			Value: "[REDACTED]",
+	open := strings.IndexByte(rawBlock, '(')
+	close := strings.LastIndexByte(rawBlock, ')')
+	if open < 0 || close <= open {
+		return fn
+	}
+	parsedArgs := parseCFunctionArguments(rawBlock[open+1 : close])
+	for index := 0; index < argCount && index < len(parsedArgs); index++ {
+		arg := parsedArgs[index]
+		fn.Args[fmt.Sprintf("arg%d", index+1)] = arg.Value
+		fn.RawArgs[index] = arg.Raw
+		if fn.RawArgs[index] == "" {
+			fn.RawArgs[index] = arg.Value
 		}
+		fn.CallArgs[index] = arg
 	}
 	return fn
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -115,17 +114,22 @@ func TestConvertWSDLPreservesSensitiveSchemaLiteralsAndEnvelopeBytes(t *testing.
 		t.Fatalf("preserved credentials made the script depend on operator reentry: %#v", result.Readiness)
 	}
 	for _, canary := range []string{passwordCanary, tokenCanary} {
+		found := false
 		if result.SourceReview != nil {
 			for _, file := range result.SourceReview.SourceFiles {
-				if strings.Contains(file.Content, canary) {
-					t.Fatalf("source review leaked canary %q: %s", canary, file.Content)
+				found = found || strings.Contains(file.Content, canary)
+				if file.Redacted {
+					t.Fatalf("source review file %q was redacted", file.Path)
 				}
 			}
+		}
+		if !found {
+			t.Fatalf("source review lost canary %q", canary)
 		}
 	}
 }
 
-func TestConvertWSDLScrubsCredentialInUnusedSchemaBranch(t *testing.T) {
+func TestConvertWSDLPreservesCredentialInUnusedSchemaBranch(t *testing.T) {
 	const unusedCanary = "unused-credential-canary-1c95f761a0"
 	result, err := Convert(ImportRequest{
 		Content: `<definitions name="ReviewSurface" targetNamespace="urn:review"
@@ -154,16 +158,16 @@ func TestConvertWSDLScrubsCredentialInUnusedSchemaBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), unusedCanary) {
-		t.Fatalf("unused schema credential leaked through source review: %s", encoded)
+	if !strings.Contains(string(encoded), unusedCanary) {
+		t.Fatalf("unused schema credential was not preserved: %s", encoded)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
-		!strings.Contains(result.SourceReview.SourceFiles[0].Content, credential.Redacted) {
-		t.Fatalf("unused schema credential was not redacted: %#v", result.SourceReview)
+		result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("unused schema source was redacted: %#v", result.SourceReview)
 	}
 }
 
-func TestConvertWSDLPreservesEndpointCredentialsAndRedactsSourceReview(t *testing.T) {
+func TestConvertWSDLPreservesEndpointCredentialsAndSourceReview(t *testing.T) {
 	const source = `<definitions name="EndpointCredentials" targetNamespace="urn:endpoint"
   xmlns="http://schemas.xmlsoap.org/wsdl/"
   xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
@@ -199,9 +203,9 @@ func TestConvertWSDLPreservesEndpointCredentialsAndRedactsSourceReview(t *testin
 		t.Fatalf("SOAP target did not reuse the preserved base URL: %#v", result.Script.Actions)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
-		!strings.Contains(result.SourceReview.SourceFiles[0].Content, "WSDL SOURCE OMITTED") ||
-		!result.SourceReview.SourceFiles[0].Redacted {
-		t.Fatalf("encoded endpoint source was not fail-closed: %#v", result.SourceReview)
+		!strings.Contains(result.SourceReview.SourceFiles[0].Content, "wsdl&#45;pass") ||
+		result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("encoded endpoint source was not preserved: %#v", result.SourceReview)
 	}
 }
 

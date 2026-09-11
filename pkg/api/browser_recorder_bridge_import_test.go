@@ -86,9 +86,9 @@ func TestBridgedBrowserImportReceivesRemoteAttestationAndKeepsCredentialServerSi
 		attested.Metadata.Import.Source != "browser_recording_har" {
 		t.Fatalf("remote profile = %#v, want server-stamped browser_recording_har", attested.Metadata)
 	}
-	if strings.Contains(attest.Body.String(), credentialValue) ||
-		!strings.Contains(attest.Body.String(), maskedScriptSecret) {
-		t.Fatal("remote-attested draft disclosed or failed to represent the protected credential")
+	if !strings.Contains(attest.Body.String(), credentialValue) ||
+		strings.Contains(attest.Body.String(), maskedScriptSecret) {
+		t.Fatal("remote-attested draft did not preserve the protected credential")
 	}
 
 	createBody, err := json.Marshal(map[string]any{
@@ -109,8 +109,8 @@ func TestBridgedBrowserImportReceivesRemoteAttestationAndKeepsCredentialServerSi
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", create.Code, create.Body.String())
 	}
-	if strings.Contains(create.Body.String(), credentialValue) {
-		t.Fatalf("stored-script response disclosed credential: %s", create.Body.String())
+	if !strings.Contains(create.Body.String(), credentialValue) {
+		t.Fatalf("stored-script response did not preserve credential: %s", create.Body.String())
 	}
 	var created StoredScript
 	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {

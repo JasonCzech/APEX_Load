@@ -12,7 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestConvertJMXRemovesCredentialsFromTestPlanAndThreadGroupLabels(t *testing.T) {
+func TestConvertJMXPreservesCredentialsInTestPlanAndThreadGroupLabels(t *testing.T) {
 	const password = "jmeter-label-password-canary-5f42"
 	tests := []struct {
 		name string
@@ -67,6 +67,7 @@ func TestConvertJMXRemovesCredentialsFromTestPlanAndThreadGroupLabels(t *testing
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			normalizedPassword := strings.ReplaceAll(password, "-", "_")
 			result, err := ConvertJMX([]byte(test.jmx), ConvertOptions{
 				FileName:      "labels.jmx",
 				ScenarioDraft: true,
@@ -79,19 +80,19 @@ func TestConvertJMXRemovesCredentialsFromTestPlanAndThreadGroupLabels(t *testing
 				t.Fatalf("unexpected conversion result: %#v", result)
 			}
 			script := result.Scripts[0]
-			if strings.Contains(script.Name, password) {
-				t.Fatalf("script display name disclosed password: %q", script.Name)
+			if !strings.Contains(script.Name, normalizedPassword) {
+				t.Fatalf("script display name lost imported password: %q", script.Name)
 			}
-			if strings.Contains(script.Metadata.Import.SourceScriptName, password) {
-				t.Fatalf("source script display name disclosed password: %q", script.Metadata.Import.SourceScriptName)
+			if !strings.Contains(script.Metadata.Import.SourceScriptName, password) {
+				t.Fatalf("source script display name lost imported password: %q", script.Metadata.Import.SourceScriptName)
 			}
-			if strings.Contains(script.Actions[0].Name, password) {
-				t.Fatalf("action display name disclosed password: %q", script.Actions[0].Name)
+			if !strings.Contains(script.Actions[0].Name, normalizedPassword) {
+				t.Fatalf("action display name lost imported password: %q", script.Actions[0].Name)
 			}
 			group := result.ScenarioDraft.Groups[0]
-			if strings.Contains(group.Name, password) ||
-				strings.Contains(group.ScriptName, password) {
-				t.Fatalf("scenario group disclosed password: %#v", group)
+			if !strings.Contains(group.Name, password) ||
+				!strings.Contains(group.ScriptName, normalizedPassword) {
+				t.Fatalf("scenario group lost imported password: %#v", group)
 			}
 			if group.ScriptName != script.Name {
 				t.Fatalf("group script_name = %q, want sanitized script name %q", group.ScriptName, script.Name)
@@ -103,7 +104,7 @@ func TestConvertJMXRemovesCredentialsFromTestPlanAndThreadGroupLabels(t *testing
 	}
 }
 
-func TestConvertJMXRemovesCredentialsFromActionReviewMetadata(t *testing.T) {
+func TestConvertJMXPreservesCredentialsInActionReviewMetadata(t *testing.T) {
 	const password = "jmeter-metadata-password-canary-9c42"
 	jmx := fmt.Sprintf(`<jmeterTestPlan version="1.2"><hashTree>
   <TestPlan testname="Plan"/><hashTree>
@@ -146,8 +147,8 @@ func TestConvertJMXRemovesCredentialsFromActionReviewMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal metadata: %v", err)
 	}
-	if strings.Contains(string(metadata), password) {
-		t.Fatalf("descriptive action metadata disclosed password: %s", metadata)
+	if !strings.Contains(string(metadata), password) {
+		t.Fatalf("descriptive action metadata lost imported password: %s", metadata)
 	}
 	if action.Metadata["execution_blocker"] != "import_review_required" {
 		t.Fatalf("credential sanitization changed execution gate: %#v", action.Metadata)

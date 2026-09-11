@@ -254,7 +254,7 @@ HTTPVersion=HTTP/2
 	}
 }
 
-func TestConvertZipRuntimeCredentialsAreExecutableAndProvenanceIsDisclosureSafe(t *testing.T) {
+func TestConvertZipRuntimeCredentialsAreExecutableAndProvenanceIsExact(t *testing.T) {
 	t.Parallel()
 	const (
 		proxyUser = "proxy-user-canary"
@@ -308,14 +308,11 @@ api_key=` + apiKey + `
 		t.Fatal(err)
 	}
 	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if strings.Contains(string(runtimeJSON), canary) {
-			t.Fatalf("preserved runtime metadata retained %q: %s", canary, runtimeJSON)
+		if !strings.Contains(string(runtimeJSON), canary) {
+			t.Fatalf("preserved runtime metadata lost %q: %s", canary, runtimeJSON)
 		}
 	}
-	if !strings.Contains(string(runtimeJSON), "[REDACTED]") {
-		t.Fatalf("preserved runtime metadata omitted disclosure sentinel: %s", runtimeJSON)
-	}
-	assertEnterpriseCredentialProvenanceRedacted(
+	assertEnterpriseCredentialProvenancePreserved(
 		t,
 		result,
 		[]string{proxyUser, proxyPass, authPass, apiKey},
@@ -329,7 +326,7 @@ api_key=` + apiKey + `
 	}
 }
 
-func TestConvertZipEmbeddedProxyUserinfoIsExecutableAndRemovedFromProvenance(t *testing.T) {
+func TestConvertZipEmbeddedProxyUserinfoIsExecutableAndPreservedInProvenance(t *testing.T) {
 	t.Parallel()
 	const (
 		proxyUser = "embedded-proxy-user-canary"
@@ -368,12 +365,11 @@ ProxyServer=http://` + proxyUser + `:` + proxyPass + `@proxy.example.test:8080
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(runtimeJSON), proxyUser) ||
-		strings.Contains(string(runtimeJSON), proxyPass) ||
-		!strings.Contains(string(runtimeJSON), "http://proxy.example.test:8080") {
-		t.Fatalf("preserved runtime proxy metadata is not disclosure-safe: %s", runtimeJSON)
+	if !strings.Contains(string(runtimeJSON), proxyUser) ||
+		!strings.Contains(string(runtimeJSON), proxyPass) {
+		t.Fatalf("preserved runtime proxy metadata lost userinfo: %s", runtimeJSON)
 	}
-	assertEnterpriseCredentialProvenanceRedacted(t, result, []string{proxyUser, proxyPass})
+	assertEnterpriseCredentialProvenancePreserved(t, result, []string{proxyUser, proxyPass})
 
 	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
 		t.Fatalf("protected requirements = %#v, want no re-entry requirements for retained proxy credentials", requirements)
@@ -423,7 +419,7 @@ ProxyServer=http://proxy.example.test:8080?region=east&token=` + proxyToken + `
 	if !strings.Contains(string(targetsJSON), "config.http.proxy.url.query") {
 		t.Fatalf("proxy query credential locator was discarded: %s", targetsJSON)
 	}
-	assertEnterpriseCredentialProvenanceRedacted(t, result, []string{proxyToken})
+	assertEnterpriseCredentialProvenancePreserved(t, result, []string{proxyToken})
 	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
 		t.Fatalf("protected requirements = %#v, want no re-entry requirement for retained proxy query credential", requirements)
 	}

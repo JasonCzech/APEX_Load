@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func TestConvertHAR(t *testing.T) {
@@ -126,7 +128,7 @@ func TestConvertHARSurfacesSampleDiagnostics(t *testing.T) {
 	}
 }
 
-func TestConvertHARScrubsGovernedSourceReview(t *testing.T) {
+func TestConvertHARPreservesGovernedSourceReview(t *testing.T) {
 	result, err := Convert([]byte(`{
   "log": {
     "entries": [{
@@ -151,8 +153,8 @@ func TestConvertHARScrubsGovernedSourceReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
-	if result.Governance == nil || !result.Governance.RedactionEnabled || result.Governance.Sensitivity != "scrubbed" {
-		t.Fatalf("governance = %#v, want scrubbed redaction", result.Governance)
+	if result.Governance == nil || result.Governance.RedactionEnabled || result.Governance.Sensitivity != scrub.SensitivityRaw {
+		t.Fatalf("governance = %#v, want raw preservation", result.Governance)
 	}
 	if result.Governance.RetentionDays != DefaultRetentionDays {
 		t.Fatalf("retention days = %d, want %d", result.Governance.RetentionDays, DefaultRetentionDays)
@@ -161,9 +163,9 @@ func TestConvertHARScrubsGovernedSourceReview(t *testing.T) {
 		t.Fatalf("source review = %#v, want scrubbed HAR source", result.SourceReview)
 	}
 	source := result.SourceReview.SourceFiles[0].Content
-	for _, secret := range []string{"super-secret-token", "cookie-secret", "\"password\":\"secret\""} {
-		if strings.Contains(source, secret) {
-			t.Fatalf("source review leaked %q in %s", secret, source)
+	for _, secret := range []string{"super-secret-token", "cookie-secret", `\"password\":\"secret\"`} {
+		if !strings.Contains(source, secret) {
+			t.Fatalf("source review lost %q in %s", secret, source)
 		}
 	}
 }
@@ -200,34 +202,29 @@ func TestConvertHARCorrelatesRawBeforeScrub(t *testing.T) {
 	if result.Correlations[0].Value != "tok-secret-abcdef123456" {
 		t.Fatalf("internal correlation value = %q, want raw value used before disclosure scrub", result.Correlations[0].Value)
 	}
-	if result.Correlations[0].SampleValue != "[REDACTED]" {
-		t.Fatalf("public correlation sample = %q, want disclosure redaction", result.Correlations[0].SampleValue)
+	if result.Correlations[0].SampleValue != "tok-secret-abcdef123456" {
+		t.Fatalf("public correlation sample = %q, want imported value", result.Correlations[0].SampleValue)
 	}
 	if !strings.Contains(result.Script.Actions[1].Target, "{{var.corr_access_token}}") {
 		t.Fatalf("second action target = %q, want raw token parameterized", result.Script.Actions[1].Target)
 	}
-	if result.Governance == nil || result.Governance.Sensitivity != "scrubbed" {
-		t.Fatalf("governance = %#v, want scrubbed marker", result.Governance)
+	if result.Governance == nil || result.Governance.Sensitivity != scrub.SensitivityRaw {
+		t.Fatalf("governance = %#v, want raw marker", result.Governance)
 	}
 	source := result.SourceReview.SourceFiles[0].Content
-	if strings.Contains(source, "tok-secret-abcdef123456") {
-		t.Fatalf("source review leaked raw token: %s", source)
+	if !strings.Contains(source, "tok-secret-abcdef123456") {
+		t.Fatalf("source review lost raw token: %s", source)
 	}
 	payload, err := json.Marshal(result)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	if bytes.Contains(payload, []byte("tok-secret-abcdef123456")) {
-		t.Fatalf("serialized conversion leaked the internal correlation value: %s", payload)
+	if !bytes.Contains(payload, []byte("tok-secret-abcdef123456")) {
+		t.Fatalf("serialized conversion lost the imported correlation value: %s", payload)
 	}
 }
 
-// TestConvertHARRedactsSecretShapedSampleValueInResponse locks in that a
-// credential-shaped correlated value is redacted in the response's
-// correlations[].sample_value (matching the "scrubbed" governance marker) while
-// the script is still parameterized from the raw value. Regression guard for
-// the raw-sample-value-in-a-scrubbed-response leak.
-func TestConvertHARRedactsSecretShapedSampleValueInResponse(t *testing.T) {
+func TestConvertHARPreservesSecretShapedSampleValueInResponse(t *testing.T) {
 	token := "AbCdEf0123456789GhIjKlMn0Z" // 26 chars, mixed case + digits, high entropy
 	har := `{
   "log": {
@@ -254,11 +251,11 @@ func TestConvertHARRedactsSecretShapedSampleValueInResponse(t *testing.T) {
 	if len(result.Correlations) != 1 {
 		t.Fatalf("correlations = %#v, want one correlation", result.Correlations)
 	}
-	if result.Correlations[0].SampleValue == token {
-		t.Fatalf("response sample_value leaked the raw secret-shaped token %q", token)
+	if result.Correlations[0].SampleValue != token {
+		t.Fatalf("response sample_value = %q, want imported token %q", result.Correlations[0].SampleValue, token)
 	}
-	if result.Governance == nil || result.Governance.Sensitivity != "scrubbed" {
-		t.Fatalf("governance = %#v, want scrubbed marker", result.Governance)
+	if result.Governance == nil || result.Governance.Sensitivity != scrub.SensitivityRaw {
+		t.Fatalf("governance = %#v, want raw marker", result.Governance)
 	}
 	// The script must still be parameterized from the raw value, not leak it.
 	if !strings.Contains(result.Script.Actions[1].Target, "{{var.") {
@@ -328,14 +325,14 @@ func TestDiffDoesNotExposeCredentialCorrelationValues(t *testing.T) {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	for _, canary := range []string{baselineToken, comparisonToken} {
-		if bytes.Contains(payload, []byte(canary)) {
-			t.Fatalf("serialized diff leaked credential correlation %q: %s", canary, payload)
+		if !bytes.Contains(payload, []byte(canary)) {
+			t.Fatalf("serialized diff did not preserve credential correlation %q: %s", canary, payload)
 		}
 	}
 	if len(report.Classifications) != 1 ||
-		report.Classifications[0].BaselineValue != "[REDACTED]" ||
-		report.Classifications[0].ComparisonValue != "[REDACTED]" {
-		t.Fatalf("classification values = %#v, want disclosure-safe placeholders", report.Classifications)
+		report.Classifications[0].BaselineValue != baselineToken ||
+		report.Classifications[0].ComparisonValue != comparisonToken {
+		t.Fatalf("classification values = %#v, want exact imported values", report.Classifications)
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestImportResponseRecursivelyRedactsReviewEvidenceCopies(t *testing.T) {
+func TestImportResponseRecursivelyPreservesReviewEvidenceCopies(t *testing.T) {
 	const secret = "m9Q!"
 	inspection := map[string]any{
 		"steps": []any{map[string]any{
@@ -67,15 +67,12 @@ func TestImportResponseRecursivelyRedactsReviewEvidenceCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(secret)) {
-		t.Fatalf("import response leaked recursively embedded TrueClient secret: %s", encoded)
-	}
-	if !bytes.Contains(encoded, []byte(maskedScriptSecret)) {
-		t.Fatalf("import response did not retain redaction sentinel: %s", encoded)
+	if !bytes.Contains(encoded, []byte(secret)) {
+		t.Fatalf("import response lost recursively embedded TrueClient source: %s", encoded)
 	}
 }
 
-func TestImportResponseRedactsCredentialBearingURLsOutsideReviewSubtrees(t *testing.T) {
+func TestImportResponsePreservesCredentialBearingURLsOutsideReviewSubtrees(t *testing.T) {
 	const (
 		user     = "source-user"
 		password = "source-password"
@@ -99,19 +96,16 @@ func TestImportResponseRedactsCredentialBearingURLsOutsideReviewSubtrees(t *test
 		t.Fatal(err)
 	}
 	for _, secret := range []string{user, password, token} {
-		if bytes.Contains(encoded, []byte(secret)) {
-			t.Fatalf("import response leaked URL credential %q: %s", secret, encoded)
+		if !bytes.Contains(encoded, []byte(secret)) {
+			t.Fatalf("import response lost URL credential %q: %s", secret, encoded)
 		}
-	}
-	if !bytes.Contains(encoded, []byte(maskedScriptSecret)) {
-		t.Fatalf("import response omitted URL redaction sentinel: %s", encoded)
 	}
 	if !bytes.Contains(encoded, []byte("mode=normal")) {
 		t.Fatalf("URL projection discarded ordinary query material: %s", encoded)
 	}
 }
 
-func TestImportResponseRedactsDuplicatedResultDiagnostics(t *testing.T) {
+func TestImportResponsePreservesDuplicatedResultDiagnostics(t *testing.T) {
 	const secret = "result-warning-token-7Qx9K2Lm4Np8"
 	response := newScriptImportResponse(scriptImportResponseOptions{
 		Warnings: []string{"Authorization: Bearer " + secret},
@@ -126,15 +120,12 @@ func TestImportResponseRedactsDuplicatedResultDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(secret)) {
-		t.Fatalf("duplicated converter diagnostics disclosed a source credential: %s", encoded)
-	}
-	if !bytes.Contains(encoded, []byte(maskedScriptSecret)) {
-		t.Fatalf("diagnostic redaction marker missing: %s", encoded)
+	if !bytes.Contains(encoded, []byte(secret)) {
+		t.Fatalf("duplicated converter diagnostics lost a source credential: %s", encoded)
 	}
 }
 
-func TestEnterpriseImportResponseRedactsRecordedResourceURLCredentials(t *testing.T) {
+func TestEnterpriseImportResponsePreservesRecordedResourceURLCredentials(t *testing.T) {
 	const (
 		username = "resource-source-user"
 		password = "resource-source-password"
@@ -166,16 +157,16 @@ func TestEnterpriseImportResponseRedactsRecordedResourceURLCredentials(t *testin
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
 	for _, secret := range []string{username, password, token} {
-		if strings.Contains(response.Body.String(), secret) {
-			t.Fatalf("enterprise import disclosed recorded-resource URL credential %q: %s", secret, response.Body.String())
+		if !strings.Contains(response.Body.String(), secret) {
+			t.Fatalf("enterprise import lost recorded-resource URL credential %q: %s", secret, response.Body.String())
 		}
 	}
-	if !strings.Contains(response.Body.String(), maskedScriptSecret) || !strings.Contains(response.Body.String(), "variant=modern") {
-		t.Fatalf("enterprise recorded-resource URL was not safely projected: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), "variant=modern") {
+		t.Fatalf("enterprise recorded-resource URL lost ordinary query material: %s", response.Body.String())
 	}
 }
 
-func TestPostmanImportMasksOpaqueCredentialAndReviewCopies(t *testing.T) {
+func TestPostmanImportPreservesOpaqueCredentialAndReviewCopies(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	const secret = "v9Q!"
 	payload := map[string]any{
@@ -215,8 +206,8 @@ func TestPostmanImportMasksOpaqueCredentialAndReviewCopies(t *testing.T) {
 	editableActions, _ := editable["actions"].([]any)
 	editableAction, _ := editableActions[0].(map[string]any)
 	editableHeaders, _ := editableAction["headers"].(map[string]any)
-	if got := editableHeaders["X-Auth-Token"]; got != maskedScriptSecret {
-		t.Fatalf("opaque destination header = %#v, want masked value", got)
+	if got := editableHeaders["X-Auth-Token"]; got != secret {
+		t.Fatalf("opaque destination header = %#v, want exact value", got)
 	}
 
 	result, _ := envelope["result"].(map[string]any)
@@ -224,16 +215,15 @@ func TestPostmanImportMasksOpaqueCredentialAndReviewCopies(t *testing.T) {
 	reviewActions, _ := reviewScript["actions"].([]any)
 	reviewAction, _ := reviewActions[0].(map[string]any)
 	reviewHeaders, _ := reviewAction["headers"].(map[string]any)
-	if got := reviewHeaders["X-Auth-Token"]; got != maskedScriptSecret {
-		t.Fatalf("review/result destination header = %#v, want masked copy", got)
+	if got := reviewHeaders["X-Auth-Token"]; got != secret {
+		t.Fatalf("review/result destination header = %#v, want exact copy", got)
 	}
 	sourceReview, err := json.Marshal(envelope["source_review"])
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(sourceReview, []byte(secret)) ||
-		!bytes.Contains(sourceReview, []byte(maskedScriptSecret)) {
-		t.Fatalf("source review was not disclosure-safe: %s", sourceReview)
+	if !bytes.Contains(sourceReview, []byte(secret)) {
+		t.Fatalf("source review lost imported credential: %s", sourceReview)
 	}
 }
 

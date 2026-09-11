@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,25 +13,27 @@ import (
 )
 
 type MetricsCollector struct {
-	ch                chan *protocol.Result
-	snapshots         []MetricsSnapshot
-	snapshotSizes     []int
-	snapshotBytes     int
-	snapshotsMu       sync.RWMutex
-	targetsMu         sync.RWMutex
-	current           *liveCounters
-	resCollector      *ResourceCollector
-	emitIdleSnapshots atomic.Bool
-	activeGaugeDirty  atomic.Bool
-	done              chan struct{}
-	aggregateDone     chan struct{}
-	startOnce         sync.Once
-	stopOnce          sync.Once
-	startedAt         time.Time
-	targetTPS         float64
-	groupTargetTPS    map[string]float64
-	groupActiveFn     func() map[string]int
-	groupRunTotals    sync.Map // map[string]*groupRunCounters; lock-free hot-path attribution
+	ch                                   chan *protocol.Result
+	snapshots                            []MetricsSnapshot
+	snapshotSizes                        []int
+	snapshotBytes                        int
+	snapshotsMu                          sync.RWMutex
+	targetsMu                            sync.RWMutex
+	current                              *liveCounters
+	resCollector                         *ResourceCollector
+	emitIdleSnapshots                    atomic.Bool
+	activeGaugeDirty                     atomic.Bool
+	done                                 chan struct{}
+	aggregateDone                        chan struct{}
+	startOnce                            sync.Once
+	stopOnce                             sync.Once
+	startedAt                            time.Time
+	targetTPS                            float64
+	groupTargetTPS                       map[string]float64
+	groupActiveFn                        func() map[string]int
+	transactionResponseTimeSLAThresholds map[string]float64
+	transactionResponseTimeSLACumulative map[string]*TransactionResponseTimeSLACompliance
+	groupRunTotals                       sync.Map // map[string]*groupRunCounters; lock-free hot-path attribution
 }
 
 const throughputGapAlertThresholdPct = 5.0
@@ -72,18 +75,31 @@ type MetricsSnapshot struct {
 	AvgWaitMs    float64 `json:"avg_wait_ms,omitempty"`
 	// ErrorsByClass counts failed business transactions by taxonomy class
 	// (timeout/connection/http_4xx/http_5xx/assertion/other).
-	ErrorsByClass      map[string]int64 `json:"errors_by_class,omitempty"`
-	ByAction           map[string]*ActionMetrics
-	ByTransaction      map[string]*ActionMetrics
-	ByDependencyTarget map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
-	BySOAPOperation    map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
-	ByNetworkProfile   map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
-	ByRegion           map[string]*ActionMetrics `json:"by_region,omitempty"`
-	ByGroup            map[string]*GroupMetrics
-	Browser            *BrowserMetricsSummary           `json:"browser,omitempty"`
-	BrowserByDevice    map[string]*BrowserDeviceMetrics `json:"browser_by_device,omitempty"`
-	Telemetry          *TelemetryMetrics                `json:"telemetry,omitempty"`
-	Resources          *SystemResources                 `json:"resources,omitempty"`
+	ErrorsByClass              map[string]int64 `json:"errors_by_class,omitempty"`
+	ByAction                   map[string]*ActionMetrics
+	ByTransaction              map[string]*ActionMetrics
+	ByDependencyTarget         map[string]*ActionMetrics `json:"by_dependency_target,omitempty"`
+	BySOAPOperation            map[string]*ActionMetrics `json:"by_soap_operation,omitempty"`
+	ByNetworkProfile           map[string]*ActionMetrics `json:"by_network_profile,omitempty"`
+	ByRegion                   map[string]*ActionMetrics `json:"by_region,omitempty"`
+	ByGroup                    map[string]*GroupMetrics
+	Browser                    *BrowserMetricsSummary                 `json:"browser,omitempty"`
+	BrowserByDevice            map[string]*BrowserDeviceMetrics       `json:"browser_by_device,omitempty"`
+	Telemetry                  *TelemetryMetrics                      `json:"telemetry,omitempty"`
+	Resources                  *SystemResources                       `json:"resources,omitempty"`
+	TransactionResponseTimeSLA []TransactionResponseTimeSLACompliance `json:"transaction_response_time_sla,omitempty"`
+}
+
+// TransactionResponseTimeSLACompliance is a cumulative, successful-sample-only
+// live counter for one named business transaction in one group.
+type TransactionResponseTimeSLACompliance struct {
+	Group                string
+	Transaction          string
+	ThresholdMs          float64
+	TotalCount           int64
+	EligibleSuccessCount int64
+	ExcludedErrorCount   int64
+	MissedCount          int64
 }
 
 type BrowserMetricsSummary struct {
@@ -269,12 +285,25 @@ func NewMetricsCollector(bufferSize int) *MetricsCollector {
 		bufferSize = 10000
 	}
 	return &MetricsCollector{
-		ch:             make(chan *protocol.Result, bufferSize),
-		current:        &liveCounters{},
-		resCollector:   NewResourceCollector(),
-		done:           make(chan struct{}),
-		aggregateDone:  make(chan struct{}),
-		groupTargetTPS: make(map[string]float64),
+		ch:                                   make(chan *protocol.Result, bufferSize),
+		current:                              &liveCounters{},
+		resCollector:                         NewResourceCollector(),
+		done:                                 make(chan struct{}),
+		aggregateDone:                        make(chan struct{}),
+		groupTargetTPS:                       make(map[string]float64),
+		transactionResponseTimeSLAThresholds: make(map[string]float64),
+		transactionResponseTimeSLACumulative: make(map[string]*TransactionResponseTimeSLACompliance),
+	}
+}
+
+func (mc *MetricsCollector) SetTransactionResponseTimeSLAThresholds(thresholds map[string]float64) {
+	mc.targetsMu.Lock()
+	defer mc.targetsMu.Unlock()
+	mc.transactionResponseTimeSLAThresholds = make(map[string]float64, len(thresholds))
+	for group, threshold := range thresholds {
+		if threshold > 0 && !math.IsNaN(threshold) && !math.IsInf(threshold, 0) {
+			mc.transactionResponseTimeSLAThresholds[strings.TrimSpace(group)] = threshold
+		}
 	}
 }
 
@@ -587,6 +616,10 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		groupTargets[name] = target
 	}
 	groupActiveFn := mc.groupActiveFn
+	slaThresholds := make(map[string]float64, len(mc.transactionResponseTimeSLAThresholds))
+	for group, threshold := range mc.transactionResponseTimeSLAThresholds {
+		slaThresholds[group] = threshold
+	}
 	mc.targetsMu.RUnlock()
 
 	var totalDuration time.Duration
@@ -609,6 +642,27 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 
 	for _, r := range results {
 		if r.BusinessTransaction {
+			group := strings.TrimSpace(r.Group)
+			transaction := strings.TrimSpace(r.ActionName)
+			if threshold, configured := slaThresholds[group]; configured && transaction != "" {
+				key := group + "\x00" + transaction
+				compliance := mc.transactionResponseTimeSLACumulative[key]
+				if compliance == nil && len(mc.transactionResponseTimeSLACumulative) < maxMetricDimensionEntries {
+					compliance = &TransactionResponseTimeSLACompliance{Group: group, Transaction: transaction, ThresholdMs: threshold}
+					mc.transactionResponseTimeSLACumulative[key] = compliance
+				}
+				if compliance != nil {
+					compliance.TotalCount++
+					if r.Success {
+						compliance.EligibleSuccessCount++
+						if float64(r.Duration)/float64(time.Millisecond) > threshold {
+							compliance.MissedCount++
+						}
+					} else {
+						compliance.ExcludedErrorCount++
+					}
+				}
+			}
 			if r.Success {
 				snap.Transactions++
 			} else {
@@ -751,6 +805,31 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				}
 			}
 		}
+	}
+	if len(slaThresholds) > 0 {
+		keys := make([]string, 0, len(mc.transactionResponseTimeSLACumulative))
+		for key := range mc.transactionResponseTimeSLACumulative {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		snap.TransactionResponseTimeSLA = make([]TransactionResponseTimeSLACompliance, 0, len(keys)+len(slaThresholds))
+		observedGroups := make(map[string]bool, len(slaThresholds))
+		for _, key := range keys {
+			row := *mc.transactionResponseTimeSLACumulative[key]
+			observedGroups[row.Group] = true
+			snap.TransactionResponseTimeSLA = append(snap.TransactionResponseTimeSLA, row)
+		}
+		for group, threshold := range slaThresholds {
+			if !observedGroups[group] {
+				snap.TransactionResponseTimeSLA = append(snap.TransactionResponseTimeSLA, TransactionResponseTimeSLACompliance{Group: group, ThresholdMs: threshold})
+			}
+		}
+		sort.Slice(snap.TransactionResponseTimeSLA, func(i, j int) bool {
+			if snap.TransactionResponseTimeSLA[i].Group == snap.TransactionResponseTimeSLA[j].Group {
+				return snap.TransactionResponseTimeSLA[i].Transaction < snap.TransactionResponseTimeSLA[j].Transaction
+			}
+			return snap.TransactionResponseTimeSLA[i].Group < snap.TransactionResponseTimeSLA[j].Group
+		})
 	}
 
 	transactionAttempts := snap.Transactions + snap.Errors

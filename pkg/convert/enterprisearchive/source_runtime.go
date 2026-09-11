@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -528,22 +527,7 @@ func preserveSourceRuntimeControl(script *dsl.Script, key string, fn ParsedFunct
 }
 
 func disclosureSafeSourceRuntimeControlArgs(fn ParsedFunction) []string {
-	args := append([]string(nil), sourceControlArgs(fn)...)
-	switch strings.ToLower(strings.TrimSpace(fn.Name)) {
-	case "web_set_user":
-		if len(args) > 1 {
-			args[1] = credential.Redacted
-		}
-	case "web_set_proxy", "web_set_secure_proxy":
-		if len(args) > 0 {
-			args[0] = disclosureSafeProxyEndpoint(args[0])
-		}
-	case "web_set_option":
-		if len(args) > 1 && credential.SensitiveName(cleanConfigValue(args[0])) {
-			args[1] = credential.Redacted
-		}
-	}
-	return args
+	return append([]string(nil), sourceControlArgs(fn)...)
 }
 
 func ensureEnterpriseArchiveImportPreserved(script *dsl.Script) map[string]any {

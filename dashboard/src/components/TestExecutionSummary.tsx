@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 
-import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, RunComparisonBaseline, TxMetrics } from '../types'
+import { GoalConfig, LiveDependencyMap, LiveErrorPattern, MetricsHistoryPoint, RunComparisonBaseline, TransactionResponseTimeSLAResult, TxMetrics } from '../types'
+import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 
 interface MetricsSummary {
   p50_ms?: number
@@ -11,6 +12,7 @@ interface MetricsSummary {
   dependency_map?: LiveDependencyMap
   error_patterns?: LiveErrorPattern[]
   soap_operations?: Record<string, TxMetrics>
+  transaction_response_time_sla?: TransactionResponseTimeSLAResult[]
 }
 
 interface Props {
@@ -945,6 +947,8 @@ export default function TestExecutionSummary({ transactions, metrics, baseline, 
           </table>
         </div>
       )}
+
+      <TransactionResponseTimeSLATable rows={metrics?.transaction_response_time_sla ?? []} />
 
       {transactions.length > 0 && (
         <div className="tx-section">

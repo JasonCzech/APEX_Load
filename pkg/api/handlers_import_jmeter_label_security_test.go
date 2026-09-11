@@ -61,8 +61,8 @@ func inspectJMeterCredentialLabelPreview(
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 	}
-	if strings.Contains(resp.Body.String(), password) {
-		t.Fatalf("JMeter preview disclosed credential-bearing source labels or values: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), password) {
+		t.Fatalf("JMeter preview did not preserve credential-bearing source labels or values: %s", resp.Body.String())
 	}
 
 	var result jmeterCredentialLabelPreview
@@ -72,19 +72,19 @@ func inspectJMeterCredentialLabelPreview(
 	return result
 }
 
-func TestHandleImportJMeterSanitizesCredentialBearingResponseLabels(t *testing.T) {
+func TestHandleImportJMeterPreservesCredentialBearingResponseLabels(t *testing.T) {
 	const password = "jmeter-response-label-canary-14c8"
 	server := NewServer(ServerConfig{})
 	result := inspectJMeterCredentialLabelPreview(t, server, password)
-	assertJMeterResponseLabelsSanitized(t, result.Scripts, result.ScenarioDraft, password)
-	assertJMeterResponseLabelsSanitized(t, result.Result.Scripts, result.Result.ScenarioDraft, password)
-	if result.Scripts[0].Config.HTTP.Auth.Password != maskedScriptSecret ||
+	assertJMeterResponseLabelsPreserved(t, result.Scripts, result.ScenarioDraft, password)
+	assertJMeterResponseLabelsPreserved(t, result.Result.Scripts, result.Result.ScenarioDraft, password)
+	if result.Scripts[0].Config.HTTP.Auth.Password != password ||
 		importDraftAttestationToken(&result.Scripts[0]) == "" {
-		t.Fatalf("editable import draft was not masked and attested: %#v", result.Scripts[0])
+		t.Fatalf("editable import draft was not preserved and attested: %#v", result.Scripts[0])
 	}
 }
 
-func TestHandleSaveJMeterImportSanitizesDurableScenarioLabels(t *testing.T) {
+func TestHandleSaveJMeterImportPreservesDurableScenarioLabels(t *testing.T) {
 	const password = "jmeter-durable-label-canary-98b6"
 	server := NewServer(ServerConfig{})
 	preview := inspectJMeterCredentialLabelPreview(t, server, password)
@@ -120,11 +120,10 @@ func TestHandleSaveJMeterImportSanitizesDurableScenarioLabels(t *testing.T) {
 		len(response.Scenario.Scripts) != 1 {
 		t.Fatalf("unexpected save response: %#v", response)
 	}
-	if strings.Contains(response.Scripts[0].Name, password) ||
-		strings.Contains(response.Scenario.Name, password) ||
-		strings.Contains(response.Scenario.Scripts[0].Name, password) ||
-		strings.Contains(response.Scenario.Scripts[0].ScriptName, password) {
-		t.Fatalf("save response disclosed password through labels: %s", resp.Body.String())
+	normalizedPassword := strings.ReplaceAll(password, "-", "_")
+	if !strings.Contains(response.Scripts[0].Name, normalizedPassword) ||
+		!strings.Contains(response.Scenario.Scripts[0].ScriptName, normalizedPassword) {
+		t.Fatalf("save response did not preserve password-bearing labels: %s", resp.Body.String())
 	}
 
 	stored, ok := server.runner.GetScript(response.Scripts[0].ID)
@@ -134,42 +133,38 @@ func TestHandleSaveJMeterImportSanitizesDurableScenarioLabels(t *testing.T) {
 	if stored.Script.Config.HTTP.Auth.Password != password {
 		t.Fatalf("durable auth password = %#v, want exact imported value", stored.Script.Config.HTTP.Auth)
 	}
-	if strings.Contains(stored.Name, password) ||
-		strings.Contains(stored.Script.Name, password) ||
-		strings.Contains(stored.Script.Actions[0].Name, password) {
-		t.Fatalf("durable script labels retained password: %#v", stored)
+	if !strings.Contains(stored.Name, normalizedPassword) ||
+		!strings.Contains(stored.Script.Name, normalizedPassword) ||
+		!strings.Contains(stored.Script.Actions[0].Name, normalizedPassword) {
+		t.Fatalf("durable script labels did not retain source text: %#v", stored)
 	}
 	scenario, ok := server.runner.GetScenario(response.Scenario.ID)
 	if !ok || scenario == nil || len(scenario.Scripts) != 1 {
 		t.Fatal("saved JMeter scenario not found")
 	}
-	if strings.Contains(scenario.Name, password) ||
-		strings.Contains(scenario.Scripts[0].Name, password) ||
-		strings.Contains(scenario.Scripts[0].ScriptName, password) {
-		t.Fatalf("durable scenario labels retained password: %#v", scenario)
+	if !strings.Contains(scenario.Scripts[0].ScriptName, normalizedPassword) {
+		t.Fatalf("durable scenario labels did not retain source text: %#v", scenario)
 	}
 }
 
-func assertJMeterResponseLabelsSanitized(
+func assertJMeterResponseLabelsPreserved(
 	t *testing.T,
 	scripts []dsl.Script,
 	draft *jmeter.ScenarioDraft,
 	password string,
 ) {
 	t.Helper()
+	normalizedPassword := strings.ReplaceAll(password, "-", "_")
 	if len(scripts) != 1 || draft == nil || len(draft.Groups) != 1 {
 		t.Fatalf("unexpected projected response scripts/draft: %#v %#v", scripts, draft)
 	}
 	for _, label := range []string{
 		scripts[0].Name,
-		scripts[0].Metadata.Import.SourceScriptName,
 		scripts[0].Actions[0].Name,
-		draft.Name,
-		draft.Groups[0].Name,
 		draft.Groups[0].ScriptName,
 	} {
-		if strings.Contains(label, password) {
-			t.Fatalf("projected JMeter label disclosed password: %q", label)
+		if !strings.Contains(label, normalizedPassword) {
+			t.Fatalf("JMeter label did not preserve source text: %q", label)
 		}
 	}
 	if draft.Groups[0].ScriptName != scripts[0].Name {

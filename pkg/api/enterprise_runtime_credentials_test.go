@@ -93,8 +93,8 @@ api_key=` + apiKey + `
 		t.Fatalf("import status = %d; body=%s", response.Code, response.Body.String())
 	}
 	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if bytes.Contains(response.Body.Bytes(), []byte(canary)) {
-			t.Fatalf("enterprise import response disclosed %q: %s", canary, response.Body.Bytes())
+		if !bytes.Contains(response.Body.Bytes(), []byte(canary)) {
+			t.Fatalf("enterprise import response did not preserve %q: %s", canary, response.Body.Bytes())
 		}
 	}
 
@@ -119,11 +119,11 @@ api_key=` + apiKey + `
 		t.Fatalf("protected source session missing: %#v", envelope)
 	}
 	if importDraftAttestationToken(&envelope.Script) == "" ||
-		envelope.Script.Config.HTTP.Proxy.Username != maskedScriptSecret ||
-		envelope.Script.Config.HTTP.Proxy.Password != maskedScriptSecret ||
-		envelope.Script.Config.HTTP.Auth.Password != maskedScriptSecret ||
-		envelope.Script.Config.WebRuntime.AdditionalAttributes["api_key"] != maskedScriptSecret {
-		t.Fatalf("enterprise browser projection was not masked and attested: %#v", envelope.Script.Config)
+		envelope.Script.Config.HTTP.Proxy.Username != proxyUser ||
+		envelope.Script.Config.HTTP.Proxy.Password != proxyPass ||
+		envelope.Script.Config.HTTP.Auth.Password != authPass ||
+		envelope.Script.Config.WebRuntime.AdditionalAttributes["api_key"] != apiKey {
+		t.Fatalf("enterprise browser draft was not preserved and attested: %#v", envelope.Script.Config)
 	}
 
 	created := createAttestedImportScript(t, server, &envelope.Script)
@@ -131,8 +131,8 @@ api_key=` + apiKey + `
 		t.Fatalf("save enterprise draft status = %d body=%s", created.Code, created.Body.String())
 	}
 	for _, canary := range []string{proxyUser, proxyPass, authPass, apiKey} {
-		if strings.Contains(created.Body.String(), canary) {
-			t.Fatalf("enterprise save response disclosed %q: %s", canary, created.Body.String())
+		if !strings.Contains(created.Body.String(), canary) {
+			t.Fatalf("enterprise save response did not preserve %q: %s", canary, created.Body.String())
 		}
 	}
 	var storedResponse StoredScript
@@ -217,13 +217,13 @@ ProxyPassword=` + proxyPass + `
 	}
 	if inspection.Script.Config.HTTP.ProxyMode != "none" ||
 		inspection.Script.Config.HTTP.Proxy.URL != "" ||
-		inspection.Script.Config.HTTP.Proxy.Username != maskedScriptSecret ||
-		inspection.Script.Config.HTTP.Proxy.Password != maskedScriptSecret ||
+		inspection.Script.Config.HTTP.Proxy.Username != proxyUser ||
+		inspection.Script.Config.HTTP.Proxy.Password != proxyPass ||
 		importDraftAttestationToken(&inspection.Script) == "" ||
-		strings.Contains(importResponse.Body.String(), proxyUser) ||
-		strings.Contains(importResponse.Body.String(), proxyPass) {
+		!strings.Contains(importResponse.Body.String(), proxyUser) ||
+		!strings.Contains(importResponse.Body.String(), proxyPass) {
 		t.Fatalf(
-			"browser-visible disabled proxy record was not masked and attested = %#v",
+			"browser-visible disabled proxy record was not preserved and attested = %#v",
 			inspection.Script.Config.HTTP,
 		)
 	}
@@ -247,9 +247,9 @@ ProxyPassword=` + proxyPass + `
 			createResponse.Body.String(),
 		)
 	}
-	if strings.Contains(createResponse.Body.String(), proxyUser) ||
-		strings.Contains(createResponse.Body.String(), proxyPass) {
-		t.Fatalf("save response disclosed proxy credentials: %s", createResponse.Body.String())
+	if !strings.Contains(createResponse.Body.String(), proxyUser) ||
+		!strings.Contains(createResponse.Body.String(), proxyPass) {
+		t.Fatalf("save response did not preserve proxy credentials: %s", createResponse.Body.String())
 	}
 	var created StoredScript
 	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
@@ -282,10 +282,10 @@ ProxyPassword=` + proxyPass + `
 	if readResponse.Code != http.StatusOK {
 		t.Fatalf("read status = %d body=%s", readResponse.Code, readResponse.Body.String())
 	}
-	if strings.Contains(readResponse.Body.String(), proxyUser) ||
-		strings.Contains(readResponse.Body.String(), proxyPass) ||
-		!strings.Contains(readResponse.Body.String(), maskedScriptSecret) {
-		t.Fatalf("ordinary read did not mask disabled proxy credentials: %s", readResponse.Body.String())
+	if !strings.Contains(readResponse.Body.String(), proxyUser) ||
+		!strings.Contains(readResponse.Body.String(), proxyPass) ||
+		strings.Contains(readResponse.Body.String(), maskedScriptSecret) {
+		t.Fatalf("ordinary read did not preserve disabled proxy credentials: %s", readResponse.Body.String())
 	}
 
 	exportDir := t.TempDir()

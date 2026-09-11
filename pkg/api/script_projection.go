@@ -1,8 +1,9 @@
 package api
 
 // Script response projection and masked-write reconciliation live here rather
-// than beside execution-time masking. Runtime scripts must retain credentials;
-// viewer, export, federation, and source-control representations must not.
+// than beside execution-time masking. Trusted imported authoring artifacts
+// retain their exact values; ordinary disclosure surfaces and runtime evidence
+// continue to use the existing masking boundaries.
 
 import (
 	"bytes"
@@ -395,62 +396,33 @@ func importPreservedStringSlice(value any) []string {
 	}
 }
 
-// sanitizePersistentImportReviewSurfaces removes credential material from
-// non-executable import provenance before any durable write. Credential-
-// preserving imports bypass executable projection by design, so this boundary
-// must be applied independently of maskScriptSecrets.
+// sanitizePersistentImportReviewSurfaces keeps trusted credential-preserving
+// imports exact. Other callers retain the legacy projection boundary so a
+// client cannot manufacture import metadata as a general disclosure channel.
 func sanitizePersistentImportReviewSurfaces(script *dsl.Script) error {
-	if script == nil {
+	if script == nil || isCredentialPreservingImport(script) {
 		return nil
 	}
 	if script.Metadata != nil && script.Metadata.Import != nil {
 		for key, value := range script.Metadata.Import.Preserved {
 			switch {
 			case key == javaVuserApprovalEvidenceKey:
-				// This is server-authored governance evidence, not executable
-				// session material. The loop has already removed its wrapper
-				// key from projection context, so preserve only the complete,
-				// strictly validated UUID/SHA-256 envelope explicitly.
 				validated := projectJavaVuserApprovalEvidence(value)
 				if len(validated) == 2 {
 					script.Metadata.Import.Preserved[key] = validated
 				} else {
 					delete(script.Metadata.Import.Preserved, key)
 				}
-			case isOpaqueImportSourcePayloadKey(key):
-				// These bounded, server-authored payloads are the only preserved
-				// metadata fields allowed to retain exact source bytes. They are
-				// required to finish a durably gated conversion and are masked
-				// independently on every ordinary response projection.
-				continue
-			case isExecutableImportPreservedPayloadKey(key):
-				// Browser recorded-only resource filtering consumes these exact
-				// URLs at runtime. They may contain the same userinfo or signed
-				// query credentials already present in the operator's imported
-				// recording, so the durable execution copy must retain them.
-				// maskScriptSecrets projects them independently on every read,
-				// export, receipt, and review surface.
+			case isOpaqueImportSourcePayloadKey(key), isExecutableImportPreservedPayloadKey(key):
 				continue
 			case isImportPreservedJavaVMSettingsKey(key):
-				// The imported [JavaVM:Options] command line is executable
-				// configuration, not review prose. Project the rest of the
-				// object exactly as before while retaining those rows verbatim.
 				script.Metadata.Import.Preserved[key] = projectPreservedJavaVMSettings(key, value)
 			case isReviewEvidenceSubtreeKey(key):
 				script.Metadata.Import.Preserved[key] = sanitizeImportReviewEvidence(value)
 			default:
-				// Import provenance is not an executable credential surface.
-				// Even a trusted import must not turn arbitrary caller-controlled
-				// metadata into a durable raw-source side channel. Preserve
-				// ordinary enums, IDs, and mappings while applying the same
-				// disclosure projection used for opaque metadata responses.
 				script.Metadata.Import.Preserved[key] = projectScriptNode(
 					value,
-					scriptProjectionContext{
-						key:       key,
-						opaqueMap: true,
-						metadata:  true,
-					},
+					scriptProjectionContext{key: key, opaqueMap: true, metadata: true},
 				)
 			}
 		}
@@ -464,10 +436,6 @@ func sanitizePersistentImportReviewSurfaces(script *dsl.Script) error {
 		default:
 			return nil
 		}
-		// Runtime-incompatible header and multipart bytes are durable execution
-		// evidence, not source-review prose. Preserve only these already-gated
-		// envelopes while the rest of a review-only action is disclosure-
-		// sanitized; response projection masks them independently.
 		fidelityEnvelopes := make(map[string]any, 2)
 		if ref.Action.Metadata != nil {
 			for _, key := range []string{
@@ -932,10 +900,13 @@ func maskStoredScript(stored *StoredScript) *StoredScript {
 	if stored == nil {
 		return nil
 	}
-	masked := cloneStoredScriptForReadLocked(stored)
-	masked.Script = maskScriptSecrets(masked.Script)
-	masked.Name = disclosureSafeScriptName(stored.Name, stored.Script)
-	return masked
+	view := cloneStoredScriptForReadLocked(stored)
+	if isCredentialPreservingImport(stored.Script) {
+		return view
+	}
+	view.Script = maskScriptSecrets(view.Script)
+	view.Name = disclosureSafeScriptName(stored.Name, stored.Script)
+	return view
 }
 
 // viewStoredScript is the authenticated stored-script authoring projection.
@@ -946,8 +917,8 @@ func maskStoredScript(stored *StoredScript) *StoredScript {
 // boundary and remains unaffected.
 func viewStoredScript(stored *StoredScript) *StoredScript {
 	view := maskStoredScript(stored)
-	if view == nil {
-		return nil
+	if view == nil || isCredentialPreservingImport(stored.Script) {
+		return view
 	}
 	restoreStoredScriptDataFileContents(view.Script, stored.Script)
 	return view
@@ -993,8 +964,10 @@ func maskAuthoringSession(session *storage.AuthoringSession) *storage.AuthoringS
 		return nil
 	}
 	masked := cloneAuthoringSession(session)
-	masked.Draft = maskScriptSecrets(masked.Draft)
-	masked.Name = disclosureSafeScriptName(session.Name, session.Draft)
+	if !isCredentialPreservingImport(session.Draft) {
+		masked.Draft = maskScriptSecrets(masked.Draft)
+		masked.Name = disclosureSafeScriptName(session.Name, session.Draft)
+	}
 	masked.ReviewState = projectAuthoringReviewState(masked.ReviewState)
 	delete(masked.ReviewState, authoringSessionIdempotencyReviewKey)
 	return masked

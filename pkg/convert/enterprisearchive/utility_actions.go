@@ -6,7 +6,6 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -480,11 +479,8 @@ func sourceSupportModeRequiresDisclosureSafePlaceholder(mode SourceFunctionSuppo
 	}
 }
 
-// makeSourceReviewActionDisclosureSafe keeps only value-free source
-// provenance on behavior that cannot execute. Review placeholders are durable
-// script/API/receipt surfaces, so carrying RawBlock, StepName, or source
-// argument values here would disclose arbitrary literals even though replay is
-// blocked.
+// makeSourceReviewActionDisclosureSafe keeps imported argument values on
+// review-only behavior while retaining its execution gate.
 func makeSourceReviewActionDisclosureSafe(action *dsl.Action, fn ParsedFunction, mode SourceFunctionSupportMode) {
 	if action == nil {
 		return
@@ -599,28 +595,8 @@ func makeEmbeddedTransactionConsumerDisclosureSafe(
 
 func disclosureSafeSourceFlow(fn ParsedFunction) ParsedFunction {
 	out := fn
-	out.Conditions = make([]string, len(fn.Conditions))
-	for index := range out.Conditions {
-		id := ""
-		if index < len(fn.ConditionIDs) {
-			id = strings.TrimSpace(fn.ConditionIDs[index])
-		}
-		if id == "" {
-			id = fmt.Sprintf("%d", index+1)
-		}
-		out.Conditions[index] = "condition@" + id
-	}
-	out.Loops = make([]string, len(fn.Loops))
-	for index := range out.Loops {
-		id := ""
-		if index < len(fn.LoopIDs) {
-			id = strings.TrimSpace(fn.LoopIDs[index])
-		}
-		if id == "" {
-			id = fmt.Sprintf("%d", index+1)
-		}
-		out.Loops[index] = "loop@" + id
-	}
+	out.Conditions = append([]string(nil), fn.Conditions...)
+	out.Loops = append([]string(nil), fn.Loops...)
 	return out
 }
 
@@ -632,12 +608,7 @@ func sourceFunctionArgumentCount(fn ParsedFunction) int {
 }
 
 func disclosureSafeSourceCallShape(fn ParsedFunction) string {
-	count := sourceFunctionArgumentCount(fn)
-	args := make([]string, count)
-	for index := range args {
-		args[index] = credential.Redacted
-	}
-	return strings.TrimSpace(fn.Name) + "(" + strings.Join(args, ", ") + ")"
+	return strings.TrimSpace(fn.Name) + "(" + strings.Join(sourceControlArgs(fn), ", ") + ")"
 }
 
 func disclosureSafeSourceReviewActionName(fn ParsedFunction) string {
@@ -652,13 +623,13 @@ func disclosureSafeSourceReviewActionName(fn ParsedFunction) string {
 }
 
 func disclosureSafeSourceReviewArgs(fn ParsedFunction) []any {
-	count := len(sourceControlArgs(fn))
-	if count == 0 {
+	values := sourceControlArgs(fn)
+	if len(values) == 0 {
 		return nil
 	}
-	args := make([]any, count)
-	for index := range args {
-		args[index] = credential.Redacted
+	args := make([]any, len(values))
+	for index, value := range values {
+		args[index] = value
 	}
 	return args
 }
@@ -677,7 +648,8 @@ func disclosureSafeStructuredCallArgs(args []ParsedArgument) []map[string]any {
 		}
 		out[index] = map[string]any{
 			"kind":  kind,
-			"value": credential.Redacted,
+			"value": arg.Value,
+			"raw":   arg.Raw,
 		}
 	}
 	return out

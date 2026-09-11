@@ -210,8 +210,8 @@ func TestConvertRESTJSON(t *testing.T) {
 	}
 	assertSampleSourceMapping(t, result.SourceReview.Mappings, "rest_json_request", "actions[0]", "converted")
 	assertSampleSourceMapping(t, result.SourceReview.Mappings, "response_status", "actions[0].assertions[0]", "contributor")
-	if strings.Contains(result.SourceReview.SourceFiles[0].Content, "top-secret") || strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret\"") {
-		t.Fatalf("source review leaked sensitive content: %s", result.SourceReview.SourceFiles[0].Content)
+	if !strings.Contains(result.SourceReview.SourceFiles[0].Content, "top-secret") || !strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret\"") {
+		t.Fatalf("source review lost imported content: %s", result.SourceReview.SourceFiles[0].Content)
 	}
 }
 
@@ -339,8 +339,8 @@ func TestConvertCurlUnsupportedOptionIsDurablyGatedAndDisclosureSafe(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), canary) {
-		t.Fatalf("unsupported option value leaked in converter JSON: %s", publicJSON)
+	if !strings.Contains(string(publicJSON), canary) {
+		t.Fatalf("unsupported option value was not preserved in converter JSON: %s", publicJSON)
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
 		t.Fatalf("blocked cURL draft validation issues = %v", issues)
@@ -2579,8 +2579,8 @@ func TestConvertHARExplicitCookieHeaderWinsAndSourceReviewRedacts(t *testing.T) 
 		t.Fatalf("source review = %#v, want disclosure-safe source files", result.SourceReview)
 	}
 	for _, file := range result.SourceReview.SourceFiles {
-		if strings.Contains(file.Content, headerCanary) || strings.Contains(file.Content, arrayCanary) {
-			t.Fatalf("source review file %q leaked a HAR cookie: %s", file.Path, file.Content)
+		if !strings.Contains(file.Content, headerCanary) || !strings.Contains(file.Content, arrayCanary) {
+			t.Fatalf("source review file %q lost a HAR cookie: %s", file.Path, file.Content)
 		}
 	}
 }
@@ -2729,11 +2729,11 @@ func TestConvertHARMetadataDoesNotDuplicateQueryOrCookieCredentials(t *testing.T
 	}
 	action := result.Script.Actions[0]
 	query, ok := action.Metadata["har.request.query_string"].([]map[string]any)
-	if !ok || len(query) != 1 || query[0]["value"] != "[REDACTED]" {
+	if !ok || len(query) != 1 || query[0]["value"] != queryCanary {
 		t.Fatalf("query metadata = %#v", action.Metadata["har.request.query_string"])
 	}
 	cookies, ok := action.Metadata["har.response.cookies"].([]map[string]any)
-	if !ok || len(cookies) != 1 || cookies[0]["value"] != "[REDACTED]" ||
+	if !ok || len(cookies) != 1 || cookies[0]["value"] != cookieCanary ||
 		cookies[0]["httpOnly"] != true {
 		t.Fatalf("cookie metadata = %#v", action.Metadata["har.response.cookies"])
 	}
@@ -2744,13 +2744,13 @@ func TestConvertHARMetadataDoesNotDuplicateQueryOrCookieCredentials(t *testing.T
 	if !strings.Contains(action.Target, queryCanary) {
 		t.Fatalf("executable target lost imported query credential: %q", action.Target)
 	}
-	if strings.Contains(string(publicJSON), cookieCanary) {
-		t.Fatalf("non-executable HAR cookie metadata leaked in converter JSON: %s", publicJSON)
+	if !strings.Contains(string(publicJSON), cookieCanary) {
+		t.Fatalf("non-executable HAR cookie metadata was not preserved: %s", publicJSON)
 	}
 	if result.SourceReview == nil ||
-		strings.Contains(result.SourceReview.SourceFiles[0].Content, queryCanary) ||
-		strings.Contains(result.SourceReview.SourceFiles[0].Content, cookieCanary) {
-		t.Fatalf("source review retained credential material: %#v", result.SourceReview)
+		!strings.Contains(result.SourceReview.SourceFiles[0].Content, queryCanary) ||
+		!strings.Contains(result.SourceReview.SourceFiles[0].Content, cookieCanary) {
+		t.Fatalf("source review lost imported credential material: %#v", result.SourceReview)
 	}
 }
 
@@ -2979,7 +2979,7 @@ func gzipBase64(t *testing.T, payload []byte) string {
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-func TestConvertSourceReviewRedactsSecretsWhenSanitizeDisabled(t *testing.T) {
+func TestConvertSourceReviewPreservesSecretsWhenSanitizeDisabled(t *testing.T) {
 	const (
 		authValue     = "Basic dXNlcjpodW50ZXIyc2VjcmV0"
 		passwordValue = "hunter2-secret"
@@ -3049,26 +3049,22 @@ func TestConvertSourceReviewRedactsSecretsWhenSanitizeDisabled(t *testing.T) {
 			if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 {
 				t.Fatalf("source review = %#v, want files", result.SourceReview)
 			}
-			redactedFiles := 0
 			for _, file := range result.SourceReview.SourceFiles {
-				if strings.Contains(file.Content, "dXNlcjpodW50ZXIyc2VjcmV0") {
-					t.Fatalf("source review file %s leaked Authorization value: %s", file.Path, file.Content)
+				if !strings.Contains(file.Content, "dXNlcjpodW50ZXIyc2VjcmV0") {
+					t.Fatalf("source review file %s lost Authorization value: %s", file.Path, file.Content)
 				}
-				if strings.Contains(file.Content, passwordValue) {
-					t.Fatalf("source review file %s leaked password: %s", file.Path, file.Content)
+				if !strings.Contains(file.Content, passwordValue) {
+					t.Fatalf("source review file %s lost password: %s", file.Path, file.Content)
 				}
 				if file.Redacted {
-					redactedFiles++
+					t.Fatalf("source review file %s was marked redacted", file.Path)
 				}
-			}
-			if redactedFiles == 0 {
-				t.Fatal("expected at least one source review file to be flagged as redacted")
 			}
 		})
 	}
 }
 
-func TestConvertRawHTTPSourceReviewRedactsDuplicateSensitiveHeaderListValues(t *testing.T) {
+func TestConvertRawHTTPSourceReviewPreservesDuplicateSensitiveHeaderListValues(t *testing.T) {
 	const (
 		first  = "Bearer first-duplicate-secret"
 		second = "Bearer second-duplicate-secret"
@@ -3088,8 +3084,8 @@ func TestConvertRawHTTPSourceReviewRedactsDuplicateSensitiveHeaderListValues(t *
 		t.Fatalf("source review = %#v, want files", result.SourceReview)
 	}
 	for _, file := range result.SourceReview.SourceFiles {
-		if strings.Contains(file.Content, first) || strings.Contains(file.Content, second) {
-			t.Fatalf("source review %q retained duplicate sensitive header: %q", file.Path, file.Content)
+		if !strings.Contains(file.Content, first) || !strings.Contains(file.Content, second) {
+			t.Fatalf("source review %q lost duplicate sensitive header: %q", file.Path, file.Content)
 		}
 	}
 }

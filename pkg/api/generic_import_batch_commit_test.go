@@ -84,8 +84,8 @@ func TestCommitGenericImportBatchRestoresOpaqueCredentialAndReplaysReceipt(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(credential)) {
-		t.Fatalf("preview disclosed source credential: %s", encoded)
+	if !bytes.Contains(encoded, []byte(credential)) {
+		t.Fatalf("preview did not preserve source credential: %s", encoded)
 	}
 	payload := map[string]any{
 		"operation_id":   "generic-opaque-replay",
@@ -96,8 +96,8 @@ func TestCommitGenericImportBatchRestoresOpaqueCredentialAndReplaysReceipt(t *te
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", created.Code, created.Body.String())
 	}
-	if strings.Contains(created.Body.String(), credential) {
-		t.Fatalf("create response disclosed source credential: %s", created.Body.String())
+	if !strings.Contains(created.Body.String(), credential) {
+		t.Fatalf("create response did not preserve source credential: %s", created.Body.String())
 	}
 	var first struct {
 		Scripts []StoredScript `json:"scripts"`
@@ -629,8 +629,8 @@ func TestCrossPlatformGenericImporterBatchContractMatrix(t *testing.T) {
 			if created.Code != http.StatusCreated {
 				t.Fatalf("create status = %d body=%s", created.Code, created.Body.String())
 			}
-			if strings.Contains(created.Body.String(), credential) {
-				t.Fatalf("create response disclosed protected credential: %s", created.Body.String())
+			if !strings.Contains(created.Body.String(), credential) {
+				t.Fatalf("create response did not preserve imported credentials: %s", created.Body.String())
 			}
 			stored, err := store.ListScripts(storage.DefaultProjectID, nil)
 			if err != nil {

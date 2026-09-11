@@ -32,28 +32,29 @@ import (
 )
 
 type assignedTest struct {
-	testID                    string
-	lifecycle                 assignmentLifecycleState
-	executionGeneration       uint64
-	requireTestExecutionLease bool
-	runSupervisionTokenHash   [sha256.Size]byte
-	vuserCount                int32
-	paused                    bool
-	pauseOperationID          string
-	pauseOperationSequence    uint64
-	duration                  time.Duration
-	durationSeconds           int64
-	committed                 bool
-	groups                    map[string]int32
-	activeGroups              map[string]int32
-	groupStats                map[string]GeneratorStats
-	groupTelemetry            map[string]MetricsTelemetry
-	groupTransactions         map[string][]TransactionMetric
-	groupAggregates           map[string]metricsAggregateSet
-	groupAssignments          map[string][sha256.Size]byte
-	groupSecretBundleIDs      map[string]string
-	groupScripts              map[string]string
-	terminalError             string
+	testID                          string
+	lifecycle                       assignmentLifecycleState
+	executionGeneration             uint64
+	requireTestExecutionLease       bool
+	runSupervisionTokenHash         [sha256.Size]byte
+	vuserCount                      int32
+	paused                          bool
+	pauseOperationID                string
+	pauseOperationSequence          uint64
+	duration                        time.Duration
+	durationSeconds                 int64
+	committed                       bool
+	groups                          map[string]int32
+	activeGroups                    map[string]int32
+	groupStats                      map[string]GeneratorStats
+	groupTelemetry                  map[string]MetricsTelemetry
+	groupTransactions               map[string][]TransactionMetric
+	groupAggregates                 map[string]metricsAggregateSet
+	groupTransactionResponseTimeSLA map[string][]engine.TransactionResponseTimeSLACompliance
+	groupAssignments                map[string][sha256.Size]byte
+	groupSecretBundleIDs            map[string]string
+	groupScripts                    map[string]string
+	terminalError                   string
 }
 
 const defaultAssignmentStageTTL = 2 * time.Minute
@@ -95,10 +96,11 @@ type groupExecution struct {
 }
 
 type executionMetricsSnapshot struct {
-	stats        GeneratorStats
-	transactions []TransactionMetric
-	telemetry    MetricsTelemetry
-	aggregates   metricsAggregateSet
+	stats                      GeneratorStats
+	transactions               []TransactionMetric
+	telemetry                  MetricsTelemetry
+	aggregates                 metricsAggregateSet
+	transactionResponseTimeSLA []engine.TransactionResponseTimeSLACompliance
 	// sourceSnapshotAt identifies the engine snapshot whose gauges and
 	// side-channel aggregates were projected into this window. LatestSnapshot
 	// returns the cached latest value, so the timestamp fences that evidence from
@@ -1728,6 +1730,9 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	if assignment.groupAggregates == nil {
 		assignment.groupAggregates = make(map[string]metricsAggregateSet)
 	}
+	if assignment.groupTransactionResponseTimeSLA == nil {
+		assignment.groupTransactionResponseTimeSLA = make(map[string][]engine.TransactionResponseTimeSLACompliance)
+	}
 	assignment.activeGroups[groupName] = stats.ActiveVUsers
 	assignment.groupStats[groupName] = stats
 	assignment.groupTelemetry[groupName] = telemetry
@@ -1743,6 +1748,13 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	assignment.groupTransactions[groupName] = groupTransactions
 	boundRetainedTransactionSamples(assignment.groupTransactions, groupName)
 	assignment.groupAggregates[groupName] = aggregates
+	if expected != nil {
+		expected.metricsMu.Lock()
+		if expected.lastMetrics != nil {
+			assignment.groupTransactionResponseTimeSLA[groupName] = append([]engine.TransactionResponseTimeSLACompliance(nil), expected.lastMetrics.transactionResponseTimeSLA...)
+		}
+		expected.metricsMu.Unlock()
+	}
 	s.assignments[testID] = assignment
 	batch := s.metricsBatchLocked(testID)
 	writer := s.archiveManager.writer(testID)
@@ -2070,6 +2082,22 @@ func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTe
 		transactions = append(transactions, groupTransactions...)
 	}
 	aggregates := mergeMetricsAggregateSets(assignment.groupAggregates)
+	transactionResponseTimeSLA := make([]*pb.TransactionResponseTimeSLACompliance, 0)
+	for _, groupRows := range assignment.groupTransactionResponseTimeSLA {
+		for _, row := range groupRows {
+			transactionResponseTimeSLA = append(transactionResponseTimeSLA, &pb.TransactionResponseTimeSLACompliance{
+				Group: row.Group, Transaction: row.Transaction, ThresholdMs: row.ThresholdMs,
+				TotalCount: row.TotalCount, EligibleSuccessCount: row.EligibleSuccessCount,
+				ExcludedErrorCount: row.ExcludedErrorCount, MissedCount: row.MissedCount,
+			})
+		}
+	}
+	sort.Slice(transactionResponseTimeSLA, func(i, j int) bool {
+		if transactionResponseTimeSLA[i].Group == transactionResponseTimeSLA[j].Group {
+			return transactionResponseTimeSLA[i].Transaction < transactionResponseTimeSLA[j].Transaction
+		}
+		return transactionResponseTimeSLA[i].Group < transactionResponseTimeSLA[j].Group
+	})
 	// The batch carries a single window, but every rate consumer computes
 	// totalSuccess/window. When a pod hosts multiple groups whose windows differ
 	// (ramp/stagger/wind-down), dividing the summed cross-group success by the max
@@ -2089,7 +2117,9 @@ func (s *Service) metricsBatchForAssignment(testID string, assignment assignedTe
 	if stats.ActiveVUsers == 0 && len(groupAssignments) == 0 {
 		stats.ActiveVUsers = assignment.vuserCount
 	}
-	return s.metricsBatchForMetrics(testID, assignment.executionGeneration, stats, transactions, aggregates, assignment.paused, groupAssignments, lifecycleState, lifecycleError, telemetry)
+	batch := s.metricsBatchForMetrics(testID, assignment.executionGeneration, stats, transactions, aggregates, assignment.paused, groupAssignments, lifecycleState, lifecycleError, telemetry)
+	batch.TransactionResponseTimeSla = transactionResponseTimeSLA
+	return batch
 }
 
 func (s *Service) metricsBatchForState(testID string, executionGeneration uint64, vuserCount int32, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string) *pb.MetricsBatch {
@@ -2521,8 +2551,13 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 		}
 	}
 	telemetry.DroppedSubscriberBatches = droppedSubscriberBatches
+	transactionResponseTimeSLA := snapshot.TransactionResponseTimeSLA
+	if !snapshotOK && previous != nil {
+		transactionResponseTimeSLA = previous.transactionResponseTimeSLA
+	}
 	metrics := executionMetricsSnapshot{
 		stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates,
+		transactionResponseTimeSLA: append([]engine.TransactionResponseTimeSLACompliance(nil), transactionResponseTimeSLA...),
 	}
 	if snapshotOK {
 		metrics.sourceSnapshotAt = snapshot.Timestamp
@@ -2587,6 +2622,7 @@ func storeExecutionMetrics(exec *groupExecution, metrics executionMetricsSnapsho
 	exec.metricsMu.Lock()
 	stored := metrics
 	stored.transactions = append([]TransactionMetric(nil), metrics.transactions...)
+	stored.transactionResponseTimeSLA = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
 	exec.lastMetrics = &stored
 	exec.metricsMu.Unlock()
 }
@@ -2614,6 +2650,9 @@ func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName strin
 	if assignment.groupAggregates == nil {
 		assignment.groupAggregates = make(map[string]metricsAggregateSet)
 	}
+	if assignment.groupTransactionResponseTimeSLA == nil {
+		assignment.groupTransactionResponseTimeSLA = make(map[string][]engine.TransactionResponseTimeSLACompliance)
+	}
 	assignment.activeGroups[groupName] = metrics.stats.ActiveVUsers
 	assignment.groupStats[groupName] = metrics.stats
 	assignment.groupTelemetry[groupName] = metrics.telemetry
@@ -2634,6 +2673,7 @@ func applyExecutionMetricsToAssignment(assignment *assignedTest, groupName strin
 	} else {
 		delete(assignment.groupAggregates, groupName)
 	}
+	assignment.groupTransactionResponseTimeSLA[groupName] = append([]engine.TransactionResponseTimeSLACompliance(nil), metrics.transactionResponseTimeSLA...)
 }
 
 // captureStoppedExecutionMetrics drains evidence after detached executions have

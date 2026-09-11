@@ -282,6 +282,7 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
         initialization: group.initialization || 'at_runtime',
         ...(runtimeSettings ? { runtimeSettings } : {}),
         assignment: cloneGroupAssignment(group.assignment),
+		transactionResponseTimeSlaMs: group.transaction_response_time_sla_ms,
       }
     })
     : [{

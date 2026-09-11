@@ -28,6 +28,33 @@ func TestNewMetricsCollector_DefaultBuffer(t *testing.T) {
 	}
 }
 
+func TestMetricsCollectorTransactionResponseTimeSLAIsCumulativeAndSuccessOnly(t *testing.T) {
+	mc := NewMetricsCollector(10)
+	mc.SetTransactionResponseTimeSLAThresholds(map[string]float64{"A": 3000, "B": 1000})
+	first := mc.computeSnapshot([]*protocol.Result{
+		{Group: "A", ActionName: "Checkout", BusinessTransaction: true, Success: true, Duration: 3000 * time.Millisecond},
+		{Group: "A", ActionName: "Checkout", BusinessTransaction: true, Success: false, Duration: 9000 * time.Millisecond},
+		{Group: "A", ActionName: "request", Success: true, Duration: 9000 * time.Millisecond},
+		{Group: "B", ActionName: "Checkout", BusinessTransaction: true, Success: true, Duration: 1001 * time.Millisecond},
+	}, time.Second)
+	if len(first.TransactionResponseTimeSLA) != 2 {
+		t.Fatalf("first SLA rows = %#v", first.TransactionResponseTimeSLA)
+	}
+	second := mc.computeSnapshot([]*protocol.Result{
+		{Group: "A", ActionName: "Checkout", BusinessTransaction: true, Success: true, Duration: 3001 * time.Millisecond},
+	}, time.Second)
+	rows := make(map[string]TransactionResponseTimeSLACompliance)
+	for _, row := range second.TransactionResponseTimeSLA {
+		rows[row.Group] = row
+	}
+	if got := rows["A"]; got.TotalCount != 3 || got.EligibleSuccessCount != 2 || got.ExcludedErrorCount != 1 || got.MissedCount != 1 {
+		t.Errorf("group A = %#v", got)
+	}
+	if got := rows["B"]; got.TotalCount != 1 || got.MissedCount != 1 || got.ThresholdMs != 1000 {
+		t.Errorf("group B = %#v", got)
+	}
+}
+
 func TestMetricsCollector_RecordAndCount(t *testing.T) {
 	mc := NewMetricsCollector(100)
 

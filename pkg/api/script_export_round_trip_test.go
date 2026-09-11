@@ -6,10 +6,8 @@ package api
 //   - every byte written to disk or handed to source control is re-importable
 //     into a script that still runs.
 //
-// Read/response projections (list, get, import review payloads) are unchanged
-// and are asserted elsewhere; the assertions here deliberately keep the
-// non-executable source-review boundary in place so this file cannot be used to
-// relax it.
+// Imported source-review evidence is part of the authoring artifact and stays
+// exact through persistence, export, and re-import.
 
 import (
 	"encoding/json"
@@ -106,11 +104,11 @@ func assertRoundTripScriptIsRunnable(t *testing.T, label string, script *dsl.Scr
 }
 
 // assertRoundTripBytesAreRunnable asserts the on-disk/source-control envelope
-// carries executable values and still withholds non-executable review evidence.
+// carries the exact imported executable and review content.
 func assertRoundTripBytesAreRunnable(t *testing.T, label string, data []byte) *dsl.Script {
 	t.Helper()
-	if strings.Contains(string(data), roundTripReviewSecret) {
-		t.Fatalf("%s: envelope disclosed non-executable review evidence: %s", label, data)
+	if !strings.Contains(string(data), roundTripReviewSecret) {
+		t.Fatalf("%s: envelope omitted imported review evidence: %s", label, data)
 	}
 	var envelope struct {
 		Script *dsl.Script `json:"script"`
@@ -168,8 +166,8 @@ func TestImportedScriptExportDownloadAndReimportStayRunnable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(storedPayload), roundTripReviewSecret) {
-		t.Fatalf("durable row retained non-executable review evidence: %s", storedPayload)
+	if !strings.Contains(string(storedPayload), roundTripReviewSecret) {
+		t.Fatalf("durable row omitted imported review evidence: %s", storedPayload)
 	}
 
 	// Export to disk.
@@ -227,16 +225,15 @@ func TestImportedScriptExportDownloadAndReimportStayRunnable(t *testing.T) {
 		t.Fatalf("re-imported script is not byte-identical to the original durable row\n got: %s\nwant: %s", got, want)
 	}
 
-	// The disclosure projection is unchanged: reads still mask.
-	masked := maskStoredScript(reimported)
-	if masked == nil || masked.Script == nil {
+	view := maskStoredScript(reimported)
+	if view == nil || view.Script == nil {
 		t.Fatal("stored-script response projection returned nothing")
 	}
-	if got := masked.Script.Actions[0].Headers["Authorization"]; !strings.Contains(got, maskedScriptSecret) {
-		t.Fatalf("read projection stopped masking Authorization: %q", got)
+	if got := view.Script.Actions[0].Headers["Authorization"]; got != roundTripAuthorization {
+		t.Fatalf("read projection changed Authorization: %q", got)
 	}
-	if got := masked.Script.Config.HTTP.Proxy.Password; got == roundTripProxyPassword {
-		t.Fatalf("read projection disclosed the proxy password: %q", got)
+	if got := view.Script.Config.HTTP.Proxy.Password; got != roundTripProxyPassword {
+		t.Fatalf("read projection changed the proxy password: %q", got)
 	}
 }
 
@@ -327,8 +324,8 @@ func TestLibraryScriptBundleShipsTheRunnableScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(payload), roundTripReviewSecret) {
-		t.Fatalf("library bundle carried non-executable review evidence: %s", payload)
+	if !strings.Contains(string(payload), roundTripReviewSecret) {
+		t.Fatalf("library bundle omitted imported review evidence: %s", payload)
 	}
 
 	// ContentHash stays the PORTABLE hash: hashLibraryScript masks internally, so

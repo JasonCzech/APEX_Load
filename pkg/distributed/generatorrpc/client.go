@@ -30,39 +30,40 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
-	TestID                     string
-	ExecutionGeneration        uint64
-	ScenarioID                 string
-	RequireTestExecutionLease  bool
-	GroupName                  string
-	TargetDuration             time.Duration
-	TargetDurationSeconds      int64
-	DurationOffset             time.Duration
-	ScriptID                   string
-	ExpectedScriptHash         string
-	ScriptContent              []byte
-	VUserCount                 int32
-	RampUp                     time.Duration
-	RampUpSeconds              int32
-	RampDown                   time.Duration
-	InitStrategy               string
-	PreBaseline                time.Duration
-	PostBaseline               time.Duration
-	ShardOrdinal               uint32
-	ShardCount                 uint32
-	VUserIDOffset              uint64
-	StartPaused                bool
-	Environment                map[string]string
-	DataFiles                  []DataFile
-	RedactionRules             []engine.RedactionRule
-	SecretBundle               map[string]string
-	SecretBundleID             string
-	RunSupervisionToken        []byte
-	Region                     string
-	StartOffset                time.Duration
-	MessageDetailMaxItems      int
-	MessageDetailMaxItemBytes  int64
-	MessageDetailMaxTotalBytes int64
+	TestID                       string
+	ExecutionGeneration          uint64
+	ScenarioID                   string
+	RequireTestExecutionLease    bool
+	GroupName                    string
+	TargetDuration               time.Duration
+	TargetDurationSeconds        int64
+	DurationOffset               time.Duration
+	ScriptID                     string
+	ExpectedScriptHash           string
+	ScriptContent                []byte
+	VUserCount                   int32
+	RampUp                       time.Duration
+	RampUpSeconds                int32
+	RampDown                     time.Duration
+	InitStrategy                 string
+	PreBaseline                  time.Duration
+	PostBaseline                 time.Duration
+	ShardOrdinal                 uint32
+	ShardCount                   uint32
+	VUserIDOffset                uint64
+	StartPaused                  bool
+	Environment                  map[string]string
+	DataFiles                    []DataFile
+	RedactionRules               []engine.RedactionRule
+	SecretBundle                 map[string]string
+	SecretBundleID               string
+	RunSupervisionToken          []byte
+	Region                       string
+	StartOffset                  time.Duration
+	MessageDetailMaxItems        int
+	MessageDetailMaxItemBytes    int64
+	MessageDetailMaxTotalBytes   int64
+	TransactionResponseTimeSLAMs float64
 }
 
 type AssignmentResult struct {
@@ -143,26 +144,37 @@ type PauseResult struct {
 }
 
 type MetricsBatch struct {
-	TestID                string
-	ExecutionGeneration   uint64
-	BatchSequence         uint64
-	GeneratorID           string
-	TimestampUnixMs       int64
-	WindowMs              int64
-	Stats                 GeneratorStats
-	Transactions          []TransactionMetric
-	FleetMetrics          *MetricAggregate
-	TransactionMetrics    []MetricAggregate
-	DependencyMetrics     []MetricAggregate
-	SOAPMetrics           []MetricAggregate
-	NetworkProfileMetrics []MetricAggregate
-	RegionMetrics         []MetricAggregate
-	Browser               *BrowserMetrics
-	BrowserByDevice       []BrowserDeviceMetrics
-	Groups                []GroupMetric
-	LifecycleState        string
-	LifecycleError        string
-	Telemetry             *MetricsTelemetry
+	TestID                     string
+	ExecutionGeneration        uint64
+	BatchSequence              uint64
+	GeneratorID                string
+	TimestampUnixMs            int64
+	WindowMs                   int64
+	Stats                      GeneratorStats
+	Transactions               []TransactionMetric
+	FleetMetrics               *MetricAggregate
+	TransactionMetrics         []MetricAggregate
+	DependencyMetrics          []MetricAggregate
+	SOAPMetrics                []MetricAggregate
+	NetworkProfileMetrics      []MetricAggregate
+	RegionMetrics              []MetricAggregate
+	Browser                    *BrowserMetrics
+	BrowserByDevice            []BrowserDeviceMetrics
+	Groups                     []GroupMetric
+	LifecycleState             string
+	LifecycleError             string
+	Telemetry                  *MetricsTelemetry
+	TransactionResponseTimeSLA []TransactionResponseTimeSLACompliance
+}
+
+type TransactionResponseTimeSLACompliance struct {
+	Group                string
+	Transaction          string
+	ThresholdMs          float64
+	TotalCount           int64
+	EligibleSuccessCount int64
+	ExcludedErrorCount   int64
+	MissedCount          int64
 }
 
 type MetricsTelemetry struct {
@@ -1306,27 +1318,39 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	}
 
 	return MetricsBatch{
-		TestID:                batch.GetTestId(),
-		ExecutionGeneration:   batch.GetExecutionGeneration(),
-		BatchSequence:         batch.GetBatchSequence(),
-		GeneratorID:           batch.GetGeneratorId(),
-		TimestampUnixMs:       batch.GetTimestampUnixMs(),
-		WindowMs:              batch.GetWindowMs(),
-		Stats:                 stats,
-		Transactions:          transactions,
-		FleetMetrics:          metricAggregateFromProto(batch.GetFleetMetrics()),
-		TransactionMetrics:    metricAggregatesFromProto(batch.GetTransactionMetrics()),
-		DependencyMetrics:     metricAggregatesFromProto(batch.GetDependencyMetrics()),
-		SOAPMetrics:           metricAggregatesFromProto(batch.GetSoapMetrics()),
-		NetworkProfileMetrics: metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
-		RegionMetrics:         metricAggregatesFromProto(batch.GetRegionMetrics()),
-		Browser:               browserMetricsFromProto(batch.GetBrowserMetrics()),
-		BrowserByDevice:       browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics()),
-		Groups:                groups,
-		LifecycleState:        batch.GetLifecycleState(),
-		LifecycleError:        batch.GetLifecycleError(),
-		Telemetry:             telemetry,
+		TestID:                     batch.GetTestId(),
+		ExecutionGeneration:        batch.GetExecutionGeneration(),
+		BatchSequence:              batch.GetBatchSequence(),
+		GeneratorID:                batch.GetGeneratorId(),
+		TimestampUnixMs:            batch.GetTimestampUnixMs(),
+		WindowMs:                   batch.GetWindowMs(),
+		Stats:                      stats,
+		Transactions:               transactions,
+		FleetMetrics:               metricAggregateFromProto(batch.GetFleetMetrics()),
+		TransactionMetrics:         metricAggregatesFromProto(batch.GetTransactionMetrics()),
+		DependencyMetrics:          metricAggregatesFromProto(batch.GetDependencyMetrics()),
+		SOAPMetrics:                metricAggregatesFromProto(batch.GetSoapMetrics()),
+		NetworkProfileMetrics:      metricAggregatesFromProto(batch.GetNetworkProfileMetrics()),
+		RegionMetrics:              metricAggregatesFromProto(batch.GetRegionMetrics()),
+		Browser:                    browserMetricsFromProto(batch.GetBrowserMetrics()),
+		BrowserByDevice:            browserDeviceMetricsFromProto(batch.GetBrowserDeviceMetrics()),
+		Groups:                     groups,
+		LifecycleState:             batch.GetLifecycleState(),
+		LifecycleError:             batch.GetLifecycleError(),
+		Telemetry:                  telemetry,
+		TransactionResponseTimeSLA: transactionResponseTimeSLAFromProto(batch.GetTransactionResponseTimeSla()),
 	}, nil
+}
+
+func transactionResponseTimeSLAFromProto(rows []*pb.TransactionResponseTimeSLACompliance) []TransactionResponseTimeSLACompliance {
+	out := make([]TransactionResponseTimeSLACompliance, 0, len(rows))
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		out = append(out, TransactionResponseTimeSLACompliance{Group: row.GetGroup(), Transaction: row.GetTransaction(), ThresholdMs: row.GetThresholdMs(), TotalCount: row.GetTotalCount(), EligibleSuccessCount: row.GetEligibleSuccessCount(), ExcludedErrorCount: row.GetExcludedErrorCount(), MissedCount: row.GetMissedCount()})
+	}
+	return out
 }
 
 func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
@@ -1376,8 +1400,9 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		MessageDetailMaxItems:     int32(partitionAssignmentInt(assignment.MessageDetailMaxItems, assignment.ShardCount, assignment.ShardOrdinal)),
 		// The per-item ceiling applies independently on every generator. Only the
 		// run-wide item count and total-byte budget are partitioned among shards.
-		MessageDetailMaxItemBytes:  assignment.MessageDetailMaxItemBytes,
-		MessageDetailMaxTotalBytes: partitionAssignmentInt64(assignment.MessageDetailMaxTotalBytes, assignment.ShardCount, assignment.ShardOrdinal),
+		MessageDetailMaxItemBytes:    assignment.MessageDetailMaxItemBytes,
+		MessageDetailMaxTotalBytes:   partitionAssignmentInt64(assignment.MessageDetailMaxTotalBytes, assignment.ShardCount, assignment.ShardOrdinal),
+		TransactionResponseTimeSlaMs: assignment.TransactionResponseTimeSLAMs,
 	}
 }
 

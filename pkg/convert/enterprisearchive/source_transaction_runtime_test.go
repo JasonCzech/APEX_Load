@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -129,8 +128,12 @@ func TestNativeCTransactionValueCallsAreReviewOnlyAndDurablyGated(t *testing.T) 
 			if _, retained := action.Metadata["source_call"]; retained {
 				t.Fatalf("metadata retained raw source_call: %#v", action.Metadata)
 			}
-			if got := fmt.Sprint(action.Metadata["source_call_shape"]); got != test.function+"("+credential.Redacted+")" {
-				t.Fatalf("source_call_shape = %q, want disclosure-safe function/arity evidence", got)
+			wantArg := "Checkout"
+			if test.function == "lr_wasted_time" {
+				wantArg = "250"
+			}
+			if got := fmt.Sprint(action.Metadata["source_call_shape"]); got != test.function+"("+wantArg+")" {
+				t.Fatalf("source_call_shape = %q, want exact imported call evidence", got)
 			}
 			if got := action.Metadata["source_argument_count"]; got != 1 {
 				t.Fatalf("source_argument_count = %#v, want 1", got)
@@ -140,8 +143,8 @@ func TestNativeCTransactionValueCallsAreReviewOnlyAndDurablyGated(t *testing.T) 
 				t.Fatalf("args = %#v, want disclosure-safe argument shape", action.Params["args"])
 			}
 			for _, arg := range args {
-				if arg != credential.Redacted {
-					t.Fatalf("args = %#v, want only disclosure sentinel values", args)
+				if fmt.Sprint(arg) != wantArg {
+					t.Fatalf("args = %#v, want exact imported value %q", args, wantArg)
 				}
 			}
 			review, _ := action.Metadata["import_review"].(map[string]any)

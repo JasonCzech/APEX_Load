@@ -6,6 +6,26 @@ import { buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPaylo
 import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
+	it('round-trips transaction response-time defaults and group overrides in both scenario modes', () => {
+		for (const scenarioMode of ['vuser_driven', 'goal_oriented'] as const) {
+			const goalConfig = buildGoalConfigPayload(scenarioMode, { transaction_response_time_sla_ms: 3000 })
+			expect(goalConfig?.transaction_response_time_sla_ms).toBe(3000)
+			const groups = buildScenarioGroupPayloads([
+				{name: 'Inherited', scriptId: 'script-1', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime'},
+				{name: 'Override', scriptId: 'script-2', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime', transactionResponseTimeSlaMs: 1250},
+			])
+			expect(groups[0].transaction_response_time_sla_ms).toBeUndefined()
+			expect(groups[1].transaction_response_time_sla_ms).toBe(1250)
+		}
+
+		const draft = buildScenarioDraftFromTest({
+			id: 'queued-run', name: 'Queued run', status: 'QUEUED', groups: [{ name: 'Override', script_id: 'script-2', vusers: 1, transaction_response_time_sla_ms: 1250 }],
+			duration: '1m', total_vusers: 1, created_at: '2026-09-10T00:00:00Z', scenario_mode: 'vuser_driven', goal_config: { transaction_response_time_sla_ms: 3000 },
+		} as never)
+		expect(draft.goalConfig.transaction_response_time_sla_ms).toBe(3000)
+		expect(draft.groups[0].transactionResponseTimeSlaMs).toBe(1250)
+	})
+
 	it('retains stepped-ramp authoring intent and early-stop settings in VUser-driven payloads', () => {
 		const goalConfig = buildGoalConfigPayload('vuser_driven', {
 			early_stop: { enabled: true, error_rate_pct: 4.5, breach_window: '45s' },

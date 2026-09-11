@@ -42,6 +42,10 @@ func liveMetricsForGroupFilterTest() *LiveMetrics {
 			"CheckoutAction": {Name: "CheckoutAction", TPS: 4, Count: 5, Errors: 1},
 			"BrowseAction":   {Name: "BrowseAction", TPS: 3, Count: 3},
 		},
+		TransactionResponseTimeSLA: []TransactionResponseTimeSLAResult{
+			{Group: "Checkout", Transaction: "CheckoutAction", ThresholdMs: 250, EligibleSuccessCount: 5, Status: "pass"},
+			{Group: "Browse", Transaction: "BrowseAction", ThresholdMs: 500, EligibleSuccessCount: 3, Status: "pass"},
+		},
 		GroupMetrics: map[string]*GroupLiveMetrics{
 			"Checkout": {
 				Name:           "Checkout",
@@ -89,6 +93,9 @@ func TestFilterLiveMetricsForGroupsAggregatesSelectedPerformanceMetrics(t *testi
 	}
 	if filtered.AvgResponseMs != 160 {
 		t.Fatalf("selected avg = %.1f, want 160", filtered.AvgResponseMs)
+	}
+	if len(filtered.TransactionResponseTimeSLA) != 1 || filtered.TransactionResponseTimeSLA[0].Group != "Checkout" {
+		t.Fatalf("selected SLA rows = %#v, want Checkout only", filtered.TransactionResponseTimeSLA)
 	}
 	if filtered.P95Ms <= 0 || filtered.P95Ms == 450 {
 		t.Fatalf("selected P95 = %.1f, want selected group percentile", filtered.P95Ms)

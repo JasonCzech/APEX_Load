@@ -996,16 +996,17 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	prepared.createdWriter = created
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{
-			Name:            request.GetGroupName(),
-			StartOffset:     plan.validated.startOffset,
-			Region:          strings.TrimSpace(request.GetRegion()),
-			ScenarioID:      request.GetScenarioId(),
-			Script:          &script,
-			VUsers:          int(request.GetVuserCount()),
-			RampUp:          plan.validated.rampUp,
-			RampDown:        plan.validated.rampDown,
-			AllowZeroVUsers: request.GetVuserCount() == 0,
-			InitStrategy:    plan.validated.initStrategy,
+			Name:                         request.GetGroupName(),
+			StartOffset:                  plan.validated.startOffset,
+			Region:                       strings.TrimSpace(request.GetRegion()),
+			ScenarioID:                   request.GetScenarioId(),
+			Script:                       &script,
+			VUsers:                       int(request.GetVuserCount()),
+			RampUp:                       plan.validated.rampUp,
+			RampDown:                     plan.validated.rampDown,
+			AllowZeroVUsers:              request.GetVuserCount() == 0,
+			InitStrategy:                 plan.validated.initStrategy,
+			TransactionResponseTimeSLAMs: request.GetTransactionResponseTimeSlaMs(),
 			DataShard: engine.DataShardConfig{
 				Ordinal: request.GetShardOrdinal(),
 				Count:   plan.validated.shardCount,

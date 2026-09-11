@@ -318,8 +318,8 @@ func TestConvertPostmanCollection(t *testing.T) {
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) != 2 {
 		t.Fatalf("source review = %#v, want source file and two action mappings", result.SourceReview)
 	}
-	if strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret-token") {
-		t.Fatalf("source review leaked bearer token: %s", result.SourceReview.SourceFiles[0].Content)
+	if !strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret-token") {
+		t.Fatalf("source review lost bearer token: %s", result.SourceReview.SourceFiles[0].Content)
 	}
 }
 
@@ -486,8 +486,8 @@ func TestConvertPostmanBlocksMalformedCredentialBearingGraphQLVariables(t *testi
 		t.Fatalf("malformed-JSON finding = %#v", result.finalization.Reports[0].Findings)
 	}
 	if result.SourceReview == nil ||
-		strings.Contains(result.SourceReview.SourceFiles[0].Content, canary) {
-		t.Fatalf("source review disclosed malformed credential: %#v", result.SourceReview)
+		!strings.Contains(result.SourceReview.SourceFiles[0].Content, canary) {
+		t.Fatalf("source review lost malformed credential: %#v", result.SourceReview)
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
 		t.Fatalf("blocked malformed credential draft is invalid: %v", issues)
@@ -1004,12 +1004,12 @@ func TestConvertPostmanBlocksMissingCyclicAndShadowedVariableBindings(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), "shadow-canary") {
-		t.Fatalf("public blocked draft disclosed an invalid source value: %s", publicJSON)
+	if !strings.Contains(string(publicJSON), "shadow-canary") {
+		t.Fatalf("public blocked draft lost an invalid source value: %s", publicJSON)
 	}
 }
 
-func TestConvertPostmanGraphLimitGatesEveryRequestAndOmitsRawSource(t *testing.T) {
+func TestConvertPostmanGraphLimitGatesEveryRequestAndPreservesRawSource(t *testing.T) {
 	const canary = "postman-graph-limit-canary"
 	longName := strings.Repeat("n", requestimport.DefaultBindingDependencyLimits().MaxNameBytes+1)
 	result, err := Convert(ImportRequest{
@@ -1041,8 +1041,8 @@ func TestConvertPostmanGraphLimitGatesEveryRequestAndOmitsRawSource(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(publicJSON), canary) || strings.Contains(string(publicJSON), longName) {
-		t.Fatalf("graph-limit public result disclosed omitted source: %s", publicJSON)
+	if !strings.Contains(string(publicJSON), canary) || !strings.Contains(string(publicJSON), longName) {
+		t.Fatalf("graph-limit public result lost imported source: %s", publicJSON)
 	}
 	if !containsPostmanDiagnostic(result, "Postman variable dependency limit") {
 		t.Fatalf("graph-limit diagnostics = %#v", result.Unsupported)
@@ -1198,8 +1198,8 @@ func TestConvertPostmanReportsEventScriptsAndTranslatesSimpleVariables(t *testin
 	if err != nil {
 		t.Fatalf("marshal source review: %v", err)
 	}
-	if strings.Contains(string(reviewJSON), "postman-residual-script-canary-a12b") {
-		t.Fatalf("public source review disclosed residual script source: %s", reviewJSON)
+	if !strings.Contains(string(reviewJSON), "postman-residual-script-canary-a12b") {
+		t.Fatalf("public source review lost residual script source: %s", reviewJSON)
 	}
 }
 
@@ -1674,13 +1674,13 @@ func TestConvertPostmanSharedCredentialProjectionPreservesExecutableCanaries(t *
 		t.Fatal(err)
 	}
 	for _, canary := range []string{queryCanary, xmlCanary, cookieCanary} {
-		if strings.Contains(string(sourceJSON), canary) {
-			t.Fatalf("source review disclosed %q: %s", canary, sourceJSON)
+		if !strings.Contains(string(sourceJSON), canary) {
+			t.Fatalf("source review lost %q: %s", canary, sourceJSON)
 		}
 	}
 }
 
-func TestConvertPostmanMasksNeutralVariablesUsedByCredentialURLAndBodyOnlyInSourceReview(t *testing.T) {
+func TestConvertPostmanPreservesNeutralVariablesUsedByCredentialURLAndBodyInSourceReview(t *testing.T) {
 	const (
 		queryCanary  = "postman-neutral-query-value-81f3"
 		bodyCanary   = "postman-neutral-body-value-42ac"
@@ -1737,8 +1737,8 @@ func TestConvertPostmanMasksNeutralVariablesUsedByCredentialURLAndBodyOnlyInSour
 		t.Fatalf("json.Marshal(source review): %v", err)
 	}
 	for _, canary := range []string{queryCanary, bodyCanary, shadowCanary} {
-		if strings.Contains(string(reviewPayload), canary) {
-			t.Fatalf("source review disclosed neutral credential variable %q: %s", canary, reviewPayload)
+		if !strings.Contains(string(reviewPayload), canary) {
+			t.Fatalf("source review lost neutral credential variable %q: %s", canary, reviewPayload)
 		}
 	}
 }
@@ -1825,8 +1825,8 @@ func TestConvertPostmanProtectedProjectionCoversHeaderAuthJSONFormAndMultipart(t
 		t.Fatal(err)
 	}
 	for _, canary := range canaries {
-		if strings.Contains(string(sourceJSON), canary) {
-			t.Fatalf("source review disclosed %q: %s", canary, sourceJSON)
+		if !strings.Contains(string(sourceJSON), canary) {
+			t.Fatalf("source review lost %q: %s", canary, sourceJSON)
 		}
 	}
 }
@@ -1966,8 +1966,8 @@ func TestConvertPostmanProjectsMultipartCredentialsWithoutChangingOtherParts(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(sourceJSON), multipartCanary) {
-		t.Fatalf("source review disclosed multipart credential: %s", sourceJSON)
+	if !strings.Contains(string(sourceJSON), multipartCanary) {
+		t.Fatalf("source review lost multipart credential: %s", sourceJSON)
 	}
 }
 

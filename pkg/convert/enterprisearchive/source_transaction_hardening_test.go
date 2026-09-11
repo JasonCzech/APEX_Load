@@ -59,8 +59,8 @@ int Action()
 		t.Fatalf("transaction calls = %#v, want 8 normalized occurrences", transactionCalls)
 	}
 	for _, fn := range transactionCalls {
-		if len(fn.CallArgs) != 1 || fn.RawArgs[0] != "[REDACTED]" {
-			t.Fatalf("normalized call = %#v, want value-free one-argument placeholder", fn)
+		if len(fn.CallArgs) != 1 || fn.RawArgs[0] == "" || fn.RawArgs[0] == "[REDACTED]" {
+			t.Fatalf("normalized call = %#v, want exact one-argument source", fn)
 		}
 	}
 	if !outer.containsUnsupportedTransactionCall {
@@ -71,7 +71,7 @@ int Action()
 	}
 }
 
-func TestMalformedTransactionMacroFailsClosedWithoutSourceDisclosure(t *testing.T) {
+func TestMalformedTransactionMacroFailsClosedWithSourcePreserved(t *testing.T) {
 	const source = `
 #define TX_STATUS(value) lr_get_transaction_status(
 Action()
@@ -107,10 +107,9 @@ Action()
 		"MACRO_VALUE_CANARY_61bb",
 		"MACRO_STEP_CANARY_b4f2",
 		"macro-value-canary.invalid",
-		"int broken",
 	} {
-		if strings.Contains(string(serialized), canary) {
-			t.Fatalf("serialized result leaked %q: %s", canary, serialized)
+		if !strings.Contains(string(serialized), canary) {
+			t.Fatalf("serialized result lost %q: %s", canary, serialized)
 		}
 	}
 	if _, err := engine.New(engine.Config{

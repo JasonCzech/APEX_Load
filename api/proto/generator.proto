@@ -123,6 +123,7 @@ message WorkAssignment {
   int32 message_detail_max_items = 31;
   int64 message_detail_max_item_bytes = 32;
   int64 message_detail_max_total_bytes = 33;
+  double transaction_response_time_sla_ms = 34;
 }
 
 message WorkCommitRequest {
@@ -280,6 +281,7 @@ message MetricsBatch {
   // that a bounded subscriber queue could not deliver.
   uint64 batch_sequence = 19;
   repeated MetricAggregate region_metrics = 20;
+  repeated TransactionResponseTimeSLACompliance transaction_response_time_sla = 21;
 }
 
 message MetricsBatchTelemetry {
@@ -300,6 +302,16 @@ message GroupMetric {
   string name = 1;
   int32 active_vusers = 2;
   MetricAggregate metrics = 3;
+}
+
+message TransactionResponseTimeSLACompliance {
+  string group = 1;
+  string transaction = 2;
+  double threshold_ms = 3;
+  int64 total_count = 4;
+  int64 eligible_success_count = 5;
+  int64 excluded_error_count = 6;
+  int64 missed_count = 7;
 }
 
 message TDigestCentroid {

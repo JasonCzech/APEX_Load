@@ -106,7 +106,7 @@ func TestParseProtectedSourceBundleRejectsInvalidOrUnboundedShape(t *testing.T) 
 	})
 }
 
-func TestConvertPostmanReviewRetainsEnvironmentProvenanceWithoutDisclosingCredential(t *testing.T) {
+func TestConvertPostmanReviewRetainsEnvironmentProvenanceAndCredential(t *testing.T) {
 	const environmentCredential = "environment-provenance-secret"
 	sanitize := true
 	result, err := Convert(ImportRequest{
@@ -130,16 +130,13 @@ func TestConvertPostmanReviewRetainsEnvironmentProvenanceWithoutDisclosingCreden
 		t.Fatalf("source review = %#v", result.SourceReview)
 	}
 	for _, file := range result.SourceReview.SourceFiles {
-		if strings.Contains(file.Content, environmentCredential) {
-			t.Fatalf("source review file %q disclosed environment credential", file.Path)
+		if file.Path == "local.postman_environment.json" && !strings.Contains(file.Content, environmentCredential) {
+			t.Fatalf("source review file %q lost environment credential", file.Path)
 		}
 	}
 	requirements := result.ProtectedRequirements.Take()
-	if len(requirements) != 1 {
-		t.Fatalf("requirements = %#v", requirements)
-	}
-	if requirements[0].Source.Path != "local.postman_environment.json" {
-		t.Fatalf("credential source = %#v, want selected environment file", requirements[0].Source)
+	if len(requirements) != 0 {
+		t.Fatalf("requirements = %#v, imported credential must not require reentry", requirements)
 	}
 }
 
@@ -238,7 +235,7 @@ func TestPostmanSourceVariableExpressionRefDoesNotMisattributeComposedValues(t *
 	}
 }
 
-func TestConvertPostmanCaseVariantCredentialDependencyMasksExactSourceValue(t *testing.T) {
+func TestConvertPostmanCaseVariantCredentialDependencyPreservesExactSourceValue(t *testing.T) {
 	const canary = "postman-case-variant-source-secret-7f29"
 	result, err := Convert(ImportRequest{Content: `{
   "info":{"name":"Case variant credential"},
@@ -262,16 +259,16 @@ func TestConvertPostmanCaseVariantCredentialDependencyMasksExactSourceValue(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(review), canary) {
-		t.Fatalf("case-variant dependency disclosed source credential: %s", review)
+	if !strings.Contains(string(review), canary) {
+		t.Fatalf("case-variant dependency lost source credential: %s", review)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
-		!result.SourceReview.SourceFiles[0].Redacted {
-		t.Fatalf("source review was not marked redacted: %#v", result.SourceReview)
+		result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review was marked redacted: %#v", result.SourceReview)
 	}
 }
 
-func TestConvertPostmanMasksCredentialVariableValueUsedBeforeLaterScopeMutation(t *testing.T) {
+func TestConvertPostmanPreservesCredentialVariableValueUsedBeforeLaterScopeMutation(t *testing.T) {
 	const canary = "early-plain-value"
 	result, err := Convert(ImportRequest{
 		EnvironmentFileName: "history.postman_environment.json",
@@ -302,8 +299,8 @@ func TestConvertPostmanMasksCredentialVariableValueUsedBeforeLaterScopeMutation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(review), canary) {
-		t.Fatalf("credential value consumed before a later scope mutation remained public: %s", review)
+	if !strings.Contains(string(review), canary) {
+		t.Fatalf("credential value consumed before a later scope mutation was lost: %s", review)
 	}
 }
 

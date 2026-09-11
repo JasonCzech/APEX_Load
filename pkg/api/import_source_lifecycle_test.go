@@ -157,8 +157,8 @@ func inspectProtectedPostmanSource(
 		importDraftProtectedTokenPrefix+inspection.ImportSessionID {
 		t.Fatalf("draft attestation token = %q, want candidate session %q", got, inspection.ImportSessionID)
 	}
-	if strings.Contains(response.Body.String(), credential) || !strings.Contains(response.Body.String(), maskedScriptSecret) {
-		t.Fatalf("opaque draft disclosed or failed to mask imported credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), credential) || strings.Contains(response.Body.String(), maskedScriptSecret) {
+		t.Fatalf("import draft did not preserve imported credential: %s", response.Body.String())
 	}
 	return inspection
 }
@@ -233,8 +233,8 @@ func TestProtectedPostmanInspectionReusesCandidateForLegacyDraftAttestation(t *t
 		storage.DefaultProjectID,
 		"",
 	)
-	if strings.Contains(response.Body.String(), credential) {
-		t.Fatalf("ordinary commit response disclosed credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), credential) {
+		t.Fatalf("commit response did not preserve credential: %s", response.Body.String())
 	}
 	durable, ok := server.runner.GetScript(stored.ID)
 	if !ok || durable == nil || durable.Script == nil ||

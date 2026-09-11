@@ -52,7 +52,7 @@ func TestDurableScriptCreatePathsRejectExecutableCredentials(t *testing.T) {
 	}
 }
 
-func TestDurableImportedScriptPreservesCredentialAndMasksReads(t *testing.T) {
+func TestDurableImportedScriptPreservesCredentialAndReads(t *testing.T) {
 	const (
 		password     = "imported-password-remains-runnable"
 		tableSecret  = "short-table-password"
@@ -111,16 +111,16 @@ func TestDurableImportedScriptPreservesCredentialAndMasksReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(storedPayload), reviewSecret) {
-		t.Fatalf("durable import retained non-executable review credential: %s", storedPayload)
+	if !strings.Contains(string(storedPayload), reviewSecret) {
+		t.Fatalf("durable import lost non-executable review credential: %s", storedPayload)
 	}
-	if got := durable.Script.Metadata.Import.Preserved["source_review"].(map[string]any)["authorization"]; got != "Bearer "+maskedScriptSecret {
+	if got := durable.Script.Metadata.Import.Preserved["source_review"].(map[string]any)["authorization"]; got != "Bearer "+reviewSecret {
 		t.Fatalf("durable source review authorization = %#v", got)
 	}
-	if got := durable.Script.Actions[1].Metadata["authorization"]; got != "Bearer "+maskedScriptSecret {
+	if got := durable.Script.Actions[1].Metadata["authorization"]; got != "Bearer "+reviewSecret {
 		t.Fatalf("durable review action authorization = %#v", got)
 	}
-	if got := durable.Script.Actions[2].Params["password"]; got != maskedScriptSecret {
+	if got := durable.Script.Actions[2].Params["password"]; got != reviewSecret {
 		t.Fatalf("durable required-review password = %#v", got)
 	}
 

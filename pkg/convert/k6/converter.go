@@ -287,14 +287,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	for _, item := range finalized.Diagnostics {
 		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 	}
-	reviewContent, credentialReviewRedacted := redactK6CredentialValues(req.Content, finalized.Requirements, requests)
-	reviewContent, residualReviewRedacted := disclosureSafeK6SourceReview(reviewContent, len(residualLines) != 0)
 	result.SecretRequirements = publicK6CredentialRequirements(finalized.Requirements)
 	result.Unsupported = diagnostics.Items()
-	result.SourceReview = sourceview.Build(map[string]string{reqFileName(result): reviewContent}, sourceMappings)
-	if credentialReviewRedacted || residualReviewRedacted {
-		markK6SourceReviewRedacted(result.SourceReview, reqFileName(result))
-	}
+	result.SourceReview = sourceview.Build(map[string]string{reqFileName(result): req.Content}, sourceMappings)
 	return result, nil
 }
 

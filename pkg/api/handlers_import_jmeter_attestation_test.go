@@ -46,8 +46,8 @@ func TestJMeterAttestedSaveRestoresCredentialUsesSelectedFolderAndReplays(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(previewJSON, []byte(credentialValue)) {
-		t.Fatal("JMeter preview disclosed the exact credential")
+	if !bytes.Contains(previewJSON, []byte(credentialValue)) {
+		t.Fatal("JMeter preview did not preserve the exact credential")
 	}
 	maskedScripts, ok := preview["scripts"].([]any)
 	if !ok || len(maskedScripts) != 1 {
@@ -59,8 +59,8 @@ func TestJMeterAttestedSaveRestoresCredentialUsesSelectedFolderAndReplays(t *tes
 		t.Fatal(err)
 	}
 	if importDraftAttestationToken(&submitted) == "" ||
-		!strings.Contains(submitted.Actions[0].HeaderList[0].Value, maskedScriptSecret) {
-		t.Fatalf("JMeter preview omitted opaque masked draft: %#v", submitted)
+		!strings.Contains(submitted.Actions[0].HeaderList[0].Value, credentialValue) {
+		t.Fatalf("JMeter preview omitted exact attested draft: %#v", submitted)
 	}
 	submitted.FolderID = &folder.ID
 	requestBody, err := json.Marshal(map[string]any{"scripts": []dsl.Script{submitted}})

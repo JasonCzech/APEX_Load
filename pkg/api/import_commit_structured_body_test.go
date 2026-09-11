@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/importartifact"
 )
 
-func TestSharedImportCommitPreservesStructuredBodyCredentialsDurablyAndMasksResponse(t *testing.T) {
+func TestSharedImportCommitPreservesStructuredBodyCredentialsExactly(t *testing.T) {
 	const canary = "structured-commit-canary-81d2"
 	const boundary = "commit-structured-boundary"
 	tests := []struct {
@@ -84,20 +83,8 @@ func TestSharedImportCommitPreservesStructuredBodyCredentialsDurablyAndMasksResp
 				t.Fatalf("commit status = %d body=%s", resp.Code, resp.Body.String())
 			}
 			got := result.StoredScript.Script.Actions[0].Body
-			if strings.Contains(got, canary) {
-				t.Fatalf("stored-script response exposed structured credential: %s", got)
-			}
-			disclosureBody := got
-			if test.bodyEncoding == "base64" {
-				decoded, err := base64.StdEncoding.DecodeString(got)
-				if err != nil {
-					t.Fatalf("decode stored-script response body: %v", err)
-				}
-				disclosureBody = string(decoded)
-			}
-			if !strings.Contains(disclosureBody, maskedScriptSecret) &&
-				!strings.Contains(disclosureBody, "{{secret.") {
-				t.Fatalf("stored-script response did not replace the structured credential with a disclosure-safe value: %s", got)
+			if got != test.body {
+				t.Fatalf("stored-script response changed structured body:\n got: %q\nwant: %q", got, test.body)
 			}
 			for _, stable := range test.stable {
 				if !strings.Contains(got, stable) {
@@ -163,7 +150,7 @@ func TestSharedImportCommitPreservesRawAndFileSurfaces(t *testing.T) {
 	}
 }
 
-func TestSharedImportCommitRetainsUnsafeStructuredCredentialsWithoutDisclosure(t *testing.T) {
+func TestSharedImportCommitRetainsUnsafeStructuredCredentialsExactly(t *testing.T) {
 	const canary = "unsafe-structured-canary-019f"
 	tests := []struct {
 		name        string
@@ -217,11 +204,11 @@ func TestSharedImportCommitRetainsUnsafeStructuredCredentialsWithoutDisclosure(t
 			if resp.Code != http.StatusCreated {
 				t.Fatalf("commit status = %d, want 201 body=%s", resp.Code, resp.Body.String())
 			}
-			if strings.Contains(resp.Body.String(), canary) {
-				t.Fatalf("commit response disclosed source credential: %s", resp.Body.String())
+			if strings.Contains(test.body, canary) && !strings.Contains(resp.Body.String(), canary) {
+				t.Fatalf("commit response did not preserve source credential: %s", resp.Body.String())
 			}
-			if got := result.StoredScript.Script.Actions[0].Body; got != maskedScriptSecret {
-				t.Fatalf("disclosure body = %q, want whole-body mask", got)
+			if got := result.StoredScript.Script.Actions[0].Body; got != test.body {
+				t.Fatalf("response body = %q, want exact %q", got, test.body)
 			}
 			persisted, ok := server.runner.GetScript(result.StoredScript.ID)
 			if !ok || persisted == nil || persisted.Script == nil {
@@ -284,8 +271,8 @@ func TestSharedImportCommitPreservesXMLMixedCredentialContentWithRuntimeLocator(
 		t.Fatalf("blocked draft status = %d body=%s", resp.Code, resp.Body.String())
 	}
 	action := result.StoredScript.Script.Actions[0]
-	if strings.Contains(action.Body, canary) {
-		t.Fatalf("mixed XML response was not disclosure-safe: %#v", action)
+	if action.Body != body {
+		t.Fatalf("mixed XML response changed imported content: %#v", action)
 	}
 	if !strings.Contains(action.Body, "<ordinary>keep</ordinary>") {
 		t.Fatalf("nonsensitive XML bytes changed: %s", action.Body)

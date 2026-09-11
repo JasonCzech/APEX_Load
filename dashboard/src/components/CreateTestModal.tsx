@@ -8,13 +8,14 @@ import { parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
 import CreateTestGroupsEditor from './CreateTestGroupsEditor'
+import TransactionResponseTimeSLASettings from './TransactionResponseTimeSLASettings'
 import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftReducer, ScenarioDraftField, ScenarioDraftState } from './scenarioDraftUtils'
 import { buildCreateTestPayload } from './scenarioPayloadUtils'
 import DurationField from './DurationField'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
-import { hasGoalModeConfiguration, validateGoalConfig } from './goalConfigValidation'
+import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionResponseTimeSLAOverrides } from './goalConfigValidation'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { effectiveGroupVUsers, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
@@ -270,15 +271,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       }
       const aggregateError = validateAggregateVUserDemand(groups)
       if (aggregateError) throw new Error(aggregateError)
+      const transactionSLAError = validateGoalConfig(goalConfig) || validateTransactionResponseTimeSLAOverrides(groups)
+      if (transactionSLAError) throw new Error(transactionSLAError)
       const payload = buildPayload()
 
       if (scenarioMode === 'goal_oriented') {
         if (!hasGoalModeConfig) {
           throw new Error('Goal-oriented scenarios require at least one goal or guardrail setting')
-        }
-        const goalConfigError = validateGoalConfig(goalConfig)
-        if (goalConfigError) {
-          throw new Error(goalConfigError)
         }
       }
 
@@ -480,6 +479,17 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             generatorInventory={generatorInventory}
             availableLabels={availableLabels}
           />
+
+			<TransactionResponseTimeSLASettings
+				defaultMs={goalConfig.transaction_response_time_sla_ms}
+				groups={groups.map((group, index) => ({
+					name: group.name || `Group ${index + 1}`,
+					scriptName: scripts.find(script => script.id === group.scriptId)?.name,
+					overrideMs: group.transactionResponseTimeSlaMs,
+				}))}
+				onDefaultChange={value => updateGoalConfig('transaction_response_time_sla_ms', value)}
+				onGroupOverrideChange={(index, value) => updateGroup(index, { transactionResponseTimeSlaMs: value })}
+			/>
 
           <CreateTestRuntimeOverrides
             draftScope={`${revisionContext?.projectId ?? projectId ?? ''}:${revisionContext?.scenarioId ?? 'new'}`}

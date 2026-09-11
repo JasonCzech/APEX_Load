@@ -24,6 +24,7 @@ export type ScenarioGroupPayload = {
   initialization: ScenarioDraftGroup['initialization']
   runtime_settings?: ScenarioUpsertPayload['runtime_settings']
   assignment?: GeneratorAssignmentSettings
+	transaction_response_time_sla_ms?: number
 }
 
 export type ScenarioUpsertPayload = {
@@ -136,6 +137,10 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
     if (group.name) {
       payload.name = group.name
     }
+
+		if (group.transactionResponseTimeSlaMs !== undefined) {
+			payload.transaction_response_time_sla_ms = group.transactionResponseTimeSlaMs
+		}
 
     if (group.role && group.role !== 'load') {
       payload.role = group.role
@@ -255,8 +260,10 @@ function normalizeSelectedTargets(targets?: string[]) {
 
 export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: GoalConfig = {}): GoalConfig | undefined {
 	const transactionRules = goalConfig.transaction_rules?.map(rule => ({ ...rule }))
+	const transactionResponseTimeSLA = goalConfig.transaction_response_time_sla_ms
 	if (scenarioMode !== 'goal_oriented') {
 		const payload: GoalConfig = {
+			...(transactionResponseTimeSLA !== undefined ? { transaction_response_time_sla_ms: transactionResponseTimeSLA } : {}),
 			...(transactionRules?.length ? { transaction_rules: transactionRules } : {}),
 			...(goalConfig.early_stop ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
 			...(goalConfig.workload_shape_config ? { workload_shape_config: structuredClone(goalConfig.workload_shape_config) } : {}),
@@ -266,6 +273,7 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
 
   const hasValue = (value: number | undefined) => value !== undefined && value !== null
   const payload: GoalConfig = {
+		...(transactionResponseTimeSLA !== undefined ? { transaction_response_time_sla_ms: transactionResponseTimeSLA } : {}),
     ...(hasValue(goalConfig.target_average_tps) ? { target_average_tps: goalConfig.target_average_tps } : {}),
     ...(hasValue(goalConfig.p95_latency_ms) ? { p95_latency_ms: goalConfig.p95_latency_ms } : {}),
     ...(hasValue(goalConfig.max_error_pct) ? { max_error_pct: goalConfig.max_error_pct } : {}),

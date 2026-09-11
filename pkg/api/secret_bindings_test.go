@@ -972,11 +972,10 @@ func TestImportResponseIncludesProjectedMultiScriptSecretRequirements(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "inline-password-a") ||
-		strings.Contains(string(encoded), "inline-token-a") ||
-		strings.Contains(string(encoded), "inline-password-b") ||
-		!strings.Contains(string(encoded), maskedScriptSecret) {
-		t.Fatalf("opaque drafts disclosed or failed to mask imported credentials: %s", encoded)
+	if !strings.Contains(string(encoded), "inline-password-a") ||
+		!strings.Contains(string(encoded), "inline-token-a") ||
+		!strings.Contains(string(encoded), "inline-password-b") {
+		t.Fatalf("import drafts lost imported credentials: %s", encoded)
 	}
 	delete(response, "script")
 	delete(response, "scripts")
@@ -984,10 +983,10 @@ func TestImportResponseIncludesProjectedMultiScriptSecretRequirements(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(reviewEncoded), "inline-password") ||
-		strings.Contains(string(reviewEncoded), "inline-token") ||
-		strings.Contains(string(reviewEncoded), "evidence-only-password") {
-		t.Fatalf("import review surface leaked inline secret: %s", reviewEncoded)
+	for _, value := range []string{"inline-password-a", "inline-token-a", "inline-password-b"} {
+		if strings.Contains(string(reviewEncoded), value) {
+			t.Fatalf("value-free binding descriptors included %q: %s", value, reviewEncoded)
+		}
 	}
 }
 

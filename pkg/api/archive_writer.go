@@ -566,6 +566,9 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	if err := applyTransactionSLARules(w.rootDir, &w.manifest); err != nil {
 		return nil, err
 	}
+	if err := applyTransactionResponseTimeSLAs(w.rootDir, &w.manifest); err != nil {
+		return nil, err
+	}
 	if err := validateArchiveArtifactTargets(w.rootDir,
 		w.manifest.TransactionsParquetFile,
 		w.manifest.ResourceSamplesParquetFile,

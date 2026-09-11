@@ -68,6 +68,7 @@ export interface StoredScenario {
     runtime_settings?: RuntimeSettingsOverride
     initialization?: 'at_runtime' | 'at_once'
     assignment?: GeneratorAssignmentSettings
+		transaction_response_time_sla_ms?: number
   }>
   schedules?: ScenarioSchedule[]
   data_pools?: ScenarioDataPoolBinding[]

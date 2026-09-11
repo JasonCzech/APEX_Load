@@ -12,7 +12,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -6626,7 +6625,7 @@ func javaSourceReviewAction(statement javaStatement, phase string, reason string
 		Type: "source_review",
 		Params: map[string]any{
 			"function": "java_statement",
-			"args":     []any{credential.Redacted},
+			"args":     []any{statement.Text},
 		},
 		Metadata: map[string]any{
 			"source":        "java_vuser",

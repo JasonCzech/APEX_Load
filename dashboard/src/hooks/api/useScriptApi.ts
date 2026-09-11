@@ -665,6 +665,14 @@ export function useScriptApi() {
     [],
   )
 
+  const downloadScript = useCallback(async (id: string) => {
+    const res = await apiFetch(`/scripts/${encodeURIComponent(id)}/download`)
+    if (!res.ok) {
+      throw new Error(res.statusText || 'Failed to download script')
+    }
+    return res.text()
+  }, [])
+
   const importEnterpriseArchive = useCallback(
     async (file: File, options?: EnterpriseArchiveImportOptions): Promise<EnterpriseArchiveImportResult> => {
       const formData = new FormData()
@@ -1570,6 +1578,7 @@ export function useScriptApi() {
       updateScriptDebugOptions,
       exportScriptDebugSession,
       exportScript,
+      downloadScript,
       importEnterpriseArchive,
       validateEnterpriseArchiveImport,
       getEnterpriseArchiveSupportMatrix,
@@ -1691,6 +1700,7 @@ export function useScriptApi() {
       updateScriptDebugOptions,
       exportScriptDebugSession,
       exportScript,
+      downloadScript,
       importEnterpriseArchive,
       validateEnterpriseArchiveImport,
       getEnterpriseArchiveSupportMatrix,

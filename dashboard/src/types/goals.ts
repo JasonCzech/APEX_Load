@@ -16,8 +16,24 @@ export interface TransactionSLARuleResult {
   message: string
 }
 
+export interface TransactionResponseTimeSLAResult {
+	group: string
+	transaction: string
+	threshold_ms: number
+	total_count: number
+	eligible_success_count: number
+	excluded_error_count: number
+	missed_count: number
+	missed_pct: number
+	met_pct: number
+	required_met_pct: number
+	status: 'pass' | 'fail' | 'not_evaluated'
+}
+
 /** Goal-oriented load targets and their live controller status. */
 export interface GoalConfig {
+	/** Scenario-wide default SLA for each named business transaction. */
+	transaction_response_time_sla_ms?: number
   target_average_tps?: number
   p95_latency_ms?: number
   max_error_pct?: number

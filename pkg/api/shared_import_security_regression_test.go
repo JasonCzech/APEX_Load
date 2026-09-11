@@ -14,7 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-func TestSharedImportResponseUsesOpaqueCredentialDraftAndRestoresOnCreate(t *testing.T) {
+func TestSharedImportResponsePreservesCredentialDraftAndCreatesExactly(t *testing.T) {
 	const credentialValue = "shared-import-exact-password-8f2a"
 	server := NewServer(ServerConfig{})
 	script := attestedImportTestScript("shared-opaque-import", credentialValue)
@@ -26,8 +26,8 @@ func TestSharedImportResponseUsesOpaqueCredentialDraftAndRestoresOnCreate(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(credentialValue)) {
-		t.Fatalf("import response disclosed exact credential: %s", encoded)
+	if !bytes.Contains(encoded, []byte(credentialValue)) {
+		t.Fatalf("import response did not preserve exact credential: %s", encoded)
 	}
 	masked, ok := response["script"].(map[string]any)
 	if !ok {
@@ -42,7 +42,7 @@ func TestSharedImportResponseUsesOpaqueCredentialDraftAndRestoresOnCreate(t *tes
 		t.Fatal(err)
 	}
 	if importDraftAttestationToken(&submitted) == "" {
-		t.Fatalf("masked draft omitted opaque save capability: %s", payload)
+		t.Fatalf("exact draft omitted save capability: %s", payload)
 	}
 	created := createAttestedImportScript(t, server, &submitted)
 	if created.Code != http.StatusCreated {

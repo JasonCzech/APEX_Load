@@ -206,9 +206,9 @@ func TestImportParameterizationPreservesAttestedCredentialsAndRotatesCapability(
 	if err := json.Unmarshal(projectedPayload, &submitted); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(projectedPayload), headerCredential) ||
-		strings.Contains(string(projectedPayload), bodyCredential) {
-		t.Fatalf("inspection disclosed imported credentials: %s", projectedPayload)
+	if !strings.Contains(string(projectedPayload), headerCredential) ||
+		!strings.Contains(string(projectedPayload), bodyCredential) {
+		t.Fatalf("inspection did not preserve imported credentials: %s", projectedPayload)
 	}
 	originalToken := importDraftAttestationToken(&submitted)
 	if originalToken == "" {
@@ -244,16 +244,15 @@ func TestImportParameterizationPreservesAttestedCredentialsAndRotatesCapability(
 	if applied.Script == nil {
 		t.Fatal("parameterization returned no script")
 	}
-	if got := applied.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+maskedScriptSecret {
-		t.Fatalf("parameterized header projection = %q", got)
+	if got := applied.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+headerCredential {
+		t.Fatalf("parameterized header = %q", got)
 	}
-	if strings.Contains(applied.Script.Actions[0].Body, bodyCredential) ||
-		!strings.Contains(applied.Script.Actions[0].Body, maskedScriptSecret) {
-		t.Fatalf("parameterized body was not disclosure-safe: %s", applied.Script.Actions[0].Body)
+	if !strings.Contains(applied.Script.Actions[0].Body, bodyCredential) {
+		t.Fatalf("parameterized body did not preserve imported credential: %s", applied.Script.Actions[0].Body)
 	}
-	if strings.Contains(response.Body.String(), headerCredential) ||
-		strings.Contains(response.Body.String(), bodyCredential) {
-		t.Fatalf("parameterization response disclosed imported credentials: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), headerCredential) ||
+		!strings.Contains(response.Body.String(), bodyCredential) {
+		t.Fatalf("parameterization response did not preserve imported credentials: %s", response.Body.String())
 	}
 	if !strings.Contains(applied.Script.Actions[1].Target, "{{var.customer_id}}") {
 		t.Fatalf("selected parameterization was not applied: %s", applied.Script.Actions[1].Target)
@@ -355,26 +354,17 @@ func TestImportResponsesIncludeParameterization(t *testing.T) {
 		t.Fatalf("expected populated parameterization block, got %+v", response["parameterization"])
 	}
 	for _, suggestion := range block.Suggestions {
-		if suggestion.Kind == paramize.KindSecret {
-			t.Fatalf("secret parameterization suggestion reached import response: %#v", suggestion)
-		}
-		if suggestion.LiteralValue != "" || suggestion.SampleValue != "" {
-			t.Fatalf("raw value reached parameterization descriptor: %#v", suggestion)
-		}
-		for _, location := range suggestion.Locations {
-			if location.SearchText != "" {
-				t.Fatalf("search text reached parameterization descriptor: %#v", suggestion)
-			}
+		if suggestion.LiteralValue == "" {
+			t.Fatalf("parameterization descriptor lost imported value: %#v", suggestion)
 		}
 	}
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "tok123") ||
-		strings.Contains(string(encoded), "hunter2") ||
-		!strings.Contains(string(encoded), maskedScriptSecret) {
-		t.Fatalf("opaque import draft disclosed or failed to mask source credentials: %s", encoded)
+	if !strings.Contains(string(encoded), "tok123") ||
+		!strings.Contains(string(encoded), "hunter2") {
+		t.Fatalf("import draft lost source credentials: %s", encoded)
 	}
 	delete(response, "script")
 	delete(response, "scripts")
@@ -382,19 +372,12 @@ func TestImportResponsesIncludeParameterization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{"tok123", "hunter2"} {
-		if strings.Contains(string(encoded), secret) {
-			t.Fatalf("parameterization review surface leaked %q: %s", secret, encoded)
-		}
-	}
-	for _, field := range []string{`"literal_value"`, `"sample_value"`, `"search_text"`} {
-		if strings.Contains(string(encoded), field) {
-			t.Fatalf("parameterization response serialized %s: %s", field, encoded)
-		}
+	if !strings.Contains(string(encoded), `"literal_value"`) || !strings.Contains(string(encoded), `"search_text"`) {
+		t.Fatalf("parameterization response lost imported matching values: %s", encoded)
 	}
 }
 
-func TestImportResponseStripsCorrelationSourceSamplesFromEveryCopy(t *testing.T) {
+func TestImportResponsePreservesCorrelationSourceSamplesInEveryCopy(t *testing.T) {
 	const sourceToken = "oauth-access-token-must-never-reach-browser"
 	correlations := []map[string]any{{
 		"name":         "access_token",
@@ -415,12 +398,12 @@ func TestImportResponseStripsCorrelationSourceSamplesFromEveryCopy(t *testing.T)
 		t.Fatal(err)
 	}
 	wire := string(encoded)
-	if strings.Contains(wire, sourceToken) {
-		t.Fatalf("import response disclosed correlation source token: %s", wire)
+	if strings.Count(wire, sourceToken) < 4 {
+		t.Fatalf("import response lost correlation source token copies: %s", wire)
 	}
 	for _, field := range []string{`"sample_value"`, `"value"`} {
-		if strings.Contains(wire, field) {
-			t.Fatalf("import response serialized protected correlation field %s: %s", field, wire)
+		if !strings.Contains(wire, field) {
+			t.Fatalf("import response omitted correlation field %s: %s", field, wire)
 		}
 	}
 	if strings.Count(wire, `"name":"access_token"`) != 2 {
@@ -428,7 +411,7 @@ func TestImportResponseStripsCorrelationSourceSamplesFromEveryCopy(t *testing.T)
 	}
 }
 
-func TestImportParameterizationDropsMisclassifiedCredentialSuggestion(t *testing.T) {
+func TestImportParameterizationPreservesMisclassifiedCredentialSuggestion(t *testing.T) {
 	script := &dsl.Script{
 		Name: "Misclassified credential", Protocol: "http",
 		Config: dsl.ScriptConfig{BaseURL: "https://api.example.com"},
@@ -450,17 +433,21 @@ func TestImportParameterizationDropsMisclassifiedCredentialSuggestion(t *testing
 
 	response := newScriptImportResponse(scriptImportResponseOptions{Script: script, Parameterization: raw})
 	block := response["parameterization"].(*paramize.Result)
+	foundPreserved := false
 	for _, suggestion := range block.Suggestions {
 		if suggestion.VarName == "user_password" {
-			t.Fatalf("credential-shaped data suggestion reached the wire: %#v", suggestion)
+			foundPreserved = suggestion.LiteralValue == "credential-never-on-wire"
 		}
+	}
+	if !foundPreserved {
+		t.Fatalf("credential-shaped import suggestion was not preserved: %#v", block.Suggestions)
 	}
 	encoded, err := json.Marshal(response)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), "credential-never-on-wire") || !strings.Contains(string(encoded), maskedScriptSecret) {
-		t.Fatalf("opaque import draft disclosed or failed to mask its source credential: %s", encoded)
+	if !strings.Contains(string(encoded), "credential-never-on-wire") || strings.Contains(string(encoded), maskedScriptSecret) {
+		t.Fatalf("import draft did not preserve its source credential: %s", encoded)
 	}
 	delete(response, "script")
 	delete(response, "scripts")
@@ -468,8 +455,8 @@ func TestImportParameterizationDropsMisclassifiedCredentialSuggestion(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(reviewEncoded), "credential-never-on-wire") {
-		t.Fatalf("import review surfaces disclosed a misclassified credential: %s", reviewEncoded)
+	if !strings.Contains(string(reviewEncoded), "credential-never-on-wire") {
+		t.Fatalf("import review surfaces did not preserve a misclassified credential: %s", reviewEncoded)
 	}
 }
 
@@ -510,12 +497,12 @@ func TestRecorderImportIncludesParameterization(t *testing.T) {
 	kinds := map[paramize.Kind]int{}
 	for _, s := range decoded.Parameterization.Suggestions {
 		kinds[s.Kind]++
-		if s.LiteralValue != "" || s.SampleValue != "" {
-			t.Errorf("recorder suggestion included raw values: %#v", s)
+		if s.LiteralValue == "" || s.SampleValue == "" {
+			t.Errorf("recorder suggestion omitted imported values: %#v", s)
 		}
 		for _, location := range s.Locations {
-			if location.SearchText != "" {
-				t.Errorf("recorder suggestion included search text: %#v", s)
+			if location.SearchText == "" {
+				t.Errorf("recorder suggestion omitted imported search text: %#v", s)
 			}
 		}
 	}
@@ -523,21 +510,21 @@ func TestRecorderImportIncludesParameterization(t *testing.T) {
 		t.Errorf("expected 1 data_param for #user_email fill, got %+v", decoded.Parameterization.Suggestions)
 	}
 	if kinds[paramize.KindSecret] != 0 {
-		t.Errorf("secret suggestions must be represented by guided binding requirements, got %+v", decoded.Parameterization.Suggestions)
+		t.Errorf("secret suggestions remain represented by guided binding requirements, got %+v", decoded.Parameterization.Suggestions)
 	}
-	if strings.Contains(resp.Body.String(), "hunter2") ||
+	if !strings.Contains(resp.Body.String(), "hunter2") ||
 		importDraftAttestationToken(&decoded.Script) == "" {
-		t.Fatalf("recorder import disclosed or failed to attest its captured credential: %s", resp.Body.String())
+		t.Fatalf("recorder import did not preserve or attest its captured credential: %s", resp.Body.String())
 	}
-	maskedPasswordFill := false
+	preservedPasswordFill := false
 	for _, action := range decoded.Script.Actions {
-		if action.Selector == "#login_password" && action.Value == maskedScriptSecret {
-			maskedPasswordFill = true
+		if action.Selector == "#login_password" && action.Value == "hunter2" {
+			preservedPasswordFill = true
 			break
 		}
 	}
-	if !maskedPasswordFill {
-		t.Fatalf("recorder import omitted its masked password fill: %#v", decoded.Script.Actions)
+	if !preservedPasswordFill {
+		t.Fatalf("recorder import omitted its exact password fill: %#v", decoded.Script.Actions)
 	}
 	var response map[string]any
 	if err := json.Unmarshal(resp.Body.Bytes(), &response); err != nil {
@@ -549,7 +536,7 @@ func TestRecorderImportIncludesParameterization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(reviewPayload), "hunter2") {
-		t.Fatalf("recorder import review surfaces disclosed captured credential: %s", reviewPayload)
+	if !strings.Contains(string(reviewPayload), "hunter2") {
+		t.Fatalf("recorder import review surfaces did not preserve captured credential: %s", reviewPayload)
 	}
 }

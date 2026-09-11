@@ -280,12 +280,12 @@ func TestHandleImportOpenAPIRedactsCredentialsFromResultAndRootSummaries(t *test
 	}
 	editable := string(envelope["script"]) + string(envelope["scripts"])
 	for _, secret := range []string{username, password, token} {
-		if strings.Contains(editable, secret) {
-			t.Fatalf("OpenAPI editable draft disclosed URL credential %q: %s", secret, editable)
+		if !strings.Contains(editable, secret) {
+			t.Fatalf("OpenAPI editable draft did not preserve URL credential %q: %s", secret, editable)
 		}
 	}
-	if !strings.Contains(editable, maskedScriptSecret) || !strings.Contains(editable, "region=east") {
-		t.Fatalf("OpenAPI editable URL projection did not preserve safe structure: %s", editable)
+	if strings.Contains(editable, maskedScriptSecret) || !strings.Contains(editable, "region=east") {
+		t.Fatalf("OpenAPI editable URL did not preserve exact structure: %s", editable)
 	}
 	delete(envelope, "script")
 	delete(envelope, "scripts")
@@ -294,12 +294,12 @@ func TestHandleImportOpenAPIRedactsCredentialsFromResultAndRootSummaries(t *test
 		t.Fatal(err)
 	}
 	for _, secret := range []string{username, password, token} {
-		if strings.Contains(string(reviewPayload), secret) {
-			t.Fatalf("OpenAPI result/review surfaces disclosed URL credential %q: %s", secret, reviewPayload)
+		if !strings.Contains(string(reviewPayload), secret) {
+			t.Fatalf("OpenAPI result/review surfaces did not preserve URL credential %q: %s", secret, reviewPayload)
 		}
 	}
-	if !strings.Contains(string(reviewPayload), maskedScriptSecret) || !strings.Contains(string(reviewPayload), "region=east") {
-		t.Fatalf("OpenAPI URL projection did not preserve a safe summary: %s", reviewPayload)
+	if !strings.Contains(string(reviewPayload), "region=east") {
+		t.Fatalf("OpenAPI URL review did not preserve exact summary: %s", reviewPayload)
 	}
 }
 
@@ -947,20 +947,17 @@ func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {
 		t.Fatalf("source review = %#v, want collection and environment", result.SourceReview)
 	}
 	assertReviewSection(t, result.ReviewSections, "postman_source_provenance", "info", "local.postman_environment.json")
-	// Public inspection projections must not disclose the environment
-	// credential. The unmodified value is retained only in a protected candidate
-	// when that facility is available.
 	if len(result.Script.DataSources) != 1 ||
-		!strings.Contains(result.Script.DataSources[0].InlineData, "[REDACTED]") ||
-		strings.Contains(result.Script.DataSources[0].InlineData, "env-token") {
-		t.Fatalf("data sources = %+v, want disclosure-safe projection", result.Script.DataSources)
+		!strings.Contains(result.Script.DataSources[0].InlineData, "env-token") ||
+		strings.Contains(result.Script.DataSources[0].InlineData, "[REDACTED]") {
+		t.Fatalf("data sources = %+v, want exact imported values", result.Script.DataSources)
 	}
 	if len(result.Script.Actions) != 1 ||
-		result.Script.Actions[0].Headers["X-Token"] != "[REDACTED]" {
-		t.Fatalf("public action did not mask imported environment credential: %+v", result.Script.Actions)
+		result.Script.Actions[0].Headers["X-Token"] != "env-token" {
+		t.Fatalf("public action did not preserve imported environment credential: %+v", result.Script.Actions)
 	}
-	if strings.Contains(resp.Body.String(), "collection-token") || strings.Contains(resp.Body.String(), "env-token") {
-		t.Fatalf("response disclosed a collection/environment credential: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "collection-token") || !strings.Contains(resp.Body.String(), "env-token") {
+		t.Fatalf("response did not preserve collection/environment credentials: %s", resp.Body.String())
 	}
 }
 

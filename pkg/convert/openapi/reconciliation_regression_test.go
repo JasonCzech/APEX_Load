@@ -145,8 +145,8 @@ paths:
 			t.Fatalf("source review lost %q:\n%s", preserved, review)
 		}
 	}
-	if strings.Contains(review, "example: test") || review == openAPISourceReviewCredentialOmission {
-		t.Fatalf("credential example was not safely redacted:\n%s", review)
+	if review != source {
+		t.Fatalf("credential example source was changed:\n%s", review)
 	}
 }
 
@@ -186,8 +186,8 @@ paths:
 			t.Fatalf("source review lost %q:\n%s", preserved, review)
 		}
 	}
-	if strings.Contains(review, "example: customer") || review == openAPISourceReviewCredentialOmission {
-		t.Fatalf("credential example was not structurally redacted:\n%s", review)
+	if review != source {
+		t.Fatalf("credential example source was changed:\n%s", review)
 	}
 }
 
@@ -242,9 +242,8 @@ paths:
 				t.Fatalf("source review = %#v", result.SourceReview)
 			}
 			content := result.SourceReview.SourceFiles[0].Content
-			if content == openAPISourceReviewCredentialOmission ||
-				!strings.Contains(content, `password: "`+scrub.Redacted+`"`) {
-				t.Fatalf("exact redaction marker caused omission for %q: %q", protected, content)
+			if !strings.Contains(content, "password: "+protected) {
+				t.Fatalf("credential source was changed for %q: %q", protected, content)
 			}
 		})
 	}

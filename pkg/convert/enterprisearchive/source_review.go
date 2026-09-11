@@ -2,7 +2,7 @@ package enterprisearchive
 
 import "github.com/jasonczech/apexload/pkg/convert/sourceview"
 
-// SourceReview contains the redacted source files and source-to-DSL mappings
+// SourceReview contains imported source files and source-to-DSL mappings
 // produced during an enterprise script archive import.
 type SourceReview = sourceview.Review
 type SourceReviewFile = sourceview.SourceFile

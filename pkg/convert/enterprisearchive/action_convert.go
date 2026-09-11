@@ -166,14 +166,6 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	}
 
 	warnings = append(warnings, annotateOpaqueTransformArgs(action, fn)...)
-	// Scrub raw masked metadata on every path: whenever a masked-body secret
-	// reference was established (flag-driven or because the body carried the
-	// masked payload) the retained masked_body_raw/masked_body_calls must never
-	// hold the obscured credential text.
-	if opts.UseMaskedBodySecretReferences || strings.HasPrefix(action.Body, "{{secret.") {
-		redactOpaqueTransformMetadata(action)
-	}
-
 	// Convert parameter references in URL/target too
 	action.Target = convertParamReferences(action.Target)
 

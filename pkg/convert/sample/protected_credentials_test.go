@@ -8,7 +8,6 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T) {
@@ -52,20 +51,6 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	}
 	if result.ProtectedRequirements.Take() != nil {
 		t.Fatal("protected credential requirements were returned more than once")
-	}
-}
-
-func TestPublicCorrelationSamplesRedactCredentialContext(t *testing.T) {
-	correlations := []Correlation{
-		{Name: "corr_session_token", Expression: "session_token", SampleValue: "simple-canary-value"},
-		{Name: "corr_location_state", Expression: "state", SampleValue: "space token/123456"},
-	}
-	sanitizePublicCorrelationSamples(correlations)
-	if correlations[0].SampleValue != scrub.Redacted {
-		t.Fatalf("credential correlation sample = %q", correlations[0].SampleValue)
-	}
-	if correlations[1].SampleValue != "space token/123456" {
-		t.Fatalf("nonsensitive correlation sample = %q", correlations[1].SampleValue)
 	}
 }
 

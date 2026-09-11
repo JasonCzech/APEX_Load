@@ -1,11 +1,8 @@
 package jmeter
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestConvertJMXDoesNotDiscloseEntityEncodedCredentialInSourceReview(t *testing.T) {
+func TestConvertJMXPreservesEntityEncodedCredentialInSourceReview(t *testing.T) {
 	const source = `<?xml version="1.0"?>
 <jmeterTestPlan><hashTree><TestPlan testname="escaped"/><hashTree>
   <ThreadGroup testname="users"/><hashTree>
@@ -37,7 +34,7 @@ func TestConvertJMXDoesNotDiscloseEntityEncodedCredentialInSourceReview(t *testi
 		t.Fatalf("source review = %#v, want one source file", result.SourceReview)
 	}
 	content := result.SourceReview.SourceFiles[0].Content
-	if strings.Contains(content, `jmeter&#45;secret`) || strings.Contains(content, "jmeter-secret") {
-		t.Fatalf("source review disclosed an entity-encoded credential: %q", content)
+	if content != source {
+		t.Fatalf("source review changed entity-encoded credential source: %q", content)
 	}
 }

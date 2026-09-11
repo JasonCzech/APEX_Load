@@ -12,7 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestEnterpriseHTTPRequestCredentialsRemainExecutableWhileProvenanceIsRedacted(t *testing.T) {
+func TestEnterpriseHTTPRequestCredentialsRemainExecutableAndPreserved(t *testing.T) {
 	t.Parallel()
 	const (
 		urlPassword    = "url-password-canary-7c91"
@@ -224,10 +224,9 @@ func assertEnterpriseCredentialPreservedResult(
 		t.Fatalf("header list = %#v, want ordered imported Authorization bytes", action.HeaderList)
 	}
 	originalURL, _ := action.Metadata["original_url"].(string)
-	if strings.Contains(originalURL, urlPassword) ||
-		strings.Contains(originalURL, queryAPIKey) ||
-		!strings.Contains(originalURL, credential.Redacted) {
-		t.Fatalf("original URL = %q, want disclosure-safe provenance", originalURL)
+	if !strings.Contains(originalURL, urlPassword) ||
+		!strings.Contains(originalURL, queryAPIKey) {
+		t.Fatalf("original URL = %q, want exact imported provenance", originalURL)
 	}
 	scriptPayload, err := json.Marshal(result.Script)
 	if err != nil {
@@ -239,13 +238,15 @@ func assertEnterpriseCredentialPreservedResult(
 		}
 	}
 
-	assertEnterpriseCredentialProvenanceRedacted(t, result, canaries)
+	assertEnterpriseCredentialProvenancePreserved(t, result, canaries)
 	preservedPayload, err := json.Marshal(result.Script.Metadata.Import.Preserved)
 	if err != nil {
 		t.Fatalf("json.Marshal(preserved provenance): %v", err)
 	}
-	if !strings.Contains(string(preservedPayload), credential.Redacted) {
-		t.Fatalf("source-authentication provenance omitted disclosure sentinel: %s", preservedPayload)
+	for _, canary := range canaries {
+		if !strings.Contains(string(preservedPayload), canary) && !strings.Contains(string(scriptPayload), canary) {
+			t.Fatalf("source-authentication provenance lost imported value %q: %s", canary, preservedPayload)
+		}
 	}
 
 	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
@@ -253,7 +254,7 @@ func assertEnterpriseCredentialPreservedResult(
 	}
 }
 
-func assertEnterpriseCredentialProvenanceRedacted(
+func assertEnterpriseCredentialProvenancePreserved(
 	t *testing.T,
 	result *ConvertResult,
 	canaries []string,
@@ -269,6 +270,7 @@ func assertEnterpriseCredentialProvenanceRedacted(
 		preserved = result.Script.Metadata.Import.Preserved
 	}
 	provenancePayload, err := json.Marshal([]any{
+		result.Script,
 		result.SourceReview,
 		result.ReviewArtifact,
 		result.FidelityReport,
@@ -279,13 +281,13 @@ func assertEnterpriseCredentialProvenanceRedacted(
 		t.Fatalf("json.Marshal(provenance): %v", err)
 	}
 	for _, canary := range canaries {
-		if strings.Contains(string(provenancePayload), canary) {
-			t.Errorf("source-review provenance retained credential %q: %s", canary, provenancePayload)
+		if !strings.Contains(string(provenancePayload), canary) {
+			t.Errorf("source-review provenance lost imported value %q: %s", canary, provenancePayload)
 		}
 	}
 }
 
-func TestEnterpriseReviewPlaceholdersRetainOnlyDisclosureSafeArgumentShape(t *testing.T) {
+func TestEnterpriseReviewPlaceholdersRetainImportedArgumentShape(t *testing.T) {
 	t.Parallel()
 	const canary = "review-placeholder-canary-4f20"
 	result := convertSourceExecutionFixture(t, `
@@ -300,8 +302,8 @@ Action()
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	if strings.Contains(string(payload), canary) {
-		t.Fatalf("review placeholder retained source argument canary: %s", payload)
+	if !strings.Contains(string(payload), canary) {
+		t.Fatalf("review placeholder lost source argument canary: %s", payload)
 	}
 	for _, action := range result.Script.Actions[:2] {
 		if _, retained := action.Metadata["source_call"]; retained {
@@ -313,7 +315,7 @@ Action()
 	}
 }
 
-func TestEnterpriseSpecializedReviewConstructorsDoNotRetainSourceStatements(t *testing.T) {
+func TestEnterpriseSpecializedReviewConstructorsRetainSourceStatements(t *testing.T) {
 	t.Parallel()
 	const canary = "specialized-review-canary-2d18"
 	fn := ParsedFunction{
@@ -342,8 +344,8 @@ func TestEnterpriseSpecializedReviewConstructorsDoNotRetainSourceStatements(t *t
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	if strings.Contains(string(payload), canary) {
-		t.Fatalf("specialized review constructor retained source statement: %s", payload)
+	if !strings.Contains(string(payload), canary) {
+		t.Fatalf("specialized review constructor lost source statement: %s", payload)
 	}
 }
 

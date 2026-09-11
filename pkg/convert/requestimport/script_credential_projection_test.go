@@ -8,7 +8,6 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -666,7 +665,7 @@ func TestProjectScriptCredentialsGovernsBaseURLRuntimeVariables(t *testing.T) {
 	})
 }
 
-func TestProjectScriptCredentialsRedactsTemplatedOriginalURLUserinfo(t *testing.T) {
+func TestProjectScriptCredentialsPreservesTemplatedOriginalURLUserinfo(t *testing.T) {
 	t.Parallel()
 	const sourceValue = "user:{{var.static_password}}"
 	script := validBaseScript()
@@ -693,9 +692,8 @@ func TestProjectScriptCredentialsRedactsTemplatedOriginalURLUserinfo(t *testing.
 		t.Fatalf("ProjectScriptCredentials: %v", err)
 	}
 	originalURL, _ := script.Actions[0].Metadata["original_url"].(string)
-	if strings.Contains(originalURL, sourceValue) ||
-		!strings.Contains(originalURL, credential.Redacted) {
-		t.Fatalf("original URL = %q, want disclosure-safe provenance", originalURL)
+	if originalURL != "https://"+sourceValue+"@api.example.test/orders" {
+		t.Fatalf("original URL = %q, want exact imported provenance", originalURL)
 	}
 	if len(result.Requirements) != 0 {
 		t.Fatalf("requirements = %#v, preserved original URL must not require reentry", result.Requirements)
@@ -708,8 +706,8 @@ func TestProjectScriptCredentialsRedactsTemplatedOriginalURLUserinfo(t *testing.
 		t.Fatalf("json.Marshal: %v", marshalErr)
 	}
 	if !strings.Contains(string(payload), "source-password") ||
-		strings.Contains(originalURL, "{{var.static_password}}") {
-		t.Fatalf("script lost executable parameter or leaked it through provenance: %s", payload)
+		!strings.Contains(originalURL, "{{var.static_password}}") {
+		t.Fatalf("script lost imported parameter or provenance: %s", payload)
 	}
 	assertCredentialPreservationFindingsNoGate(t, result.Findings)
 	if targets := preservedCredentialTargetsFromMetadata(script.Actions[0].Metadata); len(targets) != 0 {
@@ -792,9 +790,8 @@ func TestProjectScriptCredentialsRemovesAllSourceVariablesForDeduplicatedRequire
 		t.Fatalf("requirements = %#v, preserved source variables must not require reentry", result.Requirements)
 	}
 	originalURL, _ := script.Actions[0].Metadata["original_url"].(string)
-	if strings.Contains(originalURL, "{{var.metadata_password}}") ||
-		!strings.Contains(originalURL, credential.Redacted) {
-		t.Fatalf("original URL = %q, want disclosure-safe provenance", originalURL)
+	if originalURL != "https://user:{{var.metadata_password}}@api.example.test/orders" {
+		t.Fatalf("original URL = %q, want exact imported provenance", originalURL)
 	}
 	payload, marshalErr := json.Marshal(script)
 	if marshalErr != nil {
@@ -802,7 +799,7 @@ func TestProjectScriptCredentialsRemovesAllSourceVariablesForDeduplicatedRequire
 	}
 	if !strings.Contains(string(payload), sourcePassword) ||
 		!strings.Contains(string(payload), "{{var.target_password}}") ||
-		strings.Contains(originalURL, "{{var.metadata_password}}") ||
+		!strings.Contains(originalURL, "{{var.metadata_password}}") ||
 		len(script.Parameters) != 2 {
 		t.Fatalf("executable script lost deduplicated credential source: %s", payload)
 	}

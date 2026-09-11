@@ -10,7 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestConvertJMXProjectsArgumentCredentialWithoutSourceDisclosure(t *testing.T) {
+func TestConvertJMXPreservesArgumentCredentialInSourceReview(t *testing.T) {
 	const canary = "jmeter-argument-canary-73ad"
 	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
@@ -67,8 +67,8 @@ func TestConvertJMXProjectsArgumentCredentialWithoutSourceDisclosure(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(payload), canary) {
-		t.Fatalf("source review disclosed source-variable credential: %s", payload)
+	if !strings.Contains(string(payload), canary) {
+		t.Fatalf("source review lost source-variable credential: %s", payload)
 	}
 }
 

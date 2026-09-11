@@ -99,6 +99,9 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	if err := applyTransactionSLARules(workingDir, &manifest); err != nil {
 		return nil, err
 	}
+	if err := applyTransactionResponseTimeSLAs(workingDir, &manifest); err != nil {
+		return nil, err
+	}
 	if err := writeArchiveParquetFiles(workingDir, &manifest); err != nil {
 		return nil, err
 	}

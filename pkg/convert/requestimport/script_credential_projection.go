@@ -16,7 +16,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // ScriptCredentialURL is one importer-owned URL surface outside the canonical
@@ -1428,20 +1427,7 @@ func enterpriseMapString(values map[string]any, key string) string {
 }
 
 func sanitizeEnterpriseURLMetadata(ref dslwalk.SurfaceRef) {
-	metadata := ref.Metadata()
-	if metadata == nil {
-		return
-	}
-	for _, key := range []string{
-		"original_url",
-		"inferred_url_source",
-		"soap_endpoint_placeholder",
-	} {
-		if value, ok := metadata[key].(string); ok {
-			metadata[key] = scrub.ValueURL(value, scrub.Policy{})
-		}
-	}
-	ref.SetMetadata(metadata)
+	// Imported provenance is part of the operator-owned script and remains exact.
 }
 
 func synchronizeEnterpriseSequenceProvenance(script *dsl.Script) {

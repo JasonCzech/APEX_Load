@@ -33,6 +33,7 @@ import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
 import SynchronizedTimeline from './runReport/SynchronizedTimeline'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
+import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import {
   alignBaselineTimeline,
   buildBaselineOverviewDiff,
@@ -487,7 +488,22 @@ export default function RunReportPage({
           <RunReportKpiScorecard kpis={kpis} />
           <SynchronizedTimeline data={timelineHistory} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
           <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
-          <TransactionSlaScoreboard rows={slaRows} selectedAction={slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={archiveModel.archiveTransactions} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={archiveModel.onSelectedArchiveActionChange} />
+          {(report?.transaction_response_time_sla_results?.length ?? 0) > 0 ? (
+            <TransactionResponseTimeSLATable
+              rows={report?.transaction_response_time_sla_results ?? []}
+              title="Transaction SLA Scoreboard"
+              selectedGroup={archiveModel.selectedArchiveGroup}
+              selectedTransaction={archiveModel.selectedArchiveAction}
+              drilldownTransactions={archiveModel.archiveTransactions}
+              loadingTransactions={archiveModel.archiveTransactionsLoading}
+              onSelect={row => {
+                archiveModel.onSelectedArchiveGroupChange(row.group)
+                archiveModel.onSelectedArchiveActionChange(row.transaction)
+              }}
+            />
+          ) : (
+            <TransactionSlaScoreboard rows={slaRows} selectedAction={slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={archiveModel.archiveTransactions} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={archiveModel.onSelectedArchiveActionChange} />
+          )}
           {renderEvidence('action-summary')}
           <details><summary>Load impact</summary>{renderEvidence('load-impact')}</details>
         </>}

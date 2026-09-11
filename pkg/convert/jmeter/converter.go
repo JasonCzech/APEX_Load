@@ -445,37 +445,13 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if opts.ScenarioDraft && len(result.Scripts) > 0 {
 		result.ScenarioDraft = buildScenarioDraft(threadGroups, result.Scripts)
 	}
-	SanitizeDisplayLabels(result.Scripts, result.ScenarioDraft)
 	for _, script := range result.Scripts {
 		uniquify.DeduplicateActionNames(script)
 	}
 	reconcileJMeterBatchSourceMappingNames(result.Scripts, sourceMappings)
 	result.Findings = importreview.NormalizeFindings(allFindings)
 	result.SecretRequirements = publicJMeterCredentialRequirements(allRequirements)
-	reviewContent, residualSourceRedacted := redactJMeterResidualSource(string(data))
-	reviewContent, variableSourceRedacted := redactJMeterCredentialValues(
-		reviewContent,
-		allRequirements,
-		variableReview,
-	)
-	if (jmeterPreservedCredentialFinding(allFindings) &&
-		len(allRequirements) == 0) ||
-		jmeterJDBCCredentialSourceRetained(result.Scripts) {
-		// Preserve-mode credentials intentionally remain in the runnable
-		// destination, so there is no protected Requirement.Value list to drive
-		// the historical value-by-value source scrubber. Omit the public source
-		// text instead of risking disclosure through JMeter's sibling
-		// Header.name/Header.value XML shape or entity-encoded values. Newlines
-		// remain so source mappings keep their original line coordinates.
-		reviewContent = "<!-- [JMETER SOURCE OMITTED: IMPORTED CREDENTIALS RETAINED IN DESTINATION] -->" +
-			strings.Repeat("\n", strings.Count(reviewContent, "\n"))
-		variableSourceRedacted = true
-	}
-	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: reviewContent}, sourceMappings)
-	if residualSourceRedacted || variableSourceRedacted {
-		markJMeterSourceReviewRedacted(result.SourceReview, sourceFileName)
-	}
-	sanitizeJMeterResultReviewText(result)
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: string(data)}, sourceMappings)
 	return result, nil
 }
 

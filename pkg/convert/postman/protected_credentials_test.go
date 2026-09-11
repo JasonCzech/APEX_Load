@@ -56,8 +56,8 @@ func TestProtectedCredentialRequirementsAreOneShotAndJSONInvisible(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(sourceJSON), value) {
-		t.Fatalf("source review disclosed credential: %s", sourceJSON)
+	if !strings.Contains(string(sourceJSON), value) {
+		t.Fatalf("source review lost credential: %s", sourceJSON)
 	}
 }
 
@@ -131,8 +131,8 @@ func TestStaticInnocuousVariableInCredentialSurfaceIsProtectedAndRemovedFromPara
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(string(sourceJSON), canary) {
-				t.Fatalf("source review disclosed static credential variable: %s", sourceJSON)
+			if !strings.Contains(string(sourceJSON), canary) {
+				t.Fatalf("source review lost static credential variable: %s", sourceJSON)
 			}
 			requirements := result.ProtectedRequirements.Take()
 			defer clearPostmanProtectedValues(requirements)

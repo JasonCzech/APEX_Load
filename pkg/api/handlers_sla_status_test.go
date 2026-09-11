@@ -27,7 +27,8 @@ func TestTerminalSLAStatusPrefersArchivedTransactionRuleEvidence(t *testing.T) {
 	manifest := RunArchiveManifest{
 		SchemaVersion: archiveSchemaVersion,
 		TestID:        testID, Status: "FAILED", SLAEvaluated: true, SLABreached: true,
-		TransactionRuleResults: []TransactionSLARuleResult{{Status: "fail", MatchedCount: 2, Message: "archive result"}},
+		TransactionRuleResults:            []TransactionSLARuleResult{{Status: "fail", MatchedCount: 2, Message: "archive result"}},
+		TransactionResponseTimeSLAResults: []TransactionResponseTimeSLAResult{{Group: "buyers", Transaction: "Checkout", ThresholdMs: 500, EligibleSuccessCount: 2, Status: "pass"}},
 	}
 	content, err := json.Marshal(manifest)
 	if err != nil {
@@ -51,7 +52,38 @@ func TestTerminalSLAStatusPrefersArchivedTransactionRuleEvidence(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if !report.SLABreached || len(report.TransactionRuleResults) != 1 || report.TransactionRuleResults[0].Message != "archive result" {
+	if !report.SLABreached || len(report.TransactionRuleResults) != 1 || report.TransactionRuleResults[0].Message != "archive result" || len(report.TransactionResponseTimeSLAResults) != 1 || report.TransactionResponseTimeSLAResults[0].Group != "buyers" {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestLiveSLAStatusIncludesProvisionalTransactionResponseRows(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	testID := "live-response-time-sla"
+	threshold := 500.0
+	server.runner.mu.Lock()
+	server.runner.tests[testID] = &ManagedTest{
+		ID: testID, Status: "RUNNING",
+		GoalConfig: &GoalConfig{TransactionResponseTimeSLAMs: &threshold},
+		LiveMetrics: &LiveMetrics{TransactionResponseTimeSLA: []TransactionResponseTimeSLAResult{{
+			Group: "buyers", Transaction: "Checkout", ThresholdMs: threshold,
+			EligibleSuccessCount: 20, MissedCount: 1, MetPct: 95, Status: "pass",
+		}}},
+	}
+	server.runner.mu.Unlock()
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testID+"/sla-status", nil)
+	request.SetPathValue("id", testID)
+	response := httptest.NewRecorder()
+	server.handleGetTestSLAStatus(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+	var report SLABreachReport
+	if err := json.Unmarshal(response.Body.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.SLAEvaluated || len(report.TransactionResponseTimeSLAResults) != 1 || report.TransactionResponseTimeSLAResults[0].Transaction != "Checkout" {
 		t.Fatalf("report = %#v", report)
 	}
 }
@@ -63,6 +95,25 @@ func TestTerminalTransactionSLAStatusWaitsForArchiveEvidence(t *testing.T) {
 	server.runner.tests[testID] = &ManagedTest{
 		ID: testID, Status: "COMPLETE",
 		GoalConfig: &GoalConfig{TransactionRules: []TransactionSLARule{{Transaction: "Checkout", Metric: "minimum_count", Comparator: "gte", Threshold: 1, Severity: "fail"}}},
+	}
+	server.runner.mu.Unlock()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testID+"/sla-status", nil)
+	request.SetPathValue("id", testID)
+	response := httptest.NewRecorder()
+	server.handleGetTestSLAStatus(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestTerminalResponseTimeSLAStatusWaitsForArchiveEvidence(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	testID := "terminal-response-time-sla-pending"
+	threshold := 500.0
+	server.runner.mu.Lock()
+	server.runner.tests[testID] = &ManagedTest{
+		ID: testID, Status: "COMPLETE",
+		Groups: []TestGroup{{Name: "buyers", TransactionResponseTimeSLAMs: &threshold}},
 	}
 	server.runner.mu.Unlock()
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testID+"/sla-status", nil)

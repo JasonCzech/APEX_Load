@@ -207,8 +207,8 @@ func TestNoSessionImportCommitAcceptsValidLegacyAttestationAndRetainsSource(t *t
 	if response.Code != http.StatusCreated {
 		t.Fatalf("legacy attested create status = %d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), credential) {
-		t.Fatalf("legacy attested create response disclosed credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), credential) {
+		t.Fatalf("legacy attested create response did not preserve credential: %s", response.Body.String())
 	}
 	var result struct {
 		StoredScript *StoredScript `json:"stored_script"`
@@ -280,8 +280,8 @@ func TestNoSessionImportCommitAcceptsValidLegacyAttestationOnReplace(t *testing.
 	if response.Code != http.StatusOK {
 		t.Fatalf("legacy attested replace status = %d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), credential) {
-		t.Fatalf("legacy attested replace response disclosed credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), credential) {
+		t.Fatalf("legacy attested replace response did not preserve credential: %s", response.Body.String())
 	}
 	durable, ok := server.runner.GetScript(existing.ID)
 	if !ok || durable == nil || durable.Script == nil ||

@@ -1850,12 +1850,13 @@ func newErrorReference() string {
 }
 
 type SLABreachReport struct {
-	TestID                 string                     `json:"test_id"`
-	Status                 string                     `json:"status"`
-	SLAEvaluated           bool                       `json:"sla_evaluated"`
-	SLABreached            bool                       `json:"sla_breached"`
-	Details                []string                   `json:"details,omitempty"`
-	TransactionRuleResults []TransactionSLARuleResult `json:"transaction_rule_results,omitempty"`
+	TestID                            string                             `json:"test_id"`
+	Status                            string                             `json:"status"`
+	SLAEvaluated                      bool                               `json:"sla_evaluated"`
+	SLABreached                       bool                               `json:"sla_breached"`
+	Details                           []string                           `json:"details,omitempty"`
+	TransactionRuleResults            []TransactionSLARuleResult         `json:"transaction_rule_results,omitempty"`
+	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult `json:"transaction_response_time_sla_results,omitempty"`
 }
 
 func (s *Server) handleGetTestSLAStatus(w http.ResponseWriter, r *http.Request) {
@@ -1870,7 +1871,7 @@ func (s *Server) handleGetTestSLAStatus(w http.ResponseWriter, r *http.Request) 
 				s.writeArchivedSLAReport(w, id, manifest)
 				return
 			}
-			if test.GoalConfig != nil && len(test.GoalConfig.TransactionRules) > 0 {
+			if (test.GoalConfig != nil && len(test.GoalConfig.TransactionRules) > 0) || managedTestHasTransactionResponseTimeSLA(test) {
 				writeError(w, http.StatusServiceUnavailable, "terminal transaction SLA evidence is not yet available")
 				return
 			}
@@ -1902,17 +1903,18 @@ func (s *Server) writeArchivedSLAReport(w http.ResponseWriter, id string, manife
 		status = manifest.Status
 	}
 	writeJSON(w, http.StatusOK, SLABreachReport{
-		TestID:                 id,
-		Status:                 status,
-		SLAEvaluated:           manifest.SLAEvaluated,
-		SLABreached:            manifest.SLABreached,
-		Details:                manifest.SLADetails,
-		TransactionRuleResults: manifest.TransactionRuleResults,
+		TestID:                            id,
+		Status:                            status,
+		SLAEvaluated:                      manifest.SLAEvaluated,
+		SLABreached:                       manifest.SLABreached,
+		Details:                           manifest.SLADetails,
+		TransactionRuleResults:            manifest.TransactionRuleResults,
+		TransactionResponseTimeSLAResults: append([]TransactionResponseTimeSLAResult(nil), manifest.TransactionResponseTimeSLAResults...),
 	})
 }
 
 func (s *Server) writeSLAReport(w http.ResponseWriter, id, status string, cfg *GoalConfig, live *LiveMetrics) {
-	if live == nil || live.GoalStatus == nil {
+	if live == nil {
 		writeJSON(w, http.StatusOK, SLABreachReport{
 			TestID:      id,
 			Status:      status,
@@ -1921,29 +1923,58 @@ func (s *Server) writeSLAReport(w http.ResponseWriter, id, status string, cfg *G
 		return
 	}
 
-	breach := live.GoalStatus.BreachActive
+	breach := live.GoalStatus != nil && live.GoalStatus.BreachActive
 	var details []string
-	if live.GoalStatus.LatencyBreached {
+	if live.GoalStatus != nil && live.GoalStatus.LatencyBreached {
 		details = append(details, "P95 latency breached threshold")
 	}
-	if live.GoalStatus.ErrorBreached {
+	if live.GoalStatus != nil && live.GoalStatus.ErrorBreached {
 		details = append(details, "Error percentage breached threshold")
 	}
-	if live.GoalStatus.ErrorCountBreached {
+	if live.GoalStatus != nil && live.GoalStatus.ErrorCountBreached {
 		details = append(details, "Total error count breached threshold")
 	}
-	if live.GoalStatus.ServerProcessingBreached {
+	if live.GoalStatus != nil && live.GoalStatus.ServerProcessingBreached {
 		details = append(details, "Server processing time breached threshold")
 	}
-	if live.GoalStatus.TransferBreached {
+	if live.GoalStatus != nil && live.GoalStatus.TransferBreached {
 		details = append(details, "Transfer time breached threshold")
 	}
 
+	evaluated := cfg != nil && hasGoalConfig(cfg)
+	if goalConfigOnlyHasTransactionResponseTimeSLA(cfg) {
+		evaluated = false
+	}
 	writeJSON(w, http.StatusOK, SLABreachReport{
-		TestID:       id,
-		Status:       status,
-		SLAEvaluated: cfg != nil && hasGoalConfig(cfg),
-		SLABreached:  breach,
-		Details:      details,
+		TestID:                            id,
+		Status:                            status,
+		SLAEvaluated:                      evaluated,
+		SLABreached:                       breach,
+		Details:                           details,
+		TransactionResponseTimeSLAResults: append([]TransactionResponseTimeSLAResult(nil), live.TransactionResponseTimeSLA...),
 	})
+}
+
+func managedTestHasTransactionResponseTimeSLA(test *ManagedTest) bool {
+	if test == nil {
+		return false
+	}
+	if test.GoalConfig != nil && test.GoalConfig.TransactionResponseTimeSLAMs != nil {
+		return true
+	}
+	for _, group := range test.Groups {
+		if group.TransactionResponseTimeSLAMs != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func goalConfigOnlyHasTransactionResponseTimeSLA(config *GoalConfig) bool {
+	if config == nil || config.TransactionResponseTimeSLAMs == nil {
+		return false
+	}
+	copy := cloneGoalConfig(config)
+	copy.TransactionResponseTimeSLAMs = nil
+	return !hasGoalConfig(copy)
 }

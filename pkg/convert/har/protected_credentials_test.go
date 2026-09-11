@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestImportedCredentialRemainsRunnableWhileHARReviewIsRedacted(t *testing.T) {
+func TestImportedCredentialRemainsRunnableAndHARReviewIsExact(t *testing.T) {
 	const value = "har-protected-canary-7096f94f"
 	result, err := Convert([]byte(`{
 	  "log":{"entries":[{
@@ -31,8 +31,8 @@ func TestImportedCredentialRemainsRunnableWhileHARReviewIsRedacted(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(reviewJSON), value) {
-		t.Fatal("HAR source review disclosed an imported credential value")
+	if !strings.Contains(string(reviewJSON), value) {
+		t.Fatal("HAR source review lost an imported credential value")
 	}
 	requirements := result.ProtectedRequirements.Take()
 	if len(requirements) != 0 {

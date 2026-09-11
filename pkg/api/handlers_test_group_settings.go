@@ -627,18 +627,19 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 		}
 	}
 	entry := CreateGroupEntry{
-		Name:               oldGroup.Name,
-		ScriptID:           oldGroup.ScriptID,
-		Role:               oldGroup.Role,
-		VUsers:             oldGroup.VUsers,
-		RampUp:             oldGroup.RampUp,
-		RampDown:           oldGroup.RampDown,
-		Stages:             cloneLoadStages(oldGroup.Stages),
-		Iterations:         iterations,
-		RuntimeSettings:    merged,
-		Assignment:         cloneGeneratorAssignmentSettings(oldGroup.Assignment),
-		InitStrategy:       oldGroup.Initialization,
-		runtimeSecretScope: test.ID,
+		Name:                         oldGroup.Name,
+		ScriptID:                     oldGroup.ScriptID,
+		Role:                         oldGroup.Role,
+		VUsers:                       oldGroup.VUsers,
+		RampUp:                       oldGroup.RampUp,
+		RampDown:                     oldGroup.RampDown,
+		Stages:                       cloneLoadStages(oldGroup.Stages),
+		Iterations:                   iterations,
+		RuntimeSettings:              merged,
+		Assignment:                   cloneGeneratorAssignmentSettings(oldGroup.Assignment),
+		InitStrategy:                 oldGroup.Initialization,
+		TransactionResponseTimeSLAMs: cloneFloat64Ptr(oldGroup.TransactionResponseTimeSLAMs),
+		runtimeSecretScope:           test.ID,
 	}
 	newGroup, newSpec, err := tr.compileManagedTestGroupForModeWithRevisionLocked(
 		index,
@@ -683,6 +684,7 @@ func (tr *TestRunner) UpdateTestGroupRuntimeSettings(id string, groupName string
 	candidateGroups[index] = newGroup
 	candidateSpecs := append([]engine.GroupConfig(nil), test.groupSpecs...)
 	candidateSpecs[index] = newSpec
+	applyTransactionResponseTimeSLAThresholds(test.GoalConfig, candidateGroups, candidateSpecs)
 	review := buildRuntimeSettingsScenarioReview(candidateGroups, candidateSpecs)
 	if review != nil && review.Status == "blocked" {
 		return nil, fmt.Errorf("runtime settings blocked: %s", review.Summary)

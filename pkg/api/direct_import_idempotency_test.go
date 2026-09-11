@@ -172,9 +172,9 @@ func TestJMeterSaveLostResponseRetryReturnsSameDurableAssets(t *testing.T) {
 		if marshalErr != nil {
 			t.Fatal(marshalErr)
 		}
-		if bytes.Contains(maskedJSON, []byte(credential)) ||
-			!bytes.Contains(maskedJSON, []byte(maskedScriptSecret)) {
-			t.Fatalf("JMeter idempotency preview disclosed or failed to mask credential: %s", maskedJSON)
+		if !bytes.Contains(maskedJSON, []byte(credential)) ||
+			bytes.Contains(maskedJSON, []byte(maskedScriptSecret)) {
+			t.Fatalf("JMeter idempotency preview did not preserve credential: %s", maskedJSON)
 		}
 		payload := map[string]any{
 			"scripts": maskedScripts,
@@ -202,8 +202,8 @@ func TestJMeterSaveLostResponseRetryReturnsSameDurableAssets(t *testing.T) {
 	if second.Code != http.StatusCreated {
 		t.Fatalf("lost-response retry status = %d body=%s", second.Code, second.Body.String())
 	}
-	if strings.Contains(first.Body.String(), canary) || strings.Contains(second.Body.String(), canary) {
-		t.Fatal("JMeter idempotency response disclosed imported credentials")
+	if !strings.Contains(first.Body.String(), canary) || !strings.Contains(second.Body.String(), canary) {
+		t.Fatal("JMeter idempotency response did not preserve imported credentials")
 	}
 
 	var firstResult, secondResult struct {
@@ -999,8 +999,8 @@ func TestJMeterRetryHealsCredentialedAssetsAcrossServerRestart(t *testing.T) {
 		t.Fatalf("restart recovery status = %d, want 201 body=%s",
 			retry.Code, retry.Body.String())
 	}
-	if strings.Contains(retry.Body.String(), credential) {
-		t.Fatal("restart recovery response disclosed the imported credential")
+	if !strings.Contains(retry.Body.String(), credential) {
+		t.Fatal("restart recovery response did not preserve the imported credential")
 	}
 	var recovered struct {
 		Scripts  []StoredScript  `json:"scripts"`
@@ -1377,9 +1377,9 @@ func jmeterRestartAttestedSaveBody(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(maskedJSON, []byte(credential)) ||
-		!bytes.Contains(maskedJSON, []byte(maskedScriptSecret)) {
-		t.Fatalf("JMeter restart preview disclosed or failed to mask credential: %s", maskedJSON)
+	if !bytes.Contains(maskedJSON, []byte(credential)) ||
+		bytes.Contains(maskedJSON, []byte(maskedScriptSecret)) {
+		t.Fatalf("JMeter restart preview did not preserve credential: %s", maskedJSON)
 	}
 	payload := map[string]any{
 		"scripts": maskedScripts,

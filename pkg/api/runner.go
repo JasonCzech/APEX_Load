@@ -555,17 +555,24 @@ type ManagedTest struct {
 	// remoteArchiveClientsByTarget retains positively stopped evacuation
 	// sources for the final archive merge. They are deliberately excluded from
 	// active topology and every mutable-control fan-out.
-	remoteArchiveClientsByTarget map[string]generatorClient
-	remoteMetricsStreamsByTarget map[string]*generatorrpc.MetricsStream
-	remoteMetricsBatchesByTarget map[string]generatorrpc.MetricsBatch
-	remoteTargetStates           map[string]string
-	remoteFinalizing             bool
-	remoteWorkloadCompleted      bool
-	remoteLifecycleCtx           context.Context
-	remoteLifecycleCancel        context.CancelFunc
-	remoteStopFinalizerRunning   bool
-	remoteMetricsLastPublishedAt time.Time
-	remoteMetricsFlushScheduled  bool
+	remoteArchiveClientsByTarget     map[string]generatorClient
+	remoteMetricsStreamsByTarget     map[string]*generatorrpc.MetricsStream
+	remoteMetricsBatchesByTarget     map[string]generatorrpc.MetricsBatch
+	remoteTransactionResponseTimeSLA map[string]*transactionResponseTimeSLAAccumulator
+	// remoteTransactionResponseTimeSLALegacyByTarget retains cumulative
+	// controller-side counters for generators that do not yet publish the
+	// cumulative SLA contract. Keeping these counters per target lets a rolling
+	// upgrade merge legacy transaction windows with upgraded generator counters
+	// without either double-counting or discarding prior evidence.
+	remoteTransactionResponseTimeSLALegacyByTarget map[string]map[string]*transactionResponseTimeSLAAccumulator
+	remoteTargetStates                             map[string]string
+	remoteFinalizing                               bool
+	remoteWorkloadCompleted                        bool
+	remoteLifecycleCtx                             context.Context
+	remoteLifecycleCancel                          context.CancelFunc
+	remoteStopFinalizerRunning                     bool
+	remoteMetricsLastPublishedAt                   time.Time
+	remoteMetricsFlushScheduled                    bool
 	// Accepted/published revisions and the gate make distributed aggregate
 	// publication monotonic when per-target consumers finish out of order.
 	remoteMetricsAcceptedRevision   uint64
@@ -692,6 +699,9 @@ type TestGroup struct {
 	Assignment             *GeneratorAssignmentSettings `json:"assignment,omitempty"`
 	RunLogicGoals          *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
 	Initialization         string                       `json:"initialization,omitempty"`
+	// TransactionResponseTimeSLAMs overrides the scenario default for every
+	// named business transaction emitted by this group. Nil inherits the root.
+	TransactionResponseTimeSLAMs *float64 `json:"transaction_response_time_sla_ms,omitempty"`
 	// ContinueOnError records how the scenario's enabled-by-default
 	// continue-on-error policy resolved for this group, including whether a more
 	// specific layer diverged from it. The test run manifest reads it to surface
@@ -746,47 +756,48 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
-	Timestamp              time.Time                             `json:"timestamp"`
-	ActiveVUsers           int64                                 `json:"active_vusers"`
-	TPS                    float64                               `json:"tps"`
-	TargetTPS              float64                               `json:"target_tps,omitempty"`
-	ThroughputGapPct       float64                               `json:"throughput_gap_pct,omitempty"`
-	ThroughputTargetMissed bool                                  `json:"throughput_target_missed,omitempty"`
-	AvgResponseMs          float64                               `json:"avg_response_ms"`
-	ErrorPct               float64                               `json:"error_pct"`
-	TotalTx                int64                                 `json:"total_transactions"`
-	TotalErrors            int64                                 `json:"total_errors"`
-	P50Ms                  float64                               `json:"p50_ms"`
-	P90Ms                  float64                               `json:"p90_ms"`
-	P95Ms                  float64                               `json:"p95_ms"`
-	P99Ms                  float64                               `json:"p99_ms"`
-	AvgDNSMs               float64                               `json:"avg_dns_ms,omitempty"`
-	AvgConnectMs           float64                               `json:"avg_connect_ms,omitempty"`
-	AvgTLSMs               float64                               `json:"avg_tls_ms,omitempty"`
-	AvgTTFBMs              float64                               `json:"avg_ttfb_ms,omitempty"`
-	AvgWaitMs              float64                               `json:"avg_wait_ms,omitempty"`
-	ErrorBreakdown         map[string]int64                      `json:"error_breakdown,omitempty"`
-	Transactions           map[string]*TxMetrics                 `json:"transactions,omitempty"`
-	DependencyHealth       map[string]*TxMetrics                 `json:"dependency_health,omitempty"`
-	DependencyMap          *LiveDependencyMap                    `json:"dependency_map,omitempty"`
-	ErrorPatterns          []LiveErrorPattern                    `json:"error_patterns,omitempty"`
-	SOAPOperations         map[string]*TxMetrics                 `json:"soap_operations,omitempty"`
-	NetworkProfiles        map[string]*TxMetrics                 `json:"network_profiles,omitempty"`
-	ByRegion               map[string]*TxMetrics                 `json:"by_region,omitempty"`
-	GroupMetrics           map[string]*GroupLiveMetrics          `json:"groups,omitempty"`
-	Browser                *BrowserLiveMetrics                   `json:"browser,omitempty"`
-	BrowserByDevice        map[string]*BrowserDeviceLiveMetrics  `json:"browser_by_device,omitempty"`
-	GoalStatus             *GoalStatus                           `json:"goal_status,omitempty"`
-	CapacityStatus         *LiveCapacityStatus                   `json:"capacity_status,omitempty"`
-	TelemetryStatus        *TelemetryRunHealth                   `json:"telemetry_status,omitempty"`
-	Telemetry              *TelemetryHealth                      `json:"telemetry,omitempty"`
-	Resources              *engine.SystemResources               `json:"resources,omitempty"`
-	GeneratorResources     map[string]*GeneratorResourceSnapshot `json:"generator_resources,omitempty"`
-	Latency                *NetworkLatency                       `json:"latency,omitempty"`
-	LoadLevels             []ActiveLoadLevel                     `json:"load_levels,omitempty"`
-	ActiveRuntimeSeconds   float64                               `json:"-"`
-	SampleWindowSeconds    float64                               `json:"-"`
-	ErrorEvidence          []LiveErrorEvidence                   `json:"-"`
+	Timestamp                  time.Time                             `json:"timestamp"`
+	ActiveVUsers               int64                                 `json:"active_vusers"`
+	TPS                        float64                               `json:"tps"`
+	TargetTPS                  float64                               `json:"target_tps,omitempty"`
+	ThroughputGapPct           float64                               `json:"throughput_gap_pct,omitempty"`
+	ThroughputTargetMissed     bool                                  `json:"throughput_target_missed,omitempty"`
+	AvgResponseMs              float64                               `json:"avg_response_ms"`
+	ErrorPct                   float64                               `json:"error_pct"`
+	TotalTx                    int64                                 `json:"total_transactions"`
+	TotalErrors                int64                                 `json:"total_errors"`
+	P50Ms                      float64                               `json:"p50_ms"`
+	P90Ms                      float64                               `json:"p90_ms"`
+	P95Ms                      float64                               `json:"p95_ms"`
+	P99Ms                      float64                               `json:"p99_ms"`
+	AvgDNSMs                   float64                               `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs               float64                               `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs                   float64                               `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs                  float64                               `json:"avg_ttfb_ms,omitempty"`
+	AvgWaitMs                  float64                               `json:"avg_wait_ms,omitempty"`
+	ErrorBreakdown             map[string]int64                      `json:"error_breakdown,omitempty"`
+	Transactions               map[string]*TxMetrics                 `json:"transactions,omitempty"`
+	TransactionResponseTimeSLA []TransactionResponseTimeSLAResult    `json:"transaction_response_time_sla,omitempty"`
+	DependencyHealth           map[string]*TxMetrics                 `json:"dependency_health,omitempty"`
+	DependencyMap              *LiveDependencyMap                    `json:"dependency_map,omitempty"`
+	ErrorPatterns              []LiveErrorPattern                    `json:"error_patterns,omitempty"`
+	SOAPOperations             map[string]*TxMetrics                 `json:"soap_operations,omitempty"`
+	NetworkProfiles            map[string]*TxMetrics                 `json:"network_profiles,omitempty"`
+	ByRegion                   map[string]*TxMetrics                 `json:"by_region,omitempty"`
+	GroupMetrics               map[string]*GroupLiveMetrics          `json:"groups,omitempty"`
+	Browser                    *BrowserLiveMetrics                   `json:"browser,omitempty"`
+	BrowserByDevice            map[string]*BrowserDeviceLiveMetrics  `json:"browser_by_device,omitempty"`
+	GoalStatus                 *GoalStatus                           `json:"goal_status,omitempty"`
+	CapacityStatus             *LiveCapacityStatus                   `json:"capacity_status,omitempty"`
+	TelemetryStatus            *TelemetryRunHealth                   `json:"telemetry_status,omitempty"`
+	Telemetry                  *TelemetryHealth                      `json:"telemetry,omitempty"`
+	Resources                  *engine.SystemResources               `json:"resources,omitempty"`
+	GeneratorResources         map[string]*GeneratorResourceSnapshot `json:"generator_resources,omitempty"`
+	Latency                    *NetworkLatency                       `json:"latency,omitempty"`
+	LoadLevels                 []ActiveLoadLevel                     `json:"load_levels,omitempty"`
+	ActiveRuntimeSeconds       float64                               `json:"-"`
+	SampleWindowSeconds        float64                               `json:"-"`
+	ErrorEvidence              []LiveErrorEvidence                   `json:"-"`
 	// slaTelemetryPeaks retains, per SLA metric evaluated against
 	// per-transaction server telemetry, the worst transaction's summary. It is
 	// written only by terminal compaction (compactTerminalLiveMetricsTail), which
@@ -1224,21 +1235,22 @@ type StoredScenario struct {
 }
 
 type ScenarioScriptRef struct {
-	Order           int                          `json:"order"`
-	Name            string                       `json:"name,omitempty"`
-	ScriptID        string                       `json:"script_id"`
-	ScriptName      string                       `json:"script_name,omitempty"`
-	Protocol        string                       `json:"protocol,omitempty"`
-	Role            string                       `json:"role,omitempty"`
-	VUsers          int                          `json:"vusers"`
-	RampUp          string                       `json:"ramp_up,omitempty"`
-	RampDown        string                       `json:"ramp_down,omitempty"`
-	StartOffset     string                       `json:"start_offset,omitempty"`
-	Stages          []storage.LoadStage          `json:"stages,omitempty"`
-	Iterations      *int                         `json:"iterations,omitempty"`
-	Initialization  string                       `json:"initialization,omitempty"`
-	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
-	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	Order                        int                          `json:"order"`
+	Name                         string                       `json:"name,omitempty"`
+	ScriptID                     string                       `json:"script_id"`
+	ScriptName                   string                       `json:"script_name,omitempty"`
+	Protocol                     string                       `json:"protocol,omitempty"`
+	Role                         string                       `json:"role,omitempty"`
+	VUsers                       int                          `json:"vusers"`
+	RampUp                       string                       `json:"ramp_up,omitempty"`
+	RampDown                     string                       `json:"ramp_down,omitempty"`
+	StartOffset                  string                       `json:"start_offset,omitempty"`
+	Stages                       []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations                   *int                         `json:"iterations,omitempty"`
+	Initialization               string                       `json:"initialization,omitempty"`
+	RuntimeSettings              *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment                   *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	TransactionResponseTimeSLAMs *float64                     `json:"transaction_response_time_sla_ms,omitempty"`
 }
 
 const (
@@ -1768,6 +1780,10 @@ type GoalConfig struct {
 	StopOnSLABreach bool   `json:"stop_on_sla_breach,omitempty"`
 	StopOnMaxErrors bool   `json:"stop_on_max_errors,omitempty"`
 	SLABreachWindow string `json:"sla_breach_window,omitempty"`
+	// TransactionResponseTimeSLAMs is the scenario-wide default response-time
+	// SLA for named business transactions. It is independent from P95LatencyMs,
+	// which remains a fleet-level goal-controller guardrail.
+	TransactionResponseTimeSLAMs *float64 `json:"transaction_response_time_sla_ms,omitempty"`
 	// EarlyStop is a scenario-specific, VUser-mode-compatible error-rate stop.
 	// It deliberately lives beside the existing guardrails so legacy durable
 	// goal_config_json columns can round-trip it without a database migration.
@@ -1914,16 +1930,17 @@ type CreateGroupEntry struct {
 	RevisionSourceGroupIndex *int `json:"revision_source_group_index,omitempty"`
 	// RevisionNewGroup disambiguates an intentionally added/replaced group from
 	// a source group whose immutable index was accidentally omitted.
-	RevisionNewGroup bool                         `json:"revision_new_group,omitempty"`
-	VUsers           int                          `json:"vusers"`
-	RampUp           string                       `json:"ramp_up,omitempty"`
-	RampDown         string                       `json:"ramp_down,omitempty"`
-	StartOffset      string                       `json:"start_offset,omitempty"`
-	Stages           []storage.LoadStage          `json:"stages,omitempty"`
-	Iterations       *int                         `json:"iterations,omitempty"`
-	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
-	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	InitStrategy     string                       `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	RevisionNewGroup             bool                         `json:"revision_new_group,omitempty"`
+	VUsers                       int                          `json:"vusers"`
+	RampUp                       string                       `json:"ramp_up,omitempty"`
+	RampDown                     string                       `json:"ramp_down,omitempty"`
+	StartOffset                  string                       `json:"start_offset,omitempty"`
+	Stages                       []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations                   *int                         `json:"iterations,omitempty"`
+	RuntimeSettings              *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment                   *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	TransactionResponseTimeSLAMs *float64                     `json:"transaction_response_time_sla_ms,omitempty"`
+	InitStrategy                 string                       `json:"initialization,omitempty"` // "at_runtime", "at_once"
 	// Role distinguishes load-bearing groups ("load", default) from experience
 	// canaries ("observer", alias "canary"): small browser groups that emit
 	// Web Vitals continuously, are pinned during goal-based scaling, and stay

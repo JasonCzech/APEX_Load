@@ -62,10 +62,10 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // converter's complete JSON-visible ConvertResult plus shared validation and
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
-	"har":      "ef67cdad2a59cf421d3f862bf907f86a3ef1b68cddd7e87d244ecb56f59fd220",
+	"har":      "418097ed4a2784af2f85a88f180c744db2f7ef5b7a00bfff24c3eb540f28ecfa",
 	"jmeter":   "7219c9c4b6d8dbb7bb66ff2fcd3d96e63a79bac520817717839b0a1a49bfde92",
 	"k6":       "83fa7df58e867e39d7544c6b4c0a5124ede5ae3b4a3ebcfb51de6a7736b69c59",
-	"openapi":  "7dc359421e0e9513a5dad8c5ed955dcdd3bd6a92f16fa84a11a05b1ea3cdf5a0",
+	"openapi":  "282ad40974d2d7ecc3dda22a77b490e2a36149cb0584e7dc43722639c8780041",
 	"postman":  "fa2639cd6e22229d0b471fc02dc9a79a29c21ed7a6bb13e23e00b368e17ca38a",
 	"raw_http": "753109927bceb2da9bbd6dcff345c41a7d6ea87f6e0582d780cd896c06ce0e7e",
 	"wsdl":     "ab668d0db72d276a0c6f7fd526f08c274278225ea025e2e9a4ac574c804b160e",
@@ -570,7 +570,7 @@ func TestCredentialDispositionContractCharacterizesCurrentDeltas(t *testing.T) {
 }
 
 var intentionalDeltaAllowlist = map[string]string{
-	"credential_preserving_import_marker":            "Finalized imported scripts carry a stable policy marker so persistence keeps operator-supplied executable credential values while read projections remain masked.",
+	"credential_preserving_import_marker":            "Finalized imports carry a stable policy marker so operator-supplied values remain exact across scripts, source review, persistence, and authorized authoring reads.",
 	"postman_http_credentials_use_shared_projection": "Postman HTTP headers, typed auth, and structured bodies now reach the source-neutral credential projector before any compatibility rewriting.",
 	"postman_source_file_provenance":                 "Postman results identify the collection and selected environment source files so credential guidance can name the exact contributing artifact.",
 	"jmeter_http_credentials_use_shared_projection":  "JMeter HTTP headers and bodies now use the source-neutral credential projector.",

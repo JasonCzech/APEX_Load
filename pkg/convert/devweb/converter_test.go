@@ -539,7 +539,7 @@ parameters:
 	}
 }
 
-func TestConvertZipPreservesProxyCredentialsButRedactsRuntimeSourceReview(t *testing.T) {
+func TestConvertZipPreservesProxyCredentialsAndRuntimeSourceReview(t *testing.T) {
 	const (
 		proxyUsername = "devweb-proxy-user-canary-71c"
 		proxyPassword = "devweb-proxy-password-canary-29e"
@@ -577,8 +577,8 @@ proxy:
 		t.Fatal(err)
 	}
 	for _, canary := range []string{proxyUsername, proxyPassword} {
-		if strings.Contains(string(review), canary) {
-			t.Fatalf("source review disclosed runtime credential %q: %s", canary, review)
+		if !strings.Contains(string(review), canary) {
+			t.Fatalf("source review lost runtime credential %q: %s", canary, review)
 		}
 	}
 }
@@ -851,7 +851,7 @@ load.action("Dynamic", async function() {
 	}
 }
 
-func TestConvertDevWebResidualSourceIsDurableDisclosureSafeAndExecutionGated(t *testing.T) {
+func TestConvertDevWebResidualSourceIsDurableExactAndExecutionGated(t *testing.T) {
 	const canary = "devweb-residual-neutral-canary-5a21"
 	content := `
 load.action("Residual", async function() {
@@ -890,9 +890,9 @@ load.action("Residual", async function() {
 	if err != nil {
 		t.Fatalf("marshal source review: %v", err)
 	}
-	for _, forbidden := range []string{canary, "signingMaterial"} {
-		if strings.Contains(string(reviewPayload), forbidden) {
-			t.Fatalf("public source review retained %q: %s", forbidden, reviewPayload)
+	for _, expected := range []string{canary, "signingMaterial"} {
+		if !strings.Contains(string(reviewPayload), expected) {
+			t.Fatalf("public source review lost %q: %s", expected, reviewPayload)
 		}
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
@@ -1040,7 +1040,7 @@ func TestConvertZipRejectsUnsafeEntries(t *testing.T) {
 // "Authorization: Bearer <token>" in the source became a literal in the
 // executable draft. That is intentional: the operator already possesses the
 // source and the destination script must remain runnable without reentry.
-// Source-review surfaces are still irreversibly redacted.
+// Source-review surfaces retain the authored bytes too.
 func TestConvertPreservesAuthoredCredentialHeaders(t *testing.T) {
 	const canary = "devweb-authored-credential-canary-9Z1"
 	result, err := Convert(ImportRequest{
@@ -1084,12 +1084,12 @@ func TestConvertPreservesAuthoredCredentialHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(reviewJSON), canary) {
-		t.Fatalf("source review disclosed the authored credential: %s", reviewJSON)
+	if !strings.Contains(string(reviewJSON), canary) {
+		t.Fatalf("source review lost the authored credential: %s", reviewJSON)
 	}
 }
 
-func TestConvertPreservesCredentialURLButRedactsItFromSourceReview(t *testing.T) {
+func TestConvertPreservesCredentialURLInSourceReview(t *testing.T) {
 	const (
 		password = "devweb-url-password-canary"
 		token    = "devweb-url-query-canary"
@@ -1118,13 +1118,13 @@ func TestConvertPreservesCredentialURLButRedactsItFromSourceReview(t *testing.T)
 		t.Fatal(err)
 	}
 	for _, canary := range []string{password, token, authoredURL} {
-		if strings.Contains(string(reviewJSON), canary) {
-			t.Fatalf("source review disclosed URL credential %q: %s", canary, reviewJSON)
+		if !strings.Contains(string(reviewJSON), canary) {
+			t.Fatalf("source review lost URL credential %q: %s", canary, reviewJSON)
 		}
 	}
 }
 
-func TestConvertZipMasksCredentialBoundNeutralCSVColumnOnlyInSourceReview(t *testing.T) {
+func TestConvertZipPreservesCredentialBoundNeutralCSVColumnInSourceReview(t *testing.T) {
 	const (
 		credentialCanary = "devweb-neutral-csv-credential-73c1"
 		ordinaryValue    = "devweb-safe-review-label"
@@ -1211,8 +1211,8 @@ parameters:
 	if err != nil {
 		t.Fatalf("json.Marshal(source review): %v", err)
 	}
-	if strings.Contains(string(reviewPayload), credentialCanary) {
-		t.Fatalf("source review disclosed credential-bound neutral CSV cell: %s", reviewPayload)
+	if !strings.Contains(string(reviewPayload), credentialCanary) {
+		t.Fatalf("source review lost credential-bound neutral CSV cell: %s", reviewPayload)
 	}
 	if !strings.Contains(string(reviewPayload), ordinaryValue) {
 		t.Fatalf("source review discarded nonsensitive CSV cell: %s", reviewPayload)
@@ -1297,8 +1297,8 @@ func TestConvertPreservesStructuredCredentialBytesButBlocksMalformedAndDuplicate
 				t.Fatal(err)
 			}
 			for _, canary := range []string{"devweb-malformed-canary", "first-canary", "second-canary"} {
-				if strings.Contains(string(reviewJSON), canary) {
-					t.Fatalf("source review disclosed %q from a blocked body: %s", canary, reviewJSON)
+				if strings.Contains(test.body, canary) && !strings.Contains(string(reviewJSON), canary) {
+					t.Fatalf("source review lost %q from a blocked body: %s", canary, reviewJSON)
 				}
 			}
 		})

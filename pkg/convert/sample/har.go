@@ -20,9 +20,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const maxHARDecodedContentBytes = 10 << 20
@@ -260,16 +258,6 @@ func disclosureSafeHARQueryMetadata(items []map[string]any) []map[string]any {
 	out := make([]map[string]any, len(items))
 	for index, item := range items {
 		out[index] = metadataMap(item)
-		value, ok := out[index]["value"].(string)
-		if !ok || value == "" {
-			continue
-		}
-		name, _ := out[index]["name"].(string)
-		if credential.SensitiveName(name) {
-			out[index]["value"] = scrub.Redacted
-			continue
-		}
-		out[index]["value"] = scrub.Value(value, scrub.Policy{})
 	}
 	return out
 }
@@ -278,9 +266,6 @@ func disclosureSafeHARCookieMetadata(items []map[string]any) []map[string]any {
 	out := make([]map[string]any, len(items))
 	for index, item := range items {
 		out[index] = metadataMap(item)
-		if _, exists := out[index]["value"]; exists {
-			out[index]["value"] = scrub.Redacted
-		}
 	}
 	return out
 }

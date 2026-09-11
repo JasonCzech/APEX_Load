@@ -235,31 +235,32 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 	for index, group := range test.Groups {
 		javaCapacityPlan := javaVuserCapacityPlanForGroup(group)
 		groups[index] = TestGroup{
-			Name:                       group.Name,
-			ScriptID:                   group.ScriptID,
-			ScriptName:                 group.ScriptName,
-			Protocol:                   group.Protocol,
-			Role:                       group.Role,
-			VUsers:                     group.VUsers,
-			TargetDuration:             group.TargetDuration,
-			EffectiveEndAt:             cloneTimePtr(group.EffectiveEndAt),
-			RuntimeState:               group.RuntimeState,
-			EndedAt:                    cloneTimePtr(group.EndedAt),
-			RampUp:                     group.RampUp,
-			RampDown:                   group.RampDown,
-			StartOffset:                group.StartOffset,
-			Stages:                     cloneLoadStages(group.Stages),
-			Initialization:             group.Initialization,
-			Assignment:                 cloneGeneratorAssignmentSettings(group.Assignment),
-			rampUpDur:                  group.rampUpDur,
-			stageDriven:                group.stageDriven,
-			initialVUsers:              group.initialVUsers,
-			currentVUsers:              group.currentVUsers,
-			IterationOverrideKnown:     group.IterationOverrideKnown,
-			Iterations:                 cloneIntPtr(group.Iterations),
-			IterationOverride:          cloneIntPtr(group.IterationOverride),
-			javaVuserCapacityPlan:      javaCapacityPlan,
-			javaVuserCapacityPlanKnown: true,
+			Name:                         group.Name,
+			ScriptID:                     group.ScriptID,
+			ScriptName:                   group.ScriptName,
+			Protocol:                     group.Protocol,
+			Role:                         group.Role,
+			VUsers:                       group.VUsers,
+			TargetDuration:               group.TargetDuration,
+			EffectiveEndAt:               cloneTimePtr(group.EffectiveEndAt),
+			RuntimeState:                 group.RuntimeState,
+			EndedAt:                      cloneTimePtr(group.EndedAt),
+			RampUp:                       group.RampUp,
+			RampDown:                     group.RampDown,
+			StartOffset:                  group.StartOffset,
+			Stages:                       cloneLoadStages(group.Stages),
+			Initialization:               group.Initialization,
+			Assignment:                   cloneGeneratorAssignmentSettings(group.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
+			rampUpDur:                    group.rampUpDur,
+			stageDriven:                  group.stageDriven,
+			initialVUsers:                group.initialVUsers,
+			currentVUsers:                group.currentVUsers,
+			IterationOverrideKnown:       group.IterationOverrideKnown,
+			Iterations:                   cloneIntPtr(group.Iterations),
+			IterationOverride:            cloneIntPtr(group.IterationOverride),
+			javaVuserCapacityPlan:        javaCapacityPlan,
+			javaVuserCapacityPlanKnown:   true,
 		}
 	}
 	return &ManagedTest{
@@ -1329,6 +1330,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err := validateTrafficProfileCompiledGroups(req.TrafficProfile, testGroups); err != nil {
 		return nil, err
 	}
+	applyTransactionResponseTimeSLAThresholds(req.GoalConfig, testGroups, engineGroups)
 	for index, group := range engineGroups {
 		if group.StartOffset > dur {
 			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, dur)
@@ -1444,6 +1446,19 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		}
 	}
 	return test, nil
+}
+
+func applyTransactionResponseTimeSLAThresholds(goals *GoalConfig, groups []TestGroup, specs []engine.GroupConfig) {
+	var defaultMs float64
+	if goals != nil && goals.TransactionResponseTimeSLAMs != nil {
+		defaultMs = *goals.TransactionResponseTimeSLAMs
+	}
+	for index := range specs {
+		specs[index].TransactionResponseTimeSLAMs = defaultMs
+		if index < len(groups) && groups[index].TransactionResponseTimeSLAMs != nil {
+			specs[index].TransactionResponseTimeSLAMs = *groups[index].TransactionResponseTimeSLAMs
+		}
+	}
 }
 
 const (
@@ -1895,18 +1910,19 @@ func createGroupEntriesFromStoredScenario(scenario *StoredScenario) []CreateGrou
 	groups := make([]CreateGroupEntry, 0, len(scenario.Scripts))
 	for _, script := range scenario.Scripts {
 		groups = append(groups, CreateGroupEntry{
-			Name:            script.Name,
-			ScriptID:        script.ScriptID,
-			Role:            script.Role,
-			VUsers:          script.VUsers,
-			RampUp:          script.RampUp,
-			RampDown:        script.RampDown,
-			StartOffset:     script.StartOffset,
-			Stages:          cloneLoadStages(script.Stages),
-			Iterations:      cloneIntPtr(script.Iterations),
-			InitStrategy:    script.Initialization,
-			RuntimeSettings: cloneRuntimeSettings(script.RuntimeSettings),
-			Assignment:      cloneGeneratorAssignmentSettings(script.Assignment),
+			Name:                         script.Name,
+			ScriptID:                     script.ScriptID,
+			Role:                         script.Role,
+			VUsers:                       script.VUsers,
+			RampUp:                       script.RampUp,
+			RampDown:                     script.RampDown,
+			StartOffset:                  script.StartOffset,
+			Stages:                       cloneLoadStages(script.Stages),
+			Iterations:                   cloneIntPtr(script.Iterations),
+			InitStrategy:                 script.Initialization,
+			RuntimeSettings:              cloneRuntimeSettings(script.RuntimeSettings),
+			Assignment:                   cloneGeneratorAssignmentSettings(script.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(script.TransactionResponseTimeSLAMs),
 		})
 	}
 	return groups
@@ -1924,19 +1940,20 @@ func createGroupEntriesFromManagedTest(test *ManagedTest) []CreateGroupEntry {
 			iterationOverride = cloneIntPtr(group.IterationOverride)
 		}
 		groups = append(groups, CreateGroupEntry{
-			Name:                     group.Name,
-			ScriptID:                 group.ScriptID,
-			RevisionSourceGroupIndex: &sourceIndex,
-			Role:                     group.Role,
-			VUsers:                   group.VUsers,
-			RampUp:                   group.RampUp,
-			RampDown:                 group.RampDown,
-			StartOffset:              group.StartOffset,
-			Stages:                   cloneLoadStages(group.Stages),
-			Iterations:               iterationOverride,
-			InitStrategy:             group.Initialization,
-			RuntimeSettings:          cloneRuntimeSettings(group.RuntimeSettings),
-			Assignment:               cloneGeneratorAssignmentSettings(group.Assignment),
+			Name:                         group.Name,
+			ScriptID:                     group.ScriptID,
+			RevisionSourceGroupIndex:     &sourceIndex,
+			Role:                         group.Role,
+			VUsers:                       group.VUsers,
+			RampUp:                       group.RampUp,
+			RampDown:                     group.RampDown,
+			StartOffset:                  group.StartOffset,
+			Stages:                       cloneLoadStages(group.Stages),
+			Iterations:                   iterationOverride,
+			InitStrategy:                 group.Initialization,
+			RuntimeSettings:              cloneRuntimeSettings(group.RuntimeSettings),
+			Assignment:                   cloneGeneratorAssignmentSettings(group.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
 		})
 	}
 	return groups
@@ -2124,6 +2141,9 @@ func setRuntimeSettingsIteration(settings *RuntimeSettingsOverride, iterations i
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
 	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
 	if req.GoalConfig != nil {
+		if value := req.GoalConfig.TransactionResponseTimeSLAMs; value != nil && (!finiteFloat(*value) || *value <= 0) {
+			return "", fmt.Errorf("transaction_response_time_sla_ms must be greater than 0")
+		}
 		if err := ValidateTransactionSLARules(req.GoalConfig.TransactionRules); err != nil {
 			return "", fmt.Errorf("invalid goal_config: %w", err)
 		}
@@ -2132,6 +2152,11 @@ func validateScenarioRequest(req CreateTestRequest) (string, error) {
 		}
 		if err := validateWorkloadShapeConfig(req.GoalConfig.WorkloadShapeConfig, scenarioMode, req.Groups, req.GoalConfig.TargetAverageTPS); err != nil {
 			return "", err
+		}
+	}
+	for index, group := range req.Groups {
+		if value := group.TransactionResponseTimeSLAMs; value != nil && (!finiteFloat(*value) || *value <= 0) {
+			return "", fmt.Errorf("group[%d].transaction_response_time_sla_ms must be greater than 0", index)
 		}
 	}
 	if strings.TrimSpace(req.Duration) != "" {
@@ -2654,28 +2679,29 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	}
 
 	testGroup := TestGroup{
-		Name:                   name,
-		ScriptID:               group.ScriptID,
-		ScriptName:             script.Name,
-		Protocol:               script.Protocol,
-		Role:                   role,
-		VUsers:                 vusers,
-		StartOffset:            group.StartOffset,
-		RampUp:                 rampUpValue,
-		RampDown:               rampDownValue,
-		Stages:                 cloneLoadStages(group.Stages),
-		Iterations:             effectiveIterations,
-		IterationOverride:      cloneIntPtr(group.Iterations),
-		IterationOverrideKnown: true,
-		RuntimeSettings:        nil,
-		Assignment:             cloneGeneratorAssignmentSettings(assignment),
-		RunLogicGoals:          runLogicGoalSnapshot(script.Script),
-		Initialization:         initStrategy,
-		ContinueOnError:        &continueOnError,
-		rampUpDur:              engineRampUp,
-		stageDriven:            stageDriven,
-		initialVUsers:          initialVUsers,
-		currentVUsers:          initialVUsers,
+		Name:                         name,
+		ScriptID:                     group.ScriptID,
+		ScriptName:                   script.Name,
+		Protocol:                     script.Protocol,
+		Role:                         role,
+		VUsers:                       vusers,
+		StartOffset:                  group.StartOffset,
+		RampUp:                       rampUpValue,
+		RampDown:                     rampDownValue,
+		Stages:                       cloneLoadStages(group.Stages),
+		Iterations:                   effectiveIterations,
+		IterationOverride:            cloneIntPtr(group.Iterations),
+		IterationOverrideKnown:       true,
+		RuntimeSettings:              nil,
+		Assignment:                   cloneGeneratorAssignmentSettings(assignment),
+		RunLogicGoals:                runLogicGoalSnapshot(script.Script),
+		Initialization:               initStrategy,
+		TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
+		ContinueOnError:              &continueOnError,
+		rampUpDur:                    engineRampUp,
+		stageDriven:                  stageDriven,
+		initialVUsers:                initialVUsers,
+		currentVUsers:                initialVUsers,
 	}
 
 	scriptCopy := *script.Script

@@ -17,6 +17,8 @@ func TestCloneManagedTestForReadLockedDeeplyDetachesMutableFields(t *testing.T) 
 	targetTPS := 12.5
 	iterations := 3
 	goalTPS := 100.0
+	transactionSLA := 3000.0
+	groupTransactionSLA := 1500.0
 	startedAt := time.Now().UTC()
 	original := &ManagedTest{
 		ID:       "snapshot-test",
@@ -28,10 +30,11 @@ func TestCloneManagedTestForReadLockedDeeplyDetachesMutableFields(t *testing.T) 
 			RuntimeSettings: &RuntimeSettingsOverride{
 				Env: map[string]string{"BASE_URL": "https://before.example"},
 			},
-			Assignment:    &GeneratorAssignmentSettings{SelectedTargets: []string{"generator-a"}, RegionWeights: map[string]int{"east": 1}},
-			RunLogicGoals: &RunLogicGoalSnapshot{MaxTransactions: 10},
+			Assignment:                   &GeneratorAssignmentSettings{SelectedTargets: []string{"generator-a"}, RegionWeights: map[string]int{"east": 1}},
+			RunLogicGoals:                &RunLogicGoalSnapshot{MaxTransactions: 10},
+			TransactionResponseTimeSLAMs: &groupTransactionSLA,
 		}},
-		GoalConfig:  &GoalConfig{TargetAverageTPS: &goalTPS},
+		GoalConfig:  &GoalConfig{TargetAverageTPS: &goalTPS, TransactionResponseTimeSLAMs: &transactionSLA},
 		StartedAt:   &startedAt,
 		LiveMetrics: populatedLiveMetricsForCloneTest(),
 		History:     []*LiveMetrics{populatedLiveMetricsForCloneTest()},
@@ -59,7 +62,9 @@ func TestCloneManagedTestForReadLockedDeeplyDetachesMutableFields(t *testing.T) 
 	cloned.Groups[0].Assignment.SelectedTargets[0] = "generator-b"
 	cloned.Groups[0].Assignment.RegionWeights["east"] = 9
 	cloned.Groups[0].RunLogicGoals.MaxTransactions = 99
+	*cloned.Groups[0].TransactionResponseTimeSLAMs = 999
 	*cloned.GoalConfig.TargetAverageTPS = 999
+	*cloned.GoalConfig.TransactionResponseTimeSLAMs = 999
 	cloned.TelemetryHealth.Conditions[0] = "degraded"
 	mutatePopulatedLiveMetrics(cloned.LiveMetrics)
 	mutatePopulatedLiveMetrics(cloned.History[0])
@@ -109,8 +114,9 @@ func populatedLiveMetricsForCloneTest() *LiveMetrics {
 				PartitionEvents:         map[string]int64{"0": 1},
 			},
 		}},
-		DependencyMap: &LiveDependencyMap{Nodes: []LiveDependencyNode{{ID: "api"}}, Edges: []LiveDependencyEdge{{Source: "client", Target: "api"}}},
-		ErrorPatterns: []LiveErrorPattern{{Signature: "boom", Actions: []string{"checkout"}, AffectedGroups: []string{"buyers"}}},
+		TransactionResponseTimeSLA: []TransactionResponseTimeSLAResult{{Group: "buyers", Transaction: "checkout", Status: "pass"}},
+		DependencyMap:              &LiveDependencyMap{Nodes: []LiveDependencyNode{{ID: "api"}}, Edges: []LiveDependencyEdge{{Source: "client", Target: "api"}}},
+		ErrorPatterns:              []LiveErrorPattern{{Signature: "boom", Actions: []string{"checkout"}, AffectedGroups: []string{"buyers"}}},
 		GroupMetrics: map[string]*GroupLiveMetrics{"buyers": {
 			Name: "buyers",
 			DurationDigest: &engine.TDigestSnapshot{
@@ -142,6 +148,7 @@ func mutatePopulatedLiveMetrics(metrics *LiveMetrics) {
 	metrics.Transactions["checkout"].CorrelationIDs[0] = "changed"
 	metrics.Transactions["checkout"].ServerTelemetry.RequestPayloadHistogram["small"] = 99
 	metrics.Transactions["checkout"].ServerTelemetry.PartitionEvents["0"] = 99
+	metrics.TransactionResponseTimeSLA[0].Group = "changed"
 	metrics.DependencyMap.Nodes[0].ID = "changed"
 	metrics.ErrorPatterns[0].Actions[0] = "changed"
 	metrics.GroupMetrics["buyers"].DurationDigest.Centroids[0].Mean = 99

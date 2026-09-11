@@ -19,7 +19,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type ImportRequest struct {
@@ -971,13 +970,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	result.SecretRequirements = finalized.Requirements
 	result.Readiness = finalized.Readiness
 	result.Summary.BaseURL = result.Script.Config.BaseURL
-	result.Summary.Endpoint = scrub.ValueURL(result.Summary.Endpoint, scrub.Policy{})
-	for index := range result.Summary.BindingAlternatives {
-		result.Summary.BindingAlternatives[index].Endpoint = scrub.ValueURL(
-			result.Summary.BindingAlternatives[index].Endpoint,
-			scrub.Policy{},
-		)
-	}
 	for _, item := range finalized.Diagnostics {
 		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 	}
@@ -993,21 +985,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(sourceFiles) == 0 {
 		sourceFiles = map[string]string{sourceFileName: content}
 	}
-	reviewFiles := redactWSDLProjectedSecrets(sourceFiles, projectedSecrets)
-	redactedReviewFiles := make(map[string]struct{})
-	for path, reviewContent := range reviewFiles {
-		if reviewContent != sourceFiles[path] {
-			redactedReviewFiles[path] = struct{}{}
-		}
-	}
-	result.SourceReview = sourceview.Build(reviewFiles, sourceMappings)
-	if result.SourceReview != nil {
-		for index := range result.SourceReview.SourceFiles {
-			if _, redacted := redactedReviewFiles[result.SourceReview.SourceFiles[index].Path]; redacted {
-				result.SourceReview.SourceFiles[index].Redacted = true
-			}
-		}
-	}
+	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
 	return result, nil
 }
 

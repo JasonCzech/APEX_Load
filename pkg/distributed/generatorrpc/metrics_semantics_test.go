@@ -54,6 +54,34 @@ func TestCollectExecutionMetricsPublishesFreshIdleWindow(t *testing.T) {
 	}
 }
 
+func TestCollectExecutionMetricsRetainsCumulativeSLAWithoutFreshEngineSnapshot(t *testing.T) {
+	service := &Service{publishInterval: time.Second}
+	priorRows := []engine.TransactionResponseTimeSLACompliance{{
+		Group: "buyers", Transaction: "Checkout", ThresholdMs: 3000,
+		TotalCount: 8, EligibleSuccessCount: 8, MissedCount: 1,
+	}}
+	execution := &groupExecution{
+		lastMetrics: &executionMetricsSnapshot{transactionResponseTimeSLA: priorRows},
+		results: &transactionBuffer{
+			transactions: []TransactionMetric{{Group: "buyers", Name: "Checkout", DurationMs: 2000, Success: true}},
+			lastDrainAt:  time.Now().Add(-time.Second),
+		},
+	}
+
+	got, ok := service.collectExecutionMetricsWithIdle(execution, false)
+	if !ok {
+		t.Fatal("transaction window was suppressed")
+	}
+	if len(got.transactionResponseTimeSLA) != 1 || got.transactionResponseTimeSLA[0].TotalCount != 8 {
+		t.Fatalf("cumulative SLA rows = %#v, want retained prior row", got.transactionResponseTimeSLA)
+	}
+
+	priorRows[0].TotalCount = 99
+	if execution.lastMetrics.transactionResponseTimeSLA[0].TotalCount != 8 {
+		t.Fatal("stored SLA rows alias caller-owned memory")
+	}
+}
+
 func TestForcedDrainIgnoresGaugeAndSubscriberOnlyChanges(t *testing.T) {
 	sourceAt := time.Now().Add(-time.Second)
 	previous := &executionMetricsSnapshot{

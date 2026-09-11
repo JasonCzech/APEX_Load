@@ -37,8 +37,8 @@ func TestDevWebImportKeepsExactCredentialOpaqueAndMigratable(t *testing.T) {
 });`,
 	})
 	response := invokeProtectedCredentialImport(t, server, "/api/v1/scripts/import/devweb", body)
-	if bytes.Contains(response.Body, []byte(canary)) {
-		t.Fatal("DevWeb response disclosed the protected credential")
+	if !bytes.Contains(response.Body, []byte(canary)) {
+		t.Fatal("DevWeb response did not preserve the protected credential")
 	}
 	if len(response.Requirements) == 0 || response.SessionID == "" || !response.MigrationAllowed {
 		t.Fatalf("DevWeb protected review = %#v session=%q migration=%t", response.Requirements, response.SessionID, response.MigrationAllowed)
@@ -234,8 +234,8 @@ func TestOpenAPIMixedCredentialReviewAppliesEverySelectionOnce(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), literal) {
-		t.Fatalf("mixed import disclosed literal credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), literal) {
+		t.Fatalf("mixed import did not preserve literal credential: %s", response.Body.String())
 	}
 	var payload struct {
 		Script       map[string]any             `json:"script"`

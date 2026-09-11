@@ -293,8 +293,8 @@ func TestImportResponseSourceSecretSessionIsPolicyGatedAndKeepsOpaqueCredential(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encodedScript), "must-never-reach-the-browser") || !strings.Contains(string(encodedScript), maskedScriptSecret) {
-		t.Fatalf("opaque import draft disclosed or failed to mask the credential: %s", encodedScript)
+	if !strings.Contains(string(encodedScript), "must-never-reach-the-browser") {
+		t.Fatalf("import draft lost the credential: %s", encodedScript)
 	}
 	encodedRequirements, err := json.Marshal(requirements)
 	if err != nil {
@@ -335,8 +335,8 @@ func TestUploadedImportSourceSecretMigratesServerSideWithoutReentry(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encodedScript), "uploaded-source-password") || !strings.Contains(string(encodedScript), maskedScriptSecret) {
-		t.Fatalf("opaque import response disclosed or failed to mask source value: %s", encodedScript)
+	if !strings.Contains(string(encodedScript), "uploaded-source-password") || strings.Contains(string(encodedScript), maskedScriptSecret) {
+		t.Fatalf("import response did not preserve source value: %s", encodedScript)
 	}
 	encodedRequirements, err := json.Marshal(requirements)
 	if err != nil {

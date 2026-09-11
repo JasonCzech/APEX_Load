@@ -945,8 +945,8 @@ func TestHandleConvertBrowserRecordingMasksCredentialRepeatedAsDetachedName(t *t
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if strings.Contains(resp.Body.String(), credentialName) {
-		t.Fatalf("convert response disclosed credential repeated as script name: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), credentialName) {
+		t.Fatalf("convert response did not preserve imported script name: %s", resp.Body.String())
 	}
 
 	var converted map[string]any
@@ -1031,8 +1031,8 @@ func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *t
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if strings.Contains(resp.Body.String(), "browser-recorded-token") {
-		t.Fatalf("convert response disclosed recorded credential: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "browser-recorded-token") {
+		t.Fatalf("convert response did not preserve recorded credential: %s", resp.Body.String())
 	}
 	server.importDraftAttestationMu.Lock()
 	attestationCount := len(server.importDraftAttestations)
@@ -1091,8 +1091,8 @@ func TestHandleConvertBrowserRecordingPreservesHARCredentialInDurableScript(t *t
 	if readResp.Code != http.StatusOK {
 		t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
 	}
-	if strings.Contains(readResp.Body.String(), "browser-recorded-token") {
-		t.Fatalf("ordinary stored-script read disclosed HAR credential: %s", readResp.Body.String())
+	if !strings.Contains(readResp.Body.String(), "browser-recorded-token") {
+		t.Fatalf("ordinary stored-script read did not preserve HAR credential: %s", readResp.Body.String())
 	}
 }
 
@@ -1125,8 +1125,8 @@ func TestHandleConvertBrowserRecordingReplaysCompletedReceiptAfterRestart(t *tes
 	if firstResp.Code != http.StatusCreated {
 		t.Fatalf("first save status = %d body=%s", firstResp.Code, firstResp.Body.String())
 	}
-	if strings.Contains(firstResp.Body.String(), credential) || strings.Contains(firstResp.Body.String(), "response-secret") {
-		t.Fatalf("first save response disclosed HAR credentials: %s", firstResp.Body.String())
+	if !strings.Contains(firstResp.Body.String(), credential) {
+		t.Fatalf("first save response did not preserve the imported request credential: %s", firstResp.Body.String())
 	}
 	firstStored := first.runner.ListScripts()
 	if len(firstStored) != 2 {
@@ -1165,8 +1165,8 @@ func TestHandleConvertBrowserRecordingReplaysCompletedReceiptAfterRestart(t *tes
 	if retryResp.Code != http.StatusCreated {
 		t.Fatalf("restart retry status = %d body=%s", retryResp.Code, retryResp.Body.String())
 	}
-	if strings.Contains(retryResp.Body.String(), credential) || strings.Contains(retryResp.Body.String(), "response-secret") {
-		t.Fatalf("restart retry response disclosed HAR credentials: %s", retryResp.Body.String())
+	if !strings.Contains(retryResp.Body.String(), credential) {
+		t.Fatalf("restart retry response did not preserve the imported request credential: %s", retryResp.Body.String())
 	}
 	retriedStored := restarted.runner.ListScripts()
 	if len(retriedStored) != 2 {
@@ -1261,8 +1261,8 @@ func TestHandleConvertBrowserRecordingRetriesAfterBaselinePersistenceFailure(t *
 	if retryResp.Code != http.StatusCreated {
 		t.Fatalf("baseline retry status = %d body=%s", retryResp.Code, retryResp.Body.String())
 	}
-	if strings.Contains(retryResp.Body.String(), credential) {
-		t.Fatalf("baseline retry response disclosed the HAR credential: %s", retryResp.Body.String())
+	if !strings.Contains(retryResp.Body.String(), credential) {
+		t.Fatalf("baseline retry response did not preserve the HAR credential: %s", retryResp.Body.String())
 	}
 	stored := server.runner.ListScripts()
 	if len(stored) != 2 {
@@ -1804,8 +1804,8 @@ func TestHandleConvertBrowserRecordingRestartAdoptsStagedLocatorBeforeClaimCommi
 	if retryResp.Code != http.StatusCreated {
 		t.Fatalf("exact retry status=%d body=%s", retryResp.Code, retryResp.Body.String())
 	}
-	if strings.Contains(retryResp.Body.String(), credential) {
-		t.Fatalf("exact retry response disclosed credential: %s", retryResp.Body.String())
+	if !strings.Contains(retryResp.Body.String(), credential) {
+		t.Fatalf("exact retry response did not preserve credential: %s", retryResp.Body.String())
 	}
 	retried := restarted.runner.ListScripts()
 	if len(retried) != 2 {
@@ -2043,8 +2043,8 @@ func TestHandleConvertBrowserRecordingSplitPreservesMarkedCapturedSecret(t *test
 	if resp.Code != http.StatusCreated {
 		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
 	}
-	if strings.Contains(resp.Body.String(), captured) {
-		t.Fatalf("saved split-import response disclosed captured secret: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), captured) {
+		t.Fatalf("saved split-import response did not preserve captured secret: %s", resp.Body.String())
 	}
 
 	storedScripts := server.runner.ListScripts()
@@ -2052,6 +2052,7 @@ func TestHandleConvertBrowserRecordingSplitPreservesMarkedCapturedSecret(t *test
 		t.Fatalf("stored split scripts = %d, want 2", len(storedScripts))
 	}
 	foundCaptured := false
+	foundCapturedRead := false
 	for _, stored := range storedScripts {
 		if stored == nil || stored.Script == nil {
 			continue
@@ -2059,27 +2060,30 @@ func TestHandleConvertBrowserRecordingSplitPreservesMarkedCapturedSecret(t *test
 		if !isCredentialPreservingImport(stored.Script) {
 			t.Fatalf("split script lacks server-owned preservation policy: %#v", stored.Script.Metadata)
 		}
+		scriptHasCaptured := false
 		for _, action := range stored.Script.Actions {
 			if action.Type != "browser_fill" {
 				continue
 			}
-			foundCaptured = foundCaptured || action.Value == captured
+			scriptHasCaptured = scriptHasCaptured || action.Value == captured
 			if strings.HasPrefix(action.Value, "{{secret.") {
 				t.Fatalf("split browser fill requires credential re-entry: %#v", action)
 			}
 		}
+		foundCaptured = foundCaptured || scriptHasCaptured
 		readReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID, nil)
 		readResp := httptest.NewRecorder()
 		server.mux.ServeHTTP(readResp, readReq)
 		if readResp.Code != http.StatusOK {
 			t.Fatalf("stored read status = %d body=%s", readResp.Code, readResp.Body.String())
 		}
-		if strings.Contains(readResp.Body.String(), captured) {
-			t.Fatalf("ordinary split-script read disclosed captured secret: %s", readResp.Body.String())
+		foundCapturedRead = foundCapturedRead || strings.Contains(readResp.Body.String(), captured)
+		if scriptHasCaptured && !strings.Contains(readResp.Body.String(), captured) {
+			t.Fatalf("credential-bearing split-script read did not preserve captured secret: %s", readResp.Body.String())
 		}
 	}
-	if !foundCaptured {
-		t.Fatalf("no durable split script retained %q", captured)
+	if !foundCaptured || !foundCapturedRead {
+		t.Fatalf("no durable split script and read retained %q", captured)
 	}
 }
 

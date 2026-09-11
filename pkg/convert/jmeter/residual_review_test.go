@@ -8,7 +8,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestConvertJMXResidualSourceIsDurablyRetainedBlockedAndReviewSafe(t *testing.T) {
+func TestConvertJMXResidualSourceIsDurablyRetainedBlockedAndExact(t *testing.T) {
 	const (
 		scriptCanary    = "jmeter-residual-script-canary-9d87"
 		conditionCanary = "jmeter-dynamic-condition-canary-30ad"
@@ -65,8 +65,8 @@ func TestConvertJMXResidualSourceIsDurablyRetainedBlockedAndReviewSafe(t *testin
 		t.Fatalf("blocked draft validation issues = %v", issues)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
-		!result.SourceReview.SourceFiles[0].Redacted {
-		t.Fatalf("source review = %#v, want one explicitly redacted source", result.SourceReview)
+		result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review = %#v, want one exact source", result.SourceReview)
 	}
 
 	durablePayload, err := json.Marshal(result.Script)
@@ -81,8 +81,8 @@ func TestConvertJMXResidualSourceIsDurablyRetainedBlockedAndReviewSafe(t *testin
 		t.Fatalf("marshal source review: %v", err)
 	}
 	for _, canary := range []string{scriptCanary, conditionCanary} {
-		if strings.Contains(string(reviewPayload), canary) {
-			t.Fatalf("source review disclosed %q: %s", canary, reviewPayload)
+		if !strings.Contains(string(reviewPayload), canary) {
+			t.Fatalf("source review lost %q: %s", canary, reviewPayload)
 		}
 	}
 }

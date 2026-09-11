@@ -165,9 +165,9 @@ func TestImportedJavaVMCredentialSurvivesAuthoringApprovalWithoutReentry(t *test
 			approvedResponse.Body.String(),
 		)
 	}
-	if strings.Contains(approvedResponse.Body.String(), canary) ||
-		!strings.Contains(approvedResponse.Body.String(), credential.Redacted) {
-		t.Fatalf("approval response did not mask Java VM credential: %s", approvedResponse.Body.String())
+	if !strings.Contains(approvedResponse.Body.String(), canary) ||
+		strings.Contains(approvedResponse.Body.String(), credential.Redacted) {
+		t.Fatalf("approval response did not preserve Java VM credential: %s", approvedResponse.Body.String())
 	}
 
 	var approved authoringSessionApprovalResponse
@@ -256,9 +256,9 @@ func TestCredentialPreservingAuthoringCreateRetryDoesNotRequireReimport(t *testi
 	if replayed.ID != created.ID {
 		t.Fatalf("replayed session ID = %q, want %q", replayed.ID, created.ID)
 	}
-	if strings.Contains(retry.Body.String(), canary) ||
-		!strings.Contains(retry.Body.String(), credential.Redacted) {
-		t.Fatalf("idempotent replay disclosed imported Java password: %s", retry.Body.String())
+	if !strings.Contains(retry.Body.String(), canary) ||
+		strings.Contains(retry.Body.String(), credential.Redacted) {
+		t.Fatalf("idempotent replay did not preserve imported Java password: %s", retry.Body.String())
 	}
 	persisted, err := server.loadAuthoringSession(created.ID)
 	if err != nil {

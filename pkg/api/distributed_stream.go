@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -142,6 +143,8 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 		test.remoteArchiveClientsByTarget = nil
 		test.remoteMetricsStreamsByTarget = nil
 		test.remoteMetricsBatchesByTarget = nil
+		test.remoteTransactionResponseTimeSLA = nil
+		test.remoteTransactionResponseTimeSLALegacyByTarget = nil
 		test.remoteTargetStates = nil
 		test.remoteFinalizing = false
 		test.remoteLifecycleCtx = previousLifecycleCtx
@@ -446,6 +449,8 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	test.remoteGroupTargets = nil
 	test.remoteGroupShards = nil
 	test.remoteMetricsBatchesByTarget = nil
+	test.remoteTransactionResponseTimeSLA = nil
+	test.remoteTransactionResponseTimeSLALegacyByTarget = nil
 	test.remoteTargetStates = nil
 	test.remoteGoalAcceptedErrorWindows = nil
 	test.remoteGoalPublishedErrorWindows = nil
@@ -1195,6 +1200,7 @@ func stageDistributedGoalErrorWindowLocked(tr *TestRunner, test *ManagedTest, ta
 
 func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner, test *ManagedTest, target string, batch generatorrpc.MetricsBatch, fences ...distributedMetricsConsumerFence) bool {
 	batch.RegionMetrics = controllerApprovedRegionMetrics(batch.RegionMetrics, b.regionForTarget(target))
+	freshTransactions := append([]generatorrpc.TransactionMetric(nil), batch.Transactions...)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if len(fences) > 0 && !distributedMetricsConsumerFenceCurrentLocked(tr, test, target, fences[0], isTerminalRemoteLifecycle(batch.LifecycleState)) {
@@ -1235,6 +1241,9 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 			if len(batch.Groups) == 0 {
 				batch.Groups = prior.Groups
 			}
+			if len(batch.TransactionResponseTimeSLA) == 0 {
+				batch.TransactionResponseTimeSLA = prior.TransactionResponseTimeSLA
+			}
 		}
 	}
 	if prior, ok := test.remoteMetricsBatchesByTarget[target]; ok {
@@ -1263,9 +1272,200 @@ func (b *distributedExecutionBackend) storeRemoteMetricsBatchOnly(tr *TestRunner
 		}
 	}
 	test.remoteMetricsBatchesByTarget[target] = batch
+	if len(batch.TransactionResponseTimeSLA) > 0 {
+		delete(test.remoteTransactionResponseTimeSLALegacyByTarget, target)
+	} else {
+		accumulateRemoteTransactionResponseTimeSLALegacy(test, target, freshTransactions)
+	}
+	rebuildRemoteTransactionResponseTimeSLA(test)
 	test.remoteMetricsAcceptedRevision++
 	stageDistributedGoalErrorWindowLocked(tr, test, target, batch)
 	return true
+}
+
+func rebuildRemoteTransactionResponseTimeSLA(test *ManagedTest) {
+	if test == nil {
+		return
+	}
+	test.remoteTransactionResponseTimeSLA = make(map[string]*transactionResponseTimeSLAAccumulator)
+	targets := make([]string, 0, len(test.remoteMetricsBatchesByTarget))
+	for target := range test.remoteMetricsBatchesByTarget {
+		targets = append(targets, target)
+	}
+	sort.Strings(targets)
+	for _, target := range targets {
+		batch := test.remoteMetricsBatchesByTarget[target]
+		rows := append([]generatorrpc.TransactionResponseTimeSLACompliance(nil), batch.TransactionResponseTimeSLA...)
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].Group == rows[j].Group {
+				return rows[i].Transaction < rows[j].Transaction
+			}
+			return rows[i].Group < rows[j].Group
+		})
+		if len(rows) == 0 {
+			mergeRemoteTransactionResponseTimeSLALegacyTarget(test, target)
+			continue
+		}
+		for _, row := range rows {
+			group, transaction := strings.TrimSpace(row.Group), strings.TrimSpace(row.Transaction)
+			threshold, configured := effectiveTransactionResponseTimeSLAForTestGroup(test, group)
+			if !configured || transaction == "" || math.IsNaN(row.ThresholdMs) || math.IsInf(row.ThresholdMs, 0) || math.Abs(row.ThresholdMs-threshold) > 0.000001 {
+				continue
+			}
+			if row.TotalCount < 0 || row.EligibleSuccessCount < 0 || row.ExcludedErrorCount < 0 || row.MissedCount < 0 ||
+				row.MissedCount > row.EligibleSuccessCount || row.EligibleSuccessCount > row.TotalCount ||
+				row.ExcludedErrorCount != row.TotalCount-row.EligibleSuccessCount {
+				continue
+			}
+			key := group + "\x00" + transaction
+			acc := test.remoteTransactionResponseTimeSLA[key]
+			if acc == nil {
+				if len(test.remoteTransactionResponseTimeSLA) >= maxDistributedMetricSeries {
+					continue
+				}
+				acc = &transactionResponseTimeSLAAccumulator{}
+				test.remoteTransactionResponseTimeSLA[key] = acc
+			}
+			acc.total = saturatingMetricCountAdd(acc.total, row.TotalCount)
+			acc.eligible = saturatingMetricCountAdd(acc.eligible, row.EligibleSuccessCount)
+			acc.excluded = saturatingMetricCountAdd(acc.excluded, row.ExcludedErrorCount)
+			acc.missed = saturatingMetricCountAdd(acc.missed, row.MissedCount)
+		}
+	}
+}
+
+func mergeRemoteTransactionResponseTimeSLALegacyTarget(test *ManagedTest, target string) {
+	legacy := test.remoteTransactionResponseTimeSLALegacyByTarget[target]
+	keys := make([]string, 0, len(legacy))
+	for key := range legacy {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		parts := strings.SplitN(key, "\x00", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if _, configured := effectiveTransactionResponseTimeSLAForTestGroup(test, parts[0]); !configured {
+			continue
+		}
+		acc := test.remoteTransactionResponseTimeSLA[key]
+		if acc == nil {
+			if len(test.remoteTransactionResponseTimeSLA) >= maxDistributedMetricSeries {
+				continue
+			}
+			acc = &transactionResponseTimeSLAAccumulator{}
+			test.remoteTransactionResponseTimeSLA[key] = acc
+		}
+		source := legacy[key]
+		acc.total = saturatingMetricCountAdd(acc.total, source.total)
+		acc.eligible = saturatingMetricCountAdd(acc.eligible, source.eligible)
+		acc.excluded = saturatingMetricCountAdd(acc.excluded, source.excluded)
+		acc.missed = saturatingMetricCountAdd(acc.missed, source.missed)
+	}
+}
+
+func effectiveTransactionResponseTimeSLAForTestGroup(test *ManagedTest, groupName string) (float64, bool) {
+	if test == nil {
+		return 0, false
+	}
+	var defaultMs float64
+	if test.GoalConfig != nil && test.GoalConfig.TransactionResponseTimeSLAMs != nil {
+		defaultMs = *test.GoalConfig.TransactionResponseTimeSLAMs
+	}
+	for index := range test.Groups {
+		if strings.TrimSpace(test.Groups[index].Name) != strings.TrimSpace(groupName) {
+			continue
+		}
+		if test.Groups[index].TransactionResponseTimeSLAMs != nil {
+			return *test.Groups[index].TransactionResponseTimeSLAMs, true
+		}
+		return defaultMs, defaultMs > 0
+	}
+	return 0, false
+}
+
+func accumulateRemoteTransactionResponseTimeSLALegacy(test *ManagedTest, target string, transactions []generatorrpc.TransactionMetric) {
+	if test == nil || len(transactions) == 0 {
+		return
+	}
+	if test.remoteTransactionResponseTimeSLALegacyByTarget == nil {
+		test.remoteTransactionResponseTimeSLALegacyByTarget = make(map[string]map[string]*transactionResponseTimeSLAAccumulator)
+	}
+	legacy := test.remoteTransactionResponseTimeSLALegacyByTarget[target]
+	if legacy == nil {
+		legacy = make(map[string]*transactionResponseTimeSLAAccumulator)
+		test.remoteTransactionResponseTimeSLALegacyByTarget[target] = legacy
+	}
+	for _, transaction := range transactions {
+		threshold, configured := effectiveTransactionResponseTimeSLAForTestGroup(test, transaction.Group)
+		name := strings.TrimSpace(transaction.Name)
+		group := strings.TrimSpace(transaction.Group)
+		if !configured || name == "" {
+			continue
+		}
+		key := group + "\x00" + name
+		acc := legacy[key]
+		if acc == nil {
+			if len(legacy) >= maxDistributedMetricSeries {
+				continue
+			}
+			acc = &transactionResponseTimeSLAAccumulator{}
+			legacy[key] = acc
+		}
+		acc.total++
+		if !transaction.Success {
+			acc.excluded++
+			continue
+		}
+		acc.eligible++
+		if transaction.DurationMs > threshold {
+			acc.missed++
+		}
+	}
+}
+
+func saturatingMetricCountAdd(left, right int64) int64 {
+	if right > 0 && left > math.MaxInt64-right {
+		return math.MaxInt64
+	}
+	return left + right
+}
+
+func remoteTransactionResponseTimeSLAResults(test *ManagedTest) []TransactionResponseTimeSLAResult {
+	if test == nil {
+		return nil
+	}
+	keys := make([]string, 0, len(test.remoteTransactionResponseTimeSLA))
+	for key := range test.remoteTransactionResponseTimeSLA {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	results := make([]TransactionResponseTimeSLAResult, 0, len(keys))
+	observedGroups := make(map[string]bool)
+	for _, key := range keys {
+		parts := strings.SplitN(key, "\x00", 2)
+		threshold, configured := effectiveTransactionResponseTimeSLAForTestGroup(test, parts[0])
+		if !configured {
+			continue
+		}
+		observedGroups[parts[0]] = true
+		results = append(results, buildTransactionResponseTimeSLAResult(parts[0], parts[1], threshold, test.remoteTransactionResponseTimeSLA[key]))
+	}
+	for _, group := range test.Groups {
+		name := strings.TrimSpace(group.Name)
+		threshold, configured := effectiveTransactionResponseTimeSLAForTestGroup(test, name)
+		if configured && !observedGroups[name] {
+			results = append(results, buildTransactionResponseTimeSLAResult(name, "", threshold, nil))
+		}
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Group == results[j].Group {
+			return results[i].Transaction < results[j].Transaction
+		}
+		return results[i].Group < results[j].Group
+	})
+	return results
 }
 
 func (b *distributedExecutionBackend) failDistributedTestOnStreamError(tr *TestRunner, test *ManagedTest, target string, err error) {

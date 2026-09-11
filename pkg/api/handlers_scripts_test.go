@@ -618,7 +618,7 @@ func TestHandleImportSampleReturnsReplayPreflightForMissingFileAsset(t *testing.
 	}
 }
 
-func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
+func TestHandleImportSamplePreservedSourceReviewKeepsSecrets(t *testing.T) {
 	const (
 		authValue     = "Basic dXNlcjpodW50ZXIyc2VjcmV0"
 		passwordValue = "hunter2-secret"
@@ -680,12 +680,11 @@ func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	if len(result.Script.Actions) != 1 {
 		t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; got != "Basic "+maskedScriptSecret {
-		t.Fatalf("authorization header = %q, want disclosure-safe imported value", got)
+	if got := result.Script.Actions[0].Headers["Authorization"]; got != authValue {
+		t.Fatalf("authorization header = %q, want exact imported value", got)
 	}
-	if strings.Contains(result.Script.Actions[0].Body, passwordValue) ||
-		!strings.Contains(result.Script.Actions[0].Body, maskedScriptSecret) {
-		t.Fatalf("body did not use a disclosure-safe imported value: %q", result.Script.Actions[0].Body)
+	if !strings.Contains(result.Script.Actions[0].Body, passwordValue) {
+		t.Fatalf("body lost exact imported value: %q", result.Script.Actions[0].Body)
 	}
 	if importDraftAttestationToken(&result.Script) == "" {
 		t.Fatalf("masked sample import omitted its opaque save capability: %#v", result.Script.Metadata)
@@ -702,19 +701,19 @@ func TestHandleImportSamplePreservedSourceReviewRedactsSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(preservedReviewJSON), "dXNlcjpodW50ZXIyc2VjcmV0") {
-		t.Fatalf("preserved source_review leaked Authorization value: %s", preservedReviewJSON)
+	if !strings.Contains(string(preservedReviewJSON), "dXNlcjpodW50ZXIyc2VjcmV0") {
+		t.Fatalf("preserved source_review lost Authorization value: %s", preservedReviewJSON)
 	}
-	if strings.Contains(string(preservedReviewJSON), passwordValue) {
-		t.Fatalf("preserved source_review leaked password: %s", preservedReviewJSON)
+	if !strings.Contains(string(preservedReviewJSON), passwordValue) {
+		t.Fatalf("preserved source_review lost password: %s", preservedReviewJSON)
 	}
 
 	created := createAttestedImportScript(t, server, &result.Script)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("save masked sample import status = %d body=%s", created.Code, created.Body.String())
 	}
-	if strings.Contains(created.Body.String(), authValue) || strings.Contains(created.Body.String(), passwordValue) {
-		t.Fatalf("saved sample response disclosed imported credentials: %s", created.Body.String())
+	if !strings.Contains(created.Body.String(), authValue) || !strings.Contains(created.Body.String(), passwordValue) {
+		t.Fatalf("saved sample response lost imported credentials: %s", created.Body.String())
 	}
 	var createdScript StoredScript
 	if err := json.Unmarshal(created.Body.Bytes(), &createdScript); err != nil {
@@ -1391,8 +1390,8 @@ func TestHandleImportHARPairReturnsDiffAndGovernance(t *testing.T) {
 	if result.Summary.ArtifactMode != har.ArtifactModeDesignHARPair {
 		t.Fatalf("artifact mode = %q, want %q", result.Summary.ArtifactMode, har.ArtifactModeDesignHARPair)
 	}
-	if result.Summary.ArtifactSensitivity != "scrubbed" || result.Summary.RetentionDays != 3 {
-		t.Fatalf("summary governance = %#v, want scrubbed 3-day retention", result.Summary)
+	if result.Summary.ArtifactSensitivity != "raw_contains_secrets" || result.Summary.RetentionDays != 3 {
+		t.Fatalf("summary governance = %#v, want raw 3-day retention", result.Summary)
 	}
 	if !result.Summary.HARDiff.Compared || result.Summary.HARDiff.DynamicCandidates != 1 || result.Summary.HARDiff.StaticCandidates != 0 {
 		t.Fatalf("HAR diff = %#v, want one dynamic candidate", result.Summary.HARDiff)
@@ -2331,11 +2330,11 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	if len(result.Scripts) != 1 || result.Script == nil || result.Script.Protocol != "sap_gui" {
 		t.Fatalf("scripts/script = %d/%#v, want SAP GUI external-runner draft", len(result.Scripts), result.Script)
 	}
-	if result.Script.Config.SAPGUI.ConnectionString != maskedScriptSecret || result.Script.Config.SAPGUI.Password != "" {
-		t.Fatalf("sapgui config = %#v, want masked connection string and no invented password", result.Script.Config.SAPGUI)
+	if result.Script.Config.SAPGUI.ConnectionString != "ASHOST=server" || result.Script.Config.SAPGUI.Password != "" {
+		t.Fatalf("sapgui config = %#v, want exact connection string and no invented password", result.Script.Config.SAPGUI)
 	}
-	if strings.Contains(resp.Body.String(), "ASHOST=server") || importDraftAttestationToken(result.Script) == "" {
-		t.Fatalf("SAP GUI preview disclosed or failed to attest its exact source config: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "ASHOST=server") || importDraftAttestationToken(result.Script) == "" {
+		t.Fatalf("SAP GUI preview did not preserve or attest its exact source config: %s", resp.Body.String())
 	}
 	if result.DetectedProtocol.Canonical != "sap_gui" || result.DetectedProtocol.Mode != "external_runner_required" {
 		t.Fatalf("detected_protocol = %#v, want SAP GUI external runner", result.DetectedProtocol)
@@ -2374,8 +2373,8 @@ func TestHandleImportEnterpriseArchiveReturnsReviewArtifactForExternalRunnerProt
 	if save.Code != http.StatusCreated {
 		t.Fatalf("save SAP GUI draft status = %d body=%s", save.Code, save.Body.String())
 	}
-	if strings.Contains(save.Body.String(), "ASHOST=server") {
-		t.Fatalf("saved SAP GUI response disclosed its source connection string: %s", save.Body.String())
+	if !strings.Contains(save.Body.String(), "ASHOST=server") {
+		t.Fatalf("saved SAP GUI response did not preserve its source connection string: %s", save.Body.String())
 	}
 	var saved struct {
 		Scripts []StoredScript `json:"scripts"`
@@ -5904,9 +5903,9 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	if inspect.Code != http.StatusOK {
 		t.Fatalf("inspect status = %d body=%s", inspect.Code, inspect.Body.String())
 	}
-	if strings.Contains(inspect.Body.String(), credential) ||
-		!strings.Contains(inspect.Body.String(), maskedScriptSecret) {
-		t.Fatalf("JMeter inspect disclosed or failed to represent its credential: %s", inspect.Body.String())
+	if !strings.Contains(inspect.Body.String(), credential) ||
+		strings.Contains(inspect.Body.String(), maskedScriptSecret) {
+		t.Fatalf("JMeter inspect did not preserve its credential: %s", inspect.Body.String())
 	}
 	var preview struct {
 		Scripts       []dsl.Script    `json:"scripts"`
@@ -5948,8 +5947,8 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	if result.Count != 1 || len(result.Scripts) != 1 || result.Scripts[0].ID == "" {
 		t.Fatalf("unexpected scripts response: %#v", result)
 	}
-	if strings.Contains(resp.Body.String(), "imported-jmeter-token") {
-		t.Fatalf("JMeter save response disclosed imported credential: %s", resp.Body.String())
+	if !strings.Contains(resp.Body.String(), "imported-jmeter-token") {
+		t.Fatalf("JMeter save response did not preserve imported credential: %s", resp.Body.String())
 	}
 	if result.Scenario == nil || result.Scenario.ScriptCount != 1 {
 		t.Fatalf("expected saved scenario, got %#v", result.Scenario)

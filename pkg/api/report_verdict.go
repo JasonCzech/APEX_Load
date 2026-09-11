@@ -126,6 +126,12 @@ func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 				break
 			}
 		}
+		for _, result := range report.Manifest.TransactionResponseTimeSLAResults {
+			if result.Status == "not_evaluated" {
+				concerns = append(concerns, "a configured transaction response-time SLA was not evaluated")
+				break
+			}
+		}
 	}
 	if report.Manifest == nil || report.Manifest.TerminationReason != "workload_completed" {
 		concerns = append(concerns, "intended workload completion is not confirmed")
@@ -406,6 +412,9 @@ func attachReportVerdictAndSLA(report *RunArchiveReport) {
 	verdict := deriveReportVerdict(report)
 	report.Verdict = &verdict
 	report.SLARows = buildSLAComplianceRowMap(report)
+	if report.Manifest != nil {
+		report.TransactionResponseTimeSLAResults = append([]TransactionResponseTimeSLAResult(nil), report.Manifest.TransactionResponseTimeSLAResults...)
+	}
 	rollup := buildSLARollup(report.SLARows)
 	report.SLARollup = &rollup
 }

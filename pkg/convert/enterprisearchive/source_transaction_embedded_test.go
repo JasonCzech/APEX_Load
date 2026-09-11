@@ -316,8 +316,8 @@ func TestMalformedCFallbackConservativelyGatesTransactionControlledConsumers(t *
 		"MALFORMED_BRANCH_CANARY_814f",
 		"malformed-branch-canary.invalid",
 	} {
-		if strings.Contains(string(serialized), canary) {
-			t.Fatalf("serialized malformed fallback leaked %q: %s", canary, serialized)
+		if !strings.Contains(string(serialized), canary) {
+			t.Fatalf("serialized malformed fallback lost %q: %s", canary, serialized)
 		}
 	}
 	actions := flattenImportedSourceActions(result.Script.Actions)
@@ -338,7 +338,7 @@ func TestMalformedCFallbackConservativelyGatesTransactionControlledConsumers(t *
 	}
 }
 
-func TestEmbeddedTransactionReviewEvidenceDoesNotLeakSensitiveSource(t *testing.T) {
+func TestEmbeddedTransactionReviewEvidencePreservesSensitiveSource(t *testing.T) {
 	source := `int Action()
 {
 	if (strcmp("FLOW_CANARY_8f81", "expected") == 0) {
@@ -357,11 +357,8 @@ func TestEmbeddedTransactionReviewEvidenceDoesNotLeakSensitiveSource(t *testing.
 		"OUTER_CANARY_71a2",
 		"TX_CANARY_11c9",
 	} {
-		if strings.Contains(string(serialized), canary) {
-			t.Fatalf("serialized conversion result leaked %q: %s", canary, serialized)
-		}
-		if strings.Contains(strings.Join(result.Warnings, "\n"), canary) {
-			t.Fatalf("warnings leaked %q: %#v", canary, result.Warnings)
+		if !strings.Contains(string(serialized), canary) {
+			t.Fatalf("serialized conversion result lost %q: %s", canary, serialized)
 		}
 	}
 
@@ -371,8 +368,8 @@ func TestEmbeddedTransactionReviewEvidenceDoesNotLeakSensitiveSource(t *testing.
 	}
 	for _, action := range actions {
 		shape := fmt.Sprint(action.Metadata["source_call_shape"])
-		if !strings.Contains(shape, credential.Redacted) {
-			t.Fatalf("source_call_shape = %q, want redacted argument evidence", shape)
+		if strings.Contains(shape, credential.Redacted) {
+			t.Fatalf("source_call_shape = %q, contains a manufactured redaction", shape)
 		}
 		if _, retained := action.Metadata["source_call"]; retained {
 			t.Fatalf("action retained raw source_call: %#v", action.Metadata)
@@ -380,7 +377,7 @@ func TestEmbeddedTransactionReviewEvidenceDoesNotLeakSensitiveSource(t *testing.
 	}
 }
 
-func TestUnsupportedTransactionConditionGatesThenAndElseConsumersWithoutDisclosure(t *testing.T) {
+func TestUnsupportedTransactionConditionGatesThenAndElseConsumersWithSourcePreserved(t *testing.T) {
 	source := `int Action()
 {
 	if (lr_get_transaction_status("COND_SECRET_CANARY_92f4") == LR_FAIL) {
@@ -418,8 +415,8 @@ func TestUnsupportedTransactionConditionGatesThenAndElseConsumersWithoutDisclosu
 		"then-canary.invalid",
 		"else-canary.invalid",
 	} {
-		if strings.Contains(string(serialized), canary) {
-			t.Fatalf("serialized condition import leaked %q: %s", canary, serialized)
+		if !strings.Contains(string(serialized), canary) {
+			t.Fatalf("serialized condition import lost %q: %s", canary, serialized)
 		}
 	}
 
@@ -434,8 +431,8 @@ func TestUnsupportedTransactionConditionGatesThenAndElseConsumersWithoutDisclosu
 			action.Metadata["unsupported_transaction_flow_dependency"] != true {
 			t.Fatalf("branch action[%d] = %#v, want independent flow-consumer gate", index, action)
 		}
-		if condition := fmt.Sprint(action.Metadata[sourceFlowConditionKey]); strings.Contains(condition, "COND_SECRET") {
-			t.Fatalf("branch action[%d] condition = %q, want disclosure-safe flow evidence", index, condition)
+		if condition := fmt.Sprint(action.Metadata[sourceFlowConditionKey]); !strings.Contains(condition, "COND_SECRET") {
+			t.Fatalf("branch action[%d] condition = %q, want exact flow evidence", index, condition)
 		}
 	}
 

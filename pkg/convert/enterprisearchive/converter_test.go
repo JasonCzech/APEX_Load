@@ -12,7 +12,6 @@ import (
 	"unicode/utf16"
 
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -877,9 +876,8 @@ Action()
 	if err != nil {
 		t.Fatalf("json.Marshal(source_authentication): %v", err)
 	}
-	if strings.Contains(string(authControlsJSON), "perfpass") ||
-		!strings.Contains(string(authControlsJSON), credential.Redacted) {
-		t.Fatalf("source_authentication = %s, want disclosure-safe password provenance", authControlsJSON)
+	if !strings.Contains(string(authControlsJSON), "perfpass") {
+		t.Fatalf("source_authentication = %s, want exact password provenance", authControlsJSON)
 	}
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_user", "config.http.auth", "converted")
 }
@@ -1006,10 +1004,10 @@ func TestConvertUnknownCFunctionAsCustomCallReviewAction(t *testing.T) {
 	}
 	args, ok := action.Params["args"].([]any)
 	if !ok || len(args) != 3 ||
-		args[0] != credential.Redacted ||
-		args[1] != credential.Redacted ||
-		args[2] != credential.Redacted {
-		t.Fatalf("custom args = %#v, want disclosure-safe argument shape", action.Params["args"])
+		args[0] != "42" ||
+		args[1] != "LR_AUTO" ||
+		args[2] != "value" {
+		t.Fatalf("custom args = %#v, want exact imported arguments", action.Params["args"])
 	}
 	if _, retained := action.Metadata["source_call"]; retained {
 		t.Fatalf("custom action retained raw source call: %#v", action.Metadata)
@@ -1885,8 +1883,8 @@ UpdateValueOn=Each Occurrence
 	if err != nil {
 		t.Fatalf("json.Marshal(source_review) returned error: %v", err)
 	}
-	if strings.Contains(string(sourceReviewPayload), "raw-secret-token") || strings.Contains(string(sourceReviewPayload), "raw-secret-password") {
-		t.Fatalf("source review leaked raw secret literals: %s", string(sourceReviewPayload))
+	if !strings.Contains(string(sourceReviewPayload), "raw-secret-token") || !strings.Contains(string(sourceReviewPayload), "raw-secret-password") {
+		t.Fatalf("source review lost raw secret literals: %s", string(sourceReviewPayload))
 	}
 }
 
@@ -2610,8 +2608,8 @@ Format=%Y-%m-%d
 	if err != nil {
 		t.Fatalf("Marshal result: %v", err)
 	}
-	if strings.Contains(string(payload), "6a2cMASKEDPAYLOAD") {
-		t.Fatalf("masked lr_unmask payload leaked into import JSON: %s", payload)
+	if !strings.Contains(string(payload), "6a2cMASKEDPAYLOAD") {
+		t.Fatalf("masked lr_unmask source payload was not preserved in import JSON: %s", payload)
 	}
 	if result.FidelityReport == nil || result.FidelityReport.SecretGated != 1 || result.FidelityReport.DroppedBodies != 0 || result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
 		t.Fatalf("fidelity report = %#v, want one secret gate and no dropped body", result.FidelityReport)
@@ -2644,7 +2642,7 @@ Action=Action.c
 	}
 }
 
-func TestBuildSourceReviewRedactsSecrets(t *testing.T) {
+func TestBuildSourceReviewPreservesSecrets(t *testing.T) {
 	review := BuildSourceReview(map[string]string{
 		"Action.c": `Action()
 {
@@ -2662,11 +2660,11 @@ func TestBuildSourceReviewRedactsSecrets(t *testing.T) {
 		t.Fatalf("review = %#v, want one source file", review)
 	}
 	content := review.SourceFiles[0].Content
-	if strings.Contains(content, "super-secret-token") || strings.Contains(content, "plain-secret") {
-		t.Fatalf("source review content was not redacted: %s", content)
+	if !strings.Contains(content, "super-secret-token") || !strings.Contains(content, "plain-secret") {
+		t.Fatalf("source review content lost imported secrets: %s", content)
 	}
-	if !strings.Contains(content, "[REDACTED]") {
-		t.Fatalf("source review content = %s, want redaction marker", content)
+	if review.SourceFiles[0].Redacted {
+		t.Fatalf("source review was marked redacted: %#v", review.SourceFiles[0])
 	}
 }
 

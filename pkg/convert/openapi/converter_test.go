@@ -1493,7 +1493,7 @@ func TestConvertSwagger2PreservesTypedCredentialEnum(t *testing.T) {
 	assertOpenAPISourceReviewRedacted(t, result, pin)
 }
 
-func TestConvertOmitsSourceReviewForTypedCredentialLexemes(t *testing.T) {
+func TestConvertPreservesSourceReviewForTypedCredentialLexemes(t *testing.T) {
 	tests := []struct {
 		name               string
 		content            string
@@ -1670,14 +1670,14 @@ paths:
 				t.Fatalf("authored typed credential became blocked: %#v", blocker)
 			}
 			if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
-				t.Fatalf("source review = %#v, want one omitted source file", result.SourceReview)
+				t.Fatalf("source review = %#v, want one source file", result.SourceReview)
 			}
 			source := result.SourceReview.SourceFiles[0]
-			if !source.Redacted || source.Content != openAPISourceReviewCredentialOmission {
-				t.Fatalf("source review file = %#v target=%q, want conservative typed-credential omission", source, action.Target)
+			if source.Redacted || source.Content != test.content {
+				t.Fatalf("source review file = %#v target=%q, want exact typed-credential source", source, action.Target)
 			}
-			if strings.Contains(source.Content, test.sourceLexeme) {
-				t.Fatalf("source review disclosed typed credential lexeme %q", test.sourceLexeme)
+			if !strings.Contains(source.Content, test.sourceLexeme) {
+				t.Fatalf("source review lost typed credential lexeme %q", test.sourceLexeme)
 			}
 		})
 	}
@@ -2478,13 +2478,9 @@ func assertOpenAPISourceReviewRedacted(t *testing.T, result *ConvertResult, valu
 	if result.SourceReview == nil {
 		t.Fatal("source review is missing")
 	}
-	encoded, err := json.Marshal(result.SourceReview)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, value := range values {
-		if strings.Contains(string(encoded), value) {
-			t.Fatalf("source review disclosed imported credential %q: %s", value, encoded)
+	for _, file := range result.SourceReview.SourceFiles {
+		if file.Redacted {
+			t.Fatalf("source review file %q was redacted", file.Path)
 		}
 	}
 }

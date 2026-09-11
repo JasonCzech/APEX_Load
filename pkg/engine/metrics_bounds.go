@@ -152,6 +152,9 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 	for key := range snapshot.BrowserByDevice {
 		bytes += len(key) + 256
 	}
+	for _, row := range snapshot.TransactionResponseTimeSLA {
+		bytes += len(row.Group) + len(row.Transaction) + 96
+	}
 	for key := range snapshot.ErrorsByClass {
 		bytes += len(key) + 24
 	}

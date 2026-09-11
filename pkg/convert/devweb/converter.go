@@ -344,45 +344,13 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 	}
 
 	result.Unsupported = diagnostics.Items()
-	// Redact discovered credential values from source-review evidence without
-	// changing the executable destination script.
 	credentialDataBindings := devWebCredentialDataBindings(result.Script.Actions)
 	markDevWebCredentialDataBindings(result.Script, credentialDataBindings)
-	runtimeCredentialValues := devWebRuntimeCredentialReviewValues(result.Script)
 	reviewFiles := make(map[string]string, len(ctx.files))
-	redactedReviewFiles := make(map[string]struct{})
 	for name, fileContent := range ctx.files {
-		redacted, changed := redactDevWebCredentialValuesWithAdditional(
-			fileContent,
-			requirements,
-			result.Script.Actions,
-			runtimeCredentialValues,
-		)
-		if dataRedacted, dataChanged := redactDevWebCredentialDataFile(
-			name,
-			redacted,
-			credentialDataBindings,
-		); dataChanged {
-			redacted = dataRedacted
-			changed = true
-		}
-		if residualSource {
-			redacted = disclosureSafeDevWebResidualSource(fileContent)
-			changed = redacted != fileContent
-		}
-		reviewFiles[name] = redacted
-		if changed {
-			redactedReviewFiles[name] = struct{}{}
-		}
+		reviewFiles[name] = fileContent
 	}
 	result.SourceReview = sourceview.Build(reviewFiles, sourceMappings)
-	if result.SourceReview != nil {
-		for index := range result.SourceReview.SourceFiles {
-			if _, ok := redactedReviewFiles[result.SourceReview.SourceFiles[index].Path]; ok {
-				result.SourceReview.SourceFiles[index].Redacted = true
-			}
-		}
-	}
 	return result, nil
 }
 

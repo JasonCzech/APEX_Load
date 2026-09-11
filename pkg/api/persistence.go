@@ -420,9 +420,10 @@ func (tr *TestRunner) buildStoredScenarioFromPartsLocked(scenario *storage.Scena
 			VUsers: script.VUsers, RampUp: script.RampUp, RampDown: script.RampDown,
 			StartOffset: script.StartOffset,
 			Stages:      cloneLoadStages(script.Stages), Iterations: script.Iterations,
-			Initialization:  script.Initialization,
-			RuntimeSettings: decodeStoredRuntimeSettings(script.RuntimeSettings),
-			Assignment:      decodeStoredGeneratorAssignment(script.Assignment),
+			Initialization:               script.Initialization,
+			RuntimeSettings:              decodeStoredRuntimeSettings(script.RuntimeSettings),
+			Assignment:                   decodeStoredGeneratorAssignment(script.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(script.TransactionResponseTimeSLAMs),
 		}
 		if stored, ok := tr.scripts[script.ScriptID]; ok {
 			ref.ScriptName = stored.Name
@@ -965,19 +966,20 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 			iterationOverride = group.Iterations
 		}
 		entries = append(entries, CreateGroupEntry{
-			Name:               group.Name,
-			ScriptID:           group.ScriptID,
-			Role:               group.Role,
-			VUsers:             group.VUsers,
-			RampUp:             group.RampUp,
-			RampDown:           group.RampDown,
-			StartOffset:        group.StartOffset,
-			Stages:             cloneLoadStages(group.Stages),
-			Iterations:         cloneIntPtr(iterationOverride),
-			RuntimeSettings:    cloneRuntimeSettings(group.RuntimeSettings),
-			Assignment:         cloneGeneratorAssignmentSettings(group.Assignment),
-			InitStrategy:       group.Initialization,
-			runtimeSecretScope: test.ID,
+			Name:                         group.Name,
+			ScriptID:                     group.ScriptID,
+			Role:                         group.Role,
+			VUsers:                       group.VUsers,
+			RampUp:                       group.RampUp,
+			RampDown:                     group.RampDown,
+			StartOffset:                  group.StartOffset,
+			Stages:                       cloneLoadStages(group.Stages),
+			Iterations:                   cloneIntPtr(iterationOverride),
+			RuntimeSettings:              cloneRuntimeSettings(group.RuntimeSettings),
+			Assignment:                   cloneGeneratorAssignmentSettings(group.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
+			InitStrategy:                 group.Initialization,
+			runtimeSecretScope:           test.ID,
 		})
 	}
 	tr.mu.Lock()
@@ -989,6 +991,7 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 	if totalVUsers != test.TotalVUsers {
 		return fmt.Errorf("stored test workload changed while recompiling: persisted total %d, restored total %d", test.TotalVUsers, totalVUsers)
 	}
+	applyTransactionResponseTimeSLAThresholds(test.GoalConfig, groups, specs)
 	for index := range groups {
 		// The recompile used only protected references. Keep no recovered literal
 		// overlay in process memory; execution must resolve through the governed
@@ -1357,20 +1360,21 @@ func storedScenarioRefsToStorage(stored *StoredScenario) []storage.ScenarioScrip
 	scripts := make([]storage.ScenarioScript, 0, len(stored.Scripts))
 	for _, ref := range stored.Scripts {
 		scripts = append(scripts, storage.ScenarioScript{
-			ScenarioID:      stored.ID,
-			Order:           ref.Order,
-			Name:            ref.Name,
-			ScriptID:        ref.ScriptID,
-			Role:            ref.Role,
-			VUsers:          ref.VUsers,
-			RampUp:          ref.RampUp,
-			RampDown:        ref.RampDown,
-			StartOffset:     ref.StartOffset,
-			Stages:          cloneLoadStages(ref.Stages),
-			Iterations:      ref.Iterations,
-			Initialization:  ref.Initialization,
-			RuntimeSettings: runtimeSettingsForStorage(ref.RuntimeSettings),
-			Assignment:      generatorAssignmentForStorage(ref.Assignment),
+			ScenarioID:                   stored.ID,
+			Order:                        ref.Order,
+			Name:                         ref.Name,
+			ScriptID:                     ref.ScriptID,
+			Role:                         ref.Role,
+			VUsers:                       ref.VUsers,
+			RampUp:                       ref.RampUp,
+			RampDown:                     ref.RampDown,
+			StartOffset:                  ref.StartOffset,
+			Stages:                       cloneLoadStages(ref.Stages),
+			Iterations:                   ref.Iterations,
+			Initialization:               ref.Initialization,
+			RuntimeSettings:              runtimeSettingsForStorage(ref.RuntimeSettings),
+			Assignment:                   generatorAssignmentForStorage(ref.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(ref.TransactionResponseTimeSLAMs),
 		})
 	}
 	return scripts
@@ -1390,6 +1394,7 @@ func cloneScenarioScriptRefs(in []ScenarioScriptRef) []ScenarioScriptRef {
 		}
 		out[i].RuntimeSettings = cloneRuntimeSettings(in[i].RuntimeSettings)
 		out[i].Assignment = cloneGeneratorAssignmentSettings(in[i].Assignment)
+		out[i].TransactionResponseTimeSLAMs = cloneFloat64Ptr(in[i].TransactionResponseTimeSLAMs)
 	}
 	return out
 }

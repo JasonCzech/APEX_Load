@@ -403,20 +403,21 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		// compileManagedTestGroupsLocked validated and normalized the role
 		// (e.g. the "canary" alias), so persist the normalized value.
 		scripts = append(scripts, storage.ScenarioScript{
-			ScenarioID:      id,
-			Order:           i,
-			Name:            group.Name,
-			ScriptID:        group.ScriptID,
-			Role:            testGroups[i].Role,
-			VUsers:          group.VUsers,
-			RampUp:          group.RampUp,
-			RampDown:        group.RampDown,
-			StartOffset:     group.StartOffset,
-			Stages:          cloneLoadStages(group.Stages),
-			Iterations:      group.Iterations,
-			Initialization:  group.InitStrategy,
-			RuntimeSettings: runtimeSettingsForStorage(group.RuntimeSettings),
-			Assignment:      generatorAssignmentForStorage(group.Assignment),
+			ScenarioID:                   id,
+			Order:                        i,
+			Name:                         group.Name,
+			ScriptID:                     group.ScriptID,
+			Role:                         testGroups[i].Role,
+			VUsers:                       group.VUsers,
+			RampUp:                       group.RampUp,
+			RampDown:                     group.RampDown,
+			StartOffset:                  group.StartOffset,
+			Stages:                       cloneLoadStages(group.Stages),
+			Iterations:                   group.Iterations,
+			Initialization:               group.InitStrategy,
+			RuntimeSettings:              runtimeSettingsForStorage(group.RuntimeSettings),
+			Assignment:                   generatorAssignmentForStorage(group.Assignment),
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(group.TransactionResponseTimeSLAMs),
 		})
 	}
 	projectID, singleProject := tr.scenarioProjectIDFromScriptsLocked(scripts)

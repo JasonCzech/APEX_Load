@@ -1161,6 +1161,10 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					MessageDetailMaxItems:      authoredMessageDetailMaxItems(group.script),
 					MessageDetailMaxItemBytes:  authoredMessageDetailMaxItemBytes(group.script),
 					MessageDetailMaxTotalBytes: authoredMessageDetailMaxTotalBytes(group.script),
+					TransactionResponseTimeSLAMs: func() float64 {
+						threshold, _ := effectiveTransactionResponseTimeSLAForTestGroup(managedTest, groupName)
+						return threshold
+					}(),
 				})
 				cancel()
 				if assignErr != nil || !assignment.Accepted {
@@ -1533,6 +1537,8 @@ func (b *distributedExecutionBackend) detachEvacuationResources(tr *TestRunner, 
 		test.remoteGroupTargets = nil
 		test.remoteGroupShards = nil
 		test.remoteMetricsBatchesByTarget = nil
+		test.remoteTransactionResponseTimeSLA = nil
+		test.remoteTransactionResponseTimeSLALegacyByTarget = nil
 		test.remoteTargetStates = nil
 		test.remoteActivated = false
 		test.remoteActivationPending = false

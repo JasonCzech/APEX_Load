@@ -3,10 +3,10 @@
   "governance": {
     "artifact_mode": "design_har",
     "body_capture_required": true,
-    "redaction_enabled": true,
+    "redaction_enabled": false,
     "retention_days": 7,
     "scope": "http_family_only",
-    "sensitivity": "scrubbed"
+    "sensitivity": "raw_contains_secrets"
   },
   "script": {
     "actions": [
@@ -127,11 +127,10 @@
     ],
     "source_files": [
       {
-        "content": "{\"log\":{\"_apexloadSensitivity\":\"scrubbed\",\"entries\":[{\"request\":{\"headers\":[],\"method\":\"GET\",\"url\":\"https://api.example.test/health\"},\"response\":{\"content\":{\"text\":\"ok\"},\"headers\":[],\"status\":200},\"startedDateTime\":\"2026-01-01T00:00:00Z\",\"time\":10}]}}",
+        "content": "{\"log\":{\"entries\":[{\"startedDateTime\":\"2026-01-01T00:00:00Z\",\"time\":10,\"request\":{\"method\":\"GET\",\"url\":\"https://api.example.test/health\",\"headers\":[]},\"response\":{\"status\":200,\"headers\":[],\"content\":{\"text\":\"ok\"}}}]}}",
         "language": "json",
-        "original_bytes": 251,
-        "path": "sample.har",
-        "redacted": true
+        "original_bytes": 217,
+        "path": "sample.har"
       }
     ],
     "total_source_files": 1

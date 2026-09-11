@@ -142,8 +142,8 @@ http.get('https://alice:` + canary + `@api.example.test/private');
 		t.Fatal("destination conversion result did not retain the userinfo credential")
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
-		strings.Contains(result.SourceReview.SourceFiles[0].Content, canary) {
-		t.Fatalf("source review leaked userinfo credential: %#v", result.SourceReview)
+		!strings.Contains(result.SourceReview.SourceFiles[0].Content, canary) {
+		t.Fatalf("source review lost userinfo credential: %#v", result.SourceReview)
 	}
 }
 
@@ -183,7 +183,7 @@ func TestConvertRejectsSourceContainingOnlyCommentedHTTPCalls(t *testing.T) {
 	}
 }
 
-func TestConvertDynamicExpressionsBecomeDisclosureSafeBlockedDrafts(t *testing.T) {
+func TestConvertDynamicExpressionsBecomeExactBlockedDrafts(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Name: "dynamic",
 		Content: `
@@ -225,9 +225,9 @@ http.post('https://api.example.com/orders', JSON.stringify(payload));
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"credential-canary-k6", "JSON.stringify", "base +", "__ENV.TOKEN"} {
-		if strings.Contains(string(reviewPayload), forbidden) {
-			t.Fatalf("public source review retained source expression %q: %s", forbidden, reviewPayload)
+	for _, expected := range []string{"credential-canary-k6", "JSON.stringify", "base +", "__ENV.TOKEN"} {
+		if !strings.Contains(string(reviewPayload), expected) {
+			t.Fatalf("public source review lost source expression %q: %s", expected, reviewPayload)
 		}
 	}
 }
@@ -267,7 +267,7 @@ http.get(base + '/orders');
 	}
 }
 
-func TestConvertResidualLiteralIsAbsentFromCompleteResultAndBlocksRequests(t *testing.T) {
+func TestConvertResidualLiteralIsPresentInReviewAndBlocksRequests(t *testing.T) {
 	const canary = "k6-residual-arbitrary-canary-62f1"
 	result, err := Convert(ImportRequest{
 		Name: "residual",
@@ -293,8 +293,8 @@ export default function () {
 		t.Fatalf("import_review = %#v, want unsupported_source_logic", action.Metadata["import_review"])
 	}
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
-		!result.SourceReview.SourceFiles[0].Redacted {
-		t.Fatalf("source review = %#v, want explicitly redacted source", result.SourceReview)
+		result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review = %#v, want exact source", result.SourceReview)
 	}
 	gatedSource, _ := result.Script.Metadata.Import.Preserved["k6_gated_source"].(string)
 	if !strings.Contains(gatedSource, canary) {
@@ -304,8 +304,8 @@ export default function () {
 	if err != nil {
 		t.Fatalf("marshal source review: %v", err)
 	}
-	if strings.Contains(string(reviewPayload), canary) {
-		t.Fatalf("source review disclosed residual canary: %s", reviewPayload)
+	if !strings.Contains(string(reviewPayload), canary) {
+		t.Fatalf("source review lost residual canary: %s", reviewPayload)
 	}
 }
 
@@ -431,13 +431,9 @@ func assertK6SourceReviewRedacted(t *testing.T, result *ConvertResult, values ..
 	if result.SourceReview == nil {
 		t.Fatal("source review is missing")
 	}
-	payload, err := json.Marshal(result.SourceReview)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, value := range values {
-		if strings.Contains(string(payload), value) {
-			t.Fatalf("source review disclosed imported credential %q: %s", value, payload)
+	for _, file := range result.SourceReview.SourceFiles {
+		if file.Redacted {
+			t.Fatalf("source review file %q was redacted", file.Path)
 		}
 	}
 }

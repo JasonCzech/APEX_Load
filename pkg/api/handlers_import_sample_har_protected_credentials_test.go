@@ -198,15 +198,15 @@ func assertProtectedCredentialImportResponse(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(reviewEvidence, []byte(canary)) {
-		t.Fatalf("import review evidence disclosed protected canary: %s", strings.ReplaceAll(string(reviewEvidence), canary, "<PROTECTED>"))
+	if !bytes.Contains(reviewEvidence, []byte(canary)) {
+		t.Fatalf("import review evidence did not preserve protected canary: %s", reviewEvidence)
 	}
 	scriptJSON, err := json.Marshal(response.Script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(scriptJSON, []byte(canary)) || !bytes.Contains(scriptJSON, []byte(maskedScriptSecret)) {
-		t.Fatal("opaque import script disclosed or failed to mask the source credential")
+	if !bytes.Contains(scriptJSON, []byte(canary)) || bytes.Contains(scriptJSON, []byte(maskedScriptSecret)) {
+		t.Fatal("import script did not preserve the source credential")
 	}
 	if len(response.Requirements) != 1 {
 		t.Fatalf("requirements = %#v, want one protected credential", response.Requirements)
@@ -326,8 +326,8 @@ func TestScriptImportResponseCombinesLegacyAndProtectedSourceValues(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(encoded, []byte(legacyCanary)) || !bytes.Contains(encoded, []byte(maskedScriptSecret)) {
-		t.Fatal("opaque import response disclosed or failed to mask its already-authored credential")
+	if !bytes.Contains(encoded, []byte(legacyCanary)) || bytes.Contains(encoded, []byte(maskedScriptSecret)) {
+		t.Fatal("import response did not preserve its already-authored credential")
 	}
 	if bytes.Contains(encoded, []byte(protectedCanary)) {
 		t.Fatalf("protected requirement payload disclosed %q", protectedCanary)

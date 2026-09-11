@@ -39,6 +39,7 @@ const apiMock = {
   rebindScriptSecretReference: vi.fn(),
   createScript: vi.fn(),
   updateScript: vi.fn(),
+  downloadScript: vi.fn(),
   createAuthoringSession: vi.fn(),
   validateScript: vi.fn(),
   validateDraftScript: vi.fn(),
@@ -515,6 +516,7 @@ describe('ScriptEditor', () => {
     apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 1 })
     apiMock.createScript.mockResolvedValue({ id: 'script-1' })
     apiMock.updateScript.mockResolvedValue({ id: 'script-1' })
+    apiMock.downloadScript.mockResolvedValue('{"preserved":"download-password"}')
     apiMock.validateScript.mockResolvedValue({
       script_id: 'script-1',
       valid: true,
@@ -1116,6 +1118,27 @@ describe('ScriptEditor', () => {
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('unassigned', ['LOGIN_TOKEN'])
     expect(container.textContent).not.toContain('Project secret configuration is still being checked')
     expect(container.textContent).toContain('LOGIN_TOKEN')
+  })
+
+  it('downloads a clean saved script from the exact server artifact', async () => {
+    const exact = '{"config":{"http":{"auth":{"password":"download-password"}}}}'
+    apiMock.downloadScript.mockResolvedValueOnce(exact)
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
+    })
+    await flushReact()
+
+    const downloadButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Download')
+    expect(downloadButton).toBeTruthy()
+    await act(async () => {
+      downloadButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.downloadScript).toHaveBeenCalledWith('script-1')
+		expect(downloadTextFileMock).toHaveBeenCalledWith(exact, 'checkout-flow.json')
   })
 
   it('probes project secret status for an unsaved clone without showing configured references as missing', async () => {

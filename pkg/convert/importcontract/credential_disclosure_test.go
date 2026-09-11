@@ -18,17 +18,17 @@ import (
 
 const disclosureCanary = "import-disclosure-canary-7Q4Z"
 
-// TestConversionReviewResultsNeverDiscloseAuthoredCredentials is the
-// cross-importer disclosure contract.
+// TestConversionReviewResultsPreserveAuthoredCredentials is the cross-importer
+// authoring-fidelity contract.
 //
-// The executable destination intentionally retains values the importing
-// operator already supplied. Every non-executable copy—source review, stats,
-// summaries, findings, correlation samples and future review fields—must remain
-// disclosure-safe.
+// Imported scripts and collections are operator-owned authoring artifacts, so
+// executable drafts and source-review copies retain the exact values supplied
+// by the operator. Run output, logs, and debugging evidence have a separate
+// redaction boundary.
 //
 // Source values may also travel in ProtectedRequirements for explicit
 // externalization; that field is json:"-" and never part of this payload.
-func TestConversionReviewResultsNeverDiscloseAuthoredCredentials(t *testing.T) {
+func TestConversionReviewResultsPreserveAuthoredCredentials(t *testing.T) {
 	tests := []struct {
 		name    string
 		convert func(t *testing.T) any
@@ -214,8 +214,8 @@ export default function () {
 			if err != nil {
 				t.Fatalf("marshal review-only result: %v", err)
 			}
-			if strings.Contains(string(reviewPayload), disclosureCanary) {
-				t.Fatalf("conversion review material disclosed an authored credential:\n%s", reviewPayload)
+			if !strings.Contains(string(reviewPayload), disclosureCanary) {
+				t.Fatalf("conversion review material lost an authored credential:\n%s", reviewPayload)
 			}
 		})
 	}

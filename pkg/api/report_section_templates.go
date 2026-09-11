@@ -248,6 +248,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 
 {{define "sla_rollup"}}
 <h2>SLA Scorecard</h2>
+{{if .TransactionResponseTimeSLAResults}}
+<table>
+  <caption>Transaction response-time SLA (95% of successful samples required)</caption>
+  <thead><tr><th>Group</th><th>Transaction</th><th class="num">Threshold</th><th class="num">Eligible</th><th class="num">Excluded errors</th><th class="num">Missed</th><th class="num">Missed %</th><th>Result</th></tr></thead>
+  <tbody>{{range .TransactionResponseTimeSLAResults}}<tr><td>{{.Group}}</td><td>{{if .Transaction}}{{.Transaction}}{{else}}No named transaction observed{{end}}</td><td class="num">{{f0 .ThresholdMs}} ms</td><td class="num">{{hint .EligibleSuccessCount}}</td><td class="num">{{hint .ExcludedErrorCount}}</td><td class="num">{{hint .MissedCount}}</td><td class="num">{{formatPercent .MissedPct}}</td><td><span class="pill {{.Status}}">{{.Status}}</span></td></tr>{{end}}</tbody>
+</table>
+{{end}}
 <table>
   <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95</th><th class="num">SLA</th><th>Result</th></tr></thead>
   <tbody>
@@ -268,6 +275,13 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 
 {{define "sla_detail"}}
 <h2>SLA compliance</h2>
+{{if .TransactionResponseTimeSLAResults}}
+<table>
+<caption>Transaction response-time SLA by group and named business transaction</caption>
+<thead><tr><th>Group</th><th>Transaction</th><th class="num">Threshold (ms)</th><th class="num">Total</th><th class="num">Eligible successes</th><th class="num">Excluded errors</th><th class="num">Missed</th><th class="num">Missed %</th><th class="num">Met %</th><th class="num">Required met %</th><th>Result</th></tr></thead>
+<tbody>{{range .TransactionResponseTimeSLAResults}}<tr><td>{{.Group}}</td><td>{{if .Transaction}}{{.Transaction}}{{else}}No named transaction observed{{end}}</td><td class="num">{{f0 .ThresholdMs}}</td><td class="num">{{hint .TotalCount}}</td><td class="num">{{hint .EligibleSuccessCount}}</td><td class="num">{{hint .ExcludedErrorCount}}</td><td class="num">{{hint .MissedCount}}</td><td class="num">{{formatPercent .MissedPct}}</td><td class="num">{{formatPercent .MetPct}}</td><td class="num">{{formatPercent .RequiredMetPct}}</td><td><span class="pill {{.Status}}">{{.Status}}</span></td></tr>{{end}}</tbody>
+</table>
+{{end}}
 <table>
 <caption>SLA evaluation by transaction (p95 vs configured latency SLA; full results in run archive)</caption>
 <thead><tr><th>Transaction</th><th class="num">Volume</th><th class="num">p95 (ms)</th><th class="num">SLA (ms)</th><th class="num">Error %</th><th>Result</th></tr></thead>

@@ -4594,6 +4594,41 @@ paths:
                         transaction_count:
                           type: integer
                           format: int64
+                        transaction_response_time_sla_results:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              eligible_success_count:
+                                type: integer
+                                format: int64
+                              excluded_error_count:
+                                type: integer
+                                format: int64
+                              group:
+                                type: string
+                              met_pct:
+                                type: number
+                                format: double
+                              missed_count:
+                                type: integer
+                                format: int64
+                              missed_pct:
+                                type: number
+                                format: double
+                              required_met_pct:
+                                type: number
+                                format: double
+                              status:
+                                type: string
+                              threshold_ms:
+                                type: number
+                                format: double
+                              total_count:
+                                type: integer
+                                format: int64
+                              transaction:
+                                type: string
                         transaction_rule_results:
                           type: array
                           items:
@@ -5430,6 +5465,41 @@ paths:
                           tps:
                             type: number
                             format: double
+                    transaction_response_time_sla_results:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          eligible_success_count:
+                            type: integer
+                            format: int64
+                          excluded_error_count:
+                            type: integer
+                            format: int64
+                          group:
+                            type: string
+                          met_pct:
+                            type: number
+                            format: double
+                          missed_count:
+                            type: integer
+                            format: int64
+                          missed_pct:
+                            type: number
+                            format: double
+                          required_met_pct:
+                            type: number
+                            format: double
+                          status:
+                            type: string
+                          threshold_ms:
+                            type: number
+                            format: double
+                          total_count:
+                            type: integer
+                            format: int64
+                          transaction:
+                            type: string
                     verdict:
                       type: object
                       properties:
@@ -6156,6 +6226,10 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         transaction_rules:
                           type: array
                           items:
@@ -6322,6 +6396,10 @@ paths:
                               additionalProperties: true
                           start_offset:
                             type: string
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           vusers:
                             type: integer
                             format: int64
@@ -44441,6 +44519,10 @@ paths:
                       type: number
                       format: double
                       nullable: true
+                    transaction_response_time_sla_ms:
+                      type: number
+                      format: double
+                      nullable: true
                     transaction_rules:
                       type: array
                       items:
@@ -44607,6 +44689,10 @@ paths:
                           additionalProperties: true
                       start_offset:
                         type: string
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       vusers:
                         type: integer
                         format: int64
@@ -45188,6 +45274,10 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         transaction_rules:
                           type: array
                           items:
@@ -45354,6 +45444,10 @@ paths:
                               additionalProperties: true
                           start_offset:
                             type: string
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           vusers:
                             type: integer
                             format: int64
@@ -46878,6 +46972,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -47135,6 +47233,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -47691,6 +47793,11 @@ paths:
                             tps:
                               type: number
                               format: double
+                            transaction_response_time_sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transactions:
                               type: object
                               additionalProperties:
@@ -48735,6 +48842,53 @@ paths:
                           tps:
                             type: number
                             format: double
+                          transaction_response_time_sla:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                eligible_success_count:
+                                  type: integer
+                                  format: int64
+                                excluded_error_count:
+                                  type: integer
+                                  format: int64
+                                group:
+                                  type: string
+                                met_pct:
+                                  type: number
+                                  format: double
+                                missed_count:
+                                  type: integer
+                                  format: int64
+                                missed_pct:
+                                  type: number
+                                  format: double
+                                required_met_pct:
+                                  type: number
+                                  format: double
+                                status:
+                                  type: string
+                                threshold_ms:
+                                  type: number
+                                  format: double
+                                total_count:
+                                  type: integer
+                                  format: int64
+                                transaction:
+                                  type: string
+                              required:
+                                - eligible_success_count
+                                - excluded_error_count
+                                - group
+                                - met_pct
+                                - missed_count
+                                - missed_pct
+                                - required_met_pct
+                                - status
+                                - threshold_ms
+                                - total_count
+                                - transaction
                           transactions:
                             type: object
                             additionalProperties:
@@ -50566,6 +50720,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -50823,6 +50981,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -51379,6 +51541,11 @@ paths:
                             tps:
                               type: number
                               format: double
+                            transaction_response_time_sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transactions:
                               type: object
                               additionalProperties:
@@ -52423,6 +52590,53 @@ paths:
                           tps:
                             type: number
                             format: double
+                          transaction_response_time_sla:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                eligible_success_count:
+                                  type: integer
+                                  format: int64
+                                excluded_error_count:
+                                  type: integer
+                                  format: int64
+                                group:
+                                  type: string
+                                met_pct:
+                                  type: number
+                                  format: double
+                                missed_count:
+                                  type: integer
+                                  format: int64
+                                missed_pct:
+                                  type: number
+                                  format: double
+                                required_met_pct:
+                                  type: number
+                                  format: double
+                                status:
+                                  type: string
+                                threshold_ms:
+                                  type: number
+                                  format: double
+                                total_count:
+                                  type: integer
+                                  format: int64
+                                transaction:
+                                  type: string
+                              required:
+                                - eligible_success_count
+                                - excluded_error_count
+                                - group
+                                - met_pct
+                                - missed_count
+                                - missed_pct
+                                - required_met_pct
+                                - status
+                                - threshold_ms
+                                - total_count
+                                - transaction
                           transactions:
                             type: object
                             additionalProperties:
@@ -54251,6 +54465,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -54508,6 +54726,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -55064,6 +55286,11 @@ paths:
                             tps:
                               type: number
                               format: double
+                            transaction_response_time_sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transactions:
                               type: object
                               additionalProperties:
@@ -56108,6 +56335,53 @@ paths:
                           tps:
                             type: number
                             format: double
+                          transaction_response_time_sla:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                eligible_success_count:
+                                  type: integer
+                                  format: int64
+                                excluded_error_count:
+                                  type: integer
+                                  format: int64
+                                group:
+                                  type: string
+                                met_pct:
+                                  type: number
+                                  format: double
+                                missed_count:
+                                  type: integer
+                                  format: int64
+                                missed_pct:
+                                  type: number
+                                  format: double
+                                required_met_pct:
+                                  type: number
+                                  format: double
+                                status:
+                                  type: string
+                                threshold_ms:
+                                  type: number
+                                  format: double
+                                total_count:
+                                  type: integer
+                                  format: int64
+                                transaction:
+                                  type: string
+                              required:
+                                - eligible_success_count
+                                - excluded_error_count
+                                - group
+                                - met_pct
+                                - missed_count
+                                - missed_pct
+                                - required_met_pct
+                                - status
+                                - threshold_ms
+                                - total_count
+                                - transaction
                           transactions:
                             type: object
                             additionalProperties:
@@ -57948,6 +58222,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -58205,6 +58483,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -58761,6 +59043,11 @@ paths:
                             tps:
                               type: number
                               format: double
+                            transaction_response_time_sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transactions:
                               type: object
                               additionalProperties:
@@ -59805,6 +60092,53 @@ paths:
                           tps:
                             type: number
                             format: double
+                          transaction_response_time_sla:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                eligible_success_count:
+                                  type: integer
+                                  format: int64
+                                excluded_error_count:
+                                  type: integer
+                                  format: int64
+                                group:
+                                  type: string
+                                met_pct:
+                                  type: number
+                                  format: double
+                                missed_count:
+                                  type: integer
+                                  format: int64
+                                missed_pct:
+                                  type: number
+                                  format: double
+                                required_met_pct:
+                                  type: number
+                                  format: double
+                                status:
+                                  type: string
+                                threshold_ms:
+                                  type: number
+                                  format: double
+                                total_count:
+                                  type: integer
+                                  format: int64
+                                transaction:
+                                  type: string
+                              required:
+                                - eligible_success_count
+                                - excluded_error_count
+                                - group
+                                - met_pct
+                                - missed_count
+                                - missed_pct
+                                - required_met_pct
+                                - status
+                                - threshold_ms
+                                - total_count
+                                - transaction
                           transactions:
                             type: object
                             additionalProperties:
@@ -61645,6 +61979,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -61902,6 +62240,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -62458,6 +62800,11 @@ paths:
                             tps:
                               type: number
                               format: double
+                            transaction_response_time_sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transactions:
                               type: object
                               additionalProperties:
@@ -63502,6 +63849,53 @@ paths:
                           tps:
                             type: number
                             format: double
+                          transaction_response_time_sla:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                eligible_success_count:
+                                  type: integer
+                                  format: int64
+                                excluded_error_count:
+                                  type: integer
+                                  format: int64
+                                group:
+                                  type: string
+                                met_pct:
+                                  type: number
+                                  format: double
+                                missed_count:
+                                  type: integer
+                                  format: int64
+                                missed_pct:
+                                  type: number
+                                  format: double
+                                required_met_pct:
+                                  type: number
+                                  format: double
+                                status:
+                                  type: string
+                                threshold_ms:
+                                  type: number
+                                  format: double
+                                total_count:
+                                  type: integer
+                                  format: int64
+                                transaction:
+                                  type: string
+                              required:
+                                - eligible_success_count
+                                - excluded_error_count
+                                - group
+                                - met_pct
+                                - missed_count
+                                - missed_pct
+                                - required_met_pct
+                                - status
+                                - threshold_ms
+                                - total_count
+                                - transaction
                           transactions:
                             type: object
                             additionalProperties:
@@ -65342,6 +65736,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -65599,6 +65997,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -66155,6 +66557,11 @@ paths:
                             tps:
                               type: number
                               format: double
+                            transaction_response_time_sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transactions:
                               type: object
                               additionalProperties:
@@ -67199,6 +67606,53 @@ paths:
                           tps:
                             type: number
                             format: double
+                          transaction_response_time_sla:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                eligible_success_count:
+                                  type: integer
+                                  format: int64
+                                excluded_error_count:
+                                  type: integer
+                                  format: int64
+                                group:
+                                  type: string
+                                met_pct:
+                                  type: number
+                                  format: double
+                                missed_count:
+                                  type: integer
+                                  format: int64
+                                missed_pct:
+                                  type: number
+                                  format: double
+                                required_met_pct:
+                                  type: number
+                                  format: double
+                                status:
+                                  type: string
+                                threshold_ms:
+                                  type: number
+                                  format: double
+                                total_count:
+                                  type: integer
+                                  format: int64
+                                transaction:
+                                  type: string
+                              required:
+                                - eligible_success_count
+                                - excluded_error_count
+                                - group
+                                - met_pct
+                                - missed_count
+                                - missed_pct
+                                - required_met_pct
+                                - status
+                                - threshold_ms
+                                - total_count
+                                - transaction
                           transactions:
                             type: object
                             additionalProperties:
@@ -69039,6 +69493,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -69296,6 +69754,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -69852,6 +70314,11 @@ paths:
                             tps:
                               type: number
                               format: double
+                            transaction_response_time_sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
                             transactions:
                               type: object
                               additionalProperties:
@@ -70896,6 +71363,53 @@ paths:
                           tps:
                             type: number
                             format: double
+                          transaction_response_time_sla:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                eligible_success_count:
+                                  type: integer
+                                  format: int64
+                                excluded_error_count:
+                                  type: integer
+                                  format: int64
+                                group:
+                                  type: string
+                                met_pct:
+                                  type: number
+                                  format: double
+                                missed_count:
+                                  type: integer
+                                  format: int64
+                                missed_pct:
+                                  type: number
+                                  format: double
+                                required_met_pct:
+                                  type: number
+                                  format: double
+                                status:
+                                  type: string
+                                threshold_ms:
+                                  type: number
+                                  format: double
+                                total_count:
+                                  type: integer
+                                  format: int64
+                                transaction:
+                                  type: string
+                              required:
+                                - eligible_success_count
+                                - excluded_error_count
+                                - group
+                                - met_pct
+                                - missed_count
+                                - missed_pct
+                                - required_met_pct
+                                - status
+                                - threshold_ms
+                                - total_count
+                                - transaction
                           transactions:
                             type: object
                             additionalProperties:
@@ -80444,6 +80958,10 @@ paths:
                       type: number
                       format: double
                       nullable: true
+                    transaction_response_time_sla_ms:
+                      type: number
+                      format: double
+                      nullable: true
                     transaction_rules:
                       type: array
                       items:
@@ -80976,6 +81494,10 @@ paths:
                               type: string
                       start_offset:
                         type: string
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       vusers:
                         type: integer
                         format: int64
@@ -81956,6 +82478,10 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       transaction_rules:
                         type: array
                         items:
@@ -83320,6 +83846,10 @@ paths:
                               - type
                         start_offset:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -83904,6 +84434,10 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       transaction_rules:
                         type: array
                         items:
@@ -85268,6 +85802,10 @@ paths:
                               - type
                         start_offset:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -85764,6 +86302,10 @@ paths:
                     stop_on_sla_breach:
                       type: boolean
                     target_average_tps:
+                      type: number
+                      format: double
+                      nullable: true
+                    transaction_response_time_sla_ms:
                       type: number
                       format: double
                       nullable: true
@@ -86299,6 +86841,10 @@ paths:
                               type: string
                       start_offset:
                         type: string
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       vusers:
                         type: integer
                         format: int64
@@ -87279,6 +87825,10 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       transaction_rules:
                         type: array
                         items:
@@ -88643,6 +89193,10 @@ paths:
                               - type
                         start_offset:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -89494,6 +90048,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -90248,6 +90806,10 @@ paths:
                                 additionalProperties: true
                             start_offset:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -92596,6 +93158,10 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         transaction_rules:
                           type: array
                           items:
@@ -92762,6 +93328,10 @@ paths:
                               additionalProperties: true
                           start_offset:
                             type: string
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           vusers:
                             type: integer
                             format: int64
@@ -94187,6 +94757,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -94358,6 +94932,10 @@ paths:
                                 additionalProperties: true
                             start_offset:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -95996,6 +96574,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -96167,6 +96749,10 @@ paths:
                                 additionalProperties: true
                             start_offset:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -97427,6 +98013,10 @@ paths:
                           type: number
                           format: double
                           nullable: true
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         transaction_rules:
                           type: array
                           items:
@@ -97593,6 +98183,10 @@ paths:
                               additionalProperties: true
                           start_offset:
                             type: string
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           vusers:
                             type: integer
                             format: int64
@@ -99018,6 +99612,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -99189,6 +99787,10 @@ paths:
                                 additionalProperties: true
                             start_offset:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -100346,6 +100948,10 @@ paths:
                       type: number
                       format: double
                       nullable: true
+                    transaction_response_time_sla_ms:
+                      type: number
+                      format: double
+                      nullable: true
                     transaction_rules:
                       type: array
                       items:
@@ -100878,6 +101484,10 @@ paths:
                               type: string
                       start_offset:
                         type: string
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       vusers:
                         type: integer
                         format: int64
@@ -192260,6 +192870,10 @@ paths:
                       type: number
                       format: double
                       nullable: true
+                    transaction_response_time_sla_ms:
+                      type: number
+                      format: double
+                      nullable: true
                     transaction_rules:
                       type: array
                       items:
@@ -192792,6 +193406,10 @@ paths:
                               type: string
                       start_offset:
                         type: string
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       vusers:
                         type: integer
                         format: int64
@@ -194562,6 +195180,10 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       transaction_rules:
                         type: array
                         items:
@@ -195199,6 +195821,10 @@ paths:
                           type: string
                         target_duration:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -196224,6 +196850,53 @@ paths:
                         tps:
                           type: number
                           format: double
+                        transaction_response_time_sla:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              eligible_success_count:
+                                type: integer
+                                format: int64
+                              excluded_error_count:
+                                type: integer
+                                format: int64
+                              group:
+                                type: string
+                              met_pct:
+                                type: number
+                                format: double
+                              missed_count:
+                                type: integer
+                                format: int64
+                              missed_pct:
+                                type: number
+                                format: double
+                              required_met_pct:
+                                type: number
+                                format: double
+                              status:
+                                type: string
+                              threshold_ms:
+                                type: number
+                                format: double
+                              total_count:
+                                type: integer
+                                format: int64
+                              transaction:
+                                type: string
+                            required:
+                              - eligible_success_count
+                              - excluded_error_count
+                              - group
+                              - met_pct
+                              - missed_count
+                              - missed_pct
+                              - required_met_pct
+                              - status
+                              - threshold_ms
+                              - total_count
+                              - transaction
                         transactions:
                           type: object
                           additionalProperties:
@@ -198145,6 +198818,53 @@ paths:
                       tps:
                         type: number
                         format: double
+                      transaction_response_time_sla:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            eligible_success_count:
+                              type: integer
+                              format: int64
+                            excluded_error_count:
+                              type: integer
+                              format: int64
+                            group:
+                              type: string
+                            met_pct:
+                              type: number
+                              format: double
+                            missed_count:
+                              type: integer
+                              format: int64
+                            missed_pct:
+                              type: number
+                              format: double
+                            required_met_pct:
+                              type: number
+                              format: double
+                            status:
+                              type: string
+                            threshold_ms:
+                              type: number
+                              format: double
+                            total_count:
+                              type: integer
+                              format: int64
+                            transaction:
+                              type: string
+                          required:
+                            - eligible_success_count
+                            - excluded_error_count
+                            - group
+                            - met_pct
+                            - missed_count
+                            - missed_pct
+                            - required_met_pct
+                            - status
+                            - threshold_ms
+                            - total_count
+                            - transaction
                       transactions:
                         type: object
                         additionalProperties:
@@ -200564,6 +201284,10 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       transaction_rules:
                         type: array
                         items:
@@ -201201,6 +201925,10 @@ paths:
                           type: string
                         target_duration:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -202226,6 +202954,53 @@ paths:
                         tps:
                           type: number
                           format: double
+                        transaction_response_time_sla:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              eligible_success_count:
+                                type: integer
+                                format: int64
+                              excluded_error_count:
+                                type: integer
+                                format: int64
+                              group:
+                                type: string
+                              met_pct:
+                                type: number
+                                format: double
+                              missed_count:
+                                type: integer
+                                format: int64
+                              missed_pct:
+                                type: number
+                                format: double
+                              required_met_pct:
+                                type: number
+                                format: double
+                              status:
+                                type: string
+                              threshold_ms:
+                                type: number
+                                format: double
+                              total_count:
+                                type: integer
+                                format: int64
+                              transaction:
+                                type: string
+                            required:
+                              - eligible_success_count
+                              - excluded_error_count
+                              - group
+                              - met_pct
+                              - missed_count
+                              - missed_pct
+                              - required_met_pct
+                              - status
+                              - threshold_ms
+                              - total_count
+                              - transaction
                         transactions:
                           type: object
                           additionalProperties:
@@ -204147,6 +204922,53 @@ paths:
                       tps:
                         type: number
                         format: double
+                      transaction_response_time_sla:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            eligible_success_count:
+                              type: integer
+                              format: int64
+                            excluded_error_count:
+                              type: integer
+                              format: int64
+                            group:
+                              type: string
+                            met_pct:
+                              type: number
+                              format: double
+                            missed_count:
+                              type: integer
+                              format: int64
+                            missed_pct:
+                              type: number
+                              format: double
+                            required_met_pct:
+                              type: number
+                              format: double
+                            status:
+                              type: string
+                            threshold_ms:
+                              type: number
+                              format: double
+                            total_count:
+                              type: integer
+                              format: int64
+                            transaction:
+                              type: string
+                          required:
+                            - eligible_success_count
+                            - excluded_error_count
+                            - group
+                            - met_pct
+                            - missed_count
+                            - missed_pct
+                            - required_met_pct
+                            - status
+                            - threshold_ms
+                            - total_count
+                            - transaction
                       transactions:
                         type: object
                         additionalProperties:
@@ -206929,6 +207751,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -207257,6 +208083,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -208488,6 +209318,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -208816,6 +209650,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -209549,6 +210387,53 @@ paths:
                   transaction_count:
                     type: integer
                     format: int64
+                  transaction_response_time_sla_results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        eligible_success_count:
+                          type: integer
+                          format: int64
+                        excluded_error_count:
+                          type: integer
+                          format: int64
+                        group:
+                          type: string
+                        met_pct:
+                          type: number
+                          format: double
+                        missed_count:
+                          type: integer
+                          format: int64
+                        missed_pct:
+                          type: number
+                          format: double
+                        required_met_pct:
+                          type: number
+                          format: double
+                        status:
+                          type: string
+                        threshold_ms:
+                          type: number
+                          format: double
+                        total_count:
+                          type: integer
+                          format: int64
+                        transaction:
+                          type: string
+                      required:
+                        - eligible_success_count
+                        - excluded_error_count
+                        - group
+                        - met_pct
+                        - missed_count
+                        - missed_pct
+                        - required_met_pct
+                        - status
+                        - threshold_ms
+                        - total_count
+                        - transaction
                   transaction_rule_results:
                     type: array
                     items:
@@ -210907,6 +211792,10 @@ paths:
                                 type: number
                                 format: double
                                 nullable: true
+                              transaction_response_time_sla_ms:
+                                type: number
+                                format: double
+                                nullable: true
                               transaction_rules:
                                 type: array
                                 items:
@@ -211013,6 +211902,10 @@ paths:
                                   type: string
                                 target_duration:
                                   type: string
+                                transaction_response_time_sla_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
                                 vusers:
                                   type: integer
                                   format: int64
@@ -211630,6 +212523,10 @@ paths:
                                 type: number
                                 format: double
                                 nullable: true
+                              transaction_response_time_sla_ms:
+                                type: number
+                                format: double
+                                nullable: true
                               transaction_rules:
                                 type: array
                                 items:
@@ -211736,6 +212633,10 @@ paths:
                                   type: string
                                 target_duration:
                                   type: string
+                                transaction_response_time_sla_ms:
+                                  type: number
+                                  format: double
+                                  nullable: true
                                 vusers:
                                   type: integer
                                   format: int64
@@ -211968,6 +212869,53 @@ paths:
                       transaction_count:
                         type: integer
                         format: int64
+                      transaction_response_time_sla_results:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            eligible_success_count:
+                              type: integer
+                              format: int64
+                            excluded_error_count:
+                              type: integer
+                              format: int64
+                            group:
+                              type: string
+                            met_pct:
+                              type: number
+                              format: double
+                            missed_count:
+                              type: integer
+                              format: int64
+                            missed_pct:
+                              type: number
+                              format: double
+                            required_met_pct:
+                              type: number
+                              format: double
+                            status:
+                              type: string
+                            threshold_ms:
+                              type: number
+                              format: double
+                            total_count:
+                              type: integer
+                              format: int64
+                            transaction:
+                              type: string
+                          required:
+                            - eligible_success_count
+                            - excluded_error_count
+                            - group
+                            - met_pct
+                            - missed_count
+                            - missed_pct
+                            - required_met_pct
+                            - status
+                            - threshold_ms
+                            - total_count
+                            - transaction
                       transaction_rule_results:
                         type: array
                         items:
@@ -213019,6 +213967,53 @@ paths:
                         - total_errors
                         - total_transactions
                         - tps
+                  transaction_response_time_sla_results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        eligible_success_count:
+                          type: integer
+                          format: int64
+                        excluded_error_count:
+                          type: integer
+                          format: int64
+                        group:
+                          type: string
+                        met_pct:
+                          type: number
+                          format: double
+                        missed_count:
+                          type: integer
+                          format: int64
+                        missed_pct:
+                          type: number
+                          format: double
+                        required_met_pct:
+                          type: number
+                          format: double
+                        status:
+                          type: string
+                        threshold_ms:
+                          type: number
+                          format: double
+                        total_count:
+                          type: integer
+                          format: int64
+                        transaction:
+                          type: string
+                      required:
+                        - eligible_success_count
+                        - excluded_error_count
+                        - group
+                        - met_pct
+                        - missed_count
+                        - missed_pct
+                        - required_met_pct
+                        - status
+                        - threshold_ms
+                        - total_count
+                        - transaction
                   verdict:
                     type: object
                     properties:
@@ -214731,6 +215726,10 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       transaction_rules:
                         type: array
                         items:
@@ -215368,6 +216367,10 @@ paths:
                           type: string
                         target_duration:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -216393,6 +217396,53 @@ paths:
                         tps:
                           type: number
                           format: double
+                        transaction_response_time_sla:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              eligible_success_count:
+                                type: integer
+                                format: int64
+                              excluded_error_count:
+                                type: integer
+                                format: int64
+                              group:
+                                type: string
+                              met_pct:
+                                type: number
+                                format: double
+                              missed_count:
+                                type: integer
+                                format: int64
+                              missed_pct:
+                                type: number
+                                format: double
+                              required_met_pct:
+                                type: number
+                                format: double
+                              status:
+                                type: string
+                              threshold_ms:
+                                type: number
+                                format: double
+                              total_count:
+                                type: integer
+                                format: int64
+                              transaction:
+                                type: string
+                            required:
+                              - eligible_success_count
+                              - excluded_error_count
+                              - group
+                              - met_pct
+                              - missed_count
+                              - missed_pct
+                              - required_met_pct
+                              - status
+                              - threshold_ms
+                              - total_count
+                              - transaction
                         transactions:
                           type: object
                           additionalProperties:
@@ -218314,6 +219364,53 @@ paths:
                       tps:
                         type: number
                         format: double
+                      transaction_response_time_sla:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            eligible_success_count:
+                              type: integer
+                              format: int64
+                            excluded_error_count:
+                              type: integer
+                              format: int64
+                            group:
+                              type: string
+                            met_pct:
+                              type: number
+                              format: double
+                            missed_count:
+                              type: integer
+                              format: int64
+                            missed_pct:
+                              type: number
+                              format: double
+                            required_met_pct:
+                              type: number
+                              format: double
+                            status:
+                              type: string
+                            threshold_ms:
+                              type: number
+                              format: double
+                            total_count:
+                              type: integer
+                              format: int64
+                            transaction:
+                              type: string
+                          required:
+                            - eligible_success_count
+                            - excluded_error_count
+                            - group
+                            - met_pct
+                            - missed_count
+                            - missed_pct
+                            - required_met_pct
+                            - status
+                            - threshold_ms
+                            - total_count
+                            - transaction
                       transactions:
                         type: object
                         additionalProperties:
@@ -220677,6 +221774,10 @@ paths:
                         type: number
                         format: double
                         nullable: true
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       transaction_rules:
                         type: array
                         items:
@@ -221314,6 +222415,10 @@ paths:
                           type: string
                         target_duration:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -222339,6 +223444,53 @@ paths:
                         tps:
                           type: number
                           format: double
+                        transaction_response_time_sla:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              eligible_success_count:
+                                type: integer
+                                format: int64
+                              excluded_error_count:
+                                type: integer
+                                format: int64
+                              group:
+                                type: string
+                              met_pct:
+                                type: number
+                                format: double
+                              missed_count:
+                                type: integer
+                                format: int64
+                              missed_pct:
+                                type: number
+                                format: double
+                              required_met_pct:
+                                type: number
+                                format: double
+                              status:
+                                type: string
+                              threshold_ms:
+                                type: number
+                                format: double
+                              total_count:
+                                type: integer
+                                format: int64
+                              transaction:
+                                type: string
+                            required:
+                              - eligible_success_count
+                              - excluded_error_count
+                              - group
+                              - met_pct
+                              - missed_count
+                              - missed_pct
+                              - required_met_pct
+                              - status
+                              - threshold_ms
+                              - total_count
+                              - transaction
                         transactions:
                           type: object
                           additionalProperties:
@@ -224260,6 +225412,53 @@ paths:
                       tps:
                         type: number
                         format: double
+                      transaction_response_time_sla:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            eligible_success_count:
+                              type: integer
+                              format: int64
+                            excluded_error_count:
+                              type: integer
+                              format: int64
+                            group:
+                              type: string
+                            met_pct:
+                              type: number
+                              format: double
+                            missed_count:
+                              type: integer
+                              format: int64
+                            missed_pct:
+                              type: number
+                              format: double
+                            required_met_pct:
+                              type: number
+                              format: double
+                            status:
+                              type: string
+                            threshold_ms:
+                              type: number
+                              format: double
+                            total_count:
+                              type: integer
+                              format: int64
+                            transaction:
+                              type: string
+                          required:
+                            - eligible_success_count
+                            - excluded_error_count
+                            - group
+                            - met_pct
+                            - missed_count
+                            - missed_pct
+                            - required_met_pct
+                            - status
+                            - threshold_ms
+                            - total_count
+                            - transaction
                       transactions:
                         type: object
                         additionalProperties:
@@ -230142,6 +231341,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -230383,6 +231586,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -231298,6 +232505,10 @@ paths:
                             type: number
                             format: double
                             nullable: true
+                          transaction_response_time_sla_ms:
+                            type: number
+                            format: double
+                            nullable: true
                           transaction_rules:
                             type: array
                             items:
@@ -231539,6 +232750,10 @@ paths:
                               type: string
                             target_duration:
                               type: string
+                            transaction_response_time_sla_ms:
+                              type: number
+                              format: double
+                              nullable: true
                             vusers:
                               type: integer
                               format: int64
@@ -235313,6 +236528,10 @@ paths:
                       type: number
                       format: double
                       nullable: true
+                    transaction_response_time_sla_ms:
+                      type: number
+                      format: double
+                      nullable: true
                     transaction_rules:
                       type: array
                       items:
@@ -235845,6 +237064,10 @@ paths:
                               type: string
                       start_offset:
                         type: string
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       vusers:
                         type: integer
                         format: int64
@@ -237511,6 +238734,10 @@ paths:
                           type: string
                         target_duration:
                           type: string
+                        transaction_response_time_sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
                         vusers:
                           type: integer
                           format: int64
@@ -237817,6 +239044,10 @@ paths:
                       type: number
                       format: double
                       nullable: true
+                    transaction_response_time_sla_ms:
+                      type: number
+                      format: double
+                      nullable: true
                     transaction_rules:
                       type: array
                       items:
@@ -237983,6 +239214,10 @@ paths:
                           additionalProperties: true
                       start_offset:
                         type: string
+                      transaction_response_time_sla_ms:
+                        type: number
+                        format: double
+                        nullable: true
                       vusers:
                         type: integer
                         format: int64

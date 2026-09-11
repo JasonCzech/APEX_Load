@@ -254,9 +254,9 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 		}
 	}
 	if editablePasswordSource == nil ||
-		strings.Contains(editablePasswordSource.InlineData, "synthetic-value") ||
-		!strings.Contains(editablePasswordSource.InlineData, maskedScriptSecret) {
-		t.Fatalf("editable enterprise destination was not disclosure-safe: %#v", editableScript.DataSources)
+		!strings.Contains(editablePasswordSource.InlineData, "synthetic-value") ||
+		strings.Contains(editablePasswordSource.InlineData, maskedScriptSecret) {
+		t.Fatalf("editable enterprise destination did not preserve its imported value: %#v", editableScript.DataSources)
 	}
 	var reviewResult struct {
 		Script dsl.Script `json:"script"`
@@ -272,9 +272,9 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 		}
 	}
 	if reviewPasswordSource == nil ||
-		strings.Contains(reviewPasswordSource.InlineData, "synthetic-value") ||
-		!strings.Contains(reviewPasswordSource.InlineData, maskedScriptSecret) {
-		t.Fatalf("enterprise review copy was not disclosure-safe: %#v", reviewResult.Script.DataSources)
+		!strings.Contains(reviewPasswordSource.InlineData, "synthetic-value") ||
+		strings.Contains(reviewPasswordSource.InlineData, maskedScriptSecret) {
+		t.Fatalf("enterprise review copy did not preserve its imported value: %#v", reviewResult.Script.DataSources)
 	}
 	for _, field := range []string{
 		"source_secret_session_id",

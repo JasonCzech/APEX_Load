@@ -104,6 +104,10 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		value := *config.P95LatencyMs
 		clone.P95LatencyMs = &value
 	}
+	if config.TransactionResponseTimeSLAMs != nil {
+		value := *config.TransactionResponseTimeSLAMs
+		clone.TransactionResponseTimeSLAMs = &value
+	}
 	if config.MaxErrorPct != nil {
 		value := *config.MaxErrorPct
 		clone.MaxErrorPct = &value
@@ -176,6 +180,7 @@ func hasGoalConfig(config *GoalConfig) bool {
 	}
 	return config.TargetAverageTPS != nil ||
 		config.P95LatencyMs != nil ||
+		config.TransactionResponseTimeSLAMs != nil ||
 		config.MaxErrorPct != nil ||
 		config.MaxAvgServerProcessingMs != nil ||
 		config.MaxAvgTransferMs != nil ||

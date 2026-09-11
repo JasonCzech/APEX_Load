@@ -42,33 +42,34 @@ func groupActiveVUsers(gm *engine.GroupMetrics, configured int) int {
 
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
 	live := &LiveMetrics{
-		Timestamp:              snap.Timestamp,
-		ActiveVUsers:           snap.ActiveVUsers,
-		TPS:                    snap.TPS,
-		TargetTPS:              snap.TargetTPS,
-		ThroughputGapPct:       snap.ThroughputGapPct,
-		ThroughputTargetMissed: snap.ThroughputTargetMissed,
-		AvgResponseMs:          float64(snap.AvgDuration.Microseconds()) / 1000.0,
-		TotalTx:                snap.Transactions,
-		TotalErrors:            snap.Errors,
-		P50Ms:                  float64(snap.P50.Microseconds()) / 1000.0,
-		P90Ms:                  float64(snap.P90.Microseconds()) / 1000.0,
-		P95Ms:                  float64(snap.P95.Microseconds()) / 1000.0,
-		P99Ms:                  float64(snap.P99.Microseconds()) / 1000.0,
-		AvgDNSMs:               snap.AvgDNSMs,
-		AvgConnectMs:           snap.AvgConnectMs,
-		AvgTLSMs:               snap.AvgTLSMs,
-		AvgTTFBMs:              snap.AvgTTFBMs,
-		AvgWaitMs:              snap.AvgWaitMs,
-		ErrorBreakdown:         copyErrorClassCounts(snap.ErrorsByClass),
-		Transactions:           make(map[string]*TxMetrics),
-		DependencyHealth:       make(map[string]*TxMetrics),
-		SOAPOperations:         make(map[string]*TxMetrics),
-		GroupMetrics:           make(map[string]*GroupLiveMetrics),
-		NetworkProfiles:        make(map[string]*TxMetrics),
-		ByRegion:               make(map[string]*TxMetrics),
-		Resources:              snap.Resources,
-		SampleWindowSeconds:    snap.Window.Seconds(),
+		Timestamp:                  snap.Timestamp,
+		ActiveVUsers:               snap.ActiveVUsers,
+		TPS:                        snap.TPS,
+		TargetTPS:                  snap.TargetTPS,
+		ThroughputGapPct:           snap.ThroughputGapPct,
+		ThroughputTargetMissed:     snap.ThroughputTargetMissed,
+		AvgResponseMs:              float64(snap.AvgDuration.Microseconds()) / 1000.0,
+		TotalTx:                    snap.Transactions,
+		TotalErrors:                snap.Errors,
+		P50Ms:                      float64(snap.P50.Microseconds()) / 1000.0,
+		P90Ms:                      float64(snap.P90.Microseconds()) / 1000.0,
+		P95Ms:                      float64(snap.P95.Microseconds()) / 1000.0,
+		P99Ms:                      float64(snap.P99.Microseconds()) / 1000.0,
+		AvgDNSMs:                   snap.AvgDNSMs,
+		AvgConnectMs:               snap.AvgConnectMs,
+		AvgTLSMs:                   snap.AvgTLSMs,
+		AvgTTFBMs:                  snap.AvgTTFBMs,
+		AvgWaitMs:                  snap.AvgWaitMs,
+		ErrorBreakdown:             copyErrorClassCounts(snap.ErrorsByClass),
+		Transactions:               make(map[string]*TxMetrics),
+		DependencyHealth:           make(map[string]*TxMetrics),
+		SOAPOperations:             make(map[string]*TxMetrics),
+		GroupMetrics:               make(map[string]*GroupLiveMetrics),
+		NetworkProfiles:            make(map[string]*TxMetrics),
+		ByRegion:                   make(map[string]*TxMetrics),
+		Resources:                  snap.Resources,
+		TransactionResponseTimeSLA: transactionResponseTimeSLAResultsFromEngine(snap.TransactionResponseTimeSLA),
+		SampleWindowSeconds:        snap.Window.Seconds(),
 	}
 	if snap.Browser != nil {
 		live.Browser = &BrowserLiveMetrics{
@@ -160,6 +161,21 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 	}
 
 	return live
+}
+
+func transactionResponseTimeSLAResultsFromEngine(values []engine.TransactionResponseTimeSLACompliance) []TransactionResponseTimeSLAResult {
+	if len(values) == 0 {
+		return nil
+	}
+	results := make([]TransactionResponseTimeSLAResult, 0, len(values))
+	for _, value := range values {
+		acc := &transactionResponseTimeSLAAccumulator{
+			total: value.TotalCount, eligible: value.EligibleSuccessCount,
+			excluded: value.ExcludedErrorCount, missed: value.MissedCount,
+		}
+		results = append(results, buildTransactionResponseTimeSLAResult(value.Group, value.Transaction, value.ThresholdMs, acc))
+	}
+	return results
 }
 
 func buildLiveDependencyMap(dependencies map[string]*TxMetrics) *LiveDependencyMap {

@@ -1266,6 +1266,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				MessageDetailMaxItems:      authoredMessageDetailMaxItems(group.script),
 				MessageDetailMaxItemBytes:  authoredMessageDetailMaxItemBytes(group.script),
 				MessageDetailMaxTotalBytes: authoredMessageDetailMaxTotalBytes(group.script),
+				TransactionResponseTimeSLAMs: func() float64 {
+					threshold, _ := effectiveTransactionResponseTimeSLAForTestGroup(test, group.Name)
+					return threshold
+				}(),
 			},
 			group.ScriptName,
 			func() bool { return distributedRunStartable(tr, test) },

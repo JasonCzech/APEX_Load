@@ -175,7 +175,7 @@ func TestPreparePersistentBrunoNativeScriptPreservesSafeCompactProvenance(t *tes
 	}
 }
 
-func TestPreparePersistentBrunoNativeScriptDoesNotRestoreUntrustedProvenanceValues(t *testing.T) {
+func TestPreparePersistentBrunoNativeScriptPreservesSourceValuesWithoutTrustingFindingIDs(t *testing.T) {
 	script := &dsl.Script{
 		ID: "native-provenance-untrusted", Name: "Native provenance untrusted", Version: "1", Protocol: "http",
 		GeneratedBy: brunoNativeImporterIdentity,
@@ -204,9 +204,11 @@ func TestPreparePersistentBrunoNativeScriptDoesNotRestoreUntrustedProvenanceValu
 	if err != nil {
 		t.Fatalf("marshal projected provenance: %v", err)
 	}
-	if strings.Contains(string(payload), "source-password-must-not-persist") ||
-		strings.Contains(string(payload), "bruno-native-not-hex") {
-		t.Fatalf("untrusted provenance survived projection: %s", payload)
+	if !strings.Contains(string(payload), "source-password-must-not-persist") {
+		t.Fatalf("imported provenance values were not preserved: %s", payload)
+	}
+	if strings.Contains(string(payload), "bruno-native-not-hex") {
+		t.Fatalf("malformed internal finding ID was trusted: %s", payload)
 	}
 }
 

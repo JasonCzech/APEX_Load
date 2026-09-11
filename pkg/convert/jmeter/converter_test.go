@@ -1420,7 +1420,7 @@ func TestConvertJMXDerivesFirstSamplerBaseAndPreservesCrossHostTarget(t *testing
 	}
 }
 
-func TestConvertJMXProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *testing.T) {
+func TestConvertJMXPreservesCredentialsAndIsDeterministic(t *testing.T) {
 	const (
 		urlCanary      = "jmeter-url-canary-22f1"
 		headerCanary   = "jmeter-header-canary-9d63"
@@ -1526,8 +1526,8 @@ func TestConvertJMXProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *tes
 			t.Fatalf("run %d: marshal source review: %v", run, err)
 		}
 		for _, canary := range []string{urlCanary, headerCanary, passwordCanary, bodyCanary} {
-			if strings.Contains(string(sourceReview), canary) {
-				t.Fatalf("run %d: source review disclosed canary %q: %s", run, canary, sourceReview)
+			if !strings.Contains(string(sourceReview), canary) {
+				t.Fatalf("run %d: source review lost canary %q: %s", run, canary, sourceReview)
 			}
 		}
 		hash := sha256.Sum256(payload)

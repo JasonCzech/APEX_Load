@@ -142,11 +142,10 @@
     ],
     "source_files": [
       {
-        "content": "// [SOURCE OMITTED FROM PUBLIC IMPORT REVIEW]\n// [SOURCE OMITTED FROM PUBLIC IMPORT REVIEW]\n// [SOURCE OMITTED FROM PUBLIC IMPORT REVIEW]",
+        "content": "load.action(\"Escaped\", async function () {\n\t\t\t\t  await new load.WebRequest({url: \"https://api.example.test/\\q\", method: \"GET\"}).send();\n\t\t\t\t});",
         "language": "javascript",
-        "original_bytes": 137,
-        "path": "invalid.js",
-        "redacted": true
+        "original_bytes": 143,
+        "path": "invalid.js"
       }
     ],
     "total_source_files": 1

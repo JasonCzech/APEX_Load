@@ -1656,6 +1656,19 @@ export interface operations {
               "test_name"?: string;
               "test_notes_file"?: string;
               "transaction_count"?: number;
+              "transaction_response_time_sla_results"?: Array<{
+                "eligible_success_count"?: number;
+                "excluded_error_count"?: number;
+                "group"?: string;
+                "met_pct"?: number;
+                "missed_count"?: number;
+                "missed_pct"?: number;
+                "required_met_pct"?: number;
+                "status"?: string;
+                "threshold_ms"?: number;
+                "total_count"?: number;
+                "transaction"?: string;
+              }>;
               "transaction_rule_results"?: Array<{
                 "matched_count"?: number;
                 "message"?: string;
@@ -1963,6 +1976,19 @@ export interface operations {
               "total_transactions"?: number;
               "tps"?: number;
             }>;
+            "transaction_response_time_sla_results"?: Array<{
+              "eligible_success_count"?: number;
+              "excluded_error_count"?: number;
+              "group"?: string;
+              "met_pct"?: number;
+              "missed_count"?: number;
+              "missed_pct"?: number;
+              "required_met_pct"?: number;
+              "status"?: string;
+              "threshold_ms"?: number;
+              "total_count"?: number;
+              "transaction"?: string;
+            }>;
             "verdict"?: ({
               "conditional"?: boolean;
               "explanation"?: string;
@@ -2250,6 +2276,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "metric"?: string;
@@ -2304,6 +2331,7 @@ export interface operations {
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
               "start_offset"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
             "name"?: string;
@@ -7411,6 +7439,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -7675,6 +7704,7 @@ export interface operations {
                 "script_name"?: string;
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "start_delay"?: string;
@@ -16211,6 +16241,7 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "metric"?: string;
@@ -16265,6 +16296,7 @@ export interface operations {
             "script_id"?: string;
             "stages"?: Array<Record<string, unknown>>;
             "start_offset"?: string;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
           "name"?: string;
@@ -16481,6 +16513,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "metric"?: string;
@@ -16535,6 +16568,7 @@ export interface operations {
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
               "start_offset"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
             "name"?: string;
@@ -17076,6 +17110,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -17160,6 +17195,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -17330,6 +17366,7 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<Record<string, unknown>>;
                 "transactions"?: Record<string, (Record<string, unknown>) | null>;
               }) | null>;
               "id": string;
@@ -17654,6 +17691,19 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<{
+                  "eligible_success_count": number;
+                  "excluded_error_count": number;
+                  "group": string;
+                  "met_pct": number;
+                  "missed_count": number;
+                  "missed_pct": number;
+                  "required_met_pct": number;
+                  "status": string;
+                  "threshold_ms": number;
+                  "total_count": number;
+                  "transaction": string;
+                }>;
                 "transactions"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -18466,6 +18516,7 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "metric"?: string;
@@ -18657,6 +18708,7 @@ export interface operations {
               "type"?: string;
             }>;
             "start_offset"?: string;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
           "name": string;
@@ -19045,6 +19097,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "metric": string;
@@ -19553,6 +19606,7 @@ export interface operations {
                 "type": string;
               }>;
               "start_offset"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "start_delay"?: string;
@@ -21428,6 +21482,7 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "metric"?: string;
@@ -21619,6 +21674,7 @@ export interface operations {
               "type"?: string;
             }>;
             "start_offset"?: string;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
           "name"?: string;
@@ -22266,6 +22322,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "metric": string;
@@ -22487,6 +22544,7 @@ export interface operations {
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -22810,6 +22868,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -23419,6 +23490,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -25792,6 +25876,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "metric"?: string;
@@ -25846,6 +25931,7 @@ export interface operations {
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
               "start_offset"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
             "name"?: string;
@@ -26367,6 +26453,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -26421,6 +26508,7 @@ export interface operations {
                 "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "name": string;
@@ -26864,6 +26952,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator"?: string;
                 "metric"?: string;
@@ -26918,6 +27007,7 @@ export interface operations {
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
               "start_offset"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers"?: number;
             }>;
             "name"?: string;
@@ -27439,6 +27529,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -27493,6 +27584,7 @@ export interface operations {
                 "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "name": string;
@@ -28983,6 +29075,7 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "metric"?: string;
@@ -29174,6 +29267,7 @@ export interface operations {
               "type"?: string;
             }>;
             "start_offset"?: string;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
           "name"?: string;
@@ -29804,6 +29898,7 @@ export interface operations {
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "resource_baseline"?: boolean;
@@ -35557,6 +35652,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -35641,6 +35737,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -35811,6 +35908,7 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<Record<string, unknown>>;
                 "transactions"?: Record<string, (Record<string, unknown>) | null>;
               }) | null>;
               "id": string;
@@ -36135,6 +36233,19 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<{
+                  "eligible_success_count": number;
+                  "excluded_error_count": number;
+                  "group": string;
+                  "met_pct": number;
+                  "missed_count": number;
+                  "missed_pct": number;
+                  "required_met_pct": number;
+                  "status": string;
+                  "threshold_ms": number;
+                  "total_count": number;
+                  "transaction": string;
+                }>;
                 "transactions"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -36983,6 +37094,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -37094,6 +37206,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "project_id"?: string;
@@ -37507,6 +37620,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -37618,6 +37732,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "project_id"?: string;
@@ -37883,6 +37998,19 @@ export interface operations {
             "test_name": string;
             "test_notes_file"?: string;
             "transaction_count": number;
+            "transaction_response_time_sla_results"?: Array<{
+              "eligible_success_count": number;
+              "excluded_error_count": number;
+              "group": string;
+              "met_pct": number;
+              "missed_count": number;
+              "missed_pct": number;
+              "required_met_pct": number;
+              "status": string;
+              "threshold_ms": number;
+              "total_count": number;
+              "transaction": string;
+            }>;
             "transaction_rule_results"?: Array<{
               "matched_count": number;
               "message": string;
@@ -38336,6 +38464,7 @@ export interface operations {
                   "stop_on_max_errors"?: boolean;
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
+                  "transaction_response_time_sla_ms"?: (number) | null;
                   "transaction_rules"?: Array<Record<string, unknown>>;
                   "workload_shape_config"?: (Record<string, unknown>) | null;
                 }) | null;
@@ -38369,6 +38498,7 @@ export interface operations {
                   "stages"?: Array<Record<string, unknown>>;
                   "start_offset"?: string;
                   "target_duration"?: string;
+                  "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
                 "project_id"?: string;
@@ -38558,6 +38688,7 @@ export interface operations {
                   "stop_on_max_errors"?: boolean;
                   "stop_on_sla_breach"?: boolean;
                   "target_average_tps"?: (number) | null;
+                  "transaction_response_time_sla_ms"?: (number) | null;
                   "transaction_rules"?: Array<Record<string, unknown>>;
                   "workload_shape_config"?: (Record<string, unknown>) | null;
                 }) | null;
@@ -38591,6 +38722,7 @@ export interface operations {
                   "stages"?: Array<Record<string, unknown>>;
                   "start_offset"?: string;
                   "target_duration"?: string;
+                  "transaction_response_time_sla_ms"?: (number) | null;
                   "vusers": number;
                 }>;
                 "project_id"?: string;
@@ -38666,6 +38798,19 @@ export interface operations {
               "test_name": string;
               "test_notes_file"?: string;
               "transaction_count": number;
+              "transaction_response_time_sla_results"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transaction_rule_results"?: Array<{
                 "matched_count": number;
                 "message": string;
@@ -38990,6 +39135,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+            }>;
+            "transaction_response_time_sla_results"?: Array<{
+              "eligible_success_count": number;
+              "excluded_error_count": number;
+              "group": string;
+              "met_pct": number;
+              "missed_count": number;
+              "missed_pct": number;
+              "required_met_pct": number;
+              "status": string;
+              "threshold_ms": number;
+              "total_count": number;
+              "transaction": string;
             }>;
             "verdict"?: ({
               "conditional": boolean;
@@ -39490,6 +39648,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "metric": string;
@@ -39998,6 +40157,7 @@ export interface operations {
                 "type": string;
               }>;
               "start_offset"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "start_delay"?: string;
@@ -42350,6 +42510,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "metric": string;
@@ -42571,6 +42732,7 @@ export interface operations {
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -42894,6 +43056,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -43503,6 +43678,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -45182,6 +45370,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -45261,6 +45450,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "resource_baseline"?: boolean;
@@ -45580,6 +45770,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -45659,6 +45850,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "resource_baseline"?: boolean;
@@ -54841,6 +55033,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "metric": string;
@@ -55062,6 +55255,7 @@ export interface operations {
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -55385,6 +55579,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -55994,6 +56201,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -56668,6 +56888,7 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "metric"?: string;
@@ -56722,6 +56943,7 @@ export interface operations {
             "script_id"?: string;
             "stages"?: Array<Record<string, unknown>>;
             "start_offset"?: string;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
           "intent"?: string;
@@ -61928,6 +62150,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -62012,6 +62235,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -62182,6 +62406,7 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<Record<string, unknown>>;
                 "transactions"?: Record<string, (Record<string, unknown>) | null>;
               }) | null>;
               "id": string;
@@ -62506,6 +62731,19 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<{
+                  "eligible_success_count": number;
+                  "excluded_error_count": number;
+                  "group": string;
+                  "met_pct": number;
+                  "missed_count": number;
+                  "missed_pct": number;
+                  "required_met_pct": number;
+                  "status": string;
+                  "threshold_ms": number;
+                  "total_count": number;
+                  "transaction": string;
+                }>;
                 "transactions"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -63155,6 +63393,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -63239,6 +63478,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -63409,6 +63649,7 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<Record<string, unknown>>;
                 "transactions"?: Record<string, (Record<string, unknown>) | null>;
               }) | null>;
               "id": string;
@@ -63733,6 +63974,19 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<{
+                  "eligible_success_count": number;
+                  "excluded_error_count": number;
+                  "group": string;
+                  "met_pct": number;
+                  "missed_count": number;
+                  "missed_pct": number;
+                  "required_met_pct": number;
+                  "status": string;
+                  "threshold_ms": number;
+                  "total_count": number;
+                  "transaction": string;
+                }>;
                 "transactions"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -64382,6 +64636,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -64466,6 +64721,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -64636,6 +64892,7 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<Record<string, unknown>>;
                 "transactions"?: Record<string, (Record<string, unknown>) | null>;
               }) | null>;
               "id": string;
@@ -64960,6 +65217,19 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<{
+                  "eligible_success_count": number;
+                  "excluded_error_count": number;
+                  "group": string;
+                  "met_pct": number;
+                  "missed_count": number;
+                  "missed_pct": number;
+                  "required_met_pct": number;
+                  "status": string;
+                  "threshold_ms": number;
+                  "total_count": number;
+                  "transaction": string;
+                }>;
                 "transactions"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -65609,6 +65879,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -65693,6 +65964,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -65863,6 +66135,7 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<Record<string, unknown>>;
                 "transactions"?: Record<string, (Record<string, unknown>) | null>;
               }) | null>;
               "id": string;
@@ -66187,6 +66460,19 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<{
+                  "eligible_success_count": number;
+                  "excluded_error_count": number;
+                  "group": string;
+                  "met_pct": number;
+                  "missed_count": number;
+                  "missed_pct": number;
+                  "required_met_pct": number;
+                  "status": string;
+                  "threshold_ms": number;
+                  "total_count": number;
+                  "transaction": string;
+                }>;
                 "transactions"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -66836,6 +67122,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -66920,6 +67207,7 @@ export interface operations {
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
                 "target_duration"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "history"?: Array<({
@@ -67090,6 +67378,7 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<Record<string, unknown>>;
                 "transactions"?: Record<string, (Record<string, unknown>) | null>;
               }) | null>;
               "id": string;
@@ -67414,6 +67703,19 @@ export interface operations {
                 "total_errors": number;
                 "total_transactions": number;
                 "tps": number;
+                "transaction_response_time_sla"?: Array<{
+                  "eligible_success_count": number;
+                  "excluded_error_count": number;
+                  "group": string;
+                  "met_pct": number;
+                  "missed_count": number;
+                  "missed_pct": number;
+                  "required_met_pct": number;
+                  "status": string;
+                  "threshold_ms": number;
+                  "total_count": number;
+                  "transaction": string;
+                }>;
                 "transactions"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -74095,6 +74397,7 @@ export interface operations {
                 "stop_on_max_errors"?: boolean;
                 "stop_on_sla_breach"?: boolean;
                 "target_average_tps"?: (number) | null;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "transaction_rules"?: Array<{
                   "comparator": string;
                   "metric": string;
@@ -74149,6 +74452,7 @@ export interface operations {
                 "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
                 "start_offset"?: string;
+                "transaction_response_time_sla_ms"?: (number) | null;
                 "vusers": number;
               }>;
               "name": string;
@@ -83829,6 +84133,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "metric": string;
@@ -84050,6 +84355,7 @@ export interface operations {
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "history"?: Array<({
@@ -84373,6 +84679,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -84982,6 +85301,19 @@ export interface operations {
               "total_errors": number;
               "total_transactions": number;
               "tps": number;
+              "transaction_response_time_sla"?: Array<{
+                "eligible_success_count": number;
+                "excluded_error_count": number;
+                "group": string;
+                "met_pct": number;
+                "missed_count": number;
+                "missed_pct": number;
+                "required_met_pct": number;
+                "status": string;
+                "threshold_ms": number;
+                "total_count": number;
+                "transaction": string;
+              }>;
               "transactions"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -89120,6 +89452,7 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "metric"?: string;
@@ -89311,6 +89644,7 @@ export interface operations {
               "type"?: string;
             }>;
             "start_offset"?: string;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
           "name": string;
@@ -89699,6 +90033,7 @@ export interface operations {
               "stop_on_max_errors"?: boolean;
               "stop_on_sla_breach"?: boolean;
               "target_average_tps"?: (number) | null;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "transaction_rules"?: Array<{
                 "comparator": string;
                 "metric": string;
@@ -90207,6 +90542,7 @@ export interface operations {
                 "type": string;
               }>;
               "start_offset"?: string;
+              "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
             }>;
             "start_delay"?: string;
@@ -96031,6 +96367,7 @@ export interface operations {
             "stop_on_max_errors"?: boolean;
             "stop_on_sla_breach"?: boolean;
             "target_average_tps"?: (number) | null;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "transaction_rules"?: Array<{
               "comparator"?: string;
               "metric"?: string;
@@ -96222,6 +96559,7 @@ export interface operations {
               "type"?: string;
             }>;
             "start_offset"?: string;
+            "transaction_response_time_sla_ms"?: (number) | null;
             "vusers"?: number;
           }>;
           "name"?: string;

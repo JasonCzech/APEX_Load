@@ -21,13 +21,12 @@ import (
 
 func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t *testing.T) {
 	tests := []struct {
-		name           string
-		profile        string
-		inspectURL     string
-		commitURL      string
-		content        func(string) string
-		protected      func(string) string
-		viewInDataFile bool
+		name       string
+		profile    string
+		inspectURL string
+		commitURL  string
+		content    func(string) string
+		protected  func(string) string
 	}{
 		{
 			name:       "OpenAPI",
@@ -92,7 +91,6 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 			protected: func(value string) string {
 				return "Bearer " + value
 			},
-			viewInDataFile: true,
 		},
 	}
 
@@ -141,15 +139,10 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 			if strings.TrimSpace(inspection.ImportSessionID) == "" {
 				t.Fatal("inspection did not create a protected import session")
 			}
-			// The browser-visible draft is always a disclosure projection. The
-			// encrypted candidate asserted below must retain the exact credential
-			// so commit remains executable without asking the operator to enter it
-			// again.
-			assertScriptOmitsProtectedImportValue(t, &inspection.Script, value)
-			// Review/result sidecars remain disclosure-safe as well.
-			if bytes.Contains(inspection.Result, []byte(value)) ||
-				bytes.Contains(inspection.SourceReview, []byte(value)) {
-				t.Fatal("inspection review evidence disclosed an imported credential")
+			assertScriptContainsProtectedImportValue(t, &inspection.Script, value)
+			if !bytes.Contains(inspection.Result, []byte(value)) ||
+				!bytes.Contains(inspection.SourceReview, []byte(value)) {
+				t.Fatal("inspection review evidence did not preserve an imported credential")
 			}
 			if len(inspection.Requirements) == 0 {
 				t.Fatal("inspection omitted the optional credential migration review")
@@ -191,8 +184,8 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 			if commitResponse.Code != http.StatusCreated {
 				t.Fatalf("commit status = %d", commitResponse.Code)
 			}
-			if bytes.Contains(commitResponse.Body.Bytes(), []byte(value)) {
-				t.Fatal("commit JSON disclosed a protected credential value")
+			if !bytes.Contains(commitResponse.Body.Bytes(), []byte(value)) {
+				t.Fatal("commit JSON did not preserve a protected credential value")
 			}
 			var committed struct {
 				Script       *dsl.Script  `json:"script"`
@@ -204,8 +197,8 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 			if committed.Script == nil || committed.StoredScript.Script == nil || committed.StoredScript.ID == "" {
 				t.Fatal("commit response did not contain the stored script")
 			}
-			assertScriptOmitsProtectedImportValue(t, committed.Script, value)
-			assertScriptOmitsProtectedImportValue(t, committed.StoredScript.Script, value)
+			assertScriptContainsProtectedImportValue(t, committed.Script, value)
+			assertScriptContainsProtectedImportValue(t, committed.StoredScript.Script, value)
 			assertProtectedImportMetadataRemoved(t, committed.Script)
 			assertProtectedImportMetadataRemoved(t, committed.StoredScript.Script)
 			durable, ok := server.runner.GetScript(committed.StoredScript.ID)
@@ -224,11 +217,8 @@ func TestOpenAPIAndPostmanCredentialValuesRemainRunnableThroughProtectedCommit(t
 				t.Fatalf("ordinary read status = %d body=%s", readResponse.Code, readResponse.Body.String())
 			}
 			viewContainsValue := bytes.Contains(readResponse.Body.Bytes(), []byte(value))
-			if test.viewInDataFile && !viewContainsValue {
-				t.Fatal("ordinary stored-script data-file view hid the imported value")
-			}
-			if !test.viewInDataFile && viewContainsValue {
-				t.Fatal("ordinary stored-script read disclosed a credential outside a data file")
+			if !viewContainsValue {
+				t.Fatal("ordinary stored-script read hid the imported value")
 			}
 			assertProtectedImportArtifactsEncrypted(t, artifactDir, value)
 		})
@@ -288,17 +278,17 @@ func TestProtectedOpenAPICredentialValueMigratesWithoutDisclosure(t *testing.T) 
 		!payload.Requirements[0].SourceValueAvailable {
 		t.Fatalf("protected migration metadata = %#v", payload)
 	}
-	assertScriptOmitsProtectedImportValue(t, &payload.Script, value)
+	assertScriptContainsProtectedImportValue(t, &payload.Script, value)
 	projectedScript, err := json.Marshal(payload.Script)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(projectedScript, []byte(maskedScriptSecret)) {
-		t.Fatalf("protected OpenAPI preview omitted its masked credential: %s", projectedScript)
+	if !bytes.Contains(projectedScript, []byte(value)) || bytes.Contains(projectedScript, []byte(maskedScriptSecret)) {
+		t.Fatalf("protected OpenAPI preview did not preserve its credential: %s", projectedScript)
 	}
-	if bytes.Contains(payload.Result, []byte(value)) ||
-		bytes.Contains(payload.SourceReview, []byte(value)) {
-		t.Fatal("inspection review evidence disclosed a migratable OpenAPI credential")
+	if !bytes.Contains(payload.Result, []byte(value)) ||
+		!bytes.Contains(payload.SourceReview, []byte(value)) {
+		t.Fatal("inspection review evidence did not preserve a migratable OpenAPI credential")
 	}
 
 	migration := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", map[string]any{

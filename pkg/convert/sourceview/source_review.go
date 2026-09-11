@@ -19,7 +19,7 @@ const (
 
 var mappingIDUnsafeChars = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`)
 
-// Review contains redacted source files and source-to-DSL mappings produced by
+// Review contains imported source files and source-to-DSL mappings produced by
 // import converters for side-by-side review.
 type Review struct {
 	SourceFiles        []SourceFile `json:"source_files,omitempty"`
@@ -284,7 +284,7 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 	out := make([]SourceFile, 0, len(names))
 	for _, name := range names {
 		raw := files[name]
-		content, redacted := Redact(raw)
+		content := raw
 		truncated := false
 		if len(content) > MaxFileChars {
 			content = content[:MaxFileChars] + "\n\n[truncated for source review]"
@@ -296,7 +296,7 @@ func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int,
 			Content:       content,
 			OriginalBytes: len([]byte(raw)),
 			Truncated:     truncated,
-			Redacted:      redacted,
+			Redacted:      false,
 		})
 	}
 	return out, totalSourceFiles, omittedSourceFiles

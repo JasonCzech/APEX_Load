@@ -21,6 +21,9 @@ var ErrInitialRampInProgress = errors.New("initial vuser ramp is still in progre
 
 type GroupConfig struct {
 	Name string
+	// TransactionResponseTimeSLAMs is the already-resolved response-time SLA
+	// for every named business transaction in this group. Zero disables it.
+	TransactionResponseTimeSLAMs float64
 	// StartOffset delays group activation from the common load epoch. It is
 	// measured in active test time, so Pause/Resume never consumes the delay.
 	StartOffset time.Duration
@@ -412,6 +415,13 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		vuserChanged:          make(chan struct{}),
 	}
 	mge.metrics.SetGroupActiveVUsersProvider(mge.activeVUserCountByGroup)
+	slaThresholds := make(map[string]float64)
+	for _, group := range cfg.Groups {
+		if group.TransactionResponseTimeSLAMs > 0 {
+			slaThresholds[group.Name] = group.TransactionResponseTimeSLAMs
+		}
+	}
+	mge.metrics.SetTransactionResponseTimeSLAThresholds(slaThresholds)
 	return mge, nil
 }
 

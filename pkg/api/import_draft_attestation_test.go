@@ -50,8 +50,8 @@ func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(inspectionJSON, []byte(canary)) || !bytes.Contains(inspectionJSON, []byte(maskedScriptSecret)) {
-		t.Fatalf("opaque inspection draft disclosed or failed to mask imported credential: %s", inspectionJSON)
+	if !bytes.Contains(inspectionJSON, []byte(canary)) || bytes.Contains(inspectionJSON, []byte(maskedScriptSecret)) {
+		t.Fatalf("inspection draft did not preserve imported credential: %s", inspectionJSON)
 	}
 	reviewJSON, err := json.Marshal(response["result"])
 	if err != nil {
@@ -65,8 +65,8 @@ func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing
 	if create.Code != http.StatusCreated {
 		t.Fatalf("attested import save status = %d body=%s", create.Code, create.Body.String())
 	}
-	if strings.Contains(create.Body.String(), canary) {
-		t.Fatalf("ordinary stored-script response disclosed credential: %s", create.Body.String())
+	if !strings.Contains(create.Body.String(), canary) {
+		t.Fatalf("stored-script response did not preserve credential: %s", create.Body.String())
 	}
 	durable, ok := server.runner.GetScript(script.ID)
 	if !ok || durable == nil || durable.Script == nil {
@@ -87,7 +87,7 @@ func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing
 		read,
 		httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+script.ID, nil),
 	)
-	if read.Code != http.StatusOK || strings.Contains(read.Body.String(), canary) {
+	if read.Code != http.StatusOK || !strings.Contains(read.Body.String(), canary) {
 		t.Fatalf("stored-script read = %d %s", read.Code, read.Body.String())
 	}
 }
@@ -168,9 +168,9 @@ func TestImportSaveAttestationIncludesProtectedRequirementDescriptors(t *testing
 	if got := durable.Script.Actions[0].Body; got != `{"password":"{{secret.PASSWORD}}"}` {
 		t.Fatalf("durable protected reference body = %q", got)
 	}
-	if strings.Contains(created.Body.String(), inlineCanary) ||
+	if !strings.Contains(created.Body.String(), inlineCanary) ||
 		strings.Contains(created.Body.String(), protectedOnly) {
-		t.Fatalf("ordinary create response disclosed a source credential: %s", created.Body.String())
+		t.Fatalf("create response did not preserve only the credential present in the draft: %s", created.Body.String())
 	}
 }
 
@@ -311,9 +311,11 @@ func TestOpaqueImportSourcePayloadsAreAttestedAndRetainedDurably(t *testing.T) {
 				read,
 				httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+script.ID, nil),
 			)
-			if read.Code != http.StatusOK ||
-				strings.Contains(read.Body.String(), canary) {
-				t.Fatalf("ordinary read disclosed opaque payload: %d %s", read.Code, read.Body.String())
+			var readStored StoredScript
+			if read.Code != http.StatusOK || json.Unmarshal(read.Body.Bytes(), &readStored) != nil ||
+				readStored.Script == nil ||
+				!jsonValuesEqual(readStored.Script.Metadata.Import.Preserved[test.key], payload) {
+				t.Fatalf("ordinary read did not preserve opaque payload: %d %s", read.Code, read.Body.String())
 			}
 			maskedEdit := maskScriptSecrets(durable.Script)
 			if maskedEdit == nil {
@@ -452,7 +454,7 @@ func TestImportSaveAttestationAllowsNonCredentialImportOptions(t *testing.T) {
 	}}
 	created := createAttestedImportScript(t, server, configured)
 	if created.Code != http.StatusCreated ||
-		strings.Contains(created.Body.String(), credential) {
+		!strings.Contains(created.Body.String(), credential) {
 		t.Fatalf("configured attestation response = %d %s", created.Code, created.Body.String())
 	}
 	durable, ok := server.runner.GetScript(script.ID)
@@ -502,10 +504,10 @@ func TestPartialSecretBindingPreservesUnselectedImportedCredential(t *testing.T)
 	if err := json.Unmarshal(projectedJSON, &submitted); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(projectedJSON), headerCredential) ||
-		strings.Contains(string(projectedJSON), authCredential) ||
-		submitted.Config.HTTP.Auth.Password != maskedScriptSecret {
-		t.Fatalf("partial-binding preview was not disclosure-safe: %s", projectedJSON)
+	if !strings.Contains(string(projectedJSON), headerCredential) ||
+		!strings.Contains(string(projectedJSON), authCredential) ||
+		submitted.Config.HTTP.Auth.Password != authCredential {
+		t.Fatalf("partial-binding preview did not preserve imported credentials: %s", projectedJSON)
 	}
 	originalToken := importDraftAttestationToken(&submitted)
 	if originalToken == "" {
@@ -544,11 +546,11 @@ func TestPartialSecretBindingPreservesUnselectedImportedCredential(t *testing.T)
 	if got := payload.Script.Actions[0].HeaderList[0].Value; got != "Bearer {{secret.IMPORTED_HEADER}}" {
 		t.Fatalf("selected header = %q", got)
 	}
-	if got := payload.Script.Config.HTTP.Auth.Password; got != maskedScriptSecret {
-		t.Fatalf("unselected auth password projection = %q, want masked value", got)
+	if got := payload.Script.Config.HTTP.Auth.Password; got != authCredential {
+		t.Fatalf("unselected auth password = %q, want preserved value", got)
 	}
-	if strings.Contains(applied.Body.String(), authCredential) {
-		t.Fatalf("partial binding response disclosed unselected credential: %s", applied.Body.String())
+	if !strings.Contains(applied.Body.String(), authCredential) {
+		t.Fatalf("partial binding response did not preserve unselected credential: %s", applied.Body.String())
 	}
 	if len(payload.Requirements) != 1 ||
 		!payload.Requirements[0].DestinationValuePreserved {
@@ -576,8 +578,8 @@ func TestPartialSecretBindingPreservesUnselectedImportedCredential(t *testing.T)
 	if got := durable.Script.Actions[0].HeaderList[0].Value; got != "Bearer {{secret.IMPORTED_HEADER}}" {
 		t.Fatalf("durable selected header = %q", got)
 	}
-	if strings.Contains(created.Body.String(), authCredential) {
-		t.Fatalf("ordinary create response disclosed retained credential: %s", created.Body.String())
+	if !strings.Contains(created.Body.String(), authCredential) {
+		t.Fatalf("ordinary create response did not preserve retained credential: %s", created.Body.String())
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestBuildRedactsTruncatesAndNormalizesMappings(t *testing.T) {
+func TestBuildPreservesTruncatesAndNormalizesMappings(t *testing.T) {
 	longContent := strings.Repeat("a", MaxFileChars+10)
 	review := Build(map[string]string{
 		"sample.json": `{"Authorization":"Bearer raw-secret-token","password":"raw-secret-password"}`,
@@ -30,11 +30,11 @@ func TestBuildRedactsTruncatesAndNormalizesMappings(t *testing.T) {
 		files[file.Path] = file
 	}
 	sample := files["sample.json"]
-	if !sample.Redacted {
-		t.Fatalf("sample redacted = false, want true")
+	if sample.Redacted {
+		t.Fatalf("sample redacted = true, want exact imported source")
 	}
-	if strings.Contains(sample.Content, "raw-secret") {
-		t.Fatalf("redacted content leaked secret: %s", sample.Content)
+	if sample.Content != `{"Authorization":"Bearer raw-secret-token","password":"raw-secret-password"}` {
+		t.Fatalf("source content changed: %s", sample.Content)
 	}
 	huge := files["huge.txt"]
 	if !huge.Truncated {
@@ -78,7 +78,7 @@ func TestLanguageAndLineForOffset(t *testing.T) {
 	}
 }
 
-func TestBuildRedactsBeforeTruncatingReviewContent(t *testing.T) {
+func TestBuildPreservesBeforeTruncatingReviewContent(t *testing.T) {
 	key := `{"password":"`
 	value := strings.Repeat("BOUNDARYLEAK", 8)
 	prefix := strings.Repeat("a", MaxFileChars-len(key)-5)
@@ -91,14 +91,14 @@ func TestBuildRedactsBeforeTruncatingReviewContent(t *testing.T) {
 	if !file.Truncated {
 		t.Fatalf("file truncated = false, want true")
 	}
-	if !file.Redacted {
-		t.Fatalf("file redacted = false, want true for displayed secret")
+	if file.Redacted {
+		t.Fatalf("file redacted = true, want exact imported source")
 	}
 	if file.OriginalBytes != len([]byte(content)) {
 		t.Fatalf("original bytes = %d, want %d", file.OriginalBytes, len([]byte(content)))
 	}
-	if strings.Contains(file.Content, value) || strings.Contains(file.Content, "BOUND") {
-		t.Fatalf("review content leaked secret: %s", file.Content)
+	if !strings.Contains(file.Content, "BOUND") {
+		t.Fatalf("review content lost imported source before truncation: %s", file.Content)
 	}
 }
 

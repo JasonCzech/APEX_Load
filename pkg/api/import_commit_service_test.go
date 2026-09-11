@@ -389,12 +389,8 @@ func TestSharedImportCommitPreservesJSONBodyWireBytesAcrossLegacyRoutes(t *testi
 				t.Fatal(err)
 			}
 			got := result.StoredScript.Script.Actions[0].Body
-			if strings.Contains(got, canary) {
-				t.Fatalf("credential remained in response body: %s", got)
-			}
-			wantProjection := strings.Replace(body, canary, maskedScriptSecret, 1)
-			if got != wantProjection {
-				t.Fatalf("response body bytes changed outside credential occurrence:\n got: %q\nwant: %q", got, wantProjection)
+			if got != body {
+				t.Fatalf("response body bytes changed:\n got: %q\nwant: %q", got, body)
 			}
 			persisted, ok := server.runner.GetScript(scriptID)
 			if !ok || persisted == nil || persisted.Script == nil {
@@ -463,12 +459,8 @@ func TestSharedImportCommitProjectsDecodedBase64JSONAcrossLegacyRoutes(t *testin
 			if err != nil {
 				t.Fatalf("decode projected response body: %v", err)
 			}
-			if strings.Contains(string(projectedWire), canary) {
-				t.Fatalf("decoded response body retained credential: %s", projectedWire)
-			}
-			wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
-			if string(projectedWire) != wantWire {
-				t.Fatalf("wire bytes changed outside credential occurrence:\n got: %q\nwant: %q", projectedWire, wantWire)
+			if string(projectedWire) != wireBody {
+				t.Fatalf("wire bytes changed:\n got: %q\nwant: %q", projectedWire, wireBody)
 			}
 			persisted, ok := server.runner.GetScript(scriptID)
 			if !ok || persisted == nil || persisted.Script == nil {
@@ -573,11 +565,8 @@ func TestSharedImportCommitPreservesSensitiveTypedJSONAcrossLegacyRoutes(t *test
 			if resp.Code != http.StatusCreated {
 				t.Fatalf("commit status = %d, want 201 body=%s", resp.Code, resp.Body.String())
 			}
-			if strings.Contains(resp.Body.String(), typedValue) {
-				t.Fatalf("typed credential leaked through commit response: %s", resp.Body.String())
-			}
-			if !strings.Contains(resp.Body.String(), "import_review_required") {
-				t.Fatalf("typed credential response omitted its disclosure-only review gate: %s", resp.Body.String())
+			if !strings.Contains(resp.Body.String(), typedValue) {
+				t.Fatalf("typed credential was not preserved in commit response: %s", resp.Body.String())
 			}
 			persisted, ok := server.runner.GetScript(scriptID)
 			if !ok || persisted == nil || persisted.Script == nil {

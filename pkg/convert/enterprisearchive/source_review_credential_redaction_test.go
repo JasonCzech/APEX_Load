@@ -125,7 +125,7 @@ Table="passwords.dat"
 	}
 }
 
-func TestReviewOnlyResultFinalizesAllEnterpriseSourceDisclosure(t *testing.T) {
+func TestReviewOnlyResultPreservesAllEnterpriseSourceContent(t *testing.T) {
 	t.Parallel()
 	const (
 		setUserPassword = "review-only-web-set-user-password-canary"
@@ -176,8 +176,8 @@ ValueList=` + preservedValue,
 		parameterValue,
 		preservedValue,
 	} {
-		if strings.Contains(string(payload), canary) {
-			t.Fatalf("review-only result retained credential %q: %s", canary, payload)
+		if !strings.Contains(string(payload), canary) {
+			t.Fatalf("review-only result did not preserve credential %q: %s", canary, payload)
 		}
 	}
 	for _, safe := range []string{

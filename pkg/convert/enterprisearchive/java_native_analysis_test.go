@@ -156,9 +156,11 @@ func convertJavaNativeAnalysisForTest(files map[string]string, opts ConvertOptio
 		result.Script.Actions = append(result.Script.Actions, javaSourceReviewAction(javaStatement{Text: "No executable Java actions were recognized.", StartLine: 1, EndLine: 1}, "action", "no_java_actions"))
 		result.Scripts = []*dsl.Script{result.Script}
 		backfillJavaConservation(result, program)
+		result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 		return result, nil
 	}
 	result := mergeJavaLaneResults(laneResults, detected, files, profile)
 	backfillJavaConservation(result, program)
+	result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 	return result, nil
 }

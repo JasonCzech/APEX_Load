@@ -172,7 +172,7 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 		}
 		return path
 	}
-	transactionsPath := writeJSONL("transactions.jsonl", TransactionEvent{Timestamp: startedAt, TestID: testID, TestName: "Distributed parity", Group: "checkout", ActionName: "checkout", DurationMs: 50, Success: true})
+	transactionsPath := writeJSONL("transactions.jsonl", TransactionEvent{Timestamp: startedAt, TestID: testID, TestName: "Distributed parity", Group: "checkout", ActionName: "checkout", DurationMs: 50, Success: true, BusinessTransaction: true})
 	resourcesPath := writeJSONL("resources.jsonl", ResourceSample{Timestamp: startedAt, TestID: testID, TestName: "Distributed parity", ActiveVUsers: 5})
 	summariesPath := writeJSONL("interval_summaries.jsonl", IntervalSummaryRecord{
 		Timestamp: startedAt, TestID: testID, TestName: "Distributed parity", ActiveVUsers: 5, TPS: 1, TotalTx: 1,
@@ -235,7 +235,7 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 		Duration:              5 * time.Minute,
 		DurationStr:           "5m",
 		TotalVUsers:           5,
-		GoalConfig:            &GoalConfig{P95LatencyMs: ptr(250.0)},
+		GoalConfig:            &GoalConfig{P95LatencyMs: ptr(250.0), TransactionResponseTimeSLAMs: ptr(100.0)},
 		GeneratorShards:       []GeneratorShardSummary{{Group: "checkout", Target: "generator-a", VUsers: 5}},
 		Groups:                []TestGroup{{Name: "checkout", ScriptID: "script-a", ScriptName: "Checkout", Protocol: "http", VUsers: 5}},
 		LiveMetrics:           live,
@@ -301,6 +301,9 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	}
 	if !manifest.SLAEvaluated {
 		t.Fatal("distributed archive did not retain evaluated SLA evidence")
+	}
+	if len(manifest.TransactionResponseTimeSLAResults) != 1 || manifest.TransactionResponseTimeSLAResults[0].Status != "pass" || manifest.TransactionResponseTimeSLAResults[0].Group != "checkout" {
+		t.Fatalf("distributed response-time SLA results = %#v, want one passing checkout row", manifest.TransactionResponseTimeSLAResults)
 	}
 	mergedSummaryFile, err := os.Open(filepath.Join(record.ArchivePath, manifest.IntervalSummariesFile))
 	if err != nil {

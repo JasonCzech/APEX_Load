@@ -651,6 +651,9 @@ func TestBrunoRevisionActivationSynchronizesRawArtifactMasking(t *testing.T) {
 			Script: &dsl.Script{
 				ID: scriptID, Name: "Bruno runtime artifact", Version: "1.0.0",
 				Protocol: "bruno", ProjectID: brunoImportTestProject,
+				Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "bruno", Preserved: map[string]any{
+					dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+				}}},
 				Actions: []dsl.Action{{Name: "Run", Type: "bruno_run", Target: "."}},
 			},
 			RawArtifact: storage.ImportSourceArtifact{
@@ -741,12 +744,12 @@ func TestBrunoRevisionActivationSynchronizesRawArtifactMasking(t *testing.T) {
 
 	activate("revision-raw", "revision-sanitized")
 	projectedRaw, rawBody := readProjected()
-	if got := projectedRaw.Script.Config.Bruno.BundleRef; got != maskedScriptSecret {
-		t.Fatalf("raw revision projected bundle ref = %q, want masked", got)
+	if got := projectedRaw.Script.Config.Bruno.BundleRef; got != "artifact://artifact-raw-revision" {
+		t.Fatalf("raw revision bundle ref = %q, want exact reference", got)
 	}
-	if strings.Contains(rawBody, "artifact-raw-revision") ||
-		strings.Contains(rawBody, "sha-artifact-raw-revision") {
-		t.Fatalf("raw revision response disclosed protected artifact references: %s", rawBody)
+	if !strings.Contains(rawBody, "artifact-raw-revision") ||
+		!strings.Contains(rawBody, "sha-artifact-raw-revision") {
+		t.Fatalf("raw revision response did not preserve artifact references: %s", rawBody)
 	}
 	durableRaw, err := store.GetScript(scriptID)
 	if err != nil {
@@ -1053,8 +1056,8 @@ http:
 		if err != nil {
 			t.Fatal(err)
 		}
-		if bytes.Contains(encoded, []byte(reviewSecret)) {
-			t.Fatalf("Bruno commit persisted source-review plaintext: %s", encoded)
+		if !bytes.Contains(encoded, []byte(reviewSecret)) {
+			t.Fatalf("Bruno commit did not preserve source-review plaintext: %s", encoded)
 		}
 	})
 }

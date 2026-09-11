@@ -871,6 +871,9 @@ type ScenarioScript struct {
 	// Assignment holds per-group generator placement overrides as opaque JSON
 	// (mirrors Scenario.Assignment); decoded into *GeneratorAssignmentSettings upstream.
 	Assignment any `json:"assignment,omitempty"`
+	// TransactionResponseTimeSLAMs overrides the scenario-wide default for this
+	// group. Nil means inherit the scenario default.
+	TransactionResponseTimeSLAMs *float64 `json:"transaction_response_time_sla_ms,omitempty"`
 }
 
 type LoadStage struct {

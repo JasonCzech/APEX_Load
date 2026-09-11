@@ -123,9 +123,9 @@ func TestCommitAsyncAPIImportBatchRestoresOpaqueDraftsWithEmbeddedFolderAndRepla
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(previewJSON, []byte("asyncapi-first-secret")) ||
-		bytes.Contains(previewJSON, []byte("asyncapi-second-secret")) {
-		t.Fatalf("preview disclosed source credentials: %s", previewJSON)
+	if !bytes.Contains(previewJSON, []byte("asyncapi-first-secret")) ||
+		!bytes.Contains(previewJSON, []byte("asyncapi-second-secret")) {
+		t.Fatalf("preview did not preserve source credentials: %s", previewJSON)
 	}
 	payload := map[string]any{
 		"operation_id": "asyncapi-opaque-replay",
@@ -135,9 +135,9 @@ func TestCommitAsyncAPIImportBatchRestoresOpaqueDraftsWithEmbeddedFolderAndRepla
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create status = %d body=%s", created.Code, created.Body.String())
 	}
-	if strings.Contains(created.Body.String(), "asyncapi-first-secret") ||
-		strings.Contains(created.Body.String(), "asyncapi-second-secret") {
-		t.Fatalf("batch response disclosed credentials: %s", created.Body.String())
+	if !strings.Contains(created.Body.String(), "asyncapi-first-secret") ||
+		!strings.Contains(created.Body.String(), "asyncapi-second-secret") {
+		t.Fatalf("batch response did not preserve credentials: %s", created.Body.String())
 	}
 	var firstResponse struct {
 		Scripts []StoredScript `json:"scripts"`

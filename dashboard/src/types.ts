@@ -32,7 +32,7 @@ import type {
   ScenarioFootprint,
   TestGroup,
 } from './types/testConfiguration'
-import type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode, TransactionSLARuleResult } from './types/goals'
+import type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode, TransactionResponseTimeSLAResult, TransactionSLARuleResult } from './types/goals'
 import type { AuthoringHealth } from './types/authoring'
 
 export type { ReplayPreflight, ReplayPreflightCheck } from './types/scripts'
@@ -303,7 +303,7 @@ export type {
   ScenarioFootprint,
   TestGroup,
 } from './types/testConfiguration'
-export type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode, TransactionSLARule, TransactionSLARuleResult } from './types/goals'
+export type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode, TransactionResponseTimeSLAResult, TransactionSLARule, TransactionSLARuleResult } from './types/goals'
 export type { AuthoringHealth, AuthoringHealthInput } from './types/authoring'
 export type { ReleaseRef, ScenarioRef, StoredScenario, StoredScript } from './types/storedContent'
 export type {
@@ -905,6 +905,7 @@ export interface RunArchiveManifest {
   sla_breached?: boolean
   sla_details?: string[]
   transaction_rule_results?: TransactionSLARuleResult[]
+	transaction_response_time_sla_results?: TransactionResponseTimeSLAResult[]
 }
 
 export interface RunArchiveArtifact {
@@ -1558,6 +1559,7 @@ export interface RunArchiveReport {
   overview: RunArchiveOverview
   verdict?: RunArchiveVerdict
   sla_rows?: Record<string, RunArchiveSLARow>
+	transaction_response_time_sla_results?: TransactionResponseTimeSLAResult[]
   sla_rollup?: RunArchiveSLARollup
   evidence_tiers?: RunArchiveEvidenceTier[]
   error_patterns?: RunArchiveErrorPattern[]
@@ -1878,6 +1880,8 @@ export interface ScenarioDraftGroup {
   /** Per-group runtime overrides; merged over the scenario-wide runtime defaults. */
   runtimeSettings?: ScenarioRuntimeSettingsDraft
   assignment?: GeneratorAssignmentSettings
+	/** Optional group override; omitted values inherit the scenario default. */
+	transactionResponseTimeSlaMs?: number
 }
 
 export interface ScenarioDraftRevisionContext {
@@ -1942,6 +1946,7 @@ export interface LiveMetrics {
   avg_wait_ms?: number
   error_breakdown?: Record<string, number>
   transactions?: Record<string, TxMetrics>
+	transaction_response_time_sla?: TransactionResponseTimeSLAResult[]
   dependency_health?: Record<string, TxMetrics>
   dependency_map?: LiveDependencyMap
   error_patterns?: LiveErrorPattern[]

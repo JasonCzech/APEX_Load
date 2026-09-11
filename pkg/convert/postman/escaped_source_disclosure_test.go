@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestConvertDoesNotDiscloseEscapedCredentialVariableInSourceReview(t *testing.T) {
+func TestConvertPreservesEscapedCredentialVariableInSourceReview(t *testing.T) {
 	const source = `{
   "info": {"name": "escaped"},
   "variable": [{"key": "sourceCredential", "value": "postman\u002dsecret"}],
@@ -34,15 +34,12 @@ func TestConvertDoesNotDiscloseEscapedCredentialVariableInSourceReview(t *testin
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 {
 		t.Fatalf("source review = %#v, want source files", result.SourceReview)
 	}
-	for _, file := range result.SourceReview.SourceFiles {
-		if strings.Contains(file.Content, `postman\u002dsecret`) ||
-			strings.Contains(file.Content, "postman-secret") {
-			t.Fatalf("source review file %q disclosed an escaped credential: %q", file.Path, file.Content)
-		}
+	if got := result.SourceReview.SourceFiles[0].Content; got != source {
+		t.Fatalf("source review changed imported collection:\n%s", got)
 	}
 }
 
-func TestConvertProjectsBaseURLUserinfoAndPercentQueryWithoutPublicDisclosure(t *testing.T) {
+func TestConvertPreservesBaseURLUserinfoAndPercentQueryInSourceReview(t *testing.T) {
 	const source = `{
   "info": {"name": "base credentials"},
   "variable": [{
@@ -82,13 +79,8 @@ func TestConvertProjectsBaseURLUserinfoAndPercentQueryWithoutPublicDisclosure(t 
 		!strings.Contains(string(encoded), "postman%2Dquery") {
 		t.Fatalf("serialized destination lost imported base credentials: %s", encoded)
 	}
-	sourceJSON, err := json.Marshal(result.SourceReview)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, canary := range []string{`postman\u002dpass`, "postman-pass", "postman%2Dquery", "postman-query"} {
-		if strings.Contains(string(sourceJSON), canary) {
-			t.Fatalf("source review disclosed %q: %s", canary, sourceJSON)
-		}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 ||
+		result.SourceReview.SourceFiles[0].Content != source {
+		t.Fatalf("source review changed imported collection: %#v", result.SourceReview)
 	}
 }

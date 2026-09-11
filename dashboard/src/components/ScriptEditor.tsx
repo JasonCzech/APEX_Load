@@ -2529,6 +2529,22 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }
 
   const scriptEditorDirty = initialSaveRequired || jsonDirty || pendingParameterDataCellEditCount > 0 || formattedScriptJson !== baselineJsonRef.current
+
+  const handleDownloadScript = useCallback(async () => {
+    const filename = `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`
+    if (!scriptId || scriptEditorDirty) {
+      await exportGeneratedTextFile(jsonText || formatScriptJson(script), filename)
+      return
+    }
+    setError('')
+    try {
+      const content = await api.downloadScript(scriptId)
+      await exportGeneratedTextFile(content, filename)
+    } catch (cause: unknown) {
+      setError(getErrorMessage(cause, 'Failed to download script'))
+    }
+  }, [api, currentDraftScript.name, exportGeneratedTextFile, jsonText, script, scriptEditorDirty, scriptId, setError])
+
   const saveScriptDisabled = saving || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
   const saveScriptTitle = saving
     ? 'Saving script'
@@ -5229,7 +5245,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           onApply: handleApplyJsonDraft,
           onChange: handleCodePaneChange,
           onCopy: () => void navigator.clipboard?.writeText(jsonText),
-          onDownload: () => { void exportGeneratedTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`) },
+          onDownload: () => { void handleDownloadScript() },
           onFormat: handleFormatJsonDraft,
           onReset: handleResetJsonDraft,
           onRequestParameterize: openJsonParameterSelectionMenu,

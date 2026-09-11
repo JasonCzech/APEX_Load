@@ -590,17 +590,18 @@ func (tr *TestRunner) runCalendarSnapshot(projectID string, from time.Time, to t
 		for _, script := range scenario.Scripts {
 			totalVUsers += script.VUsers
 			groups = append(groups, TestGroup{
-				Name:           script.Name,
-				ScriptID:       script.ScriptID,
-				ScriptName:     firstNonEmpty(script.ScriptName, script.Name),
-				Protocol:       script.Protocol,
-				VUsers:         script.VUsers,
-				RampUp:         script.RampUp,
-				RampDown:       script.RampDown,
-				StartOffset:    script.StartOffset,
-				Stages:         append([]storage.LoadStage(nil), script.Stages...),
-				Iterations:     script.Iterations,
-				Initialization: script.Initialization,
+				Name:                         script.Name,
+				ScriptID:                     script.ScriptID,
+				ScriptName:                   firstNonEmpty(script.ScriptName, script.Name),
+				Protocol:                     script.Protocol,
+				VUsers:                       script.VUsers,
+				RampUp:                       script.RampUp,
+				RampDown:                     script.RampDown,
+				StartOffset:                  script.StartOffset,
+				Stages:                       append([]storage.LoadStage(nil), script.Stages...),
+				Iterations:                   script.Iterations,
+				Initialization:               script.Initialization,
+				TransactionResponseTimeSLAMs: cloneFloat64Ptr(script.TransactionResponseTimeSLAMs),
 			})
 		}
 		scenarios[scenario.ID] = runCalendarScenarioSummary{

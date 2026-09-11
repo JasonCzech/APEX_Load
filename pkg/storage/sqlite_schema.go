@@ -229,6 +229,7 @@ func schemaCreateTableStatements() []string {
 			role TEXT,
 			runtime_settings_json TEXT,
 			assignment_json TEXT,
+			transaction_response_time_sla_ms REAL,
 			PRIMARY KEY (scenario_id, sort_order),
 			FOREIGN KEY(scenario_id) REFERENCES scenarios(id),
 			FOREIGN KEY(script_id) REFERENCES scripts(id)
@@ -1504,6 +1505,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "scenario_scripts.runtime_settings_json", query: `ALTER TABLE scenario_scripts ADD COLUMN runtime_settings_json TEXT`},
 		{name: "scenario_scripts.assignment_json", query: `ALTER TABLE scenario_scripts ADD COLUMN assignment_json TEXT`},
 		{name: "scenario_scripts.start_offset", query: `ALTER TABLE scenario_scripts ADD COLUMN start_offset TEXT`},
+		{name: "scenario_scripts.transaction_response_time_sla_ms", query: `ALTER TABLE scenario_scripts ADD COLUMN transaction_response_time_sla_ms REAL`},
 		{name: "scenario_schedules.project_id", query: `ALTER TABLE scenario_schedules ADD COLUMN project_id TEXT`},
 		{name: "scenario_schedules.timeslot_id", query: `ALTER TABLE scenario_schedules ADD COLUMN timeslot_id TEXT`},
 		{name: "scenario_schedules.owner_subject", query: `ALTER TABLE scenario_schedules ADD COLUMN owner_subject TEXT`},

@@ -24,6 +24,7 @@ export interface TestGroup {
   runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
   assignment?: GeneratorAssignmentSettings
+	transaction_response_time_sla_ms?: number
   /** How the scenario's enabled-by-default continue-on-error policy resolved
    *  for this group, and which layer supplied the winning value. */
   continue_on_error?: ContinueOnErrorResolution

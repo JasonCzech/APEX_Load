@@ -205,6 +205,17 @@ describe('useScriptApi import wrappers', () => {
     expect(request).toHaveBeenCalledWith('/scripts/authoring/capabilities')
   })
 
+  it('downloads the exact runnable script from the server endpoint', async () => {
+    const content = '{"config":{"http":{"auth":{"password":"preserved-password"}}}}'
+    ;(apiFetch as Mock).mockResolvedValueOnce({
+      ok: true,
+      text: async () => content,
+    })
+
+    await expect(api.downloadScript('script/with spaces')).resolves.toBe(content)
+    expect(apiFetch).toHaveBeenCalledWith('/scripts/script%2Fwith%20spaces/download')
+  })
+
   it('preserves recording provenance when a reviewed draft is saved', async () => {
     const script = { name: 'Recorded', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [] }
 

@@ -504,16 +504,17 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	}
 
 	live := &LiveMetrics{
-		Timestamp:           timestamp,
-		SampleWindowSeconds: batchWindowSeconds(batch.WindowMs),
-		ActiveVUsers:        int64(batch.Stats.ActiveVUsers),
-		Transactions:        make(map[string]*TxMetrics),
-		DependencyHealth:    make(map[string]*TxMetrics),
-		SOAPOperations:      make(map[string]*TxMetrics),
-		NetworkProfiles:     make(map[string]*TxMetrics),
-		ByRegion:            make(map[string]*TxMetrics),
-		GroupMetrics:        make(map[string]*GroupLiveMetrics),
-		Telemetry:           &TelemetryHealth{},
+		TransactionResponseTimeSLA: remoteTransactionResponseTimeSLAResults(test),
+		Timestamp:                  timestamp,
+		SampleWindowSeconds:        batchWindowSeconds(batch.WindowMs),
+		ActiveVUsers:               int64(batch.Stats.ActiveVUsers),
+		Transactions:               make(map[string]*TxMetrics),
+		DependencyHealth:           make(map[string]*TxMetrics),
+		SOAPOperations:             make(map[string]*TxMetrics),
+		NetworkProfiles:            make(map[string]*TxMetrics),
+		ByRegion:                   make(map[string]*TxMetrics),
+		GroupMetrics:               make(map[string]*GroupLiveMetrics),
+		Telemetry:                  &TelemetryHealth{},
 		Resources: &engine.SystemResources{
 			CPUProcessPct: batch.Stats.CPUPercent,
 			MemProcessMb:  float64(batch.Stats.MemoryBytes) / (1024 * 1024),

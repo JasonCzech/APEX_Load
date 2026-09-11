@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/sample"
-	"github.com/jasonczech/apexload/pkg/credential"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
@@ -79,9 +77,8 @@ func Diff(baseline []byte, comparison []byte, opts ConvertOptions) (*DiffReport,
 			Expression:  corr.Expression,
 			ExtractType: corr.ExtractType,
 			SampleValue: publicCorrelationValue(corr),
-			// Public values come from the disclosure-safe sample. The raw
-			// json:"-" value remains local to this function solely for deciding
-			// whether two recordings differ.
+			// Import review is an authoring surface, so retain the exact samples.
+			// Runtime logs and debug output apply their own redaction boundary.
 			BaselineValue:  publicCorrelationValue(corr),
 			FoundInStep:    corr.FoundInStep,
 			UsedInSteps:    append([]int(nil), corr.UsedInSteps...),
@@ -150,13 +147,7 @@ func correlationValue(corr sample.Correlation) string {
 }
 
 func publicCorrelationValue(corr sample.Correlation) string {
-	if corr.SampleValue == "" {
-		return ""
-	}
-	if credential.SensitiveName(corr.Name) || credential.SensitiveName(corr.Expression) {
-		return scrub.Redacted
-	}
-	return scrub.Value(corr.SampleValue, scrub.Policy{})
+	return corr.SampleValue
 }
 
 func diffRank(classification string) int {

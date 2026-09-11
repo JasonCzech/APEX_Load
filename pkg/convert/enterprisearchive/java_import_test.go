@@ -881,9 +881,9 @@ public class Actions {
 	if err != nil {
 		t.Fatalf("marshal source review: %v", err)
 	}
-	for _, forbidden := range []string{"super-secret", "temporary-password"} {
-		if strings.Contains(string(reviewPayload), forbidden) {
-			t.Fatalf("source review disclosed JDBC password material %q: %s", forbidden, reviewPayload)
+	for _, expected := range []string{"super-secret", "temporary-password"} {
+		if !strings.Contains(string(reviewPayload), expected) {
+			t.Fatalf("source review lost JDBC password material %q: %s", expected, reviewPayload)
 		}
 	}
 	if _, ok := javaActionByType(result.Script.Actions, "db_commit"); !ok {
@@ -1412,7 +1412,7 @@ public class Actions {
 	if got[0] != "Bearer prod-token" {
 		t.Fatalf("Authorization value = %q, want imported executable header bytes preserved", got[0])
 	}
-	assertEnterpriseCredentialProvenanceRedacted(
+	assertEnterpriseCredentialProvenancePreserved(
 		t,
 		result,
 		[]string{"prod-token", "test-token"},

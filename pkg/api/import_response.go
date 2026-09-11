@@ -147,9 +147,9 @@ func importResponseValue[T any](value *T) any {
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
-	// The exact executable candidate stays server-owned behind its opaque import
-	// capability. Browser-visible drafts are always disclosure projections; the
-	// capability restores unchanged credential slots during a mutation/commit.
+	// Imported scripts and collections are operator-owned authoring artifacts.
+	// Publish them exactly as converted; redaction belongs only to run/debug
+	// evidence and must never rewrite an import draft or its review material.
 	exactScripts := importResponseRawScriptValue(opts.Scripts)
 	exactScript := importResponseRawScriptValue(opts.Script)
 	scripts := credentialPreservingImportResponseValue(opts.Scripts)
@@ -175,7 +175,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	// of letting importParameterizationScripts recompute it. Nothing between
 	// here and that call mutates `scripts`, and the projection is only read
 	// (never placed in the response), so sharing it is behaviour-preserving.
-	parameterizationProjection := projectedScripts
+	parameterizationProjection := exactScripts
 	secretBindingRequirements := secretBindingRequirementsForImportScripts(projectedScripts)
 	secretBindingRequirements = annotateSecretBindingDestinationValues(
 		secretBindingRequirements,
@@ -185,6 +185,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	if !hasScriptJSONNode(exactScripts) && !isNilImportValue(exactScript) {
 		exactFallback := []any{exactScript}
 		projectedScripts = []any{script}
+		parameterizationProjection = exactFallback
 		secretBindingRequirements = secretBindingRequirementsForImportScripts(projectedScripts)
 		secretBindingRequirements = annotateSecretBindingDestinationValues(
 			secretBindingRequirements,
@@ -193,7 +194,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		)
 	}
 
-	warnings := sanitizeImportReviewStrings(opts.Warnings)
+	warnings := append([]string(nil), opts.Warnings...)
 	if warnings == nil {
 		warnings = []string{}
 	}
@@ -228,12 +229,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	parameterizationScripts := importParameterizationScripts(
 		projectedImportScripts{value: parameterizationProjection},
 	)
-	parameterization := opts.Parameterization
-	if parameterization == nil {
-		parameterization = &paramize.Result{Suggestions: []paramize.Suggestion{}}
-	} else {
-		parameterization = sanitizeImportParameterization(parameterization, parameterizationScripts)
-	}
+	parameterization := filterTrustedImportParameterization(opts.Parameterization, parameterizationScripts)
 
 	// Collection-wide values are derived from the same disclosure projection the
 	// parameterization pass uses, so both panels agree on the tree and the IDs
@@ -243,37 +239,58 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	sharedValues := buildImportSharedValues(parameterizationScripts)
 
 	response := map[string]any{
-		"scripts":                     scripts,
-		"script":                      script,
+		"scripts":                     exactScripts,
+		"script":                      exactScript,
 		"secret_binding_requirements": secretBindingRequirements,
 		"warnings":                    warnings,
-		"stats":                       sanitizeImportEmbeddedReviewEvidence(stats),
-		"correlations":                sanitizeImportEmbeddedReviewEvidence(sanitizeImportCorrelationCollection(correlations)),
-		"assumptions":                 sanitizeImportReviewEvidence(assumptions),
-		"diagnostics":                 sanitizeImportReviewEvidence(opts.Diagnostics),
-		"unsupported_elements":        sanitizeImportReviewEvidence(unsupported),
-		"review_sections":             sanitizeImportReviewEvidence(reviewSections),
-		"repair_suggestions":          sanitizeImportReviewEvidence(repairSuggestions),
-		"scenario_draft":              sanitizeImportEmbeddedReviewEvidence(maskScriptResponseValue(importResponseValue(opts.ScenarioDraft))),
-		"summary":                     sanitizeImportEmbeddedReviewEvidence(summary),
-		"detected_protocol":           sanitizeImportEmbeddedReviewEvidence(importResponseValue(opts.DetectedProtocol)),
-		"fidelity_report":             sanitizeImportReviewEvidence(importResponseValue(opts.FidelityReport)),
-		"review_artifact":             sanitizeImportReviewEvidence(importResponseValue(opts.ReviewArtifact)),
-		"source_review":               sanitizeImportReviewEvidence(opts.SourceReview),
-		"trueclient2_compat_report":   sanitizeImportReviewEvidence(importResponseValue(opts.TrueClient2Compat)),
-		"protocol_compat_report":      sanitizeImportReviewEvidence(importResponseValue(opts.ProtocolCompat)),
+		"stats":                       stats,
+		"correlations":                correlations,
+		"assumptions":                 assumptions,
+		"diagnostics":                 opts.Diagnostics,
+		"unsupported_elements":        unsupported,
+		"review_sections":             reviewSections,
+		"repair_suggestions":          repairSuggestions,
+		"scenario_draft":              importResponseValue(opts.ScenarioDraft),
+		"summary":                     summary,
+		"detected_protocol":           importResponseValue(opts.DetectedProtocol),
+		"fidelity_report":             importResponseValue(opts.FidelityReport),
+		"review_artifact":             importResponseValue(opts.ReviewArtifact),
+		"source_review":               opts.SourceReview,
+		"trueclient2_compat_report":   importResponseValue(opts.TrueClient2Compat),
+		"protocol_compat_report":      importResponseValue(opts.ProtocolCompat),
 		"parameterization":            parameterization,
 		"shared_values":               sharedValues,
-		"preflight":                   sanitizeImportEmbeddedReviewEvidence(importResponseValue(opts.Preflight)),
+		"preflight":                   importResponseValue(opts.Preflight),
 	}
 	if !opts.Accounting.Empty() {
 		response["accounting"] = opts.Accounting
 	}
 	if opts.Result != nil {
-		response["result"] = sanitizeImportResponseValue(opts.Result)
+		response["result"] = importResponseReviewValue(opts.Result)
 	}
 
 	return response
+}
+
+func importResponseReviewValue(value any) any {
+	exact := importResponseRawScriptValue(value)
+	stripImportResponseCapabilities(exact)
+	return exact
+}
+
+func stripImportResponseCapabilities(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		delete(typed, importDraftAttestationMetadataKey)
+		delete(typed, protectedImportCredentialMetadataKey)
+		for _, child := range typed {
+			stripImportResponseCapabilities(child)
+		}
+	case []any:
+		for _, child := range typed {
+			stripImportResponseCapabilities(child)
+		}
+	}
 }
 
 func copyImportDraftCapabilities(raw, projected any) {
@@ -394,30 +411,17 @@ func validProtectedImportCredentialLocationValues(locations []any) bool {
 }
 
 func maskImportDraftForResponse(script *dsl.Script) *dsl.Script {
-	masked := maskScriptSecrets(script)
-	if masked == nil {
-		return nil
-	}
-	if token := importDraftAttestationToken(script); token != "" {
-		profile := "import"
-		if script.Metadata != nil && script.Metadata.Import != nil {
-			profile = firstNonEmpty(strings.TrimSpace(script.Metadata.Import.Source), profile)
-		}
-		ensureScriptImportPreserved(masked, profile)[importDraftAttestationMetadataKey] = token
-	}
-	return masked
+	return cloneScriptDefinition(script)
 }
 
 func credentialPreservingImportResponseValue(value any) any {
 	exact := importResponseRawScriptValue(value)
-	// Project the exact candidate before publishing it. Existing importer-owned
-	// credential locators remain active during this pass so neutral field names
-	// (for example a JSON `code`) are still masked; source-neutral URL handling
-	// keeps noncredential locators such as OAuth token_url intact.
+	// Build a private disclosure projection for migration-requirement discovery.
+	// This value is never used as the imported script returned to the operator.
 	projected := maskScriptResponseValue(exact)
 	markCredentialPreservingImportJSON(projected)
-	// The projection strips capabilities by design. Only the opaque attestation
-	// token is copied back; exact source values remain exclusively server-owned.
+	// The projection strips capabilities by design. Copy back only validated
+	// opaque capability data needed by the binding flow.
 	copyImportDraftCapabilities(exact, projected)
 	return projected
 }
@@ -718,10 +722,10 @@ func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
 	}
 }
 
-// newScriptImportResponseWithSourceSecrets augments the disclosure-safe import
-// response with an optional, short-lived server-side migration session. Raw
-// source values never enter the returned response; the session is addressed
-// only by opaque requirement IDs.
+// newScriptImportResponseWithSourceSecrets augments the exact imported
+// authoring response with an optional, short-lived server-side migration
+// session. Migration descriptors remain value-free even though imported
+// scripts and source-review material retain their authored values.
 func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts scriptImportResponseOptions) map[string]any {
 	protectedRequirements := opts.ProtectedRequirements
 	defer clearCredentialRequirementValues(protectedRequirements)
@@ -1199,6 +1203,39 @@ func sanitizeImportParameterization(input *paramize.Result, scriptValues ...any)
 		// them off the wire makes the server-side re-derivation boundary explicit.
 		cloned.Extractor = nil
 		cloned.Parameter = nil
+		output.Suggestions = append(output.Suggestions, cloned)
+	}
+	output.Summary = paramizeSummary(output.Suggestions)
+	return &output
+}
+
+// filterTrustedImportParameterization keeps exact importer-authored review data
+// while rejecting suggestions that cannot be re-derived from the converted
+// script. Import review is an authoring surface, so its literals and locations
+// must not be redacted.
+func filterTrustedImportParameterization(input *paramize.Result, scriptValues ...any) *paramize.Result {
+	if input == nil {
+		return &paramize.Result{Suggestions: []paramize.Suggestion{}}
+	}
+	trustedIDs, trustedScopedIDs, hasScriptContext := trustedParameterizationIDs(scriptValues...)
+	output := *input
+	output.Suggestions = make([]paramize.Suggestion, 0, len(input.Suggestions))
+	for _, suggestion := range input.Suggestions {
+		if !suggestion.PreApplied && hasScriptContext {
+			trusted := trustedIDs[suggestion.ID]
+			if suggestion.ScriptName != "" {
+				trusted = trustedScopedIDs[suggestion.ScriptName][suggestion.ID]
+			}
+			if !trusted {
+				continue
+			}
+		}
+		cloned := suggestion
+		cloned.Locations = append([]paramize.Location(nil), suggestion.Locations...)
+		if suggestion.FoundInAction != nil {
+			found := *suggestion.FoundInAction
+			cloned.FoundInAction = &found
+		}
 		output.Suggestions = append(output.Suggestions, cloned)
 	}
 	output.Summary = paramizeSummary(output.Suggestions)

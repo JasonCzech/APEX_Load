@@ -661,7 +661,7 @@ func TestJavaVMCredentialReviewDoesNotGateOrAffectNonJavaScriptInMixedResult(t *
 	}
 }
 
-func TestConvertZipCredentialJavaVMArgumentsRemainExactWithDisclosureSafeReview(t *testing.T) {
+func TestConvertZipCredentialJavaVMArgumentsRemainExactWithExactReview(t *testing.T) {
 	const (
 		passwordCanary = "java-vm-password-canary"
 		apiKeyCanary   = "java-vm-api-key-canary"
@@ -739,12 +739,11 @@ AdditionalVmParams_extra_arg_1=-Dapi.key=`+apiKeyCanary+`
 		t.Fatal(err)
 	}
 	for _, canary := range []string{passwordCanary, apiKeyCanary} {
-		if strings.Contains(string(reviewPayload), canary) {
-			t.Fatalf("review evidence retained Java VM canary %q: %s", canary, reviewPayload)
+		if !strings.Contains(string(reviewPayload), canary) {
+			t.Fatalf("review evidence lost Java VM canary %q: %s", canary, reviewPayload)
 		}
 	}
-	if !strings.Contains(string(reviewPayload), credential.Redacted) ||
-		!strings.Contains(string(reviewPayload), javaVMParameterExposureReviewCode) {
-		t.Fatalf("converter review omitted redaction/exposure evidence: %s", reviewPayload)
+	if !strings.Contains(string(reviewPayload), javaVMParameterExposureReviewCode) {
+		t.Fatalf("converter review omitted exposure evidence: %s", reviewPayload)
 	}
 }

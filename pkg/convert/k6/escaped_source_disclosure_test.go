@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestConvertDoesNotDiscloseEscapedCredentialInSourceReview(t *testing.T) {
+func TestConvertPreservesEscapedCredentialInSourceReview(t *testing.T) {
 	const source = `http.get("https://api.example.test/orders?api_key=k6\u002dsecret");`
 	result, err := Convert(ImportRequest{Name: "escaped credential", Content: source})
 	if err != nil {
@@ -22,12 +22,12 @@ func TestConvertDoesNotDiscloseEscapedCredentialInSourceReview(t *testing.T) {
 		t.Fatalf("source review = %#v, want one source file", result.SourceReview)
 	}
 	content := result.SourceReview.SourceFiles[0].Content
-	if strings.Contains(content, `k6\u002dsecret`) || strings.Contains(content, "k6-secret") {
-		t.Fatalf("source review disclosed an escaped credential: %q", content)
+	if !strings.Contains(content, `k6\u002dsecret`) || result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review changed an escaped credential: %q", content)
 	}
 }
 
-func TestConvertOmitsBacktickTemplateLiteralCredentialFromSourceReview(t *testing.T) {
+func TestConvertPreservesBacktickTemplateLiteralCredentialInSourceReview(t *testing.T) {
 	const source = "http.get(`https://api.example.test/orders?api_key=k6-backtick-secret`);"
 	result, err := Convert(ImportRequest{Name: "backtick credential", Content: source})
 	if err != nil {
@@ -41,12 +41,12 @@ func TestConvertOmitsBacktickTemplateLiteralCredentialFromSourceReview(t *testin
 		t.Fatalf("source review = %#v, want one source file", result.SourceReview)
 	}
 	file := result.SourceReview.SourceFiles[0]
-	if !file.Redacted || strings.Contains(file.Content, "k6-backtick-secret") {
-		t.Fatalf("source review disclosed a backtick credential: %#v", file)
+	if file.Redacted || !strings.Contains(file.Content, "k6-backtick-secret") {
+		t.Fatalf("source review changed a backtick credential: %#v", file)
 	}
 }
 
-func TestConvertDoesNotDisclosePercentEncodedURLAndFormCredentials(t *testing.T) {
+func TestConvertPreservesPercentEncodedURLAndFormCredentials(t *testing.T) {
 	const source = `http.get("https://api.example.test/orders?api_key=k6%2Dquery");
 http.post("https://api.example.test/login", "password=k6%2Dform", {headers: {"Content-Type": "application/x-www-form-urlencoded"}});`
 	result, err := Convert(ImportRequest{Name: "percent credentials", Content: source})
@@ -65,9 +65,9 @@ http.post("https://api.example.test/login", "password=k6%2Dform", {headers: {"Co
 		t.Fatalf("source review = %#v, want one source file", result.SourceReview)
 	}
 	content := result.SourceReview.SourceFiles[0].Content
-	for _, canary := range []string{"k6%2Dquery", "k6-query", "k6%2Dform", "k6-form"} {
-		if strings.Contains(content, canary) {
-			t.Fatalf("source review disclosed percent-encoded credential %q: %q", canary, content)
+	for _, canary := range []string{"k6%2Dquery", "k6%2Dform"} {
+		if !strings.Contains(content, canary) {
+			t.Fatalf("source review lost percent-encoded credential %q: %q", canary, content)
 		}
 	}
 }
@@ -90,9 +90,8 @@ http.get('https://api.example.test/orders?api_key=k6\u002dcomment');`
 		t.Fatalf("source review = %#v, want one source file", result.SourceReview)
 	}
 	content := result.SourceReview.SourceFiles[0].Content
-	if strings.Contains(content, `k6\u002dcomment`) ||
-		strings.Contains(content, "k6-comment") {
-		t.Fatalf("comment apostrophe hid escaped credential from source redaction: %q", content)
+	if !strings.Contains(content, `k6\u002dcomment`) || result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review changed escaped credential after comment: %q", content)
 	}
 }
 

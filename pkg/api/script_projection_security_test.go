@@ -215,6 +215,7 @@ func TestStoredScriptViewPreservesAuthoredDataFileValues(t *testing.T) {
 			},
 		},
 	}
+	ensureCredentialPreservingImportMetadata(script, "test")
 	stored := &StoredScript{
 		ID: script.ID, Name: script.Name, ProjectID: script.ProjectID, Script: script,
 	}
@@ -226,11 +227,11 @@ func TestStoredScriptViewPreservesAuthoredDataFileValues(t *testing.T) {
 	if got := view.Script.DataSources[0].InlineData; got != script.DataSources[0].InlineData {
 		t.Fatalf("data-file view = %q, want authored contents %q", got, script.DataSources[0].InlineData)
 	}
-	if got := view.Script.Config.HTTP.Auth.Password; got != maskedScriptSecret {
-		t.Fatalf("unrelated configuration password = %q, want %q", got, maskedScriptSecret)
+	if got := view.Script.Config.HTTP.Auth.Password; got != authPassword {
+		t.Fatalf("unrelated configuration password = %q, want exact value", got)
 	}
-	if got := view.Script.DataSources[1].InlineData; got != maskedScriptSecret {
-		t.Fatalf("file asset = %q, want disclosure-safe marker %q", got, maskedScriptSecret)
+	if got := view.Script.DataSources[1].InlineData; got != assetSecret {
+		t.Fatalf("file asset = %q, want exact value", got)
 	}
 	if got := script.DataSources[0].InlineData; !strings.Contains(got, dataPassword) {
 		t.Fatalf("view projection mutated stored data-file contents: %q", got)
@@ -245,10 +246,10 @@ func TestStoredScriptViewPreservesAuthoredDataFileValues(t *testing.T) {
 	}
 }
 
-func TestStoredScriptListMasksDataFilesWhileDetailViewRevealsThem(t *testing.T) {
+func TestStoredScriptListAndDetailPreserveDataFiles(t *testing.T) {
 	const dataPassword = "list-data-file-secret"
 	server := NewServer(ServerConfig{})
-	stored := seedLegacySecretScript(server, &dsl.Script{
+	script := &dsl.Script{
 		ID: "list-data-file", Name: "List data file", Version: "1", Protocol: "http",
 		ProjectID: "project-a",
 		Parameters: []dsl.Parameter{{
@@ -258,7 +259,9 @@ func TestStoredScriptListMasksDataFilesWhileDetailViewRevealsThem(t *testing.T) 
 			Name: "users", Type: "csv", Strategy: "sequential", FirstRowHeader: true,
 			InlineData: "username,password\nalice," + dataPassword + "\n",
 		}},
-	})
+	}
+	ensureCredentialPreservingImportMetadata(script, "test")
+	stored := seedLegacySecretScript(server, script)
 
 	listResponse := httptest.NewRecorder()
 	server.handleListScripts(
@@ -268,9 +271,8 @@ func TestStoredScriptListMasksDataFilesWhileDetailViewRevealsThem(t *testing.T) 
 	if listResponse.Code != http.StatusOK {
 		t.Fatalf("list status = %d body=%s", listResponse.Code, listResponse.Body.String())
 	}
-	if strings.Contains(listResponse.Body.String(), dataPassword) ||
-		!strings.Contains(listResponse.Body.String(), maskedScriptSecret) {
-		t.Fatalf("script list did not keep data-file values masked: %s", listResponse.Body.String())
+	if !strings.Contains(listResponse.Body.String(), dataPassword) {
+		t.Fatalf("script list lost data-file values: %s", listResponse.Body.String())
 	}
 
 	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID, nil)
@@ -946,23 +948,23 @@ func TestReconcileMaskedScriptSecretsFailsClosedWhenCredentialActionsReorder(t *
 	})
 }
 
-// Viewer READS are a disclosure projection and still mask. A download or a
-// private export is the runnable artifact — it has to be re-importable into a
-// script that executes — so those carry the executable definition and only the
-// filename stays a disclosure-safe label.
-func TestStoredScriptViewerReadsMaskWhileDownloadAndExportStayRunnable(t *testing.T) {
+// Viewer reads, downloads, and private exports all expose the same runnable
+// authoring artifact to an authorized operator.
+func TestStoredScriptViewerReadsDownloadAndExportStayRunnable(t *testing.T) {
 	exportDir := t.TempDir()
 	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir)
 	server := NewServer(ServerConfig{})
-	stored := seedLegacySecretScript(server, secretBearingScript("viewer-secret", "project-a"))
+	script := secretBearingScript("viewer-secret", "project-a")
+	ensureCredentialPreservingImportMetadata(script, "test")
+	stored := seedLegacySecretScript(server, script)
 
-	assertMasked := func(label string, response *httptest.ResponseRecorder) {
+	assertRunnableResponse := func(label string, response *httptest.ResponseRecorder) {
 		t.Helper()
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s status = %d body=%s", label, response.Code, response.Body.String())
 		}
-		if strings.Contains(response.Body.String(), "global-password") || strings.Contains(response.Body.String(), "action-api-key") {
-			t.Fatalf("%s leaked script secrets: %s", label, response.Body.String())
+		if !strings.Contains(response.Body.String(), "global-password") || !strings.Contains(response.Body.String(), "action-api-key") {
+			t.Fatalf("%s lost script credentials: %s", label, response.Body.String())
 		}
 	}
 	assertRunnable := func(label string, data []byte) {
@@ -987,12 +989,12 @@ func TestStoredScriptViewerReadsMaskWhileDownloadAndExportStayRunnable(t *testin
 
 	list := httptest.NewRecorder()
 	server.handleListScripts(list, httptest.NewRequest(http.MethodGet, "/api/v1/scripts?project_id=project-a", nil))
-	assertMasked("list", list)
+	assertRunnableResponse("list", list)
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID, nil)
 	getReq.SetPathValue("id", stored.ID)
 	get := httptest.NewRecorder()
 	server.handleGetScript(get, getReq)
-	assertMasked("get", get)
+	assertRunnableResponse("get", get)
 	downloadReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID+"/download", nil)
 	downloadReq.SetPathValue("id", stored.ID)
 	download := httptest.NewRecorder()
@@ -1009,8 +1011,9 @@ func TestStoredScriptViewerReadsMaskWhileDownloadAndExportStayRunnable(t *testin
 	exportReq.SetPathValue("id", stored.ID)
 	exported := httptest.NewRecorder()
 	server.handleExportScript(exported, exportReq)
-	// The export RESPONSE reports only a path and size, so it stays masked.
-	assertMasked("export response", exported)
+	if exported.Code != http.StatusOK {
+		t.Fatalf("export response status = %d body=%s", exported.Code, exported.Body.String())
+	}
 	path := filepath.Join(exportDir, "private.json")
 	info, err := os.Stat(path)
 	if err != nil {
@@ -1046,12 +1049,12 @@ func TestStoredScriptViewerReadsMaskWhileDownloadAndExportStayRunnable(t *testin
 	}
 }
 
-func TestStoredScriptResponseMasksDecodedBase64JSONWithoutMutatingStoredWire(t *testing.T) {
+func TestStoredScriptResponsePreservesDecodedBase64JSONWithoutMutatingStoredWire(t *testing.T) {
 	const canary = "stored-base64-response-canary-8e45"
 	const wireBody = "{\n  \"password\": \"" + canary + "\",\n  \"count\": 1.00e+2,\n  \"ok\": true\n}"
 	encodedBody := base64.StdEncoding.EncodeToString([]byte(wireBody))
 	server := NewServer(ServerConfig{})
-	stored := seedLegacySecretScript(server, &dsl.Script{
+	script := &dsl.Script{
 		ID:        "base64-response-projection",
 		Name:      "Base64 response projection",
 		Version:   "1",
@@ -1064,7 +1067,9 @@ func TestStoredScriptResponseMasksDecodedBase64JSONWithoutMutatingStoredWire(t *
 			Body:         encodedBody,
 			BodyEncoding: "base64",
 		}},
-	})
+	}
+	ensureCredentialPreservingImportMetadata(script, "test")
+	stored := seedLegacySecretScript(server, script)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID, nil)
 	getReq.SetPathValue("id", stored.ID)
@@ -1085,9 +1090,8 @@ func TestStoredScriptResponseMasksDecodedBase64JSONWithoutMutatingStoredWire(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
-	if string(decoded) != wantWire {
-		t.Fatalf("masked wire bytes changed outside credential occurrence:\n got: %q\nwant: %q", decoded, wantWire)
+	if string(decoded) != wireBody {
+		t.Fatalf("stored response changed wire bytes:\n got: %q\nwant: %q", decoded, wireBody)
 	}
 	current, ok := server.runner.GetScript(stored.ID)
 	if !ok || current.Script.Actions[0].Body != encodedBody {
@@ -1099,7 +1103,7 @@ func TestStoredScriptResponseMasksDecodedBase64JSONWithoutMutatingStoredWire(t *
 	}
 }
 
-func TestImportResponseMasksEmbeddedBase64BodyWithoutCorruptingWire(t *testing.T) {
+func TestImportResponsePreservesEmbeddedBase64BodyWithoutCorruptingWire(t *testing.T) {
 	const canary = "import-base64-response-canary-a81f"
 	const wireBody = "{\n  \"password\": \"" + canary + "\",\n  \"count\": 1.00e+2,\n  \"ok\": true\n}"
 	encodedBody := base64.StdEncoding.EncodeToString([]byte(wireBody))
@@ -1127,23 +1131,26 @@ func TestImportResponseMasksEmbeddedBase64BodyWithoutCorruptingWire(t *testing.T
 	if !ok || len(scripts) != 1 {
 		t.Fatalf("response scripts = %#v, want one projected script", response["scripts"])
 	}
-	result, ok := response["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("response result = %#v, want object", response["result"])
-	}
-	resultScript, ok := result["script"]
-	if !ok {
-		t.Fatalf("response result has no embedded script: %#v", result)
-	}
-
 	for label, value := range map[string]any{
-		"script":        response["script"],
-		"scripts":       scripts[0],
-		"result.script": resultScript,
+		"script":  response["script"],
+		"scripts": scripts[0],
+		"result":  response["result"],
 	} {
 		payload, err := json.Marshal(value)
 		if err != nil {
 			t.Fatalf("%s marshal: %v", label, err)
+		}
+		var envelope struct {
+			Script *dsl.Script `json:"script"`
+		}
+		if label == "result" {
+			if err := json.Unmarshal(payload, &envelope); err != nil {
+				t.Fatalf("%s unmarshal: %v", label, err)
+			}
+			payload, err = json.Marshal(envelope.Script)
+			if err != nil {
+				t.Fatalf("%s script marshal: %v", label, err)
+			}
 		}
 		var projected dsl.Script
 		if err := json.Unmarshal(payload, &projected); err != nil {
@@ -1157,9 +1164,8 @@ func TestImportResponseMasksEmbeddedBase64BodyWithoutCorruptingWire(t *testing.T
 		if err != nil {
 			t.Fatalf("%s body is not valid base64: %v (%q)", label, err, action.Body)
 		}
-		wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
-		if string(decoded) != wantWire {
-			t.Fatalf("%s wire bytes changed outside the expected disclosure boundary:\n got: %q\nwant: %q", label, decoded, wantWire)
+		if string(decoded) != wireBody {
+			t.Fatalf("%s changed imported wire bytes:\n got: %q\nwant: %q", label, decoded, wireBody)
 		}
 	}
 	if script.Actions[0].Body != encodedBody {

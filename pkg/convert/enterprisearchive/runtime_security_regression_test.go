@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/jasonczech/apexload/pkg/credential"
 )
 
 func TestParseRuntimeCfgHonorsCaseInsensitiveSupportedKeys(t *testing.T) {
@@ -141,7 +139,7 @@ chain=base64,gzip
 	}
 }
 
-func TestDisclosureSafeNeutralConfigValuesScrubURLCredentials(t *testing.T) {
+func TestImportedNeutralConfigValuesPreserveURLCredentials(t *testing.T) {
 	t.Parallel()
 	const (
 		userCanary  = "neutral-url-user-canary"
@@ -156,8 +154,8 @@ func TestDisclosureSafeNeutralConfigValuesScrubURLCredentials(t *testing.T) {
 	})
 	safe := sections["General"]["Documentation"]
 	for _, canary := range []string{userCanary, passCanary, tokenCanary} {
-		if strings.Contains(safe, canary) {
-			t.Fatalf("neutral preserved setting retained URL credential %q: %q", canary, safe)
+		if !strings.Contains(safe, canary) {
+			t.Fatalf("neutral preserved setting lost URL credential %q: %q", canary, safe)
 		}
 	}
 	for _, want := range []string{"safe.example.test:8443", "/reference/path"} {
@@ -166,12 +164,10 @@ func TestDisclosureSafeNeutralConfigValuesScrubURLCredentials(t *testing.T) {
 		}
 	}
 
-	source := disclosureSafeEnterpriseINIContent(
-		"[General]\nDocumentation=" + value + "\nNamespace=http://schemas.example.test/enterprise/v1\n",
-	)
+	source := "[General]\nDocumentation=" + value + "\nNamespace=http://schemas.example.test/enterprise/v1\n"
 	for _, canary := range []string{userCanary, passCanary, tokenCanary} {
-		if strings.Contains(source, canary) {
-			t.Fatalf("source-review INI retained URL credential %q: %q", canary, source)
+		if !strings.Contains(source, canary) {
+			t.Fatalf("source-review INI lost URL credential %q: %q", canary, source)
 		}
 	}
 	for _, want := range []string{"safe.example.test:8443", "/reference/path", "http://schemas.example.test/enterprise/v1"} {
@@ -181,7 +177,7 @@ func TestDisclosureSafeNeutralConfigValuesScrubURLCredentials(t *testing.T) {
 	}
 }
 
-func TestDisclosureSafeParameterSectionsRedactSemanticCredentialValues(t *testing.T) {
+func TestImportedParameterSectionsPreserveSemanticCredentialValues(t *testing.T) {
 	t.Parallel()
 	const (
 		passwordCanary = "preserved-prm-password-canary"
@@ -206,23 +202,21 @@ func TestDisclosureSafeParameterSectionsRedactSemanticCredentialValues(t *testin
 	if password["ParamName"] != "Password" ||
 		password["ColumnName"] != "Password" ||
 		password["Table"] != "credentials.dat" ||
-		password["ValueList"] != credential.Redacted ||
-		password["OriginalValue"] != credential.Redacted {
+		password["ValueList"] != passwordCanary ||
+		password["OriginalValue"] != originalCanary {
 		t.Fatalf("sensitive .prm section projection = %#v", password)
 	}
 	if got := safe["flow.prm"]["parameter:UserName"]["ValueList"]; got != "synthetic-user" {
 		t.Fatalf("nonsensitive .prm value changed: %q", got)
 	}
 
-	source := disclosureSafeEnterprisePRMContent(
-		"[parameter:Password]\nParamName=Password\nValueList=" + passwordCanary +
-			"\nOriginalValue=" + originalCanary +
-			"\n[parameter:UserName]\nParamName=UserName\nValueList=synthetic-user\n",
-	)
-	if strings.Contains(source, passwordCanary) ||
-		strings.Contains(source, originalCanary) ||
+	source := "[parameter:Password]\nParamName=Password\nValueList=" + passwordCanary +
+		"\nOriginalValue=" + originalCanary +
+		"\n[parameter:UserName]\nParamName=UserName\nValueList=synthetic-user\n"
+	if !strings.Contains(source, passwordCanary) ||
+		!strings.Contains(source, originalCanary) ||
 		!strings.Contains(source, "ValueList=synthetic-user") {
-		t.Fatalf("semantic .prm source projection was not disclosure-safe: %q", source)
+		t.Fatalf("semantic .prm source was not preserved: %q", source)
 	}
 }
 
@@ -276,7 +270,7 @@ func TestParseRuntimeCfgMixedCaseKeysMatchCanonical(t *testing.T) {
 	}
 }
 
-func TestRuntimeProxyDiagnosticsNeverEchoRawSettingValues(t *testing.T) {
+func TestRuntimeProxyDiagnosticsPreserveRawSettingValues(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
@@ -320,12 +314,12 @@ ProxyHTTPPort=erin:echo@proxy-port.test
 		t.Run(test.name, func(t *testing.T) {
 			rc := ParseRuntimeCfg(test.content)
 			diagnostics := fmt.Sprintf("%#v", rc.RuntimeIssues)
-			if len(rc.RuntimeIssues) == 0 || !strings.Contains(diagnostics, credential.Redacted) {
-				t.Fatalf("proxy diagnostics omitted redacted evidence: %s", diagnostics)
+			if len(rc.RuntimeIssues) == 0 {
+				t.Fatalf("proxy diagnostics omitted evidence: %s", diagnostics)
 			}
 			for _, leak := range test.leaks {
-				if strings.Contains(diagnostics, leak) {
-					t.Fatalf("proxy diagnostics leaked %q: %s", leak, diagnostics)
+				if !strings.Contains(diagnostics, leak) {
+					t.Fatalf("proxy diagnostics lost %q: %s", leak, diagnostics)
 				}
 			}
 			if rc.ProxyMode != "none" || rc.ProxyURL != "" || rc.ProxyUser != "" || rc.ProxyPass != "" {

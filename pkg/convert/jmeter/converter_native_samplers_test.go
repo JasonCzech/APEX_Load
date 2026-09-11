@@ -261,19 +261,19 @@ func TestConvertJMXJDBCConnectionPropertiesAreAppliedAndPreserved(t *testing.T) 
 	if err != nil {
 		t.Fatalf("marshal source review: %v", err)
 	}
-	for _, forbidden := range []string{
+	for _, expected := range []string{
 		explicitPassword,
 		"property-password",
 		"ssl-secret",
 	} {
-		if strings.Contains(string(sourceReview), forbidden) {
-			t.Fatalf("source review disclosed JDBC credential %q: %s", forbidden, sourceReview)
+		if !strings.Contains(string(sourceReview), expected) {
+			t.Fatalf("source review lost JDBC credential %q: %s", expected, sourceReview)
 		}
 	}
 	if result.SourceReview == nil ||
 		len(result.SourceReview.SourceFiles) != 1 ||
-		!result.SourceReview.SourceFiles[0].Redacted {
-		t.Fatalf("source review = %#v, want explicitly redacted JDBC source", result.SourceReview)
+		result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review = %#v, want exact JDBC source", result.SourceReview)
 	}
 	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
 		t.Fatalf("generated database script failed validation: %#v", issues)

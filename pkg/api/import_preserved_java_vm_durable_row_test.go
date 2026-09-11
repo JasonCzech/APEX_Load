@@ -136,17 +136,17 @@ func TestDurableImportedJavaVMSettingsStillProjectUnexemptMembers(t *testing.T) 
 	}
 	note, _ := settings["operator_note"].(string)
 	if strings.Contains(note, canary) {
-		t.Fatalf("unexempt java_vm_settings member kept raw source text: %q", note)
+		t.Fatalf("untrusted java_vm_settings member kept raw source text: %q", note)
 	}
 	parameters, ok := settings["additional_vm_parameters"].([]any)
 	if !ok || len(parameters) != 2 {
 		t.Fatalf("wrong-shaped additional_vm_parameters = %#v, want the projected list", settings["additional_vm_parameters"])
 	}
 	if text, _ := parameters[0].(string); strings.Contains(text, canary) {
-		t.Fatalf("wrong-shaped additional_vm_parameters kept raw source text: %q", text)
+		t.Fatalf("untrusted additional_vm_parameters kept raw source text: %q", text)
 	}
 	raw, _ := settings["additional_vm_parameters_raw"].(string)
 	if strings.Contains(raw, canary) {
-		t.Fatalf("oversized additional_vm_parameters_raw kept raw source text: %q", raw)
+		t.Fatalf("untrusted oversized additional_vm_parameters_raw kept raw source text: %q", raw)
 	}
 }

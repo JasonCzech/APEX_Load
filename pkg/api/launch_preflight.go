@@ -1132,17 +1132,18 @@ func (tr *TestRunner) launchCapacityEventForScenarioLocked(schedule *storage.Sce
 	for _, script := range scenario.Scripts {
 		totalVUsers = saturatingAddNonNegative(totalVUsers, script.VUsers)
 		groups = append(groups, TestGroup{
-			Name:           script.Name,
-			ScriptID:       script.ScriptID,
-			ScriptName:     firstNonEmpty(script.ScriptName, script.Name),
-			Protocol:       script.Protocol,
-			VUsers:         script.VUsers,
-			RampUp:         script.RampUp,
-			RampDown:       script.RampDown,
-			StartOffset:    script.StartOffset,
-			Stages:         append([]storage.LoadStage(nil), script.Stages...),
-			Iterations:     script.Iterations,
-			Initialization: script.Initialization,
+			Name:                         script.Name,
+			ScriptID:                     script.ScriptID,
+			ScriptName:                   firstNonEmpty(script.ScriptName, script.Name),
+			Protocol:                     script.Protocol,
+			VUsers:                       script.VUsers,
+			RampUp:                       script.RampUp,
+			RampDown:                     script.RampDown,
+			StartOffset:                  script.StartOffset,
+			Stages:                       append([]storage.LoadStage(nil), script.Stages...),
+			Iterations:                   script.Iterations,
+			Initialization:               script.Initialization,
+			TransactionResponseTimeSLAMs: cloneFloat64Ptr(script.TransactionResponseTimeSLAMs),
 		})
 	}
 	duration, err := time.ParseDuration(scenario.Duration)

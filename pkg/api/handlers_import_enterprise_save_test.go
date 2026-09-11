@@ -303,8 +303,8 @@ func TestHandleSaveEnterpriseArchiveImportRestoresAttestedCredentialInEmbeddedFo
 	if got := stored.Script.Metadata.Import.Source; got != "loadrunner" {
 		t.Fatalf("durable source profile = %q, want loadrunner", got)
 	}
-	if strings.Contains(response.Body.String(), "enterprise-exact-secret") {
-		t.Fatalf("save response disclosed credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), "enterprise-exact-secret") {
+		t.Fatalf("save response did not preserve credential: %s", response.Body.String())
 	}
 }
 

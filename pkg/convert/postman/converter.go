@@ -431,9 +431,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	result.Summary.Variables = parameterNames(result.Script.Parameters)
 	reportUnsupportedPostmanAuth(col.Auth, &diagnostics, "collection")
 
-	// The dashboard sends this option explicitly (and defaults it on). Preserve
-	// compatibility for API clients that predate the option and omit it.
-	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, false)
+	// Imports always preserve authored values. Redaction is limited to run and
+	// debug output, regardless of this legacy compatibility option.
+	sanitizeSensitive := false
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	requestPipeline := newPostmanRequestPipeline(
 		variableBindings.SourceValues,
@@ -444,7 +444,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	)
 	chainItems := make([]postmanChainItem, 0, len(requests))
 	sourceLineIndex := sourceview.NewLineIndex(content)
-	eventSourceRedacted := false
 	eventSourceNames := make(map[string]struct{}, len(sources))
 	for name := range sources {
 		eventSourceNames[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
@@ -471,9 +470,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				fmt.Sprintf("%s_%s_%d.js", sanitizeName(item.Name), listenType, i),
 				eventSourceNames,
 			)
-			publicScript := disclosureSafePostmanEventSource(scriptContent)
-			sources[filename] = publicScript
-			eventSourceRedacted = eventSourceRedacted || publicScript != scriptContent
+			sources[filename] = scriptContent
 			sourceMappings = append(sourceMappings, sourceview.Mapping{
 				SourceFile: filename,
 				StartLine:  1,
@@ -583,39 +580,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		diagnostics.Add(diag.Warning, "Postman completeness guard", "collection", fmt.Sprintf("%d request item(s) were present but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
-	if eventSourceRedacted {
-		// Event scripts are embedded in the collection JSON as well as exposed as
-		// virtual .js files. Omit the public collection view too, otherwise an
-		// arbitrary literal in residual JavaScript could bypass field-aware
-		// source redaction through the encoded exec array.
-		sources[sourceFileName] = disclosureSafePostmanEventSource(sources[sourceFileName])
-	}
-	if variableBindings.OmitSourceReview {
-		sources[sourceFileName] = "// [POSTMAN SOURCE OMITTED: VARIABLE GRAPH REQUIRES REVIEW]"
-		if environmentFileName != "" {
-			sources[environmentFileName] = "// [POSTMAN ENVIRONMENT OMITTED: VARIABLE GRAPH REQUIRES REVIEW]"
-		}
-	}
-	protectedSourceRedacted := maskPostmanProtectedSourceValues(sources, protectedRequirements)
-	protectedSourceRedacted = requestPipeline.redactSourceReviewBodies(sources) ||
-		protectedSourceRedacted
-	protectedSourceRedacted = maskPostmanSourceVariableValues(
-		sources,
-		credentialVariableNames,
-		requestPipeline.sourceVariables,
-	) || protectedSourceRedacted
-	protectedSourceRedacted = maskPostmanLiteralSourceValues(
-		sources,
-		variableBindings.InvalidSourceValues,
-	) || protectedSourceRedacted
 	for index := range protectedRequirements {
 		protectedRequirements[index].Value = ""
 	}
 	result.SourceReview = sourceview.Build(sources, sourceMappings)
-	if protectedSourceRedacted || eventSourceRedacted || variableBindings.OmitSourceReview {
-		markPostmanSourceReviewRedacted(result.SourceReview)
-	}
-	scrubPostmanSourceReview(result.SourceReview)
 	return result, nil
 }
 

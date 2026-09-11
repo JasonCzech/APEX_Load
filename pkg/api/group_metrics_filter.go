@@ -113,6 +113,19 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 	// the selected groups. Omit the global series instead of returning metrics
 	// from groups the caller explicitly hid.
 	out.Transactions = nil
+	selectedNames := make(map[string]struct{}, len(filter.Names))
+	for _, name := range filter.Names {
+		selectedNames[name] = struct{}{}
+	}
+	out.TransactionResponseTimeSLA = make([]TransactionResponseTimeSLAResult, 0, len(live.TransactionResponseTimeSLA))
+	for _, row := range live.TransactionResponseTimeSLA {
+		if _, selected := selectedNames[row.Group]; selected {
+			out.TransactionResponseTimeSLA = append(out.TransactionResponseTimeSLA, row)
+		}
+	}
+	if len(out.TransactionResponseTimeSLA) == 0 {
+		out.TransactionResponseTimeSLA = nil
+	}
 	out.GroupMetrics = make(map[string]*GroupLiveMetrics)
 	if len(filter.Names) == 0 {
 		clearLivePerformanceMetrics(&out)

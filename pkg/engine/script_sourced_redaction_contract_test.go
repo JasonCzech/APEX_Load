@@ -22,9 +22,9 @@ import (
 // The contract each mode pins, in one place so the individual tests do not each
 // restate it:
 //
-//   - redaction on (the DEFAULT, and the state of an unset field): a
-//     script-sourced value is scrubbed out of the run's OUTPUT.
+//   - redaction on: a script-sourced value is scrubbed out of the run's OUTPUT.
 //   - redaction off: the same value survives in that output.
+//   - an unset field uses the default-off behavior.
 //   - either way: a platform-managed {{secret.NAME}} value is scrubbed, and the
 //     durable script keeps every credential byte-exact and runnable.
 var runEvidenceRedactionModes = []struct {

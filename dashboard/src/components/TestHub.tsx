@@ -33,7 +33,8 @@ import type { ClosedVUserConfig, ClosedVUserDefinition, GoalDrivenARTConfig, Goa
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
-import { hasGoalModeConfiguration, validateGoalConfig } from './goalConfigValidation'
+import TransactionResponseTimeSLASettings from './TransactionResponseTimeSLASettings'
+import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionResponseTimeSLAOverrides } from './goalConfigValidation'
 import PageViewToggle from './PageViewToggle'
 import ExecutionPlansPanel from './ExecutionPlansPanel'
 import { type NavPage } from './Sidebar'
@@ -151,6 +152,7 @@ export interface ScenarioFormGroup {
   /** Per-group runtime overrides layered over the scenario-wide defaults. */
   runtimeSettings?: ScenarioRuntimeSettingsDraft
   assignment?: GeneratorAssignmentSettings
+	transactionResponseTimeSlaMs?: number
 }
 
 type ScenarioSortField = 'updated_at' | 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
@@ -465,6 +467,7 @@ function normalizeGroupForPayload(group: ScenarioFormGroup) {
     initialization: group.initialization,
     runtimeSettings: group.runtimeSettings,
     assignment: group.assignment,
+		transactionResponseTimeSlaMs: group.transactionResponseTimeSlaMs,
   }
 }
 
@@ -3123,15 +3126,15 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setError(assignmentValidationError)
       return null
     }
+    const transactionSLAError = validateGoalConfig(goalConfigFromForm(form)) || validateTransactionResponseTimeSLAOverrides(form.groups)
+    if (transactionSLAError) {
+      setError(transactionSLAError)
+      return null
+    }
     if (form.scenario_mode === 'goal_oriented') {
       const goalConfig = goalConfigFromForm(form)
       if (!hasGoalModeConfiguration(goalConfig)) {
         setError('Goal-oriented scenarios require at least one goal or guardrail setting')
-        return null
-      }
-      const goalConfigError = validateGoalConfig(goalConfig)
-      if (goalConfigError) {
-        setError(goalConfigError)
         return null
       }
     }
@@ -4621,6 +4624,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               />
             </div>
           )}
+			<TransactionResponseTimeSLASettings
+				defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
+				groups={formGroups.map((group, index) => ({
+					name: group.name || `Group ${index + 1}`,
+					scriptName: findScriptById(scripts, group.script_id)?.name,
+					overrideMs: group.transactionResponseTimeSlaMs,
+				}))}
+				onDefaultChange={value => setForm(previous => scenarioFormWithGoalField(previous, 'transaction_response_time_sla_ms', value))}
+				onGroupOverrideChange={(index, value) => updateScenarioGroup(index, { transactionResponseTimeSlaMs: value })}
+			/>
           <div className="scenario-subpanel">
             {activeProfileMapping && (
               <div className="scenario-shape-guidance">

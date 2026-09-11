@@ -9473,3 +9473,109 @@ col.results-actions-col {
 .import-destination-disclosure { margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
 .import-destination-disclosure > summary { cursor: pointer; color: var(--text-secondary); }
 .import-destination-disclosure[open] > summary { margin-bottom: 12px; }
+.transaction-sla-settings {
+	display: grid;
+	gap: 1rem;
+}
+
+.transaction-sla-coverage,
+.transaction-sla-effective {
+	color: var(--text-secondary);
+	font-size: 0.85rem;
+}
+
+.transaction-sla-default {
+	max-width: 22rem;
+}
+
+.transaction-sla-group-list {
+	display: grid;
+	gap: 0.55rem;
+}
+
+.transaction-sla-group-row {
+	display: grid;
+	grid-template-columns: minmax(12rem, 1fr) auto minmax(10rem, auto);
+	align-items: center;
+	gap: 1rem;
+	padding: 0.75rem 0.9rem;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+}
+
+.transaction-sla-group-row > div {
+	display: grid;
+	gap: 0.15rem;
+}
+
+.transaction-sla-group-row > div span {
+	color: var(--text-secondary);
+	font-size: 0.82rem;
+}
+
+.transaction-sla-override-input {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+}
+
+.transaction-sla-override-input input {
+	width: 7rem;
+}
+
+@media (max-width: 760px) {
+	.transaction-sla-group-row {
+		grid-template-columns: 1fr;
+		gap: 0.55rem;
+	}
+}
+.transaction-sla-compliance-heading {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.transaction-sla-compliance-heading p {
+  color: var(--text-secondary);
+  margin: 0.25rem 0 1rem;
+}
+
+.transaction-sla-compliance-heading > span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
+}
+
+.transaction-sla-status {
+  border-radius: 999px;
+  display: inline-block;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+}
+
+.transaction-sla-select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 0.2em;
+}
+
+.transaction-sla-select:hover,
+.transaction-sla-select:focus-visible {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.transaction-sla-status-pass { background: color-mix(in srgb, var(--success-color, #16a34a) 18%, transparent); color: var(--success-color, #15803d); }
+.transaction-sla-status-fail { background: color-mix(in srgb, var(--error-color, #dc2626) 18%, transparent); color: var(--error-color, #b91c1c); }
+.transaction-sla-status-not_evaluated { background: color-mix(in srgb, var(--text-secondary) 15%, transparent); color: var(--text-secondary); }

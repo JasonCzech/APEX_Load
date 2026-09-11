@@ -440,6 +440,7 @@ describe('CreateTestModal', () => {
       [{ max_dead_letter_rate_pct: -0.1 }, 'dead-letter rate'],
       [{ sla_breach_window: 'not-a-duration' }, 'SLA breach window'],
       [{ stop_on_sla_breach: true }, 'SLA threshold'],
+      [{ transaction_response_time_sla_ms: 3000, stop_on_sla_breach: true }, 'SLA threshold'],
       [{ stop_on_max_errors: true }, 'max error count'],
     ] as const
 

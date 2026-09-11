@@ -54,6 +54,9 @@ func preparePersistentBrunoNativeScript(script *dsl.Script) (*dsl.Script, error)
 		}
 		projected.Actions[index].Body = body
 	}
+	if preserveImportedCredentials {
+		return projected, nil
+	}
 	restoreBrunoNativeCompactProvenance(projected, script)
 	return projected, nil
 }

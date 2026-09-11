@@ -14,9 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type ImportRequest struct {
@@ -154,8 +152,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
 	inferExtractors := convertutil.BoolOption(req.Options.InferExtractors, true)
-	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
-
 	baseURL := strings.TrimSpace(req.Options.BaseURL)
 	if baseURL == "" {
 		baseURL = detectBaseURL(exchanges)
@@ -237,7 +233,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Warnings = append(result.Warnings, "Java-over-HTTP serialized-object traffic was imported in byte-preserving embedded mode; request/object mappings are not applied without a governed java_vuser sidecar flow")
 	}
 	sourceFiles := sampleSourceFiles(format, req.Content, req.ResponseContent)
-	redactedSourceFiles := redactSourceReviewSecrets(sourceFiles, exchanges)
 	sourceLocations := sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 	finalizationReports := make([]requestimport.Report, 0, len(exchanges))
@@ -401,33 +396,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	result.Unsupported = append(diagnostics.Items(), finalized.Diagnostics...)
 	result.Stats.CorrelationsDetected = len(correlations)
-	if sanitizeSensitive {
-		sanitizePublicCorrelationSamples(result.Correlations)
-	}
 	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
-	if result.SourceReview != nil {
-		for index := range result.SourceReview.SourceFiles {
-			if redactedSourceFiles[result.SourceReview.SourceFiles[index].Path] {
-				result.SourceReview.SourceFiles[index].Redacted = true
-			}
-		}
-	}
 	return result, nil
-}
-
-func sanitizePublicCorrelationSamples(correlations []Correlation) {
-	for index := range correlations {
-		sample := correlations[index].SampleValue
-		if sample == "" {
-			continue
-		}
-		if credential.SensitiveName(correlations[index].Name) ||
-			credential.SensitiveName(correlations[index].Expression) {
-			correlations[index].SampleValue = scrub.Redacted
-			continue
-		}
-		correlations[index].SampleValue = scrub.Value(sample, scrub.Policy{})
-	}
 }
 
 func isExplicitRedirectStep(ex exchange) bool {

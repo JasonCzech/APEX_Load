@@ -619,14 +619,11 @@ func finalizeEnterpriseArchiveImportResult(
 	applyRuntimeProfileSelectionReview(result, scripts, ctx)
 	applyEnterpriseRuntimeFidelityReview(result, scripts, ctx)
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
-	finalizeEnterpriseSourceDisclosure(result, ctx.Files, ctx.ParameterFileNames)
 	reviewDeclaredTransactionConservation(result, ctx.ProjectFileName, ctx.ProjectConfig, ctx.RuntimeConfig)
 	for _, script := range scripts {
-		redactArchiveMaskedBodyMetadata(script)
 		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, ctx.RuntimeConfig, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
 	}
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
-	sanitizeEnterpriseResultReviewText(result)
 	return nil
 }
 

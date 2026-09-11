@@ -31,6 +31,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 4, Name: "domain-feature-access-controls", Fingerprint: "86c06ad55fe5e62f1e8e9956738a8b42080e5a63988c9b2903e1f03b9eb0a13a"},
 	{Version: 5, Name: "production-traffic-profiles", Fingerprint: "6d3bff068cfb95b5ac82283cc3794af6941f3d3f9df9c4c329d3fdc9a2133ada"},
 	{Version: 6, Name: "production-traffic-run-snapshots", Fingerprint: "b77be774c8f129230d348c391e3cf34ab356f7900446bf9244f09e3d852ff462"},
+	{Version: 7, Name: "scenario-group-transaction-response-time-sla", Fingerprint: "2b27fdaf2af24996243a8aa5d67e97b01cbe81515ce391653da7f744df80ad2e"},
 }
 
 type SchemaMigrationRecord struct {

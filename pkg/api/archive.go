@@ -48,24 +48,25 @@ type RunArchiveManifest struct {
 	// InitialProvenance is captured once when archive recording begins and is
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.
-	InitialProvenance            *RunArchiveProvenance           `json:"initial_provenance,omitempty"`
-	TransactionsFile             string                          `json:"transactions_file"`
-	TransactionsParquetFile      string                          `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string                          `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string                          `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string                          `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string                          `json:"interval_summaries_parquet_file,omitempty"`
-	TestManifestFile             string                          `json:"test_manifest_file,omitempty"`
-	TestNotesFile                string                          `json:"test_notes_file,omitempty"`
-	Artifacts                    []RunArchiveArtifact            `json:"artifacts,omitempty"`
-	TransactionCount             int64                           `json:"transaction_count"`
-	ResourceSampleCount          int64                           `json:"resource_sample_count"`
-	IntervalSummaryCount         int64                           `json:"interval_summary_count"`
-	SLAEvaluated                 bool                            `json:"sla_evaluated,omitempty"`
-	SLABreached                  bool                            `json:"sla_breached"`
-	SLADetails                   []string                        `json:"sla_details,omitempty"`
-	TransactionRuleResults       []TransactionSLARuleResult      `json:"transaction_rule_results,omitempty"`
-	MessageDetailCapture         *RunArchiveMessageDetailCapture `json:"message_detail_capture,omitempty"`
+	InitialProvenance                 *RunArchiveProvenance              `json:"initial_provenance,omitempty"`
+	TransactionsFile                  string                             `json:"transactions_file"`
+	TransactionsParquetFile           string                             `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile               string                             `json:"resource_samples_file"`
+	ResourceSamplesParquetFile        string                             `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile             string                             `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile      string                             `json:"interval_summaries_parquet_file,omitempty"`
+	TestManifestFile                  string                             `json:"test_manifest_file,omitempty"`
+	TestNotesFile                     string                             `json:"test_notes_file,omitempty"`
+	Artifacts                         []RunArchiveArtifact               `json:"artifacts,omitempty"`
+	TransactionCount                  int64                              `json:"transaction_count"`
+	ResourceSampleCount               int64                              `json:"resource_sample_count"`
+	IntervalSummaryCount              int64                              `json:"interval_summary_count"`
+	SLAEvaluated                      bool                               `json:"sla_evaluated,omitempty"`
+	SLABreached                       bool                               `json:"sla_breached"`
+	SLADetails                        []string                           `json:"sla_details,omitempty"`
+	TransactionRuleResults            []TransactionSLARuleResult         `json:"transaction_rule_results,omitempty"`
+	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult `json:"transaction_response_time_sla_results,omitempty"`
+	MessageDetailCapture              *RunArchiveMessageDetailCapture    `json:"message_detail_capture,omitempty"`
 }
 
 type TransactionSLARuleResult struct {
@@ -74,6 +75,23 @@ type TransactionSLARuleResult struct {
 	Observed     *float64           `json:"observed,omitempty"`
 	MatchedCount int64              `json:"matched_count"`
 	Message      string             `json:"message"`
+}
+
+// TransactionResponseTimeSLAResult is the authoritative compliance result for
+// one named business transaction within one scenario group. Failed protocol
+// samples remain visible but are deliberately excluded from latency compliance.
+type TransactionResponseTimeSLAResult struct {
+	Group                string  `json:"group"`
+	Transaction          string  `json:"transaction"`
+	ThresholdMs          float64 `json:"threshold_ms"`
+	TotalCount           int64   `json:"total_count"`
+	EligibleSuccessCount int64   `json:"eligible_success_count"`
+	ExcludedErrorCount   int64   `json:"excluded_error_count"`
+	MissedCount          int64   `json:"missed_count"`
+	MissedPct            float64 `json:"missed_pct"`
+	MetPct               float64 `json:"met_pct"`
+	RequiredMetPct       float64 `json:"required_met_pct"`
+	Status               string  `json:"status"`
 }
 
 type RunArchiveMessageDetailCapture struct {
@@ -353,43 +371,44 @@ type transactionEventFilter struct {
 }
 
 type RunArchiveReport struct {
-	Outcome             *IntegrationOutcome                    `json:"outcome,omitempty"`
-	ByTransaction       map[string]RunArchiveActionStats       `json:"by_transaction,omitempty"`
-	ByRequest           map[string]RunArchiveActionStats       `json:"by_request,omitempty"`
-	MetricPopulations   map[string]ArchiveMetricPopulation     `json:"metric_populations,omitempty"`
-	SchemaVersion       string                                 `json:"schema_version"`
-	Compatibility       RunArchiveReportCompatibility          `json:"compatibility"`
-	Completeness        RunArchiveCompletenessScore            `json:"completeness"`
-	ChangeAttribution   RunArchiveChangeAttribution            `json:"change_attribution"`
-	ReportProfiles      []RunArchiveReportProfile              `json:"report_profiles,omitempty"`
-	NetworkPhases       RunArchiveNetworkPhaseSummary          `json:"network_phases,omitempty"`
-	ArtifactInventory   []RunArchiveArtifact                   `json:"artifact_inventory,omitempty"`
-	Integrity           *RunArchiveIntegrityReport             `json:"integrity,omitempty"`
-	Manifest            *RunArchiveManifest                    `json:"manifest"`
-	Overview            RunArchiveOverview                     `json:"overview"`
-	Verdict             *ReportVerdict                         `json:"verdict,omitempty"`
-	SLARows             map[string]SLAComplianceRow            `json:"sla_rows,omitempty"`
-	SLARollup           *RunArchiveSLARollup                   `json:"sla_rollup,omitempty"`
-	EvidenceTiers       []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
-	ErrorPatterns       []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
-	SummaryTimeline     []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
-	LoadLevelSummaries  []RunArchiveLoadLevelSummary           `json:"load_level_summaries,omitempty"`
-	ByAction            map[string]RunArchiveActionStats       `json:"by_action"`
-	ByGroup             map[string]RunArchiveActionStats       `json:"by_group,omitempty"`
-	BySOAPOperation     map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
-	ByNetworkProfile    map[string]RunArchiveActionStats       `json:"by_network_profile,omitempty"`
-	ByRegion            map[string]RunArchiveActionStats       `json:"by_region,omitempty"`
-	BySOAPFaultCode     map[string]int64                       `json:"by_soap_fault_code,omitempty"`
-	BySOAPFaultCategory map[string]int64                       `json:"by_soap_fault_category,omitempty"`
-	SOAPFaultTimeline   []RunArchiveSOAPFaultTimelineBucket    `json:"soap_fault_timeline,omitempty"`
-	SOAPPayloadTimeline []RunArchiveSOAPPayloadTimelineBucket  `json:"soap_payload_timeline,omitempty"`
-	BrowserByEngine     map[string]*BrowserEngineLiveMetrics   `json:"browser_by_engine,omitempty"`
-	BrowserByPlatform   map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
-	BrowserByDevice     map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
-	BrowserResources    []BrowserResourceTiming                `json:"browser_resources,omitempty"`
-	Web2Migration       *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
-	OracleDB            *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
-	ResourcePeaks       RunArchiveResourcePeaks                `json:"resource_peaks"`
+	Outcome                           *IntegrationOutcome                    `json:"outcome,omitempty"`
+	ByTransaction                     map[string]RunArchiveActionStats       `json:"by_transaction,omitempty"`
+	ByRequest                         map[string]RunArchiveActionStats       `json:"by_request,omitempty"`
+	MetricPopulations                 map[string]ArchiveMetricPopulation     `json:"metric_populations,omitempty"`
+	SchemaVersion                     string                                 `json:"schema_version"`
+	Compatibility                     RunArchiveReportCompatibility          `json:"compatibility"`
+	Completeness                      RunArchiveCompletenessScore            `json:"completeness"`
+	ChangeAttribution                 RunArchiveChangeAttribution            `json:"change_attribution"`
+	ReportProfiles                    []RunArchiveReportProfile              `json:"report_profiles,omitempty"`
+	NetworkPhases                     RunArchiveNetworkPhaseSummary          `json:"network_phases,omitempty"`
+	ArtifactInventory                 []RunArchiveArtifact                   `json:"artifact_inventory,omitempty"`
+	Integrity                         *RunArchiveIntegrityReport             `json:"integrity,omitempty"`
+	Manifest                          *RunArchiveManifest                    `json:"manifest"`
+	Overview                          RunArchiveOverview                     `json:"overview"`
+	Verdict                           *ReportVerdict                         `json:"verdict,omitempty"`
+	SLARows                           map[string]SLAComplianceRow            `json:"sla_rows,omitempty"`
+	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult     `json:"transaction_response_time_sla_results,omitempty"`
+	SLARollup                         *RunArchiveSLARollup                   `json:"sla_rollup,omitempty"`
+	EvidenceTiers                     []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
+	ErrorPatterns                     []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
+	SummaryTimeline                   []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
+	LoadLevelSummaries                []RunArchiveLoadLevelSummary           `json:"load_level_summaries,omitempty"`
+	ByAction                          map[string]RunArchiveActionStats       `json:"by_action"`
+	ByGroup                           map[string]RunArchiveActionStats       `json:"by_group,omitempty"`
+	BySOAPOperation                   map[string]RunArchiveActionStats       `json:"by_soap_operation,omitempty"`
+	ByNetworkProfile                  map[string]RunArchiveActionStats       `json:"by_network_profile,omitempty"`
+	ByRegion                          map[string]RunArchiveActionStats       `json:"by_region,omitempty"`
+	BySOAPFaultCode                   map[string]int64                       `json:"by_soap_fault_code,omitempty"`
+	BySOAPFaultCategory               map[string]int64                       `json:"by_soap_fault_category,omitempty"`
+	SOAPFaultTimeline                 []RunArchiveSOAPFaultTimelineBucket    `json:"soap_fault_timeline,omitempty"`
+	SOAPPayloadTimeline               []RunArchiveSOAPPayloadTimelineBucket  `json:"soap_payload_timeline,omitempty"`
+	BrowserByEngine                   map[string]*BrowserEngineLiveMetrics   `json:"browser_by_engine,omitempty"`
+	BrowserByPlatform                 map[string]*BrowserPlatformLiveMetrics `json:"browser_by_platform,omitempty"`
+	BrowserByDevice                   map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
+	BrowserResources                  []BrowserResourceTiming                `json:"browser_resources,omitempty"`
+	Web2Migration                     *RunArchiveWeb2MigrationEvidence       `json:"web2_migration,omitempty"`
+	OracleDB                          *RunArchiveOracleDBEvidence            `json:"oracle_db,omitempty"`
+	ResourcePeaks                     RunArchiveResourcePeaks                `json:"resource_peaks"`
 	// ReleaseTrend is the compact release-over-release trend for this run (this run
 	// vs the immediately prior run in the same release). It is nil by default:
 	// buildRunArchiveReport is a pure function of a single archive record, so the
@@ -848,6 +867,7 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 		cloned[i].RuntimeSettings = cloneRuntimeSettings(groups[i].RuntimeSettings)
 		cloned[i].Assignment = cloneGeneratorAssignmentSettings(groups[i].Assignment)
 		cloned[i].RunLogicGoals = cloneRunLogicGoalSnapshot(groups[i].RunLogicGoals)
+		cloned[i].TransactionResponseTimeSLAMs = cloneFloat64Ptr(groups[i].TransactionResponseTimeSLAMs)
 		cloned[i].runtimeSecretValues = nil
 	}
 	return cloned

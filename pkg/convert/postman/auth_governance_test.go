@@ -3,13 +3,14 @@ package postman
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestConvertPostmanSanitizeSensitiveControlsExecutableCredentialProjection(t *testing.T) {
+func TestConvertPostmanSanitizeSensitiveDoesNotChangeImportedCredentials(t *testing.T) {
 	content := `{
   "info":{"name":"Scrub policy"},
   "item":[{"name":"Login","request":{
@@ -20,64 +21,32 @@ func TestConvertPostmanSanitizeSensitiveControlsExecutableCredentialProjection(t
   }}]
 }`
 
-	t.Run("enabled", func(t *testing.T) {
-		sanitize := true
-		result, err := Convert(ImportRequest{
-			Content: content,
-			Options: ConvertOptions{SanitizeSensitive: &sanitize},
+	for _, sanitize := range []bool{true, false} {
+		t.Run(fmt.Sprintf("legacy_option_%t", sanitize), func(t *testing.T) {
+			result, err := Convert(ImportRequest{
+				Content: content,
+				Options: ConvertOptions{SanitizeSensitive: &sanitize},
+			})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			encoded, err := json.Marshal(result.Script)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, sourceValue := range []string{"source-header-secret", "source-body-secret"} {
+				if !bytes.Contains(encoded, []byte(sourceValue)) {
+					t.Fatalf("imported script lost %q: %s", sourceValue, encoded)
+				}
+			}
+			if policy := result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey]; policy != dsl.ImportPreservedCredentialPolicyPreserve {
+				t.Fatalf("credential preservation policy = %#v", policy)
+			}
+			if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+				t.Fatalf("imported credentials require reentry: %#v", requirements)
+			}
 		})
-		if err != nil {
-			t.Fatalf("Convert returned error: %v", err)
-		}
-		encoded, err := json.Marshal(result.Script)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, sourceValue := range []string{"source-header-secret", "source-body-secret"} {
-			if bytes.Contains(encoded, []byte(sourceValue)) {
-				t.Fatalf("scrubbed executable script retained %q: %s", sourceValue, encoded)
-			}
-		}
-		if !strings.Contains(result.Script.Actions[0].Headers["Authorization"], "{{secret.") ||
-			!strings.Contains(result.Script.Actions[0].Body, "{{secret.") {
-			t.Fatalf("scrubbed action did not use governed secret references: %#v", result.Script.Actions[0])
-		}
-		if policy := result.Script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey]; policy != nil {
-			t.Fatalf("scrubbed draft retained preserve policy: %#v", policy)
-		}
-		if projection := result.Script.Metadata.Import.Preserved["credential_projection"]; projection != "secret_reference" {
-			t.Fatalf("credential projection metadata = %#v", projection)
-		}
-		requirements := result.ProtectedRequirements.Take()
-		if len(requirements) < 2 {
-			t.Fatalf("protected requirements = %#v, want header and body credentials", requirements)
-		}
-		for _, requirement := range requirements {
-			if !requirement.SourceValueAvailable || requirement.Value == "" {
-				t.Fatalf("scrubbed source value was not available to the protected migration flow: %#v", requirement)
-			}
-		}
-	})
-
-	t.Run("disabled", func(t *testing.T) {
-		sanitize := false
-		result, err := Convert(ImportRequest{
-			Content: content,
-			Options: ConvertOptions{SanitizeSensitive: &sanitize},
-		})
-		if err != nil {
-			t.Fatalf("Convert returned error: %v", err)
-		}
-		encoded, err := json.Marshal(result.Script)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, sourceValue := range []string{"source-header-secret", "source-body-secret"} {
-			if !bytes.Contains(encoded, []byte(sourceValue)) {
-				t.Fatalf("scrub-disabled script lost %q: %s", sourceValue, encoded)
-			}
-		}
-	})
+	}
 }
 
 func TestConvertPostmanMissingAuthUsesRequestScopedGovernedSecrets(t *testing.T) {
