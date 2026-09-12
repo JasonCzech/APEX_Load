@@ -5,7 +5,7 @@ import userGuideMarkdown from '../../../docs/APPLICATION_USER_GUIDE.md?raw'
 import adminGuideMarkdown from '../../../docs/ADMIN_USER_GUIDE.md?raw'
 import mcpGuideMarkdown from '../../../mcp/README.md?raw'
 import { loadApiEndpointCatalog } from '../apiDocsClient'
-import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
+import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog } from '../apiEndpointCatalog'
 import { API_GUIDE_DEFAULT_PAGE, type ApiGuideContentPageID } from '../apiGuideNavigation'
 import { buildAllowedOperationSet, canShowEndpointForDocs, docsVisibilityOperationsForEndpoint } from '../apiGuideAccess'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
@@ -13,15 +13,6 @@ import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { ApiGuideTopbarToggle } from './ApiGuideTopbarToggle'
 import GuideMarkdownArticle from './GuideMarkdownArticle'
 import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
-
-type EndpointDoc = ApiEndpointCatalogRoute & {
-  operations: string[]
-}
-
-type EndpointGroup = {
-  title: string
-  endpoints: EndpointDoc[]
-}
 
 type CommandDoc = {
   command: string
@@ -85,18 +76,11 @@ export default function ApiGuidePage({
     () => catalogEndpointDocs.filter(route => route.path.startsWith('/api/v1/auth/')),
     [catalogEndpointDocs],
   )
-  const endpointGroups = useMemo(() => groupEndpointDocs(catalogEndpointDocs), [catalogEndpointDocs])
   const visibleQuickStartCommands = quickStartCommands.filter(command => {
     const route = endpointCatalogByKey.get(endpointCatalogKey(command.method, command.path))
     return route ? canShowEndpointForDocs(route, allowedOperations) : false
   })
   const visibleAuthRows = authRows.filter(row => canShowEndpointForDocs(row, allowedOperations))
-  const visibleEndpointGroups = endpointGroups
-    .map(group => ({
-      ...group,
-      endpoints: group.endpoints.filter(endpoint => canShowEndpointForDocs(endpoint, allowedOperations)),
-    }))
-    .filter(group => group.endpoints.length > 0)
   const canUseAccessWorkspace = ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts'].some(operation => allowedOperations.has(operation))
   // "Any administrator" gate: user/RBAC management OR system/fleet management. Drives
   // whether the admin-only "Admin Guide" tab chip and section are shown.
@@ -305,42 +289,8 @@ export default function ApiGuidePage({
         </>
       )}
 
-      {activeContentPage === 'endpoint-map' && (
-        <section className="page-section">
-          <div className="api-guide-section-header">
-            <h3>Endpoint Map</h3>
-            <p>Generated from the controller route catalog and filtered using your current effective operations. The controller remains the authorization authority; use Swagger for the complete registered route inventory and access requirements.</p>
-          </div>
-          {renderCatalogState(endpointCatalogLoaded, endpointCatalogError)}
-          {endpointCatalogLoaded && renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleEndpointGroups.length === 0, 'No endpoints are visible for the current access context.')}
-          {endpointCatalogLoaded && effectiveAccessLoaded && visibleEndpointGroups.length > 0 && (
-            <div className="api-guide-endpoint-grid">
-              {visibleEndpointGroups.map(group => (
-                <article className="api-guide-card" key={group.title}>
-                  <h4>{group.title}</h4>
-                  <ul>
-                    {group.endpoints.map(endpoint => (
-                      <li key={endpointCatalogKey(endpoint.method, endpoint.path)}><code>{formatEndpoint(endpoint)}</code></li>
-                    ))}
-                  </ul>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
     </div>
   )
-}
-
-function groupEndpointDocs(endpoints: EndpointDoc[]): EndpointGroup[] {
-  const groups = endpoints.reduce<Map<string, EndpointDoc[]>>((nextGroups, endpoint) => {
-    const group = nextGroups.get(endpoint.category) || []
-    group.push(endpoint)
-    nextGroups.set(endpoint.category, group)
-    return nextGroups
-  }, new Map())
-  return Array.from(groups.entries()).map(([title, groupEndpoints]) => ({ title, endpoints: groupEndpoints }))
 }
 
 function renderAccessState(loaded: boolean, error: boolean, empty: boolean, emptyMessage: string) {
@@ -387,8 +337,4 @@ function renderCatalogState(loaded: boolean, error: string) {
       <p>Loading the controller-backed endpoint catalog.</p>
     </div>
   )
-}
-
-function formatEndpoint(endpoint: EndpointDoc): string {
-  return `${endpoint.method} ${endpoint.path}`
 }

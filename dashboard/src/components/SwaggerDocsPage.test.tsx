@@ -233,7 +233,7 @@ paths:
     expect(topbarText()).toContain('MCP Server')
     expect(topbarText()).toContain('Quick Start')
     expect(topbarText()).toContain('Authentication')
-    expect(topbarText()).toContain('Endpoint Map')
+    expect(topbarText()).not.toContain('Endpoint Map')
     expect(topbarText()).toContain('Swagger')
     expect(topbarText()).toContain('Repo Guide')
     expect(findTopbarButton('Swagger')?.getAttribute('aria-pressed')).toBe('true')

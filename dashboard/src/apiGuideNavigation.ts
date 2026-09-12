@@ -1,4 +1,4 @@
-export type ApiGuideContentPageID = 'general' | 'user-guide' | 'admin-guide' | 'mcp' | 'quick-start' | 'authentication' | 'endpoint-map'
+export type ApiGuideContentPageID = 'general' | 'user-guide' | 'admin-guide' | 'mcp' | 'quick-start' | 'authentication'
 export type ApiGuideRouteID = 'swagger' | 'repo-guide'
 export type ApiGuideToggleID = ApiGuideContentPageID | ApiGuideRouteID
 
@@ -13,7 +13,6 @@ export const API_GUIDE_CONTENT_PAGE_IDS: ApiGuideContentPageID[] = [
   'mcp',
   'quick-start',
   'authentication',
-  'endpoint-map',
 ]
 
 // Base toggle order. The admin-only "Admin Guide" option is not listed here; it is
@@ -25,7 +24,6 @@ export const API_GUIDE_TOGGLE_OPTIONS: ApiGuideToggleOption[] = [
   { value: 'mcp', label: 'MCP Server' },
   { value: 'quick-start', label: 'Quick Start' },
   { value: 'authentication', label: 'Authentication' },
-  { value: 'endpoint-map', label: 'Endpoint Map' },
   { value: 'swagger', label: 'Swagger' },
   { value: 'repo-guide', label: 'Repo Guide' },
 ]

@@ -253,7 +253,7 @@ describe('RepositoryGuidePage', () => {
     expect(topbarText()).toContain('MCP Server')
     expect(topbarText()).toContain('Quick Start')
     expect(topbarText()).toContain('Authentication')
-    expect(topbarText()).toContain('Endpoint Map')
+    expect(topbarText()).not.toContain('Endpoint Map')
     expect(topbarText()).toContain('Swagger')
     expect(topbarText()).toContain('Repo Guide')
     expect(findTopbarButton('Repo Guide')?.getAttribute('aria-pressed')).toBe('true')
@@ -263,12 +263,12 @@ describe('RepositoryGuidePage', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
 
     expect(container.querySelector('a[href="#/docs"]')).toBeNull()
-    const endpointMapButton = findTopbarButton('Endpoint Map')
-    expect(endpointMapButton).toBeDefined()
+    const swaggerButton = findTopbarButton('Swagger')
+    expect(swaggerButton).toBeDefined()
     await act(async () => {
-      endpointMapButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      swaggerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(window.location.hash).toBe('#/docs?guide=endpoint-map')
+    expect(window.location.hash).toBe('#/swagger')
   })
 
   it('shows an accessible error when the guide asset cannot be loaded', async () => {

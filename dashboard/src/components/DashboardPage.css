@@ -667,7 +667,7 @@
 }
 
 .release-panel-stat.tone-success .release-panel-stat-value {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .release-panel-stat.tone-warning .release-panel-stat-value {

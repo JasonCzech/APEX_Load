@@ -1407,17 +1407,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       </div>
 
       <DashboardTestListStatus {...testListState} />
-      <details className="first-run-guide dash-section" open={testListState.ready && !tests.some(test => Boolean(test.archive))}>
-        <summary>Help: your first successful test</summary>
-        <p>Follow these steps in your selected workspace. Debugging checks one iteration before you generate load.</p>
-        <ol>
-          <li><button className="btn btn-secondary" onClick={() => onNavigate('settings')}>Choose or create workspace</button></li>
-          <li><button className="btn btn-secondary" onClick={() => onNavigate('scripts')}>Create or import script</button></li>
-          <li><button className="btn btn-secondary" onClick={() => onNavigate('scripts')}>Debug one iteration</button></li>
-          <li><button className="btn btn-secondary" onClick={() => onNavigate('tests')}>Build a scenario</button></li>
-          <li><button className="btn btn-primary" onClick={() => onNavigate('new-test')}>Run and review results</button></li>
-        </ol>
-      </details>
 
       <div className={`dash-dashboard-layout ${releasePanelOpen ? 'snapshot-open' : 'snapshot-collapsed'}`}>
         <div className="dash-main-column">

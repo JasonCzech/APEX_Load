@@ -1027,12 +1027,6 @@
   border-bottom: 0;
 }
 
-.api-guide-endpoint-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
 .api-guide-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -8504,7 +8498,6 @@ col.results-actions-col {
 
   .api-guide-hero,
   .api-guide-mcp-grid,
-  .api-guide-endpoint-grid,
   .swagger-docs-hero,
   .swagger-docs-controls,
   .swagger-detail-grid,
@@ -9375,7 +9368,6 @@ col.results-actions-col {
 .run-outcome-summary dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; }
 .run-outcome-summary dt { color: var(--text-muted); }
 .run-outcome-summary dd { margin: .25rem 0; }
-.first-run-guide ol { display: flex; flex-wrap: wrap; gap: 1rem 2rem; padding: 1rem 2rem; }
 @media (max-width: 760px) { .run-outcome-summary dl { grid-template-columns: 1fr; } }
 
 .script-evidence-states { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: .6rem 1rem; font-size: .8rem; border-bottom: 1px solid var(--border); }

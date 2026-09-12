@@ -129,7 +129,7 @@ describe('ApiGuidePage', () => {
     expect(topbarText()).toContain('MCP Server')
     expect(topbarText()).toContain('Quick Start')
     expect(topbarText()).toContain('Authentication')
-    expect(topbarText()).toContain('Endpoint Map')
+    expect(topbarText()).not.toContain('Endpoint Map')
     expect(topbarText()).not.toContain('Response/Errors')
     expect(topbarText()).toContain('Swagger')
     expect(topbarText()).toContain('Repo Guide')
@@ -170,38 +170,6 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('curl http://localhost:8080/api/v1/system/health')
     expect(container.textContent).not.toContain('python3 mcp/server.py')
 
-    await selectTopbarPage('Endpoint Map')
-    expect(container.textContent).toContain('/api/v1/scripts/import/enterprise-script-archive')
-    expect(container.textContent).toContain('/api/v1/scripts/import/jmeter/save')
-    expect(container.textContent).toContain('/api/v1/scripts/import/oracle-ebusiness/review')
-    expect(container.textContent).toContain('/api/v1/scripts/authoring/sessions')
-    expect(container.textContent).toContain('/api/v1/scenarios/validate-load-model')
-    expect(container.textContent).toContain('/api/v1/scenarios/load-models/templates')
-    expect(container.textContent).toContain('/api/v1/scenarios/{id}/schedules')
-    expect(container.textContent).toContain('/api/v1/data-pools/{id}/rows')
-    expect(container.textContent).toContain('/api/v1/replay/sessions/{session_id}')
-    expect(container.textContent).toContain('/api/v1/recorder/start')
-    expect(container.textContent).toContain('/api/v1/integrations/github/diagnostics')
-    expect(container.textContent).toContain('/api/v1/integrations/github/installations')
-    expect(container.textContent).toContain('/api/v1/projects/{id}/github/policy')
-    expect(container.textContent).toContain('/api/v1/scripts/import/github')
-    expect(container.textContent).toContain('/api/v1/scripts/{id}/github/status')
-    expect(container.textContent).toContain('/api/v1/integrations/github/sync-jobs/{id}')
-    expect(container.textContent).toContain('/api/v1/integrations/github/webhook')
-    expect(container.textContent).toContain('/api/v1/tests/{id}/github/check-run')
-    expect(container.textContent).toContain('/api/v1/integrations/github/check-links')
-    expect(container.textContent).toContain('/api/v1/library/remotes/{id}/pull')
-    expect(container.textContent).toContain('/api/v1/fleet/provisioner')
-    expect(container.textContent).toContain('/api/v1/fleet/load-zones')
-    expect(container.textContent).toContain('/api/v1/execution-plans')
-    expect(container.textContent).toContain('/api/v1/capacity/timeslots')
-    expect(container.textContent).toContain('/api/v1/object-repositories')
-    expect(container.textContent).toContain('/api/v1/correlation-rulesets')
-    expect(container.textContent).toContain('/api/v1/downloads/recording-agent/latest')
-    expect(container.textContent).toContain('/api/v1/system/settings')
-    expect(container.textContent).toContain('/api/v1/protocols/native-support-matrix')
-    expect(container.textContent).toContain('/api/v1/ai/review-queue')
-
     await selectTopbarPage('Authentication')
     expect(window.location.hash).toBe('#/docs?guide=authentication')
     expect(container.textContent).toContain('/api/v1/auth/me')
@@ -239,31 +207,16 @@ describe('ApiGuidePage', () => {
     expect(onNavigate).toHaveBeenCalledWith('access')
   })
 
-  it('filters endpoint rows to the current effective access', async () => {
+  it('filters catalog-backed guide sections to the current effective access', async () => {
     await renderApiGuidePage({ onNavigate: vi.fn(), effectiveAccessResources: accessResources(['view_scripts']) })
-    await selectTopbarPage('Endpoint Map')
+    await selectTopbarPage('Quick Start')
 
     const codeValues = Array.from(container.querySelectorAll('code')).map(node => node.textContent || '')
 
-    expect(codeValues).toContain('GET /api/v1/scripts')
-    expect(codeValues).toContain('POST /api/v1/scripts/validate')
-    expect(codeValues).toContain('GET /api/v1/scripts/web-api/support-matrix')
-    expect(codeValues).toContain('GET /api/v1/scripts/authoring/templates')
-    expect(codeValues).toContain('GET /api/v1/integrations/github/config')
-    expect(codeValues).toContain('GET /api/v1/integrations/github/diagnostics')
-    expect(codeValues).toContain('GET /api/v1/integrations/github/repos')
-    expect(codeValues).toContain('GET /api/v1/scripts/{id}/github/status')
-    expect(codeValues).toContain('GET /api/v1/integrations/github/sync-jobs')
-    expect(codeValues).toContain('GET /api/v1/replay/sessions/{session_id}')
-    expect(codeValues).toContain('GET /api/v1/runtime-settings/support-matrix')
-    expect(codeValues).not.toContain('POST /api/v1/scripts')
-    expect(codeValues).not.toContain('POST /api/v1/scripts/import/enterprise-script-archive')
-    expect(codeValues).not.toContain('POST /api/v1/scripts/import/github')
-    expect(codeValues).not.toContain('POST /api/v1/scripts/{id}/github/push')
-    expect(codeValues).not.toContain('PUT /api/v1/projects/{id}/github/policy')
-    expect(container.textContent).not.toContain('/api/v1/scenarios')
-    expect(codeValues).not.toContain('POST /api/v1/library/remotes')
-    expect(container.textContent).toContain('filtered using your current effective operations')
+    expect(codeValues).toContain('curl http://localhost:8080/api/v1/system/health')
+    expect(codeValues).toContain('curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/integrations/github/diagnostics')
+    expect(codeValues).not.toContain('curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/projects')
+    expect(codeValues).not.toContain('curl -X POST -H "Authorization: Bearer $APEXLOAD_API_KEY" -H "Content-Type: application/json" -d @script.json http://localhost:8080/api/v1/scripts')
 
     await selectTopbarPage('Authentication')
     expect(container.textContent).toContain('/api/v1/auth/me')
@@ -299,16 +252,16 @@ describe('ApiGuidePage', () => {
 
   it('renders distinct access loading and error states for filtered guide sections', async () => {
     await renderApiGuidePage({
-      activePage: 'endpoint-map',
+      activePage: 'quick-start',
       effectiveAccessResources: [],
       effectiveAccessLoaded: false,
     })
 
     expect(container.textContent).toContain('Checking Access')
-    expect(container.querySelector('.api-guide-endpoint-grid')).toBeNull()
+    expect(container.querySelector('.api-guide-code-stack')).toBeNull()
 
     await renderApiGuidePage({
-      activePage: 'endpoint-map',
+      activePage: 'quick-start',
       effectiveAccessResources: [],
       effectiveAccessLoaded: true,
       effectiveAccessError: true,
@@ -322,13 +275,13 @@ describe('ApiGuidePage', () => {
     loadApiEndpointCatalogMock.mockRejectedValueOnce(new Error('catalog route unavailable'))
 
     await renderApiGuidePage({
-      activePage: 'endpoint-map',
+      activePage: 'quick-start',
       effectiveAccessResources: allGuideOperations,
     })
 
     expect(container.textContent).toContain('API Docs Unavailable')
     expect(container.textContent).toContain('catalog route unavailable')
-    expect(container.querySelector('.api-guide-endpoint-grid')).toBeNull()
+    expect(container.querySelector('.api-guide-code-stack')).toBeNull()
   })
 
   it('shows the User Guide tab to everyone and renders its content', async () => {
