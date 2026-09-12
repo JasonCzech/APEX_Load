@@ -1718,6 +1718,15 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	tr.mu.Unlock()
 	live.GeneratorResources = b.buildGeneratorResourceSnapshots(test, batches)
+	if inventory, _ := tr.cachedGeneratorInventorySnapshot(); len(inventory) > 0 {
+		for _, entry := range inventory {
+			for _, resource := range live.GeneratorResources {
+				if resource.Target == entry.Target {
+					resource.PodCapacity = entry.PodCapacity
+				}
+			}
+		}
+	}
 	return live, finalStatus, finalError, accepted, publication
 }
 
@@ -1979,6 +1988,10 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 		return snapshot
 	}
 	snapshot.GeneratorID = response.GeneratorID
+	snapshot.PodCapacity = generatorrpc.PodCapacityFromProto(response.PodCapacity)
+	if snapshot.PodCapacity != nil {
+		snapshot.PodCapacity.ObservedAtUnixMS = time.Now().UnixMilli()
+	}
 	if snapshot.GeneratorID == "" {
 		snapshot.GeneratorID = target
 	}

@@ -29,6 +29,37 @@ export interface ProtocolDensityEnvelope {
   calibrated_at?: string
 }
 
+export interface PodCapacityVector {
+  cpu_cores: number
+  memory_mb: number
+  network_mbps: number
+  vusers: number
+  protocols?: Record<string, number>
+}
+
+export interface PodCapacitySnapshot {
+  state: string
+  model_version: string
+  incarnation: string
+  headroom_pct: number
+  schedulable: PodCapacityVector
+  reserved: PodCapacityVector
+  remaining: PodCapacityVector
+  reserved_pct: number
+  remaining_pct: number
+  bottleneck?: string
+  observed_at_unix_ms: number
+  confidence: string
+  dedicated: boolean
+}
+
+export interface PodCapacityPreview {
+  target: string
+  before: PodCapacitySnapshot
+  proposed: PodCapacityVector
+  after: PodCapacitySnapshot
+}
+
 export interface CapacityAdvisory {
   total_vusers: number
   duration_seconds: number

@@ -20,6 +20,16 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS pod_capacity_reservations (
+			target TEXT NOT NULL,
+			test_id TEXT NOT NULL,
+			incarnation TEXT NOT NULL,
+			generation BIGINT NOT NULL,
+			state TEXT NOT NULL,
+			reservation_json TEXT NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY(target, test_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS domains (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,

@@ -69,6 +69,7 @@ export interface DataPlatformInventory {
 }
 
 export interface SystemInventoryGenerator {
+  pod_capacity?: import('./capacity').PodCapacitySnapshot
   target: string
   generator_id: string
   pod_name?: string

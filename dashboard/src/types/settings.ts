@@ -41,6 +41,7 @@ export interface DashboardCapacityAvailabilitySettings {
 }
 
 export interface DashboardCapacityPlanningSettings {
+  pod_reservations_enabled?: boolean
   headroom_pct: number
   generator: DashboardCapacityGeneratorSettings
   availability: DashboardCapacityAvailabilitySettings

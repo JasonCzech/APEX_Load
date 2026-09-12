@@ -638,6 +638,8 @@ type Service struct {
 	podResources                         podResourceCapacity
 	scriptCache                          *scriptCacheManager
 	assignments                          map[string]assignedTest
+	podCapacityClaims                    map[string]*pb.PodCapacityClaim
+	podCapacityIncarnation               string
 	executions                           map[string]map[string]*groupExecution
 	persistentJavaDrains                 map[uint64]javaVuserCapacityDrain
 	nextPersistentJavaDrain              uint64
@@ -842,6 +844,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 	archiveTTL := configuredGeneratorArchiveTTL()
 	archiveManager := newArchiveManager(generatorID, archiveRecordMax, archiveTTL, 1024, defaultMaxArchiveTransfers, defaultMaxArchiveUnaryTransfers)
 	service := &Service{
+		podCapacityIncarnation:   newPodCapacityIncarnation(),
 		generatorID:              generatorID,
 		now:                      time.Now,
 		maxVUsers:                int32(maxVUsers),
@@ -1319,6 +1322,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		active := s.activeVUsersLocked()
 		avail := s.availableCapacityLocked()
 		persistentJavaReserved := s.heartbeatJavaVuserCapacityInUseLocked()
+		podCapacity := s.podCapacitySnapshotLocked()
 		javaOccupancyMode := s.heartbeatJavaVuserOccupancyModeLocked()
 		s.mu.RUnlock()
 		stats := generatorStatsFromResources(s.collectResources(), active)
@@ -1329,10 +1333,12 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1)
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
 		generatorNow := time.Now()
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,
+			PodCapacity:                    podCapacity,
 			TimestampUnixMs:                generatorNow.UnixMilli(),
 			TimestampUnixNano:              generatorNow.UnixNano(),
 			ActiveTestIds:                  activeTestIDs,

@@ -72,6 +72,7 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 		return nil, nil
 	}
 	out := &GeneratorAssignmentSettings{
+		SharingMode:           strings.TrimSpace(in.SharingMode),
 		Mode:                  strings.TrimSpace(in.Mode),
 		PoolID:                strings.TrimSpace(in.PoolID),
 		RequiredLabels:        normalizeRequiredLabels(in.RequiredLabels),
@@ -79,6 +80,9 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	}
 	if out.Mode == "" {
 		out.Mode = generatorAssignmentModeAuto
+	}
+	if out.SharingMode != "" && out.SharingMode != "shared" && out.SharingMode != "dedicated" {
+		return nil, fmt.Errorf("assignment.sharing_mode must be shared or dedicated")
 	}
 	switch out.Mode {
 	case generatorAssignmentModeAuto:
@@ -205,6 +209,9 @@ func effectiveRegionWeights(assignment *GeneratorAssignmentSettings) map[string]
 func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
 	if in == nil {
 		return nil, nil
+	}
+	if strings.TrimSpace(in.SharingMode) != "" {
+		return nil, fmt.Errorf("assignment.sharing_mode is test-scoped; set it on the test-level assignment")
 	}
 	if strings.TrimSpace(in.PoolID) != "" {
 		// Pool membership is expanded to concrete targets only for the test-level

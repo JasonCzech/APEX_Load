@@ -1,6 +1,7 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 import { DraftCapacityEstimate } from '../types'
+import PodCapacityMeter from './PodCapacityMeter'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { chartTooltipContentStyle, chartTooltipLabelStyle, preserveChartItemOrder } from './chartTooltipTheme'
 
@@ -40,6 +41,14 @@ function formatDraftAvailabilityDetail(estimate: DraftCapacityEstimate): string 
 export default function CreateTestCapacityPreview({ chartData, groups, draftEstimate, estimateLoading, estimateError }: Props) {
   return (
     <div className="load-profile-preview">
+      {draftEstimate?.pod_capacity_warnings?.map(message => <p role="alert" key={message}>{message}</p>)}
+      {!!draftEstimate?.pod_placements?.length && <div>
+        <h4>Peak Capacity Reservations</h4>
+        <p>Estimated from summed group peaks; held until completion. Launch revalidates availability.</p>
+        <table><thead><tr><th>Generator</th><th>Current</th><th>After launch</th></tr></thead>
+          <tbody>{draftEstimate.pod_placements.map(row => <tr key={row.target}><td>{row.target}</td><td><PodCapacityMeter capacity={row.before} /></td><td><PodCapacityMeter capacity={row.after} /></td></tr>)}</tbody>
+        </table>
+      </div>}
       <div className="chart-container">
         <ResponsiveContainer width="100%" height={160}>
           <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 18, bottom: 8 }}>

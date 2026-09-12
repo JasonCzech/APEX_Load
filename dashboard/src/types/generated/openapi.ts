@@ -2237,6 +2237,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -2299,6 +2300,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -7394,6 +7396,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "associated_releases"?: Array<{
@@ -7671,6 +7674,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -16201,6 +16205,7 @@ export interface operations {
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
+            "sharing_mode"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -16264,6 +16269,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -16473,6 +16479,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -16536,6 +16543,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -16919,6 +16927,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -17146,6 +17155,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -17492,6 +17502,7 @@ export interface operations {
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
                   "p99_ms"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "region"?: string;
                   "resources"?: (Record<string, unknown>) | null;
                   "saturation_state"?: string;
@@ -18477,6 +18488,7 @@ export interface operations {
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
+            "sharing_mode"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -18549,6 +18561,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -19052,6 +19065,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "associated_releases"?: Array<{
@@ -19446,6 +19460,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -21442,6 +21457,7 @@ export interface operations {
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
+            "sharing_mode"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -21515,6 +21531,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -22045,6 +22062,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -22368,6 +22386,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -22669,6 +22688,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: (Record<string, unknown>) | null;
                 "saturation_state"?: string;
@@ -23140,6 +23160,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -25837,6 +25858,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -25899,6 +25921,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -26414,6 +26437,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "data_pools"?: Array<{
@@ -26476,6 +26500,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -26913,6 +26938,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -26975,6 +27001,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -27490,6 +27517,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "data_pools"?: Array<{
@@ -27552,6 +27580,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -29035,6 +29064,7 @@ export interface operations {
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
+            "sharing_mode"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -29108,6 +29138,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -29620,6 +29651,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "assignment_recommendation"?: ({
@@ -29722,6 +29754,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -29900,6 +29933,13 @@ export interface operations {
               "target_duration"?: string;
               "transaction_response_time_sla_ms"?: (number) | null;
               "vusers": number;
+            }>;
+            "pod_capacity_warnings"?: Array<string>;
+            "pod_placements"?: Array<{
+              "after": Record<string, unknown>;
+              "before": Record<string, unknown>;
+              "proposed": Record<string, unknown>;
+              "target": string;
             }>;
             "resource_baseline"?: boolean;
             "runtime_settings_review"?: ({
@@ -35461,6 +35501,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -35688,6 +35729,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -36034,6 +36076,7 @@ export interface operations {
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
                   "p99_ms"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "region"?: string;
                   "resources"?: (Record<string, unknown>) | null;
                   "saturation_state"?: string;
@@ -36951,6 +36994,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -36964,6 +37008,7 @@ export interface operations {
                   "availability": Record<string, unknown>;
                   "generator": Record<string, unknown>;
                   "headroom_pct": number;
+                  "pod_reservations_enabled": boolean;
                   "reservations"?: Array<Record<string, unknown>>;
                 };
                 "general": {
@@ -37035,6 +37080,7 @@ export interface operations {
                 "net_error_in_per_sec"?: number;
                 "net_error_out_per_sec"?: number;
                 "open_fd_count"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "pod_name"?: string;
                 "pool_name"?: string;
                 "region"?: string;
@@ -37157,6 +37203,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -37477,6 +37524,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -37490,6 +37538,7 @@ export interface operations {
                   "availability": Record<string, unknown>;
                   "generator": Record<string, unknown>;
                   "headroom_pct": number;
+                  "pod_reservations_enabled": boolean;
                   "reservations"?: Array<Record<string, unknown>>;
                 };
                 "general": {
@@ -37561,6 +37610,7 @@ export interface operations {
                 "net_error_in_per_sec"?: number;
                 "net_error_out_per_sec"?: number;
                 "open_fd_count"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "pod_name"?: string;
                 "pool_name"?: string;
                 "region"?: string;
@@ -37683,6 +37733,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -38355,6 +38406,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "baseline_pinned"?: boolean;
@@ -38409,6 +38461,7 @@ export interface operations {
                   "net_error_in_per_sec"?: number;
                   "net_error_out_per_sec"?: number;
                   "open_fd_count"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "pod_name"?: string;
                   "pool_name"?: string;
                   "region"?: string;
@@ -38579,6 +38632,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "baseline_pinned"?: boolean;
@@ -38633,6 +38687,7 @@ export interface operations {
                   "net_error_in_per_sec"?: number;
                   "net_error_out_per_sec"?: number;
                   "open_fd_count"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "pod_name"?: string;
                   "pool_name"?: string;
                   "region"?: string;
@@ -39603,6 +39658,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "associated_releases"?: Array<{
@@ -39997,6 +40053,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -41876,6 +41933,7 @@ export interface operations {
               "net_error_in_per_sec"?: number;
               "net_error_out_per_sec"?: number;
               "open_fd_count"?: number;
+              "pod_capacity"?: (Record<string, unknown>) | null;
               "pod_name"?: string;
               "pool_name"?: string;
               "region"?: string;
@@ -42064,6 +42122,7 @@ export interface operations {
                 "network_mbps": number;
               };
               "headroom_pct": number;
+              "pod_reservations_enabled": boolean;
               "reservations"?: Array<{
                 "ends_at"?: (string) | null;
                 "pool_id"?: string;
@@ -42233,6 +42292,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -42556,6 +42616,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -42857,6 +42918,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: (Record<string, unknown>) | null;
                 "saturation_state"?: string;
@@ -43328,6 +43390,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -45330,6 +45393,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -45401,6 +45465,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -45730,6 +45795,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -45801,6 +45867,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -46115,6 +46182,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "controller_env"?: Record<string, string>;
@@ -46123,6 +46191,7 @@ export interface operations {
                   "availability": Record<string, unknown>;
                   "generator": Record<string, unknown>;
                   "headroom_pct": number;
+                  "pod_reservations_enabled": boolean;
                   "reservations"?: Array<Record<string, unknown>>;
                 };
                 "general": {
@@ -46194,6 +46263,7 @@ export interface operations {
                 "net_error_in_per_sec"?: number;
                 "net_error_out_per_sec"?: number;
                 "open_fd_count"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "pod_name"?: string;
                 "pool_name"?: string;
                 "region"?: string;
@@ -46251,6 +46321,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -54756,6 +54827,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -55079,6 +55151,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -55380,6 +55453,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: (Record<string, unknown>) | null;
                 "saturation_state"?: string;
@@ -55851,6 +55925,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -56848,6 +56923,7 @@ export interface operations {
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
+            "sharing_mode"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -56911,6 +56987,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -57250,6 +57327,12 @@ export interface operations {
             }) | null;
             "decision": string;
             "intent"?: string;
+            "pod_placements"?: Array<{
+              "after": Record<string, unknown>;
+              "before": Record<string, unknown>;
+              "proposed": Record<string, unknown>;
+              "target": string;
+            }>;
             "queue_allowed": boolean;
             "queue_reason"?: string;
             "recommended_assignment"?: ({
@@ -61959,6 +62042,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -62186,6 +62270,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -62532,6 +62617,7 @@ export interface operations {
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
                   "p99_ms"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "region"?: string;
                   "resources"?: (Record<string, unknown>) | null;
                   "saturation_state"?: string;
@@ -63202,6 +63288,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -63429,6 +63516,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -63775,6 +63863,7 @@ export interface operations {
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
                   "p99_ms"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "region"?: string;
                   "resources"?: (Record<string, unknown>) | null;
                   "saturation_state"?: string;
@@ -64445,6 +64534,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -64672,6 +64762,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -65018,6 +65109,7 @@ export interface operations {
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
                   "p99_ms"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "region"?: string;
                   "resources"?: (Record<string, unknown>) | null;
                   "saturation_state"?: string;
@@ -65688,6 +65780,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -65915,6 +66008,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -66261,6 +66355,7 @@ export interface operations {
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
                   "p99_ms"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "region"?: string;
                   "resources"?: (Record<string, unknown>) | null;
                   "saturation_state"?: string;
@@ -66931,6 +67026,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -67158,6 +67254,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -67504,6 +67601,7 @@ export interface operations {
                   "impact_reasons"?: Array<string>;
                   "p95_ms"?: number;
                   "p99_ms"?: number;
+                  "pod_capacity"?: (Record<string, unknown>) | null;
                   "region"?: string;
                   "resources"?: (Record<string, unknown>) | null;
                   "saturation_state"?: string;
@@ -74358,6 +74456,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "data_pools"?: Array<{
@@ -74420,6 +74519,7 @@ export interface operations {
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
+                  "sharing_mode"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -83856,6 +83956,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -84179,6 +84280,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -84480,6 +84582,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: (Record<string, unknown>) | null;
                 "saturation_state"?: string;
@@ -84951,6 +85054,7 @@ export interface operations {
                 "impact_reasons"?: Array<string>;
                 "p95_ms"?: number;
                 "p99_ms"?: number;
+                "pod_capacity"?: (Record<string, unknown>) | null;
                 "region"?: string;
                 "resources"?: ({
                   "container_cpu_limit_cores"?: number;
@@ -89413,6 +89517,7 @@ export interface operations {
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
+            "sharing_mode"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -89485,6 +89590,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -89988,6 +90094,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "associated_releases"?: Array<{
@@ -90382,6 +90489,7 @@ export interface operations {
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
+                "sharing_mode"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -93999,6 +94107,7 @@ export interface operations {
               "network_mbps"?: number;
             };
             "headroom_pct"?: number;
+            "pod_reservations_enabled"?: boolean;
             "reservations"?: Array<{
               "ends_at"?: (string) | null;
               "pool_id"?: string;
@@ -94178,6 +94287,7 @@ export interface operations {
                 "network_mbps": number;
               };
               "headroom_pct": number;
+              "pod_reservations_enabled": boolean;
               "reservations"?: Array<{
                 "ends_at"?: (string) | null;
                 "pool_id"?: string;
@@ -96328,6 +96438,7 @@ export interface operations {
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
+            "sharing_mode"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -96400,6 +96511,7 @@ export interface operations {
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
+              "sharing_mode"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;

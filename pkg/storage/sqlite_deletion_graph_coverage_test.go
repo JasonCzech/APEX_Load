@@ -41,6 +41,7 @@ var manuallyDeletedProjectTables = stringSet(
 // evidence. A declaration here is therefore a reviewed retention decision, not
 // an omission from deleteProjectGraphTx.
 var retainedAfterProjectDeletionTables = stringSet(
+	"pod_capacity_reservations", // Only generator-confirmed drainage or incarnation fencing releases capacity.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "audit_events", "capacity_instance_intents", "replay_session_leases",
 )
 
@@ -56,6 +57,7 @@ var manuallyHandledTestTables = stringSet(
 )
 
 var retainedAfterTestDeletionTables = stringSet(
+	"pod_capacity_reservations", // Reconciler also drains claims whose test record has been deleted.
 	"archive_cleanup_jobs", "archive_version_cleanup_jobs", "capacity_instance_intents",
 )
 

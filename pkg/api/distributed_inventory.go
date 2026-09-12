@@ -87,6 +87,7 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 					entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
 					entry.Status = "connected"
 					entry.AvailableCapacity = snapshot.AvailableCapacity
+					entry.PodCapacity = snapshot.PodCapacity
 					applyGeneratorStatsToInventory(&entry, snapshot.Stats)
 					entry.CPULimitCores = snapshot.CPULimitCores
 					entry.MemoryLimitBytes = snapshot.MemoryLimitBytes

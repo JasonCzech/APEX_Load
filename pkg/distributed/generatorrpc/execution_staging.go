@@ -283,6 +283,9 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 	if err := service.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
 		return assignmentStageDecision{err: err, availableCapacity: available}
 	}
+	if err := service.validatePodCapacityAssignmentLocked(request.GetTestId(), request.GetGroupName(), request.GetVuserCount()); err != nil {
+		return rejectedAssignmentStage(err.Error(), available)
+	}
 	if request.GetExecutionGeneration() == 0 && service.executionEpochManager.runSupervisionRestartFenceInherited {
 		return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, runSupervisionRestartFenceMessage), availableCapacity: available}
 	}
@@ -545,6 +548,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	}
 	if service.draining {
 		return nil, service.availableCapacityLocked(), status.Error(codes.Unavailable, "generator is draining")
+	}
+	if err := service.validatePodCapacityAssignmentLocked(request.GetTestId(), request.GetGroupName(), request.GetVuserCount()); err != nil {
+		return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, err.Error())
 	}
 	current, currentExists := service.assignments[request.GetTestId()]
 	if currentExists != plan.hadCurrent || !sameSHA256Digest(assignmentControlFingerprint(current, currentExists), plan.currentGuard) {

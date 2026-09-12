@@ -2325,6 +2325,8 @@ type CommandSortState = {
 }
 
 interface InfrastructureRow {
+  reserved?: number
+  remaining?: number
   id: string
   type: 'Generator' | 'Capacity' | 'Route'
   generatorId: string
@@ -2807,6 +2809,8 @@ function InfrastructureTable({
             <SortableHeader label="Saturation" sortKey="saturation" sort={sort} onSort={onSort} />
             <SortableHeader label="CPU" sortKey="cpu" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="Memory" sortKey="memory" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="Reserved %" sortKey="reserved" sort={sort} onSort={onSort} align="right" />
+            <SortableHeader label="Remaining %" sortKey="remaining" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="Network" sortKey="network" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="Disk" sortKey="disk" sort={sort} onSort={onSort} align="right" />
             <SortableHeader label="GC" sortKey="gc" sort={sort} onSort={onSort} align="right" />
@@ -2828,13 +2832,15 @@ function InfrastructureTable({
               <td><span className={`command-state-chip ${row.saturation}`}>{row.saturation}</span><span className="command-table-subtext">{row.saturation === 'unknown' ? 'Telemetry unavailable' : row.impact}</span></td>
               <td className="numeric">{formatOptionalPercent(row.cpu)}</td>
               <td className="numeric">{formatOptionalPercent(row.memory)}</td>
+              <td className="numeric">{formatOptionalPercent(row.reserved)}</td>
+              <td className="numeric">{formatOptionalPercent(row.remaining)}</td>
               <td className="numeric">{formatOptionalNumber(row.network, 1)}</td>
               <td className="numeric">{formatOptionalPercent(row.disk)}</td>
               <td className="numeric">{formatOptionalMs(row.gc)}</td>
               <td>{row.impact}</td>
             </tr>
           ))}
-          {rows.length === 0 && <EmptyTableRow colSpan={16} message="No infrastructure rows match the current filter." />}
+          {rows.length === 0 && <EmptyTableRow colSpan={18} message="No infrastructure rows match the current filter." />}
         </tbody>
       </table>
     </div>
@@ -2893,6 +2899,8 @@ function buildInfrastructureRows(groups: CommandGroup[], metrics?: LiveMetrics):
       saturation: generator.saturation_state || 'unknown',
       cpu: resources?.container_cpu_usage_pct ?? resources?.cpu_process_pct,
       memory: resources?.container_memory_usage_pct,
+      reserved: generator.pod_capacity?.state === 'ready' ? generator.pod_capacity.reserved_pct : undefined,
+      remaining: generator.pod_capacity?.state === 'ready' ? generator.pod_capacity.remaining_pct : undefined,
       network: (resources?.net_sent_kbps || 0) + (resources?.net_recv_kbps || 0) || resources?.tcp_retransmits_per_sec,
       disk: resources?.disk_io_time_pct,
       gc: resources?.gc_pause_ms,

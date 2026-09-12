@@ -198,6 +198,7 @@ type TestRunner struct {
 	scenarioMutationMu       sync.Mutex
 	compatCreateMu           sync.Mutex
 	reservedLaunchCreateMu   sync.Mutex
+	podCapacityMutationMu    sync.Mutex
 	contentRevision          uint64
 	contentReloadMu          sync.Mutex
 	haScriptRefresh          haRefreshCoalescer
@@ -441,6 +442,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	podCapacityEnabled    bool
 	ID                    string                                   `json:"id"`
 	RefKey                string                                   `json:"ref_key,omitempty"`
 	MaterializationKey    string                                   `json:"-"`
@@ -810,18 +812,19 @@ type LiveMetrics struct {
 }
 
 type GeneratorResourceSnapshot struct {
-	GeneratorID     string                  `json:"generator_id"`
-	Target          string                  `json:"target"`
-	Region          string                  `json:"region,omitempty"`
-	ActiveVUsers    int32                   `json:"active_vusers"`
-	TPS             float64                 `json:"tps,omitempty"`
-	ErrorPct        float64                 `json:"error_pct,omitempty"`
-	P95Ms           float64                 `json:"p95_ms,omitempty"`
-	P99Ms           float64                 `json:"p99_ms,omitempty"`
-	SaturationState string                  `json:"saturation_state,omitempty"`
-	ImpactReasons   []string                `json:"impact_reasons,omitempty"`
-	Resources       *engine.SystemResources `json:"resources,omitempty"`
-	Timestamp       time.Time               `json:"timestamp"`
+	PodCapacity     *protocol.CapacitySnapshot `json:"pod_capacity,omitempty"`
+	GeneratorID     string                     `json:"generator_id"`
+	Target          string                     `json:"target"`
+	Region          string                     `json:"region,omitempty"`
+	ActiveVUsers    int32                      `json:"active_vusers"`
+	TPS             float64                    `json:"tps,omitempty"`
+	ErrorPct        float64                    `json:"error_pct,omitempty"`
+	P95Ms           float64                    `json:"p95_ms,omitempty"`
+	P99Ms           float64                    `json:"p99_ms,omitempty"`
+	SaturationState string                     `json:"saturation_state,omitempty"`
+	ImpactReasons   []string                   `json:"impact_reasons,omitempty"`
+	Resources       *engine.SystemResources    `json:"resources,omitempty"`
+	Timestamp       time.Time                  `json:"timestamp"`
 }
 
 type LiveCapacityStatus struct {
@@ -1297,6 +1300,7 @@ type latencyRouteCacheEntry struct {
 }
 
 type GeneratorAssignmentSettings struct {
+	SharingMode     string            `json:"sharing_mode,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
 	SelectedTargets []string          `json:"selected_targets,omitempty"`
 	RegionWeights   map[string]int    `json:"region_weights,omitempty"`
@@ -2082,6 +2086,8 @@ type ScriptShakeoutResult struct {
 }
 
 type DraftCapacityEstimate struct {
+	PodPlacements         []PodCapacityPreview         `json:"pod_placements,omitempty"`
+	PodCapacityWarnings   []string                     `json:"pod_capacity_warnings,omitempty"`
 	ScenarioMode          string                       `json:"scenario_mode,omitempty"`
 	TotalVUsers           int                          `json:"total_vusers"`
 	Duration              string                       `json:"duration"`

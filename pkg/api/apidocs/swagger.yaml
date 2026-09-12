@@ -6112,6 +6112,8 @@ paths:
                             type: string
                         shard_strategy:
                           type: string
+                        sharing_mode:
+                          type: string
                         tolerate_generator_loss:
                           type: boolean
                       nullable: true
@@ -6294,6 +6296,8 @@ paths:
                                 items:
                                   type: string
                               shard_strategy:
+                                type: string
+                              sharing_mode:
                                 type: string
                               tolerate_generator_loss:
                                 type: boolean
@@ -44402,6 +44406,8 @@ paths:
                         type: string
                     shard_strategy:
                       type: string
+                    sharing_mode:
+                      type: string
                     tolerate_generator_loss:
                       type: boolean
                   nullable: true
@@ -44587,6 +44593,8 @@ paths:
                             items:
                               type: string
                           shard_strategy:
+                            type: string
+                          sharing_mode:
                             type: string
                           tolerate_generator_loss:
                             type: boolean
@@ -45157,6 +45165,8 @@ paths:
                             type: string
                         shard_strategy:
                           type: string
+                        sharing_mode:
+                          type: string
                         tolerate_generator_loss:
                           type: boolean
                       nullable: true
@@ -45342,6 +45352,8 @@ paths:
                                 items:
                                   type: string
                               shard_strategy:
+                                type: string
+                              sharing_mode:
                                 type: string
                               tolerate_generator_loss:
                                 type: boolean
@@ -46382,6 +46394,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -47086,6 +47100,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -48224,6 +48240,11 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 region:
                                   type: string
                                 resources:
@@ -50130,6 +50151,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -50834,6 +50857,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -51972,6 +51997,11 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 region:
                                   type: string
                                 resources:
@@ -53875,6 +53905,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -54579,6 +54611,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -55717,6 +55751,11 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 region:
                                   type: string
                                 resources:
@@ -57632,6 +57671,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -58336,6 +58377,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -59474,6 +59517,11 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 region:
                                   type: string
                                 resources:
@@ -61389,6 +61437,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -62093,6 +62143,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -63231,6 +63283,11 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 region:
                                   type: string
                                 resources:
@@ -65146,6 +65203,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -65850,6 +65909,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -66988,6 +67049,11 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 region:
                                   type: string
                                 resources:
@@ -68903,6 +68969,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -69607,6 +69675,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -70745,6 +70815,11 @@ paths:
                                 p99_ms:
                                   type: number
                                   format: double
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 region:
                                   type: string
                                 resources:
@@ -80844,6 +80919,8 @@ paths:
                         type: string
                     shard_strategy:
                       type: string
+                    sharing_mode:
+                      type: string
                     tolerate_generator_loss:
                       type: boolean
                   nullable: true
@@ -81056,6 +81133,8 @@ paths:
                             items:
                               type: string
                           shard_strategy:
+                            type: string
+                          sharing_mode:
                             type: string
                           tolerate_generator_loss:
                             type: boolean
@@ -82336,6 +82415,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -83399,6 +83480,8 @@ paths:
                               items:
                                 type: string
                             shard_strategy:
+                              type: string
+                            sharing_mode:
                               type: string
                             tolerate_generator_loss:
                               type: boolean
@@ -84292,6 +84375,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -85356,6 +85441,8 @@ paths:
                                 type: string
                             shard_strategy:
                               type: string
+                            sharing_mode:
+                              type: string
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
@@ -86191,6 +86278,8 @@ paths:
                         type: string
                     shard_strategy:
                       type: string
+                    sharing_mode:
+                      type: string
                     tolerate_generator_loss:
                       type: boolean
                   nullable: true
@@ -86403,6 +86492,8 @@ paths:
                             items:
                               type: string
                           shard_strategy:
+                            type: string
+                          sharing_mode:
                             type: string
                           tolerate_generator_loss:
                             type: boolean
@@ -87683,6 +87774,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -88746,6 +88839,8 @@ paths:
                               items:
                                 type: string
                             shard_strategy:
+                              type: string
+                            sharing_mode:
                               type: string
                             tolerate_generator_loss:
                               type: boolean
@@ -89906,6 +90001,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -90703,6 +90800,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -93044,6 +93143,8 @@ paths:
                             type: string
                         shard_strategy:
                           type: string
+                        sharing_mode:
+                          type: string
                         tolerate_generator_loss:
                           type: boolean
                       nullable: true
@@ -93226,6 +93327,8 @@ paths:
                                 items:
                                   type: string
                               shard_strategy:
+                                type: string
+                              sharing_mode:
                                 type: string
                               tolerate_generator_loss:
                                 type: boolean
@@ -94633,6 +94736,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -94830,6 +94935,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -96450,6 +96557,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -96647,6 +96756,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -97899,6 +98010,8 @@ paths:
                             type: string
                         shard_strategy:
                           type: string
+                        sharing_mode:
+                          type: string
                         tolerate_generator_loss:
                           type: boolean
                       nullable: true
@@ -98081,6 +98194,8 @@ paths:
                                 items:
                                   type: string
                               shard_strategy:
+                                type: string
+                              sharing_mode:
                                 type: string
                               tolerate_generator_loss:
                                 type: boolean
@@ -99488,6 +99603,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -99685,6 +99802,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -100834,6 +100953,8 @@ paths:
                         type: string
                     shard_strategy:
                       type: string
+                    sharing_mode:
+                      type: string
                     tolerate_generator_loss:
                       type: boolean
                   nullable: true
@@ -101046,6 +101167,8 @@ paths:
                             items:
                               type: string
                           shard_strategy:
+                            type: string
+                          sharing_mode:
                             type: string
                           tolerate_generator_loss:
                             type: boolean
@@ -189475,6 +189598,11 @@ paths:
                         open_fd_count:
                           type: integer
                           format: int64
+                        pod_capacity:
+                          type: object
+                          description: 'Go type: protocol.CapacitySnapshot'
+                          additionalProperties: true
+                          nullable: true
                         pod_name:
                           type: string
                         pool_name:
@@ -190430,6 +190558,8 @@ paths:
                       headroom_pct:
                         type: number
                         format: double
+                      pod_reservations_enabled:
+                        type: boolean
                       reservations:
                         type: array
                         items:
@@ -190457,6 +190587,7 @@ paths:
                       - availability
                       - generator
                       - headroom_pct
+                      - pod_reservations_enabled
                   client_app:
                     type: object
                     properties:
@@ -190897,6 +191028,8 @@ paths:
                     headroom_pct:
                       type: number
                       format: double
+                    pod_reservations_enabled:
+                      type: boolean
                     reservations:
                       type: array
                       items:
@@ -191319,6 +191452,8 @@ paths:
                       headroom_pct:
                         type: number
                         format: double
+                      pod_reservations_enabled:
+                        type: boolean
                       reservations:
                         type: array
                         items:
@@ -191346,6 +191481,7 @@ paths:
                       - availability
                       - generator
                       - headroom_pct
+                      - pod_reservations_enabled
                   client_app:
                     type: object
                     properties:
@@ -192753,6 +192889,8 @@ paths:
                         type: string
                     shard_strategy:
                       type: string
+                    sharing_mode:
+                      type: string
                     tolerate_generator_loss:
                       type: boolean
                   nullable: true
@@ -192968,6 +193106,8 @@ paths:
                             items:
                               type: string
                           shard_strategy:
+                            type: string
+                          sharing_mode:
                             type: string
                           tolerate_generator_loss:
                             type: boolean
@@ -194316,6 +194456,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -195331,6 +195473,8 @@ paths:
                                 type: string
                             shard_strategy:
                               type: string
+                            sharing_mode:
+                              type: string
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
@@ -196235,6 +196379,11 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              pod_capacity:
+                                type: object
+                                description: 'Go type: protocol.CapacitySnapshot'
+                                additionalProperties: true
+                                nullable: true
                               region:
                                 type: string
                               resources:
@@ -197728,6 +197877,11 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            pod_capacity:
+                              type: object
+                              description: 'Go type: protocol.CapacitySnapshot'
+                              additionalProperties: true
+                              nullable: true
                             region:
                               type: string
                             resources:
@@ -200420,6 +200574,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -201435,6 +201591,8 @@ paths:
                                 type: string
                             shard_strategy:
                               type: string
+                            sharing_mode:
+                              type: string
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
@@ -202339,6 +202497,11 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              pod_capacity:
+                                type: object
+                                description: 'Go type: protocol.CapacitySnapshot'
+                                additionalProperties: true
+                                nullable: true
                               region:
                                 type: string
                               resources:
@@ -203832,6 +203995,11 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            pod_capacity:
+                              type: object
+                              description: 'Go type: protocol.CapacitySnapshot'
+                              additionalProperties: true
+                              nullable: true
                             region:
                               type: string
                             resources:
@@ -207283,6 +207451,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -207317,6 +207487,8 @@ paths:
                               headroom_pct:
                                 type: number
                                 format: double
+                              pod_reservations_enabled:
+                                type: boolean
                               reservations:
                                 type: array
                                 items:
@@ -207327,6 +207499,7 @@ paths:
                               - availability
                               - generator
                               - headroom_pct
+                              - pod_reservations_enabled
                           general:
                             type: object
                             properties:
@@ -207545,6 +207718,11 @@ paths:
                             open_fd_count:
                               type: integer
                               format: int64
+                            pod_capacity:
+                              type: object
+                              description: 'Go type: protocol.CapacitySnapshot'
+                              additionalProperties: true
+                              nullable: true
                             pod_name:
                               type: string
                             pool_name:
@@ -207936,6 +208114,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -208850,6 +209030,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -208884,6 +209066,8 @@ paths:
                               headroom_pct:
                                 type: number
                                 format: double
+                              pod_reservations_enabled:
+                                type: boolean
                               reservations:
                                 type: array
                                 items:
@@ -208894,6 +209078,7 @@ paths:
                               - availability
                               - generator
                               - headroom_pct
+                              - pod_reservations_enabled
                           general:
                             type: object
                             properties:
@@ -209112,6 +209297,11 @@ paths:
                             open_fd_count:
                               type: integer
                               format: int64
+                            pod_capacity:
+                              type: object
+                              description: 'Go type: protocol.CapacitySnapshot'
+                              additionalProperties: true
+                              nullable: true
                             pod_name:
                               type: string
                             pool_name:
@@ -209503,6 +209693,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -211437,6 +211629,8 @@ paths:
                                   type: string
                               shard_strategy:
                                 type: string
+                              sharing_mode:
+                                type: string
                               tolerate_generator_loss:
                                 type: boolean
                             nullable: true
@@ -211596,6 +211790,11 @@ paths:
                                 open_fd_count:
                                   type: integer
                                   format: int64
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 pod_name:
                                   type: string
                                 pool_name:
@@ -212168,6 +212367,8 @@ paths:
                                   type: string
                               shard_strategy:
                                 type: string
+                              sharing_mode:
+                                type: string
                               tolerate_generator_loss:
                                 type: boolean
                             nullable: true
@@ -212327,6 +212528,11 @@ paths:
                                 open_fd_count:
                                   type: integer
                                   format: int64
+                                pod_capacity:
+                                  type: object
+                                  description: 'Go type: protocol.CapacitySnapshot'
+                                  additionalProperties: true
+                                  nullable: true
                                 pod_name:
                                   type: string
                                 pool_name:
@@ -214862,6 +215068,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -215877,6 +216085,8 @@ paths:
                                 type: string
                             shard_strategy:
                               type: string
+                            sharing_mode:
+                              type: string
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
@@ -216781,6 +216991,11 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              pod_capacity:
+                                type: object
+                                description: 'Go type: protocol.CapacitySnapshot'
+                                additionalProperties: true
+                                nullable: true
                               region:
                                 type: string
                               resources:
@@ -218274,6 +218489,11 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            pod_capacity:
+                              type: object
+                              description: 'Go type: protocol.CapacitySnapshot'
+                              additionalProperties: true
+                              nullable: true
                             region:
                               type: string
                             resources:
@@ -220910,6 +221130,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -221925,6 +222147,8 @@ paths:
                                 type: string
                             shard_strategy:
                               type: string
+                            sharing_mode:
+                              type: string
                             tolerate_generator_loss:
                               type: boolean
                           nullable: true
@@ -222829,6 +223053,11 @@ paths:
                               p99_ms:
                                 type: number
                                 format: double
+                              pod_capacity:
+                                type: object
+                                description: 'Go type: protocol.CapacitySnapshot'
+                                additionalProperties: true
+                                nullable: true
                               region:
                                 type: string
                               resources:
@@ -224322,6 +224551,11 @@ paths:
                             p99_ms:
                               type: number
                               format: double
+                            pod_capacity:
+                              type: object
+                              description: 'Go type: protocol.CapacitySnapshot'
+                              additionalProperties: true
+                              nullable: true
                             region:
                               type: string
                             resources:
@@ -231211,6 +231445,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -231439,6 +231675,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -232375,6 +232613,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -232603,6 +232843,8 @@ paths:
                                   items:
                                     type: string
                                 shard_strategy:
+                                  type: string
+                                sharing_mode:
                                   type: string
                                 tolerate_generator_loss:
                                   type: boolean
@@ -233502,6 +233744,8 @@ paths:
                               type: string
                           shard_strategy:
                             type: string
+                          sharing_mode:
+                            type: string
                           tolerate_generator_loss:
                             type: boolean
                         nullable: true
@@ -233524,6 +233768,8 @@ paths:
                               headroom_pct:
                                 type: number
                                 format: double
+                              pod_reservations_enabled:
+                                type: boolean
                               reservations:
                                 type: array
                                 items:
@@ -233534,6 +233780,7 @@ paths:
                               - availability
                               - generator
                               - headroom_pct
+                              - pod_reservations_enabled
                           general:
                             type: object
                             properties:
@@ -233752,6 +233999,11 @@ paths:
                             open_fd_count:
                               type: integer
                               format: int64
+                            pod_capacity:
+                              type: object
+                              description: 'Go type: protocol.CapacitySnapshot'
+                              additionalProperties: true
+                              nullable: true
                             pod_name:
                               type: string
                             pool_name:
@@ -233937,6 +234189,8 @@ paths:
                               items:
                                 type: string
                             shard_strategy:
+                              type: string
+                            sharing_mode:
                               type: string
                             tolerate_generator_loss:
                               type: boolean
@@ -236411,6 +236665,8 @@ paths:
                         type: string
                     shard_strategy:
                       type: string
+                    sharing_mode:
+                      type: string
                     tolerate_generator_loss:
                       type: boolean
                   nullable: true
@@ -236626,6 +236882,8 @@ paths:
                             items:
                               type: string
                           shard_strategy:
+                            type: string
+                          sharing_mode:
                             type: string
                           tolerate_generator_loss:
                             type: boolean
@@ -237923,6 +238181,8 @@ paths:
                           type: string
                       shard_strategy:
                         type: string
+                      sharing_mode:
+                        type: string
                       tolerate_generator_loss:
                         type: boolean
                     nullable: true
@@ -238243,6 +238503,8 @@ paths:
                               items:
                                 type: string
                             shard_strategy:
+                              type: string
+                            sharing_mode:
                               type: string
                             tolerate_generator_loss:
                               type: boolean
@@ -238747,6 +239009,34 @@ paths:
                         - script_id
                         - script_name
                         - vusers
+                  pod_capacity_warnings:
+                    type: array
+                    items:
+                      type: string
+                  pod_placements:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        after:
+                          type: object
+                          description: 'Go type: protocol.CapacitySnapshot'
+                          additionalProperties: true
+                        before:
+                          type: object
+                          description: 'Go type: protocol.CapacitySnapshot'
+                          additionalProperties: true
+                        proposed:
+                          type: object
+                          description: 'Go type: protocol.CapacityVector'
+                          additionalProperties: true
+                        target:
+                          type: string
+                      required:
+                        - after
+                        - before
+                        - proposed
+                        - target
                   resource_baseline:
                     type: boolean
                   runtime_settings_review:
@@ -238926,6 +239216,8 @@ paths:
                       items:
                         type: string
                     shard_strategy:
+                      type: string
+                    sharing_mode:
                       type: string
                     tolerate_generator_loss:
                       type: boolean
@@ -239112,6 +239404,8 @@ paths:
                             items:
                               type: string
                           shard_strategy:
+                            type: string
+                          sharing_mode:
                             type: string
                           tolerate_generator_loss:
                             type: boolean
@@ -240044,6 +240338,30 @@ paths:
                     type: string
                   intent:
                     type: string
+                  pod_placements:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        after:
+                          type: object
+                          description: 'Go type: protocol.CapacitySnapshot'
+                          additionalProperties: true
+                        before:
+                          type: object
+                          description: 'Go type: protocol.CapacitySnapshot'
+                          additionalProperties: true
+                        proposed:
+                          type: object
+                          description: 'Go type: protocol.CapacityVector'
+                          additionalProperties: true
+                        target:
+                          type: string
+                      required:
+                        - after
+                        - before
+                        - proposed
+                        - target
                   queue_allowed:
                     type: boolean
                   queue_reason:

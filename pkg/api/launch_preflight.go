@@ -61,16 +61,17 @@ type LaunchConflict struct {
 }
 
 type LaunchPreflightResponse struct {
-	Intent            string            `json:"intent,omitempty"`
-	Decision          string            `json:"decision"`
-	StartNowAllowed   bool              `json:"start_now_allowed"`
-	ScheduleAllowed   bool              `json:"schedule_allowed"`
-	QueueAllowed      bool              `json:"queue_allowed"`
-	QueueReason       string            `json:"queue_reason,omitempty"`
-	CandidateWindow   LaunchWindow      `json:"candidate_window"`
-	CapacityAdvisory  *CapacityAdvisory `json:"capacity_advisory,omitempty"`
-	BlockingConflicts []LaunchConflict  `json:"blocking_conflicts,omitempty"`
-	Warnings          []LaunchConflict  `json:"warnings,omitempty"`
+	PodPlacements     []PodCapacityPreview `json:"pod_placements,omitempty"`
+	Intent            string               `json:"intent,omitempty"`
+	Decision          string               `json:"decision"`
+	StartNowAllowed   bool                 `json:"start_now_allowed"`
+	ScheduleAllowed   bool                 `json:"schedule_allowed"`
+	QueueAllowed      bool                 `json:"queue_allowed"`
+	QueueReason       string               `json:"queue_reason,omitempty"`
+	CandidateWindow   LaunchWindow         `json:"candidate_window"`
+	CapacityAdvisory  *CapacityAdvisory    `json:"capacity_advisory,omitempty"`
+	BlockingConflicts []LaunchConflict     `json:"blocking_conflicts,omitempty"`
+	Warnings          []LaunchConflict     `json:"warnings,omitempty"`
 	// RecommendedAssignment is populated when the launch is blocked so operators
 	// get a concrete recovery path (recommended generator count/targets) rather
 	// than just a wall. Mirrors the recommendation returned by the estimate API.
@@ -492,7 +493,14 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 		blocking = append(blocking, conflicts...)
 	}
 	if conflicts := buildSnapshot.generatorPlacementLaunchConflictsLocked(preview); len(conflicts) > 0 {
-		blocking = append(blocking, conflicts...)
+		if buildSnapshot.settings.CapacityPlanning.PodReservationsEnabled {
+			for _, conflict := range conflicts {
+				conflict.Severity = "warning"
+				warnings = append(warnings, conflict)
+			}
+		} else {
+			blocking = append(blocking, conflicts...)
+		}
 	}
 
 	tr.mu.RLock()
@@ -545,7 +553,11 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 		decision = "queue"
 	}
 
+	tr.mu.RLock()
+	podPlacements, _ := tr.previewPodPlacementLocked(preview)
+	tr.mu.RUnlock()
 	return &LaunchPreflightResponse{
+		PodPlacements:         podPlacements,
 		Intent:                strings.TrimSpace(req.Intent),
 		Decision:              decision,
 		StartNowAllowed:       startNowAllowed,
@@ -627,10 +639,15 @@ func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTes
 			snapshot.SupportedProtocols = append([]string(nil), entry.SupportedProtocols...)
 			snapshot.CompatibleFeatures = append([]string(nil), entry.CompatibleFeatures...)
 			snapshot.AvailableCapacity = entry.AvailableCapacity
+			snapshot.PodCapacity = entry.PodCapacity
+			snapshot.CPULimitCores = entry.CPULimitCores
+			snapshot.MemoryLimitBytes = entry.MemoryLimitBytes
+			snapshot.MaxVUsers = entry.MaxVUsers
 			snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(entry.RuntimeCapacities)
 			activeTargets[entry.Target] = snapshot
 		}
 	}
+	configurePodLoads(tr.settings, activeTargets)
 	projected := make(map[string]generatorLoadSnapshot, len(activeTargets))
 	for target, snapshot := range activeTargets {
 		snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(snapshot.RuntimeCapacities)
@@ -672,6 +689,7 @@ func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTes
 				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
 			}
 			consumeGroupRuntimeCapacity(&snapshot, group, shard.VUsers)
+			consumePodGroupCapacity(&snapshot, group, shard.VUsers)
 			projected[shard.Target] = snapshot
 			if _, ok := defaultLoad[shard.Target]; ok {
 				defaultLoad[shard.Target] = snapshot

@@ -1,4 +1,5 @@
 import TabList from './ux/TabList'
+import PodCapacityMeter from './PodCapacityMeter'
 import PanelToggle from './ux/PanelToggle'
 import DialogLayer from './ux/DialogLayer'
 import { AuditEventTable } from './AuditEventTable'
@@ -2050,6 +2051,7 @@ function GeneratorInventoryList({
             <span className="monitor-label">Available Capacity</span>
             <span className="monitor-value">{generator.available_capacity.toLocaleString()}</span>
           </div>
+          {generator.pod_capacity && <div className="monitor-row"><span className="monitor-label">Peak capacity</span><PodCapacityMeter capacity={generator.pod_capacity} /></div>}
           <div className="monitor-row">
             <span className="monitor-label">Active VUsers</span>
             <span className="monitor-value">{generator.active_vusers.toLocaleString()}</span>

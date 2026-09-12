@@ -1967,6 +1967,7 @@ export interface LiveMetrics {
 }
 
 export interface GeneratorResourceSnapshot {
+  pod_capacity?: import('./types/capacity').PodCapacitySnapshot
   generator_id: string
   target: string
   region?: string
@@ -2588,6 +2589,7 @@ export interface LaunchConflict {
 }
 
 export interface LaunchPreflightResponse {
+  pod_placements?: import('./types/capacity').PodCapacityPreview[]
   intent?: string
   decision: 'start_now' | 'schedule' | 'queue' | 'blocked' | string
   start_now_allowed: boolean
@@ -2703,6 +2705,8 @@ export interface GoalSizingReport {
 }
 
 export interface DraftCapacityEstimate {
+  pod_placements?: import('./types/capacity').PodCapacityPreview[]
+  pod_capacity_warnings?: string[]
   scenario_mode?: ScenarioMode
   total_vusers: number
   duration: string

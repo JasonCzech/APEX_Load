@@ -40,6 +40,7 @@ type GeneratorSafetyExitEvidence struct {
 }
 
 type GeneratorInventoryEntry struct {
+	PodCapacity                       *protocol.CapacitySnapshot             `json:"pod_capacity,omitempty"`
 	Target                            string                                 `json:"target"`
 	GeneratorID                       string                                 `json:"generator_id"`
 	Region                            string                                 `json:"region,omitempty"`
@@ -122,6 +123,7 @@ func (s *Server) systemInventory(ctx context.Context) SystemInventoryResponse {
 	executionMode, entries := s.baseGeneratorInventory(ctx)
 	s.enrichGeneratorRestartability(ctx, entries)
 	s.enrichGeneratorInventoryWithPools(entries)
+	s.runner.enrichPodCapacityInventory(entries)
 	s.runner.setCachedGeneratorInventory(entries, time.Now())
 	s.cacheGeneratorInventory(ctx, entries)
 

@@ -181,7 +181,7 @@ func (s *Server) reconcileAsyncCapacityOperation(requestID string, pool *storage
 		}
 		observation := compute.Observation{}
 		var reconcileErr error
-		if len(drainingRunIDs) > 0 && !s.fleetPoolRunsArchiveTerminal(drainingRunIDs) {
+		if (len(drainingRunIDs) > 0 && !s.fleetPoolRunsArchiveTerminal(drainingRunIDs)) || (pool != nil && base.Desired < pool.DesiredSize && s.poolHasPodReservations(pool.ID)) {
 			observation = compute.Observation{
 				Requested: base.Desired, Draining: pool.DesiredSize - base.Desired,
 				RetryAfter: time.Second, Message: "waiting for active runs to drain before reducing provider capacity",
@@ -277,6 +277,37 @@ func (s *Server) reconcileAsyncCapacityOperation(requestID string, pool *storage
 		case <-timer.C:
 		}
 	}
+}
+
+func (s *Server) poolHasPodReservations(poolID string) bool {
+	store, ok := s.store.(podCapacityStore)
+	if !ok {
+		return false
+	}
+	claims, err := store.ListPodCapacityReservations()
+	if err != nil {
+		return true
+	}
+	members, err := s.store.ListFleetPoolMembers(poolID)
+	if err != nil {
+		return true
+	}
+	b, ok := s.runner.getExecutionBackend().(identityDrainableExecutionBackend)
+	if !ok {
+		return len(claims) > 0
+	}
+	targets := map[string]bool{}
+	for _, member := range members {
+		if member != nil {
+			targets[b.GeneratorTargetForID(member.GeneratorID)] = true
+		}
+	}
+	for _, claim := range claims {
+		if targets[claim.Target] {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) failAsyncCapacityOperation(requestID, message string) {

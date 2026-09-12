@@ -4772,6 +4772,10 @@ export default function SettingsPage({
               />
             </div>
             {renderFieldIssues('capacity_planning.headroom_pct')}
+            <label className="setting-row">
+              <span className="setting-label">Enforce peak pod reservations</span>
+              <input type="checkbox" checked={Boolean(settings.capacity_planning.pod_reservations_enabled)} onChange={event => setSettings(prev => ({ ...prev, capacity_planning: { ...prev.capacity_planning, pod_reservations_enabled: event.target.checked } }))} />
+            </label>
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Generator CPU (cores)</span>

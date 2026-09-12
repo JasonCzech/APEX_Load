@@ -367,6 +367,7 @@ type ProtocolRuntimeCapacity struct {
 }
 
 type HeartbeatResponse struct {
+	PodCapacity                    *pb.PodCapacitySnapshot
 	GeneratorID                    string
 	TimestampUnixMs                int64
 	TimestampUnixNano              int64
@@ -1113,6 +1114,7 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 		Version:                        pong.GetVersion(),
 		SupportedProtocols:             append([]string(nil), pong.GetSupportedProtocols()...),
 		CompatibleFeatures:             append([]string(nil), pong.GetCompatibleFeatures()...),
+		PodCapacity:                    pong.GetPodCapacity(),
 		RuntimeCapacities:              protocolRuntimeCapacitiesFromProto(pong.GetRuntimeCapacities()),
 		RunSupervisionExpirationsTotal: pong.GetRunSupervisionExpirationsTotal(),
 		RunSupervisionEscalationsTotal: pong.GetRunSupervisionEscalationsTotal(),

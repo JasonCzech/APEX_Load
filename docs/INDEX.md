@@ -51,6 +51,7 @@ These focused references are also current. They are kept separate from the prima
 | [BROWSER_BENCHMARK_ARTIFACTS.md](BROWSER_BENCHMARK_ARTIFACTS.md) | Browser benchmark artifact manifest and evidence contract |
 | [CICD_INTEGRATION.md](CICD_INTEGRATION.md) | CI/CD gate integration patterns and examples |
 | [CLUSTER_CONNECTIONS.md](CLUSTER_CONNECTIONS.md) | Registering external Kubernetes/AKS/EKS control planes and per-pool host resource allocation |
+| [POD_CAPACITY_RESERVATIONS.md](POD_CAPACITY_RESERVATIONS.md) | Peak-based shared and dedicated pod reservations, rollout, and recovery |
 | [MULTI_CLOUD_PAAS.md](MULTI_CLOUD_PAAS.md) | Azure Container Apps/Jobs and AWS ECS Fargate compute registration, lifecycle, reverse connectivity, and production-evidence boundaries |
 | [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) | Competitive positioning and migration reference |
 | [ENTERPRISE_AUTHORING_CONTRACT.md](ENTERPRISE_AUTHORING_CONTRACT.md) | Shared enterprise authoring lifecycle contract |

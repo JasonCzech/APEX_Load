@@ -65,6 +65,9 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 		CapacityAdvisory:      cloneCapacityAdvisory(preview.CapacityAdvisory),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(preview.RuntimeSettingsReview),
 	}
+	tr.mu.RLock()
+	estimate.PodPlacements, estimate.PodCapacityWarnings = tr.previewPodPlacementLocked(preview)
+	tr.mu.RUnlock()
 	if !tr.managedTestBuildFenceCurrent(revision) {
 		return nil, fmt.Errorf("controller content changed while draft capacity was being compiled; retry")
 	}

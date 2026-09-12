@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
@@ -17,6 +19,37 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	tests := s.runner.listOperationalTestSnapshots()
 	regionStats := s.generatorRegionStats(r.Context())
 	scalingStats := scalingSignalStats(tests)
+	podReplicaFloor := 0
+	reservedResources := protocol.CapacityVector{}
+	queuedResources := protocol.CapacityVector{}
+	for _, test := range tests {
+		if test == nil || test.Status != "PENDING" {
+			continue
+		}
+		if groups, err := podReservationGroups(test); err == nil {
+			for _, group := range groups {
+				queuedResources = queuedResources.Add(podGroupDemand(group))
+			}
+		}
+	}
+	if store, ok := s.runner.testStore.(podCapacityStore); ok {
+		if claims, err := store.ListPodCapacityReservations(); err == nil {
+			reserved := 0
+			for _, claim := range claims {
+				reserved += int(claim.Demand.VUsers)
+				reservedResources = reservedResources.Add(claim.Demand)
+			}
+			scalingStats.ActiveVUsers = max(scalingStats.ActiveVUsers, reserved)
+			podReplicaFloor = reservedReplicaFloor(claims, settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators)
+		} else {
+			entries, _ := s.runner.cachedGeneratorInventorySnapshot()
+			unknown := make([]storage.PodCapacityReservation, 0, len(entries))
+			for _, entry := range entries {
+				unknown = append(unknown, storage.PodCapacityReservation{Target: entry.Target})
+			}
+			podReplicaFloor = max(settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators, reservedReplicaFloor(unknown, len(entries)))
+		}
+	}
 	statusCounts := make(map[string]int)
 	for _, test := range tests {
 		if test == nil || strings.TrimSpace(test.Status) == "" {
@@ -30,6 +63,11 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	body.WriteString("# HELP apexload_up Whether the APEX Load controller is healthy.\n")
 	body.WriteString("# TYPE apexload_up gauge\n")
 	body.WriteString("apexload_up 1\n")
+	body.WriteString("# HELP apexload_pod_reserved_replica_floor Minimum StatefulSet replicas protecting retained peak reservations.\n# TYPE apexload_pod_reserved_replica_floor gauge\n")
+	fmt.Fprintf(&body, "apexload_pod_reserved_replica_floor %d\n", podReplicaFloor)
+	body.WriteString("# HELP apexload_pod_capacity_demand Estimated peak resources held or awaiting admission.\n# TYPE apexload_pod_capacity_demand gauge\n")
+	writePodCapacityDemand(&body, "reserved", reservedResources)
+	writePodCapacityDemand(&body, "queued", queuedResources)
 	body.WriteString("# HELP apexload_websocket_clients Number of connected websocket clients.\n")
 	body.WriteString("# TYPE apexload_websocket_clients gauge\n")
 	fmt.Fprintf(&body, "apexload_websocket_clients %d\n", s.hub.ClientCount())
@@ -136,6 +174,18 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	writeTelemetryPipelineMetrics(&body, liveSnapshot)
 	writeMessagingMetrics(&body, liveSnapshot)
 	_, _ = w.Write([]byte(body.String()))
+}
+
+func writePodCapacityDemand(body *strings.Builder, state string, vector protocol.CapacityVector) {
+	dimensions := vector.Dimensions()
+	keys := make([]string, 0, len(dimensions))
+	for key := range dimensions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fmt.Fprintf(body, "apexload_pod_capacity_demand{state=%q,resource=%q} %g\n", state, key, dimensions[key])
+	}
 }
 
 // writeMessagingMetrics exposes per-test, per-protocol queue/stream telemetry

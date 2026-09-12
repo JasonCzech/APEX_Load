@@ -3,6 +3,7 @@ import { GeneratorAssignmentSettings, SystemInventoryGenerator } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { isPositiveSafeInteger } from './generatorAssignmentValidation'
 import './GroupPlacementEditor.css'
+import PodCapacityMeter from './PodCapacityMeter'
 
 type PlacementMode = 'inherit' | 'auto' | 'specific_hosts' | 'required_labels' | 'region_weighted' | 'load_zone_weighted'
 
@@ -73,6 +74,7 @@ function generatorCapacityLabel(generator: SystemInventoryGenerator, protocol?: 
 }
 
 function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string) {
+  if (generator.pod_capacity && (generator.pod_capacity.state !== 'ready' || generator.pod_capacity.remaining_pct <= 0 || generator.pod_capacity.dedicated)) return false
   const drainActive = !generator.drain_state || generator.drain_state === 'active'
   const compatible = !generator.compatibility_state || generator.compatibility_state === 'compatible' || generator.compatibility_state === 'unknown'
   const protocols = generator.supported_protocols || []
@@ -208,7 +210,7 @@ export default function GroupPlacementEditor({
     : selectedCapacity > 0
       ? `${selectedCapacity} known selected VUser capacity · ${selectedUnknownCapacityCount} host${selectedUnknownCapacityCount === 1 ? '' : 's'} unknown`
       : 'Selected VUser capacity unknown'
-  const lossTolerance = scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}
+  const lossTolerance = { ...(scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}), ...(scope === 'scenario' && assignment?.sharing_mode ? { sharing_mode: assignment.sharing_mode } : {}) }
   const regionKeys = Array.from(new Set((generatorInventory || []).map(generator => generator.region?.trim()).filter((value): value is string => Boolean(value)))).sort()
   const loadZoneKeys = Array.from(new Set((generatorInventory || []).map(generator => (
     generator.labels?.load_zone
@@ -340,6 +342,13 @@ export default function GroupPlacementEditor({
 
   return (
     <div className={`group-placement-editor ${compact ? 'compact' : ''}`}>
+      {scope === 'scenario' && <label className="scenario-field">
+        <span>Generator sharing</span>
+        <select aria-label="Generator sharing" value={assignment?.sharing_mode || 'shared'} onChange={event => onChange({ ...assignment, mode: assignment?.mode || 'auto', sharing_mode: event.target.value as 'shared' | 'dedicated' })}>
+          <option value="shared">Shared capacity</option>
+          <option value="dedicated">Dedicated generators</option>
+        </select>
+      </label>}
       <div className="new-test-placement-toggle" role="radiogroup" aria-label={`${scope === 'scenario' ? 'Scenario' : 'Group'} generator placement`}>
         {allowInherit && (
           <label className={mode === 'inherit' ? 'selected' : ''}>
@@ -438,6 +447,7 @@ export default function GroupPlacementEditor({
                 />
                 <span>
                   <strong>{generator.target}</strong>
+                  <PodCapacityMeter capacity={generator.pod_capacity} />
                   <em>{generator.region || generator.pool_name || 'default'} · {generatorCapacityLabel(generator, protocol)} · {generator.status}{recommended ? ' · recommended' : ''}</em>
                   {disabledReason && <em className="warning">{disabledReason}</em>}
                 </span>

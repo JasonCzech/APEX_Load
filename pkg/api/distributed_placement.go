@@ -138,6 +138,7 @@ func planDistributedGroupShardsForCandidates(groups []TestGroup, allLoadByTarget
 				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
 			}
 			consumeGroupRuntimeCapacity(&snapshot, group, shard.VUsers)
+			consumePodGroupCapacity(&snapshot, group, shard.VUsers)
 			projected[shard.Target] = snapshot
 			if _, ok := defaultProjected[shard.Target]; ok {
 				defaultProjected[shard.Target] = snapshot
@@ -201,6 +202,36 @@ func formatRequiredLabels(labels map[string]string) string {
 }
 
 func chooseGeneratorShardsForGroup(group TestGroup, allLoadByTarget map[string]generatorLoadSnapshot, defaultLoadByTarget map[string]generatorLoadSnapshot, preferredAll []string, preferredDefault []string, inherited *GeneratorAssignmentSettings, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) []GeneratorShardSummary {
+	for _, load := range allLoadByTarget {
+		if load.PodCapacity != nil {
+			loads, targets, effective, region := defaultLoadByTarget, preferredDefault, inherited, regionState
+			if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
+				loads = allLoadByTarget
+				targets = group.Assignment.SelectedTargets
+				region = nil
+				for _, target := range targets {
+					if _, ok := loads[target]; !ok {
+						return nil
+					}
+					if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol, groupRequiredRuntimeFeature(group), effectiveGroupRequiredLabels(group, inherited)) {
+						return nil
+					}
+				}
+			}
+			if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeAuto {
+				loads = allLoadByTarget
+				targets = preferredAll
+				effective = group.Assignment
+				region = nil
+			}
+			if inherited != nil && effective != nil {
+				copy := *effective
+				copy.SharingMode = inherited.SharingMode
+				effective = &copy
+			}
+			return podCapacityShards(group, loads, targets, effective, region, compatibility)
+		}
+	}
 	if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
 		targets := make([]string, 0, len(group.Assignment.SelectedTargets))
 		requiredLabels := effectiveGroupRequiredLabels(group, inherited)

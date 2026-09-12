@@ -2550,6 +2550,7 @@ func (s *Server) refreshGeneratorInventory(ctx context.Context) {
 	defer cancel()
 	inventory := s.systemInventory(probeCtx)
 	if s.runner.isExecutionLeader() {
+		s.runner.reconcilePodCapacity(probeCtx, inventory.Generators)
 		alerts := buildFleetAlerts(inventory, s.runner.GetSystemSettings().Thresholds)
 		s.applyFleetAlertAcknowledgements(alerts)
 		s.routeFleetAlertNotifications(alerts)

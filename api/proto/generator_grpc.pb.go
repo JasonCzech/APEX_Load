@@ -19,6 +19,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	GeneratorControl_ReservePodCapacity_FullMethodName    = "/apexload.v1.GeneratorControl/ReservePodCapacity"
 	GeneratorControl_ClaimExecutionEpoch_FullMethodName   = "/apexload.v1.GeneratorControl/ClaimExecutionEpoch"
 	GeneratorControl_ClaimRunSupervision_FullMethodName   = "/apexload.v1.GeneratorControl/ClaimRunSupervision"
 	GeneratorControl_AssignWork_FullMethodName            = "/apexload.v1.GeneratorControl/AssignWork"
@@ -41,6 +42,8 @@ const (
 // GeneratorControl is the gRPC service between the controller and generator pods.
 // Phase 1 uses direct in-process execution; this proto is defined for Phase 2 distribution.
 type GeneratorControlClient interface {
+	// ReservePodCapacity holds a test's peak envelope before any work is staged.
+	ReservePodCapacity(ctx context.Context, in *PodCapacityClaim, opts ...grpc.CallOption) (*PodCapacityAck, error)
 	// ClaimExecutionEpoch establishes or renews the controller execution term on
 	// this generator. A higher generation fences all lower-generation work.
 	ClaimExecutionEpoch(ctx context.Context, in *ExecutionEpochClaim, opts ...grpc.CallOption) (*ExecutionEpochAck, error)
@@ -86,6 +89,16 @@ type generatorControlClient struct {
 
 func NewGeneratorControlClient(cc grpc.ClientConnInterface) GeneratorControlClient {
 	return &generatorControlClient{cc}
+}
+
+func (c *generatorControlClient) ReservePodCapacity(ctx context.Context, in *PodCapacityClaim, opts ...grpc.CallOption) (*PodCapacityAck, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PodCapacityAck)
+	err := c.cc.Invoke(ctx, GeneratorControl_ReservePodCapacity_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *generatorControlClient) ClaimExecutionEpoch(ctx context.Context, in *ExecutionEpochClaim, opts ...grpc.CallOption) (*ExecutionEpochAck, error) {
@@ -240,6 +253,8 @@ type GeneratorControl_StreamArchiveArtifactClient = grpc.ServerStreamingClient[A
 // GeneratorControl is the gRPC service between the controller and generator pods.
 // Phase 1 uses direct in-process execution; this proto is defined for Phase 2 distribution.
 type GeneratorControlServer interface {
+	// ReservePodCapacity holds a test's peak envelope before any work is staged.
+	ReservePodCapacity(context.Context, *PodCapacityClaim) (*PodCapacityAck, error)
 	// ClaimExecutionEpoch establishes or renews the controller execution term on
 	// this generator. A higher generation fences all lower-generation work.
 	ClaimExecutionEpoch(context.Context, *ExecutionEpochClaim) (*ExecutionEpochAck, error)
@@ -287,6 +302,9 @@ type GeneratorControlServer interface {
 // pointer dereference when methods are called.
 type UnimplementedGeneratorControlServer struct{}
 
+func (UnimplementedGeneratorControlServer) ReservePodCapacity(context.Context, *PodCapacityClaim) (*PodCapacityAck, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReservePodCapacity not implemented")
+}
 func (UnimplementedGeneratorControlServer) ClaimExecutionEpoch(context.Context, *ExecutionEpochClaim) (*ExecutionEpochAck, error) {
 	return nil, status.Error(codes.Unimplemented, "method ClaimExecutionEpoch not implemented")
 }
@@ -345,6 +363,24 @@ func RegisterGeneratorControlServer(s grpc.ServiceRegistrar, srv GeneratorContro
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&GeneratorControl_ServiceDesc, srv)
+}
+
+func _GeneratorControl_ReservePodCapacity_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PodCapacityClaim)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GeneratorControlServer).ReservePodCapacity(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GeneratorControl_ReservePodCapacity_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GeneratorControlServer).ReservePodCapacity(ctx, req.(*PodCapacityClaim))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _GeneratorControl_ClaimExecutionEpoch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -559,6 +595,10 @@ var GeneratorControl_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "apexload.v1.GeneratorControl",
 	HandlerType: (*GeneratorControlServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ReservePodCapacity",
+			Handler:    _GeneratorControl_ReservePodCapacity_Handler,
+		},
 		{
 			MethodName: "ClaimExecutionEpoch",
 			Handler:    _GeneratorControl_ClaimExecutionEpoch_Handler,

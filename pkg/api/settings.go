@@ -535,10 +535,11 @@ type ThresholdSettings struct {
 }
 
 type CapacityPlanningSettings struct {
-	HeadroomPct  float64                   `json:"headroom_pct"`
-	Generator    GeneratorCapacitySettings `json:"generator"`
-	Availability AvailabilitySettings      `json:"availability"`
-	Reservations []CapacityReservation     `json:"reservations,omitempty"`
+	PodReservationsEnabled bool                      `json:"pod_reservations_enabled"`
+	HeadroomPct            float64                   `json:"headroom_pct"`
+	Generator              GeneratorCapacitySettings `json:"generator"`
+	Availability           AvailabilitySettings      `json:"availability"`
+	Reservations           []CapacityReservation     `json:"reservations,omitempty"`
 }
 
 type GeneratorCapacitySettings struct {

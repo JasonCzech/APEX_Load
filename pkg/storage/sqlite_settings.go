@@ -178,6 +178,21 @@ func (s *SQLiteStore) CompareAndSwapSettingWithCapacityFence(
 	if err := validate(current, approved); err != nil {
 		return false, err
 	}
+	if key == "system_settings" {
+		enabled, err := podReservationsEnabled(value)
+		if err != nil {
+			return false, err
+		}
+		if !enabled {
+			var count int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pod_capacity_reservations`).Scan(&count); err != nil {
+				return false, err
+			}
+			if count > 0 {
+				return false, fmt.Errorf("cannot disable peak pod reservations until all reservations are released")
+			}
+		}
+	}
 
 	var result sql.Result
 	if exists {

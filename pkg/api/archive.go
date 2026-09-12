@@ -880,6 +880,7 @@ func cloneGeneratorInventoryEntries(entries []GeneratorInventoryEntry) []Generat
 	cloned := make([]GeneratorInventoryEntry, len(entries))
 	copy(cloned, entries)
 	for index := range cloned {
+		cloned[index].PodCapacity = entries[index].PodCapacity.Clone()
 		cloned[index].SupportedProtocols = append([]string(nil), entries[index].SupportedProtocols...)
 		cloned[index].Labels = cloneStringMap(entries[index].Labels)
 		cloned[index].CompatibleFeatures = append([]string(nil), entries[index].CompatibleFeatures...)

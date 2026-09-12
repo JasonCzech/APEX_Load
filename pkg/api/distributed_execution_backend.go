@@ -17,6 +17,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
 )
@@ -205,6 +207,8 @@ func (b *distributedExecutionBackend) openMetricsStreamWithSetupTimeout(ctx cont
 }
 
 type generatorLoadSnapshot struct {
+	podPlacementOwned              bool
+	PodCapacity                    *protocol.CapacitySnapshot
 	Target                         string
 	GeneratorID                    string
 	AvailableCapacity              int32
@@ -856,6 +860,10 @@ func (tr *TestRunner) enrichGeneratorTargetSpecsWithLabels(specs []generatorTarg
 }
 
 func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
+	tr.mu.RLock()
+	podSettings := cloneSystemSettings(tr.settings)
+	tr.mu.RUnlock()
+	var podClaims []storage.PodCapacityReservation
 	var runSupervisionToken [generatorrpc.RunSupervisionTokenSize]byte
 	var runSupervisionTokenBytes []byte
 	if b.requireRunSupervision {
@@ -1027,6 +1035,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		for _, stream := range streamsByTarget {
 			_ = stream.CloseSend()
 		}
+		tr.releasePodClaims(podClaims, clientsByTarget, executionLeaseOwnerID, executionGeneration)
 		for _, client := range clientsByTarget {
 			_ = client.Close()
 		}
@@ -1125,8 +1134,31 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRunAndLog(test, "no reachable generator targets configured")
 		return
 	}
+	configurePodLoads(podSettings, loadByTarget)
 	defaultLoadByTarget := loadSnapshotsForTargets(loadByTarget, allowedTargets)
-	peakGroupShards := planDistributedGroupShardsForCandidates(test.Groups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
+	reservationGroups := test.Groups
+	if podSettings.CapacityPlanning.PodReservationsEnabled {
+		reservationGroups, err = podReservationGroups(test)
+		if err != nil {
+			cleanup(false)
+			tr.failTestBeforeRunAndLog(test, err.Error())
+			return
+		}
+	}
+	peakGroupShards := planDistributedGroupShardsForCandidates(reservationGroups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
+	if podSettings.CapacityPlanning.PodReservationsEnabled {
+		podClaims, err = tr.reservePodPlacement(executionCtx, test, loadByTarget, peakGroupShards, clientsByTarget, executionGeneration, executionLeaseOwnerID)
+		if err != nil {
+			cleanup(false)
+			if pendingErr := tr.requeueBeforePodWork(test, "waiting for peak pod capacity: "+err.Error(), executionGeneration, executionLeaseOwnerID); pendingErr != nil {
+				tr.failTestBeforeRunAndLog(test, pendingErr.Error())
+			}
+			return
+		}
+		tr.mu.Lock()
+		test.podCapacityEnabled = true
+		tr.mu.Unlock()
+	}
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
@@ -1379,6 +1411,16 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		return
 	}
 	activate()
+	if len(podClaims) > 0 {
+		store := tr.testStore.(podCapacityStore)
+		for _, claim := range podClaims {
+			_ = tr.transitionPodLedger(store, claim.Target, claim.TestID, claim.Incarnation, claim.ReservationID, "committed", executionLeaseName, executionLeaseOwnerID, executionGeneration)
+		}
+		go func() {
+			<-remoteLifecycleCtx.Done()
+			tr.releasePodClaimsWithDial(b, podClaims)
+		}()
+	}
 	stopRunSupervisionKeeper = nil // ownership is now retained by ManagedTest cleanup.
 	if requireTestExecutionLease {
 		// The staged keeper protects the assignment through metrics setup and
@@ -1889,15 +1931,40 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 }
 
 func initialGroupShardsForRun(group TestGroup, peakShards []GeneratorShardSummary, loadByTarget map[string]generatorLoadSnapshot) []GeneratorShardSummary {
-	if !group.stageDriven {
+	peakTotal := 0
+	for _, shard := range peakShards {
+		peakTotal += shard.VUsers
+	}
+	if !group.stageDriven && peakTotal == group.VUsers {
 		return cloneGeneratorShardSummaries(peakShards)
 	}
 	targets := shardTargets(peakShards)
-	group.VUsers = groupCurrentVUsers(group)
-	return capacityWeightedShardsForGroupIncludingZero(group, targets, loadByTarget, shardStrategyForGroupShards(peakShards))
+	if group.stageDriven {
+		group.VUsers = groupCurrentVUsers(group)
+	}
+	bounded := make(map[string]generatorLoadSnapshot, len(peakShards))
+	for _, shard := range peakShards {
+		load := loadByTarget[shard.Target]
+		load.AvailableCapacity = int32(shard.VUsers)
+		bounded[shard.Target] = load
+	}
+	return capacityWeightedShardsForGroupIncludingZero(group, targets, bounded, shardStrategyForGroupShards(peakShards))
 }
 
-func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {
+func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) (resultErr error) {
+	tr.mu.RLock()
+	podCapacityEnabled := test.podCapacityEnabled || tr.settings.CapacityPlanning.PodReservationsEnabled
+	tr.mu.RUnlock()
+	if podCapacityEnabled {
+		tr.podCapacityMutationMu.Lock()
+		defer tr.podCapacityMutationMu.Unlock()
+	}
+	var rollbackPodCapacity func()
+	defer func() {
+		if resultErr != nil && rollbackPodCapacity != nil {
+			rollbackPodCapacity()
+		}
+	}()
 	if targetVUsers < 0 || targetVUsers > maxManagedTestVUsers {
 		return fmt.Errorf("target vusers must be between 0 and %d", maxManagedTestVUsers)
 	}
@@ -1955,6 +2022,12 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		}
 		ctx, cancel := context.WithTimeout(executionCtx, b.timeout)
 		defer cancel()
+		if podCapacityEnabled {
+			rollbackPodCapacity, err = tr.expandPodScale(ctx, test.ID, groupName, []GeneratorShardSummary{{Target: firstNonEmpty(groupTarget, remoteTarget), VUsers: targetVUsers}}, map[string]generatorClient{firstNonEmpty(groupTarget, remoteTarget): client})
+			if err != nil {
+				return err
+			}
+		}
 		adjustment, err := client.AdjustVUsers(ctx, generatorrpc.VUserAdjustment{
 			TestID:              test.ID,
 			ExecutionGeneration: executionGeneration,
@@ -2044,6 +2117,12 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		return fmt.Errorf("preserve distributed shard coordinates: %w", err)
 	}
 	previousByTarget := make(map[string]int, len(shards))
+	if podCapacityEnabled {
+		rollbackPodCapacity, err = tr.expandPodScale(executionCtx, test.ID, groupName, nextShards, clients)
+		if err != nil {
+			return err
+		}
+	}
 	for _, shard := range shards {
 		previousByTarget[shard.Target] = shard.VUsers
 	}

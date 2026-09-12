@@ -138,6 +138,8 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		}
 	}
 	defer releaseTopology()
+	tr.podCapacityMutationMu.Lock()
+	defer tr.podCapacityMutationMu.Unlock()
 
 	tr.mu.RLock()
 	currentTest := tr.tests[test.ID] == test
@@ -353,6 +355,17 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		closeDialedClients()
 		return nil, nil
 	}
+	podClaims, podErr := tr.reservePodEvacuation(executionCtx, b, testID, target, nextByGroup, clientsByTarget, dryRun)
+	podCommitted := false
+	defer func() {
+		if !podCommitted && len(podClaims) > 0 {
+			tr.releasePodClaimsWithDial(b, podClaims)
+		}
+	}()
+	if podErr != nil {
+		closeDialedClients()
+		return impacts, podErr
+	}
 	if dryRun {
 		closeDialedClients()
 		return impacts, nil
@@ -530,6 +543,17 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 
 sourceFenced:
+	if len(podClaims) > 0 {
+		if store, ok := tr.testStore.(podCapacityStore); ok {
+			if rows, err := store.ListPodCapacityReservations(); err == nil {
+				for _, r := range rows {
+					if r.TestID == testID && r.Target == target {
+						_ = tr.transitionPodLedger(store, r.Target, r.TestID, r.Incarnation, r.ReservationID, "releasing", executionLeaseName, executionLeaseOwnerID, executionGeneration)
+					}
+				}
+			}
+		}
+	}
 
 	// AssignWork above is a staging boundary: replacement VUsers must remain
 	// inert until the source's exact-generation StopTest has positively fenced
@@ -753,6 +777,12 @@ sourceFenced:
 
 	if stream := streamsByTarget[target]; stream != nil {
 		_ = stream.CloseSend()
+	}
+	podCommitted = true
+	if store, ok := tr.testStore.(podCapacityStore); ok {
+		for _, r := range podClaims {
+			_ = tr.transitionPodLedger(store, r.Target, r.TestID, r.Incarnation, r.ReservationID, "committed", executionLeaseName, executionLeaseOwnerID, executionGeneration)
+		}
 	}
 	return impacts, nil
 }

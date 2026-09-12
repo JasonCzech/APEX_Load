@@ -1122,6 +1122,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	if !ok {
 		return scaleTransitionDecision{err: status.Error(codes.NotFound, "group assignment not found")}
 	}
+	if err := service.validatePodCapacityAssignmentLocked(testID, request.GetGroupName(), request.GetTargetVusers()); err != nil {
+		return scaleTransitionDecision{err: status.Error(codes.ResourceExhausted, err.Error())}
+	}
 	if service.draining && request.GetTargetVusers() > currentGroupVUsers {
 		return scaleTransitionDecision{err: status.Error(codes.Unavailable, "generator is draining and cannot increase vusers")}
 	}
