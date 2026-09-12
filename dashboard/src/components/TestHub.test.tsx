@@ -6,7 +6,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
-import { type LoadModelTemplate, type StoredScenario } from '../types'
+import { type LoadModelTemplate, type StoredScript, type StoredScenario } from '../types'
 import TestHub from './TestHub'
 import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
@@ -183,7 +183,7 @@ describe('TestHub', () => {
     })
     await flushTimeouts()
 
-    const useButton = Array.from(container.querySelectorAll('.scenario-existing-script-library button')).find(button => (
+    const useButton = Array.from(document.body.querySelectorAll('.scenario-existing-script-library button')).find(button => (
       button.textContent?.includes(`Use for Group ${groupNumber}`)
         && button.closest('tr')?.textContent?.includes(scriptName)
     ))
@@ -203,7 +203,7 @@ describe('TestHub', () => {
     ))
     expect(card).toBeDefined()
     if (!card) return
-    const manualButton = Array.from(card.querySelectorAll('button')).find(button => button.textContent?.includes('Use Manual Shape'))
+    const manualButton = Array.from(card.querySelectorAll('button')).find(button => button.textContent === `Use ${shapeName}`)
     expect(manualButton).toBeDefined()
     if (!manualButton) return
     await act(async () => {
@@ -679,6 +679,8 @@ describe('TestHub', () => {
   })
 
   beforeEach(() => {
+    sessionStorage.clear()
+    localStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -966,8 +968,6 @@ describe('TestHub', () => {
   })
 
   it('selects a group script from the searchable sortable script library', async () => {
-    const scrollIntoView = vi.fn()
-    Object.defineProperty(window.HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
     apiMock.listScripts.mockResolvedValue({
       scripts: [
         {
@@ -1033,33 +1033,35 @@ describe('TestHub', () => {
     })
     await flushTimeouts()
 
-    const searchInput = container.querySelector('.scenario-existing-script-library input[type="search"]') as HTMLInputElement | null
+    const scriptDialog = document.body.querySelector('[role="dialog"][aria-labelledby="scenario-script-library-dialog-title"]')
+    expect(scriptDialog).toBeTruthy()
+    expect(scriptDialog?.textContent).toContain('Choose Script')
+    const searchInput = document.body.querySelector('.scenario-existing-script-library input[type="search"]') as HTMLInputElement | null
     expect(searchInput).toBeDefined()
     expect(document.activeElement).toBe(searchInput)
-    expect(scrollIntoView).toHaveBeenCalled()
-    expect(container.textContent).toContain('Choosing for Group 1')
-    expect(container.textContent).toContain('Payments Peak')
-    expect(container.textContent).toContain('PI30')
-    expect(container.textContent).toContain('grpc')
-    expect(container.textContent).toContain('May 15, 2026')
-    expect(container.textContent).toContain('May 20, 2026')
+    expect(document.body.textContent).toContain('Choosing for Group 1')
+    expect(document.body.textContent).toContain('Payments Peak')
+    expect(document.body.textContent).toContain('PI30')
+    expect(document.body.textContent).toContain('grpc')
+    expect(document.body.textContent).toContain('May 15, 2026')
+    expect(document.body.textContent).toContain('May 20, 2026')
     if (!searchInput) return
 
     await act(async () => {
       setInputValue(searchInput, 'Payments Peak')
     })
-    const filteredRows = Array.from(container.querySelectorAll('.scenario-existing-script-library tbody tr'))
+    const filteredRows = Array.from(document.body.querySelectorAll('.scenario-existing-script-library tbody tr'))
     expect(filteredRows).toHaveLength(1)
     expect(filteredRows[0].textContent).toContain('Payments Flow')
 
     await act(async () => {
       setInputValue(searchInput, '')
     })
-    const createdHeader = Array.from(container.querySelectorAll('.scenario-existing-script-library th'))
-      .find(header => header.textContent?.includes('Created'))
+    const createdHeader = Array.from(document.body.querySelectorAll('.scenario-existing-script-library th'))
+      .find(header => header.textContent?.startsWith('Script'))
     expect(createdHeader).toBeDefined()
     if (!createdHeader) return
-    expect(createdHeader.getAttribute('aria-sort')).toBe('none')
+    expect(createdHeader.getAttribute('aria-sort')).toBe('ascending')
     const createdSortButton = createdHeader.querySelector('button')
     expect(createdSortButton).toBeDefined()
     if (!createdSortButton) return
@@ -1067,10 +1069,10 @@ describe('TestHub', () => {
       createdSortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(createdHeader.getAttribute('aria-sort')).toBe('descending')
-    const firstSortedRow = container.querySelector('.scenario-existing-script-library tbody tr')
+    const firstSortedRow = document.body.querySelector('.scenario-existing-script-library tbody tr')
     expect(firstSortedRow?.textContent).toContain('Payments Flow')
 
-    const usePaymentsButton = Array.from(container.querySelectorAll('.scenario-existing-script-library button'))
+    const usePaymentsButton = Array.from(document.body.querySelectorAll('.scenario-existing-script-library button'))
       .find(button => button.textContent?.includes('Use for Group 1') && button.closest('tr')?.textContent?.includes('Payments Flow'))
     expect(usePaymentsButton).toBeDefined()
     if (!usePaymentsButton) return
@@ -1081,6 +1083,7 @@ describe('TestHub', () => {
     await flushTimeouts()
 
     expect(container.querySelector('.scenario-script-group-card')?.textContent).toContain('Payments Flow')
+    expect(document.body.querySelector('[role="dialog"][aria-labelledby="scenario-script-library-dialog-title"]')).toBeNull()
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
@@ -1919,7 +1922,7 @@ describe('TestHub', () => {
 
     expect(container.textContent).toContain('Scenario Library')
     expect(container.textContent).not.toContain('Scenario Library (')
-    expect(container.textContent).toContain('Library Sources')
+    expect(container.textContent).toContain('Saved scenarios')
     expect(container.textContent).toContain('Associated Release')
     expect(container.textContent).toContain('Search scenarios')
     expect(container.textContent).not.toContain('Asset Type')
@@ -1962,9 +1965,8 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('0 matching scenarios')
     expect(container.textContent).toContain('No scenarios match these filters.')
 
-    await act(async () => {
-      setInputValue(searchInput, '')
-    })
+    await clickButton('Reset filters')
+    expect(searchInput.value).toBe('')
 
     const viewRunsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View Runs'))
     expect(viewRunsButton).toBeDefined()
@@ -2130,6 +2132,22 @@ describe('TestHub', () => {
     expect(document.activeElement).toBe(deleteTrigger)
   })
 
+  it('limits header selection to the current page and offers explicit selection of all matches', async () => {
+    const scenarios = Array.from({ length: 12 }, (_, index) => scenarioFixture(`page-${index}`, `Page scenario ${index}`))
+    apiMock.listScenarios.mockResolvedValue({ scenarios, count: scenarios.length })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />))
+    await flushPromises()
+    expect(container.textContent).toContain('Showing 1–10 of 12')
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Select all scenarios on this page"]')!.click())
+    expect(container.textContent).toContain('Delete Selected (10)')
+    await clickButton('Select all 12 matching scenarios')
+    expect(container.textContent).toContain('Delete Selected (12)')
+    await clickButton('Next')
+    expect(container.textContent).toContain('Showing 11–12 of 12')
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Select all scenarios on this page"]')!.click())
+    expect(container.textContent).toContain('Delete Selected (10)')
+  })
+
   it('selects all visible scenarios and preserves failed rows after a partial bulk delete', async () => {
     vi.stubGlobal('confirm', vi.fn(() => true))
     let scenarios = [
@@ -2148,7 +2166,7 @@ describe('TestHub', () => {
     })
     await flushPromises()
 
-    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all visible scenarios"]')
+    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all scenarios on this page"]')
     expect(selectAll).not.toBeNull()
     await act(async () => {
       selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2305,6 +2323,8 @@ describe('TestHub', () => {
 
     await clickButton('Scenario Builder')
     await clickButton('Model from Existing Scenario')
+    expect(container.textContent).toContain('Choose Scenario To Model')
+    await clickWizardStep('Scripts')
     const authoredName = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
       .find(input => input.placeholder === 'Scenario name')
     expect(authoredName).toBeDefined()
@@ -2375,7 +2395,7 @@ describe('TestHub', () => {
 
     expect(Array.from(container.querySelectorAll('input')).some(input => input.value === 'Payments Against Checkout Model')).toBe(true)
     expect(container.textContent).not.toContain('Choose Scenario To Model')
-    expect(container.textContent).toContain('Existing Scripts Library')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickButton('Save draft')
     await flushPromises()
@@ -3187,8 +3207,7 @@ describe('TestHub', () => {
     await clickWizardStep('Scripts')
 
     expect(container.textContent).not.toContain('Scenario Library (')
-    expect(container.textContent).toContain('Existing Scripts Library')
-    expect(container.textContent).toContain('Checkout Flow')
+    expect(container.textContent).not.toContain('Existing Scripts Library')
 
     await clickWizardStep('Run Settings')
 
@@ -3233,9 +3252,7 @@ describe('TestHub', () => {
     expect(addGroupButton?.disabled).toBe(true)
     expect(addGroupButton?.textContent).toContain('Add a script to every existing group first')
 
-    const libraryAddButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.scenario-existing-script-library button'))
-      .find(button => button.textContent?.includes('Add Group'))
-    expect(libraryAddButton?.disabled).toBe(true)
+    expect(document.body.querySelector('.scenario-existing-script-library')).toBeNull()
 
     await clickButton('Add Group')
     expect(groupList?.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
@@ -3260,7 +3277,9 @@ describe('TestHub', () => {
     expect(addGroupButton?.disabled).toBe(true)
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Save draft'))
-    expect(saveButton?.disabled).toBe(true)
+    expect(saveButton?.disabled).toBe(false)
+    await clickButton('Save draft')
+    expect(container.textContent).toContain('Draft progress saved in this browser')
   })
 
   it.each(['Required variables are missing', 'Controller unavailable'])('retains a failed save error: %s', async message => {
@@ -3321,6 +3340,64 @@ describe('TestHub', () => {
     expect(changeView).not.toHaveBeenCalled()
   })
 
+  it('saves blocked composition locally, resumes it after remount, and never creates a runnable scenario', async () => {
+    const listed = await apiMock.listScripts()
+    apiMock.listScripts.mockResolvedValue({ ...listed, scripts: listed.scripts.map((script: StoredScript) => ({ ...script, authoring_health: { status: 'blocked', inputs: [] } })) })
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Blocked authoring checkpoint'))
+    expect(container.querySelector('[aria-label="Scripts needs attention"]')).not.toBeNull()
+    await clickButton('Save draft')
+    expect(apiMock.createScenario).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Draft progress saved in this browser')
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await clickButton('Resume draft')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')?.value).toBe('Blocked authoring checkpoint')
+    await clickWizardStep('Review')
+    expect(container.textContent).toContain('Script review required')
+    expect(apiMock.createScenario).not.toHaveBeenCalled()
+    await clickButton('Clear saved draft')
+    expect(container.querySelector('[aria-label="Saved browser draft"]')).toBeNull()
+  })
+
+  it('does not erase an unrelated browser checkpoint when another scenario is saved', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await clickButton('Build from Workload Shape')
+    await clickButton('Save draft')
+    await act(async () => root.unmount())
+    root = createRoot(container)
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Different scenario'))
+    await selectManualShapeByName('Closed VUser')
+    await clickButton('Save draft')
+    expect(apiMock.createScenario).toHaveBeenCalled()
+    expect(container.querySelector('[aria-label="Saved browser draft"]')?.textContent).toContain('Untitled draft')
+  })
+
+  it('retains a validation report when saving refreshes equivalent script definitions', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Validated checkpoint'))
+    await selectManualShapeByName('Closed VUser')
+    await clickWizardStep('Review')
+    await clickButton('Validate Load Model')
+    expect(container.textContent).toContain('Closed workload uses 10 VUsers.')
+    const listed = await apiMock.listScripts()
+    apiMock.listScripts.mockResolvedValue({ ...listed, scripts: listed.scripts.map((script: StoredScript) => ({ ...script, associated_scenarios: [{ id: 'new', name: 'New scenario' }] })) })
+    await clickButton('Save draft')
+    expect(container.textContent).toContain('Closed workload uses 10 VUsers.')
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[aria-label="Scenario name"]')!, 'Changed input'))
+    expect(container.textContent).not.toContain('Closed workload uses 10 VUsers.')
+  })
+
   it('does not claim success when a successful save response has no id', async () => {
     apiMock.createScenario.mockResolvedValueOnce({})
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={() => {}} initialView="builder" />))
@@ -3344,7 +3421,7 @@ describe('TestHub', () => {
     expect(wizardStepComplete('Shape')).toBe(false)
     expect(wizardStepComplete('Run Settings')).toBe(false)
     expect(container.textContent).toContain('Choose and apply a workload source')
-    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')?.disabled).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')?.disabled).toBe(false)
     await act(async () => setSelectValue(select, 'shape'))
     await selectManualShapeByName('Closed VUser')
     expect(container.querySelector('.scenario-builder-preview')).not.toBeNull()
@@ -3501,7 +3578,9 @@ describe('TestHub', () => {
 
     expect(container.textContent).toContain('longer than')
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft')) as HTMLButtonElement | undefined
-    expect(saveButton?.disabled).toBe(true)
+    expect(saveButton?.disabled).toBe(false)
+    await clickButton('Save draft')
+    expect(container.textContent).toContain('Draft progress saved in this browser')
   })
 
   it('persists once-only init and teardown scope from the scenario form', async () => {
@@ -3618,7 +3697,7 @@ describe('TestHub', () => {
     expect(headerName()).toBe('Header Visible Scenario')
   })
 
-  it('prompts for a scenario name on the review step instead of erroring when saving without one', async () => {
+  it('preserves an unnamed draft in browser storage and allows naming it later', async () => {
     const onSelectTest = vi.fn()
 
     await act(async () => {
@@ -3638,10 +3717,11 @@ describe('TestHub', () => {
     })
     await flushPromises()
 
-    // No scenario is created; the user is taken to review with a name prompt.
+    // An unnamed checkpoint remains recoverable without becoming a runnable scenario.
     expect(apiMock.createScenario).not.toHaveBeenCalled()
     expect(container.textContent).not.toContain('required')
-    expect(container.textContent).toContain('Name the scenario before saving.')
+    expect(container.textContent).toContain('Draft progress saved in this browser')
+    await clickWizardStep('Review')
     const promptInput = container.querySelector('.scenario-name-prompt input') as HTMLInputElement | null
     expect(promptInput).toBeTruthy()
     if (!promptInput) return
@@ -3650,6 +3730,7 @@ describe('TestHub', () => {
       setInputValue(promptInput, 'Late Named Scenario')
     })
 
+    await selectManualShapeByName('Closed VUser')
     const saveButtonAfter = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Save draft')
     await act(async () => {
       saveButtonAfter?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

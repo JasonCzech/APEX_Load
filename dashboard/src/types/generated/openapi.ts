@@ -4862,6 +4862,65 @@ export interface operations {
       };
     };
   };
+  "handleAcknowledgeThresholdIncident": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "acknowledged"?: (boolean) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleAcquireDeploymentLease": {
     parameters?: never;
     requestBody: {
@@ -30138,6 +30197,7 @@ export interface operations {
         "action"?: string;
         "actor_subject"?: string;
         "actor_type"?: string;
+        "category"?: string;
         "created_after"?: string;
         "created_before"?: string;
         "domain_id"?: string;
@@ -31210,6 +31270,8 @@ export interface operations {
         "action"?: string;
         "actor_subject"?: string;
         "actor_type"?: string;
+        "all"?: string;
+        "category"?: string;
         "created_after"?: string;
         "created_before"?: string;
         "domain_id"?: string;
@@ -34147,6 +34209,12 @@ export interface operations {
             "compatible_features"?: Array<string>;
             "eligible_generators": number;
             "max_slots": number;
+            "pending_runs"?: Array<{
+              "id": string;
+              "name": string;
+              "status": string;
+              "vusers": number;
+            }>;
             "project_active_slots"?: number;
             "project_id"?: string;
             "project_pending_slots"?: number;
@@ -34156,6 +34224,7 @@ export interface operations {
               "pending_slots": number;
               "pending_tests": number;
               "project_id": string;
+              "project_name"?: string;
               "reserved_generators"?: number;
               "reserved_slots"?: number;
               "running_tests": number;
@@ -46705,12 +46774,14 @@ export interface operations {
         "action"?: string;
         "actor_subject"?: string;
         "actor_type"?: string;
+        "category"?: string;
         "created_after"?: string;
         "created_before"?: string;
         "domain_id"?: string;
         "limit"?: number;
         "offset"?: number;
         "project_id"?: string;
+        "report"?: string;
         "resource_id"?: string;
         "resource_type"?: string;
         "status"?: string;
@@ -46736,6 +46807,7 @@ export interface operations {
               "resource_type"?: string;
               "status": string;
             }) | null>;
+            "has_more": boolean;
             "limit": number;
             "offset": number;
             "usage": {
@@ -46793,6 +46865,14 @@ export interface operations {
                 "vuser_seconds": number;
               };
             };
+            "usage_runs"?: Array<{
+              "actor": string;
+              "created_at": string;
+              "id": string;
+              "name": string;
+              "project_id": string;
+              "status": string;
+            }>;
           };
         };
       };
@@ -50063,6 +50143,7 @@ export interface operations {
         "action"?: string;
         "actor_subject"?: string;
         "actor_type"?: string;
+        "category"?: string;
         "created_after"?: string;
         "created_before"?: string;
         "domain_id"?: string;
@@ -52134,6 +52215,80 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListThresholdIncidents": {
+    parameters: {
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "project_id"?: string;
+        "q"?: string;
+        "severity"?: string;
+        "since"?: string;
+        "status"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "active_count": number;
+            "danger_count": number;
+            "generated_at": string;
+            "global_policy_count": number;
+            "incidents": Array<{
+              "acknowledged_at"?: (string) | null;
+              "acknowledged_by"?: string;
+              "active": boolean;
+              "first_seen_at": string;
+              "id": string;
+              "key": string;
+              "last_seen_at": string;
+              "payload": Record<string, unknown>;
+              "project_id": string;
+              "resolved_at"?: (string) | null;
+              "severity": string;
+              "test_id": string;
+              "test_name": string;
+            }>;
+            "last_evaluated_at": (string) | null;
+            "limit": number;
+            "offset": number;
+            "persistence_warning"?: string;
+            "unacknowledged_count": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -98367,6 +98522,12 @@ export interface paths {
   };
   "/api/v1/monitoring/prometheus/graphs": {
     "get": operations["handlePrometheusGraphs"];
+  };
+  "/api/v1/monitoring/threshold-incidents": {
+    "get": operations["handleListThresholdIncidents"];
+  };
+  "/api/v1/monitoring/threshold-incidents/{id}/ack": {
+    "patch": operations["handleAcknowledgeThresholdIncident"];
   };
   "/api/v1/object-repositories": {
     "get": operations["handleListObjectRepositories"];

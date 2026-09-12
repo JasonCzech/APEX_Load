@@ -135,8 +135,8 @@ vi.mock('./runReport/SynchronizedTimeline', () => ({ default: () => <section dat
 vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: () => <section data-testid="scoreboard" /> }))
 vi.mock('./runReport/RunReportDiagnostics', () => ({ default: () => <section data-testid="diagnostics" /> }))
 vi.mock('./runReport/RunReportCompareBar', () => ({
-  default: ({ onPinBaseline }: { onPinBaseline: () => Promise<boolean> }) => (
-    <section data-testid="compare">
+  default: ({ onPinBaseline, options = [] }: { onPinBaseline: () => Promise<boolean>; options?: TestSummary[] }) => (
+    <section data-testid="compare">{options.map(run => <span key={run.id}>{run.name}</span>)}
       <button
         type="button"
         onClick={async () => {
@@ -255,6 +255,25 @@ describe('RunReportPage', () => {
     await act(async () => root.render(render('evidence')))
     expect(container.textContent).toContain('No lifecycle event history was retained')
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
+  })
+
+  it('does not label controller timing as archived evidence while the archive report is unavailable', async () => {
+    mocks.polling.test = { ...buildTest('COMPLETE'), started_at: '2026-05-12T20:00:00Z', ended_at: '2026-05-12T20:05:00Z' }
+    mocks.archiveModel.archiveReport = null
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.textContent).toContain('Lifecycle elapsed 5m')
+    expect(container.textContent).toContain('Archived evidence elapsed Not recorded')
+  })
+
+  it('discovers eligible archived baselines beyond the first catalog page', async () => {
+    mocks.polling.test = { ...buildTest('COMPLETE'), project_id: 'project', application_id: 'app', release_id: 'release' }
+    const firstPage = Array.from({ length: 100 }, (_, i) => ({ ...buildTest('COMPLETE', false), id: `unarchived-${i}` }))
+    mocks.api.listTests.mockResolvedValueOnce({ tests: firstPage, total: 101, count: 100 }).mockResolvedValueOnce({ tests: [{ ...buildTest('COMPLETE'), id: 'older', name: 'Older archived baseline' }], total: 101, count: 1 })
+    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    await act(async () => buttonByText(container, 'Compare')?.click())
+    expect(mocks.api.listTests).toHaveBeenCalledWith(expect.objectContaining({ offset: 100, project_id: 'project', application_id: 'app', release_id: 'release' }))
+    expect(container.textContent).toContain('Older archived baseline')
+    expect(container.querySelector('[data-testid="compare"]')?.querySelectorAll('span')).toHaveLength(1)
   })
 
   it('distinguishes an event retrieval error from an empty retained history and retries', async () => {

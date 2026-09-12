@@ -1,0 +1,35 @@
+.command-overview { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); min-width: 0; }
+.command-overview h2 { margin: 0; }
+.command-overview p { color: var(--text-secondary); line-height: 1.5; }
+.command-overview-heading, .command-overview-actions, .command-overview-filters, .command-overview-results, .command-run-switcher { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.command-overview-heading { justify-content: space-between; }
+.command-overview-filters { margin: 20px 0 12px; align-items: end; }
+.command-overview label, .command-run-switcher label { display: grid; gap: 6px; font-size: 13px; }
+.command-overview input, .command-overview select, .command-run-switcher select { min-height: 36px; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-input, var(--bg-primary)); color: var(--text-primary); padding: 7px 10px; }
+.command-overview-table { overflow-x: auto; }
+.command-overview table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.command-overview caption { text-align: left; color: var(--text-secondary); padding: 12px 0; line-height: 1.5; }
+.command-overview th, .command-overview td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.command-overview small { display: block; margin-top: 6px; color: var(--text-secondary); line-height: 1.5; }
+.command-overview-run { padding: 0; background: transparent; border: 0; color: var(--accent); text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.command-overview-run strong { display: block; font-size: 14px; }
+.command-overview .command-overview-warning { color: var(--warning); }
+.command-overview-results { margin-top: 20px; }
+.command-run-switcher { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.command-run-switcher label { flex: 1; min-width: 180px; }
+.command-run-switcher select { width: 100%; }
+.command-overview button:focus-visible, .command-run-switcher :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 1100px) {
+  .command-overview thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .command-overview tbody, .command-overview tr { display: block; }
+  .command-overview tr { border: 1px solid var(--border); border-radius: var(--radius); margin: 12px 0; padding: 12px; }
+  .command-overview td { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 2fr); gap: 8px; padding: 8px 0; }
+  .command-overview td::before { content: attr(data-label); color: var(--text-secondary); }
+  .command-overview td > small { grid-column: 2; }
+  .command-overview td:first-child { display: block; }
+  .command-overview td:first-child::before { display: none; }
+}
+@media (max-width: 600px) { .command-overview { padding: 14px; } .command-overview-filters label { width: 100%; } }
+
+.command-overview-filters label:first-child { flex: 1; min-width: 180px; }
+.command-overview td .status-badge { justify-self: start; }

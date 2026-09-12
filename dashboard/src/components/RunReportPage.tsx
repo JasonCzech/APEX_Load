@@ -1,3 +1,4 @@
+import { loadAllTestSummaries } from './testCatalogPagination'
 import { useExecutionTestManifest } from './useExecutionTestManifest'
 import RunExecutionDetails, { RunExecutionFacts, RetainedRunMetrics, RetainedRunDiagnostics } from './runReport/RunExecutionDetails'
 import { executionFacts, recordedNumber } from './runReport/executionPresentation'
@@ -91,6 +92,7 @@ export default function RunReportPage({
   const [populationChoice, setPopulationChoice] = useState<MetricPopulation | null>(null)
   const [baselineOptions, setBaselineOptions] = useState<TestSummary[]>([])
   const [baselineOptionsError, setBaselineOptionsError] = useState('')
+  const [baselineOptionsLoading, setBaselineOptionsLoading] = useState(false)
   const [compareId, setCompareId] = useState(initialCompare || '')
   const { test, setTest, error: testError, archiveCheckPending, archiveCheckError, checkArchiveAgain } = useExecutionTestPolling(testId, { stopOnTerminal: true })
   const resolvedStatus = test ? resolveTestStatus(test, statusOverride ? { [test.id]: statusOverride } : {}) : ''
@@ -138,9 +140,11 @@ export default function RunReportPage({
     if (!showCompare || !test) return
     let cancelled = false
     setBaselineOptionsError('')
-    api.listTests({ project_id: test.project_id, application_id: test.application_id, release_id: test.release_id, summary: true, limit: 100 }).then(result => {
-      if (!cancelled) setBaselineOptions(result.tests.filter(run => run.id !== testId && isCompletedTestStatus(run.status) && Boolean(run.archive)))
-    }).catch(error => { if (!cancelled) setBaselineOptionsError(getErrorMessage(error, 'Unable to load baseline runs')) })
+    setBaselineOptions([])
+    setBaselineOptionsLoading(true)
+    loadAllTestSummaries(api.listTests, { project_id: test.project_id, application_id: test.application_id, release_id: test.release_id, summary: true }, 100).then(result => {
+      if (!cancelled) setBaselineOptions((result.tests || []).filter(run => run.id !== testId && isCompletedTestStatus(run.status) && Boolean(run.archive)))
+    }).catch(error => { if (!cancelled) setBaselineOptionsError(getErrorMessage(error, 'Unable to load baseline runs')) }).finally(() => { if (!cancelled) setBaselineOptionsLoading(false) })
     return () => { cancelled = true }
   }, [api, showCompare, test, testId])
   const effectiveCompareId = compareId
@@ -429,7 +433,7 @@ export default function RunReportPage({
   return (
     <div className="page run-report-page">
       <div className="run-report-toolbar">
-        <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p><StatusBadge status={resolvedStatus} stoppedByOperator={report?.manifest?.termination_reason === 'operator_stopped'} /> · Configured {recordedNumber(facts.vusers)} VUsers for {facts.duration || 'Not recorded'} · Observed elapsed {facts.elapsed}</p></div>
+        <div><p className="run-report-kicker">Run results · {test.ref_key || test.id}</p><h1>{test.name || test.id}</h1><p><StatusBadge status={resolvedStatus} stoppedByOperator={report?.manifest?.termination_reason === 'operator_stopped'} /> · Configured {recordedNumber(facts.vusers)} VUsers for {facts.duration || 'Not recorded'} · Lifecycle elapsed {facts.lifecycleElapsed}{hasArchive && <> · Archived evidence elapsed {report ? facts.elapsed : 'Not recorded'}</>}</p></div>
         <div className="run-report-toolbar-actions">
           <button className="btn btn-secondary" type="button" disabled={!hasArchive} aria-expanded={showCompare} onClick={() => setShowCompare(v => !v)}>Compare</button>
           <button className="btn btn-primary" type="button" disabled={!hasArchive} aria-expanded={showExport} onClick={() => setShowExport(v => !v)}>Export report</button>
@@ -457,7 +461,7 @@ export default function RunReportPage({
         <label>Metric population <select value={population} onChange={e => setPopulationChoice(e.target.value as MetricPopulation)}>{Object.entries(populationLabels).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>
         <p>{populationLabels[population]} · {report?.metric_populations?.[population]?.transactions ?? 'Unknown'} samples · Whole captured run. {(report?.metric_populations?.transaction?.transactions || 0) > 0 ? 'Interval graphs show named transaction metrics.' : 'Legacy interval graphs have no identified named transaction population; their values are separate from these KPIs.'} Resource curves show the load generators.</p>
       </section>}
-      {showCompare && hasArchive && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions}
+      {showCompare && hasArchive && <RunReportCompareBar compareId={effectiveCompareId} suggestedCompareId={suggestedCompareId} baselineName={baselineTest?.name} options={baselineOptions} optionsLoading={baselineOptionsLoading}
         deltas={baselineDiff} loading={baselineLoading} error={baselineError || baselineOptionsError || (effectiveCompareId && report && baselineReport && (!reportPopulationOverview(report, population) || !reportPopulationOverview(baselineReport, population)) ? 'No comparable samples for the selected population.' : '')}
         onCompareChange={setCompare} onPinBaseline={pinBaseline} />}
       {effectiveCompareId && !showCompare && <p className="run-report-muted">Comparing with {baselineTest?.name || effectiveCompareId}. Open Compare to change or clear the baseline.{baselineError ? ` ${baselineError}` : ''}</p>}

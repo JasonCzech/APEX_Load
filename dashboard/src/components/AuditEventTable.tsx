@@ -3,7 +3,8 @@ import type { DashboardAuditEvent } from '../types'
 import { detailsSummary, eventResourceLabel, formatTimestamp } from './accessUtils'
 
 /** Shared evidence presentation. Callers retain their authorized query/filter API. */
-export function AuditEventTable({ events, header, scopeLabel, onSelect, selectedId, emptyMessage = 'No activity found' }: {
+export function AuditEventTable({ events, header, scopeLabel, onSelect, selectedId, emptyMessage = 'No activity found', paginated = false }: {
+  paginated?: boolean
   events: DashboardAuditEvent[]
   header?: ReactNode
   scopeLabel?: (event: DashboardAuditEvent) => string
@@ -11,7 +12,7 @@ export function AuditEventTable({ events, header, scopeLabel, onSelect, selected
   selectedId?: string
   emptyMessage?: string
 }) {
-  return <div className="access-table-wrap">
+  return <div className="access-table-wrap" data-table-pagination={paginated ? 'off' : undefined}>
     <table className="access-data-table">
       <caption className="sr-only">Audit events</caption>
       <thead><tr>{header || ['Time', 'Actor', 'Action', 'Resource', 'Scope', 'Status', 'Details'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>

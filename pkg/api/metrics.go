@@ -1076,6 +1076,7 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 	stopForError := allowStops && tr.shouldStopForEffectiveErrorThreshold(test, live, settings.Thresholds)
 	stopForP99 := allowStops && tr.shouldStopForSustainedP99(test, live, settings.Thresholds)
 	applyThresholdAlertStopActions(alerts, stopForError, stopForP99)
+	tr.journalThresholdEvaluation(test, live, alerts)
 	for _, alert := range alerts {
 		alert["project_id"] = projectID
 		if len(live.LoadLevels) > 0 {

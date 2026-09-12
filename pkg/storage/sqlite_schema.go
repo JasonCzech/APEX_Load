@@ -1322,6 +1322,27 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS threshold_evaluations (
+            test_id TEXT PRIMARY KEY REFERENCES tests(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            evaluated_at DATETIME NOT NULL,
+            covered INTEGER NOT NULL DEFAULT 0
+        )`,
+		`CREATE TABLE IF NOT EXISTS threshold_incidents (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            test_id TEXT NOT NULL REFERENCES tests(id) ON DELETE CASCADE,
+            test_name TEXT NOT NULL,
+            incident_key TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            active INTEGER NOT NULL DEFAULT 1,
+            first_seen_at DATETIME NOT NULL,
+            last_seen_at DATETIME NOT NULL,
+            resolved_at DATETIME,
+            acknowledged_by TEXT NOT NULL DEFAULT '',
+            acknowledged_at DATETIME
+        )`,
 		`CREATE TABLE IF NOT EXISTS monitoring_collectors (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -1702,6 +1723,9 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_fleet_pool_members_generator ON fleet_pool_members(generator_id) WHERE generator_id != ''`, "idx_fleet_pool_members_generator"},
 	{`CREATE INDEX IF NOT EXISTS idx_provisioning_requests_pool ON provisioning_requests(fleet_pool_id)`, "idx_provisioning_requests_pool"},
 	{`CREATE INDEX IF NOT EXISTS idx_provisioning_events_request ON provisioning_events(request_id)`, "idx_provisioning_events_request"},
+	{`CREATE INDEX IF NOT EXISTS idx_threshold_incidents_project ON threshold_incidents(project_id, last_seen_at, id)`, "idx_threshold_incidents_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_threshold_incidents_active ON threshold_incidents(test_id, active)`, "idx_threshold_incidents_active"},
+	{`CREATE INDEX IF NOT EXISTS idx_threshold_evaluations_project ON threshold_evaluations(project_id, evaluated_at)`, "idx_threshold_evaluations_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_fleet_alert_acks_acknowledged_at ON fleet_alert_acks(acknowledged_at)`, "idx_fleet_alert_acks_acknowledged_at"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plans_project ON execution_plans(project_id)`, "idx_execution_plans_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plan_runs_plan ON execution_plan_runs(plan_id)`, "idx_execution_plan_runs_plan"},

@@ -1,3 +1,4 @@
+import type { AccessView } from './accessDestinations'
 // Shared types for the Access page workspaces (extracted from AccessPage.tsx, A16).
 import { ApplicationRepository, Domain, Project, DashboardUserRoleScopeType } from '../types'
 
@@ -17,6 +18,9 @@ export type SortState<T extends string> = {
 }
 
 export type AccessPageProps = {
+  accessView?: AccessView
+  onViewChange?: (view: AccessView) => void
+  authMode?: string
   projects: Project[]
   domains?: Domain[]
   applicationRepository?: ApplicationRepository | null

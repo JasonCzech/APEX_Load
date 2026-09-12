@@ -17,6 +17,7 @@ const apiMock = {
   rotateAuthServiceAccount: vi.fn(),
   deleteAuthServiceAccount: vi.fn(),
   listAuthUsers: vi.fn(),
+  getAuthUser: vi.fn(),
   createAuthUser: vi.fn(),
   onboardAuthUser: vi.fn(),
   updateAuthUser: vi.fn(),
@@ -93,7 +94,7 @@ async function clickScopedButton(scope: HTMLElement, label: string) {
 }
 
 async function clickSortHeader(container: HTMLElement, label: string) {
-  const header = Array.from(container.querySelectorAll<HTMLButtonElement>('th.sortable button')).find(button => button.textContent?.includes(label))
+  const header = Array.from(container.querySelectorAll<HTMLButtonElement>('th button')).find(button => button.textContent?.includes(label))
   expect(header).toBeDefined()
   if (!header) return
   await act(async () => {
@@ -345,6 +346,131 @@ describe('AccessPage', () => {
     vi.clearAllMocks()
   })
 
+  it('pages event history and exports the complete applied filter, not draft changes', async () => {
+    const base = await apiMock.getAuthUserActivity()
+    apiMock.getAuthUserActivity.mockResolvedValue({ ...base, has_more: true })
+    await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle={false} canManageUserBindings={false} canManageServiceAccounts={false} canViewUserActivity />))
+    await flushPromises()
+    const firstQuery = apiMock.getAuthUserActivity.mock.lastCall?.[0]
+    await clickButton(container, 'Next events')
+    expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({offset:50,created_before:firstQuery.created_before}))
+    expect(container.querySelector('[data-table-pagination="off"]')).not.toBeNull()
+    changeInput(inputByPlaceholder(container,'actor subject')!, 'unapplied-user')
+    await clickButton(container, 'Export all matching events CSV')
+    expect(apiMock.downloadAuthUserActivity).toHaveBeenCalledWith(expect.objectContaining({all:'true',created_before:firstQuery.created_before}))
+    expect(apiMock.downloadAuthUserActivity.mock.lastCall?.[0].actor_subject).toBeUndefined()
+    await clickButton(container, 'Apply Filters')
+    expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({offset:0,actor_subject:'unapplied-user'}))
+  })
+
+  it('keeps usage filters and exports independent from Events', async () => {
+    await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle={false} canManageUserBindings={false} canManageServiceAccounts={false} canViewUserActivity />))
+    await flushPromises()
+    changeInput(inputByPlaceholder(container,'actor subject')!, 'event-only')
+    await clickButton(container, 'Apply Filters')
+    await clickButton(container, 'Usage By User')
+    await flushPromises()
+    expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({report:'usage',actor_subject:undefined}))
+    expect(container.textContent).toContain('run creation time')
+    await clickButton(container,'Export usage CSV')
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob),'apexload-usage-by-user.csv')
+    expect(apiMock.downloadAuthUserActivity).not.toHaveBeenCalled()
+    await clickButton(container,'alice')
+    await flushPromises()
+    expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({report:'usage',actor_subject:'alice',offset:0}))
+  })
+
+  it('validates usage dates, recovers from errors, and pages matching run links', async () => {
+    const base = await apiMock.getAuthUserActivity()
+    apiMock.getAuthUserActivity.mockImplementation(async (query) => ({...base,has_more:true,usage_runs:[{id:'run-1',name:'Matching run',actor:'alice',project_id:'project-1',status:'COMPLETE',created_at:'2026-01-01T00:00:00Z'}],query}))
+    await act(async () => root.render(<AccessPage accessView="usage" projects={projects} domains={domains} canManageUserLifecycle={false} canManageUserBindings={false} canManageServiceAccounts={false} canViewUserActivity />))
+    await flushPromises()
+    expect(container.querySelector('a[href="#/test/run-1?projectId=project-1"]')?.textContent).toBe('Matching run')
+    await clickButton(container,'Next runs')
+    expect(apiMock.getAuthUserActivity).toHaveBeenLastCalledWith(expect.objectContaining({report:'usage',offset:25}))
+    const dates=container.querySelectorAll<HTMLInputElement>('input[type="datetime-local"]')
+    changeInput(dates[0],'2026-03-02T12:00'); changeInput(dates[1],'2026-03-01T12:00')
+    expect(findButton(container,'Apply usage filters')?.disabled).toBe(true)
+    expect(container.textContent).toContain('start date must be before')
+    changeInput(dates[1],'2026-03-03T12:00')
+    apiMock.getAuthUserActivity.mockRejectedValueOnce(new Error('Usage unavailable'))
+    await clickButton(container,'Apply usage filters')
+    await flushPromises()
+    expect(container.textContent).toContain('Usage unavailable')
+    await clickButton(container,'Retry usage')
+    await flushPromises()
+    expect(container.textContent).toContain('Matching run')
+  })
+
+  it('searches and pages role-preview users independently of the main directory', async () => {
+    const target={id:'user-later',subject:'later',display_name:'Later directory user',active:true,bindings:[]}
+    const base=await apiMock.listAuthUsers()
+    apiMock.listAuthUsers.mockImplementation(async (query) => query.offset===50 || query.q==='later' ? {users:[target],count:1,has_more:false} : {...base,has_more:true})
+    await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity />))
+    await flushPromises()
+    await clickButton(container,'Activity',true)
+    await clickButton(container,'Access Review')
+    await flushPromises()
+    await clickButton(container,'More users')
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith(expect.objectContaining({offset:50,limit:50}))
+    expect(container.querySelector('.access-simulator')?.textContent).toContain('Later directory user')
+    const search=container.querySelector<HTMLInputElement>('.access-simulator input')!
+    changeInput(search,'later')
+    await flushPromises()
+    expect(apiMock.listAuthUsers).toHaveBeenLastCalledWith({q:'later',limit:50,offset:0})
+    expect(container.querySelector('.access-simulator')?.textContent).toContain('Later directory user')
+  })
+
+  it('refreshes service-account review targets and never substitutes another account', async () => {
+    const base=await apiMock.getAccessReview()
+    apiMock.getAccessReview.mockResolvedValue({...base,service_accounts:[{id:'svc-later',name:'Later account',active:true,flags:['never_used']}]})
+    await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity />))
+    await flushPromises()
+    await clickButton(container,'Activity',true)
+    await clickButton(container,'Access Review')
+    await flushPromises()
+    await clickButton(container,'Inspect account')
+    expect(container.textContent).toContain('Account is no longer available')
+    expect(container.querySelector('aside')).toBeNull()
+    apiMock.listAuthServiceAccounts.mockResolvedValue({service_accounts:[{id:'svc-later',name:'Later account',active:true,global_roles:['viewer'],scopes:['results:read']}],count:1})
+    await clickButton(container,'Retry access review')
+    await flushPromises()
+    await clickButton(container,'Inspect account')
+    expect(container.querySelector('aside')?.textContent).toContain('Later account')
+  })
+
+  it('hides existing identities on creation and exposes permission selections', async () => {
+    await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity authMode="local" />))
+    await flushPromises()
+    await clickButton(container,'Onboard Users')
+    expect(container.querySelector('aside')).toBeNull()
+    expect(container.textContent).toContain('does not create a new local login')
+    await clickButton(container,'Service Accounts',true)
+    await clickButton(container,'Create service account')
+    expect(container.querySelector('aside')).toBeNull()
+    expect(container.querySelectorAll('button[aria-pressed]').length).toBeGreaterThan(0)
+    expect(container.querySelector('select[aria-label="Role for Checkout"]')).not.toBeNull()
+    expect(container.textContent).toContain('Rotation interval (days)')
+  })
+
+  it('exports review findings and opens the exact user even outside the directory page', async () => {
+    const review = await apiMock.getAccessReview()
+    apiMock.getAccessReview.mockResolvedValue({...review,users:[{id:'review-user',subject:'review',display_name:'Review Target',active:true,flags:['no_bindings']}]})
+    apiMock.getAuthUser.mockResolvedValue({id:'review-user',subject:'review',display_name:'Review Target',active:true,bindings:[]})
+    await act(async () => root.render(<AccessPage projects={projects} domains={domains} canManageUserLifecycle canManageUserBindings canManageServiceAccounts canViewUserActivity />))
+    await flushPromises()
+    await clickButton(container,'Activity',true)
+    await clickButton(container,'Access Review')
+    await flushPromises()
+    await clickButton(container,'Export access review CSV')
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob),'apexload-access-review.csv')
+    expect(apiMock.downloadAuthUserActivity).not.toHaveBeenCalled()
+    await clickButton(container,'Inspect user')
+    await flushPromises()
+    expect(apiMock.getAuthUser).toHaveBeenCalledWith('review-user')
+    expect(container.querySelector('aside')?.textContent).toContain('Review Target')
+  })
+
   it('explains genuinely empty user scope without suggesting nonexistent filters', async () => {
     apiMock.listAuthUsers.mockResolvedValue({users:[],count:0,total:0})
     await act(async () => {
@@ -356,7 +482,7 @@ describe('AccessPage', () => {
     expect(container.textContent).not.toContain('Adjust search or filters')
   })
 
-  it('creates a service-account key from the Generate Key subtab', async () => {
+  it('creates a service-account key from the Create service account subtab', async () => {
     await act(async () => {
       root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
     })
@@ -366,7 +492,7 @@ describe('AccessPage', () => {
     expect(container.textContent).toContain('Existing Accounts')
     expect(container.textContent).toContain('Nightly CI')
 
-    await clickButton(container, 'Generate Key')
+    await clickButton(container, 'Create service account')
     expect(container.textContent).toContain('CI runner')
     expect(container.textContent).toContain('Create Service Account')
 
@@ -402,7 +528,7 @@ describe('AccessPage', () => {
       root.render(<AccessPage projects={projects} domains={domains} activeDomain={domains[0]} activeProject={projects[0]} canManageUserLifecycle={false} canManageUserBindings={false} canViewUserActivity={false} canManageServiceAccounts />)
     })
     await flushPromises()
-    await clickButton(container, 'Generate Key')
+    await clickButton(container, 'Create service account')
 
     const ownerInput = inputByPlaceholder(container, 'team or person responsible')
     const contactInput = inputByPlaceholder(container, 'oncall@example.com')
@@ -524,7 +650,7 @@ describe('AccessPage', () => {
     await clickButton(container, 'Activity', true)
     await clickButton(container, 'Access Review')
     await flushPromises()
-    expect(container.textContent).toContain('Effective-Access Simulator')
+    expect(container.textContent).toContain('Role permissions preview')
 
     const simSelects = () => Array.from(container.querySelectorAll('.access-simulator select')) as HTMLSelectElement[]
     expect(simSelects().length).toBeGreaterThanOrEqual(2)
@@ -543,7 +669,7 @@ describe('AccessPage', () => {
     }))
     // The result grid shows allowed operations and the scope-narrowing caveat.
     expect(container.textContent).toContain('Run tests')
-    expect(container.textContent).toContain('narrow')
+    expect(container.textContent).toContain('token scopes')
   })
 
   it('hides access review for activity-only project admins', async () => {
@@ -580,7 +706,7 @@ describe('AccessPage', () => {
     // The banner lives in the service-accounts workspace.
     await clickButton(container, 'Service Accounts', true)
     await flushPromises()
-    expect(container.textContent).toContain('need attention')
+    expect(container.textContent).toContain('have review findings')
     expect(container.textContent).toContain('recent access denial')
   })
 
@@ -621,12 +747,12 @@ describe('AccessPage', () => {
     await clickButton(container, 'Discard changes')
     expect(container.querySelector('section[aria-label="Service accounts access workspace"]')).not.toBeNull()
 
-    await clickButton(container, 'Generate Key')
+    await clickButton(container, 'Create service account')
     // The preset itself is the baseline and should not produce a false-positive guard.
     await clickButton(container, 'Users', true)
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     await clickButton(container, 'Service Accounts', true)
-    await clickButton(container, 'Generate Key')
+    await clickButton(container, 'Create service account')
     const accountNameInput = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Service Account Name'))?.querySelector('input') as HTMLInputElement | undefined
     expect(accountNameInput).toBeDefined()
     if (!accountNameInput) return
@@ -1370,7 +1496,7 @@ describe('AccessPage', () => {
     }))
 
     vi.mocked(downloadBlob).mockResolvedValueOnce('cancelled')
-    await clickButton(container, 'Export CSV')
+    await clickButton(container, 'Export all matching events CSV')
     await flushPromises()
     expect(apiMock.downloadAuthUserActivity).toHaveBeenCalledWith(expect.objectContaining({
       actor_subject: 'alice',
@@ -1380,7 +1506,7 @@ describe('AccessPage', () => {
     expect(container.textContent).not.toContain('Activity export downloaded.')
 
     vi.mocked(downloadBlob).mockResolvedValueOnce('saved')
-    await clickButton(container, 'Export CSV')
+    await clickButton(container, 'Export all matching events CSV')
     await flushPromises()
     expect(container.textContent).toContain('Activity export downloaded.')
 
@@ -1402,11 +1528,12 @@ describe('AccessPage', () => {
     expect(container.querySelector('aside[aria-label="Selected activity event details"]')?.textContent).toContain('expired key')
 
     await clickButton(container, 'Usage By User')
+    await flushPromises()
     expect(container.textContent).toContain('alice')
     await clickSortHeader(container, 'User')
     const usageRows = Array.from(container.querySelectorAll('.access-usage-table tbody tr')).map(row => row.textContent || '')
     expect(usageRows[0]).toContain('alice')
-    await clickSortHeader(container, 'VUser Seconds')
+    await clickSortHeader(container, 'VUser seconds')
     const sortedUsageRows = Array.from(container.querySelectorAll('.access-usage-table tbody tr')).map(row => row.textContent || '')
     expect(sortedUsageRows[0]).toContain('alice')
   })

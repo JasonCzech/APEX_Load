@@ -30,7 +30,7 @@ function getTableRows(table: HTMLTableElement): HTMLTableRowElement[] {
 
 function shouldManageTable(table: HTMLTableElement): boolean {
   if (table.dataset.tablePagination === 'off') return false
-  if (table.closest('[data-table-pagination="off"]')) return false
+  if (table.dataset.tablePagination !== 'on' && table.closest('[data-table-pagination="off"]')) return false
   if (table.closest('.table-pagination-toolbar')) return false
   return getTableRows(table).length > DEFAULT_TABLE_PAGE_LIMIT
 }

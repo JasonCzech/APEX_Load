@@ -1069,6 +1069,8 @@ func (s *Server) routes(allowedOrigins []string) {
 
 	// Monitoring collectors — restricted-network agent control plane.
 	s.mux.Handle("POST /api/v1/monitoring/collectors", cors(log(auth(http.HandlerFunc(s.handleCreateMonitoringCollector)))))
+	s.mux.Handle("GET /api/v1/monitoring/threshold-incidents", cors(log(auth(http.HandlerFunc(s.handleListThresholdIncidents)))))
+	s.mux.Handle("PATCH /api/v1/monitoring/threshold-incidents/{id}/ack", cors(log(auth(http.HandlerFunc(s.handleAcknowledgeThresholdIncident)))))
 	s.mux.Handle("GET /api/v1/monitoring/collectors", cors(log(auth(http.HandlerFunc(s.handleListMonitoringCollectors)))))
 	s.mux.Handle("GET /api/v1/monitoring/collectors/{id}", cors(log(auth(http.HandlerFunc(s.handleGetMonitoringCollector)))))
 	s.mux.Handle("PATCH /api/v1/monitoring/collectors/{id}", cors(log(auth(http.HandlerFunc(s.handlePatchMonitoringCollector)))))
@@ -2164,6 +2166,10 @@ func (s *Server) shutdown(ctx context.Context) error {
 	}
 	if err := s.ShutdownScheduler(ctx); err != nil {
 		shutdownErr = errors.Join(shutdownErr, err)
+	}
+
+	if s.runner != nil && s.runner.thresholdJournal != nil {
+		shutdownErr = errors.Join(shutdownErr, s.runner.thresholdJournal.shutdown(ctx))
 	}
 
 	// With listeners drained and load stopped, tear down background components.

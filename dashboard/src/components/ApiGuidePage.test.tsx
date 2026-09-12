@@ -1,326 +1,121 @@
 // @vitest-environment jsdom
-
 import { act, type ComponentProps } from 'react'
-import { createRoot, Root } from 'react-dom/client'
+import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import endpointCatalogRaw from '../../../docs/api-endpoint-catalog.json?raw'
-
-import { loadApiEndpointCatalog } from '../apiDocsClient'
-import { parseEndpointCatalog } from '../apiEndpointCatalog'
-import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { helpArticles, loadHelpSource } from '../helpContent'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
+import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import ApiGuidePage from './ApiGuidePage'
 
-;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-
-vi.mock('../apiDocsClient', () => ({
-  loadApiEndpointCatalog: vi.fn(),
-}))
-
-const endpointCatalogFixture = parseEndpointCatalog(endpointCatalogRaw)
-const loadApiEndpointCatalogMock = vi.mocked(loadApiEndpointCatalog)
-
-function accessResources(operationIDs: string[]) {
-  return [{
-    id: 'test',
-    name: 'Test',
-    description: 'Test operations',
-    operations: operationIDs.map(id => ({ id, label: id, allowed: true })),
-  }]
-}
-
-const allGuideOperations = accessResources([
-  'view_projects',
-  'manage_projects',
-  'manage_repository_projects',
-  'view_applications',
-  'manage_applications',
-  'manage_repository_releases',
-  'view_scripts',
-  'manage_scripts',
-  'view_tests',
-  'manage_tests',
-  'view_data_pools',
-  'manage_data_pools',
-  'view_replay',
-  'manage_replay',
-  'view_system',
-  'manage_system',
-  'view_domains',
-  'manage_domains',
-  'view_application_repository',
-  'manage_application_repository',
-  'view_audit',
-  'view_auth_diagnostics',
-  'view_user_activity',
-  'manage_users',
-  'manage_user_bindings',
-  'manage_service_accounts',
-])
-
-function TopbarContributionHarness() {
-  const contribution = useActiveTopbarContribution()
-  return (
-    <div data-testid="topbar-contribution">
-      {contribution?.titleNode || contribution?.title}
-      {contribution?.controls}
-    </div>
-  )
-}
-
-describe('ApiGuidePage', () => {
+function Topbar() { const contribution = useActiveTopbarContribution(); return <div data-testid="topbar">{contribution?.title}{contribution?.controls}</div> }
+const access = (ids: string[]) => [{ id: 'test', name: 'Test', description: '', operations: ids.map(id => ({ id, label: id, allowed: true })) }]
+describe('Help documentation', () => {
   let container: HTMLDivElement
   let root: Root
-
   beforeEach(() => {
     window.history.replaceState(null, '', '/')
-    loadApiEndpointCatalogMock.mockReset()
-    loadApiEndpointCatalogMock.mockResolvedValue(endpointCatalogFixture)
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-  })
+    container = document.createElement('div'); document.body.append(container); root = createRoot(container)
 
-  afterEach(async () => {
-    await act(async () => {
-      root.unmount()
-    })
-    container.remove()
   })
-
-  async function renderApiGuidePage(props: ComponentProps<typeof ApiGuidePage> = {}) {
-    await act(async () => {
-      root.render(
-        <TopbarContributionProvider>
-          <TopbarContributionHarness />
-          <ApiGuidePage {...props} />
-        </TopbarContributionProvider>,
-      )
-    })
-    await act(async () => {})
+  afterEach(async () => { await act(async () => root.unmount()); container.remove(); vi.restoreAllMocks() })
+  async function render(props: ComponentProps<typeof ApiGuidePage> = {}) {
+    await act(async () => { root.render(<TopbarContributionProvider><Topbar /><ApiGuidePage {...props} /></TopbarContributionProvider>); await Promise.all(helpArticles.map(loadHelpSource)) })
   }
-
-  function topbarText() {
-    return container.querySelector('[data-testid="topbar-contribution"]')?.textContent || ''
-  }
-
-  function findTopbarButton(label: string) {
-    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
-    return Array.from(topbar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === label)
-  }
-
-  async function selectTopbarPage(label: string) {
-    const button = findTopbarButton(label)
-    expect(button).toBeDefined()
+  async function navigate(hash: string) { await act(async () => { window.location.hash = hash; window.dispatchEvent(new HashChangeEvent('hashchange')); await Promise.all(helpArticles.map(loadHelpSource)) }) }
+  it('starts with a self-contained first test and five semantic areas for administrators', async () => {
+    await render({ effectiveAccessResources: access(['manage_system']) })
+    expect(container.querySelector('[data-testid="topbar"]')?.textContent).toContain('Help & documentation')
+    expect(Array.from(container.querySelectorAll('nav[aria-label="Help areas"] a')).map(a => a.textContent)).toEqual(['Getting Started', 'User Guide', 'Administration', 'API & Automation', 'Troubleshooting'])
+    expect(container.textContent).toContain('Your first test')
+    expect(container.textContent).toContain('First_HTTP_Test')
+    expect(container.querySelector('[data-table-pagination="off"]')).not.toBeNull()
+    expect(container.querySelector('h2')?.textContent).toBe('In this area')
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
+  })
+  it('preserves MCP and authentication aliases inside API & Automation', async () => {
+    await render({ activePage: 'mcp' })
+    expect(container.textContent).toContain('MCP setup')
+    expect(container.textContent).toContain('.venv/bin/python')
+    expect(container.querySelector('nav[aria-label="Help areas"] a[aria-current="page"]')?.textContent).toBe('API & Automation')
+    await navigate('#/docs?guide=authentication')
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('API authentication')
+    expect(container.textContent).toContain('Service-account requests must satisfy both RBAC role checks and token scopes')
+  })
+  it('guards both area and article-level administrator deep links', async () => {
+    await render({ activePage: 'admin-guide', effectiveAccessResources: access(['view_scripts']) })
+    expect(container.querySelector('nav[aria-label="Help areas"]')?.textContent).not.toContain('Administration')
+    expect(container.textContent).toContain('Your first test')
+    await navigate('#/docs?guide=user-guide&article=identity')
+    expect(container.textContent).toContain('Administration requires administrative access')
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
+  })
+  it('does not expose administration while access is unresolved or failed', async () => {
+    await render({ activePage: 'admin-guide', effectiveAccessResources: access(['manage_system']), effectiveAccessLoaded: false })
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
+    await render({ activePage: 'admin-guide', effectiveAccessResources: access(['manage_system']), effectiveAccessError: true })
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
+  })
+  it('renders a bounded task article and safe in-app references', async () => {
+    await navigate('#/docs?guide=user-guide&article=scenarios')
+    await render()
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Model load')
+    expect(container.querySelector('.markdown-body')?.textContent).toContain('250 VUsers')
+    expect(container.querySelector('.markdown-body')?.textContent).not.toContain('The Access Console')
+    await navigate('#/repository-guide?article=api-workflows')
+    expect(container.querySelector('a[href="#/swagger"]')).not.toBeNull()
+    expect(container.querySelector('.markdown-body')?.textContent).not.toContain('does not yet wait for run N')
+  })
+  it('removes indexed administrator results immediately when access changes', async () => {
+    await render({ effectiveAccessResources: access(['manage_system']) })
+    const input = container.querySelector<HTMLInputElement>('input[type="search"]')!
     await act(async () => {
-      button?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'Controller startup compatibility')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
     })
-    return button
-  }
-
-  it('renders the Help title and the explicitly selected API General page', async () => {
-    await renderApiGuidePage({ activePage: 'general', effectiveAccessResources: allGuideOperations })
-
-    expect(container.textContent).toContain('API Guide')
-    expect(container.textContent).toContain('localhost:4000')
-    expect(container.textContent).not.toContain('localhost:3000')
-    expect(topbarText()).toContain('Help & documentation')
-    expect(topbarText()).toContain('General')
-    expect(topbarText()).toContain('MCP Server')
-    expect(topbarText()).toContain('Quick Start')
-    expect(topbarText()).toContain('Authentication')
-    expect(topbarText()).not.toContain('Endpoint Map')
-    expect(topbarText()).not.toContain('Response/Errors')
-    expect(topbarText()).toContain('Swagger')
-    expect(topbarText()).toContain('Repo Guide')
-    expect(container.textContent).toContain('http://<controller-host>:8080/api/v1')
-    expect(container.textContent).toContain('Responses And Errors')
-    expect(container.textContent).toContain('script_shakeout_failed')
-    expect(container.textContent).toContain('Dev Preview Headers')
-    expect(container.textContent).toContain('X-APEXLoad-Dev-View')
-    expect(container.textContent).toContain('project editor User behavior')
-    expect(container.textContent).not.toContain('/api/v1/auth/me')
-    expect(container.textContent).not.toContain('python3 mcp/server.py')
-    expect(container.textContent).not.toContain('/api/v1/scripts/import/postman')
-
-    expect(container.querySelector('.api-guide-header-actions')).toBeNull()
-    expect(container.querySelector('a[href="#/repository-guide"]')).toBeNull()
-    expect(container.querySelector('a[href="#/swagger"]')).toBeNull()
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)) })
+    expect(container.querySelector('.help-search-results')?.textContent).toContain('Controller startup compatibility')
+    await render({ effectiveAccessResources: access(['view_scripts']) })
+    expect(Array.from(container.querySelectorAll('.help-search-results li a')).some(a => a.textContent === 'Controller startup compatibility')).toBe(false)
   })
-
-  it('swaps API guide pages from the title toggle and keeps companion pages routed', async () => {
-    await renderApiGuidePage({ effectiveAccessResources: allGuideOperations })
-
-    const mcpButton = await selectTopbarPage('MCP Server')
-    expect(mcpButton?.getAttribute('aria-pressed')).toBe('true')
-    expect(window.location.hash).toBe('#/docs?guide=mcp')
-    expect(container.textContent).toContain('python3 mcp/server.py')
-    expect(container.textContent).toContain('apexload://api-guide')
-    expect(container.textContent).toContain('confirm=true')
-    expect(container.textContent).toContain('MCP Setup Guide')
-    expect(container.textContent).toContain('Usage With Claude Desktop')
-    expect(container.textContent).toContain('APEXLOAD_TIMEOUT_SECONDS')
-    expect(container.textContent).not.toContain('Responses And Errors')
-    expect(container.querySelector('a[href*="mcp/README.md"]')).toBeNull()
-    expect(container.querySelector('.api-guide-mcp-guide-link')?.textContent).toContain('View MCP setup guide')
-
-    const quickStartButton = await selectTopbarPage('Quick Start')
-    expect(quickStartButton?.getAttribute('aria-pressed')).toBe('true')
-    expect(window.location.hash).toBe('#/docs?guide=quick-start')
-    expect(container.textContent).toContain('curl http://localhost:8080/api/v1/system/health')
-    expect(container.textContent).not.toContain('python3 mcp/server.py')
-
-    await selectTopbarPage('Authentication')
-    expect(window.location.hash).toBe('#/docs?guide=authentication')
-    expect(container.textContent).toContain('/api/v1/auth/me')
-    expect(container.textContent).toContain('/api/v1/auth/diagnostics')
-    expect(container.textContent).toContain('/api/v1/auth/service-accounts')
-    expect(container.textContent).toContain('/api/v1/auth/users')
-    expect(container.textContent).toContain('/api/v1/auth/users/onboard')
-    expect(container.textContent).toContain('/api/v1/auth/users/{id}/bindings')
-    expect(container.textContent).toContain('/api/v1/auth/users/{id}/revoke-sessions')
-    expect(container.textContent).toContain('/api/v1/auth/user-activity')
-    expect(container.textContent).toContain('/api/v1/auth/user-activity/export')
-    expect(container.textContent).toContain('active local APEX Load user record')
-    expect(container.textContent).toContain('Human roles come from local bindings')
-
-    await selectTopbarPage('Swagger')
-    expect(window.location.hash).toBe('#/swagger')
-
-    await selectTopbarPage('Repo Guide')
-    expect(window.location.hash).toBe('#/repository-guide')
+  it('updates copyable API examples only for a safe controller URL', async () => {
+    await navigate('#/docs?guide=general&article=api-overview'); await render()
+    const input = container.querySelector<HTMLInputElement>('input[type="url"]')!
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    const update = async (value: string) => act(async () => { setValue.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })) })
+    await update('https://load.example.test:8443/api/v1')
+    expect(container.querySelector('.markdown-body')?.textContent).toContain('export APEXLOAD_URL=https://load.example.test:8443/api/v1')
+    for (const invalid of ['https://load.example.test/;whoami', 'https://user:password@load.example.test/api/v1', 'javascript:alert(1)', 'https://load.example.test/api/v1?token=secret']) {
+      await update(invalid)
+      expect(input.getAttribute('aria-invalid')).toBe('true')
+      expect(container.querySelector('.markdown-body')?.textContent).not.toContain(invalid)
+    }
   })
-
-  it('links access guidance to the Access page when dashboard navigation is available', async () => {
-    const onNavigate = vi.fn()
-    await renderApiGuidePage({ onNavigate, effectiveAccessResources: allGuideOperations })
-    await selectTopbarPage('Authentication')
-
-    const accessButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Access'))
-    expect(accessButton).toBeDefined()
-    if (!accessButton) return
-
-    await act(async () => {
-      accessButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onNavigate).toHaveBeenCalledWith('access')
+  it('canonicalizes source section links to the correct task article', async () => {
+    await navigate('#/docs?guide=user-guide&article=orientation&section=validating-and-replaying'); await render()
+    expect(window.location.hash).toContain('article=replay')
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Validate & replay')
+    expect(container.querySelector('nav[aria-label="Help articles"] a[aria-current="page"]')?.textContent).toBe('Validate & replay')
   })
-
-  it('filters catalog-backed guide sections to the current effective access', async () => {
-    await renderApiGuidePage({ onNavigate: vi.fn(), effectiveAccessResources: accessResources(['view_scripts']) })
-    await selectTopbarPage('Quick Start')
-
-    const codeValues = Array.from(container.querySelectorAll('code')).map(node => node.textContent || '')
-
-    expect(codeValues).toContain('curl http://localhost:8080/api/v1/system/health')
-    expect(codeValues).toContain('curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/integrations/github/diagnostics')
-    expect(codeValues).not.toContain('curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/projects')
-    expect(codeValues).not.toContain('curl -X POST -H "Authorization: Bearer $APEXLOAD_API_KEY" -H "Content-Type: application/json" -d @script.json http://localhost:8080/api/v1/scripts')
-
-    await selectTopbarPage('Authentication')
-    expect(container.textContent).toContain('/api/v1/auth/me')
-    expect(container.textContent).not.toContain('/api/v1/auth/users')
-    expect(container.textContent).not.toContain('/api/v1/auth/user-activity')
-    expect(container.textContent).not.toContain('Access Workspace')
-    expect(container.textContent).not.toContain('Open Access')
-    expect(topbarText()).toContain('Repo Guide')
-    expect(topbarText()).toContain('Swagger')
-    expect(container.querySelector('a[href="#/swagger"]')).toBeNull()
+  it('reports an unknown article and falls back to a usable guide', async () => {
+    await navigate('#/docs?article=unknown'); await render()
+    expect(container.textContent).toContain('That article is not in this build')
+    expect(container.querySelector('.help-article-header h2')?.textContent).toBe('Your first test')
   })
-
-  it('shows binding endpoints without lifecycle endpoints for delegated user-binding access', async () => {
-    const onNavigate = vi.fn()
-    await renderApiGuidePage({ onNavigate, effectiveAccessResources: accessResources(['manage_user_bindings']) })
-    await selectTopbarPage('Authentication')
-
-    const authEndpointRows = Array.from(container.querySelectorAll('.api-guide-table-card tbody tr')).map(row => {
-      const codes = Array.from(row.querySelectorAll('code')).map(node => node.textContent || '')
-      return `${codes[0]} ${codes[1]}`
-    })
-    expect(authEndpointRows).toContain('GET /api/v1/auth/users')
-    expect(authEndpointRows).toContain('GET /api/v1/auth/users/{id}')
-    expect(authEndpointRows).toContain('POST /api/v1/auth/users/{id}/bindings')
-    expect(authEndpointRows).toContain('DELETE /api/v1/auth/users/{id}/bindings/{binding_id}')
-    expect(authEndpointRows).not.toContain('POST /api/v1/auth/users')
-    expect(authEndpointRows).not.toContain('PATCH /api/v1/auth/users/{id}')
-    expect(authEndpointRows).not.toContain('POST /api/v1/auth/users/{id}/disable')
-    expect(authEndpointRows).not.toContain('POST /api/v1/auth/users/{id}/enable')
-    expect(container.textContent).toContain('Access Workspace')
-    expect(container.textContent).toContain('Open Access')
+  it('copies the displayed example and its shareable article URL', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    await render()
+    const buttons = Array.from(container.querySelectorAll('button'))
+    await act(async () => buttons.find(b => b.textContent === 'Copy example')!.click())
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('HTTPServer'))
+    expect(container.textContent).toContain('Copied')
+    await act(async () => buttons.find(b => b.textContent === 'Copy article link')!.click())
+    expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining('article=first-test'))
   })
-
-  it('renders distinct access loading and error states for filtered guide sections', async () => {
-    await renderApiGuidePage({
-      activePage: 'quick-start',
-      effectiveAccessResources: [],
-      effectiveAccessLoaded: false,
-    })
-
-    expect(container.textContent).toContain('Checking Access')
-    expect(container.querySelector('.api-guide-code-stack')).toBeNull()
-
-    await renderApiGuidePage({
-      activePage: 'quick-start',
-      effectiveAccessResources: [],
-      effectiveAccessLoaded: true,
-      effectiveAccessError: true,
-    })
-
-    expect(container.textContent).toContain('Unable To Filter Access')
-    expect(container.textContent).toContain('/api/v1/system/health')
-  })
-
-  it('shows a controller docs error when the endpoint catalog cannot be loaded', async () => {
-    loadApiEndpointCatalogMock.mockRejectedValueOnce(new Error('catalog route unavailable'))
-
-    await renderApiGuidePage({
-      activePage: 'quick-start',
-      effectiveAccessResources: allGuideOperations,
-    })
-
-    expect(container.textContent).toContain('API Docs Unavailable')
-    expect(container.textContent).toContain('catalog route unavailable')
-    expect(container.querySelector('.api-guide-code-stack')).toBeNull()
-  })
-
-  it('shows the User Guide tab to everyone and renders its content', async () => {
-    await renderApiGuidePage({ activePage: 'general', effectiveAccessResources: accessResources(['view_scripts']) })
-
-    expect(topbarText()).toContain('User Guide')
-    expect(findTopbarButton('Admin Guide')).toBeUndefined()
-
-    const userGuideButton = await selectTopbarPage('User Guide')
-    expect(userGuideButton?.getAttribute('aria-pressed')).toBe('true')
-    expect(window.location.hash).toBe('#/docs')
-    expect(container.textContent).toContain('What APEX Load Does')
-    expect(container.textContent).not.toContain('Responses And Errors')
-  })
-
-  it('hides the Admin Guide tab from non-admins and guards direct navigation', async () => {
-    await renderApiGuidePage({ activePage: 'admin-guide', effectiveAccessResources: accessResources(['view_scripts']) })
-
-    expect(findTopbarButton('Admin Guide')).toBeUndefined()
-    // Direct navigation to the admin guide falls back to the default General page.
-    expect(container.textContent).toContain('What APEX Load Does')
-    expect(container.textContent).not.toContain('The Access Console')
-  })
-
-  it('shows the Admin Guide tab to administrators and renders its content', async () => {
-    await renderApiGuidePage({ effectiveAccessResources: accessResources(['manage_users']) })
-
-    expect(topbarText()).toContain('Admin Guide')
-
-    const adminButton = await selectTopbarPage('Admin Guide')
-    expect(adminButton?.getAttribute('aria-pressed')).toBe('true')
-    expect(window.location.hash).toBe('#/docs?guide=admin-guide')
-    expect(container.textContent).toContain('The Access Console')
-    expect(container.textContent).not.toContain('Responses And Errors')
-  })
-
-  it('shows the Admin Guide tab for system administrators without user-management access', async () => {
-    await renderApiGuidePage({ effectiveAccessResources: accessResources(['manage_system']) })
-
-    expect(topbarText()).toContain('Admin Guide')
+  it('keeps a useful recovery message if clipboard access fails', async () => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+    await render()
+    await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Copy example')!.click())
+    expect(container.textContent).toContain('Copy unavailable. Select the example and copy manually.')
   })
 })

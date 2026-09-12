@@ -1,7 +1,6 @@
 import { type ReactNode, useMemo, useReducer } from 'react'
 import {
   Area,
-  Brush,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -66,21 +65,15 @@ function renderBreachAreas(windows: ReturnType<typeof buildBreachWindows>) {
 function LaneChart({
   lane,
   data,
-  fullCount,
   goalConfig,
   breachWindows,
-  showBrush,
   showBaseline,
-  onBrush,
 }: {
   lane: LaneConfig
   data: MetricsHistoryPoint[]
-  fullCount: number
   goalConfig?: GoalConfig
   breachWindows: ReturnType<typeof buildBreachWindows>
-  showBrush: boolean
   showBaseline?: boolean
-  onBrush: (range: { startIndex?: number; endIndex?: number }) => void
 }) {
   const p95Sla = goalConfig?.p95_latency_ms
   const errorSla = goalConfig?.max_error_pct
@@ -91,8 +84,8 @@ function LaneChart({
         <span>{lane.yLabel}</span>
       </div>
       <div className="run-report-lane-chart">
-        <ResponsiveContainer width="100%" height={showBrush ? 170 : 138}>
-          <ComposedChart data={data} syncId="metrics" margin={{ top: 14, right: 24, bottom: showBrush ? 32 : 8, left: 4 }}>
+        <ResponsiveContainer width="100%" height={138}>
+          <ComposedChart data={data} syncId="metrics" margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
             <YAxis stroke="var(--text-muted)" fontSize={11} width={48} domain={lane.domain} />
@@ -130,16 +123,7 @@ function LaneChart({
                 {showBaseline && <Line type="monotone" dataKey="baselineErrorPct" name="Baseline Error %" stroke="var(--danger)" strokeDasharray="5 4" dot={false} isAnimationActive={false} />}
               </>
             )}
-            {showBrush && fullCount > 1 && (
-              <Brush
-                dataKey="time"
-                height={24}
-                travellerWidth={8}
-                stroke="var(--accent)"
-                fill="var(--bg-card)"
-                onChange={onBrush}
-              />
-            )}
+
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -149,10 +133,9 @@ function LaneChart({
 
 export default function SynchronizedTimeline({ data, goalConfig, loading, error, showBaseline }: Props) {
   const [zoomState, dispatchZoom] = useReducer(timelineZoomReducer, initialTimelineZoomState)
-  const visibleData = useMemo(() => {
-    if (!zoomState.window) return data
-    return data.slice(zoomState.window.startIndex, zoomState.window.endIndex + 1)
-  }, [data, zoomState.window])
+  const startIndex = Math.min(zoomState.window?.startIndex ?? 0, Math.max(0, data.length - 1))
+  const endIndex = Math.min(zoomState.window?.endIndex ?? Math.max(0, data.length - 1), Math.max(0, data.length - 1))
+  const visibleData = useMemo(() => data.slice(startIndex, endIndex + 1), [data, startIndex, endIndex])
   const breachWindows = useMemo(
     () => buildBreachWindows(visibleData, goalConfig?.p95_latency_ms, goalConfig?.max_error_pct),
     [goalConfig?.max_error_pct, goalConfig?.p95_latency_ms, visibleData],
@@ -177,28 +160,28 @@ export default function SynchronizedTimeline({ data, goalConfig, loading, error,
           </button>
         )}
       </div>
+      {data.length > 1 && <div className="run-report-timeline-window" aria-label="Timeline window">
+        <label>Window start: {data[startIndex]?.time}
+          <input type="range" aria-label="Timeline window start" min={0} max={endIndex} value={startIndex}
+            aria-valuetext={data[startIndex]?.time}
+            onChange={event => dispatchZoom({ type: 'set-window', startIndex: Number(event.target.value), endIndex, pointCount: data.length })} />
+        </label>
+        <label>Window end: {data[endIndex]?.time}
+          <input type="range" aria-label="Timeline window end" min={startIndex} max={data.length - 1} value={endIndex}
+            aria-valuetext={data[endIndex]?.time}
+            onChange={event => dispatchZoom({ type: 'set-window', startIndex, endIndex: Number(event.target.value), pointCount: data.length })} />
+        </label>
+      </div>}
       <div className="run-report-timeline-stack">
-        {LANES.map((lane, index) => (
+        {LANES.map((lane) => (
           <LaneChart
             key={lane.id}
             lane={lane}
             data={visibleData}
-            fullCount={data.length}
             goalConfig={goalConfig}
             breachWindows={breachWindows}
-            showBrush={index === 0}
             showBaseline={showBaseline}
-            onBrush={(range) => {
-              if (typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
-                dispatchZoom({
-                  type: 'set-window',
-                  startIndex: range.startIndex,
-                  endIndex: range.endIndex,
-                  pointCount: data.length,
-                  baseStartIndex: zoomState.window?.startIndex ?? 0,
-                })
-              }
-            }}
+
           />
         ))}
       </div>

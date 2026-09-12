@@ -590,3 +590,22 @@
 .run-execution-records pre { max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .run-report-page button:focus-visible, .run-report-page summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .run-report-areas { flex-wrap: wrap; }
+
+.run-report-timeline-window {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+.run-report-timeline-window label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.run-report-timeline-window input[type="range"] {
+  width: 100%;
+  min-height: 28px;
+  accent-color: var(--accent);
+}

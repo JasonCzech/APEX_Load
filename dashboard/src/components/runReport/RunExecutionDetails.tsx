@@ -8,7 +8,8 @@ export function RunExecutionFacts({ test, report, manifest }: { test: TestSummar
   const facts = executionFacts(test, report, manifest)
   return <dl className="run-execution-facts" aria-label="Execution facts">
     <div><dt>Configured duration</dt><dd>{facts.duration || 'Not recorded'}</dd></div>
-    <div><dt>Observed elapsed</dt><dd>{facts.elapsed}</dd></div>
+    <div><dt>Lifecycle elapsed</dt><dd>{facts.lifecycleElapsed}</dd></div>
+    {report && <div><dt>Archived evidence elapsed</dt><dd>{facts.elapsed}</dd></div>}
     <div><dt>Configured VUsers</dt><dd>{recordedNumber(facts.vusers)}</dd></div>
     <div><dt>Observed peak VUsers</dt><dd>{facts.peak}</dd></div>
   </dl>

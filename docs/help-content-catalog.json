@@ -1,0 +1,496 @@
+[
+  {
+    "id": "first-test",
+    "area": "getting-started",
+    "title": "Your first test",
+    "path": "docs/HELP_GETTING_STARTED.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "orientation",
+    "area": "user-guide",
+    "title": "Concepts & navigation",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "What APEX Load Does",
+      "Ways To Use APEX Load",
+      "Signing In And Getting Oriented",
+      "The Dashboard"
+    ]
+  },
+  {
+    "id": "authoring",
+    "area": "user-guide",
+    "title": "Author a script",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Authoring A Script"
+    ]
+  },
+  {
+    "id": "data",
+    "area": "user-guide",
+    "title": "Parameters, data & secrets",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Parameterizing And Data"
+    ]
+  },
+  {
+    "id": "replay",
+    "area": "user-guide",
+    "title": "Validate & replay",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Validating And Replaying",
+      "Recording And Correlation"
+    ]
+  },
+  {
+    "id": "imports",
+    "area": "user-guide",
+    "title": "Import existing scripts",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Importing Existing Scripts"
+    ]
+  },
+  {
+    "id": "scenarios",
+    "area": "user-guide",
+    "title": "Model load",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Building A Scenario"
+    ]
+  },
+  {
+    "id": "execution",
+    "area": "user-guide",
+    "title": "Run & monitor",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Launching A Test",
+      "Run States",
+      "Monitoring A Live Run",
+      "Scheduling Recurring Runs",
+      "Chaining Runs With Execution Plans"
+    ]
+  },
+  {
+    "id": "results",
+    "area": "user-guide",
+    "title": "Analyze results",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Reading Results And Reports"
+    ]
+  },
+  {
+    "id": "shared-assets",
+    "area": "user-guide",
+    "title": "Shared assets & settings",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Repository And Shared Assets",
+      "Settings Reference",
+      "Integrations"
+    ]
+  },
+  {
+    "id": "glossary",
+    "area": "user-guide",
+    "title": "Glossary & good practices",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Glossary",
+      "Tips For Getting Good Results"
+    ]
+  },
+  {
+    "id": "administration",
+    "area": "admin-guide",
+    "title": "Administrator tasks",
+    "path": "docs/ADMIN_USER_GUIDE.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "operations",
+    "area": "admin-guide",
+    "title": "Backup, recovery & retention",
+    "path": "docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks"
+  },
+  {
+    "id": "platform",
+    "area": "admin-guide",
+    "title": "Deployment & HA",
+    "path": "docs/ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks"
+  },
+  {
+    "id": "identity",
+    "area": "admin-guide",
+    "title": "Identity & access runbook",
+    "path": "docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks"
+  },
+  {
+    "id": "clusters",
+    "area": "admin-guide",
+    "title": "Cluster connections",
+    "path": "docs/CLUSTER_CONNECTIONS.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks"
+  },
+  {
+    "id": "restart",
+    "area": "admin-guide",
+    "title": "Generator restart controls",
+    "path": "docs/KUBERNETES_RESTART_CONTROLS.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks"
+  },
+  {
+    "id": "migration",
+    "area": "admin-guide",
+    "title": "SQLite to PostgreSQL migration",
+    "path": "docs/SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks"
+  },
+  {
+    "id": "telemetry",
+    "area": "admin-guide",
+    "title": "OpenTelemetry traces",
+    "path": "docs/OPENTELEMETRY.md",
+    "owner": "APEX Load maintainers",
+    "group": "Runbooks"
+  },
+  {
+    "id": "api-overview",
+    "area": "general",
+    "title": "Overview & first API calls",
+    "path": "docs/HELP_API_OVERVIEW.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "authentication",
+    "area": "general",
+    "title": "API authentication",
+    "path": "docs/API_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Authentication"
+    ]
+  },
+  {
+    "id": "api-workflows",
+    "area": "general",
+    "title": "API workflows",
+    "path": "docs/API_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Request Conventions",
+      "Core Workflows",
+      "Generated Endpoint Map",
+      "Operational Tips"
+    ]
+  },
+  {
+    "id": "startup",
+    "area": "admin-guide",
+    "title": "Controller startup compatibility",
+    "path": "docs/API_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Controller Startup Compatibility"
+    ],
+    "group": "Runbooks"
+  },
+  {
+    "id": "cli",
+    "area": "general",
+    "title": "CLI & CI/CD",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Automating APEX Load"
+    ]
+  },
+  {
+    "id": "ci",
+    "area": "general",
+    "title": "CI pipeline examples",
+    "path": "docs/CICD_INTEGRATION.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "mcp",
+    "area": "general",
+    "title": "MCP setup",
+    "path": "mcp/README.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "troubleshooting",
+    "area": "troubleshooting",
+    "title": "Diagnose a problem",
+    "path": "docs/HELP_TROUBLESHOOTING.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "faq",
+    "area": "troubleshooting",
+    "title": "Testing FAQ",
+    "path": "docs/APPLICATION_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Troubleshooting And FAQ"
+    ]
+  },
+  {
+    "id": "capabilities",
+    "area": "user-guide",
+    "title": "Capabilities & limitations",
+    "path": "docs/HELP_CAPABILITIES.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "dsl",
+    "area": "user-guide",
+    "title": "DSL action reference",
+    "path": "docs/DSL_ACTION_REFERENCE.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "messaging",
+    "area": "user-guide",
+    "title": "Messaging support",
+    "path": "docs/MESSAGING_SUPPORT.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "browser",
+    "area": "user-guide",
+    "title": "Browser & mobile support",
+    "path": "docs/BROWSER_AND_MOBILE_SUPPORT.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "java",
+    "area": "user-guide",
+    "title": "Java VUser runtime",
+    "path": "docs/JAVA_VUSER_RUNTIME.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "runtime",
+    "area": "user-guide",
+    "title": "Runtime settings support",
+    "path": "docs/RUNTIME_SETTINGS_PARITY.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "debugger",
+    "area": "user-guide",
+    "title": "Replay debugger",
+    "path": "docs/SCRIPT_DEBUGGER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "changes",
+    "area": "getting-started",
+    "title": "Documentation changes & version",
+    "path": "docs/HELP_CHANGES.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference"
+  },
+  {
+    "id": "support",
+    "area": "troubleshooting",
+    "title": "Contact support & collect evidence",
+    "path": "docs/HELP_SUPPORT.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "recording-agent",
+    "area": "user-guide",
+    "title": "Recording agent setup",
+    "path": "docs/recording-agent.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "prometheus",
+    "area": "user-guide",
+    "title": "Prometheus metrics",
+    "path": "docs/PROMETHEUS_METRICS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "powerbi",
+    "area": "user-guide",
+    "title": "Power BI integration",
+    "path": "docs/POWERBI_INTEGRATION.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "dynatrace",
+    "area": "user-guide",
+    "title": "Dynatrace webhooks",
+    "path": "docs/DYNATRACE_WEBHOOKS.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "github",
+    "area": "general",
+    "title": "GitHub integration",
+    "path": "docs/GITHUB_INTEGRATION.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "surfaces",
+    "area": "general",
+    "title": "Hosted, desktop & CLI",
+    "path": "docs/ACCESS_SURFACES.md",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "installation",
+    "title": "Choose an installation",
+    "path": "deployments/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-local",
+    "title": "Local Kubernetes",
+    "path": "deployments/k8s/local/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-kind",
+    "title": "Docker Desktop kind",
+    "path": "deployments/k8s/local-kind/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-onprem",
+    "title": "On-premises Kubernetes",
+    "path": "deployments/k8s/onprem/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-aks",
+    "title": "Azure Kubernetes Service",
+    "path": "deployments/k8s/aks/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-helm",
+    "title": "Helm installation",
+    "path": "deployments/helm/apexload/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-compose",
+    "title": "Docker Compose monitoring",
+    "path": "deployments/docker/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-terraform",
+    "title": "Azure infrastructure",
+    "path": "deployments/azure/terraform/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-azure-monitor",
+    "title": "AKS Azure Monitor",
+    "path": "deployments/k8s/aks-azure-monitor/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "install-monitoring",
+    "title": "Kubernetes monitoring",
+    "path": "deployments/k8s/monitoring/README.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "ai-secrets",
+    "title": "Local AI provider secrets",
+    "path": "deployments/k8s/AI_PROVIDER_SETUP.md",
+    "area": "admin-guide",
+    "group": "Installation",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "lr-web",
+    "title": "LoadRunner web coverage",
+    "path": "docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md",
+    "area": "user-guide",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "lr-java",
+    "title": "LoadRunner Java lr coverage",
+    "path": "docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md",
+    "area": "user-guide",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "lr-truclient",
+    "title": "TruClient step coverage",
+    "path": "docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md",
+    "area": "user-guide",
+    "group": "Reference",
+    "owner": "APEX Load maintainers"
+  }
+]

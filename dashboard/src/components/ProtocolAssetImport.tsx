@@ -1,3 +1,4 @@
+import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
@@ -2141,6 +2142,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         }}>Back</button>}
       </div>
 
+      <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
+
       <div className="sample-import-card">
         <div className="sample-import-grid">
           <div className="sample-import-field sample-import-span-2">
@@ -2254,32 +2257,19 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           )}
           {kind === 'har' && (
             <>
-              <label className="sample-import-field sample-import-span-2">
-                <span>Comparison HAR</span>
-                <input
-                  type="file"
+              <div className="sample-import-field sample-import-span-2">
+                <span>Comparison HAR (optional)</span>
+                <ImportDropzone
                   accept={labels.accept}
+                  file={secondaryHARFile}
+                  onFile={next => { invalidateConversionSource(); setSecondaryHARFile(next) }}
+                  dropHint="Drop an optional comparison HAR file here"
+                  validate={candidate => validateImportFile('har', candidate)}
+                  onError={setMessageError}
                   disabled={sourceMutationLocked}
-                  onChange={event => {
-                    invalidateConversionSource()
-                    const candidate = event.currentTarget.files?.[0] || null
-                    if (!candidate) {
-                      setSecondaryHARFile(null)
-                      return
-                    }
-                    const validationError = validateImportFile('har', candidate)
-                    if (validationError) {
-                      setSecondaryHARFile(null)
-                      setMessageError(validationError)
-                      event.currentTarget.value = ''
-                      return
-                    }
-                    setMessageError('')
-                    setSecondaryHARFile(candidate)
-                  }}
                 />
-                <small>{secondaryHARFile ? secondaryHARFile.name : 'Optional second recording for correlation diff'}</small>
-              </label>
+                <small>Optional second recording for correlation diff</small>
+              </div>
               <label className="sample-import-field">
                 <span>Retention Days</span>
                 <input type="number" min={1} value={retentionDays} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setRetentionDays(Math.max(1, Number(event.target.value) || 1)) }} />
@@ -2314,11 +2304,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         </button>
       </div>
 
+      {(messageError || convertTask.error) && <div className="sample-import-error" role="alert">{messageError || convertTask.error}</div>}
+
       {sourceImportSupportHasLimitations(sourceImportSupport) && (
         <SourceImportCoveragePanel kind={kind} support={sourceImportSupport} />
       )}
 
-      {(messageError || convertTask.error) && <div className="sample-import-error">{messageError || convertTask.error}</div>}
 
       {result && reviewedScript && (
         <div className="sample-import-result">

@@ -408,3 +408,13 @@ describe('terminal run route compatibility', () => {
     expect(navPageForAppView(view)).toBe('results')
   })
 })
+
+
+it('round trips Help articles, section links, and API searches through workspace canonicalization', () => {
+  for (const hash of ['#/docs?guide=user-guide&article=scenarios&section=sizing-from-a-goal&projectId=p', '#/swagger?search=script%20validate&projectId=p']) {
+    const view = parseAppViewFromHash(hash)
+    expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+  }
+  expect(parseAppViewFromHash('#/docs?guide=user-guide&article=scenarios&section=sizing-from-a-goal')).toMatchObject({ guideArticle: 'scenarios', guideSection: 'sizing-from-a-goal' })
+  expect(parseAppViewFromHash('#/swagger?search=script%20validate')).toMatchObject({ search: 'script validate' })
+})

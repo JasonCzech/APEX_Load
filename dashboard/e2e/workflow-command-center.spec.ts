@@ -1,0 +1,88 @@
+import { test, expect, seedScript, json, idOf, login } from './support/workflow'
+import { createWorkspace, scopeQuery } from './support/workspace'
+
+test('Command Center supports empty actions, run triage, persistent switching and catalog recovery', async ({ page }, testInfo) => {
+  test.setTimeout(120_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  await page.goto(`/#/command-center?${scopeQuery(workspace)}`)
+  await page.reload()
+  const overview = page.getByRole('region', { name: 'Active run overview', exact: true })
+  await expect(overview.getByRole('heading', { name: 'No active runs', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open analysis', exact: true })).toHaveCount(0)
+  await expect(overview.getByRole('button', { name: 'New Test', exact: true })).toBeEnabled()
+  await overview.getByRole('button', { name: 'New Test', exact: true }).click()
+  await expect(page).toHaveURL(/#\/new-test/)
+  await page.getByRole('button', { name: 'Command Center', exact: true }).click()
+
+  const ids: string[] = []
+  for (let i = 0; i < 6; i++) {
+    ids.push(idOf(await json(await request.post('/api/v1/tests', { data: {
+      project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+      name: `Audit checkout ${i}`, duration: '30m', groups: [{ name: 'orders', script_id: scriptId, vusers: 1 }],
+    } }))))
+  }
+  let failCatalog = false
+  const project = (run: Record<string, unknown>) => {
+    const index = ids.indexOf(String(run.id))
+    if (index < 0) return run
+    return { ...run, status: index === 4 ? 'PAUSED' : index === 5 ? 'PENDING' : 'RUNNING',
+      started_at: new Date(Date.now() - 300_000).toISOString(),
+      pending_reason: index === 5 ? 'Project VUser capacity exhausted' : undefined,
+      live_metrics: { timestamp: new Date().toISOString(), active_vusers: 1, tps: 10,
+        total_transactions: 90, total_errors: index === 0 ? 10 : 0, error_pct: index === 0 ? 10 : 0,
+        avg_response_ms: 120, p50_ms: 100, p90_ms: 150, p95_ms: 160, p99_ms: 180 } }
+  }
+  await page.route('**/api/v1/tests**', async route => {
+    const path = new URL(route.request().url()).pathname
+    if (route.request().method() !== 'GET' || (path !== '/api/v1/tests' && !ids.some(id => path === `/api/v1/tests/${id}`))) return route.continue()
+    if (path === '/api/v1/tests' && failCatalog) return route.fulfill({ status: 503, json: { error: 'Catalog unavailable' } })
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({ response, json: path === '/api/v1/tests' ? { ...payload, tests: payload.tests.map(project) } : project(payload) })
+  })
+  await page.reload()
+  await expect(overview).toContainText('6 active runs')
+  await expect(overview.getByRole('row').filter({ hasText: 'Audit checkout 0' })).toContainText('Errors reported')
+  await expect(overview).toContainText('Project VUser capacity exhausted')
+  await overview.getByRole('searchbox', { name: 'Find a run' }).fill('checkout 0')
+  await expect(overview.getByRole('button', { name: /^Open Audit checkout/ })).toHaveCount(1)
+  await overview.getByRole('button', { name: /^Open Audit checkout 0/ }).press('Enter')
+  await expect(page).toHaveURL(new RegExp(`#/command-center/${ids[0]}`))
+  await expect(page.getByRole('combobox', { name: 'Current run', exact: true })).toHaveValue(ids[0])
+  const target = page.getByRole('spinbutton', { name: 'orders target VUsers', exact: true })
+  await target.fill('5')
+  await page.getByRole('combobox', { name: 'Current run', exact: true }).selectOption(ids[1])
+  await expect(page).toHaveURL(new RegExp(`#/command-center/${ids[1]}`))
+  await expect(target).toHaveValue('1')
+  await page.getByRole('combobox', { name: 'Current run', exact: true }).selectOption(ids[0])
+  await expect(target).toHaveValue('5')
+  await page.reload()
+  await expect(page.getByRole('combobox', { name: 'Current run', exact: true })).toHaveValue(ids[0])
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Pause this test run?' })
+  await expect(dialog).toContainText('Audit checkout 0')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await page.getByRole('link', { name: '+4 runs', exact: true }).click()
+  await expect(overview).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Scenario Library', exact: true })).toHaveCount(0)
+  failCatalog = true
+  await overview.getByRole('button', { name: 'Refresh runs' }).click()
+  await expect(overview.getByRole('alert')).toContainText('Showing the last successful list')
+  await expect(overview).toContainText('Audit checkout 0')
+  await page.reload()
+  await expect(overview.getByRole('alert')).toContainText('Active runs could not be determined')
+  await expect(overview.getByRole('heading', { name: 'No active runs', exact: true })).toHaveCount(0)
+  failCatalog = false
+  await overview.getByRole('button', { name: 'Retry active runs' }).click()
+  await expect(overview.getByRole('alert')).toHaveCount(0)
+  await expect(overview).toContainText('6 active runs')
+  await page.setViewportSize({ width: 900, height: 1000 })
+  await overview.getByRole('searchbox', { name: 'Find a run' }).fill('no match')
+  await expect(overview).toContainText('No runs match these filters')
+  await overview.getByRole('button', { name: 'Clear filters', exact: true }).click()
+  await page.screenshot({ path: testInfo.outputPath('command-center-overview.png'), fullPage: true })
+})

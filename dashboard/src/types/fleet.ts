@@ -31,6 +31,7 @@ export interface FleetAlertsResponse {
 }
 
 export interface FleetProjectSlotAccounting {
+  project_name?: string
   project_id: string
   active_slots: number
   pending_slots: number
@@ -42,6 +43,7 @@ export interface FleetProjectSlotAccounting {
 }
 
 export interface FleetCapacityResponse {
+  pending_runs?: { id: string; name: string; status: string; vusers: number }[]
   project_id?: string
   region?: string
   protocol?: string

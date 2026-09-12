@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MetricsHistoryPoint, RunArchiveReport, TestRunManifest, TestSummary } from '../../types'
-import { executionDate, executionFacts, executionLoadPoints, recordedNumber } from './executionPresentation'
+import { executionDate, executionFacts, executionLoadPoints, recordedNumber, lifecycleElapsedSeconds, formatElapsedSeconds } from './executionPresentation'
 
 const test: TestSummary = { id: 'run', name: 'Run', status: 'FAILED', duration: '20m', total_vusers: 10, groups: [], created_at: '', error: 'Controller restarted' }
 
@@ -38,4 +38,20 @@ describe('execution evidence presentation', () => {
     expect(history[0].timestampMs).toBe(start + 60000)
   })
 
+})
+
+
+describe('lifecycle elapsed', () => {
+  it('keeps controller lifecycle and archived evidence windows distinct', () => {
+    const current = { ...test, started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T12:05:07Z' }
+    const report = { manifest: { provenance: { started_at: '2026-09-10T12:00:30Z' }, completed_at: current.ended_at } } as RunArchiveReport
+    expect(executionFacts(current, report)).toMatchObject({ lifecycleElapsed: '5m 7s', elapsed: '4m 37s' })
+  })
+  it('never substitutes creation or planned time and preserves recorded zero', () => {
+    expect(lifecycleElapsedSeconds({ ...test, created_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T12:05:00Z' })).toBeUndefined()
+    expect(executionFacts({ ...test, started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T12:05:00Z' }, { manifest: {} } as RunArchiveReport).elapsed).toBe('Not recorded')
+    expect(formatElapsedSeconds(undefined)).toBe('Not recorded')
+    expect(formatElapsedSeconds(0)).toBe('0s')
+    expect(lifecycleElapsedSeconds({ ...test, started_at: '2026-09-10T12:00:00Z', ended_at: '2026-09-10T11:59:00Z' })).toBeUndefined()
+  })
 })

@@ -86,7 +86,7 @@ test('[U16] a finished run produces a report and stays findable in results', asy
 
   // The results view must render that run rather than an empty history.
   await page.goto(`/#/results`)
-  const filter = page.getByPlaceholder('Find releases or results...')
+  const filter = page.getByRole('searchbox', { name: 'Search results', exact: true })
   await expect(filter).toBeVisible({ timeout: 30_000 })
   await filter.fill(runName)
   const resultRow = page.locator('tbody tr').filter({ hasText: runName })

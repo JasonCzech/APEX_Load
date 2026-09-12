@@ -45,6 +45,8 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 
 	// Monitoring collectors (restricted-network agent control plane) — project-admin infra.
 	routeAuth(http.MethodPost, "/api/v1/monitoring/collectors", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorCreateProjectID, MaxBodyBytes: 65536}),
+	routeAuth(http.MethodGet, "/api/v1/monitoring/threshold-incidents", viewerProjectAccess(resolveProjectIDFromQuery)),
+	routeAuth(http.MethodPatch, "/api/v1/monitoring/threshold-incidents/{id}/ack", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveThresholdIncidentProjectID, MaxBodyBytes: 65536}),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/collectors", viewerProjectAccess(resolveProjectIDFromQuery)),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/collectors/{id}", viewerProjectAccess(resolveMonitoringCollectorProjectID)),
 	routeAuth(http.MethodPatch, "/api/v1/monitoring/collectors/{id}", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorProjectID, MaxBodyBytes: 65536}),

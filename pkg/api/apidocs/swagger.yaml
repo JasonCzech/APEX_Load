@@ -13863,6 +13863,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: category
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: created_after
           in: query
           description: Handler-defined query parameter.
@@ -13986,6 +13992,12 @@ paths:
           schema:
             type: string
         - name: actor_type
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: category
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -15681,6 +15693,8 @@ paths:
                         - id
                         - status
                       nullable: true
+                  has_more:
+                    type: boolean
                   limit:
                     type: integer
                     format: int64
@@ -15875,9 +15889,35 @@ paths:
                     required:
                       - generated_at
                       - totals
+                  usage_runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        actor:
+                          type: string
+                        created_at:
+                          type: string
+                          format: date-time
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        project_id:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - actor
+                        - created_at
+                        - id
+                        - name
+                        - project_id
+                        - status
                 required:
                   - count
                   - events
+                  - has_more
                   - limit
                   - offset
                   - usage
@@ -15933,6 +15973,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: category
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: created_after
           in: query
           description: Handler-defined query parameter.
@@ -15968,6 +16014,12 @@ paths:
             type: integer
             format: int64
         - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: report
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -16056,6 +16108,18 @@ paths:
           schema:
             type: string
         - name: actor_type
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: all
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: category
           in: query
           description: Handler-defined query parameter.
           required: false
@@ -30768,6 +30832,25 @@ paths:
                   max_slots:
                     type: integer
                     format: int64
+                  pending_runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        status:
+                          type: string
+                        vusers:
+                          type: integer
+                          format: int64
+                      required:
+                        - id
+                        - name
+                        - status
+                        - vusers
                   project_active_slots:
                     type: integer
                     format: int64
@@ -30793,6 +30876,8 @@ paths:
                           type: integer
                           format: int64
                         project_id:
+                          type: string
+                        project_name:
                           type: string
                         reserved_generators:
                           type: integer
@@ -39518,6 +39603,262 @@ paths:
       tags:
         - Monitoring
       x-handler: handlePrometheusGraphs
+  /api/v1/monitoring/threshold-incidents:
+    get:
+      summary: List Threshold Incidents
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleListThresholdIncidents
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active_count:
+                    type: integer
+                    format: int64
+                  danger_count:
+                    type: integer
+                    format: int64
+                  generated_at:
+                    type: string
+                    format: date-time
+                  global_policy_count:
+                    type: integer
+                    format: int64
+                  incidents:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        acknowledged_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        acknowledged_by:
+                          type: string
+                        active:
+                          type: boolean
+                        first_seen_at:
+                          type: string
+                          format: date-time
+                        id:
+                          type: string
+                        key:
+                          type: string
+                        last_seen_at:
+                          type: string
+                          format: date-time
+                        payload:
+                          type: object
+                          additionalProperties: {}
+                        project_id:
+                          type: string
+                        resolved_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        severity:
+                          type: string
+                        test_id:
+                          type: string
+                        test_name:
+                          type: string
+                      required:
+                        - active
+                        - first_seen_at
+                        - id
+                        - key
+                        - last_seen_at
+                        - payload
+                        - project_id
+                        - severity
+                        - test_id
+                        - test_name
+                  last_evaluated_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  limit:
+                    type: integer
+                    format: int64
+                  offset:
+                    type: integer
+                    format: int64
+                  persistence_warning:
+                    type: string
+                  unacknowledged_count:
+                    type: integer
+                    format: int64
+                required:
+                  - active_count
+                  - danger_count
+                  - generated_at
+                  - global_policy_count
+                  - incidents
+                  - last_evaluated_at
+                  - limit
+                  - offset
+                  - unacknowledged_count
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: severity
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: since
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handleListThresholdIncidents
+  /api/v1/monitoring/threshold-incidents/{id}/ack:
+    patch:
+      summary: Acknowledge Threshold Incident
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleAcknowledgeThresholdIncident
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                acknowledged:
+                  type: boolean
+                  nullable: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+      x-handler: handleAcknowledgeThresholdIncident
   /api/v1/object-repositories:
     get:
       summary: List Object Repositories

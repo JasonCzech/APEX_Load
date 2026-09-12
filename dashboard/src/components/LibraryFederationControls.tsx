@@ -23,6 +23,7 @@ type LibraryFederationControlsProps = {
   federation: UseLibraryFederationResult
   projectName?: string
   filtersActive?: boolean
+  onResetFilters?: () => void
   searchControl?: ReactNode
   primaryAction?: ReactNode
   filterControls?: ReactNode
@@ -30,7 +31,7 @@ type LibraryFederationControlsProps = {
   summaryText?: string
 }
 
-export default function LibraryFederationControls({ kind, federation, projectName, filtersActive, searchControl, primaryAction, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
+export default function LibraryFederationControls({ kind, federation, projectName, filtersActive, onResetFilters, searchControl, primaryAction, filterControls, onConfigureRemotes, summaryText }: LibraryFederationControlsProps) {
   const {
     remotes,
     selectedRemoteId,
@@ -55,7 +56,7 @@ export default function LibraryFederationControls({ kind, federation, projectNam
     <div className="library-source-controls">
       <div className="library-source-header">
         <div>
-          <h3 className="section-title">Library Sources</h3>
+          <h3 className="section-title">{kind === 'result' ? 'Result runs' : kind === 'script' ? 'Script assets' : 'Saved scenarios'}</h3>
           <p className="library-toolbar-subtitle">{summaryText || sourceDescription(kind)}</p>
         </div>
         {sourceFilter === 'host' && selectedRemoteId && <div className="library-source-summary">
@@ -82,7 +83,7 @@ export default function LibraryFederationControls({ kind, federation, projectNam
         </div>}
       </div>
 
-      <LibraryToolbar filtersActive={filtersActive} search={searchControl} filters={filterControls} actions={<>{primaryAction}<button className="btn btn-secondary" type="button" onClick={() => void refreshCatalogs()} disabled={loading}>Refresh</button></>}>
+      <LibraryToolbar filtersActive={filtersActive} search={searchControl} filters={filterControls} actions={<>{primaryAction}{filtersActive && onResetFilters && <button className="btn btn-secondary" type="button" onClick={onResetFilters}>Reset filters</button>}<button className="btn btn-secondary" type="button" onClick={() => void refreshCatalogs()} disabled={loading}>Refresh</button></>}>
         {sourceFilter === 'host' && !selectedRemoteId && <div><span>Not connected</span>{onConfigureRemotes && <button className="btn btn-secondary" type="button" onClick={onConfigureRemotes}>Connect remote workspace</button>}</div>}
         {sourceFilter === 'host' && <label className="project-redaction-rule-field">
           <span>Remote</span>

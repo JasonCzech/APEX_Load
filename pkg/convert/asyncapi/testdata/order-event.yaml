@@ -1,0 +1,29 @@
+asyncapi: 3.0.0
+info:
+  title: Synthetic order event fidelity fixture
+  version: 1.0.0
+servers:
+  broker:
+    host: FIXTURE_BROKER
+    protocol: kafka
+channels:
+  orders:
+    address: FIXTURE_TOPIC
+    messages:
+      order:
+        payload:
+          type: object
+          example:
+            orderId: FIXTURE_MARKER
+            amount: 19.95
+            currency: EUR
+            items: [alpha, beta]
+operations:
+  receiveOrder:
+    action: receive
+    channel:
+      $ref: '#/channels/orders'
+  publishOrder:
+    action: send
+    channel:
+      $ref: '#/channels/orders'

@@ -334,17 +334,17 @@ describe('DashboardPage', () => {
     expect(applicationState.setActiveRelease).toHaveBeenCalledWith(expect.objectContaining({ id: 'rel-2', name: 'Sprint 23' }))
     const dashboardTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('.dash-tab'))
     expect(dashboardTabs.map(tab => tab.textContent?.trim())).toEqual([
-      'Recent Activity3',
+      'Recent Runs3',
       'Active Tests1',
-      'Performance Trend2',
+      'Load Comparison2',
       'Release Trend Analysis2',
     ])
-    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Payments Failure Drill')
 
-    clickButtonByText('Performance Trend')
+    clickButtonByText('Load Comparison')
     await flushDashboard()
-    expect(getTabByText('Performance Trend').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Load Comparison').getAttribute('aria-selected')).toBe('true')
     const performancePanelText = container.querySelector('.dash-performance-trend')?.textContent || ''
     expect(performancePanelText).toContain('Graph Releases')
     expect(performancePanelText).toContain('Graph Runs')
@@ -362,7 +362,7 @@ describe('DashboardPage', () => {
     expect(performancePanelText).not.toContain('Max Memory')
     expect(performancePanelText).not.toContain('Telemetry Breaches')
     expect(container.textContent).toContain('Not available')
-    expect(container.textContent).toContain('Export CSV')
+    expect(container.textContent).toContain('Export release trend CSV')
     expect(container.textContent).toContain('View Results')
     expect(container.textContent).not.toContain('Test Summary')
     expect(container.textContent).toContain('pixel_8 · Landscape · Touch enabled · Headless')
@@ -397,8 +397,8 @@ describe('DashboardPage', () => {
     clickButtonByText('Active Now')
     expect(onSelectTest).toHaveBeenCalledWith('test-active')
 
-    clickButtonByText('Performance Trend')
-    clickButtonByText('Export CSV')
+    clickButtonByText('Load Comparison')
+    clickButtonByText('Export release trend CSV')
     await act(async () => {
       await Promise.resolve()
     })
@@ -412,7 +412,7 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('iphone_se · Portrait · Touch enabled · Headed')
 
     clickButtonByText('Aggregate TPS (active tests)')
-    expect(onNavigate).toHaveBeenCalledWith('tests')
+    expect(onNavigate).toHaveBeenCalledWith('command-center')
   })
 
   it('loads every bounded application-run page before computing dashboard counts and trends', async () => {
@@ -441,7 +441,7 @@ describe('DashboardPage', () => {
 
     expect(apiMock.listTests).toHaveBeenNthCalledWith(1, { application_id: 'app-1', limit: 1000, offset: 0, project_id: 'project-1', summary: true })
     expect(apiMock.listTests).toHaveBeenNthCalledWith(2, { application_id: 'app-1', limit: 1000, offset: 1, project_id: 'project-1', summary: true })
-    expect(getTabByText('Recent Activity').textContent).toContain('2')
+    expect(getTabByText('Recent Runs').textContent).toContain('2')
     expect(container.textContent).toContain('Newest Run')
     expect(container.textContent).toContain('Oldest Run')
 
@@ -530,8 +530,8 @@ describe('DashboardPage', () => {
     })
 
     await flushDashboard()
-    clickButtonByText('Performance Trend')
-    clickButtonByText('Export CSV')
+    clickButtonByText('Load Comparison')
+    clickButtonByText('Export release trend CSV')
     await flushDashboard()
 
     expect(apiMock.downloadReleaseTrend).toHaveBeenCalledWith('rel-1')
@@ -570,8 +570,8 @@ describe('DashboardPage', () => {
   it('counts queued and reserved runs as pending work', async () => {
     apiMock.listTests.mockResolvedValueOnce({
       tests: [
-        { id: 'queued-run', name: 'Queued Checkout', status: 'QUEUED', application_id: 'app-1', project_id: 'project-1', created_at: '2026-05-10T10:00:00Z' },
-        { id: 'reserved-run', name: 'Reserved Checkout', status: 'RESERVED', application_id: 'app-1', project_id: 'project-1', created_at: '2026-05-10T10:01:00Z' },
+        { id: 'queued-run', name: 'Queued Checkout', status: 'QUEUED', application_id: 'app-1', release_id: 'rel-1', project_id: 'project-1', created_at: '2026-05-10T10:00:00Z' },
+        { id: 'reserved-run', name: 'Reserved Checkout', status: 'RESERVED', application_id: 'app-1', release_id: 'rel-1', project_id: 'project-1', created_at: '2026-05-10T10:01:00Z' },
       ],
       count: 2,
     })
@@ -594,7 +594,7 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('Reserved Checkout waiting')
   })
 
-  it('renders same-named archive-pending attention items with unique keys', async () => {
+  it('groups same-named missing archives without losing run identities', async () => {
     // Two completed runs share a name and have no archive, so they produce
     // attention items with identical title + detail (different ids). The feed
     // key must stay unique or React drops/duplicates a row and warns.
@@ -631,9 +631,12 @@ describe('DashboardPage', () => {
       })
       await flushDashboard()
 
-      const archivePendingItems = Array.from(container.querySelectorAll('.release-panel-feed-item'))
-        .filter(item => item.textContent?.includes('archive pending'))
-      expect(archivePendingItems).toHaveLength(2)
+      const archivePendingItems = Array.from(container.querySelectorAll('.dashboard-attention-item'))
+        .filter(item => item.textContent?.includes('missing archives'))
+      expect(archivePendingItems).toHaveLength(1)
+      expect(archivePendingItems[0].textContent).toContain('2 runs missing archives')
+      expect(container.textContent).toContain('web-test-a')
+      expect(container.textContent).toContain('web-test-b')
 
       const duplicateKeyWarnings = errorSpy.mock.calls.filter(call => String(call[0]).includes('same key'))
       expect(duplicateKeyWarnings).toEqual([])
@@ -779,15 +782,15 @@ describe('DashboardPage', () => {
 
     await flushDashboard()
 
-    expect(getTabByText('Performance Trend').textContent).toContain('2')
+    expect(getTabByText('Load Comparison').textContent).toContain('2')
     expect(getTabByText('Active Tests').textContent).toContain('1')
-    expect(getTabByText('Recent Activity').textContent).toContain('3')
+    expect(getTabByText('Recent Runs').textContent).toContain('3')
     expect(getTabByText('Release Trend Analysis').textContent).toContain('2')
-    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.dash-release-panel')).toBeTruthy()
 
-    clickButtonByText('Performance Trend')
-    expect(getTabByText('Performance Trend').getAttribute('aria-selected')).toBe('true')
+    clickButtonByText('Load Comparison')
+    expect(getTabByText('Load Comparison').getAttribute('aria-selected')).toBe('true')
     expect(currentTableRunNames()).toEqual(['Release Smoke', 'Checkout Archive'])
 
     clickSortButton('Run')
@@ -801,8 +804,8 @@ describe('DashboardPage', () => {
     expect(onSelectTest).toHaveBeenCalledWith('test-complete-2')
     onSelectTest.mockClear()
 
-    clickButtonByText('Recent Activity')
-    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
+    clickButtonByText('Recent Runs')
+    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.dash-release-panel')).toBeTruthy()
     expect(currentTableRunNames()).toEqual(['Payments Failure Drill', 'Release Smoke', 'Checkout Archive'])
 
@@ -832,7 +835,7 @@ describe('DashboardPage', () => {
 
     await flushDashboard()
 
-    clickButtonByText('Performance Trend')
+    clickButtonByText('Load Comparison')
     await flushDashboard()
 
     expect(apiMock.getLoadComparison).toHaveBeenLastCalledWith('app-1', 'transaction', '', { testIds: ['test-complete', 'test-complete-2'] })
@@ -876,7 +879,7 @@ describe('DashboardPage', () => {
     expect(onOpenTestArchive).toHaveBeenCalledWith('test-complete')
     expect(onSelectTest).not.toHaveBeenCalled()
 
-    clickButtonByText('Performance Trend')
+    clickButtonByText('Load Comparison')
     await flushDashboard()
 
     const performanceRow = tableRowContaining('Checkout Archive')
@@ -1048,14 +1051,14 @@ describe('DashboardPage', () => {
     await flushDashboard()
     await flushDashboard()
 
-    expect(getTabByText('Recent Activity').getAttribute('aria-selected')).toBe('true')
-    expect(getTabByText('Recent Activity').textContent).toContain('12')
+    expect(getTabByText('Recent Runs').getAttribute('aria-selected')).toBe('true')
+    expect(getTabByText('Recent Runs').textContent).toContain('12')
     expect(currentTableRunNames()).toHaveLength(12)
 
-    clickButtonByText('Performance Trend')
+    clickButtonByText('Load Comparison')
     await flushDashboard()
 
-    expect(getTabByText('Performance Trend').textContent).toContain('12')
+    expect(getTabByText('Load Comparison').textContent).toContain('12')
     expect(apiMock.getTestArchiveReport).toHaveBeenCalledTimes(12)
     expect(currentTableRunNames()).toHaveLength(12)
     expect(container.textContent).not.toContain('View 7 more archived')
@@ -1418,9 +1421,9 @@ describe('DashboardPage', () => {
     expect(apiMock.getTestArchiveReports.mock.calls.every(call => call[1] === 'project-1')).toBe(true)
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
 
-    clickButtonByText('Performance Trend')
+    clickButtonByText('Load Comparison')
     await flushDashboard()
-    expect(getTabByText('Performance Trend').textContent).toContain('50')
+    expect(getTabByText('Load Comparison').textContent).toContain('50')
     expect(container.textContent).toContain('1 archived performance report could not be loaded.')
     expect(currentTableRunNames()).toHaveLength(50)
 
@@ -1450,7 +1453,7 @@ describe('DashboardPage', () => {
     expect(apiMock.getTestArchiveReports).toHaveBeenCalledTimes(4)
     expect(apiMock.getTestArchiveReports.mock.calls[3][0]).toHaveLength(1)
     expect(container.textContent).not.toContain('archived performance report could not be loaded')
-    expect(getTabByText('Performance Trend').textContent).toContain('52')
+    expect(getTabByText('Load Comparison').textContent).toContain('52')
     expect(currentTableRunNames()).toHaveLength(52)
   })
 
@@ -1507,10 +1510,97 @@ describe('DashboardPage', () => {
     expect(container.querySelector('.dash-active-card')).toBeNull()
     expect(container.textContent).toContain('No tests currently running')
 
-    clickButtonByText('Recent Activity')
+    clickButtonByText('Recent Runs')
     expect(container.textContent).toContain('web test')
     expect(container.textContent).toContain('FAILED')
     expect(container.textContent).toContain('COMPLETE')
+  })
+
+  it('keeps paused runs active and does not report missing live metrics as zero', async () => {
+    apiMock.listTests.mockResolvedValue({ tests: [{ ...scopedTest('paused', 'Paused checkout', 'app-1', 'rel-1'), status: 'PAUSED', ended_at: undefined }] })
+    await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onNavigate={onNavigate} />) })
+    await flushDashboard()
+    expect(container.textContent).toContain('1 active (running or paused)')
+    expect(getButtonByText('Current TPS').textContent).toContain('—')
+    expect(getButtonByText('Mean Run Error Rate').textContent).toContain('—')
+    await act(async () => { getTabByText('Active Tests').click() })
+    expect(container.textContent).toContain('Paused checkout')
+  })
+
+  it('opens the queue from the summary and routes the selected queued run to Command Center', async () => {
+    const onOpenCommandCenter = vi.fn()
+    apiMock.listTests.mockResolvedValue({ tests: [
+      { ...scopedTest('queued-1', 'Queued Checkout', 'app-1', 'rel-1'), status: 'PENDING', queue_position: 1, pending_reason: 'Project VUser limit' },
+      { ...scopedTest('queued-2', 'Reserved Checkout', 'app-1', 'rel-1'), status: 'RESERVED', queue_position: 2 },
+    ] })
+    await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onOpenCommandCenter={onOpenCommandCenter} onNavigate={onNavigate} />) })
+    await flushDashboard()
+    expect(getTabByText('Active & Queued').textContent).toContain('2')
+    clickButtonByText('View queued tests (2)')
+    expect(container.querySelector('[aria-label="Queued runs"]')?.textContent).toContain('Project VUser limit')
+    expect(container.querySelector('[aria-label="Queued runs"]')?.textContent).toContain('queued-2')
+    clickButtonByText('View queued tests')
+    // The first matching button is the overview shortcut; use the queue's CTA explicitly.
+    const queueButton = container.querySelector<HTMLButtonElement>('.dashboard-queue .dashboard-summary-heading button')!
+    await act(async () => { queueButton.click() })
+    expect(onOpenCommandCenter).toHaveBeenCalledWith('queued-1')
+    expect(onNavigate).not.toHaveBeenCalledWith('tests')
+  })
+
+  it('scopes history, live counts and readiness to the selected release', async () => {
+    apiMock.listTests.mockResolvedValue({ tests: [scopedTest('one', 'First release', 'app-1', 'rel-1'), { ...scopedTest('two', 'Second release', 'app-1', 'rel-2'), status: 'RUNNING' }] })
+    const render = () => root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onNavigate={onNavigate} />)
+    await act(async () => { render() })
+    await flushDashboard()
+    expect(container.textContent).toContain('First release')
+    expect(container.textContent).not.toContain('Second release')
+    expect(getTabByText('Active Tests').textContent).toContain('0')
+    applicationState.activeRelease = { ...applicationState.activeRelease, id: 'rel-2', name: 'Sprint 23' }
+    await act(async () => { render() })
+    expect(container.textContent).not.toContain('First release')
+    expect(getTabByText('Active Tests').textContent).toContain('1')
+    expect(container.querySelector('[aria-label="Release readiness and attention"]')?.textContent).toContain('0 of 0')
+  })
+
+  it('marks failed health refreshes stale and clears the warning when a later check succeeds', async () => {
+    await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onNavigate={onNavigate} />) })
+    await flushDashboard()
+    apiMock.getHealth.mockRejectedValueOnce(new Error('offline'))
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flushDashboard()
+    expect(container.textContent).toContain('System health is stale')
+    expect(getButtonByText('API Health').textContent).toContain('Stale')
+    expect(getButtonByText('Generators Ready').textContent).toContain('—')
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')) })
+    await flushDashboard()
+    expect(container.textContent).not.toContain('System health is stale')
+    expect(getButtonByText('API Health').textContent).toContain('Healthy')
+  })
+
+  it('distinguishes a loading report from unavailable comparison evidence', async () => {
+    const response = deferred<{ reports: Record<string, null> }>()
+    apiMock.listTests.mockResolvedValue({ tests: [{ ...scopedTest('saved', 'Saved run', 'app-1', 'rel-1'), archive: { transaction_count: 12 } }] })
+    apiMock.getTestArchiveReports.mockReturnValue(response.promise)
+    await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onNavigate={onNavigate} />) })
+    await flushDashboard()
+    expect(container.textContent).toContain('Loading latest report completeness and comparison baseline')
+    await act(async () => { response.resolve({ reports: { saved: null } }) })
+    await flushDashboard()
+    expect(container.textContent).toContain('Comparison baseline unavailable without a loaded report.')
+    expect(container.textContent).not.toContain('No recorded comparison baseline for the latest run.')
+  })
+
+  it('filters grouped evidence gaps and preserves accessible run details for unavailable archives', async () => {
+    apiMock.listTests.mockResolvedValue({ tests: [scopedTest('missing', 'Missing run', 'app-1', 'rel-1'), { ...scopedTest('saved', 'Saved run', 'app-1', 'rel-1'), archive: { transaction_count: 12 } }] })
+    await act(async () => { root.render(<DashboardPage testStatuses={{}} metricsHistory={{}} connectionState="connected" onSelectTest={onSelectTest} onOpenTestArchive={vi.fn()} onOpenCommandCenter={vi.fn()} onNavigate={onNavigate} />) })
+    await flushDashboard()
+    clickButtonByText('1 run missing archives')
+    expect(currentTableRunNames()).toEqual(['Missing run'])
+    expect(container.querySelector('.dashboard-run-details')?.textContent).toContain('publication progress unknown')
+    expect(container.querySelector('button[aria-label="View results for Missing run (missing)"]')).toBeTruthy()
+    expect(container.querySelector('[aria-label="Release readiness and attention"]')?.textContent).toContain('1 of 2')
+    clickButtonByText('Clear filters')
+    expect(currentTableRunNames()).toHaveLength(2)
   })
 
   function clickButtonByText(text: string) {

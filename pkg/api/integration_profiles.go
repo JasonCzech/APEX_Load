@@ -65,7 +65,7 @@ func (s *Server) handleListAPMIntegrationProfiles(w http.ResponseWriter, r *http
 	profiles := buildAPMIntegrationProfiles(settings, s.tracing)
 	configured := 0
 	for _, profile := range profiles {
-		if profile.Status == "configured" || profile.Status == "supported" {
+		if profile.Status == "configured" {
 			configured++
 		}
 	}

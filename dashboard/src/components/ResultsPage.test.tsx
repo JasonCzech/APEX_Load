@@ -720,7 +720,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select all visible results"]')).not.toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select all matching local results"]')).not.toBeNull()
     const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
     expect(rowCheckboxes).toHaveLength(3)
 
@@ -923,7 +923,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select all visible results"]')).not.toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select all matching local results"]')).not.toBeNull()
     const rowCheckboxes = Array.from(container.querySelectorAll('tbody input[type="checkbox"]')) as HTMLInputElement[]
     expect(rowCheckboxes).toHaveLength(11)
 
@@ -1165,6 +1165,24 @@ describe('ResultsPage', () => {
     expect(onOpenTestArchive).not.toHaveBeenCalled()
   })
 
+  it('filters by inclusive calendar dates and resets the active search and date range', async () => {
+    await act(async () => root.render(<ResultsPage testStatuses={{}} onSelectTest={vi.fn()} activeApplication={{ id: 'app-1', name: 'Storefront', created_at: '', updated_at: '' }} activeRelease={{ id: 'rel-1', application_id: 'app-1', name: 'Sprint 24', created_at: '', updated_at: '' }} />))
+    const dates = container.querySelectorAll<HTMLInputElement>('input[type="date"]')
+    const update = async (input: HTMLInputElement, value: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await update(dates[0], '2026-05-12')
+    await update(dates[1], '2026-05-12')
+    expect(container.querySelectorAll('.library-source-table tbody tr')).toHaveLength(2)
+    await update(dates[0], '2026-05-13')
+    expect(container.textContent).toContain('No results match the current filters')
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Reset result filters')?.click() })
+    expect(dates[0].value).toBe('')
+    expect(dates[1].value).toBe('')
+    expect(container.querySelectorAll('.library-source-table tbody tr')).toHaveLength(2)
+  })
+
   it('opens results directly on filters, library sources, and row actions', async () => {
     await act(async () => {
       root.render(
@@ -1191,13 +1209,14 @@ describe('ResultsPage', () => {
     expect(container.textContent).toContain('Results Library')
     expect(container.querySelector('.results-filter-bar')).toBeNull()
     expect(selectByLabel(container, 'Associated Release')?.value).toBe('rel-1')
-    expect(inputByPlaceholder(container, 'Find releases or results...')).toBeTruthy()
+    expect(inputByPlaceholder(container, 'Find runs by name, reference or scenario...')).toBeTruthy()
     expect(selectByLabel(container, 'Status')?.value).toBe('all')
     expect(selectByLabel(container, 'Archive State')?.value).toBe('all')
     expect(container.textContent).not.toContain('Release Results')
-    expect(container.textContent).toContain('Library Sources')
+    expect(container.textContent).toContain('Result runs')
     expect(container.querySelectorAll('.library-source-panel')).toHaveLength(1)
     expect(container.querySelectorAll('.library-source-table')).toHaveLength(1)
+    expect(container.querySelector('.library-source-table')?.getAttribute('data-table-pagination')).toBe('off')
     expect(apiMock.listTests).toHaveBeenCalledWith(expect.objectContaining({
       application_id: 'app-1',
       limit: 1000,
@@ -1205,10 +1224,10 @@ describe('ResultsPage', () => {
       summary: true,
     }))
     expect(container.querySelector('.results-truncation-status')).toBeNull()
-    expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Library Sources'])
+    expect(Array.from(container.querySelectorAll('h3.section-title')).map(header => header.textContent)).toEqual(['Result runs'])
     const headerLabels = Array.from(container.querySelectorAll('.library-source-table thead th'))
       .map(header => (header.textContent || '').replace(/[↕↑↓]/g, '').trim())
-    expect(headerLabels).toEqual(['', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Duration', 'Archive', 'Actions'])
+    expect(headerLabels).toEqual(['', 'Source', 'Scenario', 'Status', 'VUsers', 'Groups', 'Started', 'Lifecycle elapsed', 'Archive', 'Actions'])
     const sourceSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
       .find(button => button.textContent?.includes('Source'))
     const startedSortButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.library-source-table thead th.sortable > button'))
@@ -1222,7 +1241,7 @@ describe('ResultsPage', () => {
     const sourceCell = sourceRowNamed(container, 'iPhone Checkout').querySelector('.results-source-cell')
     expect(sourceCell?.textContent?.trim()).toBe('Local')
     const actualDurationCell = sourceRowNamed(container, 'iPhone Checkout').querySelectorAll('td')[7]
-    expect(actualDurationCell?.textContent?.trim()).toBe('5m')
+    expect(actualDurationCell?.textContent?.trim()).toBe('Not recorded')
     expect(container.textContent).not.toContain('local only')
     expect(container.textContent).not.toContain('Visible Sources')
     expect(container.querySelector('.results-selection-bar')).toBeNull()
@@ -1233,12 +1252,12 @@ describe('ResultsPage', () => {
     expect(container.querySelector('.library-source-table thead th:last-child')?.classList.contains('results-actions-column')).toBe(true)
     expect(sourceRowNamed(container, 'iPhone Checkout').querySelector('td:last-child .results-row-actions')).toBeTruthy()
 
-    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'LOC-RUN-20260512-001')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), 'LOC-RUN-20260512-001')
     expect(sourceRowNamed(container, 'iPhone Checkout')).toBeDefined()
     expect(container.textContent).not.toContain('iPad Checkout')
     expect(container.textContent).not.toContain('Visible Sources')
     expect(container.querySelector('.results-selection-bar')).toBeNull()
-    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), '')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), '')
 
     expect(container.querySelector('a[href="/api/v1/tests/run-a/archive/root-cause"]')).toBeNull()
     expect(sourceRowNamed(container, 'iPhone Checkout').textContent).not.toContain('Root Cause')
@@ -1262,7 +1281,7 @@ describe('ResultsPage', () => {
     })
     await flushPromises()
 
-    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all visible results"]')
+    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all matching local results"]')
     expect(selectAll).not.toBeNull()
     await act(async () => {
       selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1401,7 +1420,7 @@ describe('ResultsPage', () => {
     })
     expect(buttonByText(container, 'Delete Selected (1)')).toBeDefined()
 
-    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'iPad Checkout')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), 'iPad Checkout')
     await flushPromises()
 
     expect(buttonByText(container, 'Delete Selected (0)')).toBeUndefined()
@@ -1675,12 +1694,12 @@ describe('ResultsPage', () => {
       release_id: 'rel-1',
     }))
 
-    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), 'Remote Name')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), 'Remote Name')
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('Remote ID Match')
     expect(container.textContent).not.toContain('iPhone Checkout')
 
-    await changeInput(inputByPlaceholder(container, 'Find releases or results...'), '')
+    await changeInput(inputByPlaceholder(container, 'Find runs by name, reference or scenario...'), '')
     await changeSelect(selectByLabel(container, 'Status')!, 'failed')
     expect(sourceRowNamed(container, 'Remote Name Match')).toBeDefined()
     expect(container.textContent).not.toContain('Remote ID Match')

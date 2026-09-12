@@ -16,7 +16,7 @@ for (const theme of themes) for (const width of [923, 1440]) {
       await page.goto(`/#/${route}?${scopeQuery(workspace)}`)
       await expect(page.locator('#app-page-title')).toHaveText(titleText)
       await expect(page.locator('.page-loading')).toHaveCount(0)
-      if (route === 'command-center') await expect(page.getByRole('heading', {name: 'No active run selected', exact: true})).toBeVisible()
+      if (route === 'command-center') await expect(page.getByRole('heading', {name: 'No active runs', exact: true})).toBeVisible()
       await page.waitForLoadState('networkidle')
       if (['scripts', 'tests', 'results', 'repository'].includes(route)) await expect(page.locator('.ux-library-toolbar')).toHaveCount(1)
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme)

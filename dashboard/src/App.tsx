@@ -1,3 +1,5 @@
+import { takeMonitoringTabFocus } from './components/monitoringWorkspaceModel';
+import { contextualHelpHash } from './contextualHelp';
 import { terminalRunReportView } from './appRouting';
 import PageHeader from './components/ux/PageHeader'
 import { settingsOwner } from "./components/settingsNavigation";
@@ -389,6 +391,7 @@ function AppShell({
     pending: PendingGuardedHistoryTraversal;
   } | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
+  const commandRunViewMemory = useRef(new Map<string, Map<string, unknown>>());
   const [settingsFocusRequest, setSettingsFocusRequest] = useState<{ destination: string; control: string } | null>(null);
   const clearSettingsFocusRequest = useCallback(() => setSettingsFocusRequest(null), []);
   const metricsHistoryRef = useRef<Record<string, MetricsHistoryPoint[]>>({});
@@ -425,6 +428,7 @@ function AppShell({
     import("./types").DashboardAuthEffectiveAccessResource[]
   >([]);
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false);
+  const [accessPermissionsInitialized, setAccessPermissionsInitialized] = useState(false);
   const [effectiveAccessError, setEffectiveAccessError] = useState(false);
   const [domains, setDomains] = useState<import("./types").Domain[]>([]);
   const [domainsLoaded, setDomainsLoaded] = useState(false);
@@ -1136,12 +1140,13 @@ function AppShell({
         ? {
             project_id: activeProject.id,
             application_id: activeApplication?.id,
+            release_id: activeRelease?.id,
             summary: true,
             active_only: true,
             limit: 100,
           }
         : null,
-    [activeApplication?.id, activeProject?.id],
+    [activeApplication?.id, activeProject?.id, activeRelease?.id],
   );
   const desktopTestListParams = useMemo(
     () =>
@@ -2906,6 +2911,7 @@ function AppShell({
       } finally {
         if (!cancelled) {
           setEffectiveAccessLoaded(true);
+          setAccessPermissionsInitialized(true);
         }
       }
     };
@@ -2982,7 +2988,7 @@ function AppShell({
           testName: currentTestRun?.name,
         });
   const orderedTopbarRuns =
-    view.page === "test" && currentTestRun
+    (view.page === "test" || view.page === "command-center") && currentTestRun
       ? [
           currentTestRun,
           ...activeTopbarRuns.filter((run) => run.id !== currentTestRun.id),
@@ -3023,6 +3029,7 @@ function AppShell({
   const effectiveTopbarTitle = view.page === "scripts" && scriptsTopbarState?.editingId && activeTopbarContribution?.id === "script-editor"
     ? activeTopbarContribution?.title || topbarPageTitle
     : topbarPageTitle;
+  const taskHelpHash = contextualHelpHash(view);
   const showTopbarClientDownloads = shouldShowTopbarClientDownloads(view);
   const mainContentClassName = `main-content topbar-title-mode page-${view.page}`;
   // Application/release ids are appended to the route by canonicalization
@@ -3038,6 +3045,8 @@ function AppShell({
     // Scenario subviews share one editor instance. Re-keying on its own view
     // toggle loses the selected saved scenario and the save confirmation.
     ...(view.page === "tests" ? { scenarioView: undefined } : {}),
+    // Access subtabs share directory selections, filters, drafts, and issued keys.
+    ...(view.page === "access" ? { accessView: undefined } : {}),
     // Report sections/lenses belong to the same run. Keep focus and population
     // selection while their controlled route props update inside that page.
     ...(view.page === "report" ? { section: undefined, lens: undefined, compare: undefined } : {}),
@@ -3062,6 +3071,15 @@ function AppShell({
     const returnTarget = returningCommandCenter
       ? mainContentRef.current?.querySelector<HTMLElement>("[data-command-details]")
       : null;
+    const monitorFocus = takeMonitoringTabFocus();
+    if (monitorFocus) {
+      // Topbar contributions settle after the route panel mounts.
+      const frame = requestAnimationFrame(() => {
+        const tab = document.querySelector<HTMLElement>(`[data-monitor-category="${monitorFocus}"]`);
+        (tab || mainContentRef.current)?.focus({ preventScroll: true });
+      });
+      return () => cancelAnimationFrame(frame);
+    }
     (returnTarget || mainContentRef.current)?.focus({ preventScroll: true });
   }, [routeBoundaryKey, view.page, returningCommandCenter]);
 
@@ -3174,6 +3192,7 @@ function AppShell({
                     <a
                       key={run.id}
                       className={`topbar-run-chip ${tone}`}
+                      aria-current={currentRouteTestId === run.id ? "page" : undefined}
                       href={viewToLocationHash(
                         mergeAppViewWithWorkspace(
                           { page: "command-center", testId: run.id },
@@ -3188,6 +3207,7 @@ function AppShell({
                     >
                       <span className="topbar-run-dot" aria-hidden="true" />
                       <span className="topbar-run-name">{run.name}</span>
+                      <span className="topbar-run-status">{statusLabel}</span>
                     </a>
                   );
                 })}
@@ -3196,13 +3216,13 @@ function AppShell({
                     className="topbar-run-chip topbar-run-more"
                     href={viewToLocationHash(
                       mergeAppViewWithWorkspace(
-                        { page: "tests" },
+                        { page: "command-center" },
                         currentWorkspaceScope,
                       ),
                     )}
                     onClick={(event) => {
                       event.preventDefault();
-                      setGuardedView({ page: "tests" });
+                      navigateToCommandCenter();
                     }}
                   >
                     +{hiddenTopbarRunCount} run
@@ -3212,6 +3232,7 @@ function AppShell({
               </nav>
             )}
             <div className="main-topbar-actions">
+              {taskHelpHash && <a className="btn btn-sm btn-ghost" href={taskHelpHash}>Help for this page</a>}
               {topbarSecondaryActions.length > 0 && (
                 <div
                   className="topbar-action-group secondary"
@@ -3384,6 +3405,7 @@ function AppShell({
               {(view.page === "command-center" || retainedCommandCenter) && !routeAssetScopeBlocked && (
                 <div hidden={view.page !== "command-center"}>
                 <CommandCenterPrototype
+                  runViewMemory={commandRunViewMemory.current}
                   testId={commandCenterTestId}
                   active={view.page === "command-center"}
                   history={commandCenterTestId ? metricsHistory[commandCenterTestId] || [] : []}
@@ -3392,6 +3414,18 @@ function AppShell({
                   }
                   applicationId={activeApplication?.id}
                   projectId={activeProject?.id}
+                  releaseId={activeRelease?.id}
+                  scopeLabel={`${activeProject?.name || "Choose a project"} / ${activeApplication?.name || "All applications"} / ${activeRelease?.name || "All releases"}`}
+                  onSelectRun={navigateToCommandCenter}
+                  onOpenOverview={() => navigateToCommandCenter()}
+                  overviewActions={{
+                    onNewTest: () => handleNavigate("new-test"),
+                    newTestDisabledReason: !effectiveAccessLoaded ? "Checking permissions…" : effectiveAccessError ? "Permissions could not be verified. Open New Test from the sidebar to retry." : !isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false) ? "Your current role cannot create test runs." : undefined,
+                    onBrowseScenarios: () => handleNavigate("tests"),
+                    releases,
+                    onSelectRelease: handleSidebarReleaseChange,
+                    onOpenRepository: () => handleNavigate("repository"),
+                  }}
                   thresholdAlerts={thresholdAlerts}
                   onAcknowledgeThresholdAlert={acknowledgeThresholdAlertByKey}
                   onOpenExecution={id => {
@@ -3479,7 +3513,7 @@ function AppShell({
                   onNativeImportRequestHandled={() =>
                     setNativeImportRequest(null)
                   }
-                  onSelectScenario={navigateToTest}
+                  onSelectScenario={openRun}
                   onNavigate={handleNavigate}
                   onAuthoringStateChange={handleScriptsAuthoringStateChange}
                 />
@@ -3539,6 +3573,7 @@ function AppShell({
                   activeDomain={activeDomain}
                   activeApplication={activeApplication}
                   activeProject={activeProject}
+                  activeRelease={activeRelease}
                   applicationRepository={applicationRepository}
                   categories={repositoryCategories}
                   projects={projects}
@@ -3553,15 +3588,17 @@ function AppShell({
                   onProjectCreated={createAndSelectProject}
 					onProjectDelete={deleteProject}
                   onOpenScript={navigateToScriptEdit}
-                  onOpenTest={(testID, projectID) =>
-                    navigateToTest(testID, undefined, projectID)
-                  }
+                  onOpenTest={openRun}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onCreateTestFromScenario={navigateToNewTestForScenario}
                 />
               )}
-              {view.page === "access" && !view.setting && !routeAssetScopeBlocked && (
+              {view.page === "access" && !view.setting && !routeAssetScopeBlocked && !accessPermissionsInitialized && <p role="status">Loading Access permissions…</p>}
+              {view.page === "access" && !view.setting && !routeAssetScopeBlocked && accessPermissionsInitialized && (
                 <AccessPage
+                  accessView={view.accessView}
+                  onViewChange={accessView => setGuardedView({ ...view, accessView })}
+                  authMode={authStatus?.mode}
                   projects={projects}
                   domains={domains}
                   applicationRepository={applicationRepository}

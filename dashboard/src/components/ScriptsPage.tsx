@@ -1,3 +1,4 @@
+import { useLibraryFilter } from './useLibraryFilter'
 import BulkActions from './ux/BulkActions'
 import { confirmAction } from './ux/confirmAction'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -147,6 +148,8 @@ function scriptSearchText(script: StoredScript) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
+const healthFilterKeys = healthFilters.map(filter => filter.key)
+
 export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0 }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -161,10 +164,11 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
   const [secretStatusByScript, setSecretStatusByScript] = useState<Record<string, ScriptSecretStatus>>({})
   const [secretStatusStateByScript, setSecretStatusStateByScript] = useState<Record<string, 'loading' | 'ready' | 'error'>>({})
-  const [libraryQuery, setLibraryQuery] = useState('')
-  const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
-  const [releaseFilter, setReleaseFilter] = useState('all')
-  const [folderFilter, setFolderFilter] = useState('all')
+  const filterScope = `scripts:${activeProject?.domain_id || ''}:${activeProjectId || ''}`
+  const [libraryQuery, setLibraryQuery] = useLibraryFilter<string>(filterScope, 'query', '')
+  const [healthFilter, setHealthFilter] = useLibraryFilter<AuthoringHealthFilter>(filterScope, 'health', 'all', healthFilterKeys)
+  const [releaseFilter, setReleaseFilter] = useLibraryFilter<string>(filterScope, 'release', 'all')
+  const [folderFilter, setFolderFilter] = useLibraryFilter<string>(filterScope, 'folder', 'all')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
   const [effectiveAccessLoaded, setEffectiveAccessLoaded] = useState(false)
   const [libraryNotice, setLibraryNotice] = useState('')
@@ -422,10 +426,6 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     setEffectiveAuthAccessResources([])
     setEffectiveAccessLoaded(false)
     setLibraryNotice('')
-    setLibraryQuery('')
-    setHealthFilter('all')
-    setReleaseFilter('all')
-    setFolderFilter('all')
     setSelectedScriptIds(new Set())
     setDeletingScriptIds(new Set())
   }, [activeProjectId])
@@ -520,21 +520,21 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     [scriptFolders],
   )
 
-  const filteredScripts = useMemo(() => {
+  const scriptsMatchingLibraryFilters = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase()
     return scripts.filter(script => {
-      if (!scriptMatchesHealthFilter(script, healthFilter)) return false
       if (releaseFilter !== 'all' && !(script.associated_releases || []).some(release => release.name === releaseFilter)) return false
       if (folderFilter === 'unfiled' && script.folder_id) return false
       if (folderFilter !== 'all' && folderFilter !== 'unfiled' && script.folder_id !== folderFilter) return false
       if (!query) return true
       return scriptSearchText(script).includes(query)
     })
-  }, [folderFilter, healthFilter, libraryQuery, releaseFilter, scripts])
+  }, [folderFilter, libraryQuery, releaseFilter, scripts])
+  const filteredScripts = useMemo(() => scriptsMatchingLibraryFilters.filter(script => scriptMatchesHealthFilter(script, healthFilter)), [scriptsMatchingLibraryFilters, healthFilter])
 
   const healthFilterCounts = useMemo(() => {
     return healthFilters.reduce<Record<AuthoringHealthFilter, number>>((acc, filter) => {
-      acc[filter.key] = scripts.filter(script => scriptMatchesHealthFilter(script, filter.key)).length
+      acc[filter.key] = scriptsMatchingLibraryFilters.filter(script => scriptMatchesHealthFilter(script, filter.key)).length
       return acc
     }, {
       all: 0,
@@ -544,7 +544,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       runtime_warning: 0,
       ai_guardrail: 0,
     })
-  }, [scripts])
+  }, [scriptsMatchingLibraryFilters])
 
   const {
     sortField,
@@ -731,7 +731,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   )
 
   const federationRemoteRows = useMemo(() => {
-    if (releaseFilter !== 'all') return []
+    if (federation.sourceFilter === 'local' || releaseFilter !== 'all' || folderFilter !== 'all' || healthFilter !== 'all') return []
     const query = libraryQuery.trim().toLowerCase()
     return federation.remoteItems.filter(item => {
       // On "all", local scripts already cover assets that exist on both sides; only
@@ -740,7 +740,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       if (!query) return true
       return [item.name, item.protocol, item.project_id].filter(Boolean).join(' ').toLowerCase().includes(query)
     })
-  }, [federation.remoteItems, federation.sourceFilter, knownScriptIds, libraryQuery, releaseFilter])
+  }, [federation.remoteItems, federation.sourceFilter, knownScriptIds, libraryQuery, releaseFilter, folderFilter, healthFilter])
+
+  const matchingScriptCount = (federation.sourceFilter === 'host' ? 0 : sortedScripts.length) + federationRemoteRows.length
 
   const scriptFederation = useMemo<ScriptLibraryFederation>(() => ({
     sourceFilter: federation.sourceFilter,
@@ -1107,12 +1109,13 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           )}
           <LibraryFederationControls
             kind="script"
-            filtersActive={releaseFilter !== 'all' || folderFilter !== 'all'}
+            filtersActive={Boolean(libraryQuery.trim()) || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' || federation.sourceFilter !== 'all'}
+            onResetFilters={() => { setLibraryQuery(''); setHealthFilter('all'); setReleaseFilter('all'); setFolderFilter('all'); federation.setSourceFilter('all') }}
             primaryAction={canManageScripts && <button className="btn btn-primary" type="button" onClick={openCreateOptions}>Create script</button>}
             federation={federation}
             projectName={activeProject?.name}
             onConfigureRemotes={openRemoteSettings}
-            summaryText={libraryQuery.trim() || releaseFilter !== 'all' || folderFilter !== 'all' ? `${sortedScripts.length} matching script${sortedScripts.length === 1 ? '' : 's'}` : 'Search by script, protocol, health, release, or folder.'}
+            summaryText={`${matchingScriptCount} matching script${matchingScriptCount === 1 ? '' : 's'} · Project library across applications and releases.`}
             searchControl={(<label className="project-redaction-rule-field">
                   <span>Search scripts</span>
                   <input
@@ -1158,11 +1161,13 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
               </>
             )}
           />
-          <div className="library-health-filters" aria-label="Authoring health filters">
+          <div className="library-health-filters" aria-label="Local authoring health filters">
+            <span className="cell-muted">Local authoring health</span>
             {healthFilters.map(filter => (
               <button
                 key={filter.key}
                 type="button"
+                aria-pressed={healthFilter === filter.key}
                 className={`script-health-filter ${healthFilter === filter.key ? 'active' : ''}`}
                 onClick={() => setHealthFilter(filter.key)}
               >
@@ -1173,6 +1178,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           </div>
           {canManageScripts && (
             <BulkActions count={selectedVisibleScriptIds.length}>
+                {selectedVisibleScriptIds.length < visibleSelectableScriptIds.length && <button type="button" className="btn btn-secondary" onClick={() => toggleAllVisibleScripts(true)}>Select all {visibleSelectableScriptIds.length} matching scripts</button>}
                 <button
                   type="button"
                   className="btn btn-ghost"

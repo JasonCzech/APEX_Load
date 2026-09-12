@@ -66,6 +66,15 @@ describe('TablePaginationManager', () => {
     localStorage.clear()
   })
 
+  it('allows a run-history table to opt in inside a catalog that owns its pagination', async () => {
+    const { table } = buildTable(23, { paginationOff: true })
+    table.dataset.tablePagination = 'on'
+    act(() => root.render(<TablePaginationManager />))
+    await flushTableScan()
+    expect(visibleRowTexts(table)).toHaveLength(10)
+    expect(document.querySelector('.table-pagination-summary')?.textContent).toBe('Showing 1-10 of 23')
+  })
+
   it('uses the saved personal default while allowing a table override', async () => {
     localStorage.setItem('apexload.personal-preferences', JSON.stringify({ tableRows: 25 }))
     const { table } = buildTable(30)

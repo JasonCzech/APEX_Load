@@ -510,7 +510,8 @@ describe('AppShell hook-order stability across navigation', () => {
     const scenarioRequests = vi.mocked(fetch).mock.calls
       .map(([input]) => typeof input === 'string' ? input : String((input as { url?: string })?.url ?? input))
       .filter(url => url.includes('/scenarios'))
-    expect(scenarioRequests.some(url => url.includes('project_id=project-b'))).toBe(true)
+    // The selected scenario is loaded by ID; the builder need not fetch a project-wide list.
+    expect(scenarioRequests.some(url => url.includes('/scenarios/scenario-b'))).toBe(true)
     expect(scenarioRequests.some(url => url.includes('project_id=project-a'))).toBe(false)
   })
 

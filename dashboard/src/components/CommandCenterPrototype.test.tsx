@@ -370,6 +370,105 @@ describe('CommandCenterPrototype', () => {
     }))
   })
 
+  it.each([false, true])('keeps staged targets and dismisses confirmation when switching (remount: %s)', async (remount) => {
+    const runViewMemory = new Map<string, Map<string, unknown>>()
+    const runA = buildLiveVuserTest()
+    const runB = { ...buildLiveVuserTest(), id: 'run-b', name: 'Second run' }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}))
+    await act(async () => { root.render(<CommandCenterPrototype key={remount ? runA.id : undefined} runViewMemory={runViewMemory} testId={runA.id} initialTest={runA} />) })
+    await flush()
+    await changeNumberInput(inputByLabel('Live Checkout target VUsers'), '65')
+    await click(buttonNamed('Pause'))
+    expect(container.querySelector('.confirm-run-action-modal')).not.toBeNull()
+    await act(async () => { root.render(<CommandCenterPrototype key={remount ? runB.id : undefined} runViewMemory={runViewMemory} testId={runB.id} initialTest={runB} />) })
+    await flush()
+    expect(container.querySelector('.confirm-run-action-modal')).toBeNull()
+    expect(inputByLabel('Live Checkout target VUsers').value).toBe('50')
+    await act(async () => { root.render(<CommandCenterPrototype key={remount ? runA.id : undefined} runViewMemory={runViewMemory} testId={runA.id} initialTest={runA} />) })
+    await flush()
+    expect(inputByLabel('Live Checkout target VUsers').value).toBe('65')
+  })
+
+  it('does not apply a late pause response to the newly selected run', async () => {
+    const runA = buildLiveVuserTest()
+    const runB = { ...buildLiveVuserTest(), id: 'run-b', name: 'Second run' }
+    let resolvePause: ((response: Response) => void) | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => requestUrl(input).endsWith('/pause')
+      ? new Promise(resolve => { resolvePause = resolve }) : Promise.resolve(jsonResponse({})))
+    await act(async () => { root.render(<CommandCenterPrototype testId={runA.id} initialTest={runA} />) })
+    await flush()
+    await click(buttonNamed('Pause'))
+    await confirmRunAction('Pause Test')
+    await act(async () => { root.render(<CommandCenterPrototype testId={runB.id} initialTest={runB} />) })
+    await flush()
+    await act(async () => { resolvePause?.(jsonResponse({})); await Promise.resolve() })
+    await flush()
+    expect(container.textContent).toContain('Second run')
+    expect(buttonNamed('Pause')).toBeDefined()
+    expect(container.textContent).not.toContain('Run paused at the next action boundary')
+  })
+
+  it('routes even a single discovered run through the supplied navigation callback', async () => {
+    const onSelectRun = vi.fn()
+    const run = buildLiveVuserTest()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ tests: [run], total: 1 }))
+    await act(async () => { root.render(<CommandCenterPrototype projectId="project-1" releaseId="release-1" onSelectRun={onSelectRun} />) })
+    await flush()
+    expect(container.querySelector('[aria-label="Active run overview"]')).not.toBeNull()
+    expect(onSelectRun).not.toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes('release_id=release-1'))).toBe(true)
+    await click(buttonNamed('Live VUser Checkout'))
+    expect(onSelectRun).toHaveBeenCalledWith(run.id)
+    expect(container.querySelector('[aria-label="Command center run controls"]')).toBeNull()
+  })
+
+  it('distinguishes catalog failure from empty, preserves the last list, and retries', async () => {
+    let fails = true
+    const onSelectRun = vi.fn()
+    const run = buildLiveVuserTest()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => fails
+      ? Promise.resolve(new Response(JSON.stringify({ error: 'Catalog unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json' } }))
+      : Promise.resolve(jsonResponse({ tests: [run], total: 1 })))
+    await act(async () => { root.render(<CommandCenterPrototype projectId="project-1" onSelectRun={onSelectRun} />) })
+    await flush()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Active runs could not be determined')
+    expect(container.textContent).not.toContain('No active runs')
+    expect(container.textContent).not.toContain('Open analysis')
+    fails = false
+    await click(buttonNamed('Retry active runs'))
+    await flush()
+    expect(container.textContent).toContain(run.name)
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    fails = true
+    await click(buttonNamed('Refresh runs'))
+    await flush()
+    expect(container.textContent).toContain(run.name)
+    expect(container.textContent).toContain('Showing the last successful list')
+    expect(container.textContent).toContain('Last updated')
+    fails = false
+    await click(buttonNamed('Retry active runs'))
+    await flush()
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('provides permission-aware empty actions and resolves missing release before Results', async () => {
+    const onNewTest = vi.fn()
+    const onResults = vi.fn()
+    const onSelectRelease = vi.fn()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ tests: [], total: 0 }))
+    await act(async () => { root.render(<CommandCenterPrototype projectId="project-1" onSelectRun={vi.fn()} onOpenResults={onResults}
+      overviewActions={{ onNewTest, newTestDisabledReason: 'Viewer cannot create runs', onSelectRelease, releases: [] }} />) })
+    await flush()
+    expect(buttonNamed('New Test').disabled).toBe(true)
+    expect(buttonNamed('Open Results').disabled).toBe(true)
+    expect(container.textContent).toContain('No releases are available')
+    expect(container.textContent).not.toContain('Open analysis')
+    await click(buttonNamed('New Test'))
+    expect(onNewTest).not.toHaveBeenCalled()
+    await click(buttonNamed('Open Results'))
+    expect(onResults).not.toHaveBeenCalled()
+  })
+
   it('shows the empty state (not the prototype run) when discovery finds no live runs', async () => {
     const openResults = vi.fn()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ tests: [], count: 0 }))
@@ -379,12 +478,12 @@ describe('CommandCenterPrototype', () => {
     })
     await flush()
 
-    expect(container.textContent).toContain('No active run selected')
-    expect(container.textContent).toContain('Historical results can be opened from the Results folder.')
+    expect(container.textContent).toContain('No active runs')
+    expect(container.textContent).toContain('Start a new test or choose a saved scenario.')
     expect(container.textContent).toContain('Open Results')
     expect(container.textContent).not.toContain('Checkout Peak Soak - Command Center Prototype')
     expect(container.querySelector('[aria-label="Command center run controls"]')).toBeNull()
-    expect(container.querySelector('[aria-label="No active command center run"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Active run overview"]')).not.toBeNull()
 
     await click(buttonNamed('Open Results'))
 
@@ -406,7 +505,7 @@ describe('CommandCenterPrototype', () => {
     })
     await flush()
 
-    expect(container.querySelector('[aria-label="No active command center run"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Active run overview"]')).toBeNull()
     expect(container.textContent).toContain('Live VUser Checkout')
     expect(container.querySelector('[aria-label="Command center run controls"]')).not.toBeNull()
     const discoveryURL = fetchMock.mock.calls
@@ -490,16 +589,16 @@ describe('CommandCenterPrototype', () => {
     await flush()
 
     // Multiple live runs => no guessing; a picker is shown.
-    expect(container.textContent).toContain('Select an active run')
-    expect(container.textContent).toContain('2 runs are running or waiting')
+    expect(container.textContent).toContain('Active runs')
+    expect(container.textContent).toContain('2 active runs')
     expect(container.textContent).toContain('Checkout Soak')
     expect(container.textContent).toContain('Search Spike')
-    expect(container.querySelector('[aria-label="No active command center run"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="Active run overview"]')).not.toBeNull()
 
     await click(buttonNamed('Checkout Soak'))
     await flush()
 
-    expect(container.querySelector('[aria-label="No active command center run"]')).toBeNull()
+    expect(container.querySelector('[aria-label="Active run overview"]')).toBeNull()
     expect(container.textContent).toContain('Checkout Soak')
   })
 
@@ -530,7 +629,7 @@ describe('CommandCenterPrototype', () => {
     await flush()
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('No active run selected')
+    expect(container.textContent).toContain('Choose a workspace')
   })
 
   it('ignores discovery results from the previous project scope', async () => {

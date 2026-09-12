@@ -128,7 +128,11 @@ test('Settings search reveals and focuses each matching personal control', async
   }
   await page.goto(`/#/access?setting=authentication&${scopeQuery(workspace)}`)
   await expect(page.getByRole('heading', { name: 'Authentication', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Expand Settings navigation' }).click()
+  await expect(page.getByRole('navigation', { name: 'Access administration' })).toBeVisible()
+  await expect(page.getByRole('navigation', { name: 'Settings sections' })).toBeHidden()
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const expandSettings = page.getByRole('button', { name: 'Expand Settings navigation' })
+  if (await expandSettings.isVisible()) await expandSettings.click()
   await page.getByRole('searchbox', { name: 'Find settings' }).fill('theme')
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('button', { name: 'Personal preferences', exact: true }).click()
   await expect(page.getByRole('combobox', { name: 'Dashboard Theme', exact: true })).toBeFocused()

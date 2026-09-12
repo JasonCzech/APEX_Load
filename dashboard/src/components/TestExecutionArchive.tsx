@@ -1820,6 +1820,7 @@ export default function TestExecutionArchive({
                 <div className="archive-filter-bar">
                   <select
                     className="archive-action-select"
+                    aria-label="Archived action"
                     value={selectedArchiveAction}
                     onChange={(event) => onSelectedArchiveActionChange(event.target.value)}
                   >
@@ -1830,7 +1831,8 @@ export default function TestExecutionArchive({
                   {soapOperationEntries.length > 0 && (
                     <select
                       className="archive-action-select archive-filter-select"
-                      value={selectedArchiveSOAPOperation}
+                      aria-label="Archived SOAP operation"
+                    value={selectedArchiveSOAPOperation}
                       onChange={(event) => onSelectedArchiveSOAPOperationChange(event.target.value)}
                     >
                       <option value="">All SOAP operations</option>
@@ -1841,6 +1843,7 @@ export default function TestExecutionArchive({
                   )}
                   <select
                     className="archive-action-select archive-filter-select"
+                    aria-label="Archived group"
                     value={selectedArchiveGroup}
                     onChange={(event) => onSelectedArchiveGroupChange(event.target.value)}
                   >
@@ -1891,6 +1894,7 @@ export default function TestExecutionArchive({
                 <div className="archive-pagination-actions">
                   <select
                     className="archive-page-size-select"
+                    aria-label="Archived event rows per page"
                     value={archivePageSize}
                     onChange={(event) => onPageSizeChange(Number(event.target.value))}
                   >

@@ -1,0 +1,89 @@
+import { settingsDestination, settingsOwner } from './components/settingsNavigation'
+import { describe, expect, it } from 'vitest'
+import { articleBlocks, articleForSection, helpArticles, helpArticleHash, loadHelpSource, resolveHelpLink, searchHelp } from './helpContent'
+import { parseMarkdown } from './components/repositoryGuideMarkdown'
+import { apiGuideHashForToggle, apiGuideToggleOptions, helpAreaForPage } from './apiGuideNavigation'
+
+const first = helpArticles.find(a => a.id === 'first-test')!
+describe('Help catalogue and content contracts', () => {
+  it('loads every catalogue source and every selected task section', async () => {
+    expect(new Set(helpArticles.map(a => a.id)).size).toBe(helpArticles.length)
+    for (const article of helpArticles) {
+      const source = await loadHelpSource(article)
+      const headings = parseMarkdown(source).filter(block => block.kind === 'heading').map(block => block.text)
+      for (const section of article.sections || []) expect(headings, `${article.id}: ${section}`).toContain(section)
+      expect(articleBlocks(article, source).length, article.id).toBeGreaterThan(0)
+    }
+  })
+  it('links every core help document reference to a catalogue article or app route', async () => {
+    for (const article of helpArticles.filter(a => a.path.includes('/HELP_'))) {
+      const source = await loadHelpSource(article)
+      const withoutCode = source.replace(/```[\s\S]*?```/g, '')
+      for (const match of withoutCode.matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+        const link = resolveHelpLink(match[1], article, source)
+        expect(link, `${article.path}: ${match[1]}`).not.toBe('')
+        if (link.startsWith('#/docs?')) {
+          const params = new URLSearchParams(link.split('?')[1]); const target = helpArticles.find(a => a.id === params.get('article'))!
+          expect(target).toBeDefined()
+          if (params.get('section')) expect(articleForSection(target.path, params.get('section')!, await loadHelpSource(target)), match[1]).toBeDefined()
+        }
+      }
+    }
+  })
+  it('keeps task links synchronized with the current Settings, Access and Repository owners', async () => {
+    const paths = new Set<string>()
+    for (const article of helpArticles.filter(a => a.path.includes('/HELP_') || ['docs/APPLICATION_USER_GUIDE.md', 'docs/ADMIN_USER_GUIDE.md', 'docs/API_USER_GUIDE.md'].includes(a.path))) {
+      if (paths.has(article.path)) continue
+      paths.add(article.path)
+      const source = await loadHelpSource(article)
+      for (const match of source.matchAll(/\]\(#\/(settings|access|repository)\?setting=([^&)]+)[^)]*\)/g)) {
+        expect(settingsDestination(match[2]), match[0]).toBeDefined()
+        expect(settingsOwner(match[2]), match[0]).toBe(match[1])
+      }
+    }
+  })
+  it('keeps examples complete and the key capability corrections intact', async () => {
+    const source = await loadHelpSource(first)
+    const example = parseMarkdown(source).find(block => block.kind === 'code' && block.language === 'json')
+    expect(example?.kind).toBe('code')
+    if (example?.kind !== 'code') return
+    const script = JSON.parse(example.code).script
+    expect(script.protocol).toBe('http')
+    expect(script.config.base_url).toBe('http://127.0.0.1:8099')
+    expect(script.actions[0].assertions).toContainEqual({ type: 'status_code', expected: 200 })
+    const userSource = await loadHelpSource(helpArticles.find(a => a.id === 'authoring')!)
+    expect(userSource).not.toContain('500 response counts as a success')
+    expect(userSource).not.toContain('Trace and metric export')
+    expect(userSource).not.toContain('will not be rejected at launch')
+    const apiSource = await loadHelpSource(helpArticles.find(a => a.id === 'api-workflows')!)
+    expect(apiSource).not.toContain('does not yet wait for run N')
+    expect(apiSource).not.toContain('| Method |')
+  })
+  it('finds text in separate articles and returns shareable section destinations', async () => {
+    const article = helpArticles.find(a => a.id === 'scenarios')!
+    const docs = [{ article, source: await loadHelpSource(article) }, { article: first, source: await loadHelpSource(first) }]
+    expect(searchHelp(docs, 'pacing 250').map(r => r.article.id)).toEqual(['scenarios'])
+    expect(searchHelp(docs, 'zzzzzz')).toEqual([])
+    expect(searchHelp(docs, '   ')).toEqual([])
+    const result = searchHelp(docs, '270')[0]
+    expect(helpArticleHash(result.article, result.section)).toContain('section=sizing-from-a-goal')
+  })
+  it.each(['//evil.example/x', '/etc/passwd', 'javascript:alert(1)', 'file:///etc/passwd', '../../../secret.md', 'https://user:pass@example.com'])('does not turn an unapproved relative source into a document route: %s', href => {
+    const result = resolveHelpLink(href, first, '')
+    expect(result.startsWith('#/docs')).toBe(false)
+  })
+  it('resolves source-relative and section links through the explicit catalogue', async () => {
+    const source = await loadHelpSource(first)
+    expect(resolveHelpLink('HELP_SUPPORT.md', first, source)).toContain('article=support')
+    expect(resolveHelpLink('missing.md', first, source)).toBe('')
+    expect(resolveHelpLink('#create-and-prove-the-script', first, source)).toContain('section=create-and-prove-the-script')
+    expect(resolveHelpLink('dsl.schema.json', first, source)).toContain('article=dsl')
+  })
+  it('retains old URLs and groups their navigation under automation', () => {
+    for (const alias of ['mcp', 'authentication', 'quick-start', 'swagger', 'repo-guide'] as const) expect(helpAreaForPage(alias)).toBe('general')
+    expect(apiGuideHashForToggle('getting-started')).toBe('#/docs')
+    expect(apiGuideHashForToggle('user-guide')).toBe('#/docs?guide=user-guide')
+    expect(apiGuideToggleOptions({ includeAdminGuide: true })).toHaveLength(5)
+    expect(apiGuideToggleOptions({ includeAdminGuide: false })).toHaveLength(4)
+  })
+})

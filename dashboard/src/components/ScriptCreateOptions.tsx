@@ -8,6 +8,7 @@ import { useApi } from '../hooks/useApi'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import PageViewToggle from './PageViewToggle'
 import ReferenceKeyBadge from './ReferenceKeyBadge'
+import './ImportWorkflowGuide.css'
 
 interface Props {
   projectId?: string
@@ -414,6 +415,7 @@ export default function ScriptCreateOptions({
   const [importSurfaces, setImportSurfaces] = useState<AuthoringImportSurface[]>([])
   const [importSurfacesLoading, setImportSurfacesLoading] = useState(Boolean(projectId))
   const [importSurfacesError, setImportSurfacesError] = useState('')
+  const [sourceQuery, setSourceQuery] = useState('')
   const [featurePolicy, setFeaturePolicy] = useState<{ features: Array<{ id: string; effective_enabled: boolean }> } | null>(null)
   const [featurePolicyResolved, setFeaturePolicyResolved] = useState(!projectId)
   const [internalWorkflow, setInternalWorkflow] = useState<CreateWorkflow>('start-new')
@@ -689,7 +691,13 @@ export default function ScriptCreateOptions({
     }
   }, [loadImportSurfaces, policyRefreshSignal])
 
-  const importSurfaceGroups = useMemo(() => groupImportSurfaces(importSurfaces), [importSurfaces])
+  const visibleImportSurfaces = importSurfaces.filter(surface => surface.visible)
+  const filteredImportSurfaces = visibleImportSurfaces.filter(surface => {
+    const text = [surface.title, surface.description, surface.category, surface.badge, surface.id,
+      ...(surface.modes || []).flatMap(mode => [mode.label, mode.description])].join(' ').toLowerCase()
+    return sourceQuery.toLowerCase().trim().split(/\s+/).every(term => text.includes(term))
+  })
+  const importSurfaceGroups = groupImportSurfaces(filteredImportSurfaces)
 
   return (
     <div className="page">
@@ -1040,6 +1048,14 @@ export default function ScriptCreateOptions({
               <h3>Import From Source</h3>
               <p>Choose a source asset, then review generated actions, source comparisons, data fit, validation notes, and approval evidence in one draft workflow.</p>
             </div>
+            <div className="import-source-search">
+              <label>
+                <span>Find a source format</span>
+                <input type="search" className="settings-input" value={sourceQuery} onChange={event => setSourceQuery(event.target.value)} placeholder="Search formats, protocols, or tools" />
+              </label>
+              {sourceQuery && <button type="button" className="btn btn-secondary" onClick={() => setSourceQuery('')}>Clear search</button>}
+              {!importSurfacesLoading && !importSurfacesError && <span role="status">{filteredImportSurfaces.length} of {visibleImportSurfaces.length} sources</span>}
+            </div>
             <div className="script-create-import-groups">
               {importSurfacesLoading && <div className="script-create-empty">Loading import sources...</div>}
               {importSurfacesError && (
@@ -1049,7 +1065,7 @@ export default function ScriptCreateOptions({
                 </div>
               )}
               {!importSurfacesLoading && !importSurfacesError && importSurfaceGroups.length === 0 && (
-                <div className="script-create-empty">No import sources are available from this controller.</div>
+                <div className="script-create-empty">{visibleImportSurfaces.length ? 'No source formats match your search. Try a format such as HAR, JMeter, or OpenAPI.' : 'No import sources are available from this controller.'}</div>
               )}
               {importSurfaceGroups.map(group => (
                 <div className="script-create-import-group" key={group.category}>

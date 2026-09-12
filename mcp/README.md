@@ -2,6 +2,10 @@
 
 The APEX Load MCP server lets AI agents operate the APEX Load REST API through the Model Context Protocol. It is an automation and control-plane bridge only; load generators and test execution never depend on this Python process.
 
+## Before You Start
+
+Run this bridge on a machine that can reach your APEX Load controller. File imports read paths on that machine, not on the dashboard server or an agent client elsewhere. Obtain a project-scoped service-account key through your administrator; both roles and token scopes apply. The Python bridge is not required for ordinary dashboard or CLI use.
+
 ## Capabilities
 
 The server exposes structured tools for the documented API surface:
@@ -29,9 +33,10 @@ Use Python 3.10 or newer.
 ```bash
 cd /path/to/apexload/mcp
 python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements.txt
 ```
+
+On Windows, use `.venv\Scripts\python.exe` instead of `.venv/bin/python`. Keep the absolute interpreter path for your client configuration.
 
 ## Configuration
 
@@ -70,7 +75,7 @@ Errors use the same top-level shape with `ok:false`, normalized `error.code`, `e
 {
   "mcpServers": {
     "apexload": {
-      "command": "python3",
+      "command": "/path/to/apexload/mcp/.venv/bin/python",
       "args": ["/path/to/apexload/mcp/server.py"],
       "env": {
         "APEXLOAD_URL": "http://localhost:8080/api/v1",
@@ -82,19 +87,25 @@ Errors use the same top-level shape with `ok:false`, normalized `error.code`, `e
 }
 ```
 
+After configuring the client, restart its MCP connection and invoke a read-only system health tool. Expect an `ok: true` response and HTTP 200. Then inspect identity/effective access before using project tools. Client support and configuration formats vary; use the client's documented stdio MCP configuration with the same interpreter, script and environment values. This example is for Claude Desktop and is not a claim that every client accepts this JSON.
+
+If Python reports a missing module, confirm the client uses the virtual-environment interpreter above. For 401/403 check the controller URL, key and project roles/scopes. If a file cannot be opened, confirm its path exists on the MCP host. See [API authentication](../docs/API_USER_GUIDE.md#authentication) and [Troubleshooting](../docs/HELP_TROUBLESHOOTING.md).
+
 ## Running Manually
 
 ```bash
 cd /path/to/apexload/mcp
-APEXLOAD_URL=http://localhost:8080/api/v1 python3 server.py
+APEXLOAD_URL=http://localhost:8080/api/v1 .venv/bin/python server.py
 ```
 
 ## Testing
 
+The following commands are for contributors, from the repository root with the MCP virtual environment installed. Clients normally launch and supervise the stdio process themselves.
+
 Run the mocked unit suite:
 
 ```bash
-python3 -m pytest mcp
+mcp/.venv/bin/python -m pytest mcp
 ```
 
 Run live integration smoke tests against a controller:
@@ -102,7 +113,7 @@ Run live integration smoke tests against a controller:
 ```bash
 APEXLOAD_MCP_INTEGRATION=1 \
 APEXLOAD_URL=http://localhost:8080/api/v1 \
-python3 -m pytest mcp/tests/test_integration_smoke.py
+mcp/.venv/bin/python -m pytest mcp/tests/test_integration_smoke.py
 ```
 
 Integration tests are intentionally read/validate-only and are skipped unless `APEXLOAD_MCP_INTEGRATION=1` is set.

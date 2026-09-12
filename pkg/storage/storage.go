@@ -670,6 +670,7 @@ type GitHubEnterpriseStore interface {
 }
 
 type AuditEventFilter struct {
+	FleetOnly    bool
 	Limit        int
 	Offset       int
 	Action       string

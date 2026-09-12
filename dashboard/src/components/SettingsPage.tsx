@@ -1,3 +1,4 @@
+import AccessNavigation from './AccessNavigation'
 import TabList from './ux/TabList'
 import FormField from './ux/FormField'
 import PanelToggle from "./ux/PanelToggle"
@@ -342,9 +343,10 @@ export default function SettingsPage({
   onProjectUpdate,
 }: SettingsPageProps) {
   const destination = settingsDestination(destinationId)
+  const accessSettings = destination?.group === 'Access & Security'
   const resourceId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('resourceId') || ''
   const requestedReturn = new URLSearchParams(window.location.hash.split('?')[1] || '').get('returnTo') || ''
-  const returnTo = /^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
+  const returnTo = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
   const [navigationSearch, setNavigationSearch] = useState('')
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 1100)
   const desktopSurface = isDesktopSurface()
@@ -409,7 +411,8 @@ export default function SettingsPage({
   // whenever the route hash changes (LazyLoadBoundary is keyed on it), and a
   // domain or project switch rewrites the hash — without persistence every
   // scope switch would bounce the operator back to the General tab.
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() => readSettingsSubsectionId('apexload.settings.section', 'general', isSettingsSectionId))
+  const [storedSection, setActiveSection] = useState<SettingsSectionId>(() => readSettingsSubsectionId('apexload.settings.section', 'general', isSettingsSectionId))
+  const activeSection = destination?.section ?? storedSection
   const [activeGeneralSubsection, setActiveGeneralSubsection] = useState<GeneralSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.generalSubsection'))
   const [activeGovernanceSubsection, setActiveGovernanceSubsection] = useState<GovernanceSettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.governanceSubsection', 'schedule-defaults', isGovernanceSettingsSubsectionId))
   const [activeCapacitySubsection, setActiveCapacitySubsection] = useState<CapacitySettingsSubsectionId>(() => readSettingsSubsectionId('apexload.settings.capacitySubsection', 'availability', isCapacitySettingsSubsectionId))
@@ -967,11 +970,6 @@ export default function SettingsPage({
   const canManageServiceAccounts = capabilityAllowed('manage_service_accounts')
   const canViewAudit = capabilityAllowed('view_audit')
 
-  useEffect(() => {
-    if (!canManageSystem && activeSection === 'feature-access') {
-      setActiveSection('general')
-    }
-  }, [activeSection, canManageSystem])
   const canSave = validationErrors.length === 0 && !loading && !loadFailed && !settingsMutationBusy && hasUnsavedChanges && canManageSystem
   const formDisabled = loading || loadFailed || settingsMutationBusy || effectiveAuthAccessLoading || !canManageSystem
   const fieldAccessibility = (field: string) => {
@@ -1327,7 +1325,7 @@ export default function SettingsPage({
     const generation = ++dataPoolLoadGenerationRef.current
     const projectId = activeProject?.id
     try {
-      const response = await api.listDataPools(projectId)
+      const response = await (preferredId ? api.listDataPools(projectId, true) : api.listDataPools(projectId))
       if (generation !== dataPoolLoadGenerationRef.current || projectId !== activeDataPoolProjectIdRef.current) return false
       const pools: SharedDataPool[] = response.data_pools || []
       setDataPools(pools)
@@ -1335,7 +1333,7 @@ export default function SettingsPage({
       // carry the previous project's selection into the new project's panel.
       const isMember = (id?: string) => Boolean(id && pools.some(pool => pool.id === id))
       const currentSelection = selectedDataPoolIdRef.current
-      const nextSelected = isMember(preferredId) ? (preferredId as string) : isMember(currentSelection) ? currentSelection : (pools[0]?.id || '')
+      const nextSelected = preferredId ? (isMember(preferredId) ? preferredId : '') : isMember(currentSelection) ? currentSelection : (pools[0]?.id || '')
       // Row loading belongs to the selection effect, which carries the
       // cancellation guard; fetching here as well raced it with stale results.
       selectedDataPoolIdRef.current = nextSelected
@@ -1346,7 +1344,7 @@ export default function SettingsPage({
         setDataPoolRowsNextCursor(null)
         setDataPoolRowsHasMore(false)
       }
-      setDataPoolActionError('')
+      setDataPoolActionError(preferredId && !isMember(preferredId) ? 'The requested data pool is not available in this project. Choose a pool below or return to the repository.' : '')
       return true
     } catch (error: unknown) {
       if (generation !== dataPoolLoadGenerationRef.current || projectId !== activeDataPoolProjectIdRef.current) return false
@@ -1373,11 +1371,11 @@ export default function SettingsPage({
     // otherwise start the newly scoped list with a clean slate.
     const breadcrumb = readSettingsBreadcrumb<string>('apexload.settings.dataPoolNotice')
     setDataPoolActionNotice(breadcrumb || '')
-    void loadDataPools()
+    void loadDataPools(destinationId === 'test-data' ? resourceId : undefined)
     return () => {
       dataPoolLoadGenerationRef.current += 1
     }
-  }, [loadDataPools])
+  }, [loadDataPools, destinationId, resourceId])
 
   useEffect(() => {
     let cancelled = false
@@ -3253,9 +3251,10 @@ export default function SettingsPage({
         )}
       </div>
 
-      <div className={`settings-tabbed-layout ${navigationOpen ? "" : "navigation-collapsed"}`}>
-        <PanelToggle className="settings-browse-button" expanded={navigationOpen} panelName="Settings navigation" controls="settings-task-navigation" onToggle={() => setNavigationOpen(value => !value)} />
-        <nav id="settings-task-navigation" className={`settings-task-navigation ${navigationOpen ? 'is-open' : ''}`} aria-label="Settings sections">
+      {accessSettings && <AccessNavigation currentSetting={destinationId} />}
+      <div className={`settings-tabbed-layout ${navigationOpen && !accessSettings ? "" : "navigation-collapsed"}`}>
+        {!accessSettings && <PanelToggle className="settings-browse-button" expanded={navigationOpen} panelName="Settings navigation" controls="settings-task-navigation" onToggle={() => setNavigationOpen(value => !value)} />}
+        <nav hidden={accessSettings} id="settings-task-navigation" className={`settings-task-navigation ${navigationOpen ? 'is-open' : ''}`} aria-label="Settings sections">
           <label className="settings-navigation-search">Find settings<input className="settings-input" type="search" value={navigationSearch} onChange={event => setNavigationSearch(event.target.value)} placeholder="Search connections, policies…" /></label>
           {Array.from(new Set(SETTINGS_DESTINATIONS.map(item => item.group))).map(group => {
             const entries = SETTINGS_DESTINATIONS.filter(item => item.group === group && (item.id !== 'features' || canManageSystem) && matchesSettingsSearch(item, navigationSearch))
@@ -3274,7 +3273,7 @@ export default function SettingsPage({
           {projectHasUnsavedChanges && <section aria-label="Pending project edits" className="settings-subsection"><h3>Project: {selectedProject?.name}</h3><p>Changed fields: {projectChangedFields.join(', ')}</p><button className="btn btn-primary" type="button" disabled={!canManageProjects || !!projectDraftValidationError || settingsMutationBusy || policySaving} onClick={() => void saveProjectCompliance()}>Save project changes</button> <button className="btn btn-secondary" type="button" disabled={settingsMutationBusy || policySaving} onClick={discardProjectChanges}>Cancel project changes</button></section>}
           {currentDestination.group === 'Infrastructure' && canManageSystem && <InfrastructureSetupGuide />}
           {currentDestination.id === 'allocations' && <CapacityCommitments reservations={savedSettings.capacity_planning.reservations || []} projectId={activeProject?.id} projects={projects} pools={fleetPools || []} />}
-          {returnTo && <a className="btn btn-secondary" href={returnTo}>Return to originating workflow</a>}
+          {returnTo && <a className="btn btn-secondary" href={returnTo}>{/^#\/repository(?:\?|$)/.test(returnTo) ? 'Return to repository' : 'Return to originating workflow'}</a>}
           {currentDestination.id === 'preferences' && <section aria-label="Personal preferences"><PersonalSettings theme={theme} onThemeChange={onThemeChange} authStatus={authStatus} /></section>}
           {destination?.resource && <section className="settings-resource-editor">
 <button className="btn btn-secondary" onClick={() => onNavigate?.('fleet')}>Return to Fleet monitoring</button>
@@ -4460,7 +4459,7 @@ export default function SettingsPage({
                           {auditActionError || auditActionMessage}
                         </div>
                       )}
-                      <AuditEventTable events={auditEvents} scopeLabel={event => projects.find(project => project.id === event.project_id)?.name || event.project_id || 'Deployment'} emptyMessage="No audit events yet" />
+                      <AuditEventTable paginated events={auditEvents} scopeLabel={event => projects.find(project => project.id === event.project_id)?.name || event.project_id || 'Deployment'} emptyMessage="No audit events yet" />
                     </div>
                   </div>
                 </section>
@@ -5031,18 +5030,18 @@ export default function SettingsPage({
           </div>
         </div>
 
-        {canManageSystem && <div
+        {<div
           id="settings-section-feature-access"
           className={sectionClass}
           hidden={activeSection !== 'feature-access'}
           style={{ order: getSectionOrder('feature-access') }}
         >
-          <FeatureAccessPanel
+          {effectiveAuthAccessLoading ? <p role="status">Loading feature policy permissions…</p> : !canManageSystem ? <p role="alert">You do not have permission to manage domain feature policy.</p> : <FeatureAccessPanel
             ref={featureAccessRef}
             domains={domains}
             initialDomainId={activeDomain?.id}
             onDirtyChange={setFeatureAccessDirty}
-          />
+          />}
         </div>}
 
         <div
@@ -5906,7 +5905,7 @@ export default function SettingsPage({
                         onClick={saveProjectCompliance}
                         disabled={!projectHasUnsavedChanges || policySaving || Boolean(projectDraftValidationError) || !canManageProjects}
                       >
-                        Save Project Governance
+                        {currentDestination.id === 'redaction' ? 'Save redaction rules' : 'Save Project Governance'}
                       </button>
                     </div>
                   </div>

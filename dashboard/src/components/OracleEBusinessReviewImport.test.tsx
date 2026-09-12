@@ -94,6 +94,54 @@ describe('OracleEBusinessReviewImport', () => {
     expect(saveButton).toBeUndefined()
   })
 
+  it('requires source and invalidates findings whenever the review inputs change', async () => {
+    await act(async () => root.render(<OracleEBusinessReviewImport projectId="project-1" />))
+    const run = () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Run Review')!
+    expect(run().disabled).toBe(true)
+    const source = container.querySelector('textarea')!
+    await act(async () => setTextareaValue(source, 'Oracle source'))
+    await act(async () => run().click())
+    expect(container.textContent).toContain('Checkout Review')
+    await act(async () => setTextareaValue(source, 'Different source'))
+    expect(container.textContent).not.toContain('Checkout Review')
+    await act(async () => run().click())
+    const pkg = container.querySelector('select')!
+    await act(async () => {
+      pkg.value = 'siebel_web'
+      pkg.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.textContent).not.toContain('Checkout Review')
+    await act(async () => run().click())
+    const name = container.querySelector('input')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(name, 'Changed name')
+      name.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.textContent).not.toContain('Checkout Review')
+  })
+
+  it('locks inputs while reviewing and ignores a result from the previous project', async () => {
+    let resolve!: (value: unknown) => void
+    apiMock.reviewOracleEBusiness.mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    await act(async () => root.render(<OracleEBusinessReviewImport projectId="project-1" />))
+    await act(async () => setTextareaValue(container.querySelector('textarea')!, 'Source A'))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Run Review')!.click())
+    expect(container.querySelector('fieldset')?.disabled).toBe(true)
+    await act(async () => root.render(<OracleEBusinessReviewImport projectId="project-2" />))
+    await act(async () => resolve({ name: 'Stale project result', status: 'review' }))
+    expect(container.textContent).not.toContain('Stale project result')
+    expect(container.querySelector('textarea')?.value).toBe('')
+    expect(container.querySelector('fieldset')?.disabled).toBe(false)
+  })
+
+  it('announces review failures for recovery', async () => {
+    apiMock.reviewOracleEBusiness.mockRejectedValueOnce(new Error('Review unavailable'))
+    await act(async () => root.render(<OracleEBusinessReviewImport />))
+    await act(async () => setTextareaValue(container.querySelector('textarea')!, 'Source'))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Run Review')!.click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Review unavailable')
+  })
+
   it('renders a sparse review payload without crashing', async () => {
     apiMock.reviewOracleEBusiness.mockResolvedValueOnce({ status: 'review' })
     await act(async () => {

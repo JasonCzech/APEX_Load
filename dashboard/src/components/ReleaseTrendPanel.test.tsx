@@ -93,6 +93,17 @@ const detailProps = {
 }
 
 describe('ReleaseTrendPanel', () => {
+  it('explains missing named-transaction evidence and the need for another baseline run', async () => {
+    const trend = trendFixture()
+    trend.run_count = 1
+    trend.points = [{ ...trend.points[0], metric_population: 'transaction', transactions: 0 }]
+    await act(async () => { root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={vi.fn().mockResolvedValue(trend)} />) })
+    await flush()
+    expect(container.textContent).toContain('Request / action samples in Load Comparison do not establish named transaction attempts')
+    expect(container.textContent).toContain('A trend needs at least two comparable runs')
+    expect(container.textContent).toContain('No samples')
+  })
+
   it('renders the run series with deltas and a regression flag', async () => {
     const getReleaseTrend = vi.fn().mockResolvedValue(trendFixture())
     await act(async () => {

@@ -1,340 +1,96 @@
-import CloudTestParityDashboard from './CloudTestParityDashboard'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-
-import userGuideMarkdown from '../../../docs/APPLICATION_USER_GUIDE.md?raw'
-import adminGuideMarkdown from '../../../docs/ADMIN_USER_GUIDE.md?raw'
-import mcpGuideMarkdown from '../../../mcp/README.md?raw'
-import { loadApiEndpointCatalog } from '../apiDocsClient'
-import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog } from '../apiEndpointCatalog'
-import { API_GUIDE_DEFAULT_PAGE, type ApiGuideContentPageID } from '../apiGuideNavigation'
-import { buildAllowedOperationSet, canShowEndpointForDocs, docsVisibilityOperationsForEndpoint } from '../apiGuideAccess'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { API_GUIDE_DEFAULT_PAGE, helpAreaForPage, isApiGuideContentPageID, type ApiGuideContentPageID } from '../apiGuideNavigation'
+import { buildAllowedOperationSet } from '../apiGuideAccess'
+import { articleBlocks, articleForSection, helpArticles, helpArticleHash, loadHelpSource, resolveHelpLink, type HelpArticle } from '../helpContent'
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { ApiGuideTopbarToggle } from './ApiGuideTopbarToggle'
 import GuideMarkdownArticle from './GuideMarkdownArticle'
+import HelpWorkspace from './HelpWorkspace'
+import { useHelpHash } from '../hooks/useHelpHash'
 import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
+import dslSchemaURL from '../../../docs/dsl.schema.json?url'
+import { copyTextToClipboard } from '../utils/clipboardUtils'
 
-type CommandDoc = {
-  command: string
-  method: string
-  path: string
-}
+const CloudTestParityDashboard = lazy(() => import('./CloudTestParityDashboard'))
 
-const quickStartCommands: CommandDoc[] = [
-  { command: 'curl http://localhost:8080/api/v1/system/health', method: 'GET', path: '/api/v1/system/health' },
-  { command: 'curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/projects', method: 'GET', path: '/api/v1/projects' },
-  { command: 'curl -X POST -H "Authorization: Bearer $APEXLOAD_API_KEY" -H "Content-Type: application/json" -d @script.json http://localhost:8080/api/v1/scripts', method: 'POST', path: '/api/v1/scripts' },
-  { command: 'curl -H "Authorization: Bearer $APEXLOAD_API_KEY" http://localhost:8080/api/v1/integrations/github/diagnostics', method: 'GET', path: '/api/v1/integrations/github/diagnostics' },
-]
-
-const mcpResources = [
-  'apexload://api-guide',
-  'apexload://auth/access-matrix',
-  'apexload://system/parity-status',
-  'apexload://runtime-settings/support-matrix',
-  'apexload://protocol-bundles/support-matrix',
-]
-
-const statusRows = [
-  ['200', 'Request succeeded.'],
-  ['201', 'Resource created.'],
-  ['202', 'Long-running operation accepted.'],
-  ['400', 'Invalid request body or query parameter.'],
-  ['401', 'Authentication required or token invalid.'],
-  ['403', 'Authenticated but blocked by RBAC or service-account scope.'],
-  ['404', 'Resource not found.'],
-  ['409', 'Conflict, such as a schedule conflict, capacity shortfall, or script_shakeout_failed review gate.'],
-]
-
-type ApiGuidePageProps = {
+type Props = {
   activePage?: ApiGuideContentPageID
+  defaultArticle?: string
   onNavigate?: (page: 'access') => void
   effectiveAccessResources?: DashboardAuthEffectiveAccessResource[]
   effectiveAccessLoaded?: boolean
   effectiveAccessError?: boolean
 }
+export default function ApiGuidePage({ activePage = API_GUIDE_DEFAULT_PAGE, defaultArticle, onNavigate, effectiveAccessResources = [], effectiveAccessLoaded = true, effectiveAccessError = false }: Props) {
+  const hash = useHelpHash()
+  const params = new URLSearchParams(hash.split('?')[1] || '')
+  const routedPage = hash.startsWith('#/docs') && isApiGuideContentPageID(params.get('guide')) ? params.get('guide') as ApiGuideContentPageID : activePage
+  const operations = useMemo(() => buildAllowedOperationSet(effectiveAccessResources), [effectiveAccessResources])
+  const isAdmin = effectiveAccessLoaded && !effectiveAccessError && ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts', 'manage_system'].some(operation => operations.has(operation))
+  const requested = params.get('article') || (routedPage === 'mcp' ? 'mcp' : routedPage === 'authentication' ? 'authentication' : defaultArticle)
+  const match = helpArticles.find(article => article.id === requested)
+  const denied = (match?.area || helpAreaForPage(routedPage)) === 'admin-guide' && !isAdmin
+  const area = denied ? 'getting-started' : match?.area || helpAreaForPage(routedPage)
+  const article = (!denied && match) || helpArticles.find(article => article.area === area)!
+  const section = params.get('section') || undefined
+  const hasTopbar = useHasTopbarContributionProvider()
+  useApiGuideTopbarContribution(area, 'Help & documentation', undefined, isAdmin)
+  return <div className="page api-guide-page help-page">
+    {!hasTopbar && <ApiGuideTopbarToggle active={area} includeAdminGuide={isAdmin} />}
+    <HelpWorkspace area={area} activeArticle={article.id} isAdmin={isAdmin}>
+      {denied && <p role="status">Administration requires administrative access. Start with the public help articles or contact your administrator.</p>}
+      {requested && !match && <p role="status">That article is not in this build. Choose an article below.</p>}
+      <HelpArticleContent key={article.id} article={article} section={section} isAdmin={isAdmin} />
+      {article.id === 'administration' && <details><summary>CloudTest compatibility and delivery reference</summary><Suspense fallback={<p role="status">Loading compatibility reference…</p>}><CloudTestParityDashboard /></Suspense></details>}
+      {article.id === 'authentication' && isAdmin && onNavigate && <button type="button" className="btn btn-secondary" onClick={() => onNavigate('access')}>Open Access</button>}
+    </HelpWorkspace>
+  </div>
+}
 
-export default function ApiGuidePage({
-  activePage = API_GUIDE_DEFAULT_PAGE,
-  onNavigate,
-  effectiveAccessResources = [],
-  effectiveAccessLoaded = true,
-  effectiveAccessError = false,
-}: ApiGuidePageProps) {
-  const [activeGuideSection, setActiveGuideSection] = useState<ApiGuideContentPageID>(activePage)
-  const [endpointCatalog, setEndpointCatalog] = useState<ApiEndpointCatalog | null>(null)
-  const [endpointCatalogError, setEndpointCatalogError] = useState('')
-  const hasTopbarContributionProvider = useHasTopbarContributionProvider()
-  const allowedOperations = useMemo(() => buildAllowedOperationSet(effectiveAccessResources), [effectiveAccessResources])
-  const endpointCatalogRoutes = useMemo(() => endpointCatalog?.routes ?? [], [endpointCatalog])
-  const endpointCatalogByKey = useMemo(() => buildEndpointCatalogMap(endpointCatalogRoutes), [endpointCatalogRoutes])
-  const catalogEndpointDocs = useMemo(() => endpointCatalogRoutes.map(route => ({
-    ...route,
-    operations: docsVisibilityOperationsForEndpoint(route),
-  })), [endpointCatalogRoutes])
-  const authRows = useMemo(
-    () => catalogEndpointDocs.filter(route => route.path.startsWith('/api/v1/auth/')),
-    [catalogEndpointDocs],
-  )
-  const visibleQuickStartCommands = quickStartCommands.filter(command => {
-    const route = endpointCatalogByKey.get(endpointCatalogKey(command.method, command.path))
-    return route ? canShowEndpointForDocs(route, allowedOperations) : false
-  })
-  const visibleAuthRows = authRows.filter(row => canShowEndpointForDocs(row, allowedOperations))
-  const canUseAccessWorkspace = ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts'].some(operation => allowedOperations.has(operation))
-  // "Any administrator" gate: user/RBAC management OR system/fleet management. Drives
-  // whether the admin-only "Admin Guide" tab chip and section are shown.
-  const isAdmin = canUseAccessWorkspace || allowedOperations.has('manage_system')
-  const handleContentPageChange = useCallback((page: ApiGuideContentPageID) => {
-    setActiveGuideSection(page)
-  }, [])
-  useApiGuideTopbarContribution(activeGuideSection, 'Help & documentation', handleContentPageChange, isAdmin)
-
-  useEffect(() => {
-    setActiveGuideSection(activePage)
-  }, [activePage])
-
+function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticle; section?: string; isAdmin: boolean }) {
+  const [state, setState] = useState<{ source?: string; error?: string }>({})
+  const [attempt, setAttempt] = useState(0)
+  const [copied, setCopied] = useState('')
+  const [controllerURL, setControllerURL] = useState('http://localhost:8080/api/v1')
   useEffect(() => {
     let cancelled = false
-    setEndpointCatalogError('')
-    loadApiEndpointCatalog()
-      .then(catalog => {
-        if (cancelled) return
-        setEndpointCatalog(catalog)
-      })
-      .catch(error => {
-        if (cancelled) return
-        setEndpointCatalog(null)
-        setEndpointCatalogError(error instanceof Error ? error.message : 'API endpoint catalog could not be loaded.')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Guard direct navigation to the admin guide: only render it once effective access
-  // has loaded and confirms an administrator; otherwise fall back to the default page.
-  const canShowAdminGuide = isAdmin && effectiveAccessLoaded
-  const activeContentPage = activeGuideSection === 'admin-guide' && !canShowAdminGuide
-    ? API_GUIDE_DEFAULT_PAGE
-    : activeGuideSection
-  const endpointCatalogLoaded = endpointCatalog !== null
-
-  return (
-    <div className="page api-guide-page">
-      <div className="page-header">
-        <div>
-          <h2>API Guide</h2>
-          <p className="page-subtitle">REST and WebSocket reference for automating APEX Load from CI/CD, integrations, and operator tooling.</p>
-        </div>
-      </div>
-      {!hasTopbarContributionProvider && (
-        <div className="inline-create-row api-guide-section-switcher">
-          <ApiGuideTopbarToggle active={activeGuideSection} onContentPageChange={handleContentPageChange} includeAdminGuide={isAdmin} />
-        </div>
-      )}
-
-      {activeContentPage === 'general' && (
-        <>
-          <section className="api-guide-hero" aria-labelledby="api-guide-base-url">
-            <div>
-              <span className="api-guide-kicker">Base URL</span>
-              <h3 id="api-guide-base-url">http://&lt;controller-host&gt;:8080/api/v1</h3>
-              <p>Local dashboard development proxies <code>/api</code> from <code>localhost:4000</code>; direct clients should call the controller origin.</p>
-            </div>
-            <div className="api-guide-meta-grid">
-              <div><span>Auth</span><strong>Dev, OIDC/trusted headers, local users, service accounts</strong></div>
-              <div><span>Payloads</span><strong>JSON plus CSV, HTML, ZIP, and archive downloads</strong></div>
-              <div><span>Streams</span><strong>WebSocket at /api/v1/ws</strong></div>
-              <div><span>MCP</span><strong>FastMCP bridge for agent and CI automation</strong></div>
-            </div>
-          </section>
-
-          <section className="page-section">
-            <div className="api-guide-section-header">
-              <h3>Responses And Errors</h3>
-              <p>JSON error responses use <code>{'{"error":"message"}'}</code>. Download endpoints may return CSV, HTML, ZIP, or binary artifacts.</p>
-            </div>
-            <div className="api-guide-status-grid">
-              {statusRows.map(([status, meaning]) => (
-                <div className="api-guide-status-card" key={status}>
-                  <strong>{status}</strong>
-                  <span>{meaning}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="api-guide-callout">
-            <h3>Dev Preview Headers</h3>
-            <p>In local dev auth mode only, API clients may send <code>X-APEXLoad-Dev-View: admin|user</code> and <code>X-APEXLoad-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
-          </section>
-        </>
-      )}
-
-      {activeContentPage === 'user-guide' && (
-        <GuideMarkdownArticle source={userGuideMarkdown} />
-      )}
-
-      {activeContentPage === 'admin-guide' && (
-        <><GuideMarkdownArticle source={adminGuideMarkdown} /><details><summary>CloudTest compatibility and delivery reference</summary><CloudTestParityDashboard /></details></>
-      )}
-
-      {activeContentPage === 'mcp' && (
-        <section className="page-section api-guide-mcp-section">
-          <div className="api-guide-section-header">
-            <h3>MCP Server</h3>
-            <p>Run the APEX Load MCP bridge for agent-driven automation. It uses service-account auth and adds confirmation guardrails before mutating API calls.</p>
-          </div>
-          <div className="api-guide-mcp-grid">
-            <article className="api-guide-mcp-card">
-              <h4>Start The Server</h4>
-              <pre><code>{'APEXLOAD_URL=http://localhost:8080/api/v1 \\\nAPEXLOAD_API_KEY=srk_... \\\npython3 mcp/server.py'}</code></pre>
-              <button
-                type="button"
-                className="api-guide-mcp-guide-link"
-                onClick={() => document.getElementById('mcp-setup-guide')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              >
-                View MCP setup guide
-              </button>
-            </article>
-            <article className="api-guide-mcp-card">
-              <h4>Tool Coverage</h4>
-              <p>Structured tools cover system, auth, projects, scripts, scenarios, runs, reports, scheduling, fleet, data pools, imports, and AI assistance.</p>
-              <div className="api-guide-mcp-tags">
-                <span>service accounts</span>
-                <span>confirm=true</span>
-                <span>reason required</span>
-              </div>
-            </article>
-            <article className="api-guide-mcp-card">
-              <h4>Agent Resources</h4>
-              <ul>
-                {mcpResources.map(resource => (
-                  <li key={resource}><code>{resource}</code></li>
-                ))}
-              </ul>
-            </article>
-          </div>
-          <div id="mcp-setup-guide" className="api-guide-mcp-setup-guide">
-            <div className="api-guide-section-header">
-              <h3>MCP Setup Guide</h3>
-              <p>Install, configure, and connect the bundled APEX Load MCP server without leaving the application.</p>
-            </div>
-            <GuideMarkdownArticle source={mcpGuideMarkdown} />
-          </div>
-        </section>
-      )}
-
-      {activeContentPage === 'quick-start' && (
-        <section className="page-section">
-          <div className="api-guide-section-header">
-            <h3>Quick Start</h3>
-            <p>Use a service account key for automation and keep project/application/release ids in your pipeline context.</p>
-          </div>
-          {renderCatalogState(endpointCatalogLoaded, endpointCatalogError)}
-          {endpointCatalogLoaded && renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleQuickStartCommands.length === 0, 'No quick-start calls are available for the current access context.')}
-          {endpointCatalogLoaded && effectiveAccessLoaded && (
-            <div className="api-guide-code-stack">
-              {visibleQuickStartCommands.map(({ command }) => (
-                <pre key={command}><code>{command}</code></pre>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {activeContentPage === 'authentication' && (
-        <>
-          <section className="page-section">
-            <div className="api-guide-section-header">
-              <h3>Authentication</h3>
-              <p>OIDC or trusted headers prove human identity, but an active local APEX Load user record is required after bootstrap. Human roles come from local bindings; service accounts can use <code>Authorization: Bearer &lt;api-key&gt;</code> or <code>X-APEXLoad-API-Key</code>, with RBAC roles and token scopes both enforced.</p>
-            </div>
-            {renderCatalogState(endpointCatalogLoaded, endpointCatalogError)}
-            {endpointCatalogLoaded && renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleAuthRows.length === 0, 'No authentication endpoints are visible for the current access context.')}
-            {endpointCatalogLoaded && effectiveAccessLoaded && visibleAuthRows.length > 0 && (
-              <div className="api-guide-table-card">
-                <table>
-                  <thead>
-                    <tr><th>Method</th><th>Endpoint</th><th>Use</th></tr>
-                  </thead>
-                  <tbody>
-                    {visibleAuthRows.map(row => (
-                      <tr key={endpointCatalogKey(row.method, row.path)}>
-                        <td><code>{row.method}</code></td>
-                        <td><code>{row.path}</code></td>
-                        <td>{row.summary}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {endpointCatalogLoaded && effectiveAccessLoaded && canUseAccessWorkspace && (
-            <section className="api-guide-callout api-guide-key-callout">
-              <div>
-                <h3>Access Workspace</h3>
-                <p>Use Access to onboard human users, assign global/domain/project roles, review activity by user and scope, and generate service-account keys for MCP, CI/CD, reporting exports, and controlled external automation.</p>
-              </div>
-              {onNavigate && (
-                <button className="btn btn-secondary btn-sm btn-accent-action" type="button" onClick={() => onNavigate('access')}>
-                  Open Access
-                </button>
-              )}
-            </section>
-          )}
-        </>
-      )}
-
-    </div>
-  )
-}
-
-function renderAccessState(loaded: boolean, error: boolean, empty: boolean, emptyMessage: string) {
-  if (!loaded) {
-    return (
-      <div className="api-guide-callout">
-        <h3>Checking Access</h3>
-        <p>Loading your effective access before filtering this guide section.</p>
-      </div>
-    )
-  }
-  if (error) {
-    return (
-      <div className="api-guide-callout">
-        <h3>Unable To Filter Access</h3>
-        <p>Effective access could not be loaded. Public endpoints are shown, and Swagger remains the complete generated API reference.</p>
-      </div>
-    )
-  }
-  if (empty) {
-    return (
-      <div className="api-guide-callout">
-        <h3>No Endpoints Available</h3>
-        <p>{emptyMessage}</p>
-      </div>
-    )
-  }
-  return null
-}
-
-function renderCatalogState(loaded: boolean, error: string) {
-  if (loaded) return null
-  if (error) {
-    return (
-      <div className="api-guide-callout">
-        <h3>API Docs Unavailable</h3>
-        <p>{error}</p>
-      </div>
-    )
-  }
-  return (
-    <div className="api-guide-callout">
-      <h3>Loading API Docs</h3>
-      <p>Loading the controller-backed endpoint catalog.</p>
-    </div>
-  )
+    loadHelpSource(article).then(source => { if (!cancelled) setState({ source }) }, () => { if (!cancelled) setState({ error: 'This article could not be loaded. Retry or choose another article.' }) })
+    return () => { cancelled = true }
+  }, [article, attempt])
+  const resolvedArticle = state.source && section ? articleForSection(article.path, section, state.source) : undefined
+  const displayArticle = resolvedArticle && (isAdmin || resolvedArticle.area !== 'admin-guide') ? resolvedArticle : article
+  useEffect(() => {
+    if (displayArticle.id === article.id) return
+    const url = new URL(window.location.href)
+    const params = new URLSearchParams(url.hash.split('?')[1] || '')
+    params.set('guide', displayArticle.area)
+    params.set('article', displayArticle.id)
+    url.hash = `/docs?${params}`
+    window.history.replaceState(window.history.state, '', url)
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+  }, [article.id, displayArticle.id, displayArticle.area])
+  const validURL = /^https?:\/\//.test(controllerURL) && (() => { try { const u = new URL(controllerURL); return !u.username && !u.password && !u.search && !u.hash && /^[a-zA-Z0-9:/._~%[\]-]+$/.test(controllerURL) } catch { return false } })()
+  const source = state.source && article.id === 'api-overview' && validURL ? state.source.split('http://localhost:8080/api/v1').join(controllerURL.replace(/\/$/, '')) : state.source || ''
+  const blocks = useMemo(() => articleBlocks(displayArticle, source), [displayArticle, source])
+  return <>
+    <header className="help-article-header"><div><p className="api-guide-kicker">{displayArticle.group || 'Guide'}</p><h2>{displayArticle.title}</h2></div>
+      <button type="button" className="btn btn-secondary btn-sm" onClick={async () => {
+        const url = `${window.location.href.split('#')[0]}${helpArticleHash(displayArticle, section)}`
+        setCopied(await copyTextToClipboard(url) ? 'Link copied' : 'Copy unavailable. Copy the address from your browser.')
+      }}>Copy article link</button><span role="status">{copied}</span>
+    </header>
+    {article.id === 'dsl' && <p><a href={dslSchemaURL} download="dsl.schema.json">Download the generated DSL JSON schema</a></p>}
+    {article.id === 'api-overview' && <label className="help-controller-url">Controller API URL
+      <input type="url" value={controllerURL} onChange={event => setControllerURL(event.target.value)} aria-invalid={!validURL} />
+      <span>{validURL ? 'Examples below use this URL. No request is sent.' : 'Enter an HTTP(S) URL without credentials, query parameters or shell characters.'}</span>
+    </label>}
+    {state.source && section && !resolvedArticle && <p role="status">That section is not available in this build. Choose a section from On this page.</p>}
+    {state.error ? <div role="alert"><p>{state.error}</p><button type="button" onClick={() => { setState({}); setAttempt(value => value + 1) }}>Retry article</button></div> : state.source === undefined ? <p role="status">Loading article…</p> : <GuideMarkdownArticle
+      source={source} blocks={blocks} section={section}
+      sectionHref={id => helpArticleHash(displayArticle, id)}
+      resolveLink={href => resolveHelpLink(href, displayArticle, state.source!)}
+    />}
+    {state.source && <p className="help-article-owner">Maintained by {displayArticle.owner}. <a href="#/docs?article=changes">Review scope & version</a></p>}
+  </>
 }

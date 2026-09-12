@@ -3,18 +3,19 @@
 This guide is for APEX Load administrators — the people who onboard users, assign
 roles, run the generator fleet, and configure the platform. It focuses on the
 administrative surfaces of the dashboard rather than day-to-day test authoring, which
-is covered in the **User Guide** tab.
+is covered in the [User Guide](APPLICATION_USER_GUIDE.md).
 
 You can see this guide because your account holds an administrative capability. Not
 every administrator can do everything below: APEX Load uses fine-grained, scoped
 permissions, so a project administrator sees a narrower set of controls than a system
 administrator. Where a task needs a specific capability, this guide says so.
 
-Administrative controls live in three main places:
+Administrative controls are grouped by task:
 
 - **Access** (sidebar) — users, roles, service accounts, activity, and audit.
 - **Monitoring → Fleet** — generators, pools, capacity, and provisioning.
-- **Settings** — authentication, governance, integrations, capacity, and retention.
+- **Settings** — runtime configuration, integrations, capacity, scheduling and retention.
+- **Access → Authentication & policy** — identity configuration, import policy, redaction and project secrets.
 
 ## Administrator Roles At A Glance
 
@@ -94,10 +95,10 @@ Grant the narrowest scope that fits. If someone only works on one project, bind 
 as `editor` on that project rather than globally. Remove bindings when they are no
 longer needed; every grant and revocation is recorded in the audit log.
 
-To check what a given person or service account can actually do, use the
-**effective-access** view — it resolves all of a principal's bindings and scopes into
-the concrete operations they are allowed. This is the fastest way to answer "why can
-(or can't) this user do X?"
+Use **Access → Activity → Access Review → Role permissions preview** to inspect
+operations granted by role bindings in the selected scope. This is not a complete
+API authorization check: account status, service-account token scopes, and
+route-specific policies can still deny those operations.
 
 ## Service Accounts And API Keys
 
@@ -118,6 +119,18 @@ these under **Access → Service Accounts**.
 Note that some sensitive operations — notably writing project secrets — are
 intentionally unavailable to service accounts even with broad roles, and require an
 authorized human workflow.
+
+## Project secret providers
+
+A read-only provider requires the deployment administrator to supply values through
+the configured environment or secret manager. The dashboard cannot create or
+rotate values in that provider. For a writable encrypted database provider, configure
+`APEXLOAD_WRAPPING_MASTER_KEY` (or a versioned `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`)
+on the controller. For writable Azure Key Vault, enable
+`APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true`, set `APEXLOAD_AZURE_KEY_VAULT_URL`,
+and grant the controller identity Key Vault Secrets Officer. Protect and back up
+wrapping keys; losing them makes encrypted values unreadable. See
+[Project Secrets](PROJECT_SECRETS.md) for deployment and migration details.
 
 ## Activity, Audit, And Access Review
 
@@ -171,32 +184,30 @@ cycling generator pods so in-flight runs are handled cleanly.
 
 ## System And Organization Settings
 
-Most platform configuration lives under **Settings**. Many sections are
-administrator-only, and system-level controls are gated by `manage_system`. Key areas:
+Use the task navigation and destination search in [Settings](#/settings). System-level
+writes require the relevant administrative capability. Common destinations include:
 
-- **General** — platform information, usage, entitlements, readiness, **Authentication**,
-  and **Governance**.
-- **Performance Thresholds** — default SLA gates and thresholds.
-- **Capacity Planning** — availability, generator profile, reservations, and retention
-  policy.
-- **Domains** and **Applications & Releases** — the organizational hierarchy.
-- **Projects & Compliance** — project-level governance and compliance settings.
-- **Shared Data Pools** — reusable data sources and project secrets.
-- **Integrations** — library federation, GitHub, Prometheus, imported dashboards, and
-  notification targets (Slack, Microsoft Teams, and Dynatrace).
+- [Controller & runtime](#/settings?setting=platform) and [Edition & deployment limits](#/settings?setting=entitlements).
+- [Alert & stop policies](#/settings?setting=thresholds), [Schedule defaults](#/settings?setting=scheduling), and [Notification routes](#/settings?setting=notifications).
+- [Kubernetes clusters](#/settings?setting=clusters), [Generator pools](#/settings?setting=pools), and [Standing allocations](#/settings?setting=allocations).
+- [Domains & placement defaults](#/settings?setting=domains), [Projects](#/settings?setting=projects), and [Applications & releases](#/settings?setting=applications).
+- [Project limits & quotas](#/settings?setting=limits) and [Archive & HAR retention](#/settings?setting=retention).
+- [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), [Project redaction rules](#/access?setting=redaction), and [Project secrets](#/access?setting=secrets).
+- [Repository → Shared data pools](#/repository?setting=test-data) for reusable input rows.
 
 ### Authentication
 
 The **Authentication** settings reflect how identity is proven for your deployment —
-one of `dev` (local development only), `trusted_headers` (an upstream gateway forwards
+one of `dev` (local development only), `local` (seeded test personas, non-production), `trusted_headers` (an upstream gateway forwards
 identity), or `oidc` (APEX Load handles login and sessions directly). Regardless of
 mode, human authorization always resolves through local user records and role
 bindings, so onboarding users is a prerequisite for production access.
 
 ### Governance
 
-The **Governance** settings centralize policy: schedule defaults, script-import rules,
-service-account API governance, and a recent-audit-events view. Use these to set the
+Policy is grouped by task: [Schedule defaults](#/settings?setting=scheduling),
+[Import credential policy](#/access?setting=imports), service-account API governance,
+and [Governance audit](#/access?setting=audit). Use these to set the
 guardrails that keep self-service safe — for example, requiring review before certain
 imports or runs proceed.
 
@@ -231,7 +242,7 @@ review and act on these gates:
 
 ## Licensing And Entitlements
 
-The **Entitlements** view (under **Settings → General**, and available per project)
+The [Edition & deployment limits](#/settings?setting=entitlements) view
 is a read-only projection of what the deployment is entitled to and how much is being
 used:
 
@@ -281,3 +292,18 @@ operations runbook. These live alongside this guide in the project documentation
   and watch fleet alerts and capacity before approving large runs.
 - **Review regularly.** Use access review and audit export to run periodic entitlement
   reviews, and export audit events after major governance changes.
+
+## In-App Operational References
+
+Start with [Choose an installation](../deployments/README.md) for the environment-specific setup steps.
+
+- [Identity and access operations](AUTH_RBAC_OPERATIONS_RUNBOOK.md)
+- [Backup, restore, retention and recovery](ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md)
+- [Deployment and HA architecture](ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md)
+- [Cluster connections](CLUSTER_CONNECTIONS.md)
+- [Generator restart controls](KUBERNETES_RESTART_CONTROLS.md)
+- [SQLite to PostgreSQL migration](SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md)
+- [Telemetry configuration](OPENTELEMETRY.md)
+- [Support escalation template](HELP_SUPPORT.md)
+
+For upgrades, record the current build, review the deployment release notes and storage compatibility, back up metadata and archives, verify a restore in an isolated environment, and follow your deployment's rollout/rollback procedure. Recheck identity, generator readiness and one small test after rollout. The runbooks above describe deployment-specific requirements; do not assume a database rollback is safe after a schema migration.

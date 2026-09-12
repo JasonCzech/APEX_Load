@@ -1,4 +1,5 @@
 import BulkActions from './ux/BulkActions'
+import { lifecycleElapsedSeconds, formatElapsedSeconds } from './runReport/executionPresentation'
 import RowActions from './ux/RowActions'
 import TabList from './ux/TabList'
 import { confirmAction } from './ux/confirmAction'
@@ -115,25 +116,6 @@ function sortTestsByStartAscending(tests: TestSummary[]) {
 
 function rowStartedAt(row: ResultSourceRow) {
   return new Date(row.startedAt || 0).getTime()
-}
-
-function actualRunDurationSeconds(test: TestSummary) {
-  const startedAt = new Date(test.start_time || test.started_at || test.created_at || 0).getTime()
-  const endedAt = new Date(test.ended_at || 0).getTime()
-  if (Number.isFinite(startedAt) && Number.isFinite(endedAt) && endedAt >= startedAt && endedAt > 0) {
-    return (endedAt - startedAt) / 1000
-  }
-  return parseDurationToSeconds(test.duration)
-}
-
-function formatActualRunDuration(seconds: number) {
-  const totalSeconds = Math.max(0, Math.round(seconds))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const remainder = totalSeconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m${remainder ? ` ${remainder}s` : ''}`
-  if (minutes > 0) return `${minutes}m${remainder ? ` ${remainder}s` : ''}`
-  return `${remainder}s`
 }
 
 function resultSourceStatusTone(status?: string) {
@@ -645,6 +627,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
   const [sortField, setSortField] = useState<SortField>('started')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   const [search, setSearch] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [archiveFilter, setArchiveFilter] = useState<ArchiveFilter>('all')
   const error = operationError || listError || resultTailError || externalImportsError
@@ -743,8 +727,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           name: test.name,
           status: resolveStatus(test, testStatuses),
           startedAt: test.start_time || test.started_at || test.created_at,
-          duration: formatActualRunDuration(actualRunDurationSeconds(test)),
-          durationSeconds: actualRunDurationSeconds(test),
+          duration: formatElapsedSeconds(lifecycleElapsedSeconds(test)),
+          durationSeconds: lifecycleElapsedSeconds(test),
           applicationId: item.application_id || test.application_id,
           releaseId: test.release_id || item.release_id,
           releaseName: item.release_name || (test.release_id === activeRelease?.id ? activeRelease?.name : undefined),
@@ -840,6 +824,13 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
       if (statusFilter !== 'all' && row.status.toLowerCase() !== statusFilter) return false
       if (archiveFilter === 'ready' && !row.hasArchive) return false
       if (archiveFilter === 'pending' && row.hasArchive) return false
+      const started = row.startedAt ? new Date(row.startedAt).getTime() : NaN
+      if (fromDate && (!Number.isFinite(started) || started < new Date(`${fromDate}T00:00:00`).getTime())) return false
+      if (toDate) {
+        const end = new Date(`${toDate}T00:00:00`)
+        end.setDate(end.getDate() + 1)
+        if (!Number.isFinite(started) || started >= end.getTime()) return false
+      }
       if (!normalizedSearch) return true
       const haystack = [
         row.source,
@@ -864,7 +855,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         .toLowerCase()
       return haystack.includes(normalizedSearch)
     })
-  }, [activeApplication, activeRelease, applicationQualifiedRows, archiveFilter, localReleaseByRemoteId, mappedRemoteApplicationId, mappedRemoteReleaseId, releaseFilter, search, statusFilter])
+  }, [activeApplication, activeRelease, applicationQualifiedRows, archiveFilter, localReleaseByRemoteId, mappedRemoteApplicationId, mappedRemoteReleaseId, releaseFilter, search, statusFilter, fromDate, toDate])
 
   const sortedRows = useMemo(() => {
     return [...filteredRows].sort((a, b) => {
@@ -892,6 +883,8 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           bValue = rowStartedAt(b)
           break
         case 'duration':
+          if (a.test && a.durationSeconds === undefined) return b.test && b.durationSeconds === undefined ? 0 : 1
+          if (b.test && b.durationSeconds === undefined) return -1
           aValue = a.durationSeconds ?? parseDurationToSeconds(a.duration)
           bValue = b.durationSeconds ?? parseDurationToSeconds(b.duration)
           break
@@ -1426,7 +1419,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         <td>{row.totalVusers ?? '-'}</td>
         <td>{row.groupCount ?? '-'}</td>
         <td className="cell-muted">{row.startedAt ? formatDate(row.startedAt) : '-'}</td>
-        <td className="cell-muted">{row.duration || '-'}</td>
+        <td className="cell-muted">{row.duration || '-'}{!row.test && <small> (source-reported)</small>}</td>
         <td className="cell-muted">
           {test
             ? (test.archive ? `${test.archive.transaction_count} archive records` : 'Unavailable')
@@ -1881,7 +1874,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
         <div className="library-source-panel results-library-panel">
           <LibraryFederationControls
             kind="result"
-            filtersActive={releaseFilter !== 'all' || statusFilter !== 'all' || archiveFilter !== 'all'}
+            filtersActive={Boolean(search || fromDate || toDate || releaseFilter !== (activeRelease?.id || 'all') || statusFilter !== 'all' || archiveFilter !== 'all')}
             federation={federation}
             projectName={activeProjectName}
             onConfigureRemotes={openRemoteSettings}
@@ -1892,11 +1885,13 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                     type="search"
                     value={search}
                     onChange={event => setSearch(event.target.value)}
-                    placeholder="Find releases or results..."
+                    placeholder="Find runs by name, reference or scenario..."
                   />
                 </label>)}
             filterControls={(
               <>
+                <label className="project-redaction-rule-field"><span>Started from</span><input className="settings-input" type="date" value={fromDate} max={toDate || undefined} onInput={event => setFromDate(event.currentTarget.value)} onChange={event => setFromDate(event.currentTarget.value)} /></label>
+                <label className="project-redaction-rule-field"><span>Started through</span><input className="settings-input" type="date" value={toDate} min={fromDate || undefined} onInput={event => setToDate(event.currentTarget.value)} onChange={event => setToDate(event.currentTarget.value)} /></label>
                 <label className="project-redaction-rule-field">
                   <span>Associated Release</span>
                   <select
@@ -1935,8 +1930,13 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
             )}
             summaryText={resultsSourcesLoading
               ? 'Loading local and remote result sources...'
-              : `${filteredRows.length} result source${filteredRows.length === 1 ? '' : 's'} for ${activeRelease.name}.`}
+              : `${filteredRows.length} matching run${filteredRows.length === 1 ? '' : 's'} · ${activeRelease.name}.`}
           />
+          {(search || fromDate || toDate || statusFilter !== 'all' || archiveFilter !== 'all' || releaseFilter !== (activeRelease?.id || 'all')) && <div className="settings-inline-actions" aria-label="Active result filters">
+            <span>{[search && `Search: ${search}`, fromDate && `From ${fromDate}`, toDate && `Through ${toDate}`, releaseFilter !== (activeRelease?.id || 'all') && `Release: ${releaseFilter === 'all' ? 'All releases' : releaseFilter}`, statusFilter !== 'all' && `Status: ${statusFilter}`, archiveFilter !== 'all' && `Archive: ${archiveFilter === 'ready' ? 'ready' : 'unavailable'}`].filter(Boolean).join(' · ')}</span>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setSearch(''); setFromDate(''); setToDate(''); setStatusFilter('all'); setArchiveFilter('all'); setReleaseFilter(activeRelease?.id || 'all') }}>Reset result filters</button>
+          </div>}
+          <p className="setting-desc">Lifecycle elapsed uses recorded start and end times; configured duration is never substituted. Report evidence windows may differ.</p>
           {resultsTruncated && (
             <p className="results-truncation-status" role="status" aria-live="polite">
               Loaded {tests.length.toLocaleString()} of {resultListTotal.toLocaleString()} local results. Older results continue loading in the background.
@@ -1973,7 +1973,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
             </div>
           ) : (
             <div ref={resultsTableRef} className={`data-table library-source-table-wrap${shouldVirtualizeRows ? ' results-virtual-table-wrap' : ''}`}>
-              <table className="library-source-table results-library-source-table">
+              <table data-table-pagination="off" className="library-source-table results-library-source-table">
                 <colgroup>
                   <col className="results-select-col" />
                   <col className="results-source-col" />
@@ -1992,7 +1992,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                       <SelectAllCheckbox
                         selectedCount={visibleSelectedIds.length}
                         visibleCount={visibleSelectableIds.length}
-                        ariaLabel="Select all visible results"
+                        ariaLabel="Select all matching local results"
                         onChange={toggleAllVisible}
                       />
                     </th>
@@ -2002,7 +2002,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                     <SortHeader label="VUsers" field="total_vusers" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Groups" field="groups" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Started" field="started" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
-                    <SortHeader label="Duration" field="duration" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                    <SortHeader label="Lifecycle elapsed" field="duration" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                     <SortHeader label="Archive" field="archive" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                     <th className="results-actions-column">Actions</th>
                   </tr>

@@ -9571,3 +9571,42 @@ col.results-actions-col {
 .transaction-sla-status-pass { background: color-mix(in srgb, var(--success-color, #16a34a) 18%, transparent); color: var(--success-color, #15803d); }
 .transaction-sla-status-fail { background: color-mix(in srgb, var(--error-color, #dc2626) 18%, transparent); color: var(--error-color, #b91c1c); }
 .transaction-sla-status-not_evaluated { background: color-mix(in srgb, var(--text-secondary) 15%, transparent); color: var(--text-secondary); }
+
+/* Access administration: keep identity, scope and remediation visible. */
+.access-navigation { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.access-navigation [aria-current="page"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.access-workspace.access-workspace-full { grid-template-columns: minmax(0, 1fr); }
+.access-review { overflow-x: auto; }
+.access-review-table { min-width: 600px; margin: 12px 0 24px; }
+.access-review-table td { white-space: normal; overflow-wrap: anywhere; line-height: 1.6; }
+.access-review-priority { display: block; color: var(--text-primary); margin-bottom: 4px; }
+.access-flag-badge { display: inline-block; margin: 2px 6px 2px 0; padding: 3px 8px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-secondary); background: var(--bg-surface); }
+.access-column-choice { display: flex; align-items: center; gap: 8px; padding: 12px 0; color: var(--text-secondary); font-size: 13px; }
+.access-users-table.access-columns-compact :is(th, td):is(:nth-child(3), :nth-child(6), :nth-child(7), :nth-child(8), :nth-child(9)),
+.access-accounts-table.access-columns-compact :is(th, td):is(:nth-child(6), :nth-child(7), :nth-child(8), :nth-child(9)) { display: none; }
+:is(.access-users-table, .access-accounts-table) :is(th, td):first-child { position: sticky; left: 0; background: var(--bg-secondary); z-index: 2; max-width: 220px; }
+:is(.access-users-table, .access-accounts-table) :is(th, td):last-child { position: sticky; right: 0; background: var(--bg-secondary); z-index: 2; box-shadow: -2px 0 0 var(--border); }
+:is(.access-users-table, .access-accounts-table) th:is(:first-child, :last-child) { z-index: 3; }
+.access-onboarding-help, .access-query-summary { color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.access-onboarding-help { margin-bottom: 20px; max-width: 90ch; }
+.access-page .ux-form-field { display: flex; flex-direction: column; gap: 8px; }
+.access-page .ux-form-field label { font-size: 12px; color: var(--text-secondary); }
+.access-page .ux-form-field input { min-height: 38px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); background: var(--bg-surface); font: inherit; }
+.access-chip:focus-visible, .access-page button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.access-chip[aria-pressed="true"]::before { content: '✓ '; }
+.access-pagination { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+@media (max-width: 760px) {
+  :is(.access-users-table, .access-accounts-table) :is(th, td):first-child { max-width: 130px; }
+  .access-table-actions { flex-direction: column; align-items: stretch; }
+  .access-table-actions button { min-height: 36px; }
+}
+
+.access-simulator { overflow-x: auto; }
+.access-review-table th:first-child { min-width: 170px; }
+.access-review-table .access-row-primary { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.access-review section .access-review-table { min-width: 700px; }
+.access-review section .access-review-table :is(th, td):last-child { min-width: 112px; position: sticky; right: 0; background: var(--bg-secondary); }
+.access-review-table .btn { white-space: nowrap; overflow-wrap: normal; }
+.access-flag-badge { white-space: nowrap; }
+.access-users-table.access-columns-compact { min-width: 760px; }
+.access-accounts-table.access-columns-compact { min-width: 860px; }

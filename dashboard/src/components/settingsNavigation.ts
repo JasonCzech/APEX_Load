@@ -61,8 +61,8 @@ export function settingsOwner(id: string): 'settings' | 'access' | 'repository' 
 export function settingsHref(id: string, currentHash = typeof window === 'undefined' ? '' : window.location.hash, resourceId?: string): string {
   const current = new URLSearchParams(currentHash.split('?')[1] || '')
   const params = new URLSearchParams({ setting: settingsDestination(id)?.id || 'platform' })
-  const origin = /^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(currentHash) ? currentHash : current.get('returnTo') || ''
-  if (/^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(origin)) params.set('returnTo', origin)
+  const origin = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(currentHash) && !current.has('setting') ? currentHash : current.get('returnTo') || ''
+  if (/^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(origin)) params.set('returnTo', origin)
   if (resourceId) params.set('resourceId', resourceId)
   for (const key of ['projectId', 'applicationId', 'releaseId']) {
     const value = current.get(key)

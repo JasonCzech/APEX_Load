@@ -344,6 +344,10 @@ export function ReleaseTrendPanel({
         )}
       </div>
       {filters}
+      {rows.some(row => (row.transaction?.transactions ?? row.point.transactions) === 0) && <p className="dashboard-context-note" role="note">
+        Some runs have no samples in this population. Request / action samples in Load Comparison do not establish named transaction attempts. Open a run's evidence to check instrumentation and archive coverage; collect named transactions in a subsequent run before comparing this series.
+      </p>}
+      {rows.length < 2 && <p className="dashboard-context-note">A trend needs at least two comparable runs with samples from the same population. Broaden the scenario filter or collect another run with the same workload and acceptance criteria.</p>}
       {transactionScoped && (
         <p className="release-trend-scope-note" data-testid="release-trend-scope-note">
           Response and error columns are scoped to <strong>{transactionFilter}</strong>; runs without that transaction are hidden.

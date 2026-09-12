@@ -4,6 +4,7 @@ import { drainBoundedOffsetCatalog } from './catalogPagination'
 const COMMAND_CENTER_DISCOVERY_PAGE_SIZE = 200
 
 type TestListParams = {
+  release_id?: string
   application_id?: string
   project_id?: string
   summary: boolean
@@ -19,7 +20,7 @@ type TestListPage = {
 
 export function listAllCommandCenterActiveRuns(
   listPage: (params: TestListParams) => Promise<TestListPage>,
-  scope: { application_id?: string; project_id?: string },
+  scope: { application_id?: string; project_id?: string; release_id?: string },
 ): Promise<TestSummary[]> {
   return drainBoundedOffsetCatalog(
     async (limit, offset) => {

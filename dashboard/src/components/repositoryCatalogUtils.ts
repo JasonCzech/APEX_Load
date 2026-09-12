@@ -261,7 +261,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
       const releaseIds = unique([
         ...releaseIdsFromRefs(scriptReleaseRefs),
       ])
-      const status = script.authoring_health?.status || 'Ready'
+      const status = script.authoring_health?.status || 'Not assessed'
       rows.push({
         id: script.id,
         kind: 'script',
@@ -295,7 +295,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
       const releaseNames = releaseNamesFromRefs(scenarioReleaseRefs)
       const releaseIds = releaseIdsFromRefs(scenarioReleaseRefs)
       const protocols = protocolListFromScenario(scenario)
-      const status = 'Ready'
+      const status = 'Saved'
       rows.push({
         id: scenario.id,
         kind: 'scenario',

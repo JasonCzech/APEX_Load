@@ -783,6 +783,21 @@ describe('SettingsPage', () => {
     delete (window as BridgeWindow).go
   })
 
+  it('keeps a feature destination visible while permissions load and after denial', async () => {
+    let resolve!: (value: unknown) => void
+    apiMock.getAuthEffectiveAccess.mockReturnValue(new Promise(done => { resolve = done }))
+    await act(async () => root.render(<SettingsPage theme="dark" onThemeChange={vi.fn()} destinationId="features" />))
+    expect(container.querySelector<HTMLElement>('#settings-section-feature-access')?.hidden).toBe(false)
+    expect(container.querySelector<HTMLElement>('#settings-section-general')?.hidden).toBe(true)
+    expect(container.textContent).toContain('Loading feature policy permissions')
+    expect(container.querySelector('nav[aria-label="Access administration"] a[aria-current="page"]')?.textContent).toBe('Feature policy')
+    await act(async () => resolve({enabled:true,authenticated:true,resources:[]}))
+    await flushPromises()
+    expect(container.querySelector<HTMLElement>('#settings-section-feature-access')?.hidden).toBe(false)
+    expect(container.textContent).toContain('You do not have permission to manage domain feature policy.')
+    expect(container.querySelector<HTMLElement>('#settings-task-navigation')?.hidden).toBe(true)
+  })
+
   it('edits and deletes a project from the catalog with confirmation', async () => {
     projectContextMock.deleteProject.mockResolvedValue({ deleted: 'project-1' })
     projectApiMock.updateProject.mockResolvedValue({ id: 'project-1', name: 'Checkout renamed', created_at: '', updated_at: '' })
@@ -1985,7 +2000,7 @@ describe('SettingsPage', () => {
     await setFieldValue(secondRuleInputs[1] as HTMLInputElement, '[ACCOUNT]')
     await setFieldValue(secondRulePattern, 'account-[A-Z0-9]+')
 
-    const saveButton = findButton('Save Project Governance')
+    const saveButton = findButton('Save redaction rules')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -2619,7 +2634,7 @@ describe('SettingsPage', () => {
 
     await flushPromises()
 
-    const saveButton = findButton('Save Project Governance')
+    const saveButton = findButton('Save redaction rules')
     expect(saveButton).toBeDefined()
     if (!saveButton) return
 
@@ -5693,6 +5708,23 @@ describe('SettingsPage', () => {
     expect(apiMock.deleteDataPool).toHaveBeenCalledTimes(1)
     expect(section?.textContent).toContain('The delete succeeded—do not retry.')
     expect(section?.textContent).not.toContain('Unable to delete data pool')
+  })
+
+  it('opens a repository-linked pool and never silently selects a different pool for an unavailable link', async () => {
+    apiMock.listDataPools.mockResolvedValue({ data_pools: [{ id: 'pool-linked', name: 'Linked pool', project_id: 'project-1', created_at: '', updated_at: '' }, { id: 'pool-other', name: 'Other pool', project_id: 'project-1', created_at: '', updated_at: '' }], count: 2 })
+    const render = (resourceId: string) => {
+      window.location.hash = `#/repository?setting=test-data&resourceId=${resourceId}`
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} destinationId="test-data" />)
+    }
+    await act(async () => render('pool-linked'))
+    await flushPromises()
+    expect(apiMock.listDataPools).toHaveBeenCalledWith('project-1', true)
+    expect(container.querySelector('#settings-section-data-pools .settings-release-row.active')?.textContent).toContain('Linked pool')
+    await act(async () => render('missing'))
+    await flushPromises()
+    expect(container.querySelector('#settings-section-data-pools .settings-release-row.active')).toBeNull()
+    expect(container.textContent).toContain('The requested data pool is not available in this project')
+    window.location.hash = ''
   })
 
   it('does not let a slow data-pool response from the previous project overwrite the active project', async () => {

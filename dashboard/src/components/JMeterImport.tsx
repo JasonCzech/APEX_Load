@@ -1,3 +1,4 @@
+import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
@@ -536,6 +537,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         }}>Back</button>}
       </div>
 
+
+      <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
       <div
         ref={dropzoneRef}
         className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
@@ -599,6 +602,18 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       <div className="settings-notice">
         HTTP plans convert most completely. Homogeneous JDBC, FTP, and TCP thread groups now convert into native database/network scripts, safe JSR223/BeanShell statements are translated, and anything that needs a provider/adapter (such as JMS) or manual review is classified rather than dropped.
       </div>
+
+      <div className="import-workflow-actions">
+        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null || saving}>
+          {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
+        </button>
+        <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null || saving}>
+          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Convert JMeter Plan'}
+        </button>
+      </div>
+
+      {error && <div className="lr-error" role="alert">{error}</div>}
+      {notice && <div className="settings-notice">{notice}</div>}
 
       {coverageSections.length > 0 ? (
         <div className="lr-preserved">
@@ -672,17 +687,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         </div>
       )}
 
-      <div className="replay-panel-actions">
-        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null || saving}>
-          {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
-        </button>
-        <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null || saving}>
-          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Convert JMeter Plan'}
-        </button>
-      </div>
 
-      {error && <div className="lr-error" role="alert">{error}</div>}
-      {notice && <div className="settings-notice">{notice}</div>}
+
 
       {result && (
         <div className="lr-result">

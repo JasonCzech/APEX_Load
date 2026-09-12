@@ -1,3 +1,4 @@
+import { isAccessView, type AccessView } from './components/accessDestinations'
 import { API_GUIDE_DEFAULT_PAGE, isApiGuideContentPageID, type ApiGuideContentPageID } from './apiGuideNavigation'
 import type { NavPage } from './components/Sidebar'
 
@@ -9,15 +10,15 @@ export type AppWorkspaceScope = {
 
 export type AppView = AppWorkspaceScope & (
   | { page: Exclude<NavPage, 'command-center' | 'new-test' | 'scripts' | 'tests' | 'docs' | 'monitoring' | 'settings' | 'access' | 'repository'> }
-  | { page: 'settings' | 'access' | 'repository'; setting?: string; returnTo?: string; resourceId?: string }
+  | { page: 'settings' | 'access' | 'repository'; setting?: string; returnTo?: string; resourceId?: string; accessView?: AccessView }
   | { page: 'monitoring'; category?: MonitoringCategoryID }
-  | { page: 'docs'; guidePage?: ApiGuideContentPageID }
+  | { page: 'docs'; guidePage?: ApiGuideContentPageID; guideArticle?: string; guideSection?: string }
   | { page: 'command-center'; testId?: string }
   | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; section?: ReportSection }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
-  | { page: 'swagger' }
+  | { page: 'swagger'; search?: string }
   | { page: 'repository-guide' }
   | { page: 'recorder-panel'; sessionId: string; folderId?: string }
   | { page: 'test'; testId: string; tab?: TestWorkspaceTabID }
@@ -210,6 +211,8 @@ export function parseAppViewFromHash(hash: string): AppView {
     return {
       page: 'docs',
       ...(isApiGuideContentPageID(guidePage) ? { guidePage } : {}),
+      ...(params.get('article') ? { guideArticle: params.get('article')!.slice(0, 160) } : {}),
+      ...(params.get('section') ? { guideSection: params.get('section')!.slice(0, 240) } : {}),
       ...workspaceScope,
     }
   }
@@ -218,7 +221,7 @@ export function parseAppViewFromHash(hash: string): AppView {
     const setting = params.get('setting') || undefined
     const returnTo = params.get('returnTo') || ''
     const resourceId = params.get('resourceId') || ''
-    return { page, ...(resourceId ? { resourceId } : {}), ...(setting ? { setting } : {}), ...(/^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(returnTo) ? { returnTo } : {}), ...workspaceScope }
+    return { page, ...(page === 'access' && isAccessView(params.get('accessView')) ? { accessView: params.get('accessView') as AccessView } : {}), ...(resourceId ? { resourceId } : {}), ...(setting ? { setting } : {}), ...(/^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(returnTo) ? { returnTo } : {}), ...workspaceScope }
   }
 
   if (page === 'monitoring') {
@@ -231,7 +234,7 @@ export function parseAppViewFromHash(hash: string): AppView {
   }
 
   if (page === 'swagger') {
-    return { page: 'swagger', ...workspaceScope }
+    return { page: 'swagger', ...(params.get('search') ? { search: params.get('search')!.slice(0, 240) } : {}), ...workspaceScope }
   }
 
   if (page === 'repository-guide') {
@@ -311,8 +314,9 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'settings' || view.page === 'access' || view.page === 'repository') {
     const params = new URLSearchParams()
     if (view.setting) params.set('setting', view.setting)
+    if (view.page === 'access' && view.accessView) params.set('accessView', view.accessView)
     if (view.resourceId) params.set('resourceId', view.resourceId)
-    if (view.returnTo && /^#\/(monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(view.returnTo)) params.set('returnTo', view.returnTo)
+    if (view.returnTo && /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(view.returnTo)) params.set('returnTo', view.returnTo)
     appendWorkspaceScope(params, view)
     return params.size ? `#/${view.page}?${params}` : `#/${view.page}`
   }
@@ -372,6 +376,8 @@ export function viewToLocationHash(view: AppView): string {
   if (view.page === 'docs') {
     const params = new URLSearchParams()
     if (view.guidePage && view.guidePage !== API_GUIDE_DEFAULT_PAGE) params.set('guide', view.guidePage)
+    if (view.guideArticle) params.set('article', view.guideArticle)
+    if (view.guideSection) params.set('section', view.guideSection)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/docs?${query}` : '#/docs'
@@ -387,6 +393,7 @@ export function viewToLocationHash(view: AppView): string {
 
   if (view.page === 'swagger') {
     const params = new URLSearchParams()
+    if (view.search) params.set('search', view.search)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/swagger?${query}` : '#/swagger'

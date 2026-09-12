@@ -1,3 +1,4 @@
+import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
@@ -1488,6 +1489,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
         </div>
       )}
+
+      <ImportWorkflowGuide stage={committed ? 'saved' : inspection ? 'review' : 'source'} />
 
       {protectedSessionLabel && !committed && (
         <div

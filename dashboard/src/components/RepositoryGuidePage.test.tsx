@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import { act } from 'react'
-import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createRoot } from 'react-dom/client'
+import { describe, expect, it } from 'vitest'
 
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
@@ -173,162 +173,28 @@ describe('parseMarkdown', () => {
   })
 })
 
-describe('RepositoryGuidePage', () => {
-  const guideSource = [
-    '# APEX Load API User Guide',
-    '',
-    '## Authentication',
-    '',
-    'Use `Authorization` when calling the API.',
-    '',
-    '```bash',
-    'curl http://localhost:8080/api/v1/system/health',
-    '```',
-    '',
-    '| Method | Path |',
-    '| --- | --- |',
-    '| `GET` | `/api/v1/system/health` |',
-  ].join('\n')
-  let container: HTMLDivElement
-  let root: Root
-  let rootMounted: boolean
-
-  beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      text: async () => guideSource,
-    }))
-    window.history.replaceState(null, '', '/')
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-    rootMounted = true
-  })
-
-  afterEach(() => {
-    if (rootMounted) act(() => root.unmount())
-    container.remove()
-    vi.unstubAllGlobals()
-  })
-
-  async function renderRepositoryGuidePage() {
+describe('RepositoryGuidePage compatibility route', () => {
+  it('opens API workflows under the consolidated Help title', async () => {
+    const { helpArticles, loadHelpSource } = await import('../helpContent')
+    const container = document.createElement('div'); document.body.append(container)
+    const root = createRoot(container)
+    window.history.replaceState(null, '', '/#/repository-guide')
     await act(async () => {
-      root.render(
-        <TopbarContributionProvider>
-          <TopbarContributionHarness />
-          <RepositoryGuidePage />
-        </TopbarContributionProvider>,
-      )
+      root.render(<TopbarContributionProvider><TopbarContributionHarness /><RepositoryGuidePage /></TopbarContributionProvider>)
+      await loadHelpSource(helpArticles.find(article => article.id === 'api-workflows')!)
     })
-  }
-
-  function topbarText() {
-    return container.querySelector('[data-testid="topbar-contribution"]')?.textContent || ''
-  }
-
-  function findTopbarButton(label: string) {
-    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
-    return Array.from(topbar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === label)
-  }
-
-  it('documents the persistent Java Vuser lifecycle contract used by the packaged guide', async () => {
-    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
-    const { readFileSync } = await import('node:fs')
-    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
-    const source = readFileSync(`${cwd}/../docs/API_USER_GUIDE.md`, 'utf8') as string
-
-    expect(source).toContain('java_vuser_persistent_lifecycle_v1')
-    expect(source).toContain('one JVM and one `Actions` instance alive per VUser')
-    expect(source).not.toContain('launch requires an enabled runner advertising `java_vuser_phase_lifecycle_v1`')
-    expect(source).not.toContain('start a fresh JVM and `Actions` instance for each requested phase')
+    expect(container.textContent).toContain('API workflows')
+    expect(container.textContent).toContain('Help & documentation')
+    expect(container.textContent).toContain('java_vuser_persistent_lifecycle_v1')
+    expect(container.textContent).toContain('one JVM and one Actions instance alive per VUser')
+    expect(container.querySelector('a[href="#/swagger"]')).not.toBeNull()
+    await act(async () => root.unmount()); container.remove()
   })
+})
 
-  it('renders the in-repository guide with retained API Guide title toggles', async () => {
-    await renderRepositoryGuidePage()
 
-    expect(container.textContent).toContain('APEX Load API User Guide')
-    expect(topbarText()).toContain('Repository Guide')
-    expect(topbarText()).toContain('General')
-    expect(topbarText()).toContain('MCP Server')
-    expect(topbarText()).toContain('Quick Start')
-    expect(topbarText()).toContain('Authentication')
-    expect(topbarText()).not.toContain('Endpoint Map')
-    expect(topbarText()).toContain('Swagger')
-    expect(topbarText()).toContain('Repo Guide')
-    expect(findTopbarButton('Repo Guide')?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.textContent).toContain('Authentication')
-    expect(container.querySelector('.markdown-table-wrap table')).not.toBeNull()
-    expect(container.querySelector('pre.markdown-code-block code')).not.toBeNull()
-    expect(fetch).toHaveBeenCalledTimes(1)
-
-    expect(container.querySelector('a[href="#/docs"]')).toBeNull()
-    const swaggerButton = findTopbarButton('Swagger')
-    expect(swaggerButton).toBeDefined()
-    await act(async () => {
-      swaggerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(window.location.hash).toBe('#/swagger')
-  })
-
-  it('shows an accessible error when the guide asset cannot be loaded', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: false,
-      status: 503,
-      text: async () => '',
-    } as Response)
-
-    await renderRepositoryGuidePage()
-
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('status 503')
-  })
-
-  it('reports an empty successful guide response as an error instead of loading forever', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 204,
-      text: async () => '',
-    } as Response)
-
-    await renderRepositoryGuidePage()
-
-    expect(container.querySelector('[role="status"]')).toBeNull()
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('response was empty')
-  })
-
-  it('reports a rejected guide request as an accessible network error', async () => {
-    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('network unavailable'))
-
-    await renderRepositoryGuidePage()
-
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('network unavailable')
-  })
-
-  it('aborts the guide request on unmount and ignores a late body resolution', async () => {
-    let resolveBody!: (source: string) => void
-    const body = new Promise<string>(resolve => {
-      resolveBody = resolve
-    })
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      text: () => body,
-    } as Response)
-
-    await renderRepositoryGuidePage()
-    const signal = vi.mocked(fetch).mock.calls[0]?.[1]?.signal
-    expect(signal).toBeInstanceOf(AbortSignal)
-    expect(signal?.aborted).toBe(false)
-
-    act(() => root.unmount())
-    rootMounted = false
-    expect(signal?.aborted).toBe(true)
-
-    await act(async () => {
-      resolveBody('# Late guide')
-      await body
-      await Promise.resolve()
-    })
-    expect(container.textContent).toBe('')
-  })
+it('gives repeated reference headings unique section IDs and preserves escaped table pipes', () => {
+  const blocks = parseMarkdown('## Fields\n\n## Fields\n\n## Fields-1\n\n| Mode | Detail |\n| --- | --- |\n| `admin\\|user` | Two modes |')
+  expect(blocks.filter(block => block.kind === 'heading').map(block => block.id)).toEqual(['fields', 'fields-1', 'fields-1-1'])
+  expect(blocks.find(block => block.kind === 'table')).toMatchObject({ headers: ['Mode', 'Detail'], rows: [['`admin|user`', 'Two modes']] })
 })

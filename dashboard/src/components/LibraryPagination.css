@@ -1,0 +1,6 @@
+.library-pagination { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 0; color: var(--text-secondary); font-size: 12px; }
+.library-pagination label { display: flex; align-items: center; gap: 6px; }
+.library-pagination select { background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 5px; }
+/* Keep workload and actions in separate columns while allowing horizontal scrolling. */
+.scenario-library-table > table > tbody > tr > td:last-child { position: static; }
+.scenario-library-table > table > tbody > tr > td[aria-label="Scenario workload"] { min-width: 240px; }

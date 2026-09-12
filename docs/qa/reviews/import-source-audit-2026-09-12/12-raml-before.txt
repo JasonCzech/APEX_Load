@@ -1,0 +1,54 @@
+- complementary:
+  - button "APEX Load dashboard":
+    - img "APEX Load"
+  - 'button "Select domain. Current domain: Default Domain"':
+    - generic: ◇
+  - 'button "Select project. Current project: ACC"':
+    - generic: ◫
+  - 'button "Select application. Current application: Legacy"':
+    - generic: ▣
+  - 'button "Select release. Current release: Imported Legacy"':
+    - generic: ◆
+  - navigation:
+    - button "Dashboard":
+    - button "New Test":
+    - button "Command Center":
+    - button "Results":
+    - button "Scripts":
+    - button "Scenarios":
+    - button "Repository":
+    - button "Monitoring":
+    - button "Help & documentation":
+    - button "Access":
+    - button "Settings":
+  - generic "Live"
+  - 'button "Build info: local · v0.1.0-dev.20260912+6d53cf5"'
+- main "Script Builder":
+  - status: Script Builder
+  - generic "Dashboard controls":
+    - heading "Script Builder" [level=1]
+    - group "Script page view":
+      - button "Script Library"
+      - button "Script Builder" [pressed]
+    - link "Help for this page":
+      - /url: "#/docs?guide=user-guide&article=authoring"
+    - generic "Deployment identity":
+      - generic: Browser · Server
+  - generic "Save destination — review folder before saving"
+  - option "Project root" [selected]
+  - group "Script import controls":
+    - heading "Import RAML" [level=2]
+    - paragraph: Upload a RAML 1.0 JSON/YAML document — or a .zip bundle whose !include files resolve together — and generate HTTP actions with resource, method, example, OAuth2, and Anypoint policy review notes.
+    - button "Back"
+    - generic: File
+    - button "Drop a RAML file or .zip bundle here":
+      - paragraph: Drop a RAML file or .zip bundle here
+      - generic: or click to browse
+    - generic: Script Name
+    - textbox "Script Name":
+      - /placeholder: Imported RAML Script
+    - generic: Base URL Override
+    - textbox "Base URL Override":
+      - /placeholder: https://api.example.com
+    - button "Validate Only" [disabled]
+    - button "Convert RAML" [disabled]

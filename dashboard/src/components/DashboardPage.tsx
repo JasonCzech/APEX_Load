@@ -1,4 +1,6 @@
 import TabList from './ux/TabList'
+import DashboardLandingSummary from './DashboardLandingSummary'
+import { buildDashboardAttention, dashboardAcceptance, emptyRunFilters, filterDashboardRuns, pendingRunDetail, runReference, type RunFilters } from './dashboardLandingModel'
 import PanelToggle from "./ux/PanelToggle"
 import { handleTabKey } from './tabKeyboard'
 import { reportAcceptance, formatReportPercent } from './runReport/reportPresentation'
@@ -45,7 +47,7 @@ interface HealthData {
     effective_available_generators?: number
     configured_available_generators?: number
     source?: string
-    warnings?: string[]
+    warnings?: string[] | null
   }
 }
 
@@ -56,12 +58,6 @@ type PerformanceSortField = 'run' | 'completed' | 'peak_tps' | 'avg_ms' | 'error
 type ActivitySortField = 'run' | 'status' | 'vusers' | 'duration' | 'transactions' | 'date'
 export type DashboardSnapshotAudience = 'admin' | 'user'
 
-interface AttentionItem {
-  tone: 'danger' | 'warning' | 'info'
-  title: string
-  detail: string
-  testId?: string
-}
 
 interface ActiveGroupMetricRow {
   name: string
@@ -112,17 +108,17 @@ interface ReleaseSnapshotPanelProps {
     completed: number
     aborted: number
     active: number
-    activeTps: number
-    avgError: number
+    activeTps: number | undefined
+    avgError: number | undefined
   }
   latestReleaseRun: TestSummary | undefined
   releaseTrendStats: ReleaseTrendStats
   health: HealthData | null
   statusLabel: string
+  healthUpdatedAt: number | null
   statusColor: string
   activeTests: TestSummary[]
   pendingTests: TestSummary[]
-  attentionItems: AttentionItem[]
   testDataReady: boolean
   onToggle: () => void
   onReleaseChange: (release: Release) => void
@@ -132,7 +128,6 @@ interface ReleaseSnapshotPanelProps {
   onResults: () => void
   onMonitoring: () => void
   onNewTest: () => void
-  onSelectTest: (id: string) => void
 }
 
 interface DashboardTestListState {
@@ -158,9 +153,9 @@ const graphMetricOptions: { key: CardMetricKey; label: string; color: string; di
 ]
 
 const dashboardTabs: { id: DashboardTabKey; label: string }[] = [
-  { id: 'activity', label: 'Recent Activity' },
+  { id: 'activity', label: 'Recent Runs' },
   { id: 'active', label: 'Active Tests' },
-  { id: 'performance', label: 'Performance Trend' },
+  { id: 'performance', label: 'Load Comparison' },
   { id: 'releaseTrend', label: 'Release Trend Analysis' },
 ]
 
@@ -454,10 +449,10 @@ function ReleaseSnapshotPanel({
   releaseTrendStats,
   health,
   statusLabel,
+  healthUpdatedAt,
   statusColor,
   activeTests,
   pendingTests,
-  attentionItems,
   testDataReady,
   onToggle,
   onReleaseChange,
@@ -467,7 +462,6 @@ function ReleaseSnapshotPanel({
   onResults,
   onMonitoring,
   onNewTest,
-  onSelectTest,
 }: ReleaseSnapshotPanelProps) {
   const panelId = 'dashboard-release-snapshot-panel'
   const completedRunCount = releaseStats.completed + releaseStats.failed + releaseStats.aborted
@@ -482,7 +476,6 @@ function ReleaseSnapshotPanel({
   const panelModeLabel = audience === 'admin' ? 'Operations Snapshot' : 'Release Quality'
   const latestStatus = latestReleaseRun ? `${latestReleaseRun.name} · ${latestReleaseRun.status}` : 'No completed runs'
   const qualityTone = releaseStats.failed > 0 || releaseTrendStats.slaBreaches > 0 ? 'warning' : 'success'
-  const visibleAttentionItems = attentionItems.slice(0, 3)
 
   return (
     <aside className={`dash-release-panel ${open ? 'is-open' : 'is-collapsed'}`} aria-label="Release snapshot panel">
@@ -520,8 +513,8 @@ function ReleaseSnapshotPanel({
             <SnapshotStat label="Failed Runs" value={releaseStats.failed} tone={releaseStats.failed > 0 ? 'danger' : 'success'} onClick={onResults} />
             <SnapshotStat label="Archives Ready" value={archivesReady} onClick={onResults} />
             <SnapshotStat label="Archive records" value={releaseStats.totalTx.toLocaleString()} onClick={onResults} />
-            <SnapshotStat label="Current TPS" value={formatNumber(dashboardStats.activeTps, 1)} onClick={onPrimaryActiveRun} />
-            <SnapshotStat label="Current Error Rate" value={`${formatNumber(dashboardStats.avgError, 2)}%`} tone={dashboardStats.avgError > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
+            <SnapshotStat label="Current TPS" value={dashboardStats.active ? formatOptionalNumber(dashboardStats.activeTps, 1) : 'Idle'} onClick={onPrimaryActiveRun} />
+            <SnapshotStat label="Mean Run Error Rate" value={dashboardStats.active ? formatOptionalPercent(dashboardStats.avgError, 2) : 'Idle'} tone={(dashboardStats.avgError ?? 0) > 0 ? 'danger' : 'neutral'} onClick={onPrimaryActiveRun} />
           </div>
         )}
 
@@ -540,28 +533,12 @@ function ReleaseSnapshotPanel({
                 <h4>Operations Activity</h4>
                 <span>{activeTests.length} live · {pendingTests.length} queued</span>
               </div>
+              <p className="dashboard-context-note">System-wide health · last successful check: {healthUpdatedAt ? new Date(healthUpdatedAt).toLocaleTimeString() : 'Not available'}</p>
               <div className="release-panel-detail-grid">
                 <SnapshotStat label="API Health" value={statusLabel} tone={statusColor === 'healthy' ? 'success' : statusColor === 'offline' ? 'danger' : 'warning'} onClick={onMonitoring} />
                 <SnapshotStat label="Generators Ready" value={generatorAvailability} onClick={onMonitoring} />
-                <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? 0} />
+                <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? '—'} />
                 <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={() => onPendingRun(pendingTests[0]?.id)} />
-              </div>
-              <div className="release-panel-feed">
-                {visibleAttentionItems.length === 0 ? (
-                  <div className="release-panel-feed-empty">No active attention items for this release.</div>
-                ) : visibleAttentionItems.map((item, index) => (
-                  <button
-                    type="button"
-                    key={`attention-${index}-${item.testId ?? item.title}`}
-                    className={`release-panel-feed-item tone-${item.tone}`}
-                    onClick={() => item.testId
-                      ? pendingTests.some(test => test.id === item.testId) ? onPendingRun(item.testId) : onSelectTest(item.testId)
-                      : onMonitoring()}
-                  >
-                    <strong>{item.title}</strong>
-                    <span>{item.detail}</span>
-                  </button>
-                ))}
               </div>
               <div className="release-panel-actions" aria-label="Release operations links">
                 <button type="button" className="btn btn-secondary btn-sm" onClick={onMonitoring}>Monitoring</button>
@@ -736,6 +713,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     await refreshTestList()
   }, [commitDashboardCatalog, dashboardCatalogScopeKey, refreshTestList])
   const [health, setHealth] = useState<HealthData | null>(null)
+  const [healthError, setHealthError] = useState(false)
+  const [healthUpdatedAt, setHealthUpdatedAt] = useState<number | null>(null)
+  const [runFilters, setRunFilters] = useState<RunFilters>(emptyRunFilters)
   const [archiveReports, setArchiveReports] = useState<Record<string, RunArchiveReport | null>>({})
   const [releasePanelOpen, setReleasePanelOpen] = useState(true)
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('activity')
@@ -762,6 +742,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     error: testListError || dashboardTailError,
     onRefresh: refreshDashboardCatalog,
   }), [dashboardCatalogReady, dashboardScopeReady, dashboardTailError, dashboardTailLoading, refreshDashboardCatalog, testListError, testListLoading, testListRefreshing])
+
+  useEffect(() => { setRunFilters(emptyRunFilters) }, [activeProjectId, activeApplicationId, activeRelease?.id])
 
   // Scenario display names for the Release Trend filter. Runs only carry a
   // scenario_id, so this resolves labels — lazily, the first time the tab that
@@ -793,6 +775,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
     let cancelled = false
     let inFlight = false
+    setHealth(null)
+    setHealthError(false)
+    setHealthUpdatedAt(null)
     const load = async () => {
       if (inFlight) {
         return
@@ -805,7 +790,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         const healthRes = await api.getHealth()
         if (cancelled) return
         setHealth(healthRes)
-      } catch { /* ignore */ } finally {
+        setHealthError(false)
+        setHealthUpdatedAt(Date.now())
+      } catch {
+        if (!cancelled) setHealthError(true)
+      } finally {
         inFlight = false
       }
     }
@@ -833,15 +822,15 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }, [api, activeApplicationId, activeProjectId, dashboardScopeReady])
 
   const resolvedTests = useMemo(() =>
-    tests.map(t => ({
+    tests.filter(t => !activeRelease?.id || t.release_id === activeRelease.id).map(t => ({
       ...t,
       status: resolveTestStatus(t, testStatuses) as TestSummary['status'],
     })),
-    [tests, testStatuses],
+    [tests, testStatuses, activeRelease?.id],
   )
 
   const activeTests = useMemo(() =>
-    resolvedTests.filter(t => isLiveTestStatus(t.status)),
+    resolvedTests.filter(t => isLiveTestStatus(t.status) || t.status === 'PAUSED'),
     [resolvedTests],
   )
 
@@ -983,8 +972,8 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }, [activeProjectId, api, archivedReleaseRuns, archiveReports])
 
   const failedArchiveReportCount = useMemo(
-    () => Object.values(archiveReports).filter(report => report === null).length,
-    [archiveReports],
+    () => archivedReleaseRuns.filter(test => archiveReports[test.id] === null).length,
+    [archiveReports, archivedReleaseRuns],
   )
   const archiveReportsError = failedArchiveReportCount > 0
     ? `${failedArchiveReportCount} archived performance report${failedArchiveReportCount === 1 ? '' : 's'} could not be loaded.`
@@ -1145,7 +1134,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const releaseTrendStats = useMemo(() => buildReleaseTrendStats(performanceTrend), [performanceTrend])
 
   const sortedRecentTests = useMemo(() => {
-    return [...recentTests].sort((left, right) => {
+    return filterDashboardRuns(recentTests, runFilters, archiveReports, testListUpdatedAt ?? Date.now()).sort((left, right) => {
       let leftValue: string | number
       let rightValue: string | number
       switch (activitySort.field) {
@@ -1178,20 +1167,20 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       const compared = compareValues(leftValue, rightValue, activitySort.direction)
       return compared || compareValues(completionTime(left), completionTime(right), 'desc')
     })
-  }, [activitySort, recentTests])
+  }, [activitySort, recentTests, runFilters, archiveReports, testListUpdatedAt])
 
   const stats = useMemo(() => {
     const completed = resolvedTests.filter(t => t.status === 'COMPLETE').length
     const failed = resolvedTests.filter(t => t.status === 'FAILED').length
     const aborted = resolvedTests.filter(t => t.status === 'ABORTED').length
     const activeVUsers = activeTests.reduce((sum, test) => sum + (test.live_metrics?.active_vusers ?? test.total_vusers ?? 0), 0)
-    const activeTps = activeTests.reduce((sum, test) => sum + (test.live_metrics?.tps || 0), 0)
+    const activeTps = activeTests.every(test => Number.isFinite(test.live_metrics?.tps)) ? activeTests.reduce((sum, test) => sum + test.live_metrics!.tps, 0) : undefined
     const avgLatency = activeLiveMetrics.length
       ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.avg_response_ms || 0), 0) / activeLiveMetrics.length
       : 0
-    const avgError = activeLiveMetrics.length
-      ? activeLiveMetrics.reduce((sum, metrics) => sum + (metrics?.error_pct || 0), 0) / activeLiveMetrics.length
-      : 0
+    const avgError = activeTests.length > 0 && activeTests.every(test => Number.isFinite(test.live_metrics?.error_pct))
+      ? activeTests.reduce((sum, test) => sum + test.live_metrics!.error_pct, 0) / activeTests.length
+      : undefined
     return { total: resolvedTests.length, completed, failed, aborted, active: activeTests.length, activeVUsers, activeTps, avgLatency, avgError }
   }, [resolvedTests, activeTests, activeLiveMetrics])
 
@@ -1204,48 +1193,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     return { total: releaseTests.length, completed, failed, aborted, archived, totalTx }
   }, [releaseTests, releaseCompleted])
 
-  const attentionItems = useMemo(() => {
-    const items: AttentionItem[] = []
-    activeTests.forEach(test => {
-      const errorPct = test.live_metrics?.error_pct || 0
-      if (errorPct >= 1) {
-        items.push({ tone: 'danger', title: `${test.name} errors`, detail: `${formatNumber(errorPct, 2)}% current error rate`, testId: test.id })
-      }
-      const avgMs = test.live_metrics?.avg_response_ms || 0
-      if (avgMs >= 1000) {
-        items.push({ tone: 'warning', title: `${test.name} latency`, detail: `${formatNumber(avgMs)} ms average response`, testId: test.id })
-      }
-    })
-    releaseCompleted.slice(0, 8).forEach(test => {
-      if (test.status === 'FAILED') {
-        items.push({ tone: 'danger', title: `${test.name} failed`, detail: formatDateTime(test.ended_at || test.created_at), testId: test.id })
-      } else if (test.status === 'ABORTED') {
-        items.push({ tone: 'warning', title: `${test.name} aborted`, detail: formatDateTime(test.ended_at || test.created_at), testId: test.id })
-      } else if (!test.archive) {
-        items.push({ tone: 'info', title: `${test.name} archive pending`, detail: 'Result archive is not available yet', testId: test.id })
-      }
-    })
-    if (health?.capacity_availability?.warnings?.length) {
-      items.push({ tone: 'warning', title: 'Capacity warning', detail: health.capacity_availability.warnings[0] })
-    }
-    pendingTests.slice(0, 3).forEach(test => {
-      const queuePrefix = test.queue_position ? `Queue #${test.queue_position}` : 'Queued'
-      items.push({
-        tone: 'info',
-        title: `${test.name} waiting`,
-        detail: `${queuePrefix} · ${test.pending_reason || 'waiting for capacity'}${test.pending_since ? ` · since ${formatDateTime(test.pending_since)}` : ''}`,
-        testId: test.id,
-      })
-    })
-    return items.slice(0, 6)
-  }, [activeTests, health, pendingTests, releaseCompleted])
+  const attentionItems = useMemo(() => buildDashboardAttention(activeTests, pendingTests, releaseCompleted, archiveReports, healthError ? [] : health?.capacity_availability?.warnings, healthError), [activeTests, pendingTests, releaseCompleted, archiveReports, health, healthError])
 
-  const statusColor = connectionState === 'connected'
-    ? health?.status === 'healthy' ? 'healthy' : 'degraded'
-    : connectionState === 'connecting'
-      ? 'checking'
-      : 'offline'
-  const statusLabel = statusColor === 'healthy'
+  const statusColor = healthError ? 'stale' : !health ? 'checking' : health.status === 'healthy' ? 'healthy' : 'degraded'
+  const statusLabel = statusColor === 'stale' ? 'Stale' : statusColor === 'healthy'
     ? 'Healthy'
     : statusColor === 'degraded'
       ? 'Degraded'
@@ -1254,7 +1205,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         : 'Offline'
 
   const navigateToMonitoring = () => onNavigate('monitoring')
-  const navigateToTests = () => onNavigate('tests')
+  const navigateToTests = () => onNavigate('command-center')
   const navigateToNewTest = () => onNavigate('new-test')
   const navigateToResults = () => onNavigate('results')
   const downloadTrendCsv = async () => {
@@ -1281,7 +1232,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       onSelectTest(activeTests[0].id)
       return
     }
-    onNavigate('tests')
+    setActiveDashboardTab('active')
   }
   const navigateToPendingRun = (id?: string) => {
     if (id && onOpenCommandCenter) {
@@ -1312,10 +1263,10 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }
   const dashboardTabCounts = useMemo<Record<DashboardTabKey, number>>(() => ({
     activity: recentTests.length,
-    active: stats.active,
+    active: stats.active + pendingTests.length,
     performance: performanceTrend.length,
     releaseTrend: performanceTrend.length,
-  }), [performanceTrend.length, recentTests.length, stats.active])
+  }), [performanceTrend.length, recentTests.length, stats.active, pendingTests.length])
   const activeDashboardTabLabel = dashboardTabs.find(tab => tab.id === activeDashboardTab)?.label || 'Dashboard'
   const dashboardTabControls = useMemo(() => (
     <TabList className="dash-tab-row topbar-page-section-toggle" role="tablist" aria-label="Dashboard sections" onKeyDown={handleTabKey}>
@@ -1328,12 +1279,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           className={`dash-tab ${activeDashboardTab === tab.id ? 'active' : ''}`}
           onClick={() => setActiveDashboardTab(tab.id)} tabIndex={(activeDashboardTab === tab.id) ? 0 : -1}
         >
-          <span>{tab.label}</span>
+          <span>{tab.id === 'active' && pendingTests.length > 0 ? 'Active & Queued' : tab.label}</span>
           <strong>{dashboardTabCounts[tab.id]}</strong>
         </button>
       ))}
     </TabList>
-  ), [activeDashboardTab, dashboardTabCounts])
+  ), [activeDashboardTab, dashboardTabCounts, pendingTests.length])
   const dashboardTopbarContribution = useMemo(() => ({
     id: 'dashboard-page',
     title: 'Dashboard',
@@ -1359,7 +1310,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     </th>
   )
   const performanceTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedPerformanceTrend.length}`)
-  const activityTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedRecentTests.length}`)
+  const activityTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedRecentTests.length}:${attentionItems.length}`)
   const activeTestIds = useMemo(() => activeTests.map(test => test.id), [activeTests])
   const aggregateHistory = useMemo(() => {
     return aggregateDashboardTpsHistory(activeTestIds, metricsHistory)
@@ -1407,6 +1358,19 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       </div>
 
       <DashboardTestListStatus {...testListState} />
+      {connectionState !== 'connected' && <p className="dashboard-context-note" role="status">Live stream: {connectionState}. Run metadata is polled separately; live workload samples may be stale.</p>}
+
+      {testListState.ready && <DashboardLandingSummary
+        releaseName={activeRelease?.name || 'All releases'} completed={releaseCompleted} reports={archiveReports}
+        activeCount={activeTests.length} queuedCount={pendingTests.length} updatedAt={testListUpdatedAt}
+        stale={Boolean(testListState.error)} attention={attentionItems}
+        onQueue={() => { setActiveDashboardTab('active') }} onResults={navigateToResults}
+        onAttention={item => {
+          if (item.destination === 'evidence') { setRunFilters({ ...emptyRunFilters, evidence: 'unavailable' }); setActiveDashboardTab('activity') }
+          else if (item.testId) { if (pendingTests.some(test => test.id === item.testId)) navigateToPendingRun(item.testId); else onSelectTest(item.testId) }
+          else navigateToMonitoring()
+        }}
+      />}
 
       <div className={`dash-dashboard-layout ${releasePanelOpen ? 'snapshot-open' : 'snapshot-collapsed'}`}>
         <div className="dash-main-column">
@@ -1417,11 +1381,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         {testListState.ready && activeDashboardTab === 'performance' && (
           <section className="dash-section dash-performance-trend">
             <div className="dash-section-heading-row">
-              <h3 className="dash-section-title">Performance Trend</h3>
+              <h3 className="dash-section-title">Load Comparison</h3>
               <div className="dash-section-heading-actions">
                 {activeRelease?.id && performanceTrend.length > 0 && (
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => void downloadTrendCsv()}>
-                    Export CSV
+                  <button type="button" className="btn btn-secondary btn-sm" title="Exports the complete release series, not the selected load-comparison runs." onClick={() => void downloadTrendCsv()}>
+                    Export release trend CSV
                   </button>
                 )}
                 {performanceTrend.length > 0 && (
@@ -1530,7 +1494,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           {onOpenTestArchive && (
                             <td aria-label="Trend actions">
                               <div className="trend-row-actions">
-                                <button type="button" className="btn btn-sm btn-primary" onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>View results</button>
+                                <button type="button" className="btn btn-sm btn-primary" aria-label={`View results for ${test.name} (${runReference(test)})`} onClick={event => { event.stopPropagation(); onOpenTestArchive(test.id) }}>View results</button>
                               </div>
                             </td>
                           )}
@@ -1550,7 +1514,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               Active Tests
               {stats.active > 0 && <span className="dash-badge pulse">{stats.active}</span>}
             </h3>
-            {activeTests.length === 0 ? (
+            {pendingTests.length > 0 && <section className="dashboard-queue" aria-label="Queued runs">
+              <div className="dashboard-summary-heading"><h3>Queued runs ({pendingTests.length})</h3><button type="button" className="btn btn-secondary btn-sm" onClick={() => navigateToPendingRun(pendingTests[0]?.id)}>View queued tests</button></div>
+              {pendingTests.map(test => <div className="dashboard-queue-row" key={test.id}>
+                <div><strong>{test.name}</strong><span>{runReference(test)} · {test.queue_position ? `Queue #${test.queue_position}` : test.status}</span><span>{pendingRunDetail(test)}</span></div>
+                <button type="button" className="btn btn-secondary btn-sm" aria-label={`Open queued run ${test.name} (${runReference(test)})`} onClick={() => navigateToPendingRun(test.id)}>Open in Command Center</button>
+              </div>)}
+            </section>}
+            {activeTests.length === 0 && pendingTests.length > 0 ? <p className="dashboard-context-note">No tests currently running. Generator readiness does not guarantee project capacity.</p> : activeTests.length === 0 ? (
               <div className="dash-empty compact">
                 <span className="dash-empty-icon">
                   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1558,13 +1529,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   </svg>
                 </span>
                 <span>No tests currently running</span>
-                <span className="dash-empty-hint">{pendingTests.length > 0 ? `${pendingTests.length} test${pendingTests.length === 1 ? '' : 's'} waiting on project capacity.` : 'Start a scenario from the New Test page'}</span>
+                <span className="dash-empty-hint">Start a scenario from the New Test page</span>
                 <button
                   type="button"
-                  className={`btn btn-sm ${pendingTests.length > 0 ? 'btn-secondary' : 'btn-primary'}`}
-                  onClick={pendingTests.length > 0 ? navigateToTests : navigateToNewTest}
+                  className="btn btn-sm btn-primary"
+                  onClick={navigateToNewTest}
                 >
-                  {pendingTests.length > 0 ? 'View queued tests' : 'Start New Test'}
+                  Start New Test
                 </button>
               </div>
             ) : (
@@ -1705,7 +1676,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
         {testListState.ready && activeDashboardTab === 'activity' && (
           <section className="dash-section dash-activity">
-            <h3 className="dash-section-title">Recent Activity</h3>
+            <div className="dashboard-summary-heading"><h3 className="dash-section-title">Recent completed runs</h3><button type="button" className="btn btn-secondary btn-sm" onClick={navigateToResults}>All results</button></div>
+            {recentTests.length > 0 && <div className="dashboard-run-filters" role="search" aria-label="Filter completed runs">
+              <label>Find a run<input type="search" value={runFilters.search} placeholder="Name or run reference" onChange={event => setRunFilters(current => ({ ...current, search: event.target.value }))} /></label>
+              <label>Period<select value={runFilters.days} onChange={event => setRunFilters(current => ({ ...current, days: event.target.value }))}><option value="all">All time</option><option value="1">Last 24 hours</option><option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option></select></label>
+              <label>Execution<select value={runFilters.status} onChange={event => setRunFilters(current => ({ ...current, status: event.target.value }))}><option value="all">All states</option><option value="COMPLETE">Complete</option><option value="FAILED">Failed</option><option value="ABORTED">Aborted</option></select></label>
+              <label>Evidence<select value={runFilters.evidence} onChange={event => setRunFilters(current => ({ ...current, evidence: event.target.value }))}><option value="all">All evidence</option><option value="available">Archive available</option><option value="unavailable">Archive unavailable</option></select></label>
+              <label>Acceptance<select value={runFilters.acceptance} onChange={event => setRunFilters(current => ({ ...current, acceptance: event.target.value }))}><option value="all">All outcomes</option>{['Pass', 'Fail', 'Inconclusive', 'Not assessed', 'Unavailable', 'Loading'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setRunFilters(emptyRunFilters)}>Clear filters</button>
+              <span>{sortedRecentTests.length} of {recentTests.length} runs</span>
+            </div>}
+            {recentTests.length > 0 && sortedRecentTests.length === 0 && <p role="status">No runs match these filters. Clear filters to see all completed runs.</p>}
             {recentTests.length === 0 ? (
               <div className="dash-empty compact">
                 <span>No completed tests yet</span>
@@ -1721,7 +1702,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                       {renderActivitySortHeader('status', 'Status')}
                       {renderActivitySortHeader('vusers', 'VUsers', 'num')}
                       {renderActivitySortHeader('duration', 'Duration', 'num')}
-                      {renderActivitySortHeader('transactions', 'Transactions', 'num')}
+                      {renderActivitySortHeader('transactions', 'Archive records', 'num')}
                       {renderActivitySortHeader('date', 'Date / Time')}
                       {onOpenCommandCenter && <th>Actions</th>}
                     </tr>
@@ -1742,6 +1723,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             >
                               {test.name}
                             </button>
+                            <span className="trend-run-meta dashboard-run-reference">{runReference(test)}</span>
+                            <span className="dashboard-evidence" title={test.archive ? 'A saved archive is available. Acceptance is assessed separately.' : 'Saved archive unavailable; publication progress is unknown.'}>{test.archive ? 'Archive available' : 'Archive unavailable'} · Acceptance: {dashboardAcceptance(test, archiveReports)}</span>
+                            <details className="dashboard-run-details" onClick={event => event.stopPropagation()}>
+                              <summary>Run details<span className="dashboard-sr-only"> for {test.name} ({runReference(test)})</span></summary>
+                              <dl><div><dt>Configured VUsers</dt><dd>{test.total_vusers}</dd></div><div><dt>Configured duration</dt><dd>{test.duration}</dd></div><div><dt>Archive records</dt><dd>{test.archive ? test.archive.transaction_count.toLocaleString() : 'Unavailable — publication progress unknown'}</dd></div></dl>
+                            </details>
                             {(test.script_name || runtimeSummary) && (
                               <span className="trend-run-meta">{[test.script_name, runtimeSummary].filter(Boolean).join(' · ')}</span>
                             )}
@@ -1749,13 +1736,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                           <td><StatusBadge status={test.status} /></td>
                           <td className="num">{test.total_vusers}</td>
                           <td className="num">{test.duration}</td>
-                          <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : 'pending'}</td>
+                          <td className="num">{test.archive ? test.archive.transaction_count.toLocaleString() : '—'}</td>
                           <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
                           {onOpenCommandCenter && (
                             <td>
                               <button
                                 type="button"
                                 className="btn btn-sm btn-ghost"
+                                aria-label={`${onOpenTestArchive ? 'View results' : 'Command Center'} for ${test.name} (${runReference(test)})`}
                                 onClick={event => {
                                   event.stopPropagation();
                                   (['COMPLETE', 'FAILED', 'ABORTED'].includes(test.status) && onOpenTestArchive ? onOpenTestArchive : onOpenCommandCenter)(test.id)
@@ -1808,12 +1796,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           dashboardStats={stats}
           latestReleaseRun={latestReleaseRun}
           releaseTrendStats={releaseTrendStats}
-          health={health}
+          health={healthError ? null : health}
+          healthUpdatedAt={healthUpdatedAt}
           statusLabel={statusLabel}
           statusColor={statusColor}
           activeTests={activeTests}
           pendingTests={pendingTests}
-          attentionItems={attentionItems}
           testDataReady={testListState.ready}
           onToggle={() => setReleasePanelOpen(value => !value)}
           onReleaseChange={setActiveRelease}
@@ -1823,7 +1811,6 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           onResults={navigateToResults}
           onMonitoring={navigateToMonitoring}
           onNewTest={navigateToNewTest}
-          onSelectTest={onSelectTest}
         />
       </div>
     </div>

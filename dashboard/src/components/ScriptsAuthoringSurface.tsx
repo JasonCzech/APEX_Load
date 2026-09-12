@@ -214,8 +214,10 @@ function ScriptsAuthoringContent({
         <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
       )
     case 'oracle-review':
-      return renderCreateOptionsSurface(
+      return createOptionsSurface(
         <OracleEBusinessReviewImport projectId={projectId} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+        false,
+        null,
       )
     case 'devweb-import':
       return renderCreateOptionsSurface(

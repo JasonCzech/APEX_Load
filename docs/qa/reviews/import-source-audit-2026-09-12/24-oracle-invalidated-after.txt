@@ -1,0 +1,73 @@
+- complementary:
+  - button "APEX Load dashboard":
+    - img "APEX Load"
+  - 'button "Select domain. Current domain: Default Domain"':
+    - generic: ◇
+  - 'button "Select project. Current project: ACC"':
+    - generic: ◫
+  - 'button "Select application. Current application: Legacy"':
+    - generic: ▣
+  - 'button "Select release. Current release: Imported Legacy"':
+    - generic: ◆
+  - navigation:
+    - button "Dashboard":
+    - button "New Test":
+    - button "Command Center":
+    - button "Results":
+    - button "Scripts":
+    - button "Scenarios":
+    - button "Repository":
+    - button "Monitoring":
+    - button "Help & documentation":
+    - button "Access":
+    - button "Settings":
+  - generic "Live"
+  - 'button "Build info: local · v0.1.0-dev.20260912+6d53cf5"'
+- main "Oracle E-Business Review":
+  - status: Oracle E-Business Review
+  - generic "Dashboard controls":
+    - heading "Oracle E-Business Review" [level=1]
+    - navigation "Active test runs":
+      - link "User_Registration_Flow Queued":
+        - /url: "#/command-center/3b75cea5-4f47-4afe-9f5b-41ee2e913ab0?projectId=10eb412e-7153-4458-825e-ec012c7a5c76&applicationId=legacy-534ca7811f72&releaseId=legacy-imported-534ca7811f72"
+        - generic: User_Registration_Flow
+        - generic: Queued
+      - link "Multi-group (2 groups) Queued":
+        - /url: "#/command-center/ea1d688b-2159-4949-a825-ca0418d24c86?projectId=10eb412e-7153-4458-825e-ec012c7a5c76&applicationId=legacy-534ca7811f72&releaseId=legacy-imported-534ca7811f72"
+        - generic: Multi-group (2 groups)
+        - generic: Queued
+    - link "Help for this page":
+      - /url: "#/docs?guide=user-guide&article=authoring"
+    - generic "Deployment identity":
+      - generic: Browser · Server
+  - group "Script import controls":
+    - heading "Oracle E-Business / Siebel Review" [level=2]
+    - paragraph: Review packaged enterprise app sources for package signals, correlation candidates, execution posture, and evidence requirements.
+    - button "Back"
+    - list "Source review workflow":
+      - generic: "1."
+      - text: Provide source
+      - generic: "2."
+      - text: Review findings
+    - paragraph: "Review only: this page produces findings and next actions. It does not create or save a script."
+    - group "Review source":
+      - generic: Review Name
+      - textbox "Review Name":
+        - /placeholder: Oracle checkout review
+      - generic: Package
+      - combobox "Package":
+        - option "Auto-detect package" [selected]
+        - option "Oracle E-Business Web"
+        - option "Siebel Web"
+        - option "Oracle NCA / Forms"
+        - option "Generic Web HTTP/HTML"
+      - generic: Source Text
+      - textbox "Source Text" [active]:
+        - /placeholder: Paste HAR excerpts, source snippets, exported steps, URLs, or notes for review.
+        - text: A completely different generic source
+      - generic: Source Files
+      - button "Source Files Optional supporting files for review"
+      - generic: Optional supporting files for review
+    - button "Run Review"
+    - heading "Review Notes" [level=3]
+    - paragraph: Oracle-Web and Siebel-Web are HTTP-backed package reviews; replay, correlation repair, data-source fit, and approval evidence are required before promotion. Oracle NCA is intentionally review-only until an Oracle Forms/NCA client runner is explicitly approved for a project. DevWeb, JMeter, and Web-HTTP/HTML retain their existing import/runtime paths and add Oracle E-Business caveats through this review layer.

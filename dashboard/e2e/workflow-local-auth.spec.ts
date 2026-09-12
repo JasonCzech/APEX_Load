@@ -41,7 +41,7 @@ test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve th
   await expect.poll(() => runStatus(request, id), { timeout: 90_000 }).toBe('COMPLETE')
   await expect.poll(async () => (await request.get(`/api/v1/tests/${id}/archive/manifest`)).ok(), { timeout: 60_000 }).toBe(true)
   await page.getByRole('button', { name: 'Results', exact: true }).first().click()
-  await page.getByPlaceholder('Find releases or results...').fill(runName)
+  await page.getByRole('searchbox', { name: 'Search results', exact: true }).fill(runName)
   const row = page.locator('tbody tr').filter({ hasText: runName })
   await expect(row).toBeVisible()
   await row.getByRole('button', { name: 'View results' }).click()

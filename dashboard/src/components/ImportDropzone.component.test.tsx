@@ -57,15 +57,44 @@ describe('ImportDropzone', () => {
     expect(container.textContent).toContain('Change')
   })
 
-  it('clears the file when change is clicked', () => {
+  it('removes the file only when Remove is clicked', () => {
     const file = new File(['{}'], 'spec.json', { type: 'application/json' })
     const onFile = vi.fn()
     render({ file, onFile })
-    const change = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Change')
+    const change = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Remove')
     act(() => {
       change!.click()
     })
     expect(onFile).toHaveBeenCalledWith(null)
+  })
+
+  it('opens Change without discarding the selected file and prevents nested button semantics', () => {
+    const file = new File(['{}'], 'spec.json')
+    const onFile = render({ file })
+    const input = container.querySelector('input')!
+    const browse = vi.spyOn(input, 'click')
+    expect(container.querySelector('.import-dropzone')?.getAttribute('role')).toBe('group')
+    act(() => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Change')!.click())
+    expect(browse).toHaveBeenCalledTimes(1)
+    expect(onFile).not.toHaveBeenCalled()
+  })
+
+  it('prevents space from scrolling when opening the keyboard picker', () => {
+    render()
+    const browse = vi.spyOn(container.querySelector('input')!, 'click')
+    const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    act(() => container.querySelector('.import-dropzone')!.dispatchEvent(event))
+    expect(event.defaultPrevented).toBe(true)
+    expect(browse).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears a previous rejection after a valid selection', () => {
+    const onError = vi.fn()
+    render({ onError })
+    const event = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'dataTransfer', { value: { files: [new File(['{}'], 'valid.json')] } })
+    act(() => container.querySelector('.import-dropzone')!.dispatchEvent(event))
+    expect(onError).toHaveBeenCalledWith('')
   })
 
   it('accepts a dropped file', () => {

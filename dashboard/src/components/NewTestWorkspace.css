@@ -1,0 +1,69 @@
+/* Scoped overrides keep New Test independent of other workspaces. */
+.new-test-draft-toolbar, .new-test-selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.new-test-draft-toolbar > span { flex: 1 1 280px; color: var(--text-secondary); }
+.new-test-selected {
+  padding: 18px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+}
+.new-test-selected > strong, .new-test-selected > span { flex-basis: 100%; overflow-wrap: break-word; }
+.new-test-reference { display: block; color: var(--text-secondary); font-weight: normal; overflow-wrap: anywhere; }
+.new-test-workspace .new-test-scenario-table th { white-space: nowrap; overflow-wrap: normal; }
+.new-test-workspace .new-test-scenario-table td { overflow-wrap: break-word; }
+.new-test-workspace .new-test-scenario-table th:nth-child(1) { width: 42%; }
+.new-test-workspace .new-test-scenario-table th:nth-child(4) { width: 16%; }
+.new-test-workspace .new-test-scenario-table th:nth-child(5) { width: 18%; }
+.new-test-workspace .new-test-scenario-table th:nth-child(7) { width: 24%; }
+.new-test-workspace .new-test-scenario-table > thead > tr > th:nth-child(2),
+.new-test-workspace .new-test-scenario-table > thead > tr > th:nth-child(3),
+.new-test-workspace .new-test-scenario-table > thead > tr > th:nth-child(6),
+.new-test-workspace .new-test-scenario-table > tbody > .new-test-scenario-table-row > td:nth-child(2),
+.new-test-workspace .new-test-scenario-table > tbody > .new-test-scenario-table-row > td:nth-child(3),
+.new-test-workspace .new-test-scenario-table > tbody > .new-test-scenario-table-row > td:nth-child(6) { display: none; }
+.new-test-workspace .new-test-script-table { table-layout: fixed; min-width: 0; width: 100%; }
+.new-test-workspace .new-test-script-table th { width: auto; white-space: normal; }
+.new-test-workspace .new-test-script-table td { word-break: normal; overflow-wrap: break-word; min-width: 0; }
+.new-test-script-row .cell-name small, .new-test-script-row .cell-name button { display: block; margin-top: 8px; }
+.new-test-runtime-cell details { cursor: auto; }
+.new-test-runtime-cell summary { cursor: pointer; color: var(--text-primary); }
+.new-test-runtime-cell dd { margin: 0 0 8px; }
+.run-group-modal { width: min(1000px, calc(100vw - 48px)); max-width: 1000px; }
+.run-group-modal .new-test-default-editor-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.new-test-schedules-layout .new-test-schedule-fields { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+.new-test-schedule-fields > .setting-row { width: 100%; box-sizing: border-box; min-width: 0; display: grid; grid-template-columns: minmax(180px, 1fr) minmax(260px, 2fr); align-items: start; gap: 12px; }
+.new-test-schedule-fields > .setting-row > input[type="search"] { grid-column: 2; }
+.new-test-schedule-fields > .setting-row > select { grid-column: 2; }
+.new-test-schedule-policy, .new-test-catalog-search, .new-test-readiness-body { display: block; padding: 18px; }
+.new-test-schedule-policy dl { display: grid; grid-template-columns: minmax(100px, 1fr) 2fr; gap: 8px; }
+.new-test-schedule-policy dd { margin: 0; }
+.new-test-schedule-catalog > p { padding: 0 18px 18px; }
+.new-test-schedule-catalog td { overflow-wrap: anywhere; }
+.new-test-readiness-body ul { padding-left: 22px; }
+.new-test-readiness-body li { margin-bottom: 12px; overflow-wrap: anywhere; }
+.new-test-readiness-body p, .new-test-readiness-body li, .new-test-launch-card p, .new-test-summary p { color: var(--text-secondary); line-height: 1.5; }
+.new-test-launch-card p, .new-test-summary p { font-size: 13px; }
+@media (max-width: 1200px) {
+  .new-test-layout.new-test-workspace { grid-template-columns: minmax(0, 1fr); }
+  .new-test-workspace .new-test-run-config-row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  .new-test-schedule-fields > .setting-row { grid-template-columns: minmax(0, 1fr); }
+  .new-test-schedule-fields > .setting-row > select, .new-test-schedule-fields > .setting-row > input[type="search"] { grid-column: 1; }
+  .run-group-modal .new-test-default-editor-grid { grid-template-columns: minmax(0, 1fr); }
+  .new-test-workspace .new-test-scenario-table, .new-test-workspace .new-test-script-table { min-width: 480px; }
+}
+.new-test-schedule-catalog .data-table { overflow-x: auto; }
+.new-test-schedule-catalog table { min-width: 640px; }
+.new-test-schedule-catalog button { white-space: nowrap; }
+@media (max-width: 1000px) {
+  .new-test-schedule-fields > .setting-row { grid-template-columns: minmax(0, 1fr); }
+  .new-test-schedule-fields > .setting-row > select,
+  .new-test-schedule-fields > .setting-row > input[type="search"] { grid-column: 1; }
+}

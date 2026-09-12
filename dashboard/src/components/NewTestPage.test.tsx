@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import NewTestPage from './NewTestPage'
 import { CLEARABLE_RUNTIME_SECTIONS, type ClearableRuntimeSection } from './newTestRunModel'
 import { pacingFromEdit } from './pacingEditModel'
+import { readNewTestDraft, saveNewTestDraft } from './newTestDraft'
 import { persistNewTestQueueAttempt } from './newTestQueueAttempt'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
@@ -14,6 +15,8 @@ import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 const apiMock = {
   listScenarios: vi.fn(),
+  previewScenarioSchedule: vi.fn(),
+  getScript: vi.fn(),
   listScenarioSchedules: vi.fn(),
   listScenarioScheduleOccurrences: vi.fn(),
   createScenarioSchedule: vi.fn(),
@@ -164,6 +167,9 @@ describe('NewTestPage', () => {
         },
       ],
     })
+    window.sessionStorage.clear()
+    apiMock.previewScenarioSchedule.mockResolvedValue({ occurrences: ['2026-09-14T13:00:00Z'] })
+    apiMock.getScript.mockRejectedValue(new Error('No script access'))
     apiMock.createTest.mockResolvedValue({ id: 'test-1' })
     apiMock.getTest.mockRejectedValue(new Error('test not found'))
     apiMock.estimateTest.mockResolvedValue({})
@@ -467,7 +473,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('Scenario Schedule')
   })
 
-  it('prompts before leaving a dirty run setup for schedules', async () => {
+  it('retains a dirty run setup when switching tabs without creating a test', async () => {
     await act(async () => {
       root.render(
         <NavigationGuardProvider>
@@ -500,16 +506,12 @@ describe('NewTestPage', () => {
       schedulesButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Unsaved Changes')
-    expect(container.textContent).not.toContain('Scenario Schedule')
-
-    const discardButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Discard changes'))
-    await act(async () => {
-      discardButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
+    expect(container.textContent).not.toContain('Unsaved Changes')
     expect(container.textContent).toContain('Scenario Schedule')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run Setup')?.click())
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('Dirty run setup')
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(apiMock.startTest).not.toHaveBeenCalled()
   })
 
   it('guards scenario row changes that would discard dirty launch overrides', async () => {
@@ -568,7 +570,7 @@ describe('NewTestPage', () => {
     expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).not.toBe('Dirty launch name')
   })
 
-  it('guards an unsaved run-default modal draft before leaving run setup', async () => {
+  it('preserves an open run-default editor when the page tab changes', async () => {
     await act(async () => {
       root.render(
         <NavigationGuardProvider>
@@ -598,7 +600,7 @@ describe('NewTestPage', () => {
       .find(button => button.textContent === 'Schedules')
     await act(async () => schedulesButton?.click())
 
-    expect(container.textContent).toContain('Unsaved Changes')
+    expect(container.textContent).not.toContain('Unsaved Changes')
     expect(document.querySelector('.run-default-modal')).toBeTruthy()
   })
 
@@ -684,7 +686,7 @@ describe('NewTestPage', () => {
     expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('')
   })
 
-  it('queues a guarded run with the still-open group editor draft applied', async () => {
+  it('saves a local draft with pending group edits without creating or starting a test', async () => {
     await act(async () => {
       root.render(
         <NavigationGuardProvider>
@@ -712,20 +714,14 @@ describe('NewTestPage', () => {
       if (vusersInput) setInputValue(vusersInput, '25')
     })
 
-    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Schedules')
-    await act(async () => schedulesButton?.click())
-    expect(container.textContent).toContain('Unsaved Changes')
-    const saveChanges = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save changes'))
-    await act(async () => saveChanges?.click())
-    await vi.waitFor(() => expect(apiMock.createTest).toHaveBeenCalledTimes(1))
-
-    expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({
-      scenario_id: 'scenario-1',
-      groups: [expect.objectContaining({ script_id: 'script-1', vusers: 25 })],
-    }))
-    expect(container.textContent).toContain('Scenario Schedule')
+    const saveDraft = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save draft')
+    await act(async () => saveDraft?.click())
+    const saved = readNewTestDraft('project-1', 'app-1')
+    expect(saved).not.toBeNull()
+    expect(Object.values(saved!.groupRunOverrides)[0].vusers).toBe(25)
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(apiMock.startTest).not.toHaveBeenCalled()
+    expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
   })
 
   it('omits previously tested release tags without duplicate key warnings', async () => {
@@ -801,6 +797,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).not.toContain('Calendar Windows')
     expect(container.textContent).not.toContain('Missed Run Policy')
 
+    await flushDebouncedPreflight()
     await act(async () => {
       saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -842,6 +839,7 @@ describe('NewTestPage', () => {
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')
     await act(async () => editButton?.click())
     const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update Schedule')
+    await flushDebouncedPreflight()
     await act(async () => updateButton?.click())
     await flushPromises()
 
@@ -885,6 +883,7 @@ describe('NewTestPage', () => {
       if (maintenanceTimezone) setSelectValue(maintenanceTimezone, 'Asia/Tokyo')
     })
     const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update Schedule')
+    await flushDebouncedPreflight()
     await act(async () => updateButton?.click())
     await flushPromises()
 
@@ -975,10 +974,10 @@ describe('NewTestPage', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Scenario Two Schedule')
-    expect(container.textContent).not.toContain('Stale Scenario One Schedule')
+    expect(container.querySelector('[aria-label="Selected scenario schedules"]')?.textContent).not.toContain('Stale Scenario One Schedule')
   })
 
-  it('guards navigation away from a dirty schedule draft', async () => {
+  it('preserves a dirty recurring draft across both page tabs', async () => {
     await act(async () => {
       root.render(
         <NavigationGuardProvider>
@@ -1004,14 +1003,11 @@ describe('NewTestPage', () => {
 
     const runSetupButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Run Setup')
     await act(async () => runSetupButton?.click())
-    expect(container.textContent).toContain('Unsaved Changes')
-    expect(container.textContent).toContain('Scenario Schedule')
-
-    const discardButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Discard changes'))
-    await act(async () => discardButton?.click())
-    expect(container.textContent).not.toContain('Scenario Schedule')
-    expect(container.textContent).toContain('Run Summary')
+    expect(container.textContent).not.toContain('Unsaved Changes')
+    await act(async () => schedulesButton?.click())
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="schedule-name-label"]')?.value).toBe('Dirty recurring schedule')
+    expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
+    expect(apiMock.createTest).not.toHaveBeenCalled()
   })
 
   it('guards editing another schedule when the current schedule draft is dirty', async () => {
@@ -1166,7 +1162,7 @@ describe('NewTestPage', () => {
     expect(container.textContent).toContain('40')
     expect(container.textContent).toContain('Batch Script')
     expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Iterations')
-    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Log Level')
+    expect(container.querySelector('.new-test-scenario-expanded-row')?.textContent).toContain('Log level')
 
     await act(async () => {
       setInputValue(searchInput, 'does-not-exist')
@@ -1294,7 +1290,7 @@ describe('NewTestPage', () => {
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-type')).toBe('number')
     expect(profileCard.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-domain')).toBe('0,dataMax')
     expect(profileCard.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
-    expect(launchCard.textContent).toContain('Hold for Manual Start / Schedule Run')
+    expect(launchCard.textContent).toContain('Run timing')
     expect(launchCard.textContent).toContain('Hold for Manual Start')
     expect(launchCard.textContent).toContain('Schedule Run')
     expect(profileCard.compareDocumentPosition(launchCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -1305,16 +1301,16 @@ describe('NewTestPage', () => {
     const scriptGroupsTableText = scriptGroupsTable?.textContent || ''
     expect(scriptGroupsTableText).toContain('Iterations')
     expect(scriptGroupsTableText).toContain('Pacing')
-    expect(scriptGroupsTableText).toContain('Think Time')
-    expect(scriptGroupsTableText).toContain('Log Level')
-    expect(scriptGroupsTableText).toContain('Auto Tx')
+    expect(scriptGroupsTableText).toContain('Think time')
+    expect(scriptGroupsTableText).toContain('Log level')
+    expect(scriptGroupsTableText).toContain('Auto transactions')
     expect(scriptGroupsTableText).toContain('Duration driven')
     expect(scriptGroupsTableText).toContain('Script timing')
     expect(scriptGroupsTableText).toContain('Script think time')
     expect(scriptGroupsTableText).toContain('Standard')
     expect(scriptGroupsTableText).toContain('Per iteration')
     expect(scriptGroupsTableText).toContain('Stop / Snapshot')
-    expect(scriptGroupsTableText).not.toMatch(/\bdefault\b/i)
+    expect(scriptGroupsTableText).toContain('Auto')
 
     const runtimeDefaultsToggle = container.querySelector('.new-test-runtime-defaults summary') as HTMLElement | null
     expect(runtimeDefaultsToggle).toBeTruthy()
@@ -1494,7 +1490,7 @@ describe('NewTestPage', () => {
     const scriptGroupRow = Array.from(container.querySelectorAll('.new-test-script-row')).find(row => row.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
     expect(scriptGroupRow).toBeTruthy()
     expect(container.querySelector('.new-test-script-table')?.textContent).not.toContain('Browser')
-    expect(container.querySelector('.new-test-script-table')?.textContent).not.toContain('Edit')
+    expect(container.querySelector('.new-test-script-table')?.textContent).toContain('Edit settings')
 
     await act(async () => {
       scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1550,7 +1546,7 @@ describe('NewTestPage', () => {
     expect(scriptGroupsTableText).toContain('4')
     expect(scriptGroupsTableText).toContain('Fixed delay · 0.75 seconds')
     expect(scriptGroupsTableText).toContain('Extended')
-    expect(scriptGroupsTableText).not.toMatch(/\bdefault\b/i)
+    expect(scriptGroupsTableText).toContain('Script default')
     expect(container.textContent).toContain('Run override')
 
     await flushDebouncedPreflight()
@@ -3169,7 +3165,7 @@ describe('NewTestPage', () => {
     })
 
     const scriptGroupsTableText = container.querySelector('.new-test-script-table')?.textContent || ''
-    expect(scriptGroupsTableText).toContain('Placement')
+    expect(scriptGroupsTableText).toContain('Runtime / placement')
     expect(scriptGroupsTableText).toContain('Sharded: 2 hosts, capacity weighted')
     expect(container.textContent).toContain('Host Placement')
     expect(container.textContent).toContain('1 sharded group')
@@ -3261,7 +3257,7 @@ describe('NewTestPage', () => {
     })
 
     const modal = document.querySelector('.run-group-modal') as HTMLElement | null
-    expect(modal?.textContent).toContain('Automatic placement and capability rules remain available')
+    expect(modal?.textContent).toContain('Capacity estimates may include configured or local execution capacity')
     expect(modal?.textContent).toContain('gen-a:9090')
     const autoRadio = Array.from(modal?.querySelectorAll('label') || []).find(label => label.textContent?.includes('Automatic placement'))?.querySelector('input') as HTMLInputElement | null
     expect(autoRadio).toBeTruthy()
@@ -3834,7 +3830,7 @@ describe('NewTestPage', () => {
     await flushDebouncedPreflight()
 
     expect(container.textContent).toContain('Hold for Manual Start')
-    expect(container.textContent).toContain('Reserved Window')
+    expect(container.textContent).toContain('Proposed launch window')
 
     const reserveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for Manual Start')
     await act(async () => {
@@ -4247,6 +4243,119 @@ describe('NewTestPage', () => {
     expect(container.querySelector('[aria-label="Blackout windows window 1 end time"]')).toBeInstanceOf(HTMLInputElement)
     expect(container.querySelector('[aria-label="Blackout windows window 1 days of week"]')).not.toBeNull()
   })
+  async function renderAuditPage() {
+    await act(async () => root.render(<NavigationGuardProvider><NewTestPage
+      activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+      activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+      releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+      onSelectTest={vi.fn()} onCreateRelease={vi.fn().mockResolvedValue(null)}
+    /></NavigationGuardProvider>))
+    await flushPromises()
+  }
+  const auditButton = (name: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === name)
+
+  it('keeps the selected scenario identity visible when filtering excludes its row', async () => {
+    await renderAuditPage()
+    const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
+    await act(async () => setInputValue(search, 'No matching scenario'))
+    expect(container.querySelectorAll('.new-test-scenario-table-row')).toHaveLength(0)
+    expect(container.querySelector('[aria-label="Selected scenario"]')?.textContent).toContain('scenario-1')
+    expect(container.querySelector('.new-test-launch-card')?.textContent).toContain('scenario-1')
+    await act(async () => auditButton('Show selected scenario')?.click())
+    expect(container.querySelectorAll('.new-test-scenario-table-row')).toHaveLength(1)
+  })
+
+  it('restores a saved run draft after unmount without executing or modifying a schedule', async () => {
+    await renderAuditPage()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')!, 'Saved draft run'))
+    await act(async () => auditButton('Save draft')?.click())
+    expect(readNewTestDraft('project-1', 'app-1')?.runName).toBe('Saved draft run')
+    await act(async () => root.render(null))
+    await renderAuditPage()
+    await act(async () => auditButton('Restore saved draft')?.click())
+    await flushPromises()
+    expect(container.querySelector<HTMLInputElement>('[aria-labelledby="new-test-run-name-label"]')?.value).toBe('Saved draft run')
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+    expect(apiMock.startTest).not.toHaveBeenCalled()
+    expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
+  })
+
+  it('keeps a missing saved reservation bound and applies current policies when restoring a new schedule draft', async () => {
+    await renderAuditPage()
+    await act(async () => auditButton('Save draft')?.click())
+    const saved = readNewTestDraft('project-1', 'app-1')!
+    saveNewTestDraft({ ...saved, selectedTimeslotId: 'missing-reservation' })
+    await act(async () => root.render(null))
+    apiMock.getSystemSettings.mockResolvedValue({ schedule_defaults: { approval_policy: 'manual_review', missed_run_policy: 'skip' } })
+    await renderAuditPage()
+    await act(async () => auditButton('Restore saved draft')?.click())
+    await flushPromises()
+    expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-timeslot-label"]')?.value).toBe('missing-reservation')
+    expect(auditButton('Start Now')?.disabled).toBe(true)
+    expect(container.textContent).toContain('saved capacity reservation is unavailable')
+    await act(async () => auditButton('Schedules')?.click())
+    expect(container.querySelector('[aria-label="Effective schedule policies"]')?.textContent).toContain('manual review')
+    expect(apiMock.createTest).not.toHaveBeenCalled()
+  })
+
+  it('explains empty required schedule fields instead of only disabling save', async () => {
+    await renderAuditPage()
+    await act(async () => auditButton('Schedules')?.click())
+    await act(async () => {
+      setInputValue(container.querySelector<HTMLInputElement>('[aria-labelledby="schedule-name-label"]')!, '')
+      setInputValue(container.querySelector<HTMLInputElement>('[aria-label="Raw cron expression"]')!, '')
+    })
+    expect(auditButton('Save Schedule')?.disabled).toBe(true)
+    expect(container.querySelector('#new-test-schedule-name-error')?.textContent).toBe('Enter a schedule name.')
+    expect(container.querySelector('#new-test-cron-error')?.textContent).toContain('Enter a schedule frequency')
+    expect(container.querySelector('[aria-labelledby="schedule-name-label"]')?.getAttribute('aria-invalid')).toBe('true')
+    expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
+  })
+
+  it('blocks invalid cron and hides stale occurrences while the new preview is pending', async () => {
+    await renderAuditPage()
+    await act(async () => auditButton('Schedules')?.click())
+    await flushDebouncedPreflight()
+    expect(auditButton('Save Schedule')?.disabled).toBe(false)
+    apiMock.previewScenarioSchedule.mockRejectedValueOnce(new Error('Invalid cron expression'))
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-label="Raw cron expression"]')!, 'invalid'))
+    expect(auditButton('Save Schedule')?.disabled).toBe(true)
+    expect(container.querySelector('.cron-next-runs')).toBeNull()
+    expect(container.textContent).toContain('Refreshing next runs')
+    await flushDebouncedPreflight()
+    expect(container.querySelector('[aria-label="Raw cron expression"]')?.getAttribute('aria-invalid')).toBe('true')
+    expect(auditButton('Save Schedule')?.disabled).toBe(true)
+    await act(async () => auditButton('Save Schedule')?.click())
+    expect(apiMock.createScenarioSchedule).not.toHaveBeenCalled()
+  })
+
+  it('does not claim that fallback schedule policies are verified after a settings failure', async () => {
+    apiMock.getSystemSettings.mockRejectedValue(new Error('Settings unavailable'))
+    await renderAuditPage()
+    await act(async () => auditButton('Schedules')?.click())
+    await flushDebouncedPreflight()
+    expect(auditButton('Save Schedule')?.disabled).toBe(true)
+    expect(container.textContent).toContain('Scheduling defaults could not be loaded')
+    apiMock.getSystemSettings.mockResolvedValue({ schedule_defaults: { approval_policy: 'manual_review', missed_run_policy: 'skip' } })
+    await act(async () => auditButton('Retry scheduling defaults')?.click())
+    await flushPromises()
+    expect(container.querySelector('[aria-label="Effective schedule policies"]')?.textContent).toContain('manual review')
+    expect(auditButton('Save Schedule')?.disabled).toBe(false)
+  })
+
+  it('reviews nested assertions, safe target origins, missing SLAs and unknown monitoring coverage', async () => {
+    apiMock.getScript.mockResolvedValue({ script: { config: { base_url: 'https://private:secret@example.com/hidden?key=hidden' }, actions: [{ type: 'if', steps: [{ type: 'http', url: '/orders', assertions: [{ type: 'status', expected: 200 }] }] }] } })
+    await renderAuditPage()
+    await flushPromises()
+    const review = container.querySelector('[aria-label="Run readiness review"]')!
+    expect(review.textContent).toContain('https://example.com')
+    expect(review.textContent).not.toContain('private:secret')
+    expect(review.textContent).not.toContain('?key=hidden')
+    expect(review.textContent).toContain('1 script assertions configured')
+    expect(review.textContent).toContain('No group response-time SLA configured')
+    expect(review.textContent).toContain('Target monitoring coverage is not verified')
+  })
+
 })
 
 async function flushPromises() {

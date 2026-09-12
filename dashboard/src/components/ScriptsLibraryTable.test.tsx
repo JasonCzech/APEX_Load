@@ -82,6 +82,26 @@ describe('ScriptsLibraryTable federation', () => {
     vi.clearAllMocks()
   })
 
+  it('paginates local and remote assets together and selects only local rows on the page', async () => {
+    const scripts = Array.from({ length: 11 }, (_, index) => ({ ...script, id: `script-${index}`, name: `Script ${index}` }))
+    const onToggleScriptSelection = vi.fn()
+    const render = (items = scripts) => root.render(<ScriptsLibraryTable {...baseProps} scripts={items} federation={makeFederation()} canManageScripts selectedScriptIds={new Set()} onToggleScriptSelection={onToggleScriptSelection} onToggleAllVisibleScripts={vi.fn()} />)
+    await act(async () => render())
+    expect(container.querySelector('table')?.dataset.tablePagination).toBe('off')
+    expect(container.textContent).toContain('Showing 1–10 of 12')
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Select all scripts on this page"]')!.click())
+    expect(onToggleScriptSelection.mock.calls.map(call => call[0])).toEqual(scripts.slice(0, 10).map(item => item.id))
+    onToggleScriptSelection.mockClear()
+    await act(async () => findButton('Next')!.click())
+    expect(container.textContent).toContain('Showing 11–12 of 12')
+    expect(container.textContent).toContain('Host Only Script')
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Select all scripts on this page"]')!.click())
+    expect(onToggleScriptSelection.mock.calls).toEqual([['script-10']])
+    await act(async () => render(scripts.slice(0, 1)))
+    expect(container.textContent).toContain('Showing 1–2 of 2')
+    expect(findButton('Previous')?.disabled).toBe(true)
+  })
+
   it('lets narrow layouts reveal secondary columns without changing selection or actions', async () => {
     await act(async () => root.render(<ScriptsLibraryTable {...baseProps} />))
     const toggle = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Show usage & dates')!
@@ -396,7 +416,7 @@ describe('ScriptsLibraryTable federation', () => {
     const scriptHeader = Array.from(container.querySelectorAll<HTMLTableCellElement>('th'))
       .find(header => header.textContent?.includes('Script'))
     const healthHeader = Array.from(container.querySelectorAll<HTMLTableCellElement>('th'))
-      .find(header => header.textContent?.includes('Health'))
+      .find(header => header.textContent?.includes('Authoring health'))
     expect(scriptHeader?.getAttribute('aria-sort')).toBe('ascending')
     expect(healthHeader?.getAttribute('aria-sort')).toBe('none')
     const healthSortButton = healthHeader?.querySelector('button')

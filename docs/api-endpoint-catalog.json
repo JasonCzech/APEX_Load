@@ -2487,6 +2487,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/monitoring/threshold-incidents",
+      "operationId": "handleListThresholdIncidents",
+      "summary": "List Threshold Incidents",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/monitoring/threshold-incidents/{id}/ack",
+      "operationId": "handleAcknowledgeThresholdIncident",
+      "summary": "Acknowledge Threshold Incident",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/object-repositories",
       "operationId": "handleListObjectRepositories",
       "summary": "List Object Repositories",

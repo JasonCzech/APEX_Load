@@ -15,6 +15,7 @@ import {
 
 import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
+import CommandCenterOverview, { type CommandCenterOverviewProps } from './CommandCenterOverview'
 import { useTestApi } from '../hooks/api/useTestApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
@@ -80,6 +81,12 @@ interface CommandCenterPrototypeProps {
   initialTest?: TestSummary
   applicationId?: string
   projectId?: string
+  releaseId?: string
+  scopeLabel?: string
+  onSelectRun?: (id: string) => void
+  onOpenOverview?: () => void
+  runViewMemory?: Map<string, Map<string, unknown>>
+  overviewActions?: Pick<CommandCenterOverviewProps, 'onNewTest' | 'newTestDisabledReason' | 'onBrowseScenarios' | 'releases' | 'onSelectRelease' | 'onOpenRepository'>
   // Live global SLA threshold breaches for this run (Settings → Thresholds),
   // rendered as a compact strip above the cockpit views.
   thresholdAlerts?: ThresholdAlertEntry[]
@@ -432,6 +439,12 @@ export default function CommandCenterPrototype({
   initialTest,
   applicationId,
   projectId,
+  releaseId,
+  scopeLabel = 'Current workspace',
+  onSelectRun,
+  onOpenOverview,
+  runViewMemory,
+  overviewActions,
   thresholdAlerts = [],
   onAcknowledgeThresholdAlert,
   onOpenExecution,
@@ -450,9 +463,9 @@ export default function CommandCenterPrototype({
   }, [active])
   // When the Command Center is opened without an explicit run on the route
   // (e.g. via the sidebar nav rather than from a run chip), we discover the
-  // live runs in scope and pick one. `testId` below is the effective run the
-  // view renders: the routed run if present, otherwise the auto-selected one.
-  const discoveryScopeKey = projectId ? `${projectId}\u001f${applicationId || ''}` : ''
+  // live runs in scope for explicit selection. Standalone legacy callers can
+  // still auto-select a single run when no routing callback is provided.
+  const discoveryScopeKey = projectId ? `${projectId}\u001f${applicationId || ''}\u001f${releaseId || ''}` : ''
   const [autoSelection, setAutoSelection] = useState<{ scopeKey: string; testId: string } | null>(null)
   const autoSelectedTestId = autoSelection?.scopeKey === discoveryScopeKey ? autoSelection.testId : null
   const setAutoSelectedTestId = useCallback((nextTestID: string | null) => {
@@ -462,9 +475,14 @@ export default function CommandCenterPrototype({
     scopeKey: string
     runs: TestSummary[]
     discovering: boolean
+    error?: string
+    updatedAt?: number
   }>({ scopeKey: '', runs: [], discovering: false })
+  const [discoveryRetry, setDiscoveryRetry] = useState(0)
   const liveRunOptions = runDiscoveryState.scopeKey === discoveryScopeKey ? runDiscoveryState.runs : []
-  const discoveringRuns = runDiscoveryState.scopeKey === discoveryScopeKey && runDiscoveryState.discovering
+  const discoveringRuns = Boolean(discoveryScopeKey) && (runDiscoveryState.scopeKey !== discoveryScopeKey || runDiscoveryState.discovering)
+  const discoveryError = runDiscoveryState.scopeKey === discoveryScopeKey ? runDiscoveryState.error || '' : ''
+  const discoveryUpdatedAt = runDiscoveryState.scopeKey === discoveryScopeKey ? runDiscoveryState.updatedAt : undefined
   const discoveryGenerationRef = useRef(0)
   const testId = testIdProp || autoSelectedTestId || undefined
   useEffect(() => {
@@ -485,7 +503,20 @@ export default function CommandCenterPrototype({
     if (shelf) observer.observe(shelf)
     return () => observer.disconnect()
   }, [active, testId])
-  const viewMemory = useMemo(() => ({ testId, values: new Map<string, unknown>() }), [testId])
+  // Retain a bounded set of per-run drafts and table preferences while switching
+  // within this workspace. Scope changes cannot reuse another project's draft.
+  const [localRunMemories] = useState(() => new Map<string, Map<string, unknown>>())
+  const runMemories = runViewMemory || localRunMemories
+  const viewMemory = useMemo(() => {
+    const key = `${discoveryScopeKey}\u001f${testId || ''}`
+    const values = runMemories.get(key) || new Map<string, unknown>()
+    runMemories.delete(key)
+    runMemories.set(key, values)
+    if (runMemories.size > 20) runMemories.delete(runMemories.keys().next().value!)
+    return { testId, values }
+  }, [discoveryScopeKey, runMemories, testId])
+  const currentRunRef = useRef(testId)
+  currentRunRef.current = testId
   const [variant, setVariant] = useState<VariantId>('ops')
   const [liveTest, setLiveTest] = useState<TestSummary | null>(() => initialTest || null)
   const [loadError, setLoadError] = useState('')
@@ -517,6 +548,8 @@ export default function CommandCenterPrototype({
   useEffect(() => {
     archiveCheckGenerationRef.current += 1
     archiveCheckInFlightRef.current = false
+    onCancelRunAction()
+    setShowNotes(false)
     setGroupSettingsDialog(null)
     setShowRuntimeAdjustment(false)
     setLiveEvidenceByRunSignature({})
@@ -526,7 +559,7 @@ export default function CommandCenterPrototype({
     setArchiveFinalizationTimedOut(false)
     setArchiveCheckPending(false)
     setArchiveCheckError('')
-  }, [testId])
+  }, [testId, onCancelRunAction])
   const syncedTargetsRef = useRef<Record<string, number>>({})
   const syncedTargetTestIdRef = useRef<string | null>(null)
   const [state, setState] = useState<CommandCenterState>(() => ({
@@ -695,15 +728,12 @@ export default function CommandCenterPrototype({
     }
   }, [api, testId])
 
-  // Auto-discover live runs when the view is opened without a selected run.
-  // A single live run is selected automatically; multiple live runs surface a
-  // picker (see CommandCenterEmptyState). Skipped for the local prototype and
-  // once a run is routed/selected. Polls so a run that starts while the empty
-  // state is open gets picked up.
+  // Keep the routed overview and run switcher current. Standalone consumers
+  // without a navigation callback retain single-run auto-selection.
   useEffect(() => {
     const requestGeneration = ++discoveryGenerationRef.current
-    if (prototypeMode || testIdProp || initialTest || autoSelectedTestId || !discoveryScopeKey) {
-      setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
+    if (!active || prototypeMode || initialTest || (!onSelectRun && (testIdProp || autoSelectedTestId)) || !discoveryScopeKey) {
+      if (active) setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
       return undefined
     }
     let cancelled = false
@@ -715,6 +745,7 @@ export default function CommandCenterPrototype({
       }
       inFlight = true
       setRunDiscoveryState(current => ({
+        ...(current.scopeKey === discoveryScopeKey ? current : {}),
         scopeKey: discoveryScopeKey,
         runs: current.scopeKey === discoveryScopeKey ? current.runs : [],
         discovering: true,
@@ -723,18 +754,23 @@ export default function CommandCenterPrototype({
         const discoveredRuns = await listAllCommandCenterActiveRuns(api.listTests, {
           application_id: applicationId,
           project_id: projectId,
+          release_id: releaseId,
         })
         if (cancelled || discoveryGenerationRef.current !== requestGeneration) return
         const liveRuns = discoveredRuns.filter(test => isCommandCenterDiscoverableStatus(test.status))
-        if (liveRuns.length === 1) {
+        if (liveRuns.length === 1 && !onSelectRun) {
           setAutoSelectedTestId(liveRuns[0].id)
           setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
         } else {
-          setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: liveRuns, discovering: false })
+          setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: liveRuns, discovering: false, updatedAt: Date.now() })
         }
-      } catch {
+      } catch (error: unknown) {
         if (!cancelled && discoveryGenerationRef.current === requestGeneration) {
-          setRunDiscoveryState({ scopeKey: discoveryScopeKey, runs: [], discovering: false })
+          setRunDiscoveryState(current => ({
+            ...(current.scopeKey === discoveryScopeKey ? current : { runs: [] }),
+            scopeKey: discoveryScopeKey, discovering: false,
+            error: getErrorMessage(error, 'The run catalog is unavailable'),
+          }))
         }
       } finally {
         inFlight = false
@@ -746,12 +782,15 @@ export default function CommandCenterPrototype({
       }
     }
     void discover()
+    const onVisibility = () => { if (document.visibilityState === 'visible') void discover() }
+    document.addEventListener('visibilitychange', onVisibility)
     const interval = window.setInterval(() => { void discover() }, 5000)
     return () => {
       cancelled = true
       window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [api, applicationId, autoSelectedTestId, discoveryScopeKey, initialTest, projectId, prototypeMode, setAutoSelectedTestId, testIdProp])
+  }, [active, api, applicationId, autoSelectedTestId, discoveryScopeKey, initialTest, projectId, releaseId, prototypeMode, setAutoSelectedTestId, testIdProp, onSelectRun, discoveryRetry])
 
   const activeLiveTest = liveTest?.id === testId ? liveTest : null
   // resolveTestStatus keeps the socket override from rolling the run backward.
@@ -810,7 +849,7 @@ export default function CommandCenterPrototype({
     const isNewTest = syncedTargetTestIdRef.current !== displayTest.id
     setState(prev => {
       const nextTargets = Object.entries(canonicalTargets).reduce((targets, [groupName, target]) => {
-        const previousValue = isNewTest ? undefined : prev.vuserTargets[groupName]
+        const previousValue = isNewTest ? (viewMemory.values.get('targetDrafts') as Record<string, number> | undefined)?.[groupName] : prev.vuserTargets[groupName]
         const previousSyncedValue = isNewTest ? undefined : syncedTargetsRef.current[groupName]
         targets[groupName] = previousValue === undefined || previousValue === previousSyncedValue
           ? target
@@ -821,7 +860,7 @@ export default function CommandCenterPrototype({
     })
     syncedTargetsRef.current = canonicalTargets
     syncedTargetTestIdRef.current = displayTest.id
-  }, [displayTest, liveMode])
+  }, [displayTest, liveMode, viewMemory])
 
   const runStatus = liveMode || hasLiveRoute || emptyMode ? displayTest.status : state.runStatus
   const groups = useMemo(
@@ -1091,14 +1130,16 @@ export default function CommandCenterPrototype({
   }, [])
 
   const updateLiveStatus = useCallback((status: TestStatus, feedbackMessage: string) => {
+    if (currentRunRef.current !== testId) return
     setLiveTest(prev => prev ? { ...prev, status } : prev)
     setState(prev => ({ ...prev, feedback: feedbackMessage }))
-  }, [])
+  }, [testId])
 
   const startRun = async () => {
     if (liveMode && testId) {
       try {
         const response = await api.startTest(testId)
+        if (currentRunRef.current !== testId) return
         if (response.status === 'pending') {
           setLiveTest(prev => prev ? {
             ...prev,
@@ -1112,6 +1153,7 @@ export default function CommandCenterPrototype({
         setLiveTest(prev => response.test || (prev ? { ...prev, status: 'INITIALIZING' } : prev))
         setState(prev => ({ ...prev, feedback: 'Start requested. Run is initializing.' }))
       } catch (error: unknown) {
+        if (currentRunRef.current !== testId) return
         setState(prev => ({ ...prev, feedback: getErrorMessage(error, 'Unable to start test') }))
       }
       return
@@ -1130,6 +1172,7 @@ export default function CommandCenterPrototype({
         await api.pauseTest(testId)
         updateLiveStatus('PAUSED', 'Run paused at the next action boundary.')
       } catch (error: unknown) {
+        if (currentRunRef.current !== testId) return
         setState(prev => ({ ...prev, feedback: getErrorMessage(error, 'Unable to change pause state') }))
       }
       return
@@ -1148,6 +1191,7 @@ export default function CommandCenterPrototype({
         await api.stopTest(testId)
         updateLiveStatus('STOPPING', 'Graceful stop requested. VUsers will finish the current action.')
       } catch (error: unknown) {
+        if (currentRunRef.current !== testId) return
         setState(prev => ({ ...prev, feedback: getErrorMessage(error, 'Unable to stop test') }))
       }
       return
@@ -1166,6 +1210,7 @@ export default function CommandCenterPrototype({
           ? 'Abort requested. Waiting for generator teardown and finalization.'
           : 'Abort requested. Pre-start run cancelled.')
       } catch (error: unknown) {
+        if (currentRunRef.current !== testId) return
         setState(prev => ({ ...prev, feedback: getErrorMessage(error, 'Unable to abort test') }))
       }
       return
@@ -1177,6 +1222,7 @@ export default function CommandCenterPrototype({
     const targetMode = isGoalOrientedRun(displayTest) ? 'tps' : 'vusers'
     const role = displayTest.groups.find(group => group.name === groupName)?.role
     const target = targetMode === 'tps' ? clampTpsTarget(value) : clampTarget(value, role)
+    viewMemory.values.set('targetDrafts', { ...(viewMemory.values.get('targetDrafts') as Record<string, number> || {}), [groupName]: target })
     setState(prev => ({
       ...prev,
       vuserTargets: { ...prev.vuserTargets, [groupName]: target },
@@ -1222,6 +1268,10 @@ export default function CommandCenterPrototype({
       try {
         if (targetMode === 'tps') {
           const update = await api.updateGoalTarget(testId, groupName, target)
+          const drafts = { ...(viewMemory.values.get('targetDrafts') as Record<string, number> || {}) }
+          delete drafts[groupName]
+          viewMemory.values.set('targetDrafts', drafts)
+          if (currentRunRef.current !== testId) return
           setLiveTest(prev => prev ? {
             ...prev,
             goal_targets: update.goal_targets,
@@ -1241,6 +1291,10 @@ export default function CommandCenterPrototype({
           ? { action: 'run' as const, ramp_duration: rampDuration }
           : { action: 'run' as const }
         await api.scaleVUsers(testId, groupName, target, scaleOptions)
+        const drafts = { ...(viewMemory.values.get('targetDrafts') as Record<string, number> || {}) }
+        delete drafts[groupName]
+        viewMemory.values.set('targetDrafts', drafts)
+        if (currentRunRef.current !== testId) return
         setState(prev => ({
           ...prev,
           vuserTargets: { ...prev.vuserTargets, [groupName]: target },
@@ -1249,6 +1303,7 @@ export default function CommandCenterPrototype({
             : `${groupName} VUser target applied at ${target.toLocaleString()}.`,
         }))
       } catch (error: unknown) {
+        if (currentRunRef.current !== testId) return
         setState(prev => ({ ...prev, feedback: getErrorMessage(error, targetMode === 'tps' ? 'Unable to update goal target' : 'Unable to scale VUsers') }))
       }
       return
@@ -1307,16 +1362,32 @@ export default function CommandCenterPrototype({
   return (
     <CommandViewMemoryContext.Provider key={viewMemory.testId} value={viewMemory.values}>
     <div ref={pageRef} className={`page command-center-page ${experienceVersion === 'v2' ? 'command-center-v2' : 'command-center-original'}`}>
-      {active && (commandCenterTopbarTarget ? createPortal(experienceSwitch, commandCenterTopbarTarget) : experienceSwitch)}
+      {active && !emptyMode && (commandCenterTopbarTarget ? createPortal(experienceSwitch, commandCenterTopbarTarget) : experienceSwitch)}
       {emptyMode ? (
-        <CommandCenterEmptyState
+        <CommandCenterOverview
+          key={discoveryScopeKey}
+          {...overviewActions}
+          scopeLabel={scopeLabel}
+          scopeReady={Boolean(projectId)}
+          releaseId={releaseId}
           onOpenResults={onOpenResults}
-          liveRuns={liveRunOptions}
-          discovering={discoveringRuns}
-          onSelectRun={setAutoSelectedTestId}
+          runs={liveRunOptions}
+          loading={discoveringRuns}
+          error={discoveryError}
+          updatedAt={discoveryUpdatedAt}
+          onRefresh={() => setDiscoveryRetry(value => value + 1)}
+          onSelectRun={onSelectRun || setAutoSelectedTestId}
         />
       ) : (
         <>
+      {onSelectRun && <nav className="command-run-switcher" aria-label="Switch active run">
+        <button type="button" className="btn btn-secondary" onClick={onOpenOverview}>All active runs</button>
+        <label>Current run<select aria-label="Current run" value={testId || ''} onChange={event => onSelectRun(event.target.value)}>
+          {!liveRunOptions.some(run => run.id === testId) && <option value={testId || ''}>{displayTest.name} · {displayTest.ref_key || testId}</option>}
+          {liveRunOptions.map(run => <option key={run.id} value={run.id}>{run.name} · {run.ref_key || run.id} · {run.status}</option>)}
+        </select></label>
+        {discoveryError && <span role="alert">Run list is stale. <button type="button" className="btn btn-secondary" onClick={() => setDiscoveryRetry(value => value + 1)}>Retry active runs</button></span>}
+      </nav>}
       <RunControlShelf
         test={displayTest}
         status={runStatus}
@@ -1523,61 +1594,6 @@ function useCommandViewState<T,>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => memory?.has(key) ? memory.get(key) as T : initial)
   useEffect(() => { memory?.set(key, value) }, [key, memory, value])
   return [value, setValue] as const
-}
-
-function CommandCenterEmptyState({
-  onOpenResults,
-  liveRuns = [],
-  discovering = false,
-  onSelectRun,
-}: {
-  onOpenResults?: () => void
-  liveRuns?: TestSummary[]
-  discovering?: boolean
-  onSelectRun?: (testId: string) => void
-}) {
-  const hasRuns = liveRuns.length > 0
-  return (
-    <section className="command-empty-state" aria-label="No active command center run">
-      <div>
-        <h2>{hasRuns ? 'Select an active run' : 'No active run selected'}</h2>
-        {hasRuns ? (
-          <>
-            <p>
-              {liveRuns.length} runs are running or waiting. Choose one to inspect its status.
-            </p>
-            <ul className="command-empty-run-list" aria-label="Active runs">
-              {liveRuns.map(run => (
-                <li key={run.id}>
-                  <button
-                    type="button"
-                    className="command-empty-run-option"
-                    onClick={() => onSelectRun?.(run.id)}
-                  >
-                    <span className="command-empty-run-name">{run.name || run.ref_key || run.id}<small>{run.ref_key || run.id} · {run.created_at ? new Date(run.created_at).toLocaleString() : "Creation time unavailable"}</small></span>
-                    <StatusBadge status={run.status} />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : (
-          <p>
-            {discovering
-              ? 'Looking for active runs…'
-              : 'Start a test or open the Command Center from an active run to see live controls and metrics. Historical results can be opened from the Results folder.'}
-          </p>
-        )}
-        {onOpenResults && (
-          <div className="command-empty-actions">
-            <button type="button" className="btn btn-sm btn-secondary" onClick={onOpenResults}>
-              Open Results
-            </button>
-          </div>
-        )}
-      </div>
-    </section>
-  )
 }
 
 interface RunControlShelfProps {

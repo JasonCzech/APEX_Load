@@ -1,0 +1,131 @@
+import axe from 'axe-core'
+import type { BrowserContext } from '@playwright/test'
+import { test as workflowTest, expect, login } from './support/workflow'
+
+const localAuth = process.env.APEXLOAD_E2E_PROFILE === 'local-auth'
+type HelpAuthState = Awaited<ReturnType<BrowserContext['storageState']>> | undefined
+// Read-only Help tests reuse one authenticated session. Repeated persona logins
+// would exhaust the controller's real per-user limit and affect later workflows.
+const test = workflowTest.extend<Record<never, never>, { helpAuthState: HelpAuthState }>({
+  helpAuthState: [async ({ browser }, provide) => {
+    if (!localAuth) { await provide(undefined); return }
+    const context = await browser.newContext({ baseURL: process.env.APEXLOAD_E2E_BASE_URL || 'http://127.0.0.1:18081' })
+    try {
+      await login(await context.newPage())
+      await provide(await context.storageState())
+    } finally { await context.close() }
+  }, { scope: 'worker' }],
+  storageState: async ({ helpAuthState }, provide) => { await provide(helpAuthState) },
+})
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.addInitScript({ content: axe.source })
+  await page.goto('/#/docs')
+  await expect(page.getByRole('heading', { name: 'Your first test', exact: true })).toBeVisible()
+})
+
+test('Help tasks, search and section links survive navigation and validate the first-test example', async ({ page }) => {
+  const areas = page.getByRole('navigation', { name: 'Help areas' })
+  await expect(areas.getByRole('link')).toHaveCount(5)
+  await expect(areas.getByRole('link', { name: 'Getting Started', exact: true })).toHaveAttribute('aria-current', 'page')
+  const example = await page.locator('.help-code-example').filter({ has: page.locator('code[data-language="json"]') }).locator('code').textContent()
+  // Validate the exact text shown to the reader against the real controller contract.
+  const response = await page.request.post('/api/v1/scripts/validate', { data: JSON.parse(example!) })
+  expect(response.ok()).toBe(true)
+  const validation = await response.json()
+  expect(validation.valid, JSON.stringify(validation)).toBe(true)
+
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('pacing 250')
+  const result = page.locator('.help-search-results').getByRole('link', { name: 'Model load', exact: true })
+  await expect(result).toBeVisible()
+  await result.click()
+  await expect(page.getByRole('heading', { name: 'Model load', exact: true })).toBeAttached()
+  await expect(page).toHaveURL(/article=scenarios/)
+  const section = new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('section')!
+  const heading = page.locator(`[id="${section}"]`)
+  await expect(heading).toBeFocused()
+  const assertBelowToolbar = async () => {
+    const target = await heading.boundingBox()
+    const toolbar = await page.locator('.main-topbar').boundingBox()
+    expect(target!.y).toBeGreaterThanOrEqual(toolbar!.y + toolbar!.height)
+  }
+  await assertBelowToolbar()
+  await page.reload()
+  await expect(heading).toBeFocused()
+  await assertBelowToolbar()
+  await areas.getByRole('link', { name: 'Getting Started', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Your first test', exact: true })).toBeVisible()
+  await expect.poll(() => page.locator('.main-content').evaluate(el => el.scrollTop)).toBe(0)
+  await page.goBack()
+  await expect(heading).toBeFocused()
+
+  await page.goto('/#/docs?guide=user-guide&article=imports')
+  await expect(page.locator('.markdown-body tbody tr').last()).toBeAttached()
+  await expect(page.locator('.markdown-body table').first().locator('tbody tr')).toHaveCount(17)
+  await expect(page.locator('.markdown-body table').first()).toContainText('Oracle E-Business / Siebel')
+  await expect(page.locator('.guide-markdown-article [aria-label*="pagination" i]')).toHaveCount(0)
+})
+
+test('legacy URLs, generated API search and contextual guidance reach the right articles', async ({ page }) => {
+  for (const [hash, title] of [['#/docs?guide=quick-start', 'Overview & first API calls'], ['#/docs?guide=mcp', 'MCP setup'], ['#/docs?guide=authentication', 'API authentication'], ['#/repository-guide', 'API workflows']]) {
+    await page.goto(`/${hash}`)
+    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: 'Help areas' }).getByRole('link', { name: 'API & Automation', exact: true })).toHaveAttribute('aria-current', 'page')
+  }
+  await page.goto('/#/docs?guide=user-guide&article=scenarios')
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('scripts/validate')
+  await page.getByRole('link', { name: 'Search API operations for “scripts/validate”' }).click()
+  await expect(page.getByRole('heading', { name: 'API Reference (OpenAPI)', exact: true })).toBeVisible()
+  await expect(page.locator('.swagger-operation-card')).toHaveCount(1)
+  await expect(page.locator('.swagger-operation-card')).toContainText('/api/v1/scripts/validate')
+  await page.goto('/#/results')
+  await page.getByRole('link', { name: 'Help for this page', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Analyze results', exact: true })).toBeVisible()
+})
+
+test('Help is readable at narrow widths and exposes accessible navigation', async ({ page }, testInfo) => {
+  await page.screenshot({ path: testInfo.outputPath('help-desktop.png'), animations: 'disabled' })
+  await page.setViewportSize({ width: 800, height: 900 })
+  await page.goto('/#/docs?guide=user-guide&article=capabilities')
+  await expect(page.getByRole('heading', { name: 'Capabilities & limitations', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Capabilities & limitations', exact: true })).toBeInViewport()
+  for (const link of await page.getByRole('navigation', { name: 'Help areas' }).getByRole('link').all()) {
+    const box = await link.boundingBox()
+    expect(box!.x + box!.width).toBeLessThanOrEqual(800)
+  }
+  await page.getByText('Browse articles', { exact: true }).click()
+  await expect(page.getByRole('navigation', { name: 'Help articles' })).toBeVisible()
+  await page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'Capabilities & limitations', exact: true }).click()
+  await page.getByText('Browse articles', { exact: true }).click()
+  expect(await page.locator('.help-workspace').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+  const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace, .help-primary-nav', { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations)
+  expect(violations).toEqual([])
+  await page.getByRole('heading', { name: 'Capabilities & limitations', exact: true }).scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('help-narrow.png'), animations: 'disabled' })
+})
+
+test('non-administrators cannot open or search Administration articles', async ({ page, browser }) => {
+  test.skip(!localAuth, 'Requires the restricted local-auth persona')
+  const context = await browser.newContext({ baseURL: new URL(page.url()).origin, storageState: { cookies: [], origins: [] } })
+  try {
+    const userPage = await context.newPage()
+    await login(userPage, 'user')
+    await userPage.goto('/#/docs?guide=admin-guide&article=administration')
+    await expect(userPage.getByRole('status').filter({ hasText: 'Administration requires administrative access' })).toBeVisible()
+    await expect(userPage.getByRole('navigation', { name: 'Help areas' }).getByRole('link')).toHaveCount(4)
+    await userPage.getByRole('searchbox', { name: 'Search all help articles' }).fill('Administrator tasks')
+    await expect(userPage.locator('.help-search-results [role="status"]')).toHaveText('0 matching articles')
+  } finally { await context.close() }
+})
+
+
+test('Help maintains readable contrast across the supported themes', async ({ page }) => {
+  for (const theme of ['dark', 'light', 'solarized-dark', 'solarized-light', 'monokai-dimmed']) {
+    await page.goto('/#/settings?setting=preferences')
+    await page.getByRole('combobox', { name: 'Dashboard Theme', exact: true }).selectOption(theme)
+    await page.goto('/#/docs?guide=general&article=api-overview')
+    await expect(page.getByRole('heading', { name: 'Overview & first API calls', exact: true })).toBeVisible()
+    const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace, .help-primary-nav', { runOnly: ['color-contrast'] })).violations)
+    expect(violations, theme).toEqual([])
+  }
+})

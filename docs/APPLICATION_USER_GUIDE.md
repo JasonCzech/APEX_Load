@@ -7,11 +7,10 @@ it live, and reading the results.
 
 It is written for the people who run performance tests: engineers, SDETs, and
 performance analysts working in the dashboard. For administrative tasks (managing
-users, roles, the generator fleet, and system settings) see the **Admin Guide** tab.
-For automating APEX Load from CI/CD or scripts, see the **General**, **Quick Start**,
-**Authentication**, and **Endpoint Map** tabs, plus the **Swagger** reference.
+users, roles, the generator fleet, and system settings) see the [Administration](ADMIN_USER_GUIDE.md).
+For automating APEX Load from CI/CD or scripts, see the [API & Automation](HELP_API_OVERVIEW.md) and the [API Reference](#/swagger).
 
-If you have never used APEX Load before, jump to **Quick Start: Your First Test** and
+If you have never used APEX Load before, open [Your first test](HELP_GETTING_STARTED.md) and
 come back to the reference sections afterwards.
 
 ## What APEX Load Does
@@ -61,15 +60,13 @@ fifteen minutes.
 3. **Point it at your target.** In the Script Editor, set `config.base_url`, then add
    one action per request. Give each action a meaningful `name` — that name is the
    transaction label you will see in the report.
-4. **Add at least one assertion.** An action with no assertion can only fail on a
-   transport error. `status_code` plus `response_time_ms` is the minimum that makes a
+4. **Add at least one assertion.** HTTP 4xx/5xx responses fail by default; assertions also check expected business behavior. `status_code` plus `response_time_ms` is the minimum that makes a
    run meaningful.
 5. **Validate.** Click **Validate**. This checks structure and settings without
    sending a single request. Fix everything it reports before going further.
 6. **Replay once.** Click **Replay** to execute the script for exactly one user. Step
    through the actions and confirm each request sent what you expected and each
-   response was what you assumed. This is where nine out of ten scripting mistakes
-   surface.
+   response was what you assumed. Use the evidence to correct request, data and correlation mistakes.
 7. **Build a scenario.** Go to **Scenarios**, create one, and add a single group:
    your script, a small VUser count (10 is plenty for a first run), a short ramp-up
    (30s), and a short duration (2m). Run **Validate the load model**.
@@ -95,13 +92,13 @@ your main map:
 | --- | --- |
 | **Dashboard** | Live overview of tests and recent activity. |
 | **New Test** | Launch a run from a scenario, and manage run schedules. |
-| **Command Center** | The live cockpit for a single running test. |
+| **Command Center** | Active-run overview and live run controls. |
 | **Results** | Browse completed runs and their reports. |
 | **Scripts** | Author, import, and manage test scripts. |
 | **Scenarios** | Assemble scripts into runnable load models, and manage execution plans. |
 | **Repository** | Manage applications, releases, projects, and shared assets. |
 | **Monitoring** | System health, telemetry, the generator fleet, and the run calendar. |
-| **API Guide** | The page you are reading, plus the API and Swagger references. |
+| **Help & documentation** | The page you are reading, plus API & Automation and the generated API Reference. |
 | **Access** | User bindings, service accounts, and activity. Only appears if you hold one of the access-management capabilities. |
 | **Settings** | Your and (for administrators) system-wide configuration. |
 
@@ -123,7 +120,7 @@ Navigation shortcuts are two-key sequences: press `g`, release, then the second 
 | `g` `r` | Results |
 | `g` `m` | Monitoring |
 | `g` `f` | Fleet |
-| `g` `h` | API Guide |
+| `g` `h` | Help & documentation |
 | `g` `,` | Settings |
 | `g` `a` | Access (when you have access to it) |
 
@@ -140,15 +137,25 @@ Global keys:
 
 The **Dashboard** is your landing page and live overview. Use it to:
 
-- See which tests are running right now and their status at a glance.
+- Review acceptance outcomes and archive coverage for the selected release.
+  **COMPLETE** describes execution; it does not establish performance acceptance.
+- See active and queued tests, inspect wait reasons, and open the selected queued
+  run in **Command Center**.
 - Watch real-time metric history — throughput, response time, and error rate — for
   active runs.
-- Review the release trend, so you can tell whether the latest build is faster or
-  slower than the last.
+- Find completed runs by name or reference and filter by period, execution,
+  evidence availability, or acceptance. At narrow widths, expand **Run details**
+  for configured load, duration, and archive record counts.
+- Use **Load Comparison** for selected series at matching load levels and
+  **Release Trend Analysis** for named transaction attempts. The page explains
+  missing samples and baseline requirements; one run cannot establish a trend.
 - Jump straight into a run's **Command Center** or open a finished run's report.
 
-Treat the Dashboard as mission control: it is the fastest way to confirm a run is
-healthy and to reach the detail views when it is not.
+**Needs attention** puts current issues and queued work ahead of grouped historical
+archive gaps. Missing archives have unknown publication progress unless recorded
+evidence says otherwise. Run-data freshness, live-stream connectivity, and
+system-wide health are shown separately; stale or missing data is not proof of
+a healthy workload.
 
 ## Authoring A Script
 
@@ -170,7 +177,7 @@ the DSL's logical sections rather than raw text:
 | `actions` | The main body each virtual user repeats: requests, checks, captures, and control flow. |
 | `teardown` | Cleanup actions that run once per virtual user at the end. |
 
-Here is a complete, runnable HTTP script showing the shape of all of it:
+This HTTP example illustrates the full structure. Before running it, replace shop.example.com with an approved reachable test service, provide accounts.csv with username and sku columns, and configure the SHOP_PASSWORD project secret. For an example with no data or secret prerequisites, use [Your first test](HELP_GETTING_STARTED.md).
 
 ```json
 {
@@ -280,7 +287,7 @@ Useful extractor options: `on_miss` (`fail` to fail the request when nothing mat
 
 ### Checking Responses With Assertions
 
-An action with no assertion only fails on a transport error. HTTP supports:
+HTTP responses outside 200–399 fail by default even without assertions. Assertions add checks for expected status, content and timing. HTTP supports:
 
 | Assertion `type` | Fields | Passes when |
 | --- | --- | --- |
@@ -383,7 +390,7 @@ up as an unexpanded template in your request.
 ### Data Sources And Data Pools
 
 A **data source** is declared inside the script; a **data pool** is a project-scoped,
-reusable set of rows managed under **Settings → Data Pools** and bound to a scenario.
+reusable set of rows managed under [Repository → Shared data pools](#/repository?setting=test-data) and bound to a scenario.
 Both are addressed the same way from a script: `{{data.name.column}}`.
 
 The `strategy` field decides how VUsers walk the rows:
@@ -400,7 +407,7 @@ pool, so a rerun sees exactly the same data.
 ### Secrets
 
 **Project secrets** back the `{{secret.NAME}}` namespace, managed under
-**Settings → Projects & Compliance → Project Secrets**. The UI shows only their metadata
+[Access → Project secrets](#/access?setting=secrets). The UI shows only their metadata
 and status — never the values — and secret writes require an authorized human action.
 Values resolved through `{{secret.NAME}}` are redacted from logs, snapshots, reports,
 and archives regardless of any other setting.
@@ -416,7 +423,7 @@ Before you run a script at scale, prove it works for a single user.
 
 1. **Validate** checks the script's structure, action fields, assertions, and settings
    without executing anything. It runs the same validation the runtime applies at
-   admission, so a script that validates will not be rejected at launch.
+   admission. Launch separately checks current permissions, capacity, secrets, runner capabilities and governance; validation does not guarantee admission.
 2. **Replay** runs the script once, interactively, through the controller's replay
    engine.
 
@@ -512,7 +519,7 @@ human decision. Each imported script lands in one of four modes:
 | --- | --- | --- |
 | `executable` | Converts straight to a runnable script | Review the warnings, then validate and replay |
 | `review_only` | Preserved faithfully, but a human must decide how it should run | Work through the flagged fragments in the review panel |
-| `external_runner_required` | Needs a specific runner capability enabled before it can launch — Java VUser, SAP GUI, and Oracle Forms/NCA are the common cases | Ask an administrator to enable the runner for the pool, then relaunch |
+| `external_runner_required` | Needs an external execution path; import support alone does not provide a runner | Check [Capabilities & limitations](HELP_CAPABILITIES.md). Java VUser has a governed runner; SAP GUI has no standard runtime and Oracle NCA requires an approved bridge |
 | `unsupported` | Nothing in the source maps to an executable action | Re-author, or import a different artifact |
 
 The review flow reports back a promotion status — `ready_for_validation`,
@@ -521,8 +528,7 @@ together with the next action for each one. Map source values, confirm secret bi
 and save the reviewed draft.
 
 Coverage for the big legacy sources is documented and evidence-backed rather than
-claimed: see the **LoadRunner Web Function Coverage**, **LoadRunner Java lr Function
-Coverage**, and **LoadRunner TruClient Step Coverage** references for exactly which
+claimed: see the [LoadRunner Web Function Coverage](LOADRUNNER_WEB_FUNCTION_COVERAGE.md), [LoadRunner Java lr Function Coverage](LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md), and [LoadRunner TruClient Step Coverage](LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md) references for exactly which
 functions convert, which are no-ops, and which are preserved for review.
 
 ## Building A Scenario
@@ -555,13 +561,7 @@ If you know the throughput you need but not the VUser count, use the
 latency, and APEX Load reverse-calculates a recommended VUser count.
 
 The arithmetic is worth understanding, because it tells you when the recommendation is
-wrong: concurrency ≈ throughput × response time. At 50 TPS with a 400 ms mean response
-time and a 5 s pacing interval, each VUser completes one iteration every ~5.4 s, so you
-need roughly 270 VUsers. Halve the response time and you need half as many. If your
-measured response time under load differs sharply from the figure you sized with,
-resize rather than trusting the original number.
-
-Always **validate the load model** before saving. The validator catches settings that
+wrong: concurrency ≈ throughput × response time. Assume one transaction per iteration and no think time. At 50 TPS, a fixed 5 s start-to-start pacing interval requires about 250 VUsers while the work fits inside the interval. A 5 s post-iteration delay plus 400 ms response time instead requires 50 × 5.4 = 270 VUsers. Reducing that response time to 200 ms yields 260 VUsers, not half as many. Include think time and all actions when sizing an iteration, and distinguish request, transaction and iteration throughput. Resize from measured behavior under load. Always **validate the load model** before saving. The validator catches settings that
 would fail at run time — an invalid source IP, a group referencing a script that no
 longer validates, a duration shorter than the ramp.
 
@@ -616,9 +616,24 @@ success state is `COMPLETE`, not `COMPLETED`.
 
 ## Monitoring A Live Run
 
-Open the **Command Center** to watch a run in real time. If you open it without picking
-a run, it finds the live run in your current scope automatically. It streams metrics
-over a WebSocket connection, so numbers update continuously without a refresh.
+Open the **Command Center** to see active runs in your selected project, application,
+and release. With no release selected, the overview includes all releases in that
+scope. Search by name or reference, filter by status, and sort by attention, newest,
+or name. Each row shows run status, waiting reasons, load, throughput, cumulative
+error percentage, timing, and metric freshness. Remaining time is an estimate because
+the summary does not include cumulative pause time.
+
+When there are no active runs, choose **New Test** or **Browse scenarios**. New Test
+requires permission to manage tests. Select a release before opening Results; if
+none exists, open the Repository to configure the workspace. A failed refresh shows
+an error and Retry instead of claiming the scope is empty; previously loaded runs
+remain visible with their last update time.
+
+Select a run to open its live controls. The run ID stays in the URL for reloads and
+sharing. Use **Current run** to switch runs or **All active runs** to return to the
+overview. Staged target edits are retained separately for each run while this
+app session remains open; reloading clears those unsaved edits. The selected
+run streams metrics over WebSocket, while the overview refreshes periodically.
 
 From the Command Center you can also control the run while it is in flight:
 
@@ -631,10 +646,10 @@ From the Command Center you can also control the run while it is in flight:
 | **Abort** | Any non-terminal state | Force-cancels active work immediately |
 | **Scale VUsers** | `RUNNING` | Raises or lowers a group's VUser count, instantly or over a ramp |
 | **Adjust goal target** | `RUNNING`, goal-oriented runs | Changes a group's throughput (TPS) target and lets the system converge on it |
+| **Change duration** | `RUNNING` | Adjusts the remaining execution time |
 
 Pause and Stop become unavailable once a run enters `STOPPING` — from there only Abort
-remains. Adjusting a run's remaining **duration** is done from the run's Test Execution
-workspace rather than the Command Center.
+remains.
 
 Watch throughput, response-time percentiles (p50/p95/p99), and error rate together.
 When errors climb, drill into the live error evidence to see representative failures
@@ -697,6 +712,18 @@ A run report gives you:
 - **Root-cause analysis** — a deterministic breakdown of where time and errors
   concentrated, with optional governed AI assistance where policy allows it.
 
+### Interpret The Outcome
+
+COMPLETE is a lifecycle state: execution ended. Check whether SLA evaluation ran and whether its verdict passed, failed or lacks enough evidence. A technically completed run can breach its SLA; missing evaluation is not an automatic pass.
+
+Action failures describe unsuccessful work, such as HTTP 4xx/5xx, failed assertions or transport problems. SLA gates evaluate aggregate performance thresholds. Read both, and compare request/transaction counts before comparing error rates.
+
+Request throughput counts protocol requests; transaction throughput counts named reporting units; iteration throughput counts full passes through the script. One iteration may produce several requests or transactions, so do not interchange these units when sizing load.
+
+Percentiles describe the distribution: p95 means 95% of the measured samples were at or below that latency. Compare p95/p99 alongside sample counts, throughput, error rate and test phase. A percentile based on a handful of observations is not a stable baseline.
+
+For baseline comparisons, hold target environment, release context, script version, data, load shape, runtime settings and measurement windows constant where possible. Explain intentional differences. Separate warm-up/ramp behavior from steady state, and inspect generator saturation before blaming the target.
+
 ### Report Profiles
 
 A report is assembled from a registry of sections, selected by profile:
@@ -730,28 +757,27 @@ changed selector is fixed once rather than in fourteen scripts.
 
 ## Settings Reference
 
-**Settings** has eight sections. All eight are visible to everyone; whether you can
-*edit* one depends on your capabilities, and a read-only banner appears when you cannot
-save.
+Configuration uses task destinations. Use the destination search and check the scope
+shown by the page before changing a value. Visibility and editing depend on your
+capabilities; a help link does not grant permission.
 
-| Section | Subsections | Editing requires |
-| --- | --- | --- |
-| **General** | Platform, Usage, Entitlements, Readiness, Authentication, Governance | `manage_system` |
-| **Performance Thresholds** | — | `manage_system` |
-| **Capacity Planning** | Availability, Generator Profile, Reservations, Retention | `manage_system` |
-| **Domains** | — | `manage_domains` |
-| **Projects & Compliance** | Project Catalog, Limits, GitHub Policy, Redaction Rules, Project Secrets | `manage_projects` |
-| **Applications & Releases** | — | `manage_projects` |
-| **Data Pools** | — | `manage_scripts` |
-| **Integrations** | Library Federation, GitHub, Prometheus, Dashboards, Power BI, Notifications | `manage_system` |
+| Task | Destination |
+| --- | --- |
+| Theme, editor wrapping, table rows and reduced motion | [Settings → Personal preferences](#/settings?setting=preferences) |
+| Controller configuration and deployment limits | [Controller & runtime](#/settings?setting=platform), [Edition & deployment limits](#/settings?setting=entitlements) |
+| Domains, projects and application releases | [Domains & placement defaults](#/settings?setting=domains), [Projects](#/settings?setting=projects), [Applications & releases](#/settings?setting=applications) |
+| Project limits and usage | [Project limits & quotas](#/settings?setting=limits), [Usage accounting](#/settings?setting=usage) |
+| Generator connections and capacity | [Kubernetes clusters](#/settings?setting=clusters), [Generator pools](#/settings?setting=pools), [Standing allocations](#/settings?setting=allocations) |
+| Alert thresholds and stop policy | [Alert & stop policies](#/settings?setting=thresholds) |
+| Schedule behavior and notification delivery | [Schedule defaults](#/settings?setting=scheduling), [Notification routes](#/settings?setting=notifications) |
+| Archive and recording retention | [Archive & HAR retention](#/settings?setting=retention) |
+| Shared input rows | [Repository → Shared data pools](#/repository?setting=test-data) |
+| Authentication, import policy, redaction and secrets | [Access → Authentication](#/access?setting=authentication), [Import credential policy](#/access?setting=imports), [Project redaction rules](#/access?setting=redaction), [Project secrets](#/access?setting=secrets) |
 
-Two you will use often as a tester: **Performance Thresholds** defines the SLA gates
-that produce a run's verdict and can trigger threshold alerts and a sustained-P99
-auto-stop, and **Data Pools** is where shared row data lives.
-
-Under **General → Governance** you will find Schedule Defaults, Script Imports, Service
-Account APIs, and Recent Audit Events — useful for understanding why a schedule or
-import is waiting for approval.
+Alert/stop policy affects runtime decisions; a run's SLA verdict and lifecycle status
+remain distinct. Shared data pools provide snapshots to runs, as described in
+[Parameters, data & secrets](APPLICATION_USER_GUIDE.md#parameterizing-and-data).
+See [Administration](ADMIN_USER_GUIDE.md) for scoped roles and operational responsibilities.
 
 ## Automating APEX Load
 
@@ -802,18 +828,16 @@ Add `--format json` for a machine-readable result object (`status`, `sla_evaluat
 `sla_breached`, `sla_details`, `transactions`, `errors`, `tps`, `duration_ms`), and
 `--junit <path>` for a JUnit XML report your CI test reporter can render. CLI threshold
 flags take precedence over thresholds declared in the script's goal config. The
-**CI/CD Integration** reference has copy-ready GitHub Actions gates for both
+[CI/CD Integration](CICD_INTEGRATION.md) reference has copy-ready GitHub Actions gates for both
 GitHub.com with OIDC and GHES with a scoped API key.
 
 ### The API And The MCP Server
 
-- The **General**, **Quick Start**, and **Authentication** tabs on this page explain
-  the base URL, service-account keys, and how to authenticate.
-- The **Endpoint Map** tab lists the routes available to your current access.
-- The **Swagger** tab is the generated route reference.
-- The **MCP Server** tab covers agent-driven automation. The MCP bridge uses
-  service-account auth and adds confirmation guardrails — mutating calls require an
-  explicit confirmation and a reason — with tools covering system, auth, projects,
+- The [API overview](HELP_API_OVERVIEW.md) and [API authentication](API_USER_GUIDE.md#authentication) articles explain the base URL,
+  first API calls, service-account keys, and how to authenticate.
+- The [API Reference](#/swagger) is the generated route reference.
+- The [MCP setup](../mcp/README.md) article covers agent-driven automation. The MCP bridge uses
+  service-account auth and adds confirmation guardrails — mutating calls require explicit confirmation, and destructive/admin calls additionally require a reason — with tools covering system, auth, projects,
   scripts, scenarios, runs, reports, scheduling, fleet, data pools, imports, and AI
   assistance.
 
@@ -825,13 +849,11 @@ GitHub.com with OIDC and GHES with a scoped API key.
 | **Grafana** | Import an existing Grafana dashboard so live run panels appear alongside APEX Load metrics | Settings → Integrations → Dashboards |
 | **Power BI** | Per-run publishing to a push dataset for business reporting | Settings → Integrations → Power BI |
 | **Dynatrace** | Webhook notifications on run and threshold events | Settings → Integrations → Notifications |
-| **OpenTelemetry** | Trace and metric export from the controller and generators | Deployment configuration |
+| **OpenTelemetry** | Opt-in OTLP traces from standalone controller and generators; metrics remain Prometheus, with no native OTLP metrics/log export | Deployment configuration |
 | **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | Settings → Integrations → GitHub |
 | **Kubernetes clusters** | Register AKS/EKS/generic control planes so an administrator can place generator pools on them with per-pool CPU, memory, and node placement | Admin cluster registry |
 
-Each has its own reference document — **Prometheus Metrics**, **Grafana Dashboard
-Import**, **Power BI Publishing**, **Dynatrace Webhooks**, **OpenTelemetry**,
-**GitHub Integration**, and **Cluster Connections**.
+Each has its own reference document: [Prometheus metrics](PROMETHEUS_METRICS.md), [Power BI](POWERBI_INTEGRATION.md), [Dynatrace webhooks](DYNATRACE_WEBHOOKS.md), [OpenTelemetry](OPENTELEMETRY.md), [GitHub integration](GITHUB_INTEGRATION.md), and [Cluster connections](CLUSTER_CONNECTIONS.md).
 
 ## Troubleshooting And FAQ
 
@@ -852,9 +874,7 @@ loudly instead of quietly carrying an empty value into every later request, then
 and inspect the response body.
 
 **My run says `external_runner_required` and will not launch.**
-The script needs a runner capability that is not enabled — Java VUser, SAP GUI, and
-Oracle Forms/NCA are the usual cases. An administrator has to enable that runner for
-the pool the run is placed on. This is a deliberate gate, not a bug.
+Check the import disposition and [Capabilities & limitations](HELP_CAPABILITIES.md). Java VUser requires its configured governed sidecar. SAP GUI has no registered runtime in standard binaries, and Oracle Forms/NCA requires an approved bridge; enabling a pool setting alone cannot supply either missing execution path.
 
 **The shakeout failed and my run is parked.**
 The run is in `SHAKEOUT_REVIEW`. Open it, read the canary evidence, and fix the script —
@@ -863,7 +883,7 @@ can override and continue.
 
 **The launch was refused for capacity.**
 The scenario needs more generator capacity than is currently available. Run the
-capacity preview, lower the VUser count, lengthen the ramp, or ask an administrator
+capacity preview, lower the VUser count if that still meets your objective, or ask an administrator
 about the generator fleet and reservations under **Capacity Planning**.
 
 **A PDF export was refused.**
@@ -909,8 +929,7 @@ eye.
 - **Validate and replay** a script for one user before running it for thousands.
 - Give every action a **meaningful name** — that name is your transaction label, and
   you cannot rename it after the fact in an archived report.
-- Add at least one **assertion** per action. Without one, an action can only fail on a
-  transport error, and a 500 response counts as a success.
+- Add at least one **assertion** per action. HTTP 4xx/5xx already fail by default; assertions also verify the expected business response.
 - Use **think time and pacing** deliberately. A script with neither is a load generator
   pointed at your own infrastructure, not a model of user behavior.
 - Import existing tests through the **review** flow rather than trusting a raw

@@ -2,19 +2,19 @@
 
 This guide is for engineers and operators who want to automate APEX Load from CI/CD, external release systems, or integration scripts. It focuses on workflow guidance for the public REST and WebSocket API served by the controller.
 
-For the exhaustive, current route inventory, use the dashboard **Swagger** page or **API Guide → Endpoint Map**. Those views are generated from the controller route catalog; this repository guide is hand-maintained prose for common automation flows and operational context.
+For the exhaustive, current route inventory, use the dashboard [API Reference](#/swagger). Those views are generated from the controller route catalog; this repository guide is hand-maintained prose for common automation flows and operational context.
 
-Last reviewed against `pkg/api/server.go`, `pkg/api/route_catalog.go`, and the generated endpoint catalog on July 19, 2026.
+Last reviewed against `pkg/api/server.go`, `pkg/api/route_catalog.go`, and the generated endpoint catalog for the September 12, 2026 documentation update. Behavioral corrections also reference the HTTP protocol and execution-plan orchestrator.
 
 ### Reference Coverage
 
-The generated OpenAPI document is authoritative for registered HTTP methods, paths, path/query/header parameter names and basic types, deprecation flags, authentication alternatives, route-level access requirements, request media/top-level serializable fields, and handler-declared response statuses/media. Semantic validation rules, conditional requirements, and some dynamic representations remain defined by handlers and workflow-specific guides. The Endpoint Map is a compact route inventory and access-oriented navigation aid; it is not an authorization source. The controller's runtime RBAC and service-account scope checks always decide access.
+The generated OpenAPI document is authoritative for registered HTTP methods, paths, path/query/header parameter names and basic types, deprecation flags, authentication alternatives, route-level access requirements, request media/top-level serializable fields, and handler-declared response statuses/media. Semantic validation rules, conditional requirements, and some dynamic representations remain defined by handlers and workflow-specific guides. API Reference filters are navigation aids, not authorization sources. The controller's runtime RBAC and service-account scope checks always decide access.
 
 Use the references together:
 
 - **Swagger**: every registered REST route plus inferred query/header, request-body, response, media, and access contracts; explicit maintained schemas override inference.
-- **Endpoint Map**: compact grouping and a best-effort filter based on the current principal's effective operations.
-- **Repository Guide**: request examples, behavioral contracts, limitations, and operational workflows.
+- **API Reference filters**: category, search, and optional filtering by the current principal's effective operations.
+- **API Workflows**: request examples, behavioral contracts, limitations, and operational workflows.
 - **DSL references**: [DSL action reference](DSL_ACTION_REFERENCE.md) and [JSON Schema](dsl.schema.json) for script payloads.
 
 ## Base URL
@@ -69,7 +69,7 @@ APEX Load supports four auth modes:
 
 For human users, OIDC, trusted headers, or Local Test Login prove identity, but APEX Load access is controlled by local user records and local role bindings. After bootstrap, an upstream-authenticated human principal must have an active local user whose `subject` matches the authenticated subject. Human effective roles come from `UserRoleBinding` rows, not from upstream role headers. Service accounts keep their existing key-based behavior.
 
-Local Test Login is selected in Settings and takes effect after restart. It seeds `admin/admin` (system administrator), `domainadmin/domainadmin` (Default Domain administrator), `user/user` (read-only default workspace), and `dev/dev` (default workspace editor). Changes to fixture active state and role bindings in Access are preserved. Passwords are stored only as bcrypt hashes, and browser session tokens are stored only as SHA-256 hashes. Every controller startup while Local Test Login is active invalidates existing local sessions, so a restarted application opens at the persona login instead of silently restoring the previous persona. Logging out any persona, including `dev`, clears the current session and returns to the same login. These fixed credentials are deliberately rejected under production posture.
+Local Test Login is selected in [Access → Authentication](#/access?setting=authentication) and takes effect after restart. It seeds `admin/admin` (system administrator), `domainadmin/domainadmin` (Default Domain administrator), `user/user` (read-only default workspace), and `dev/dev` (default workspace editor). Changes to fixture active state and role bindings in Access are preserved. Passwords are stored only as bcrypt hashes, and browser session tokens are stored only as SHA-256 hashes. Every controller startup while Local Test Login is active invalidates existing local sessions, so a restarted application opens at the persona login instead of silently restoring the previous persona. Logging out any persona, including `dev`, clears the current session and returns to the same login. These fixed credentials are deliberately rejected under production posture.
 
 Service-account automation can authenticate with either header:
 
@@ -88,40 +88,7 @@ Dashboard operators with access management permission can onboard users, assign 
 
 Useful auth endpoints:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/auth/login` | Initiate OIDC login flow; redirects to the configured identity provider. |
-| `POST` | `/api/v1/auth/login` | Start a Local Test Login session from a username and password. |
-| `GET` | `/api/v1/auth/callback` | OIDC callback; exchanges the authorization code for a signed session. |
-| `POST` | `/api/v1/auth/logout` | CSRF-protected logout for the current OIDC or Local Test Login session. |
-| `GET` | `/api/v1/auth/me` | Current auth mode, local user status, locally resolved roles, and session metadata. |
-| `GET` | `/api/v1/auth/effective-access?project_id=<id>` | Operations allowed for the current principal from local user bindings or service-account roles. |
-| `GET` | `/api/v1/auth/access-matrix` | Full role-to-operation catalog. |
-| `GET` | `/api/v1/auth/roles` | Role catalog, scope rules, and assignable-role metadata. |
-| `GET` | `/api/v1/auth/policy` | Current authentication and authorization policy projection. |
-| `GET` | `/api/v1/auth/diagnostics` | OIDC/trusted-header readiness diagnostics. Requires system-admin access outside dev/disabled bypass modes. |
-| `GET` | `/api/v1/auth/access-review` | Access-review evidence for the current authorized scope. |
-| `GET` | `/api/v1/auth/effective-access/principal` | System-admin lookup of effective access for one user or service account. |
-| `GET` | `/api/v1/auth/users` | Search local human users. Requires `manage_users` or `manage_user_bindings`; binding-only callers see manageable bindings only. |
-| `POST` | `/api/v1/auth/users` | Onboard a human user subject. Requires `manage_users`. |
-| `POST` | `/api/v1/auth/users/onboard` | Explicit onboarding workflow for a human user subject. Requires `manage_users`. |
-| `GET` | `/api/v1/auth/users/{id}` | Get one local user and role bindings. Requires `manage_users` or `manage_user_bindings`; binding-only callers see manageable bindings only. |
-| `PATCH` | `/api/v1/auth/users/{id}` | Update local user metadata. Requires `manage_users`. |
-| `POST` | `/api/v1/auth/users/{id}/bindings` | Grant a global, domain, project, or repository role binding. Requires `manage_users` or `manage_user_bindings`, with delegated scope checks. |
-| `DELETE` | `/api/v1/auth/users/{id}/bindings/{binding_id}` | Remove one local role binding. Requires `manage_users` or `manage_user_bindings`, with delegated scope checks. |
-| `POST` | `/api/v1/auth/users/{id}/disable` | Disable a local user while preserving audit history. Requires `manage_users`. |
-| `POST` | `/api/v1/auth/users/{id}/enable` | Re-enable a local user. Requires `manage_users`. |
-| `POST` | `/api/v1/auth/users/{id}/revoke-sessions` | Increment the user's session epoch so existing OIDC and local sessions can no longer authenticate. |
-| `GET` | `/api/v1/auth/user-activity` | Audit events plus attributed usage filtered by user, timeframe, domain, project, action, or status. |
-| `GET` | `/api/v1/auth/user-activity/export` | Export user activity as CSV. |
-| `GET` | `/api/v1/auth/service-accounts` | List service accounts. |
-| `POST` | `/api/v1/auth/service-accounts` | Create a service account and return its one-time API key. |
-| `PATCH` | `/api/v1/auth/service-accounts/{id}` | Update service-account metadata, roles, scopes, or active state. |
-| `POST` | `/api/v1/auth/service-accounts/{id}/rotate` | Rotate a service-account API key. |
-| `DELETE` | `/api/v1/auth/service-accounts/{id}` | Delete a service account. |
-| `GET` | `/api/v1/auth/audit-events` | Query audit events. |
-| `GET` | `/api/v1/auth/audit-events/export` | Export audit events as CSV. |
-| `POST` | `/api/v1/auth/ci/github/exchange` | Exchange a policy-validated GitHub Actions OIDC token for a short-lived APEX Load CI bearer token. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 ### Human User Administration
 
@@ -291,38 +258,7 @@ curl "http://localhost:8080/api/v1/replay/sessions/$SESSION_ID/export?format=log
 
 Import endpoints:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/v1/scripts/import/enterprise-script-archive` | Import an enterprise script archive ZIP with protocol auto-detection. Returns executable scripts, review artifacts, or external-runner-required drafts depending on source protocol. |
-| `POST` | `/api/v1/scripts/import/enterprise-script-archive/validate` | Validate an enterprise script archive without saving. Uses the same detection, fidelity, and review envelope as conversion. |
-| `GET` | `/api/v1/scripts/import/enterprise-script-archive/support-matrix` | Enterprise script archive protocol import support, including TruClient 2 Web, Java-family, SAP GUI, and external-runner routes. |
-| `POST` | `/api/v1/scripts/import/jmeter` | Import a JMeter test plan. |
-| `POST` | `/api/v1/scripts/import/jmeter/save` | Save a reviewed JMeter import draft. |
-| `POST` | `/api/v1/scripts/import/jmeter/validate` | Validate a JMeter archive or plan without saving. |
-| `GET` | `/api/v1/scripts/import/jmeter/support-matrix` | JMeter import support matrix. |
-| `POST` | `/api/v1/scripts/import/k6` | Import the constrained k6 HTTP subset into APEX Load DSL. |
-| `POST` | `/api/v1/scripts/export/k6` | Export an APEX HTTP script to a reviewable k6 HTTP subset script. |
-| `GET` | `/api/v1/scripts/import/k6/support-matrix` | k6 import/export support matrix. |
-| `POST` | `/api/v1/scripts/import/har` | Import a HAR archive. |
-| `POST` | `/api/v1/scripts/import/openapi` | Generate HTTP/API drafts from OpenAPI or Swagger. |
-| `POST` | `/api/v1/scripts/import/asyncapi` | Inspect an AsyncAPI contract and return a reviewable messaging import. |
-| `POST` | `/api/v1/scripts/import/asyncapi/commit` | Commit an approved AsyncAPI import draft. |
-| `GET` | `/api/v1/scripts/import/asyncapi/support-matrix` | AsyncAPI protocol and operation coverage. |
-| `POST` | `/api/v1/scripts/import/bruno/inspect` | Inspect a Bruno collection without saving scripts. |
-| `POST` | `/api/v1/scripts/import/bruno/commit` | Commit an approved Bruno import. |
-| `GET` | `/api/v1/scripts/import/bruno/support-matrix` | Bruno import coverage and limits. |
-| `POST` | `/api/v1/scripts/import/broker-config` | Import supported broker configuration into a reviewable messaging draft. |
-| `GET` | `/api/v1/scripts/import/broker-config/support-matrix` | Broker configuration import coverage. |
-| `POST` | `/api/v1/scripts/import/postman` | Generate HTTP/API drafts from a Postman collection JSON file. |
-| `POST` | `/api/v1/scripts/import/wsdl` | Generate SOAP drafts from WSDL. |
-| `POST` | `/api/v1/scripts/import/devweb` | Import DevWeb-style assets. |
-| `GET` | `/api/v1/scripts/import/devweb/support-matrix` | DevWeb import support matrix. |
-| `GET` | `/api/v1/scripts/import/oracle-ebusiness/support-matrix` | Oracle E-Business/Siebel support matrix. |
-| `POST` | `/api/v1/scripts/import/oracle-ebusiness/review` | Review Oracle E-Business, Siebel, or Oracle NCA source for supported routes. |
-| `POST` | `/api/v1/scripts/import/sample` | Import raw HTTP, cURL, REST sample requests. |
-| `GET` | `/api/v1/scripts/web-api/support-matrix` | Web API execution support matrix. |
-| `GET` | `/api/v1/protocols/native-support-matrix` | Runtime-native protocol implementation status. |
-| `GET` | `/api/v1/protocol-bundles/support-matrix` | Protocol bundle, governance, and entitlement projection. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 #### Shared HTTP import finalization
 
@@ -357,27 +293,7 @@ Project policy controls allowed repositories, branches, path templates, direct-c
 
 Useful GitHub endpoints:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/integrations/github/config` | Safe GitHub configuration and capability flags for dashboard and clients. |
-| `GET` | `/api/v1/integrations/github/diagnostics` | GHES reachability, auth-mode, installation, webhook, PAT fallback, and Checks readiness. |
-| `GET` | `/api/v1/integrations/github/installations` | GitHub App installations known to automation. |
-| `GET` | `/api/v1/integrations/github/login` | Begin a per-user OAuth connect flow. |
-| `GET` | `/api/v1/integrations/github/callback` | OAuth callback route. |
-| `GET` / `DELETE` | `/api/v1/integrations/github/connection` | Read or remove the current user's OAuth connection. |
-| `GET` | `/api/v1/integrations/github/repos` | List repositories visible to the resolved GitHub identity. |
-| `GET` | `/api/v1/integrations/github/branches` | List repository branches. |
-| `GET` | `/api/v1/integrations/github/contents` | Browse repository contents for import review. |
-| `GET` / `PUT` | `/api/v1/projects/{id}/github/policy` | Read or update the authoritative project GitHub policy. |
-| `POST` | `/api/v1/scripts/import/github` | Import one GitHub JSON DSL file through the review/save path. |
-| `POST` | `/api/v1/scripts/{id}/github/push` | Push a script by direct commit or pull request. |
-| `GET` | `/api/v1/scripts/{id}/github/status` | Script link, drift, blob SHA, commit SHA, policy, rate-limit, auth-mode, and check status. |
-| `POST` / `GET` | `/api/v1/integrations/github/sync-jobs` | Create or list bulk import/push sync jobs. |
-| `GET` | `/api/v1/integrations/github/sync-jobs/{id}` | Read sync-job progress, conflict decisions, and errors. |
-| `POST` | `/api/v1/integrations/github/webhook` | GitHub webhook receiver; validates `X-Hub-Signature-256` and dedupes `X-GitHub-Delivery`. |
-| `GET` | `/api/v1/integrations/github/webhooks` | Webhook delivery log. |
-| `POST` | `/api/v1/tests/{id}/github/check-run` | Publish or retry an APEX Load run result as a GitHub Check Run. |
-| `GET` | `/api/v1/integrations/github/check-links` | GitHub Check Run links associated with APEX Load runs. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 Example project policy update:
 
@@ -451,28 +367,7 @@ curl -X POST http://localhost:8080/api/v1/scenarios/validate-load-model \
 
 Useful scenario endpoints:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/scenarios` | List scenarios. |
-| `GET` | `/api/v1/scenarios/{id}` | Get one scenario. |
-| `PUT` | `/api/v1/scenarios/{id}` | Update a scenario. |
-| `DELETE` | `/api/v1/scenarios/{id}` | Delete a scenario. |
-| `POST` | `/api/v1/scenarios/size-from-goal` | Reverse-calculate recommended VUser counts from a target throughput or latency goal. |
-| `GET` | `/api/v1/scenarios/load-models/support-matrix` | Supported load model features, including chaos-resilience workloads. |
-| `GET` | `/api/v1/scenarios/load-models/templates` | Starter load model templates, including `chaos-resilience-shakeout`. |
-| `GET` | `/api/v1/scenarios/{id}/results` | Runs linked to one scenario. |
-| `GET` | `/api/v1/scenarios/{id}/runtime-settings/report` | Runtime settings compatibility report. |
-| `GET` | `/api/v1/scenarios/{id}/data-pools` | Scenario data-pool bindings. |
-| `PUT` | `/api/v1/scenarios/{id}/data-pools` | Update scenario data-pool bindings. |
-| `GET` | `/api/v1/scenarios/{id}/schedules` | Scenario schedules. |
-| `POST` | `/api/v1/scenarios/{id}/schedules` | Create a schedule for a scenario. |
-| `PUT` | `/api/v1/scenarios/{id}/schedules/{schedule_id}` | Update a schedule. |
-| `DELETE` | `/api/v1/scenarios/{id}/schedules/{schedule_id}` | Delete a schedule. |
-| `GET` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences` | Occurrence and approval history for a schedule. |
-| `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve` | Approve a pending schedule occurrence. |
-| `POST` | `/api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject` | Reject a pending schedule occurrence. |
-| `GET` | `/api/v1/schedules/health` | Scheduling health, queue, approval, and conflict signals. |
-| `GET` | `/api/v1/run-calendar` | Calendar view of scheduled upcoming and recent completed runs, including scenario labels and release context. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 #### IP Spoofing (Source-IP Pool)
 
@@ -512,19 +407,7 @@ Add `reserve_launch_window: true` to create a manual-start reservation. The API 
 
 Control endpoints:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/tests` | List runs. |
-| `POST` | `/api/v1/tests/estimate` | Estimate capacity for a proposed run. |
-| `POST` | `/api/v1/tests/preflight` | Pre-flight capacity and governance policy check for a proposed run without creating it. Blocks external-runner-required drafts until the matching runner capability is enabled. |
-| `GET` | `/api/v1/tests/{id}` | Get run status and live summary. |
-| `GET` | `/api/v1/tests/{id}/manifest` | Generator assignment manifest for a run (which generators host which groups). |
-| `POST` | `/api/v1/tests/{id}/start` | Start a queued or reserved run. |
-| `POST` | `/api/v1/tests/{id}/stop` | Gracefully stop a run. |
-| `POST` | `/api/v1/tests/{id}/abort` | Abort immediately. |
-| `POST` | `/api/v1/tests/{id}/pause` | Soft-pause between actions. |
-| `POST` | `/api/v1/tests/{id}/resume` | Resume a paused run. |
-| `PATCH` | `/api/v1/tests/{id}/vusers` | Change VUser count for a group. Send `action: "run"` to apply `target_vusers`, or `action: "pause"` / `"stop"` to drive that group to zero. Include optional `ramp_duration`, such as `"2m"`, to add or remove VUsers gradually. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 `stop` lets each VUser finish its currently executing action, skips remaining think time/actions, and then runs teardown. `abort` hard-cancels active local work and sends `graceful: false` to distributed generators. Active requests remain durably `STOPPING` until teardown/archive finalization publishes a terminal `ABORTED` state; the control response therefore reports the current durable status plus `stop_requested` or `abort_requested`. Queued and other pre-start runs transition directly to `ABORTED`.
 | `PATCH` | `/api/v1/tests/{id}/goal-targets` | Adjust per-group TPS targets for a `goal_oriented` run. Request: `{"group":"<name>","target_tps":<float>}`. Response includes updated `goal_targets` map and the new aggregate `target_average_tps`. Broadcasts `goal_target_changed` on the WebSocket. Returns `409` if the test is not `goal_oriented`. |
@@ -557,25 +440,7 @@ Messages are JSON and include a `type` field such as `metrics_update`, `test_cre
 
 ### 7. Download Reports And Archives
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/tests/{id}/report` | HTML report. |
-| `GET` | `/api/v1/tests/{id}/archive` | Full run archive. |
-| `GET` | `/api/v1/tests/{id}/archive/manifest` | Archive manifest. |
-| `GET` | `/api/v1/tests/{id}/archive/report` | Structured run report. |
-| `GET` | `/api/v1/tests/{id}/archive/files/{name}` | One named archive artifact. |
-| `GET` | `/api/v1/tests/{id}/archive/browser-diagnostics` | Browser replay diagnostics artifact. |
-| `GET` | `/api/v1/tests/{id}/archive/transactions` | Transaction data. |
-| `GET` | `/api/v1/tests/{id}/archive/resources` | Resource metrics. |
-| `GET` | `/api/v1/tests/{id}/archive/summaries` | Interval summaries. |
-| `GET` | `/api/v1/tests/{id}/archive/analysis` | Merged action/dependency graph plus paged transaction drilldown. |
-| `GET` | `/api/v1/tests/{id}/archive/root-cause` | Deterministic root-cause analysis. |
-| `GET` | `/api/v1/tests/{id}/archive/ai-root-cause` | Governed AI root-cause assistance when policy allows it. |
-| `GET` | `/api/v1/tests/{id}/archive/comparison` | Comparison export. **Single-run** (existing): add `baseline_id=<id>` to compare the addressed run against one baseline. **Multi-run** (new): add `comparison_ids=<id1>,<id2>,...` (up to 9 comparison IDs; addressed run is the baseline; max 10 runs total) plus `breakdown=overall\|platform\|engine\|device`. Multi-run only supports `format=csv`; result is ordered oldest→newest with a `Content-Disposition` attachment header. |
-| `GET` | `/api/v1/applications/{id}/load-comparison?scope=transaction\|group&key=<name>&test_id=<run>` | Compare transaction or group TPS/ART under load across releases for an application. Add repeated `test_id` params or comma-separated `test_ids` to limit the archived runs considered. |
-| `POST` | `/api/v1/archives/retention/plan` | Preview archive-retention pruning. |
-| `POST` | `/api/v1/archives/retention/apply` | Apply archive-retention pruning. |
-| `GET` | `/api/v1/releases/{id}/trend/export` | Release trend CSV. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 Some reporting endpoints accept `format` or `profile` query parameters where implemented, for example `format=html|json|csv|pdf|jsonl|parquet` and `profile=executive|engineer|audit`.
 
@@ -587,21 +452,7 @@ Library APIs move reusable scripts, scenarios, results, and archives between thi
 
 Useful library endpoints:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/library/capabilities` | Library feature and operation support advertised by this controller. |
-| `GET` | `/api/v1/library/catalog?kind=script|scenario|result&project_id=<id>` | Local asset catalog. |
-| `POST` | `/api/v1/library/export` | Export one local asset bundle for transfer. |
-| `POST` | `/api/v1/library/import` | Import a JSON library bundle. |
-| `POST` | `/api/v1/library/import/archive` | Import an uploaded archive bundle. |
-| `GET` | `/api/v1/library/results/{id}/archive` | Download a result archive from the library surface. |
-| `GET` / `POST` | `/api/v1/library/remotes` | List or create remote library hosts. |
-| `PUT` / `DELETE` | `/api/v1/library/remotes/{id}` | Update or delete a remote host. |
-| `POST` | `/api/v1/library/remotes/{id}/probe` | Probe remote health and credentials. |
-| `GET` | `/api/v1/library/remotes/{id}/catalog?kind=script|scenario|result&project_id=<id>` | Catalog assets on a remote host. |
-| `POST` | `/api/v1/library/remotes/{id}/pull` | Pull a remote asset into the local project. |
-| `POST` | `/api/v1/library/remotes/{id}/push` | Push a local asset to the remote host. |
-| `POST` | `/api/v1/library/remotes/{id}/diff` | Compare local and remote versions. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 ### 9. Record, Replay, And Debug
 
@@ -609,48 +460,13 @@ Unified replay sessions use `/api/v1/replay/sessions/...` for draft and stored s
 
 Useful recorder and replay endpoints:
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/replay/sessions/{session_id}` | Read a replay/debug session. |
-| `GET` | `/api/v1/replay/sessions/{session_id}/export?format=json|log` | Export replay evidence. |
-| `POST` | `/api/v1/replay/sessions/{session_id}/pause` | Pause replay. |
-| `POST` | `/api/v1/replay/sessions/{session_id}/resume` | Resume replay. |
-| `POST` | `/api/v1/replay/sessions/{session_id}/step` | Step replay at a breakpoint. |
-| `POST` | `/api/v1/replay/sessions/{session_id}/stop` | Stop replay. |
-| `PATCH` | `/api/v1/replay/sessions/{session_id}/breakpoints` | Replace replay breakpoints. |
-| `GET` | `/api/v1/browser-replay/sessions/{session_id}` | Read a browser replay session. |
-| `POST` | `/api/v1/browser-replay/sessions/{session_id}/pause` | Pause browser replay. |
-| `POST` | `/api/v1/browser-replay/sessions/{session_id}/resume` | Resume browser replay. |
-| `POST` | `/api/v1/browser-replay/sessions/{session_id}/stop` | Stop browser replay. |
-| `GET` | `/api/v1/recorder` | List recordings. |
-| `POST` | `/api/v1/recorder/start` | Start a recording proxy session. |
-| `GET` / `DELETE` | `/api/v1/recorder/{id}` | Read or delete one recording. |
-| `POST` | `/api/v1/recorder/{id}/pause` | Pause a recording. |
-| `POST` | `/api/v1/recorder/{id}/resume` | Resume a recording. |
-| `POST` | `/api/v1/recorder/{id}/stop` | Stop a recording. |
-| `PATCH` | `/api/v1/recorder/{id}/requests/{seq}` | Edit one recorded request. |
-| `POST` | `/api/v1/recorder/{id}/convert/preview` | Preview conversion to script DSL. |
-| `POST` | `/api/v1/recorder/{id}/convert` | Convert a recording to script DSL. |
-| `GET` | `/api/v1/recorder/{id}/export` | Export recording evidence. |
-| `GET` | `/api/v1/recorder/status` | Recorder proxy status. |
-| `GET` | `/api/v1/recorder/ca.pem` | Recorder CA certificate. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 ### 10. Govern Assisted Authoring
 
 The assisted-authoring surface is policy-gated and defaults to the deterministic local provider. External LLM integration is not wired by default. AI draft output cannot directly become a reusable script: drafts enter an authoring session and must pass structural validation, diff review, replay evidence, and explicit approval.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/ai/authoring/contract` | Published source types, evidence requirements, promotion gates, and audit contract. |
-| `GET` | `/api/v1/ai/policy?project_id=<id>` | Effective provider allow-list, enabled state, redaction posture, retention, and project override. |
-| `POST` | `/api/v1/ai/drafts` | Create a deterministic draft and, by default, an authoring review session. |
-| `POST` | `/api/v1/ai/repairs` | Return deterministic repair suggestions and a preview without mutating the stored script. |
-| `POST` | `/api/v1/ai/explain` | Explain a supported script, scenario, runtime, or report target with citations. |
-| `GET` | `/api/v1/ai/review-queue?project_id=<id>` | List draft sessions awaiting review or approval. |
-| `GET` | `/api/v1/scripts/authoring/capabilities` | Authoring workflow capabilities. |
-| `GET` / `POST` | `/api/v1/scripts/authoring/sessions` | List or create authoring sessions. |
-| `GET` / `PUT` / `DELETE` | `/api/v1/scripts/authoring/sessions/{id}` | Read, update, or discard one authoring session. |
-| `POST` | `/api/v1/scripts/authoring/sessions/{id}/approve` | Promote an approval-ready authoring session. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 ### 11. Manage Data Pools And Project Secrets
 
@@ -658,106 +474,39 @@ Data pools are project-scoped reusable row sets. They can be bound to scenarios 
 
 Row `status` is free text; rows whose status is `consumed`, `used`, `disabled`, `inactive`, or `exhausted` are excluded from run snapshots, exports with `?status=active`, and load-model row counts — every other status (including blank) executes. Archiving a pool (`archived_at`) blocks new bindings, imports, and run creation until it is restored; on `PUT /api/v1/data-pools/{id}` an omitted `archived_at` leaves the archive state unchanged, an explicit `null` restores, and a timestamp archives. `PUT` requests must echo the previously read `updated_at` (pools) or `version` (rows) as an optimistic-concurrency token; a mismatch returns `409`.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` / `POST` | `/api/v1/data-pools` | List or create data pools. |
-| `GET` / `PUT` / `DELETE` | `/api/v1/data-pools/{id}` | Read, replace, or delete a pool. |
-| `GET` / `POST` | `/api/v1/data-pools/{id}/rows` | List or append pool rows. |
-| `POST` | `/api/v1/data-pools/{id}/rows/import` | Bulk-load rows from a CSV/TSV upload (`mode=append\|replace`, `delimiter=auto\|comma\|tab`, `header`, `columns`, `dry_run`). |
-| `GET` | `/api/v1/data-pools/{id}/rows/export` | Stream the pool as an `.apexload.csv` round-trip file (`?status=active\|all`); the default `all` form preserves row status. Leading formula characters are apostrophe-guarded, and the APEX preamble remains recognizable after a file is renamed, while ordinary CSV files preserve literal apostrophes. |
-| `PUT` / `DELETE` | `/api/v1/data-pools/{id}/rows/{row_id}` | Replace or delete one row. |
-| `GET` | `/api/v1/projects/{id}/secrets` | List secret metadata and provider capabilities; values are never returned. |
-| `POST` | `/api/v1/projects/{id}/secrets/status` | Check whether named secret requirements are configured. |
-| `POST` | `/api/v1/projects/{id}/secrets` | Create one or more secrets with create-only semantics. Human authorization and a writable provider are required. |
-| `PUT` | `/api/v1/projects/{id}/secrets/{name}` | Rotate an existing secret. Human authorization and a writable provider are required. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 Secret writes are intentionally unavailable to service accounts even when the account has broad roles; use an authorized human workflow and audit the result. A partial batch failure can report already-created entries, the failed entry, and unattempted entries, so clients should read the response and refresh status before retrying.
 
 ### 12. Orchestrate Execution Plans, Reservations, And CI Runs
 
-Execution plans group ordered scenario entries with per-entry runtime/data-pool overrides. `run_mode` accepts `parallel` or `sequential`. In the current implementation, materialization creates the enabled run entries eagerly; `sequential` records the intended ordering and partial-failure behavior but does not yet wait for run N to finish before starting run N+1.
+Execution plans group ordered scenario entries with per-entry runtime/data-pool overrides. `run_mode` accepts `parallel` or `sequential`. Sequential execution is dependency-gated: each enabled entry starts only after the previous run reaches a terminal state. The entry failure policy determines whether a failure halts the sequence or skips onward. Parallel plans create their enabled entries eagerly. Persisted plan-run state supports recovery after controller restart or HA takeover.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` / `POST` | `/api/v1/execution-plans` | List or create execution plans. |
-| `GET` / `PUT` / `DELETE` | `/api/v1/execution-plans/{id}` | Read, revision-checked update, or delete a plan. |
-| `POST` | `/api/v1/execution-plans/{id}/runs` | Materialize enabled entries and create their test runs. |
-| `GET` | `/api/v1/execution-plans/{id}/runs` | List materialized plan runs. |
-| `GET` | `/api/v1/execution-plans/{id}/runs/{runId}` | Read one plan-run record. |
-| `GET` | `/api/v1/execution-plans/{id}/approvals` | List governance approvals for a plan. |
-| `POST` | `/api/v1/execution-plans/{id}/approvals/{approval_id}/approve` | Approve a plan gate. |
-| `POST` | `/api/v1/execution-plans/{id}/approvals/{approval_id}/reject` | Reject a plan gate. |
-| `GET` / `POST` | `/api/v1/execution-plans/{id}/schedules` | List or create plan schedules. |
-| `PUT` / `DELETE` | `/api/v1/execution-plans/{id}/schedules/{schedule_id}` | Update or delete a plan schedule. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 Capacity reservations protect a project/time window and can optionally target a fleet pool. New reservations always start `pending`; approval and run binding use dedicated endpoints.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` / `POST` | `/api/v1/capacity/timeslots` | List or create capacity reservations. |
-| `GET` / `PUT` / `DELETE` | `/api/v1/capacity/timeslots/{id}` | Read, update, or delete a reservation. |
-| `POST` | `/api/v1/capacity/timeslots/availability` | Check a proposed window against available/reserved capacity. |
-| `POST` | `/api/v1/capacity/timeslots/{id}/approve` | Approve a pending reservation. |
-| `POST` | `/api/v1/capacity/timeslots/{id}/reject` | Reject a pending reservation. |
-| `POST` | `/api/v1/capacity/timeslots/{id}/bind` | Bind an approved reservation to a test. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 Controller-backed GitHub Actions runs require project policy plus either the GitHub OIDC exchange or an approved `ci_runner` service account. Use an `Idempotency-Key` on create so retries recover the same accepted attempt.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/v1/auth/ci/github/exchange` | Validate GitHub Actions OIDC claims and return a short-lived bearer token. |
-| `POST` | `/api/v1/ci/runs` | Validate policy/source identity and create an idempotent CI run. |
-| `GET` | `/api/v1/ci/runs/{id}` | Read normalized CI run, SLA, result, and publication state. |
-| `POST` | `/api/v1/ci/runs/{id}/abort` | Abort a CI run with an optional reason. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 ### 13. Operate Fleet And Monitoring Integrations
 
 Fleet APIs expose live capacity, load zones, alerts, persistent pool/metadata records, lifecycle controls, and provisioning requests. Cordon excludes new placement; drain marks a generator as draining; evacuation supports `{"dry_run":true}` before moving/handling affected distributed runs. Provisioning requests are recorded honestly as `not_configured` when no live cloud/Kubernetes provisioner is installed.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/fleet/capacity` | Aggregated placement capacity and generator health. |
-| `GET` | `/api/v1/fleet/load-zones` | Region/load-zone projection. |
-| `GET` | `/api/v1/fleet/alerts` | Fleet alerts with acknowledgement state. |
-| `PATCH` | `/api/v1/fleet/alerts/{id}/ack` | Acknowledge an active fleet alert. |
-| `GET` / `POST` | `/api/v1/fleet/pools` | List or create fleet pools. |
-| `GET` / `PUT` / `DELETE` | `/api/v1/fleet/pools/{id}` | Read, update, or delete a fleet pool. |
-| `GET` | `/api/v1/fleet/generators` | Persistent generator metadata. |
-| `PATCH` | `/api/v1/fleet/generators/{id}` | Update target, region, pool, provider, cordon, or tags. |
-| `POST` | `/api/v1/fleet/generators/{id}/cordon` | Exclude a generator from new placement. |
-| `POST` | `/api/v1/fleet/generators/{id}/drain` | Mark a generator as draining. |
-| `POST` | `/api/v1/fleet/generators/{id}/evacuate` | Preview or apply evacuation for active distributed runs. |
-| `POST` | `/api/v1/fleet/generators/{id}/uncordon` | Return a generator to active placement. |
-| `GET` / `POST` | `/api/v1/fleet/provision-requests` | List or create provisioning requests. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 Monitoring collectors use one-time registration/rotation tokens. The heartbeat route is authenticated in-handler with that collector token (Bearer or `X-APEXLoad-API-Key`), not ordinary human RBAC middleware. Imported Grafana dashboards follow inspect/preview/commit-style workflows and do not silently create unsupported live integrations.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` / `POST` | `/api/v1/monitoring/collectors` | List or register collectors. |
-| `GET` / `PATCH` / `DELETE` | `/api/v1/monitoring/collectors/{id}` | Read, update, or remove a collector. |
-| `POST` | `/api/v1/monitoring/collectors/{id}/rotate-token` | Rotate the one-time collector token. |
-| `POST` | `/api/v1/monitoring/collectors/{id}/heartbeat` | Collector heartbeat ingestion. |
-| `GET` | `/api/v1/monitoring/collectors/{id}/metrics` | Collector metrics projection. |
-| `GET` | `/api/v1/monitoring/dashboards` | List imported Grafana dashboards. |
-| `GET` | `/api/v1/monitoring/dashboards/graphs` | Query-ready graphs derived from imported dashboards. |
-| `POST` | `/api/v1/monitoring/dashboards/import/grafana/preview` | Preview dashboard mapping. |
-| `POST` | `/api/v1/monitoring/dashboards/import/grafana/commit` | Commit a reviewed dashboard import. |
-| `GET` | `/api/v1/monitoring/dashboards/import/grafana/support-matrix` | Supported Grafana constructs and limits. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 ### 14. Inspect Entitlements And Import External Results
 
 Entitlements are a read-only self-hosted projection of enabled bundles, configured limits, and current usage. They do not implement a licensing engine or enforce limits.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/v1/system/entitlements` | Edition, protocol bundles, and configured limits. |
-| `GET` | `/api/v1/system/entitlements/usage` | Deployment-wide usage against the projection. |
-| `GET` | `/api/v1/projects/{id}/entitlements/usage` | Project-scoped usage projection. |
-| `POST` | `/api/v1/results/import` | Import a supported external result envelope. |
-| `GET` | `/api/v1/results/imports` | List external-result import records in scope. |
-| `GET` | `/api/v1/reports/profiles` | Supported report profiles and output capabilities. |
-| `GET` | `/api/v1/runtime-settings/support-matrix` | Runtime-setting implementation and protocol applicability. |
+Use the [API Reference](#/swagger) for current methods, paths, permissions and response contracts for this workflow.
 
 ## Generated Endpoint Map
 

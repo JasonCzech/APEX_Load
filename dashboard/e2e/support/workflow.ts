@@ -149,6 +149,9 @@ export function mutation(page: Page, method: string, path: string) {
   return page.waitForResponse(r => r.request().method() === method && new URL(r.url()).pathname === path)
 }
 export async function login(page: Page, username = 'admin') {
+  // Workflow tests share a controller and source IP. Pace real UI logins below
+  // its ten-per-minute limit rather than retrying failures or weakening auth.
+  await new Promise(resolve => setTimeout(resolve, 6500))
   await page.goto('/#/dashboard')
   await page.getByLabel('Username').fill(username)
   await page.getByLabel('Password').fill(username)

@@ -52,9 +52,9 @@ export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions 
     case 'docs':
       return 'Help & documentation'
     case 'swagger':
-      return 'Swagger Docs'
+      return 'Help & documentation'
     case 'repository-guide':
-      return 'Repository Guide'
+      return 'Help & documentation'
     case 'recorder-panel':
       return 'Browser Recorder'
     case 'access':

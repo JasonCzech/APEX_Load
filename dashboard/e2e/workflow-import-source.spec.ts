@@ -1,0 +1,94 @@
+import { test, expect, login, mutation, json } from './support/workflow'
+import { createWorkspace, scopeQuery } from './support/workspace'
+
+test('source catalog search and importer guidance stay consistent across formats', async ({ page }) => {
+  test.setTimeout(90_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  // Refresh hierarchy cached before the authenticated API setup.
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  const search = page.getByRole('searchbox', { name: 'Find a source format' })
+  await search.fill('no-such-format')
+  await expect(page.getByText(/No source formats match your search/)).toBeVisible()
+  await page.getByRole('button', { name: 'Clear search' }).click()
+  await expect(page.getByText('17 of 17 sources')).toBeVisible()
+
+  for (const [query, title, sourceHeading] of [
+    ['OpenAPI', 'Import OpenAPI', 'OpenAPI / Swagger'], ['Bruno', 'Import Bruno Collection', 'Bruno Collection'],
+    ['Postman', 'Import Postman Collection', 'Postman Collection'], ['WSDL', 'Import WSDL', 'WSDL / SOAP'],
+    ['AsyncAPI', 'Import AsyncAPI', 'AsyncAPI / Kafka'], ['RAML', 'Import RAML', 'RAML / Anypoint'],
+    ['HAR Traffic', 'Import HAR', 'HAR Traffic'], ['Playwright', 'Import Browser Recording', 'Recorder Export / Playwright Codegen'],
+    ['Request / Response', 'Build Script From Sample', 'Request / Response Sample'], ['JMeter', 'Import JMeter Test Plan', 'Import JMeter'],
+    ['DevWeb', 'Import DevWeb Script', 'DevWeb Source'], ['k6', 'Import k6 Script', 'k6 Script'],
+    ['CloudTest', 'Import Akamai CloudTest Export', 'Akamai CloudTest Export'], ['Event Hubs', 'Import Event Hubs Capture', 'Event Hubs Capture'],
+    ['Broker Config', 'Import Broker Config', 'Broker Config'],
+  ]) {
+    await search.fill(query)
+    await page.locator('.script-create-option').filter({ has: page.getByRole('heading', { name: sourceHeading, exact: true }) }).click()
+    await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+    const guide = page.getByRole('list', { name: 'Import workflow', exact: true })
+    await expect(guide).toBeVisible()
+    await expect(guide.locator('[aria-current="step"]')).toContainText('Provide source')
+    if (query === 'JMeter') {
+      const action = page.getByRole('button', { name: 'Convert JMeter Plan' })
+      const coverage = page.getByRole('heading', { name: 'Import Coverage', exact: true })
+      expect(await action.evaluate((button, heading) => Boolean(heading && (button.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)), await coverage.elementHandle())).toBe(true)
+    }
+    if (query === 'Request / Response') await expect(page.getByRole('textbox', { name: 'Primary Sample', exact: true })).toBeVisible()
+    if (query === 'HAR Traffic') await expect(page.getByRole('button', { name: 'Drop an optional comparison HAR file here' })).toBeVisible()
+    await page.getByRole('button', { name: 'Back', exact: true }).click()
+  }
+})
+
+test('Oracle review clears obsolete findings and never offers a script destination', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  // Refresh hierarchy cached before the authenticated API setup.
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find a source format' }).fill('Oracle')
+  await page.locator('.script-create-option').click()
+  await expect(page.getByText('Review only: this page produces findings and next actions.', { exact: false })).toBeVisible()
+  await expect(page.getByText('Save destination', { exact: false })).toHaveCount(0)
+  const run = page.getByRole('button', { name: 'Run Review', exact: true })
+  await expect(run).toBeDisabled()
+  const source = page.getByRole('textbox', { name: 'Source Text', exact: true })
+  await source.fill('GET /OA_HTML/AppsLogin Oracle E-Business web login')
+  await run.click()
+  await expect(page.getByRole('heading', { name: 'Review Pack', exact: true })).toBeVisible()
+  await source.fill('Different source')
+  await expect(page.getByRole('heading', { name: 'Review Pack', exact: true })).toHaveCount(0)
+  await expect(run).toBeEnabled()
+  await page.screenshot({ path: testInfo.outputPath('oracle-current-source.png'), fullPage: true })
+})
+
+test('HAR comparison can be removed and upload errors recover accessibly', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  // Refresh hierarchy cached before the authenticated API setup.
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find a source format' }).fill('HAR Traffic')
+  await page.getByRole('button', { name: /^HAR HAR Traffic/ }).click()
+  const inputs = page.getByRole('group', { name: 'Script import controls' }).locator('input[type=file]')
+  await inputs.nth(0).setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('invalid') })
+  await expect(page.locator('.sample-import-error[role=alert]')).toBeVisible()
+  const har = { name: 'synthetic.har', mimeType: 'application/json', buffer: Buffer.from('{"log":{"version":"1.2","entries":[]}}') }
+  await inputs.nth(0).setInputFiles(har)
+  await expect(page.locator('.sample-import-error')).toHaveCount(0)
+  await inputs.nth(1).setInputFiles({ ...har, name: 'comparison.har' })
+  await page.getByRole('group', { name: 'Selected file comparison.har', exact: true }).getByRole('button', { name: 'Remove', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Drop an optional comparison HAR file here' })).toBeVisible()
+  // Real validation must leave the library untouched, even when no entries can convert.
+  const validation = mutation(page, 'POST', '/api/v1/scripts/import/har')
+  await page.getByRole('button', { name: 'Validate Only' }).click()
+  await validation
+  expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(0)
+})

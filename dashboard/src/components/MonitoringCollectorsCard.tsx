@@ -12,6 +12,7 @@ import ConfirmDestructiveModal from './ConfirmDestructiveModal'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { listAllMonitoringCollectors } from './monitoringCatalogModel'
 import './parityPanels.css'
+import './MonitoringWorkspace.css'
 
 interface Props {
   projectId?: string
@@ -73,8 +74,13 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   const [createForm, setCreateForm] = useState({ name: '', description: '', packs: '' })
   const [edit, setEdit] = useState<EditState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MonitoringCollector | null>(null)
-  const [oneTimeToken, setOneTimeToken] = useState<{ name: string; token: string } | null>(null)
-  const [metrics, setMetrics] = useState<{ name: string; snapshot: CollectorMetricSnapshot } | null>(null)
+  const [oneTimeToken, setOneTimeToken] = useState<{ id: string; name: string; token: string } | null>(null)
+  const [metrics, setMetrics] = useState<{ id: string; name: string; snapshot: CollectorMetricSnapshot } | null>(null)
+  const [lastLoaded, setLastLoaded] = useState<Date | null>(null)
+  const listPendingRef = useRef(false)
+  const metricsGenerationRef = useRef(0)
+  const [metricsError, setMetricsError] = useState<string | null>(null)
+  const [metricsLoading, setMetricsLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [copyError, setCopyError] = useState<string | null>(null)
@@ -103,7 +109,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   const closeCreate = useCallback(() => runGuarded(discardCreate), [discardCreate, runGuarded])
   const closeEdit = useCallback(() => runGuarded(discardEdit), [discardEdit, runGuarded])
   const closeToken = useCallback(() => setOneTimeToken(null), [])
-  const closeMetrics = useCallback(() => setMetrics(null), [])
+  const closeMetrics = useCallback(() => { metricsGenerationRef.current += 1; setMetrics(null); setMetricsError(null); setMetricsLoading(false) }, [])
 
   useModalDialog({ dialogRef: createDialogRef, enabled: showCreate, onClose: busy ? undefined : closeCreate })
   useModalDialog({ dialogRef: editDialogRef, enabled: Boolean(edit), onClose: busy ? undefined : closeEdit })
@@ -113,6 +119,11 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
   useLayoutEffect(() => {
     loadGenerationRef.current += 1
     setCollectors([])
+    setLastLoaded(null)
+    listPendingRef.current = false
+    metricsGenerationRef.current += 1
+    setMetricsError(null)
+    setMetricsLoading(false)
     setLoading(false)
     setError(null)
     setShowCreate(false)
@@ -138,22 +149,29 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
       if (isCurrentScope(scope)) setCollectors([])
       return
     }
+    listPendingRef.current = true
     setLoading(true)
     setError(null)
     try {
 			const nextCollectors = await listAllMonitoringCollectors(api.listCollectors, projectId)
       if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
 			setCollectors(nextCollectors)
+      setLastLoaded(new Date())
     } catch (err) {
       if (!isCurrentScope(scope) || requestGeneration !== loadGenerationRef.current) return
       setError(err instanceof ApiError ? err.message : 'Failed to load monitoring collectors.')
     } finally {
       if (isCurrentScope(scope) && requestGeneration === loadGenerationRef.current) setLoading(false)
+      if (requestGeneration === loadGenerationRef.current) listPendingRef.current = false
     }
   }, [api, isCurrentScope, projectId])
 
   useEffect(() => {
     void load()
+    const poll = () => { if (document.visibilityState === 'visible' && !listPendingRef.current) void load() }
+    const interval = window.setInterval(poll, 5000)
+    document.addEventListener('visibilitychange', poll)
+    return () => { window.clearInterval(interval); document.removeEventListener('visibilitychange', poll); loadGenerationRef.current += 1 }
   }, [load])
 
   const submitCreate = useCallback(async (): Promise<boolean> => {
@@ -172,7 +190,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 			setCollectors(current => [...current.filter(collector => collector.id !== res.collector.id), res.collector])
       setShowCreate(false)
       resetCreate()
-      setOneTimeToken({ name: res.collector.name, token: res.token })
+      setOneTimeToken({ id: res.collector.id, name: res.collector.name, token: res.token })
       await load()
 			return true
     } catch (err) {
@@ -219,7 +237,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
 				if (res.collector) {
 					setCollectors(current => current.map(candidate => candidate.id === res.collector.id ? res.collector : candidate))
 				}
-        setOneTimeToken({ name: collector.name, token: res.token })
+        setOneTimeToken({ id: collector.id, name: collector.name, token: res.token })
         await load()
       } catch (err) {
         if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to rotate token.')
@@ -238,7 +256,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
       try {
         const snapshot = await api.getCollectorMetrics(collector.id)
         if (!isCurrentScope(scope)) return
-        setMetrics({ name: collector.name, snapshot })
+        setMetrics({ id: collector.id, name: collector.name, snapshot }); setMetricsError(null)
       } catch (err) {
         if (isCurrentScope(scope)) setError(err instanceof ApiError ? err.message : 'Failed to load collector metrics.')
       } finally {
@@ -247,6 +265,22 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
     },
     [api, isCurrentScope],
   )
+
+  const refreshMetrics = useCallback(async () => {
+    if (!metrics || metricsLoading) return
+    const scope = { ...scopeRef.current }
+    const generation = ++metricsGenerationRef.current
+    setMetricsLoading(true)
+    setMetricsError(null)
+    try {
+      const snapshot = await api.getCollectorMetrics(metrics.id)
+      if (isCurrentScope(scope) && generation === metricsGenerationRef.current) setMetrics(current => current?.id === metrics.id ? { ...current, snapshot } : current)
+    } catch (err) {
+      if (isCurrentScope(scope) && generation === metricsGenerationRef.current) setMetricsError(err instanceof Error ? err.message : 'Unable to refresh metrics.')
+    } finally {
+      if (isCurrentScope(scope) && generation === metricsGenerationRef.current) setMetricsLoading(false)
+    }
+  }, [api, isCurrentScope, metrics, metricsLoading])
 
   const confirmDelete = useCallback(async () => {
     if (!deleteTarget) return
@@ -326,11 +360,13 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
         )}
       </div>
 
-      {error && <div className="pp-error" role="alert">{error}</div>}
+      <div className="monitor-workflow-actions"><button type="button" className="btn btn-secondary btn-sm" disabled={loading || !projectId} onClick={() => void load()}>{loading ? 'Refreshing collectors…' : 'Refresh collectors'}</button><span className="monitor-status-note">{lastLoaded ? `Collectors checked ${lastLoaded.toLocaleTimeString()}. Refreshes every 5 seconds while visible.` : 'Collector status has not been retrieved.'}</span></div>
+      <details><summary>Collector setup and verification</summary><ol><li>Register a collector and select the packs it may submit.</li><li>Install the apexload-collector-agent binary on the monitored host. Set APEXLOAD_CONTROLLER_URL, APEXLOAD_COLLECTOR_ID, APEXLOAD_COLLECTOR_TOKEN, and APEXLOAD_COLLECTOR_PACKS in its service environment. Use the collector ID shown below and the token shown once at registration.</li><li>Start the agent with a reachable HTTPS controller URL. Its default heartbeat interval is 15 seconds.</li><li>Check Last seen, then open Metrics to verify the expected pack and sample values. Registration alone does not confirm collection.</li></ol></details>
+      {error && <div className="pp-error" role="alert">{error} {lastLoaded ? 'Previously loaded collector data may be stale.' : ''}</div>}
 
       {!projectId ? (
         <div className="pp-empty">Select a project to view its monitoring collectors.</div>
-      ) : loading ? (
+      ) : loading && !lastLoaded ? (
         <div className="pp-empty">Loading collectors…</div>
       ) : collectors.length === 0 ? (
         <div className="pp-empty">
@@ -347,6 +383,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
                   <span className={healthPillClass(collector.health)}>{collector.health}</span>
                 </div>
                 <div className="pp-row-meta">
+                  <span>collector ID: {collector.id}</span>
                   <span>packs: {collector.allowed_metric_packs?.length ? packsToText(collector.allowed_metric_packs) : 'none'}</span>
                   <span>last seen: {formatTimestamp(collector.last_seen_at)}</span>
                 </div>
@@ -484,6 +521,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
             </div>
             <div className="pp-token">
               <span className="pp-token-warning">This token is shown only once. Copy it now and store it securely.</span>
+              <p>Collector ID: <code>{oneTimeToken.id}</code></p>
               <div className="pp-token-value">
                 <code>{oneTimeToken.token}</code>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => void copyToken()}>
@@ -507,7 +545,7 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
           <div ref={metricsDialogRef} className="pp-modal" role="dialog" aria-modal="true" aria-labelledby="collector-metrics-dialog-title">
             <div className="pp-modal-header">
               <h3 id="collector-metrics-dialog-title">
-                Live metrics — “{metrics.name}”
+                Latest captured metrics — “{metrics.name}”
                 <span className={freshness(metrics.snapshot).cls} style={{ marginLeft: 8 }}>
                   {freshness(metrics.snapshot).label}
                 </span>
@@ -517,6 +555,9 @@ export default function MonitoringCollectorsCard({ projectId, canManage = false 
               </button>
             </div>
             <div className="pp-modal-form">
+              <p className="monitor-status-note">This is a snapshot of the last heartbeat. Refresh to check for new samples.</p>
+              <button type="button" className="btn btn-secondary btn-sm" disabled={metricsLoading} onClick={() => void refreshMetrics()}>{metricsLoading ? 'Refreshing metrics…' : 'Refresh metrics'}</button>
+              {metricsError && <p role="alert">{metricsError} The displayed snapshot may be stale.</p>}
               <div className="pp-row-meta">
                 <span>health: {metrics.snapshot.health}</span>
                 <span>last received: {formatTimestamp(metrics.snapshot.received_at)}</span>

@@ -156,6 +156,8 @@ describe('TestHub build-from-goal', () => {
     expect(container.textContent).toContain('Throughput goal')
     expect(container.textContent).toContain('Estimate adaptive demand')
     expect(container.textContent).not.toContain('Scenario Mode')
+    expect(container.querySelector('[aria-label="Average response time for Group 1"]')).not.toBeNull()
+    await act(async () => { findButton(container, 'Import completed baseline')?.click() })
     const picker = container.querySelector('select[aria-label="Completed baseline run"]') as HTMLSelectElement
     expect(Array.from(picker.options).map(option => option.textContent)).toEqual(expect.arrayContaining([
       expect.stringContaining('Baseline Run'),
@@ -199,6 +201,7 @@ describe('TestHub build-from-goal', () => {
 
     expect(apiMock.listTests).toHaveBeenNthCalledWith(1, { limit: 1000, offset: 0, project_id: 'project-1', summary: true })
     expect(apiMock.listTests).toHaveBeenNthCalledWith(2, { limit: 1000, offset: 1, project_id: 'project-1', summary: true })
+    await act(async () => { findButton(container, 'Import completed baseline')?.click() })
     expect(container.textContent).toContain('Newest Baseline')
     expect(container.textContent).toContain('Oldest Baseline')
     expect(container.textContent).toContain('2 completed runs available')
@@ -237,6 +240,7 @@ describe('TestHub build-from-goal', () => {
     await flush()
 
     expect(apiMock.listTests).toHaveBeenLastCalledWith({ limit: 1000, offset: 0, project_id: 'project-2', summary: true })
+    await act(async () => { findButton(container, 'Import completed baseline')?.click() })
     expect(container.textContent).toContain('Project B Baseline')
     expect(container.textContent).not.toContain('Project A Baseline')
   })
@@ -249,6 +253,8 @@ describe('TestHub build-from-goal', () => {
     await flush()
     await act(async () => findButton(container, 'Build from Goal')?.click())
     await flush()
+    expect(container.querySelector('[aria-label="Average response time for Group 1"]')).not.toBeNull()
+    await act(async () => { findButton(container, 'Import completed baseline')?.click() })
     const picker = container.querySelector<HTMLSelectElement>('[aria-label="Completed baseline run"]')!
     await act(async () => { picker.value = 'run-1'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
     await act(async () => findButton(container, 'Start Over')?.click())
@@ -275,6 +281,8 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { findButton(container, 'Build from Goal')?.click() })
     await flush()
 
+    expect(container.querySelector('[aria-label="Average response time for Group 1"]')).not.toBeNull()
+    await act(async () => { findButton(container, 'Import completed baseline')?.click() })
     const picker = container.querySelector('select[aria-label="Completed baseline run"]') as HTMLSelectElement
     await act(async () => { picker.value = 'run-1'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
     await act(async () => { picker.value = 'run-2'; picker.dispatchEvent(new Event('change', { bubbles: true })) })

@@ -21,6 +21,21 @@ describe('RunReportCompareBar', () => {
     container.remove()
   })
 
+  it('distinguishes loading, empty and failed discovery with an actionable Results link', async () => {
+    const render = (optionsLoading = false, error = '') => root.render(<RunReportCompareBar compareId="" deltas={{}} optionsLoading={optionsLoading} error={error} onCompareChange={vi.fn()} onPinBaseline={vi.fn()} />)
+    await act(async () => render(true))
+    expect(container.textContent).toContain('Finding archived baseline runs')
+    expect(container.textContent).not.toContain('No other archived runs')
+    expect(container.querySelector('select')?.disabled).toBe(true)
+    await act(async () => render())
+    expect(container.textContent).toContain('No other archived runs')
+    expect(container.querySelector('a')?.getAttribute('href')).toContain('#/results')
+    expect(container.querySelector('.run-report-compare-deltas')).toBeNull()
+    await act(async () => render(false, 'Discovery unavailable'))
+    expect(container.textContent).toContain('Discovery unavailable')
+    expect(container.textContent).not.toContain('No other archived runs')
+  })
+
   it('confirms a successful pin and clears the confirmation for another comparison', async () => {
     const onPinBaseline = vi.fn().mockResolvedValue(true)
     const render = (compareId: string) => (

@@ -1,3 +1,4 @@
+import { API_ORIGIN } from '../hooks/apiClient'
 import DialogLayer from './ux/DialogLayer'
 import { useEffect, useRef } from 'react'
 import type { IssuedKeyState } from './accessTypes'
@@ -15,8 +16,9 @@ export function AccessIssuedKeyModal({
   onCopy,
   onClose,
 }: AccessIssuedKeyModalProps) {
-  const curlExample = `curl -H "Authorization: Bearer ${issuedKey.key}" http://localhost:8080/api/v1/projects`
-  const mcpExample = `APEXLOAD_URL=http://localhost:8080/api/v1\nAPEXLOAD_API_KEY=${issuedKey.key}\npython3 mcp/server.py`
+  const endpoint = API_ORIGIN
+  const curlExample = `curl -H "Authorization: Bearer ${issuedKey.key}" ${endpoint}/api/v1/projects`
+  const mcpExample = `APEXLOAD_URL=${endpoint}/api/v1\nAPEXLOAD_API_KEY=${issuedKey.key}\npython3 mcp/server.py`
   const dialogRef = useRef<HTMLDivElement>(null)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
 

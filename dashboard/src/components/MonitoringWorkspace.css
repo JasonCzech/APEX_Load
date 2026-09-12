@@ -1,0 +1,35 @@
+.monitoring-grid[data-active-category="telemetry"],
+.monitoring-grid[data-active-category="fleet"],
+.monitoring-grid[data-active-category="alerts"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.monitoring-grid[data-active-category="telemetry"] .monitor-scroll-area { max-height: none; overflow: visible; }
+.monitoring-grid[data-active-category="telemetry"] .monitor-warning-list { background: var(--bg-secondary); border-color: var(--border); }
+.monitor-build-details > summary { cursor: pointer; margin: 8px 0; }
+.monitor-advisories { margin-bottom: 20px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
+.monitor-advisories h2 { font-size: 16px; margin: 0 0 12px; }
+.monitor-advisories > div { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.monitor-advisories > div > span { flex: 1; }
+.monitoring-topbar-advisory { cursor: pointer; font: inherit; }
+.monitor-calendar-options { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.monitor-calendar-options label { display: inline-flex; align-items: center; gap: 6px; }
+button.run-calendar-more { cursor: pointer; min-height: 32px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); }
+.monitor-workflow-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.monitor-workflow-actions label { display: flex; align-items: center; gap: 6px; }
+.monitor-workflow-actions input, .monitor-workflow-actions select { color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); min-height: 32px; border-radius: 4px; padding: 4px 8px; }
+.monitor-status-note { font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
+.monitor-alert-history { display: grid; gap: 12px; }
+.monitor-alert-history article { padding: 12px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
+.monitor-alert-history p { margin: 4px 0; }
+.monitor-pack-picker { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.monitor-pack-picker .monitor-pack-option { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.monitor-pack-picker .monitor-pack-option input[type="checkbox"] { width: 18px; height: 18px; padding: 0; margin: 2px 0; }
+.monitor-pack-option > span { display: grid; gap: 4px; text-transform: none; letter-spacing: normal; }
+.monitor-pack-option small { display: block; font-weight: normal; line-height: 1.5; color: var(--text-secondary); }
+.monitor-pack-picker summary { cursor: pointer; }
+.pp-modal:has(.monitor-pack-picker) { width: min(760px, 100%); }
+@media (max-width: 950px) {
+  .monitoring-grid[data-active-category="telemetry"], .monitoring-grid[data-active-category="fleet"], .monitoring-grid[data-active-category="alerts"] { grid-template-columns: minmax(0, 1fr); }
+}
+.monitor-evidence { margin-bottom: 20px; }
+.monitor-evidence h3 { margin: 0; font-size: inherit; }
+.monitor-evidence details > summary { padding: 10px 0; cursor: pointer; }
+.monitor-body > p { overflow-wrap: anywhere; }

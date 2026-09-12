@@ -15,16 +15,35 @@ export function recordedNumber(value?: number): string {
   return value !== undefined && Number.isFinite(value) && value >= 0 ? value.toLocaleString() : 'Not recorded'
 }
 
+/** Controller lifecycle timing, never a configured duration or creation timestamp. */
+export function lifecycleElapsedSeconds(test: TestSummary): number | undefined {
+  const start = recordedTime(test.started_at) ?? recordedTime(test.start_time)
+  const end = recordedTime(test.ended_at)
+  return start !== undefined && end !== undefined && end >= start ? (end - start) / 1000 : undefined
+}
+
+export function formatElapsedSeconds(seconds?: number): string {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return 'Not recorded'
+  const total = Math.round(seconds)
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const remainder = total % 60
+  if (hours) return `${hours}h ${minutes}m${remainder ? ` ${remainder}s` : ''}`
+  if (minutes) return `${minutes}m${remainder ? ` ${remainder}s` : ''}`
+  return `${remainder}s`
+}
+
 export function executionFacts(test: TestSummary, report?: RunArchiveReport | null, manifest?: TestRunManifest | null) {
   const immutable = manifest?.initial_configuration_provenance?.immutable === true
   const config = immutable ? manifest.initial_configuration : null
-  const started = report?.manifest?.provenance?.started_at || test.started_at
-  const ended = report?.manifest?.completed_at || test.ended_at
+  const started = report ? report.manifest?.provenance?.started_at : test.started_at || test.start_time
+  const ended = report ? report.manifest?.completed_at : test.ended_at
   const start = recordedTime(started)
   const end = recordedTime(ended)
   const elapsed = start !== undefined && end !== undefined && end >= start ? Math.round((end - start) / 1000) : undefined
   return {
     immutable,
+    lifecycleElapsed: formatElapsedSeconds(lifecycleElapsedSeconds(test)),
     duration: immutable ? config?.duration : test.duration,
     vusers: immutable ? config?.total_vusers : test.total_vusers,
     groups: (immutable ? config?.groups : test.groups) ?? [],

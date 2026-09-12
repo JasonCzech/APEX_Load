@@ -1704,7 +1704,7 @@ func (s *SQLiteStore) ListAuditEvents(filter AuditEventFilter) ([]*AuditEvent, e
 	query := strings.Builder{}
 	query.WriteString(`SELECT id, action, actor_type, actor_subject, actor_display_name, COALESCE(project_id, ''), COALESCE(domain_id, ''), resource_type, resource_id, status, details_json, created_at FROM audit_events`)
 	query.WriteString(where)
-	query.WriteString(` ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+	query.WriteString(` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`)
 	args = append(args, filter.Limit, filter.Offset)
 	rows, err := s.db.Query(query.String(), args...)
 	if err != nil {
@@ -1747,6 +1747,9 @@ func buildAuditEventFilterWhere(filter AuditEventFilter) (string, []any) {
 		}
 		query.WriteString(` AND ` + column + ` = ?`)
 		args = append(args, trimmed)
+	}
+	if filter.FleetOnly {
+		query.WriteString(` AND (action LIKE 'fleet.%' OR action LIKE 'generator.%' OR action LIKE 'provisioning.%' OR resource_type IN ('fleet_alert', 'fleet_pool', 'generator', 'provisioning_request', 'provisioning_operation'))`)
 	}
 	appendFilter("action", filter.Action)
 	appendFilter("actor_type", filter.ActorType)

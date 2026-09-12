@@ -1,55 +1,29 @@
-export type ApiGuideContentPageID = 'general' | 'user-guide' | 'admin-guide' | 'mcp' | 'quick-start' | 'authentication'
-export type ApiGuideRouteID = 'swagger' | 'repo-guide'
-export type ApiGuideToggleID = ApiGuideContentPageID | ApiGuideRouteID
-
-export type ApiGuideToggleOption = { value: ApiGuideToggleID; label: string }
-
-export const API_GUIDE_DEFAULT_PAGE: ApiGuideContentPageID = 'user-guide'
-
-export const API_GUIDE_CONTENT_PAGE_IDS: ApiGuideContentPageID[] = [
-  'general',
-  'user-guide',
-  'admin-guide',
-  'mcp',
-  'quick-start',
-  'authentication',
-]
-
-// Base toggle order. The admin-only "Admin Guide" option is not listed here; it is
-// spliced in for administrators by apiGuideToggleOptions() so the chip stays hidden
-// from non-admins.
+export type HelpAreaID = 'getting-started' | 'user-guide' | 'admin-guide' | 'general' | 'troubleshooting'
+// Existing public URLs remain valid aliases for the consolidated automation area.
+export type ApiGuideContentPageID = HelpAreaID | 'mcp' | 'authentication' | 'quick-start'
+export type ApiGuideToggleID = ApiGuideContentPageID | 'swagger' | 'repo-guide'
+export type ApiGuideToggleOption = { value: HelpAreaID; label: string }
+export const API_GUIDE_DEFAULT_PAGE: ApiGuideContentPageID = 'getting-started'
+export const API_GUIDE_CONTENT_PAGE_IDS: ApiGuideContentPageID[] = ['getting-started', 'user-guide', 'admin-guide', 'general', 'troubleshooting', 'mcp', 'authentication', 'quick-start']
 export const API_GUIDE_TOGGLE_OPTIONS: ApiGuideToggleOption[] = [
-  { value: 'general', label: 'General' },
+  { value: 'getting-started', label: 'Getting Started' },
   { value: 'user-guide', label: 'User Guide' },
-  { value: 'mcp', label: 'MCP Server' },
-  { value: 'quick-start', label: 'Quick Start' },
-  { value: 'authentication', label: 'Authentication' },
-  { value: 'swagger', label: 'Swagger' },
-  { value: 'repo-guide', label: 'Repo Guide' },
+  { value: 'general', label: 'API & Automation' },
+  { value: 'troubleshooting', label: 'Troubleshooting' },
 ]
-
-const ADMIN_GUIDE_TOGGLE_OPTION: ApiGuideToggleOption = { value: 'admin-guide', label: 'Admin Guide' }
-
-// Returns the toggle options for the API guide, inserting the admin-only "Admin Guide"
-// option immediately after "User Guide" when the current principal is an administrator.
 export function apiGuideToggleOptions({ includeAdminGuide }: { includeAdminGuide: boolean }): ApiGuideToggleOption[] {
-  if (!includeAdminGuide) return API_GUIDE_TOGGLE_OPTIONS
-  const userGuideIndex = API_GUIDE_TOGGLE_OPTIONS.findIndex(option => option.value === 'user-guide')
-  const insertAt = userGuideIndex === -1 ? API_GUIDE_TOGGLE_OPTIONS.length : userGuideIndex + 1
-  return [
-    ...API_GUIDE_TOGGLE_OPTIONS.slice(0, insertAt),
-    ADMIN_GUIDE_TOGGLE_OPTION,
-    ...API_GUIDE_TOGGLE_OPTIONS.slice(insertAt),
-  ]
+  return includeAdminGuide
+    ? [...API_GUIDE_TOGGLE_OPTIONS.slice(0, 2), { value: 'admin-guide', label: 'Administration' }, ...API_GUIDE_TOGGLE_OPTIONS.slice(2)]
+    : API_GUIDE_TOGGLE_OPTIONS
 }
-
+export function helpAreaForPage(page: ApiGuideToggleID): HelpAreaID {
+  return ['swagger', 'repo-guide', 'mcp', 'authentication', 'quick-start'].includes(page) ? 'general' : page as HelpAreaID
+}
 export function isApiGuideContentPageID(value: string | null | undefined): value is ApiGuideContentPageID {
   return API_GUIDE_CONTENT_PAGE_IDS.includes(value as ApiGuideContentPageID)
 }
-
 export function apiGuideHashForToggle(value: ApiGuideToggleID): string {
   if (value === 'swagger') return '#/swagger'
   if (value === 'repo-guide') return '#/repository-guide'
-  if (value === API_GUIDE_DEFAULT_PAGE) return '#/docs'
-  return `#/docs?guide=${encodeURIComponent(value)}`
+  return value === API_GUIDE_DEFAULT_PAGE ? '#/docs' : `#/docs?guide=${value}`
 }

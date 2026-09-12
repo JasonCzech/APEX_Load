@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { request } from '../hooks/apiClient'
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,6 +10,8 @@ import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { NavigationGuardRunnerContext } from '../hooks/NavigationGuardProvider'
 import MonitoringPage, { buildRunCalendarModel, mergeDashboardService } from './MonitoringPage'
 import type { RunCalendarEvent, SystemReadinessResponse, SystemServicesResponse } from '../types'
+
+vi.mock('../hooks/apiClient', async importOriginal => ({ ...await importOriginal<typeof import('../hooks/apiClient')>(), request: vi.fn() }))
 
 const projectMockState = vi.hoisted(() => ({ activeProjectId: 'project-1' }))
 
@@ -79,6 +82,8 @@ describe('MonitoringPage', () => {
 
   beforeEach(() => {
     window.localStorage.clear()
+    window.sessionStorage.clear()
+    vi.mocked(request).mockResolvedValue({ graphs: [], enabled: false, configured: false, incidents: [], limit: 50, offset: 0, global_policy_count: 0, last_evaluated_at: null, generated_at: new Date().toISOString(), active_count: 0, unacknowledged_count: 0, danger_count: 0 })
     projectMockState.activeProjectId = 'project-1'
     apiMock.getHealth.mockResolvedValue({
       status: 'ok',
@@ -641,7 +646,7 @@ describe('MonitoringPage', () => {
     expect(container.textContent).toContain('Auth Mode: development auth bypass is enabled')
     expect(container.textContent).toContain('Generator Inventory')
     expect(container.textContent).toContain('0/0 connected')
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
 
     await clickMonitorTab('Telemetry')
 
@@ -697,10 +702,10 @@ describe('MonitoringPage', () => {
       )
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
     await clickMonitorTab('Telemetry')
     expect(onCategoryChange).toHaveBeenCalledWith('telemetry')
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
 
     await act(async () => {
       root.render(
@@ -730,7 +735,7 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Telemetry')
     expect(pending).not.toBeNull()
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
     await act(async () => (pending as unknown as () => void)())
     expect(visibleMonitorCardIds()).toEqual(['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'])
   })
@@ -1500,7 +1505,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
     expect(container.textContent).toContain('Readiness & Services')
     expect(container.textContent).toContain('4/4 active')
     expect(container.textContent).toContain('Backend')
@@ -1547,7 +1552,7 @@ describe('MonitoringPage', () => {
       root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
     })
 
-    expect(visibleMonitorCardIds()).toEqual(['system-health', 'threshold-alerts', 'production-readiness'])
+    expect(visibleMonitorCardIds()).toEqual(['production-readiness', 'system-health', 'threshold-alerts'])
     expect(container.textContent).not.toContain('Active Services')
     const storedOrder = JSON.parse(window.localStorage.getItem('apexload.monitoring.cardOrder') || '[]') as string[]
     expect(storedOrder).not.toContain('active-services')
@@ -1563,12 +1568,27 @@ describe('MonitoringPage', () => {
 
     expect(container.textContent).toContain('APM Profiles')
     expect(container.textContent).toContain('0 configured · 2 supported profiles')
+    expect(container.querySelector('[data-card-id="apm-integrations"] .monitor-header-badge')?.classList.contains('danger')).toBe(false)
     expect(container.textContent).toContain('OpenTelemetry: Supported; setup required')
     expect(container.textContent).toContain('Dynatrace: Supported; setup required')
     expect(container.textContent).toContain('Monitor Packs')
     expect(container.textContent).toContain('1/2 native')
     expect(container.textContent).toContain('Kubernetes: Native support')
     expect(container.textContent).toContain('JVM: Integration contract')
+  })
+
+  it('flags an enabled APM integration that is unavailable without flagging optional profiles', async () => {
+    const profiles = await apiMock.getAPMIntegrationProfiles()
+    profiles.profiles[0].status = 'unavailable'
+    apiMock.getAPMIntegrationProfiles.mockResolvedValue(profiles)
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+    await clickMonitorTab('Telemetry')
+    const badge = container.querySelector('[data-card-id="apm-integrations"] .monitor-header-badge')
+    expect(badge?.textContent).toBe('1 unavailable · 0 configured · 2 supported profiles')
+    expect(badge?.classList.contains('danger')).toBe(true)
+    expect(container.textContent).toContain('Dynatrace: Supported; setup required')
   })
 
   it('renders JMS broker diagnostics with lag and throughput details', async () => {
@@ -1905,7 +1925,7 @@ describe('MonitoringPage', () => {
 
     await clickMonitorTab('Fleet')
 
-    expect(apiMock.listAuthAuditEvents).toHaveBeenCalledWith({ limit: 20 })
+    expect(apiMock.listAuthAuditEvents).toHaveBeenCalledWith({ limit: 8, category: 'fleet' })
     expect(container.textContent).toContain('Fleet Audit')
     expect(container.textContent).toContain('generator.drain_state.update')
     expect(container.textContent).toContain('generator/apexload-generator-0')
@@ -2307,147 +2327,12 @@ describe('MonitoringPage', () => {
     expect(deduped.map(service => service.id)).toEqual(['controller-api', 'custom-frontend'])
   })
 
-  it('renders SLA threshold alerts with a stop-requested badge and ack control', async () => {
-    const onAcknowledgeThresholdAlert = vi.fn()
-    const onSelectTest = vi.fn()
-    const alerts = [
-      {
-        key: 'test-1:error_pct:',
-        testId: 'test-1',
-        testName: 'Checkout',
-        metric: 'error_pct',
-        value: 7.5,
-        threshold: 5,
-        action: 'stop_requested' as const,
-        firstSeenAt: '2026-07-30T12:00:00Z',
-        lastSeenAt: '2026-07-30T12:00:05Z',
-        acknowledged: false,
-        active: true,
-      },
-      {
-        key: 'test-1:p99_ms:',
-        testId: 'test-1',
-        testName: 'Checkout',
-        metric: 'p99_ms',
-        value: 1830,
-        threshold: 1500,
-        firstSeenAt: '2026-07-30T12:00:00Z',
-        lastSeenAt: '2026-07-30T12:00:05Z',
-        acknowledged: true,
-        active: true,
-      },
-    ]
-
-    await act(async () => {
-      root.render(
-        <MonitoringPage
-          connectionState="connected"
-          telemetryDiagnostics={[]}
-          thresholdAlerts={alerts}
-          onAcknowledgeThresholdAlert={onAcknowledgeThresholdAlert}
-          onSelectTest={onSelectTest}
-        />,
-      )
-    })
-
-    expect(container.textContent).toContain('SLA Threshold Alerts')
-    expect(container.textContent).toContain('Error rate 7.50% exceeded threshold 5% — auto-stop requested')
-    expect(container.textContent).toContain('P99 latency 1830 ms exceeded threshold 1500 ms')
-    expect(container.textContent).toContain('acknowledged')
-
-    const thresholdCard = Array.from(container.querySelectorAll('.monitor-card, [class*="monitor"]'))
-      .find(el => el.textContent?.includes('SLA Threshold Alerts')) || container
-    const ackButtons = Array.from(thresholdCard.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent === 'Ack')
-    expect(ackButtons.length).toBe(1)
-    await act(async () => {
-      ackButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(onAcknowledgeThresholdAlert).toHaveBeenCalledWith('test-1:error_pct:')
-
-    const openButton = Array.from(thresholdCard.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Open')
-    await act(async () => {
-      openButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(onSelectTest).toHaveBeenCalledWith('test-1')
-  })
-
-  it('shows the SLA threshold empty state when no alerts exist', async () => {
-    await act(async () => {
-      root.render(
-        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[]} />,
-      )
-    })
-
-    expect(container.textContent).toContain('SLA Threshold Alerts')
-    expect(container.textContent).toContain('No global SLA threshold breaches on running tests.')
-  })
-
-  it('re-renders the SLA card when threshold alert props change after mount', async () => {
-    const baseAlert = {
-      key: 'test-1:p99_ms:',
-      testId: 'test-1',
-      testName: 'Checkout',
-      metric: 'p99_ms',
-      value: 1830,
-      threshold: 1500,
-      firstSeenAt: '2026-07-30T12:00:00Z',
-      lastSeenAt: '2026-07-30T12:00:05Z',
-      acknowledged: false,
-      active: true,
-    }
-
-    await act(async () => {
-      root.render(
-        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[]} />,
-      )
-    })
-    expect(container.textContent).toContain('No global SLA threshold breaches on running tests.')
-
-    // A live WS alert arrives: the memoized cards must pick up the new prop.
-    await act(async () => {
-      root.render(
-        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[baseAlert]} />,
-      )
-    })
-    expect(container.textContent).toContain('P99 latency 1830 ms exceeded threshold 1500 ms')
-
-    // Acknowledging updates the same entry: the row must re-render as acked.
-    await act(async () => {
-      root.render(
-        <MonitoringPage connectionState="connected" telemetryDiagnostics={[]} thresholdAlerts={[{ ...baseAlert, acknowledged: true }]} />,
-      )
-    })
-    expect(container.textContent).toContain('acknowledged')
-  })
-
-  it('keeps resolved threshold history without treating it as an active warning', async () => {
-    const resolvedAlert = {
-      key: 'test-1:p99_ms:',
-      testId: 'test-1',
-      testName: 'Checkout',
-      metric: 'p99_ms',
-      value: 1830,
-      threshold: 1500,
-      firstSeenAt: '2026-07-30T12:00:00Z',
-      lastSeenAt: '2026-07-30T12:00:05Z',
-      acknowledged: false,
-      active: false,
-    }
-
-    await act(async () => {
-      root.render(
-        <MonitoringPage
-          connectionState="connected"
-          telemetryDiagnostics={[]}
-          thresholdAlerts={[resolvedAlert]}
-          onAcknowledgeThresholdAlert={vi.fn()}
-        />,
-      )
-    })
-
-    const thresholdCard = container.querySelector('[data-card-id="threshold-alerts"]')
-    expect(thresholdCard?.textContent).toContain('resolved')
-    expect(thresholdCard?.querySelector('.monitor-header-badge')?.textContent).toBe('clear')
-    expect(Array.from(thresholdCard?.querySelectorAll('button') || []).some(button => button.textContent === 'Ack')).toBe(false)
+  it('shows unconfigured SLA coverage without asserting that tests are clear', async () => {
+    await act(async () => root.render(<MonitoringPage connectionState="connected" />))
+    const card = container.querySelector('[data-card-id="threshold-alerts"]')
+    expect(card?.textContent).toContain('Not configured')
+    expect(card?.textContent).toContain('Shared SLA incident history')
+    expect(card?.textContent).not.toContain('No global SLA threshold breaches')
+    expect(request).toHaveBeenCalledWith(expect.stringContaining('project_id=project-1'), expect.anything())
   })
 })

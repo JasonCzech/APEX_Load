@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import ImportWorkflowGuide from './ImportWorkflowGuide'
+import { useEffect, useRef, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
@@ -32,11 +33,33 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
   const [supportNotes, setSupportNotes] = useState<string[]>([])
   const [messageError, setMessageError] = useState('')
   const [reviewDetailsOpen, setReviewDetailsOpen] = useState(false)
+  const [readingFiles, setReadingFiles] = useState(false)
+  const fileReadGeneration = useRef(0)
+  const operationBusy = reviewTask.pending || readingFiles
+  const resetReview = reviewTask.reset
+
+  const invalidateReview = () => {
+    resetReview()
+    setMessageError('')
+    setReviewDetailsOpen(false)
+  }
 
   useEffect(() => {
-    onOperationBusyChange?.(reviewTask.pending)
+    resetReview()
+    setFiles([])
+    setSourceText('')
+    setName('')
+    setPackageName('')
+    setMessageError('')
+    setReviewDetailsOpen(false)
+    setReadingFiles(false)
+    return () => { fileReadGeneration.current += 1 }
+  }, [projectId, resetReview])
+
+  useEffect(() => {
+    onOperationBusyChange?.(operationBusy)
     return () => onOperationBusyChange?.(false)
-  }, [onOperationBusyChange, reviewTask.pending])
+  }, [onOperationBusyChange, operationBusy])
 
   useEffect(() => {
     let cancelled = false
@@ -47,18 +70,24 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
   }, [api])
 
   const handleFiles = async (nextFiles: FileList | null) => {
-    if (!nextFiles?.length) return
+    if (!nextFiles?.length || operationBusy) return
+    const generation = ++fileReadGeneration.current
+    invalidateReview()
+    setReadingFiles(true)
     try {
       const loaded = await Promise.all(Array.from(nextFiles).map(async file => ({ name: file.name, content: await file.text() })))
+      if (generation !== fileReadGeneration.current) return
       setFiles(loaded)
-      setMessageError('')
-      reviewTask.reset()
     } catch (error: unknown) {
+      if (generation !== fileReadGeneration.current) return
       setMessageError(getErrorMessage(error, 'Unable to read review source file.'))
+    } finally {
+      if (generation === fileReadGeneration.current) setReadingFiles(false)
     }
   }
 
   const handleReview = async () => {
+    if (operationBusy) return
     if (!sourceText.trim() && files.length === 0) {
       setMessageError('Provide source text or upload at least one review file.')
       return
@@ -72,8 +101,8 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
         source_text: sourceText || undefined,
         files,
       }), { clearValue: true })
-    } catch (error: unknown) {
-      setMessageError(getErrorMessage(error, 'Oracle E-Business review failed.'))
+    } catch {
+      // useAsyncTask owns the error and discards stale project responses.
     }
   }
 
@@ -99,24 +128,26 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
           <h2>Oracle E-Business / Siebel Review</h2>
           <p className="sample-import-subtitle">Review packaged enterprise app sources for package signals, correlation candidates, execution posture, and evidence requirements.</p>
         </div>
-        {onClose && <button className="btn btn-secondary" type="button" onClick={onClose}>Back</button>}
+        {onClose && <button className="btn btn-secondary" type="button" disabled={operationBusy} onClick={onClose}>Back</button>}
       </div>
 
-      <div className="sample-import-card">
+      <ImportWorkflowGuide stage={review ? 'review' : 'source'} reviewOnly />
+
+      <fieldset className="sample-import-card import-operation-gate" disabled={operationBusy} aria-label="Review source" aria-busy={operationBusy}>
         <div className="sample-import-grid two-col">
           <label className="sample-import-field">
             <span>Review Name</span>
-            <input value={name} onChange={event => setName(event.target.value)} placeholder="Oracle checkout review" />
+            <input value={name} onChange={event => { invalidateReview(); setName(event.target.value) }} placeholder="Oracle checkout review" />
           </label>
           <label className="sample-import-field">
             <span>Package</span>
-            <select value={packageName} onChange={event => setPackageName(event.target.value)}>
+            <select value={packageName} onChange={event => { invalidateReview(); setPackageName(event.target.value) }}>
               {packageOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
           <label className="sample-import-field sample-import-span-2">
             <span>Source Text</span>
-            <textarea value={sourceText} onChange={event => setSourceText(event.target.value)} rows={12} spellCheck={false} placeholder="Paste HAR excerpts, source snippets, exported steps, URLs, or notes for review." />
+            <textarea value={sourceText} onChange={event => { invalidateReview(); setSourceText(event.target.value) }} rows={12} spellCheck={false} placeholder="Paste HAR excerpts, source snippets, exported steps, URLs, or notes for review." />
           </label>
           <label className="sample-import-field sample-import-span-2">
             <span>Source Files</span>
@@ -131,16 +162,19 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
             />
             <small>{files.length ? files.map(file => file.name).join(', ') : 'Optional supporting files for review'}</small>
           </label>
+          {files.length > 0 && <button className="btn btn-secondary" type="button" onClick={() => { invalidateReview(); setFiles([]) }}>Remove source files</button>}
         </div>
-      </div>
+      </fieldset>
 
       <div className="sample-import-actions">
-        <button className="btn btn-primary btn-lg" type="button" onClick={handleReview} disabled={reviewTask.pending}>
+        <button className="btn btn-primary btn-lg" type="button" onClick={handleReview} disabled={operationBusy || (!sourceText.trim() && files.length === 0)}>
           {reviewTask.pending ? <><span className="spinner" /> Reviewing...</> : 'Run Review'}
         </button>
       </div>
 
-      {(messageError || reviewTask.error) && <div className="sample-import-error">{messageError || reviewTask.error}</div>}
+      {readingFiles && <p role="status">Reading source files…</p>}
+
+      {(messageError || reviewTask.error) && <div className="sample-import-error" role="alert">{messageError || reviewTask.error}</div>}
 
       {supportNotes.length > 0 && !review && (
         <div className="sample-import-card">

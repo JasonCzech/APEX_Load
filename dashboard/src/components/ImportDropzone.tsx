@@ -52,6 +52,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
         return false
       }
     }
+    onError?.('')
     onFile(next)
     return true
   }, [validate, onError, onFile])
@@ -118,14 +119,20 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
       onDragOver={event => { event.preventDefault(); if (!disabled) setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
-      onClick={handleBrowse}
-      role="button"
-      tabIndex={disabled ? -1 : 0}
+      onClick={file ? undefined : handleBrowse}
+      role={file ? 'group' : 'button'}
+      tabIndex={disabled || file ? -1 : 0}
       aria-disabled={disabled}
       // Named explicitly (as the JMeter/archive dropzones are) so the transient
       // drop-status text inside the zone cannot leak into its accessible name.
-      aria-label={file ? `Selected file ${file.name}. Choose another file` : dropHint}
-      onKeyDown={event => { if (!disabled && (event.key === 'Enter' || event.key === ' ')) handleBrowse() }}
+      aria-label={file ? `Selected file ${file.name}` : dropHint}
+      onKeyDown={event => {
+        if (disabled || file || event.target !== event.currentTarget) return
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          handleBrowse()
+        }
+      }}
     >
       <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
       <input
@@ -156,12 +163,23 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
             disabled={disabled}
             onClick={event => {
               event.stopPropagation()
+              handleBrowse()
+            }}
+          >
+            Change
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            disabled={disabled}
+            onClick={() => {
               if (disabledRef.current) return
+              onError?.('')
               onFile(null)
               if (inputRef.current) inputRef.current.value = ''
             }}
           >
-            Change
+            Remove
           </button>
         </div>
       ) : (

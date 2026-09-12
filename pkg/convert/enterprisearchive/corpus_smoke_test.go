@@ -243,7 +243,11 @@ func TestPinnedLRScriptsCorpusSmoke(t *testing.T) {
 		})
 	}
 
-	for _, key := range []string{"devweb", "jmeter", "web_http_html", "soap", "sap_web", "sap_gui", "rdp", "rte", "truclient_web", "truclient_mobile_web", "truclient_native_mobile", "java_vuser", "java_jms_solace"} {
+	// The pinned cc010f01 corpus contains no Java sources. Java/JMS conversion
+	// is covered by the dedicated repository fixtures, not by this public corpus.
+	// Keep this obligation scoped to source families actually present in the pin.
+	t.Logf("public corpus source directories=%d, conversion counts=%v", len(dirs), counts)
+	for _, key := range []string{"devweb", "jmeter", "web_http_html", "soap", "sap_web", "sap_gui", "rdp", "rte", "truclient_web", "truclient_mobile_web", "truclient_native_mobile"} {
 		if counts[key] == 0 {
 			t.Fatalf("corpus coverage counts = %#v, missing %s", counts, key)
 		}

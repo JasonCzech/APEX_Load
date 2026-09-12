@@ -1,4 +1,7 @@
 import LibraryToolbar from './ux/LibraryToolbar'
+import { DEFAULT_REPOSITORY_FILTERS, readRepositoryViewState, writeRepositoryViewState, type RepositoryViewState } from './repositoryViewState'
+import './RepositoryWorkspace.css'
+import { repositoryDataPoolHref } from './repositoryAssetNavigation'
 import TabList from './ux/TabList'
 import { confirmAction } from './ux/confirmAction'
 import { handleTabKey } from './tabKeyboard'
@@ -50,6 +53,7 @@ interface Props {
   activeDomain: Domain | null
   activeApplication: Application | null
   activeProject?: Project | null
+  activeRelease?: Release | null
   applicationRepository: ApplicationRepository | null
   categories: RepositoryCategory[]
   projects: Project[]
@@ -128,21 +132,8 @@ function readStoredCatalogTab(): RepositoryCatalogTab {
   return CATALOG_TABS.some(tab => tab.id === stored) ? stored as RepositoryCatalogTab : 'all'
 }
 
-const DEFAULT_FILTERS: RepositoryCatalogFilters = {
-  query: '',
-  projectId: 'all',
-  releaseId: 'all',
-  status: 'all',
-  protocol: 'all',
-  timeframe: 'all',
-  customStartDate: '',
-  customEndDate: '',
-}
+const DEFAULT_FILTERS = DEFAULT_REPOSITORY_FILTERS
 
-const DEFAULT_SORT: RepositoryCatalogSort = {
-  key: 'last_activity',
-  direction: 'desc',
-}
 
 const BULK_DELETE_ORDER: Record<RepositoryAssetKind, number> = {
   test: 0,
@@ -234,7 +225,8 @@ function renderStatus(row: RepositoryAssetRow) {
   if (row.kind === 'test' && row.status) {
     return <StatusBadge status={row.status} />
   }
-  return <span className={`repository-status-pill ${statusTone(row.status)}`}>{row.status || 'Unknown'}</span>
+  return <><span className={`repository-status-pill ${statusTone(row.status)}`}>{row.kind === 'script' ? `Authoring: ${row.status || 'Not assessed'}` : row.kind === 'scenario' ? 'Saved' : row.status || 'Unknown'}</span>
+    {(row.kind === 'script' || row.kind === 'scenario') && <span className="repository-readiness-note">Validation, debug and approval evidence must be checked before execution.</span>}</>
 }
 
 function repositoryRowKey(row: RepositoryAssetRow) {
@@ -246,6 +238,7 @@ export default function ApplicationRepositoryPage({
   activeDomain,
   activeApplication,
   activeProject,
+  activeRelease,
   applicationRepository,
   categories,
   projects,
@@ -276,9 +269,46 @@ export default function ApplicationRepositoryPage({
   const [scenariosByProject, setScenariosByProject] = useState<Record<string, StoredScenario[]>>({})
   const [testsByProject, setTestsByProject] = useState<Record<string, TestSummary[]>>({})
   const [dataPoolsByProject, setDataPoolsByProject] = useState<Record<string, SharedDataPool[]>>({})
-  const [activeTab, setActiveTab] = useState<RepositoryCatalogTab>(readStoredCatalogTab)
-  const [filters, setFilters] = useState<RepositoryCatalogFilters>(DEFAULT_FILTERS)
-  const [sort, setSort] = useState<RepositoryCatalogSort>(DEFAULT_SORT)
+  const viewKey = `apexload.repository.view:${activeDomain?.id || ''}:${activeProject?.id || ''}:${activeApplication?.id || ''}`
+  const [initialView] = useState(() => {
+    const restored = readRepositoryViewState(viewKey)
+    try { if (!window.sessionStorage.getItem(viewKey)) restored.tab = readStoredCatalogTab() } catch { /* Use defaults. */ }
+    return restored
+  })
+  const [viewScope, setViewScope] = useState(viewKey)
+  const [activeTab, setActiveTab] = useState<RepositoryCatalogTab>(() => initialView.tab)
+  const [filters, setFilters] = useState<RepositoryCatalogFilters>(initialView.filters)
+  const [sort, setSort] = useState<RepositoryCatalogSort>(initialView.sort)
+  const [page, setPage] = useState(initialView.page)
+  const [pageSize, setPageSize] = useState<RepositoryViewState['pageSize']>(initialView.pageSize)
+  const [inspectedKey, setInspectedKey] = useState<string | null>(null)
+  const pageRef = useRef<HTMLDivElement | null>(null)
+  const restoreScrollRef = useRef<number | null>(initialView.scrollTop)
+  if (viewScope !== viewKey) {
+    const restored = readRepositoryViewState(viewKey)
+    try { if (!window.sessionStorage.getItem(viewKey)) restored.tab = readStoredCatalogTab() } catch { /* Use defaults. */ }
+    setViewScope(viewKey)
+    setActiveTab(restored.tab)
+    setFilters(restored.filters)
+    setSort(restored.sort)
+    setPage(restored.page)
+    setPageSize(restored.pageSize)
+    setInspectedKey(null)
+    restoreScrollRef.current = restored.scrollTop
+  }
+  const savedViewRef = useRef<RepositoryViewState>(initialView)
+  savedViewRef.current = { tab: activeTab, filters, sort, page, pageSize, scrollTop: savedViewRef.current.scrollTop }
+  useEffect(() => { writeRepositoryViewState(viewKey, savedViewRef.current) }, [viewKey, activeTab, filters, sort, page, pageSize])
+  useEffect(() => {
+    const scrollElement = pageRef.current?.closest('main')
+    const save = () => {
+      if (restoreScrollRef.current !== null) return
+      savedViewRef.current.scrollTop = scrollElement?.scrollTop || 0
+      writeRepositoryViewState(viewKey, savedViewRef.current)
+    }
+    scrollElement?.addEventListener('scroll', save, { passive: true })
+    return () => { scrollElement?.removeEventListener('scroll', save) }
+  }, [viewKey])
   const [catalogLoading, setCatalogLoading] = useState(false)
   const [catalogWarnings, setCatalogWarnings] = useState<Record<string, string>>({})
   const [catalogLoadedAt, setCatalogLoadedAt] = useState('')
@@ -506,7 +536,11 @@ export default function ApplicationRepositoryPage({
 
   const visibleRows = useMemo(() => sortRepositoryRows(filteredRows, sort), [filteredRows, sort])
   const catalogTableScrollRef = useRef<HTMLDivElement | null>(null)
-  const virtualizeCatalogRows = visibleRows.length > REPOSITORY_CATALOG_VIRTUALIZE_THRESHOLD
+  const pageCount = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(visibleRows.length / pageSize))
+  const currentPage = Math.min(page, pageCount - 1)
+  const pageStart = pageSize === 'all' ? 0 : currentPage * pageSize
+  const pageRows = pageSize === 'all' ? visibleRows : visibleRows.slice(pageStart, pageStart + pageSize)
+  const virtualizeCatalogRows = pageSize === 'all' && visibleRows.length > REPOSITORY_CATALOG_VIRTUALIZE_THRESHOLD
   const catalogRowVirtualizer = useVirtualizer({
     count: visibleRows.length,
     getScrollElement: () => catalogTableScrollRef.current,
@@ -524,17 +558,32 @@ export default function ApplicationRepositoryPage({
             return row ? [{ row, virtualIndex: item.index }] : []
           })
         : visibleRows.slice(0, REPOSITORY_CATALOG_INITIAL_WINDOW).map((row, index) => ({ row, virtualIndex: index })))
-    : visibleRows.map(row => ({ row, virtualIndex: null }))
+    : pageRows.map(row => ({ row, virtualIndex: null }))
   const catalogPaddingTop = virtualCatalogRows[0]?.start || 0
   const catalogPaddingBottom = virtualCatalogRows.length > 0
     ? Math.max(0, catalogRowVirtualizer.getTotalSize() - virtualCatalogRows[virtualCatalogRows.length - 1].end)
     : (virtualizeCatalogRows
         ? Math.max(0, (visibleRows.length - REPOSITORY_CATALOG_INITIAL_WINDOW) * 82)
         : 0)
+  const filterSignature = JSON.stringify([viewKey, activeTab, filters, sort])
+  const previousFiltersRef = useRef(filterSignature)
+  const previousFilterScopeRef = useRef(viewKey)
   useEffect(() => {
-    if (catalogTableScrollRef.current) catalogTableScrollRef.current.scrollTop = 0
-    if (virtualizeCatalogRows) catalogRowVirtualizer.scrollToOffset(0)
-  }, [activeTab, catalogRowVirtualizer, filters, sort, virtualizeCatalogRows])
+    if (previousFiltersRef.current !== filterSignature) {
+      previousFiltersRef.current = filterSignature
+      if (previousFilterScopeRef.current === viewKey) setPage(0)
+      previousFilterScopeRef.current = viewKey
+      if (catalogTableScrollRef.current) catalogTableScrollRef.current.scrollTop = 0
+      if (virtualizeCatalogRows) catalogRowVirtualizer.scrollToOffset(0)
+    }
+  }, [filterSignature, viewKey, catalogRowVirtualizer, virtualizeCatalogRows])
+  useEffect(() => {
+    if (!catalogLoadedAt || catalogLoading || restoreScrollRef.current === null) return
+    const scrollElement = pageRef.current?.closest('main')
+    if (scrollElement) scrollElement.scrollTop = restoreScrollRef.current
+    savedViewRef.current.scrollTop = restoreScrollRef.current
+    restoreScrollRef.current = null
+  }, [catalogLoadedAt, catalogLoading])
   useEffect(() => {
     writeStoredString('apexload.repository.tab', activeTab)
   }, [activeTab])
@@ -565,8 +614,9 @@ export default function ApplicationRepositoryPage({
     [selectableVisibleRows, selectedRowKeys],
   )
 
-  const allVisibleRowsSelected = selectableVisibleRows.length > 0 && selectedVisibleRows.length === selectableVisibleRows.length
-  const hasPartialVisibleSelection = selectedVisibleRows.length > 0 && !allVisibleRowsSelected
+  const selectedPageRows = pageRows.filter(row => selectedRowKeys.has(repositoryRowKey(row)))
+  const allVisibleRowsSelected = pageRows.length > 0 && selectedPageRows.length === pageRows.length
+  const hasPartialVisibleSelection = selectedPageRows.length > 0 && !allVisibleRowsSelected
 
   const filterActive = filters.query.trim()
     || filters.projectId !== 'all'
@@ -773,9 +823,9 @@ export default function ApplicationRepositoryPage({
     setSelectedRowKeys(prev => {
       const next = new Set(prev)
       if (allVisibleRowsSelected) {
-        selectableVisibleRows.forEach(row => next.delete(repositoryRowKey(row)))
+        pageRows.forEach(row => next.delete(repositoryRowKey(row)))
       } else {
-        selectableVisibleRows.forEach(row => next.add(repositoryRowKey(row)))
+        pageRows.forEach(row => next.add(repositoryRowKey(row)))
       }
       return next
     })
@@ -1030,6 +1080,28 @@ export default function ApplicationRepositoryPage({
     ? `No assets found for ${activeApplication.name}.`
     : 'No assets found for this domain.'
 
+  const scopedScenarioIds = useMemo(() => new Set(catalogRows.filter(row => row.kind === 'scenario').map(row => `${row.projectId}:${row.id}`)), [catalogRows])
+  const scopedRunIds = useMemo(() => new Set(catalogRows.filter(row => row.kind === 'test').map(row => `${row.projectId}:${row.id}`)), [catalogRows])
+  const inspected = catalogRows.find(row => repositoryRowKey(row) === inspectedKey)
+  const inspectedScenario = inspected?.kind === 'scenario' ? scenariosByProject[inspected.projectId]?.find(item => item.id === inspected.id) : undefined
+  const relatedScenarios = inspected?.kind === 'script' ? (scenariosByProject[inspected.projectId] || []).filter(item => scopedScenarioIds.has(`${inspected.projectId}:${item.id}`) && item.scripts.some(script => script.script_id === inspected.id)) : []
+  const relatedRuns = inspected ? (testsByProject[inspected.projectId] || []).filter(test =>
+    scopedRunIds.has(`${inspected.projectId}:${test.id}`) && (inspected.kind === 'scenario' ? test.scenario_id === inspected.id : inspected.kind === 'script' && test.groups?.some(group => group.script_id === inspected.id))) : []
+  useEffect(() => {
+    if (inspectedKey) pageRef.current?.querySelector<HTMLElement>('.repository-inspection')?.focus()
+  }, [inspectedKey])
+  const [structureFocus, setStructureFocus] = useState('')
+  useEffect(() => {
+    if (activeTab !== 'structure' || !structureFocus) return
+    const element = document.getElementById(`repository-project-${structureFocus}`)
+    element?.scrollIntoView?.({ block: 'center' })
+    element?.focus()
+  }, [activeTab, structureFocus])
+  const repositoryOriginParams = new URLSearchParams(window.location.hash.split('?')[1] || '')
+  if (activeProject) repositoryOriginParams.set('projectId', activeProject.id)
+  if (activeApplication) repositoryOriginParams.set('applicationId', activeApplication.id)
+  if (activeRelease) repositoryOriginParams.set('releaseId', activeRelease.id)
+  const repositoryOrigin = `#/repository${repositoryOriginParams.size ? `?${repositoryOriginParams}` : ''}`
   const renderRowAction = (row: RepositoryAssetRow) => {
     if (row.kind === 'script' && onOpenScript) {
       return <button type="button" className="repository-row-action" onClick={() => onOpenScript(row.id, row.projectId)}>Edit</button>
@@ -1048,13 +1120,14 @@ export default function ApplicationRepositoryPage({
       )
     }
     if (row.kind === 'project' || row.kind === 'release') {
-      return <span className="repository-row-action-muted">Structure</span>
+      return <button type="button" className="repository-row-action" onClick={() => { setStructureFocus(row.projectId); setActiveTab('structure') }}>Open structure</button>
     }
-    return <span className="repository-row-action-muted">Catalog</span>
+    if (row.kind === 'data_pool') return <a className="repository-row-action" href={repositoryDataPoolHref(row.id, row.projectId, repositoryOrigin)}>Open data pool</a>
+    return null
   }
 
   return (
-    <div className="page repository-page">
+    <div className="page repository-page" ref={pageRef}>
       <nav className="settings-inline-actions" aria-label="Related administration"><a className="btn btn-secondary btn-sm" href={settingsHref('test-data')}>Shared test data</a><a className="btn btn-secondary btn-sm" href={settingsHref('projects')}>Manage workspaces</a></nav>
       <div className="page-header">
         <div>
@@ -1098,7 +1171,7 @@ export default function ApplicationRepositoryPage({
         <div className="settings-inline-actions" aria-label="Repository scope">
           <button type="button" className="btn btn-secondary" disabled={!activeProject} aria-pressed={!!activeProject && filters.projectId === activeProject.id} onClick={() => setFilters(prev => ({ ...prev, projectId: activeProject?.id || 'all', releaseId: 'all' }))}>Current workspace</button>
           <button type="button" className="btn btn-secondary" aria-pressed={filters.projectId === 'all'} onClick={() => setFilters(prev => ({ ...prev, projectId: 'all', releaseId: 'all' }))}>All accessible projects</button>
-          <span>Catalog: {activeDomain?.name || 'Selected domain'} · {filters.projectId === 'all' ? 'All accessible projects' : scopedProjects.find(project => project.id === filters.projectId)?.name || filters.projectId}</span>
+          <span>Catalog: {activeDomain?.name || 'Selected domain'} · {filters.projectId === 'all' ? 'All accessible projects' : scopedProjects.find(project => project.id === filters.projectId)?.name || filters.projectId} · {activeApplication ? `Application ${activeApplication.name} for releases, scripts, scenarios and runs; projects and data pools are project-wide.` : 'All applications'}</span>
         </div>
         <LibraryToolbar filtersActive={Boolean(filterActive)} label="Repository controls" search={<label className="library-search repository-search">
             <span>Search repository</span>
@@ -1203,7 +1276,7 @@ export default function ApplicationRepositoryPage({
                 onClick={() => setActiveTab(tab.id)} tabIndex={(activeTab === tab.id) ? 0 : -1}
               >
                 <span>{tab.label}</span>
-                <strong>{count}</strong>
+                <strong>{tab.id === 'structure' || !filterActive ? count : `${filterRepositoryRows(catalogRows, tab.id, filters).length} / ${count}`}</strong>
               </button>
             )
           })}
@@ -1215,13 +1288,32 @@ export default function ApplicationRepositoryPage({
           </div>
         )}
 
+        {inspected && activeTab !== 'structure' && <section tabIndex={-1} className="repository-inspection" aria-label={`Inspect ${inspected.name}`}>
+          <header><h2>{inspected.name}</h2><button className="btn btn-secondary btn-sm" type="button" onClick={() => setInspectedKey(null)}>Close inspection</button></header>
+          <dl><dt>Type</dt><dd>{repositoryKindLabel(inspected.kind)}</dd><dt>Project</dt><dd>{inspected.projectName}</dd><dt>Release</dt><dd>{inspected.releaseNames.join(', ') || inspected.releaseName || 'None'}</dd><dt>Summary</dt><dd>{inspected.summary}</dd><dt>Identifier</dt><dd><code>{inspected.id}</code></dd></dl>
+          {renderRowAction(inspected)}
+          {inspectedScenario && <><h3>Scenario scripts</h3><ul>{inspectedScenario.scripts.map(script => <li key={script.script_id}><button className="repository-row-action" type="button" disabled={!onOpenScript} onClick={() => onOpenScript?.(script.script_id, inspected.projectId)}>{script.script_name || script.script_id}</button></li>)}</ul></>}
+          {inspected.kind === 'script' && <><h3>Used by scenarios</h3>{relatedScenarios.length ? <ul>{relatedScenarios.map(scenario => <li key={scenario.id}><button className="repository-row-action" type="button" onClick={() => { setFilters(DEFAULT_FILTERS); setActiveTab('scenario'); setInspectedKey(`scenario:${scenario.id}`) }}>{scenario.name}</button></li>)}</ul> : <p>No scenarios in the loaded catalog reference this script.</p>}</>}
+          {(inspected.kind === 'scenario' || inspected.kind === 'script') && <><h3>Run history</h3>{relatedRuns.length ? <ul>{relatedRuns.map(test => <li key={test.id}><button className="repository-row-action" type="button" disabled={!onOpenTest} onClick={() => onOpenTest?.(test.id, inspected.projectId)}>{test.name} · {test.ref_key || test.id} · {test.status}</button></li>)}</ul> : <p>No runs in the loaded catalog reference this asset.</p>}</>}
+        </section>}
+        {activeTab !== 'structure' && (
+          <nav className="repository-pagination" aria-label="Repository pages">
+            <span role="status">Showing {pageRows.length ? pageStart + 1 : 0}–{pageStart + pageRows.length} of {visibleRows.length} matching items</span>
+            <label>Rows <select aria-label="Repository rows per page" value={pageSize} onChange={event => { setPageSize(event.target.value === 'all' ? 'all' : Number(event.target.value) as 10 | 25); setPage(0) }}>
+              <option value="10">10</option><option value="25">25</option><option value="all">All</option>
+            </select></label>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={currentPage === 0 || bulkBusy} onClick={() => setPage(currentPage - 1)}>Previous page</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={currentPage + 1 >= pageCount || bulkBusy} onClick={() => setPage(currentPage + 1)}>Next page</button>
+          </nav>
+        )}
         {activeTab !== 'structure' && selectedVisibleRows.length > 0 && (
           <div className="repository-bulk-bar" role="region" aria-label="Bulk repository actions">
             <div className="repository-bulk-summary">
-              <strong>{plural(selectedVisibleRows.length, 'item')} selected</strong>
+              <strong>{plural(selectedVisibleRows.length, 'item')} selected ({selectedPageRows.length} on this page)</strong>
               <span>{archiveableSelectedRows.length > 0 ? plural(archiveableSelectedRows.length, 'archiveable item') : 'No archiveable items'}</span>
             </div>
             <div className="repository-bulk-actions">
+              {selectedVisibleRows.length < selectableVisibleRows.length && <button type="button" className="repository-row-action" disabled={bulkBusy} onClick={() => setSelectedRowKeys(new Set(selectableVisibleRows.map(repositoryRowKey)))}>Select all {selectableVisibleRows.length} matching items</button>}
               <button
                 type="button"
                 className="repository-row-action"
@@ -1246,7 +1338,7 @@ export default function ApplicationRepositoryPage({
         )}
 
         {activeTab === 'structure' ? (
-          <div className="repository-structure-panel">
+          <div className="repository-structure-panel"><p className="setting-desc">Full domain structure · All projects and applications. Catalog filters do not apply here.</p>
             {canManageRepository && activeDomain && (
               <form className="repository-inline-form" onSubmit={submitCategory}>
                 <label>
@@ -1310,7 +1402,7 @@ export default function ApplicationRepositoryPage({
 
                   <div className="repository-project-list">
                     {(projectsByCategory[section.id] || []).map(project => (
-                      <article key={project.id} className="repository-project">
+                      <article id={`repository-project-${project.id}`} tabIndex={-1} key={project.id} className="repository-project">
                         <div className="repository-project-title">
                           <div>
                             <h3>{project.name}</h3>
@@ -1381,7 +1473,7 @@ export default function ApplicationRepositoryPage({
           <div
             ref={catalogTableScrollRef}
             className={`data-table repository-asset-table${virtualizeCatalogRows ? ' repository-asset-table-virtualized' : ''}`}
-            data-table-pagination={virtualizeCatalogRows ? 'off' : undefined}
+            data-table-pagination="off"
           >
             <table>
               <thead>
@@ -1390,10 +1482,10 @@ export default function ApplicationRepositoryPage({
                     <input
                       type="checkbox"
                       className="repository-select-checkbox"
-                      aria-label="Select all visible repository items"
+                      aria-label="Select all items on this page" title="Select all items on this page"
                       aria-checked={allVisibleRowsSelected ? 'true' : hasPartialVisibleSelection ? 'mixed' : 'false'}
                       checked={allVisibleRowsSelected}
-                      disabled={visibleRows.length === 0}
+                      disabled={pageRows.length === 0 || bulkBusy}
                       onChange={toggleVisibleRowsSelection}
                     />
                   </th>
@@ -1432,9 +1524,9 @@ export default function ApplicationRepositoryPage({
                     </td>
                         <td aria-label="Repository asset">
                       <div className="repository-asset-name">
-                        <strong>{row.name}</strong>
+                        <button type="button" className="repository-row-action" onClick={() => setInspectedKey(repositoryRowKey(row))}>{row.name}</button>
                         <span>{row.summary}</span>
-                        <code>{row.id}</code>
+                        <details><summary>Identifier</summary><code>{row.id}</code></details>
                       </div>
                     </td>
                     <td><span className="repository-kind-pill">{repositoryKindLabel(row.kind)}</span></td>
@@ -1469,7 +1561,7 @@ export default function ApplicationRepositoryPage({
                         {row.detail && <span>{row.detail}</span>}
                       </div>
                     </td>
-                    <td>{renderRowAction(row)}</td>
+                    <td><div className="repository-row-actions"><button type="button" className="repository-row-action" onClick={() => setInspectedKey(repositoryRowKey(row))}>Inspect</button>{renderRowAction(row)}</div></td>
                   </tr>
                 ))}
                 {virtualizeCatalogRows && catalogPaddingBottom > 0 && (

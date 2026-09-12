@@ -181,6 +181,7 @@ type runtimeSecretRecoveryState struct {
 }
 
 type TestRunner struct {
+	thresholdJournal      *thresholdJournalWriter
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript
 	privateCISnapshots    map[string]int
@@ -1507,6 +1508,9 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		execution:                    localExecutionBackend{},
 		notifier:                     newNotificationDispatcher(nil),
 		routeCache:                   make(map[string]latencyRouteCacheEntry),
+	}
+	if journal, ok := store.(storage.ThresholdIncidentStore); ok {
+		tr.thresholdJournal = &thresholdJournalWriter{store: journal}
 	}
 	if githubStore, ok := store.(storage.GitHubEnterpriseStore); ok {
 		tr.githubCheckStore = githubStore

@@ -17,9 +17,6 @@ vi.mock('recharts', () => {
   )
   return {
     Area: ({ dataKey }: { dataKey?: string }) => <path data-testid="mock-area" data-key={dataKey || ''} />,
-    Brush: ({ onChange }: { onChange?: (range: { startIndex?: number; endIndex?: number }) => void }) => (
-      <button data-testid="mock-brush" type="button" onClick={() => onChange?.({ startIndex: 1, endIndex: 2 })}>brush</button>
-    ),
     CartesianGrid: Mock,
     ComposedChart: MockChart,
     Line: ({ dataKey, strokeDasharray }: { dataKey?: string; strokeDasharray?: string }) => (
@@ -85,7 +82,7 @@ describe('SynchronizedTimeline', () => {
     expect(container.querySelector('[data-key="baselineTps"]')).not.toBeNull()
   })
 
-  it('applies the shared brush zoom to every lane', async () => {
+  it('provides named bounded keyboard sliders and applies their window to every lane', async () => {
     await act(async () => {
       root.render(
         <SynchronizedTimeline
@@ -94,9 +91,19 @@ describe('SynchronizedTimeline', () => {
       )
     })
 
-    await act(async () => {
-      container.querySelector('[data-testid="mock-brush"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    const start = container.querySelector('[aria-label="Timeline window start"]') as HTMLInputElement
+    const end = container.querySelector('[aria-label="Timeline window end"]') as HTMLInputElement
+    expect(start.min).toBe('0')
+    expect(end.max).toBe('3')
+    expect(start.getAttribute('aria-valuetext')).toBe('00')
+    for (const [input, value] of [[start, '1'], [end, '2']] as const) {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    expect(start.getAttribute('aria-valuetext')).toBe('01')
+    expect(end.min).toBe('1')
 
     const charts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
     expect(charts.every(chart => chart.getAttribute('data-length') === '2')).toBe(true)

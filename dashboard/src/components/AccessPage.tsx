@@ -1,10 +1,14 @@
+import { settingsHref } from './settingsNavigation'
+import { useAccessWorkspace } from './useAccessWorkspace'
+import AccessNavigation from './AccessNavigation'
+import { csvBlob, reviewPriority, activityDateError, activitySnapshotBefore } from './accessReporting'
+import AccessUsagePanel from './AccessUsagePanel'
 import FormField from './ux/FormField'
 import TabList from './ux/TabList'
 import { confirmAction } from './ux/confirmAction'
 import PanelToggle from "./ux/PanelToggle"
 import { handleTabKey } from './tabKeyboard'
 import { AuditEventTable } from './AuditEventTable'
-import { settingsHref } from './settingsNavigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useApi } from '../hooks/useApi'
@@ -25,21 +29,21 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 import { AccessIssuedKeyModal } from './AccessIssuedKeyModal'
 import { SortHeader } from './SortHeader'
 import type {
-  AccessTab, UserSubTab, ServiceAccountSubTab, ActivitySubTab, UserSortField, AccountSortField,
-  ActivitySortField, UsageSortField, SortState, AccessPageProps, PurposePreset, ServiceAccountForm,
+  UserSortField, AccountSortField,
+  ActivitySortField, SortState, AccessPageProps, PurposePreset, ServiceAccountForm,
   UserForm, UserBindingForm, UserFilterState, AccountFilterState, ActivityFilterForm, IssuedKeyState,
 } from './accessTypes'
 import {
   PURPOSE_PRESETS, GLOBAL_ROLE_OPTIONS, SCOPED_ROLE_OPTIONS, SCOPE_OPTIONS, ROLE_LABELS, SCOPE_LABELS,
-  userSortDefaults, accountSortDefaults, activitySortDefaults, usageSortDefaults, preferredTab, presetByID,
+  userSortDefaults, accountSortDefaults, activitySortDefaults, preferredTab, presetByID,
   buildPresetForm, formFromServiceAccount, buildActivityFilter, toggleValue, toProjectRolesPayload,
   mergeScopedRolesPayload, parseOptionalDateTime, parseRotationDays, timestampValue, formatTimestamp,
-  formatDurationSeconds, formatRoleList, roleOptionsForScope, uniqueValues, includesQuery, comparePrimitive,
+  formatRoleList, roleOptionsForScope, uniqueValues, includesQuery, comparePrimitive,
   stableSort, nextSort, defaultScopeID, createUserBindingDraft, initialUserBindingDrafts,
   userBindingDraftFromBinding, bindingSignature, draftSignature, normalizedUserBindingDrafts, userStatusBadge,
   accountBadges, accountStatusKeys, bindingLabel, userRoleList, userAccessLabels, userMatchesDomain,
   userMatchesProject, accountRoleList, accountAccessLabels, accountMatchesDomain, accountMatchesProject,
-  bucketLabel, formatNumber, usageSummary, usageForUser, eventScopeLabel, eventResourceLabel, detailsSummary,
+  usageSummary, usageForUser, eventScopeLabel, eventResourceLabel, detailsSummary,
 } from './accessUtils'
 
 const USER_PAGE_SIZE_OPTIONS = [25, 50, 100]
@@ -187,6 +191,9 @@ function additionalScopedRoleEntries(
 }
 
 export default function AccessPage({
+  accessView,
+  onViewChange,
+  authMode,
   projects,
   domains = [],
   applicationRepository,
@@ -199,12 +206,10 @@ export default function AccessPage({
   accessReviewRefreshSignal = 0,
 }: AccessPageProps) {
   const api = useApi()
+  const settingsHrefForAuth = settingsHref('authentication')
   const { runGuarded } = useNavigationGuardRunner()
   const canUseUsers = canManageUserLifecycle || canManageUserBindings
-  const [activeTab, setActiveTab] = useState<AccessTab>(() => preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity))
-  const [userSubTab, setUserSubTab] = useState<UserSubTab>('existing')
-  const [serviceAccountSubTab, setServiceAccountSubTab] = useState<ServiceAccountSubTab>('existing')
-  const [activitySubTab, setActivitySubTab] = useState<ActivitySubTab>('events')
+  const { activeTab, userSubTab, serviceAccountSubTab, activitySubTab, setActiveTab, setUserSubTab, setServiceAccountSubTab, setActivitySubTab } = useAccessWorkspace(preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity), accessView, onViewChange)
   const [accounts, setAccounts] = useState<DashboardServiceAccount[]>([])
   const [users, setUsers] = useState<DashboardUser[]>([])
   const [usersTotal, setUsersTotal] = useState(0)
@@ -227,12 +232,14 @@ export default function AccessPage({
   const [activityInspectorCollapsed, setActivityInspectorCollapsed] = useState(false)
   const [userFilters, setUserFilters] = useState<UserFilterState>({ query: '', status: '', role: '', domainID: '', projectID: '' })
   const [accountFilters, setAccountFilters] = useState<AccountFilterState>({ query: '', status: '', role: '', scope: '', domainID: '', projectID: '' })
+  const [showUserMetadata, setShowUserMetadata] = useState(false)
+  const [showAccountMetadata, setShowAccountMetadata] = useState(false)
   const [activitySearch, setActivitySearch] = useState('')
-  const [usageSearch, setUsageSearch] = useState('')
+
   const [userSort, setUserSort] = useState<SortState<UserSortField>>({ field: 'user', direction: 'asc' })
   const [accountSort, setAccountSort] = useState<SortState<AccountSortField>>({ field: 'updated', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<SortState<ActivitySortField>>({ field: 'time', direction: 'desc' })
-  const [usageSort, setUsageSort] = useState<SortState<UsageSortField>>({ field: 'vuser_seconds', direction: 'desc' })
+
   const [userForm, setUserForm] = useState<UserForm>({ subject: '', email: '', displayName: '' })
   const [editUserForm, setEditUserForm] = useState<UserForm>({ subject: '', email: '', displayName: '' })
   const [onboardBindingDrafts, setOnboardBindingDrafts] = useState<UserBindingForm[]>(() => initialUserBindingDrafts(projects, domains, activeProject, activeDomain, applicationRepository))
@@ -249,6 +256,19 @@ export default function AccessPage({
     createdAfter: '',
     createdBefore: '',
   })
+  const [appliedActivityFilter, setAppliedActivityFilter] = useState(activityFilter)
+  const [activityPage, setActivityPage] = useState(0)
+  const [activityHasMore, setActivityHasMore] = useState(false)
+  const [activitySnapshot, setActivitySnapshot] = useState(() => new Date().toISOString())
+  const activityValidation = activityDateError(activityFilter.createdAfter, activityFilter.createdBefore)
+  const activityWorkspaceRef = useRef(`${activeDomain?.id || ''}:${activeProject?.id || ''}`)
+  useEffect(() => {
+    const workspace = `${activeDomain?.id || ''}:${activeProject?.id || ''}`
+    if (activityWorkspaceRef.current === workspace) return
+    activityWorkspaceRef.current = workspace
+    const next = { actorSubject: '', domainID: activeDomain?.id || '', projectID: activeProject?.id || '', action: '', status: '', createdAfter: '', createdBefore: '' }
+    setActivityFilter(next); setAppliedActivityFilter(next); setActivityPage(0); setActivitySnapshot(new Date().toISOString())
+  }, [activeDomain?.id, activeProject?.id])
   const [activityEvents, setActivityEvents] = useState<DashboardAuditEvent[]>([])
   const [activityUsage, setActivityUsage] = useState<Awaited<ReturnType<typeof api.getAuthUserActivity>>['usage'] | null>(null)
   const [accessReview, setAccessReview] = useState<DashboardAccessReviewResponse | null>(null)
@@ -273,6 +293,13 @@ export default function AccessPage({
   const [accountEditMode, setAccountEditMode] = useState(false)
   const [editAccountForm, setEditAccountForm] = useState<ServiceAccountForm>(() => buildPresetForm(presetByID('ci')))
   const [simulatorPrincipal, setSimulatorPrincipal] = useState<{ type: 'user' | 'service_account'; id: string }>({ type: 'user', id: '' })
+  const [simulatorUsers, setSimulatorUsers] = useState<DashboardUser[]>([])
+  const [simulatorQuery, setSimulatorQuery] = useState('')
+  const [simulatorPage, setSimulatorPage] = useState(0)
+  const [simulatorHasMore, setSimulatorHasMore] = useState(false)
+  const [simulatorDirectoryLoading, setSimulatorDirectoryLoading] = useState(false)
+  const [simulatorDirectoryError, setSimulatorDirectoryError] = useState('')
+  const [simulatorDirectoryRevision, setSimulatorDirectoryRevision] = useState(0)
   const [simulatorResult, setSimulatorResult] = useState<DashboardAuthEffectiveAccess | null>(null)
   const [simulatorError, setSimulatorError] = useState('')
   const [simulatorLoading, setSimulatorLoading] = useState(false)
@@ -346,9 +373,21 @@ export default function AccessPage({
   }, [accessReview])
   const simulatorPrincipalOptions = useMemo(() =>
     simulatorPrincipal.type === 'user'
-      ? users.map(user => ({ id: user.id, label: user.display_name || user.subject }))
+      ? simulatorUsers.map(user => ({ id: user.id, label: user.display_name || user.subject }))
       : accounts.map(account => ({ id: account.id, label: account.name })),
-  [simulatorPrincipal.type, users, accounts])
+  [simulatorPrincipal.type, simulatorUsers, accounts])
+
+  useEffect(() => {
+    if (activeTab !== 'activity' || activitySubTab !== 'review' || simulatorPrincipal.type !== 'user' || !canManageUserLifecycle) return
+    let cancelled = false
+    setSimulatorDirectoryLoading(true); setSimulatorDirectoryError(''); setSimulatorUsers([])
+    void api.listAuthUsers({ q: simulatorQuery.trim() || undefined, limit: 50, offset: simulatorPage * 50 }).then(response => {
+      if (cancelled) return
+      setSimulatorUsers(response.users || [])
+      setSimulatorHasMore(response.has_more ?? (response.users || []).length === 50)
+    }).catch(error => { if (!cancelled) setSimulatorDirectoryError(getErrorMessage(error, 'Unable to search users')) }).finally(() => { if (!cancelled) setSimulatorDirectoryLoading(false) })
+    return () => { cancelled = true }
+  }, [activeTab, activitySubTab, simulatorPrincipal.type, canManageUserLifecycle, api, simulatorQuery, simulatorPage, simulatorDirectoryRevision])
 
   const accessTabControls = useMemo(() => (
     accessWorkspaceAvailable ? (
@@ -373,7 +412,7 @@ export default function AccessPage({
         )}
       </TabList>
     ) : null
-  ), [accessReviewAttention, accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, runGuarded, users.length, usersTotal])
+  ), [accessReviewAttention, accessWorkspaceAvailable, accounts.length, activeTab, activityEvents.length, canManageServiceAccounts, canUseUsers, canViewUserActivity, runGuarded, setActiveTab, users.length, usersTotal])
 
   const accessTopbarContribution = useMemo(() => ({
     id: 'access-page',
@@ -508,29 +547,6 @@ export default function AccessPage({
     })
   }, [activityEvents, activitySearch, activitySort, domains, projects])
 
-  const filteredUsageBuckets = useMemo(() => {
-    const filtered = userBuckets.filter(bucket => includesQuery([
-      bucketLabel(bucket),
-      bucket.run_count,
-      bucket.total_vusers,
-      bucket.vuser_seconds,
-    ], usageSearch))
-
-    return stableSort(filtered, (a, b) => {
-      const valueFor = (bucket: UsageAccountingBucket): string | number => {
-        switch (usageSort.field) {
-          case 'runs': return bucket.run_count
-          case 'total_vusers': return bucket.total_vusers
-          case 'duration': return bucket.duration_seconds
-          case 'vuser_seconds': return bucket.vuser_seconds
-          case 'user':
-          default:
-            return bucketLabel(bucket)
-        }
-      }
-      return comparePrimitive(valueFor(a), valueFor(b), usageSort.direction)
-    })
-  }, [usageSearch, usageSort, userBuckets])
 
   const loadAccounts = useCallback(async () => {
     const requestGeneration = ++accountsLoadGenerationRef.current
@@ -649,9 +665,10 @@ export default function AccessPage({
     }
     setActivityLoading(true)
     try {
-      const response = await api.getAuthUserActivity(buildActivityFilter(activityFilter))
+      const response = await api.getAuthUserActivity({ ...buildActivityFilter(appliedActivityFilter), created_before: activitySnapshotBefore(appliedActivityFilter.createdBefore, activitySnapshot), offset: activityPage * 50 })
       if (!isCurrentRequest()) return
       setActivityEvents(response.events || [])
+      setActivityHasMore(response.has_more ?? (response.events || []).length === 50)
       setActivityUsage(response.usage)
       setActivityError('')
       setActivityLoadFailed(false)
@@ -662,7 +679,7 @@ export default function AccessPage({
     } finally {
       if (isCurrentRequest()) setActivityLoading(false)
     }
-  }, [activityFilter, api, canViewUserActivity])
+  }, [appliedActivityFilter, activityPage, activitySnapshot, api, canViewUserActivity])
 
   const loadAccessReview = useCallback(async () => {
     const requestGeneration = ++accessReviewLoadGenerationRef.current
@@ -713,7 +730,7 @@ export default function AccessPage({
     if (!canManageUserLifecycle && activitySubTab === 'review') {
       setActivitySubTab('events')
     }
-  }, [activitySubTab, canManageUserLifecycle])
+  }, [activitySubTab, canManageUserLifecycle, setActivitySubTab])
 
   // Admins get the access-review posture eagerly (for the attention badge) and refetched on
   // each `access_review_changed` ping, regardless of which tab is open.
@@ -730,13 +747,13 @@ export default function AccessPage({
       if (current === 'activity' && canViewUserActivity) return current
       return preferredTab(canUseUsers, canManageServiceAccounts, canViewUserActivity)
     })
-  }, [canManageServiceAccounts, canUseUsers, canViewUserActivity])
+  }, [canManageServiceAccounts, canUseUsers, canViewUserActivity, setActiveTab])
 
   useEffect(() => {
     if (!canManageUserLifecycle && userSubTab === 'onboard') {
       setUserSubTab('existing')
     }
-  }, [canManageUserLifecycle, userSubTab])
+  }, [canManageUserLifecycle, userSubTab, setUserSubTab])
 
   useEffect(() => {
     void loadAccounts()
@@ -1357,7 +1374,7 @@ export default function AccessPage({
     setActivityMessage('')
     setActivityError('')
     try {
-      const blob = await api.downloadAuthUserActivity(buildActivityFilter(activityFilter))
+      const blob = await api.downloadAuthUserActivity({ ...buildActivityFilter(appliedActivityFilter), created_before: activitySnapshotBefore(appliedActivityFilter.createdBefore, activitySnapshot), all: 'true' })
       const date = new Date().toISOString().slice(0, 10)
       const outcome = await downloadBlob(blob, `apexload-user-activity-${date}.csv`)
       if (outcome === 'cancelled') return
@@ -1781,6 +1798,7 @@ export default function AccessPage({
                 <span>{item.name}</span>
               </label>
               <select
+                aria-label={`Role for ${item.name}`}
                 value={selectedRole || defaultRole}
                 disabled={!selectedRole}
                 onChange={event => setter(prev => ({ ...prev, [rolesKey]: { ...prev[rolesKey], [item.id]: event.target.value } }))}
@@ -1813,6 +1831,7 @@ export default function AccessPage({
             <button
               key={option.id}
               type="button"
+              aria-pressed={current.globalRoles.includes(option.id)}
               className={`access-chip ${current.globalRoles.includes(option.id) ? 'active' : ''}`}
               onClick={() => setter(prev => ({ ...prev, globalRoles: toggleValue(prev.globalRoles, option.id) }))}
             >
@@ -1832,6 +1851,7 @@ export default function AccessPage({
             <button
               key={option.id}
               type="button"
+              aria-pressed={current.scopes.includes(option.id)}
               className={`access-chip ${current.scopes.includes(option.id) ? 'active' : ''}`}
               onClick={() => setter(prev => ({ ...prev, scopes: toggleValue(prev.scopes, option.id) }))}
             >
@@ -1886,7 +1906,7 @@ export default function AccessPage({
           <input type="datetime-local" value={editAccountForm.expiresAt} onChange={event => setEditAccountForm(prev => ({ ...prev, expiresAt: event.target.value }))} />
         </label>
         <label>
-          <span>Rotation Interval</span>
+          <span>Rotation interval (days)</span>
           <input type="number" min={0} step={1} value={editAccountForm.rotationDays} onChange={event => setEditAccountForm(prev => ({ ...prev, rotationDays: event.target.value }))} />
         </label>
       </div>
@@ -1970,16 +1990,49 @@ export default function AccessPage({
     )
   }
 
+  const [reviewExportMessage, setReviewExportMessage] = useState('')
+  const exportReview = async () => {
+    if (!accessReview) return
+    try {
+      const rows: unknown[][] = [['type', 'id', 'name', 'priority', 'flags', 'owner', 'generated_at']]
+      for (const user of accessReview.users) rows.push(['user', user.id, user.display_name || user.subject, reviewPriority(user.flags), user.flags.join('; '), '', accessReview.generated_at])
+      for (const account of accessReview.service_accounts) rows.push(['service_account', account.id, account.name, reviewPriority(account.flags), account.flags.join('; '), accounts.find(item => item.id === account.id)?.owner_id || '', accessReview.generated_at])
+      if (await downloadBlob(csvBlob(rows), 'apexload-access-review.csv') !== 'cancelled') setReviewExportMessage('Access review export downloaded.')
+    } catch (error) { setReviewExportMessage(getErrorMessage(error, 'Unable to export access review')) }
+  }
+  const inspectReviewUser = async (id: string, subject: string) => {
+    try {
+      const user = await api.getAuthUser(id)
+      if (!user) throw new Error('User is no longer available. Refresh the review.')
+      usersLoadGenerationRef.current += 1
+      authoritativeUsersRef.current.set(user.id, { entity: user, listScope: dataSignature({ page: 0, pageSize: userPageSize, domainID: '', projectID: '', query: subject.trim(), role: '', status: '' }), isSatisfiedBy: (serverUser, authoritativeUser) => userMutationStateSignature(serverUser) === userMutationStateSignature(authoritativeUser) })
+      setUserFilters({ query: subject, status: '', role: '', domainID: '', projectID: '' })
+      setUserPage(0); setUsers([user]); setSelectedUserID(id); setUserInspectorCollapsed(false); setUserSubTab('existing')
+    } catch (error) { setAccessReviewError(getErrorMessage(error, 'Unable to inspect user')) }
+  }
+  const inspectReviewAccount = async (id: string) => {
+    try {
+      const response = await api.listAuthServiceAccounts()
+      const refreshed = response.service_accounts || []
+      if (!refreshed.some(account => account.id === id)) throw new Error('Account is no longer available. Refresh the review.')
+      accountsLoadGenerationRef.current += 1
+      setAccounts(refreshed)
+      setAccountFilters({ query: '', status: '', role: '', scope: '', domainID: '', projectID: '' })
+      setSelectedAccountID(id); setAccountInspectorCollapsed(false); setServiceAccountSubTab('existing')
+    } catch (error) { setAccessReviewError(getErrorMessage(error, 'Unable to inspect service account')) }
+  }
+
   const renderAccessReview = () => {
     if (accessReviewLoading) return <div className="access-empty">Loading access review…</div>
-    if (accessReviewError) return <div className="access-error">{accessReviewError}</div>
+    if (accessReviewError) return <div className="access-error" role="alert">{accessReviewError} <button onClick={() => void loadAccessReview()}>Retry access review</button></div>
     if (!accessReview) return <div className="access-empty">No access review data.</div>
     const { users: reviewUsers, service_accounts: reviewAccounts, stale_after_days } = accessReview
-    if (reviewUsers.length === 0 && reviewAccounts.length === 0) {
-      return <div className="access-empty">Nothing to review — no stale, unbound, over-privileged, or expiring principals.</div>
-    }
     return (
       <div className="access-review">
+        {reviewUsers.length === 0 && reviewAccounts.length === 0 && <p role="status">Nothing to review — no stale, unbound, over-privileged, or expiring principals.</p>}
+        <button className="btn btn-secondary" onClick={() => void exportReview()}>Export access review CSV</button>
+        {reviewExportMessage && <p role="status">{reviewExportMessage}</p>}
+        <p>Deployment-wide findings as of {formatTimestamp(accessReview.generated_at)}. Informational findings include disabled identities. Use Inspect to change access or rotate keys, then refresh to verify the finding is resolved.</p>
         <p className="setting-desc">
           Principals worth a periodic look. Users are flagged stale after {stale_after_days} days without sign-in.
           {' '}
@@ -1988,15 +2041,16 @@ export default function AccessPage({
         {reviewUsers.length > 0 && (
           <section>
             <h4>Users ({reviewUsers.length})</h4>
-            <table className="access-table">
-              <thead><tr><th>User</th><th>Global roles</th><th>Last seen</th><th>Flags</th></tr></thead>
+            <table className="access-data-table access-review-table">
+              <thead><tr><th>User</th><th>Global roles</th><th>Last seen</th><th>Priority / reasons</th><th>Action</th></tr></thead>
               <tbody>
                 {reviewUsers.map(u => (
                   <tr key={u.id}>
-                    <td>{u.display_name || u.subject}</td>
+                    <td><button className="access-row-primary" onClick={() => void inspectReviewUser(u.id, u.subject)}>{u.display_name || u.subject}</button></td>
                     <td className="cell-mono">{(u.global_roles || []).join(', ') || '—'}</td>
                     <td>{u.last_seen_at ? new Date(u.last_seen_at).toLocaleDateString() : 'never'}</td>
-                    <td>{u.flags.map(f => <span key={f} className="access-flag-badge">{f.replace(/_/g, ' ')}</span>)}</td>
+                    <td><strong className="access-review-priority">{reviewPriority(u.flags)}</strong>{u.flags.map(f => <span key={f} className="access-flag-badge">{f.replace(/_/g, ' ')}</span>)}</td>
+                    <td><button className="btn btn-secondary btn-sm" onClick={() => void inspectReviewUser(u.id, u.subject)}>Inspect user</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -2006,15 +2060,16 @@ export default function AccessPage({
         {reviewAccounts.length > 0 && (
           <section>
             <h4>Service Accounts ({reviewAccounts.length})</h4>
-            <table className="access-table">
-              <thead><tr><th>Account</th><th>Scopes</th><th>Last used</th><th>Flags</th></tr></thead>
+            <table className="access-data-table access-review-table">
+              <thead><tr><th>Account</th><th>Scopes</th><th>Last used</th><th>Priority / reasons</th><th>Action</th></tr></thead>
               <tbody>
                 {reviewAccounts.map(a => (
                   <tr key={a.id}>
-                    <td>{a.name}</td>
+                    <td><button className="access-row-primary" onClick={() => void inspectReviewAccount(a.id)}>{a.name}</button><span className="access-row-meta">Owner: {accounts.find(item => item.id === a.id)?.owner_id || 'Unassigned'}</span></td>
                     <td className="cell-mono">{(a.scopes || []).join(', ') || '—'}</td>
                     <td>{a.last_used_at ? new Date(a.last_used_at).toLocaleDateString() : 'never'}</td>
-                    <td>{a.flags.map(f => <span key={f} className="access-flag-badge">{f.replace(/_/g, ' ')}</span>)}</td>
+                    <td><strong className="access-review-priority">{reviewPriority(a.flags)}</strong>{a.flags.map(f => <span key={f} className="access-flag-badge">{f.replace(/_/g, ' ')}</span>)}</td>
+                    <td><button className="btn btn-secondary btn-sm" onClick={() => void inspectReviewAccount(a.id)}>Inspect account</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -2029,14 +2084,21 @@ export default function AccessPage({
     const principalOptions = simulatorPrincipalOptions
     // Mirror the backend normalization (empty project_id → "unassigned", empty domain_id →
     // "default") so the displayed scope matches what the simulator actually evaluates.
-    const simProjectLabel = activeProject?.id || 'unassigned'
-    const simDomainLabel = activeProject?.domain_id || activeDomain?.id || 'default'
+    const simProjectLabel = activeProject?.name || 'Unassigned'
+    const simDomainLabel = domains.find(domain => domain.id === activeProject?.domain_id)?.name || activeDomain?.name || 'Default Domain'
     return (
       <section className="access-simulator">
-        <h4>Effective-Access Simulator</h4>
+        <h4>Role permissions preview</h4>
         <p className="setting-desc">
-          Resolve what a user or service account can do in the active scope (project {simProjectLabel}, domain {simDomainLabel}). Role-based; a service account&apos;s token scopes narrow its API access further.
+          Preview assigned role permissions in the active scope (project {simProjectLabel}, domain {simDomainLabel}). This is not an API authorization check: account status, token scopes and route policies may deny these operations.
         </p>
+        {simulatorPrincipal.type === 'user' && <div className="access-table-toolbar">
+          <label><span>Find a user for role preview</span><input value={simulatorQuery} onChange={event => { setSimulatorQuery(event.target.value); setSimulatorPage(0); setSimulatorPrincipal({ type: 'user', id: '' }); setSimulatorResult(null) }} /></label>
+          <button disabled={simulatorDirectoryLoading || simulatorPage === 0} onClick={() => { setSimulatorPage(value => value - 1); setSimulatorPrincipal({ type: 'user', id: '' }); setSimulatorResult(null) }}>Previous users</button>
+          <button disabled={simulatorDirectoryLoading || !simulatorHasMore} onClick={() => { setSimulatorPage(value => value + 1); setSimulatorPrincipal({ type: 'user', id: '' }); setSimulatorResult(null) }}>More users</button>
+          {simulatorDirectoryLoading && <p role="status">Loading user choices…</p>}
+          {simulatorDirectoryError && <p role="alert">{simulatorDirectoryError} <button onClick={() => setSimulatorDirectoryRevision(value => value + 1)}>Retry user search</button></p>}
+        </div>}
         <div className="access-form-grid">
           <label>
             <span>Principal Type</span>
@@ -2050,7 +2112,7 @@ export default function AccessPage({
           </label>
           <label>
             <span>Principal</span>
-            <select value={simulatorPrincipal.id} onChange={event => setSimulatorPrincipal(prev => ({ ...prev, id: event.target.value }))}>
+            <select value={simulatorPrincipal.id} onChange={event => { setSimulatorPrincipal(prev => ({ ...prev, id: event.target.value })); setSimulatorResult(null) }}>
               <option value="">Select…</option>
               {principalOptions.map(option => (
                 <option key={option.id} value={option.id}>{option.label}</option>
@@ -2070,8 +2132,8 @@ export default function AccessPage({
               <strong>{simulatorResult.principal_name || 'Principal'}</strong>
               {simulatorResult.scopes_narrow_api_access ? ' — token scopes further narrow this key’s API access.' : ''}
             </p>
-            <table className="access-table">
-              <thead><tr><th>Resource</th><th>Allowed operations</th></tr></thead>
+            <table className="access-data-table access-review-table">
+              <thead><tr><th>Resource</th><th>Operations granted by roles</th></tr></thead>
               <tbody>
                 {simulatorResult.resources.map(resource => {
                   const allowed = resource.operations.filter(op => op.allowed)
@@ -2116,7 +2178,7 @@ export default function AccessPage({
 
   return (
     <div className="page access-page">
-      <nav className="settings-inline-actions" aria-label="Related administration"><a className="btn btn-secondary btn-sm" href={settingsHref('authentication')}>Authentication</a><a className="btn btn-secondary btn-sm" href={settingsHref('features')}>Feature policy</a><a className="btn btn-secondary btn-sm" href={settingsHref('imports')}>Import policy</a><a className="btn btn-secondary btn-sm" href={settingsHref('redaction')}>Redaction</a><a className="btn btn-secondary btn-sm" href={settingsHref('secrets')}>Project secrets</a><a className="btn btn-secondary btn-sm" href={settingsHref('audit')}>Governance audit</a></nav>
+      <AccessNavigation />
       <div className="page-header">
         <div>
           <h2>Access</h2>
@@ -2134,14 +2196,14 @@ export default function AccessPage({
       {!hasTopbarContributionProvider && accessTabControls}
 
       {activeTab === 'users' && (
-        <section className="access-workspace" role="tabpanel" aria-label="Users access workspace">
+        <section className={`access-workspace ${userSubTab === 'onboard' || userInspectorCollapsed || !selectedUser ? 'access-workspace-full' : ''}`} role="tabpanel" aria-label="Users access workspace">
           <article className="access-panel access-table-panel">
             <div className="access-panel-header">
               <div>
                 <h3>Users</h3>
                 <p>{usersLoading ? 'Loading users...' : `${filteredUsers.length} of ${usersTotal} users`}</p>
               </div>
-              {selectedUser && userInspectorCollapsed && (
+              {userSubTab === 'existing' && selectedUser && userInspectorCollapsed && (
                 <PanelToggle expanded={false} panelName="user details" controls="access-user-details" onToggle={() => setUserInspectorCollapsed(false)} />
               )}
             </div>
@@ -2201,8 +2263,9 @@ export default function AccessPage({
                   </div>
                 )}
 
+                <label className="access-column-choice"><input type="checkbox" checked={showUserMetadata} onChange={event => setShowUserMetadata(event.target.checked)} /> Show email, dates and usage columns</label>
                 <div className="access-table-wrap">
-                  <table className="access-data-table">
+                  <table className={`access-data-table access-users-table ${showUserMetadata ? '' : 'access-columns-compact'}`} data-table-pagination="off">
                     <thead>
                       <tr>
                         <SortHeader label="User" field="user" sort={userSort} onSort={field => setUserSort(prev => nextSort(prev, field, userSortDefaults))} />
@@ -2287,6 +2350,7 @@ export default function AccessPage({
 
             {userSubTab === 'onboard' && canManageUserLifecycle && (
               <>
+                <p className="access-onboarding-help">This creates an access record, not an identity-provider account. No invitation or password is sent. {authMode === 'dev' || authMode === 'disabled' ? 'Development bypass is active; roles take effect when an identity-based authentication mode is enabled.' : authMode === 'local' ? 'Local Test Login uses the configured test personas; this form does not create a new local login.' : 'Create the identity in your configured provider first, copy its stable subject here, and have the user sign in through the deployment’s normal login flow.'} <a href={settingsHrefForAuth}>Review authentication setup</a></p>
                 <div className="access-form-grid">
                   <label>
                     <span>Subject</span>
@@ -2319,38 +2383,38 @@ export default function AccessPage({
               </>
             )}
           </article>
-          {renderUserInspector()}
+          {userSubTab === 'existing' && renderUserInspector()}
         </section>
       )}
 
       {activeTab === 'service_accounts' && (
-        <section className="access-workspace" role="tabpanel" aria-label="Service accounts access workspace">
+        <section className={`access-workspace ${serviceAccountSubTab === 'generate' || accountInspectorCollapsed || !selectedAccount ? 'access-workspace-full' : ''}`} role="tabpanel" aria-label="Service accounts access workspace">
           <article className="access-panel access-table-panel">
             <div className="access-panel-header">
               <div>
                 <h3>Service Accounts</h3>
                 <p>{loading ? 'Loading service accounts...' : `${filteredAccounts.length} of ${accounts.length} automation principals`}</p>
               </div>
-              {selectedAccount && accountInspectorCollapsed && (
+              {serviceAccountSubTab === 'existing' && selectedAccount && accountInspectorCollapsed && (
                 <PanelToggle expanded={false} panelName="service account details" controls="access-account-details" onToggle={() => setAccountInspectorCollapsed(false)} />
               )}
             </div>
             {accessReviewAttention && (accessReviewAttention.accountsFlagged > 0 || accessReviewAttention.denials > 0) && (
               <div className="access-alert access-attention-banner">
                 {accessReviewAttention.accountsFlagged > 0 && (
-                  <span>{accessReviewAttention.accountsFlagged} service account(s) need attention (rotation, expiry, or broad scope). </span>
+                  <span>{accessReviewAttention.accountsFlagged} service account(s) have review findings. Inspect the reasons below, including unused accounts, rotation, expiry and scope. </span>
                 )}
                 {accessReviewAttention.denials > 0 && (
                   <span>{accessReviewAttention.denials} recent access denial(s). </span>
                 )}
                 {canManageUserLifecycle && (
-                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => runGuarded(() => { setActiveTab('activity'); setActivitySubTab('review') })}>Open access review</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => runGuarded(() => { setActivitySubTab('review') })}>Open access review</button>
                 )}
               </div>
             )}
             <TabList className="access-subtab-row" role="tablist" aria-label="Service account workspace views" onKeyDown={handleTabKey}>
               <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'existing'} className={`access-subtab ${serviceAccountSubTab === 'existing' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('existing'))} tabIndex={(serviceAccountSubTab === 'existing') ? 0 : -1}>Existing Accounts</button>
-              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'generate'} className={`access-subtab ${serviceAccountSubTab === 'generate' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('generate'))} tabIndex={(serviceAccountSubTab === 'generate') ? 0 : -1}>Generate Key</button>
+              <button type="button" role="tab" aria-selected={serviceAccountSubTab === 'generate'} className={`access-subtab ${serviceAccountSubTab === 'generate' ? 'active' : ''}`} onClick={() => runGuarded(() => setServiceAccountSubTab('generate'))} tabIndex={(serviceAccountSubTab === 'generate') ? 0 : -1}>Create service account</button>
             </TabList>
 
             {serviceAccountSubTab === 'existing' && (
@@ -2412,8 +2476,9 @@ export default function AccessPage({
                   </div>
                 )}
 
+                <label className="access-column-choice"><input type="checkbox" checked={showAccountMetadata} onChange={event => setShowAccountMetadata(event.target.checked)} /> Show last use, rotation, expiry and update columns</label>
                 <div className="access-table-wrap">
-                  <table className="access-data-table">
+                  <table className={`access-data-table access-accounts-table ${showAccountMetadata ? '' : 'access-columns-compact'}`}>
                     <thead>
                       <tr>
                         <SortHeader label="Account" field="account" sort={accountSort} onSort={field => setAccountSort(prev => nextSort(prev, field, accountSortDefaults))} />
@@ -2519,7 +2584,7 @@ export default function AccessPage({
                     <input type="datetime-local" value={form.expiresAt} onChange={event => setForm(prev => ({ ...prev, expiresAt: event.target.value }))} />
                   </label>
                   <label>
-                    <span>Rotation Interval</span>
+                    <span>Rotation interval (days)</span>
                     <input type="number" min={1} step={1} value={form.rotationDays} onChange={event => setForm(prev => ({ ...prev, rotationDays: event.target.value }))} />
                   </label>
                 </div>
@@ -2545,25 +2610,25 @@ export default function AccessPage({
               </>
             )}
           </article>
-          {renderAccountInspector()}
+          {serviceAccountSubTab === 'existing' && renderAccountInspector()}
         </section>
       )}
 
       {activeTab === 'activity' && (
-        <section className="access-workspace" role="tabpanel" aria-label="Activity access workspace">
+        <section className={`access-workspace ${activitySubTab !== 'events' || activityInspectorCollapsed || !selectedActivity ? 'access-workspace-full' : ''}`} role="tabpanel" aria-label="Activity access workspace">
           <article className="access-panel access-table-panel">
             <div className="access-panel-header">
               <div>
-                <h3>Activity</h3>
-                <p>{activityLoading ? 'Loading activity...' : `${activityEvents.length} audit events`}</p>
+                <h3>{activitySubTab === 'events' ? 'Audit events' : activitySubTab === 'usage' ? 'Usage By User' : 'Access Review'}</h3>
+                <p>{activitySubTab === 'events' ? activityLoading ? 'Loading events…' : `${activityEvents.length} events on this page${activityHasMore ? ' · more history available' : ''}` : activitySubTab === 'usage' ? 'Usage by user and matching runs' : 'Review flagged identities and their assigned roles'}</p>
               </div>
               <div className="access-account-actions">
-                {selectedActivity && activityInspectorCollapsed && (
+                {activitySubTab === 'events' && selectedActivity && activityInspectorCollapsed && (
                   <PanelToggle expanded={false} panelName="activity event details" controls="access-activity-details" onToggle={() => setActivityInspectorCollapsed(false)} />
                 )}
-                <button className="btn btn-secondary btn-sm" type="button" onClick={exportActivity} disabled={!canViewUserActivity || activityExporting}>
-                  {activityExporting ? 'Exporting...' : 'Export CSV'}
-                </button>
+                {activitySubTab === 'events' && <button className="btn btn-secondary btn-sm" type="button" onClick={exportActivity} disabled={!canViewUserActivity || activityExporting}>
+                  {activityExporting ? 'Exporting...' : 'Export all matching events CSV'}
+                </button>}
               </div>
             </div>
             <TabList className="access-subtab-row" role="tablist" aria-label="Activity workspace views" onKeyDown={handleTabKey}>
@@ -2622,7 +2687,7 @@ export default function AccessPage({
                     <span>Created Before</span>
                     <input type="datetime-local" value={activityFilter.createdBefore} onChange={event => setActivityFilter(prev => ({ ...prev, createdBefore: event.target.value }))} />
                   </label>
-                  <button className="btn btn-primary btn-sm" type="button" onClick={loadActivity} disabled={!canViewUserActivity || activityLoading}>
+                  <button className="btn btn-primary btn-sm" type="button" onClick={() => { setAppliedActivityFilter(activityFilter); setActivityPage(0); setActivitySnapshot(new Date().toISOString()) }} disabled={!canViewUserActivity || activityLoading || !!activityValidation}>
                     {activityLoading ? 'Applying...' : 'Apply Filters'}
                   </button>
                 </div>
@@ -2645,7 +2710,14 @@ export default function AccessPage({
                   </div>
                 )}
 
-                <AuditEventTable events={filteredActivityEvents} selectedId={activityInspectorCollapsed ? undefined : selectedActivityID} onSelect={selectActivity} scopeLabel={event => eventScopeLabel(event, projects, domains)} header={<>
+                {activityValidation && <p role="alert">{activityValidation}</p>}
+                <p className="access-query-summary">History snapshot: {formatTimestamp(activitySnapshot)}. Filters apply when you choose Apply Filters. Table search and sorting affect this page only; export includes all events matching the applied filters.</p>
+                <nav className="access-pagination" aria-label="Event history pagination">
+                  <button className="btn btn-secondary" disabled={activityLoading || activityPage === 0} onClick={() => setActivityPage(value => value - 1)}>Previous events</button>
+                  <span>Page {activityPage + 1} · {activityEvents.length ? `${activityPage * 50 + 1}–${activityPage * 50 + activityEvents.length}` : 'No'} events loaded</span>
+                  <button className="btn btn-secondary" disabled={activityLoading || activityLoadFailed || !activityHasMore} onClick={() => setActivityPage(value => value + 1)}>Next events</button>
+                </nav>
+                <AuditEventTable paginated events={filteredActivityEvents} selectedId={activityInspectorCollapsed ? undefined : selectedActivityID} onSelect={selectActivity} scopeLabel={event => eventScopeLabel(event, projects, domains)} header={<>
                         <SortHeader label="Time" field="time" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Actor" field="actor" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
                         <SortHeader label="Action" field="action" sort={activitySort} onSort={field => setActivitySort(prev => nextSort(prev, field, activitySortDefaults))} />
@@ -2656,46 +2728,8 @@ export default function AccessPage({
               </>
             )}
 
-            {activitySubTab === 'usage' && (
-              <>
-                <div className="access-table-toolbar compact">
-                  <label>
-                    <span>Search</span>
-                    <input value={usageSearch} onChange={event => setUsageSearch(event.target.value)} placeholder="user or attribution key" />
-                  </label>
-                </div>
-                <div className="access-table-wrap">
-                  <table className="access-data-table access-usage-table">
-                    <thead>
-                      <tr>
-                        <SortHeader label="User" field="user" sort={usageSort} onSort={field => setUsageSort(prev => nextSort(prev, field, usageSortDefaults))} />
-                        <SortHeader label="Runs" field="runs" sort={usageSort} onSort={field => setUsageSort(prev => nextSort(prev, field, usageSortDefaults))} numeric />
-                        <SortHeader label="Total VUsers" field="total_vusers" sort={usageSort} onSort={field => setUsageSort(prev => nextSort(prev, field, usageSortDefaults))} numeric />
-                        <SortHeader label="Duration" field="duration" sort={usageSort} onSort={field => setUsageSort(prev => nextSort(prev, field, usageSortDefaults))} numeric />
-                        <SortHeader label="VUser Seconds" field="vuser_seconds" sort={usageSort} onSort={field => setUsageSort(prev => nextSort(prev, field, usageSortDefaults))} numeric />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredUsageBuckets.map(bucket => (
-                        <tr key={bucketLabel(bucket)}>
-                          <td><strong>{bucketLabel(bucket)}</strong></td>
-                          <td className="num">{formatNumber(bucket.run_count)}</td>
-                          <td className="num">{formatNumber(bucket.total_vusers)}</td>
-                          <td className="num">{formatDurationSeconds(bucket.duration_seconds)}</td>
-                          <td className="num">{formatNumber(bucket.vuser_seconds)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {filteredUsageBuckets.length === 0 && (
-                    <div className="access-empty-state">
-                      <strong>No attributed usage</strong>
-                      <span>New runs will appear after user attribution is recorded.</span>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
+            {activitySubTab === 'usage' && <AccessUsagePanel key={`${activeDomain?.id || ""}:${activeProject?.id || ""}`} projects={projects} domains={domains} activeProject={activeProject} activeDomain={activeDomain} />}
+
           </article>
           {activitySubTab === 'events' && renderActivityInspector()}
         </section>

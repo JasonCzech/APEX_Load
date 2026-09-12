@@ -62,6 +62,7 @@ describe('LoadComparisonPanel', () => {
 
     expect(getLoadComparison).toHaveBeenCalledWith('app-1', 'transaction', '')
     expect(container.textContent).toContain('Load Comparison')
+    expect(container.textContent).toContain('this grouping does not establish named transaction attempt evidence')
     expect(container.textContent).toContain('TPS Under Load')
     expect(container.textContent).toContain('ART Under Load')
     expect(container.querySelector<HTMLSelectElement>('select[aria-label="Select transaction for load comparison"]')?.value).toBe('Checkout Flow')
@@ -78,6 +79,18 @@ describe('LoadComparisonPanel', () => {
       ['134 ms', 'Avg ART'],
       ['1 (1.25%)', 'Errors'],
     ])
+  })
+
+  it('labels action evidence separately and explains a single-run baseline', async () => {
+    const response = transactionComparison()
+    response.options[0].source_kind = 'action'
+    response.releases = [{ ...response.releases[0], run_count: 1 }]
+    const getLoadComparison = vi.fn().mockResolvedValue(response)
+    await act(async () => { root.render(<LoadComparisonPanel applicationId="app-1" getLoadComparison={getLoadComparison} />) })
+    await flush()
+    expect(container.textContent).toContain('Population: request / action samples, grouped by action name.')
+    expect(container.textContent).toContain('whole-run totals across stored populations')
+    expect(container.textContent).toContain('one point cannot establish a trend')
   })
 
   it('switches between transactions and groups and reloads selected keys', async () => {

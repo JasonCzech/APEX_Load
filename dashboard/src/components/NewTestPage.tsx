@@ -83,6 +83,11 @@ import {
   type ScenarioScriptGroup,
 } from './newTestRunModel'
 import './CreateTestModal.css'
+import './NewTestWorkspace.css'
+import NewTestReadiness from './NewTestReadiness'
+import NewTestScheduleCatalog from './NewTestScheduleCatalog'
+import { scenarioIdentity } from './newTestPresentation'
+import { readNewTestDraft, saveNewTestDraft, clearNewTestDraft, type NewTestDraft, type ScheduleDraft, type ScheduleWindowDraft } from './newTestDraft'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -157,34 +162,6 @@ function errorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object') return undefined
   const status = (error as { status?: unknown }).status
   return typeof status === 'number' ? status : undefined
-}
-
-type ScheduleWindowDraft = {
-  name: string
-  days_of_week: number[]
-  start_time: string
-  end_time: string
-  timezone?: string
-}
-
-type ScheduleDraft = {
-	revision?: number
-  name: string
-  cron_expr: string
-  timezone: string
-  release_id: string
-  timeslot_id: string
-  run_name_template: string
-  enabled: boolean
-  approval_policy: string
-  missed_run_policy: string
-  blackout_windows: ScheduleWindowDraft[]
-  maintenance_windows: ScheduleWindowDraft[]
-  availability_windows: ScheduleWindowDraft[]
-  // Optional date-range pause, held as <input type="datetime-local"> values
-  // (local wall-clock) and converted to RFC3339 UTC when submitted.
-  disabled_from: string
-  disabled_until: string
 }
 
 const DEFAULT_SCHEDULE_DEFAULTS: Required<DashboardScheduleDefaultsSettings> = {
@@ -287,7 +264,7 @@ function formatScenarioReleaseSummary(scenario: StoredScenario) {
 
 function scenarioSearchText(scenario: StoredScenario) {
   return [
-    scenario.name,
+    scenario.name, scenario.id, scenario.ref_key,
     scenario.duration,
     scenario.scenario_mode,
     ...scenarioProtocolList(scenario),
@@ -420,7 +397,7 @@ function ScheduleWindowListEditor({ title, description, windows, fallbackTimezon
             <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${title.toLowerCase()} window ${i + 1}`}>Remove</button>
           </div>
         ))}
-        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} onClick={add}>+ Add window</button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled} aria-label={`Add ${title.toLowerCase()} window`} onClick={add}>+ Add window</button>
       </div>
     </div>
   )
@@ -574,12 +551,18 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [expandedScheduleId, setExpandedScheduleId] = useState<string | null>(null)
   const [scheduleOccurrenceLoading, setScheduleOccurrenceLoading] = useState<string | null>(null)
   const [scheduleOccurrences, setScheduleOccurrences] = useState<Record<string, ScenarioScheduleOccurrence[]>>({})
+  const [scheduleDefaultsStatus, setScheduleDefaultsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [scheduleDefaultsRetry, setScheduleDefaultsRetry] = useState(0)
   const [scheduleDefaults, setScheduleDefaults] = useState<DashboardScheduleDefaultsSettings>(DEFAULT_SCHEDULE_DEFAULTS)
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
   const [scheduleDraftBaseline, setScheduleDraftBaseline] = useState<ScheduleDraft>(buildDefaultScheduleDraft())
-  const [schedulePreview, setSchedulePreview] = useState<{ occurrences: string[]; error: string; conflictSummary?: string } | null>(null)
+  const [schedulePreview, setSchedulePreview] = useState<{ key: string; occurrences: string[]; error: string; conflictSummary?: string } | null>(null)
   const [runName, setRunName] = useState('')
   const runNameScenarioRef = useRef('')
+  const scheduleDraftRef = useRef(scheduleDraft)
+  const scheduleBaselineRef = useRef(scheduleDraftBaseline)
+  scheduleDraftRef.current = scheduleDraft
+  scheduleBaselineRef.current = scheduleDraftBaseline
   const [newReleaseName, setNewReleaseName] = useState('')
   const [scenarioQuery, setScenarioQuery] = useState('')
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useState('')
@@ -601,6 +584,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [groupSaveNotice, setGroupSaveNotice] = useState('')
   const [showNewRelease, setShowNewRelease] = useState(false)
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
+  const [estimateCheckedAt, setEstimateCheckedAt] = useState('')
+  const [preflightCheckedAt, setPreflightCheckedAt] = useState('')
   const [estimateLoading, setEstimateLoading] = useState(false)
   const [immediatePreflight, setImmediatePreflight] = useState<LaunchPreflightResponse | null>(null)
   const [immediatePreflightLoading, setImmediatePreflightLoading] = useState(false)
@@ -616,16 +601,22 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [generatorInventoryLoading, setGeneratorInventoryLoading] = useState(false)
   const [generatorInventoryError, setGeneratorInventoryError] = useState('')
+  const [inventoryRefresh, setInventoryRefresh] = useState(0)
+  const [inventoryCheckedAt, setInventoryCheckedAt] = useState('')
+  const [scheduleQuery, setScheduleQuery] = useState('')
+  const [catalogRefresh, setCatalogRefresh] = useState(0)
   const [timeslotState, setTimeslotState] = useState<{ projectID: string; timeslots: CapacityTimeslot[] }>({ projectID: '', timeslots: [] })
   const bindableTimeslots = timeslotState.projectID === activeProjectID ? timeslotState.timeslots : EMPTY_BINDABLE_TIMESLOTS
   const [selectedTimeslotId, setSelectedTimeslotId] = useState('')
   const newTestDirtyRef = useRef(false)
   const runDefaultOverridesRef = useRef(runDefaultOverrides)
   const groupRunOverridesRef = useRef(groupRunOverrides)
-  const createQueuedRunRef = useRef<() => Promise<boolean>>(async () => false)
+  const saveDraftRef = useRef<() => boolean>(() => false)
+  const [savedDraft, setSavedDraft] = useState<NewTestDraft | null>(null)
+  const [restoreDraft, setRestoreDraft] = useState<NewTestDraft | null>(null)
+  const [draftNotice, setDraftNotice] = useState('')
   const savePendingRunEditorsRef = useRef<() => boolean>(() => true)
   const resetRunSetupRef = useRef<() => void>(() => undefined)
-  const saveScheduleRef = useRef<() => Promise<boolean>>(async () => false)
   const resetScheduleSetupRef = useRef<() => void>(() => undefined)
   const scheduleDirtyRef = useRef(false)
   // Session persistence keeps an unresolved Queue Now attempt recoverable after
@@ -861,14 +852,17 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   useEffect(() => {
     let cancelled = false
     const loadScheduleDefaults = async () => {
+      setScheduleDefaultsStatus('loading')
       try {
         const response = await api.getSystemSettings()
         if (!cancelled) {
           setScheduleDefaults(normalizeScheduleDefaults(response.schedule_defaults))
+          setScheduleDefaultsStatus('ready')
         }
       } catch {
         if (!cancelled) {
           setScheduleDefaults(DEFAULT_SCHEDULE_DEFAULTS)
+          setScheduleDefaultsStatus('error')
         }
       }
     }
@@ -876,16 +870,18 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [api, scheduleDefaultsRetry])
   useEffect(() => {
     let cancelled = false
     const loadInventory = async () => {
       setGeneratorInventoryLoading(true)
       setGeneratorInventoryError('')
+      setInventoryCheckedAt('')
       try {
         const response = await api.getSystemInventory()
         if (!cancelled) {
           setGeneratorInventory(response.generators || [])
+          setInventoryCheckedAt(new Date().toLocaleTimeString())
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -900,7 +896,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     return () => {
       cancelled = true
     }
-  }, [api])
+  }, [api, inventoryRefresh])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
   const replaceScheduleDraft = useCallback((next: ScheduleDraft) => {
@@ -928,6 +924,20 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     replaceScheduleDraft(buildDefaultScheduleDraft())
   }, [activeProjectID, replaceScheduleDraft, scenarioId])
 
+  useEffect(() => {
+    if (editingScheduleId || scheduleDefaultsStatus !== 'ready') return
+    setScheduleDraft(previous => ({ ...previous, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' }))
+    setScheduleDraftBaseline(previous => ({ ...previous, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' }))
+  }, [editingScheduleId, scheduleDefaults, scheduleDefaultsStatus])
+
+  const schedulePreviewKey = JSON.stringify([activeProjectID, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
+  const currentSchedulePreview = schedulePreview?.key === schedulePreviewKey ? schedulePreview : null
+  const schedulePreviewPending = Boolean(scenarioId && scheduleDraft.cron_expr.trim() && !currentSchedulePreview)
+  const scheduleFormError = !editingScheduleId && scheduleDefaultsStatus !== 'ready' ? 'System scheduling defaults are not verified.'
+    : !scheduleDraft.name.trim() ? 'Enter a schedule name.'
+    : !scheduleDraft.cron_expr.trim() ? 'Enter a schedule frequency or cron expression.'
+      : currentSchedulePreview?.error || ''
+
   // Live "next runs" preview: re-fetch (debounced) from the backend so the
   // shown fire times use the exact production cron evaluator (tz/DST/windows/
   // pause/Quartz specifiers) and cannot diverge from what the scheduler will do.
@@ -951,13 +961,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
         disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
       }, 5).then(result => {
-        if (!cancelled) setSchedulePreview({ occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '' })
+        if (!cancelled) setSchedulePreview({ key: schedulePreviewKey, occurrences: result.occurrences || [], error: '', conflictSummary: result.conflict_summary || '' })
       }).catch(err => {
-        if (!cancelled) setSchedulePreview({ occurrences: [], error: getErrorMessage(err, 'Invalid schedule') })
+        if (!cancelled) setSchedulePreview({ key: schedulePreviewKey, occurrences: [], error: getErrorMessage(err, 'Invalid schedule') })
       })
     }, 400)
     return () => { cancelled = true; window.clearTimeout(handle) }
-  }, [api, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
+  }, [api, schedulePreviewKey, scenarioId, scheduleDraft.cron_expr, scheduleDraft.timezone, scheduleDraft.blackout_windows, scheduleDraft.maintenance_windows, scheduleDraft.availability_windows, scheduleDraft.disabled_from, scheduleDraft.disabled_until])
 
   const release = useMemo(() => releases.find(item => item.id === releaseId), [releases, releaseId])
   const effectiveRunDuration = useMemo(() => getEffectiveRunDuration(scenario, runDefaultOverrides), [scenario, runDefaultOverrides])
@@ -1145,6 +1155,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       const res = await api.listScenarioSchedules(currentScenarioId)
       if (!isCurrentScheduleScope(scope) || requestGeneration !== scheduleRequestGenerationRef.current) return
       setSchedules(res.schedules || [])
+      setCatalogRefresh(value => value + 1)
     } catch (err: unknown) {
       if (isCurrentScheduleScope(scope) && requestGeneration === scheduleRequestGenerationRef.current) {
         setError(getErrorMessage(err, 'Unable to load schedules'))
@@ -1174,7 +1185,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       : immediatePreflightLoading || estimateLoading
         ? 'Refreshing estimate...'
         : capacityAdvisory
-          ? `${formatCount(capacityAdvisory.recommended_generators, 'generator')} needed; ${capacityAdvisory.available_generators} available`
+          ? `${formatCount(capacityAdvisory.recommended_generators, 'generator')} estimated; ${capacityAdvisory.available_generators} targets in the capacity estimate. Check live host inventory below. Updated ${immediatePreflight?.capacity_advisory ? preflightCheckedAt : estimateCheckedAt}.`
           : 'Pending estimate'
     const bottleneckValue = !scenario
       ? 'Not available'
@@ -1195,14 +1206,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       { label: 'Run Overrides', value: formatCount(runOverridesCount, 'override') },
       { label: 'Host Placement', value: groupPlacementSummary(groupRunOverrides, scenario?.scripts) },
       { label: 'Data Pools', value: dataPoolValue },
-      { label: 'Capacity', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
-      { label: 'Bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
-      { label: 'Reservation Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
-      { label: `Reserved Window (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, value: formatReservationWindow(immediatePreflight) },
+      { label: 'Capacity estimate', value: capacityValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
+      { label: 'Estimated bottleneck', value: bottleneckValue, tone: capacityAdvisory?.requires_override ? 'warning' : 'normal' },
+      { label: 'Preflight Decision', value: formatLaunchDecision(immediatePreflight, immediatePreflightLoading), tone: launchBlocked ? 'warning' : 'normal' },
+      { label: `Proposed launch window (${Intl.DateTimeFormat().resolvedOptions().timeZone})`, value: formatReservationWindow(immediatePreflight) },
       { label: 'Conflicts', value: launchConflict ? launchConflict.message : 'None', tone: launchConflict ? 'warning' : 'normal' },
       { label: 'Next Blocking Event', value: formatNextBlockingEvent(immediatePreflight), tone: launchBlocked ? 'warning' : 'normal' },
     ]
-  }, [draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
+  }, [estimateCheckedAt, preflightCheckedAt, draftEstimate?.capacity_advisory, effectiveRunDuration, effectiveScenarioGroups.length, estimateLoading, groupRunOverrides, immediatePreflight, immediatePreflightLoading, protocols, release?.name, runName, runOverridesCount, scenario, totalVUsers])
   const readiness = useMemo(() => {
     const checks = [
       { label: activeApplication ? `Application: ${activeApplication.name}` : 'Select an application', ready: !!activeApplication },
@@ -1214,9 +1225,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }, [activeApplication, release, scenario])
   const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
+  const timeslotValidationError = selectedTimeslotId && !bindableTimeslots.some(slot => slot.id === selectedTimeslotId) ? 'The saved capacity reservation is unavailable. Refresh capacity or explicitly choose another reservation before launching.' : ''
   const runSetupValidationError = useMemo(
-    () => validateRunSetup(scenario, effectiveScenarioGroups),
-    [effectiveScenarioGroups, scenario],
+    () => timeslotValidationError || validateRunSetup(scenario, effectiveScenarioGroups),
+    [effectiveScenarioGroups, scenario, timeslotValidationError],
   )
   const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError
   const buildCurrentRunCreatePayload = useCallback((
@@ -1262,7 +1274,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     void refreshSchedules(scenarioId)
   }, [refreshSchedules, scenarioId])
   useEffect(() => {
-    if (!editingScheduleId) {
+    if (!editingScheduleId && JSON.stringify(scheduleDraftRef.current) === JSON.stringify(scheduleBaselineRef.current)) {
       replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
     }
   }, [editingScheduleId, releaseId, replaceScheduleDraft, scenario, scheduleDefaults])
@@ -1277,7 +1289,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     const timer = window.setTimeout(async () => {
       try {
         const estimate = await api.estimateTest(runCreatePayload)
-        if (!cancelled) setDraftEstimate(estimate)
+        if (!cancelled) { setDraftEstimate(estimate); setEstimateCheckedAt(new Date().toLocaleTimeString()) }
       } catch {
         if (!cancelled) setDraftEstimate(null)
       } finally {
@@ -1285,7 +1297,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [api, runCreatePayload])
+  }, [api, runCreatePayload, inventoryRefresh])
 
   useEffect(() => {
     if (!runCreatePayload) {
@@ -1301,7 +1313,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     const timer = window.setTimeout(async () => {
       try {
         const preflight = await api.preflightTest({ ...runCreatePayload, intent: 'immediate' })
-        if (!cancelled) setImmediatePreflight(preflight)
+        if (!cancelled) { setImmediatePreflight(preflight); setPreflightCheckedAt(new Date().toLocaleTimeString()) }
       } catch (cause: unknown) {
         if (!cancelled) {
           setImmediatePreflight(null)
@@ -1312,7 +1324,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       }
     }, 400)
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [api, runCreatePayload])
+  }, [api, runCreatePayload, inventoryRefresh])
 
   useEffect(() => {
     if (!runCreatePayload || !scheduledStartISO) {
@@ -1379,7 +1391,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     const currentGroupOverrides = groupRunOverridesRef.current
     const currentRunCreatePayload = buildCurrentRunCreatePayload(currentRunDefaults, currentGroupOverrides)
     const currentEffectiveGroups = buildEffectiveScenarioGroups(scenario, currentGroupOverrides)
-    const currentRunSetupValidationError = validateRunSetup(scenario, currentEffectiveGroups)
+    const currentRunSetupValidationError = timeslotValidationError || validateRunSetup(scenario, currentEffectiveGroups)
     if (!canManageTests) {
       setError('Current session cannot create, reserve, or start test runs for this project.')
       return false
@@ -1493,6 +1505,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       }
       if (!test) throw new Error('Unable to recover the created queued run')
       const openCreatedRun = (id: string, commandCenter = true) => {
+        clearNewTestDraft(activeProjectID, activeApplication.id)
+        setSavedDraft(null)
         // The submitted form is durable; clear its guard before navigating.
         flushSync(resetRunSetup)
         ;(commandCenter ? (onOpenCommandCenter || onSelectTest) : onSelectTest)(id)
@@ -1640,11 +1654,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     replaceScheduleDraft(buildDefaultScheduleDraft(scenario, releaseId, scheduleDefaults))
   }, [releaseId, replaceScheduleDraft, scenario, scheduleDefaults])
 
-  const runNameDirty = Boolean(runName.trim() && runName.trim() !== (scenario?.name || '').trim())
-  const releaseDirty = Boolean(releaseId && releaseId !== defaultReleaseId)
+  const runNameDirty = Boolean(scenario && runName !== scenario.name)
+  const releaseDirty = releaseId !== defaultReleaseId
   const pendingDefaultDirty = Boolean(editingDefaultKey && hasDefaultEditChanges)
   const pendingGroupDirty = Boolean(editingGroupKey && hasGroupEditChanges)
-  const newTestDirty = pageMode === 'launch' && Boolean(
+  const newTestDirty = Boolean(
     runNameDirty
     || releaseDirty
     || runOverridesCount > 0
@@ -1654,29 +1668,44 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     || pendingDefaultDirty
     || pendingGroupDirty
   )
-  const scheduleDraftDirty = pageMode === 'schedules'
-    && JSON.stringify(scheduleDraft) !== JSON.stringify(scheduleDraftBaseline)
-  createQueuedRunRef.current = async () => {
-    if (!savePendingRunEditorsRef.current()) return false
-    const created = await createRun('queue', { navigate: false })
-    if (created) resetRunSetup()
-    return created
+  const scheduleDraftDirty = JSON.stringify(scheduleDraft) !== JSON.stringify(scheduleDraftBaseline)
+  const buildCurrentDraft = (): NewTestDraft => ({
+      version: 1, projectId: activeProjectID, applicationId: activeApplication?.id || '',
+      scenarioId: scenario?.id || '', scenarioUpdatedAt: scenario?.updated_at || '', pageMode,
+      runName, releaseId, runDefaultOverrides: runDefaultOverridesRef.current,
+      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, newReleaseName, showNewRelease,
+      scheduleDraft, editingScheduleId,
+    })
+  const savedDraftMatches = savedDraft && JSON.stringify({ ...savedDraft, pageMode: null }) === JSON.stringify({ ...buildCurrentDraft(), pageMode: null })
+  const hasUnsavedChanges = (newTestDirty || scheduleDraftDirty) && (!savedDraftMatches || pendingDefaultDirty || pendingGroupDirty)
+  saveDraftRef.current = () => {
+    if (!savePendingRunEditorsRef.current() || !activeProjectID || !activeApplication || !scenario) return false
+    const draft = buildCurrentDraft()
+    try {
+      saveNewTestDraft(draft)
+      setSavedDraft(draft)
+      setDraftNotice('Draft saved in this browser tab. No run or recurring trigger was created.')
+      return true
+    } catch {
+      setError('Draft could not be saved in this browser. Keep this page open and try again.')
+      return false
+    }
   }
   resetRunSetupRef.current = resetRunSetup
   resetScheduleSetupRef.current = resetScheduleSetup
-  newTestDirtyRef.current = newTestDirty
-  scheduleDirtyRef.current = scheduleDraftDirty
+  newTestDirtyRef.current = hasUnsavedChanges && newTestDirty
+  scheduleDirtyRef.current = hasUnsavedChanges && scheduleDraftDirty
   const newTestGuard = useMemo<NavigationGuard>(() => ({
     id: 'new-test-run-setup',
-    label: 'New Test setup or schedule',
+    label: 'New Test draft (saving does not create or start a test)',
     isDirty: () => newTestDirtyRef.current || scheduleDirtyRef.current,
-    save: () => scheduleDirtyRef.current ? saveScheduleRef.current() : createQueuedRunRef.current(),
+    save: () => saveDraftRef.current(),
     discard: () => {
       if (scheduleDirtyRef.current) resetScheduleSetupRef.current()
       if (newTestDirtyRef.current) resetRunSetupRef.current()
     },
   }), [])
-  useNavigationGuard(newTestGuard, newTestDirty || scheduleDraftDirty)
+  useNavigationGuard(newTestGuard, hasUnsavedChanges)
 
   const openRunDefaultEditor = (key: RunDefaultKey) => {
     if (!scenario) return
@@ -2217,6 +2246,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	  setError('Choose a scenario before managing schedules.')
 	  return false
 	}
+	if (schedulePreviewPending || scheduleFormError) {
+      setError(scheduleFormError || 'Wait for the schedule preview before saving.')
+      return false
+    }
 	const scope = {
 	  projectID: activeProjectID,
 	  scenarioID: scenario.id,
@@ -2415,7 +2448,32 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 		  }
 		}
 
-  saveScheduleRef.current = submitSchedule
+
+  useEffect(() => {
+    setSavedDraft(readNewTestDraft(activeProjectID, activeApplication?.id || ''))
+    setRestoreDraft(null)
+    setDraftNotice('')
+  }, [activeProjectID, activeApplication?.id])
+  useEffect(() => {
+    if (!restoreDraft || !scenario || restoreDraft.scenarioId !== scenario.id) return
+    if (restoreDraft.projectId !== activeProjectID || restoreDraft.applicationId !== activeApplication?.id) return
+    runDefaultOverridesRef.current = restoreDraft.runDefaultOverrides
+    groupRunOverridesRef.current = restoreDraft.groupRunOverrides
+    setRunDefaultOverrides(restoreDraft.runDefaultOverrides)
+    setGroupRunOverrides(restoreDraft.groupRunOverrides)
+    setNewReleaseName(restoreDraft.newReleaseName)
+    setShowNewRelease(restoreDraft.showNewRelease)
+    setRunName(restoreDraft.runName)
+    setReleaseId(restoreDraft.releaseId)
+    setScheduledStartLocal(restoreDraft.scheduledStartLocal)
+    setSelectedTimeslotId(restoreDraft.selectedTimeslotId)
+    setScheduleDraft(restoreDraft.editingScheduleId ? restoreDraft.scheduleDraft : { ...restoreDraft.scheduleDraft, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' })
+    setEditingScheduleId(restoreDraft.editingScheduleId)
+    setPageMode(restoreDraft.pageMode)
+    setExpandedScenarioId(scenario.id)
+    setRestoreDraft(null)
+    setDraftNotice('Saved draft restored. Review current capacity and settings before starting or scheduling.')
+  }, [restoreDraft, scenario, activeProjectID, activeApplication?.id, scheduleDefaults])
 
   const showStartNow = true
   const startNowAllowed = Boolean(immediatePreflight?.start_now_allowed)
@@ -2429,7 +2487,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       value={pageMode}
       ariaLabel="New test page view"
       className="new-test-view-toggle topbar-page-section-toggle"
-      onChange={nextMode => runGuarded(() => setPageMode(nextMode))}
+      onChange={nextMode => runGuarded(() => setPageMode(nextMode), ['new-test-run-setup'])}
       options={[
         { value: 'launch', label: 'Run Setup' },
         { value: 'schedules', label: 'Schedules' },
@@ -2459,6 +2517,19 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         )}
       </div>
 
+      <div className="new-test-draft-toolbar">
+        <span>Run Setup and Schedules keep your edits when switching tabs.</span>
+        <button type="button" className="btn btn-secondary" onClick={() => saveDraftRef.current()} disabled={!scenario}>Save draft</button>
+        {savedDraft && <button type="button" className="btn btn-secondary" onClick={() => runGuarded(() => {
+          if (!scenarios.some(item => item.id === savedDraft.scenarioId && (item.updated_at || '') === savedDraft.scenarioUpdatedAt)) {
+            setError('The saved scenario has changed or is no longer available. Select it again and review its current settings.')
+            return
+          }
+          setScenarioId(savedDraft.scenarioId)
+          setRestoreDraft(savedDraft)
+        })}>Restore saved draft</button>}
+      </div>
+      {draftNotice && <p role="status">{draftNotice}</p>}
       {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
       {effectiveAccessLoaded && effectiveAccessError && (
         <div className="settings-error-inline page-error-banner" role="alert">
@@ -2506,12 +2577,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       {pageMode === 'schedules' ? (
         <div className="new-test-layout new-test-schedules-layout">
           <div className="new-test-main">
+            <NewTestScheduleCatalog scenarios={scenarios} projectId={activeProjectID} revision={catalogRefresh} onSelectScenario={id => runGuarded(() => { setScenarioId(id); setScheduleQuery('') })} />
+
             <section className="new-test-step">
               <div className="new-test-step-header">
                 <span className="new-test-step-index">1</span>
                 <div className="new-test-step-header-content">
                   <h3>Scenario Schedule</h3>
-                  <p>Bind a recurring cron expression to a reusable scenario.</p>
+                  <p>Choose when the stored scenario runs. Run Setup overrides are not used by recurring schedules.</p>
                 </div>
                 <div className="new-test-step-header-actions">
                   {editingScheduleId && (
@@ -2526,17 +2599,18 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       Cancel Edit
                     </button>
                   )}
-                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests}>
+                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests || schedulePreviewPending || Boolean(scheduleFormError)}>
                     {editingScheduleId ? 'Update Schedule' : 'Save Schedule'}
                   </button>
                 </div>
               </div>
-              <div className="settings-group">
+              <div className="settings-group new-test-schedule-fields">
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label" id="schedule-scenario-label">Scenario</span>
                     <span className="setting-desc">Recurring runs always execute one stored scenario</span>
                   </div>
+                  <input type="search" className="settings-input" aria-label="Search schedule scenarios" placeholder="Name or reference key" value={scheduleQuery} onChange={event => setScheduleQuery(event.target.value)} />
                   <select className="settings-input" aria-labelledby="schedule-scenario-label" value={scenarioId} onChange={(event) => {
                     const nextScenarioID = event.target.value
                     runGuarded(() => {
@@ -2545,7 +2619,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     })
                   }}>
                     <option value="">Select scenario</option>
-                    {scenarios.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    {[...scenarios].sort((a, b) => scenarioIdentity(a).localeCompare(scenarioIdentity(b))).filter(item => item.id === scenarioId || scenarioSearchText(item).includes(scheduleQuery.toLowerCase())).map(item => <option key={item.id} value={item.id}>{scenarioIdentity(item)} · {item.duration} · {totalScenarioVUsers(item)} VUsers</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
@@ -2553,7 +2627,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <span className="setting-label" id="schedule-name-label">Schedule Name</span>
                     <span className="setting-desc">Human-friendly label for the recurring trigger</span>
                   </div>
-                  <input className="settings-input" aria-labelledby="schedule-name-label" value={scheduleDraft.name} onChange={(event) => setScheduleDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Nightly smoke" />
+                  <input className="settings-input" required aria-invalid={!scheduleDraft.name.trim()} aria-describedby={!scheduleDraft.name.trim() ? "new-test-schedule-name-error" : undefined} aria-labelledby="schedule-name-label" value={scheduleDraft.name} onChange={(event) => setScheduleDraft(prev => ({ ...prev, name: event.target.value }))} placeholder="Nightly smoke" />
+                  {!scheduleDraft.name.trim() && <span id="new-test-schedule-name-error" role="alert">Enter a schedule name.</span>}
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
@@ -2565,15 +2640,17 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   </div>
                   <div className="cron-field-stack">
                     <CronBuilder value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(expr) => setScheduleDraft(prev => ({ ...prev, cron_expr: expr }))} />
-<details><summary>Advanced cron expression</summary>                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" /></details>
-                    {schedulePreview && (
-                      schedulePreview.error ? (
-                        <span className="setting-desc cron-preview-error" role="alert">{schedulePreview.error}</span>
-                      ) : schedulePreview.occurrences.length > 0 ? (
+<details><summary>Advanced cron expression</summary>                    <input className="settings-input cron-raw-input" value={scheduleDraft.cron_expr} disabled={!canManageTests} onChange={(event) => setScheduleDraft(prev => ({ ...prev, cron_expr: event.target.value }))} placeholder="0 9 * * 1-5" aria-label="Raw cron expression" aria-invalid={Boolean(currentSchedulePreview?.error) || !scheduleDraft.cron_expr.trim()} aria-describedby={currentSchedulePreview?.error || !scheduleDraft.cron_expr.trim() ? "new-test-cron-error" : undefined} /></details>
+                    {!scheduleDraft.cron_expr.trim() && <p id="new-test-cron-error" role="alert">Enter a schedule frequency or cron expression.</p>}
+                    {schedulePreviewPending && <p role="status">Refreshing next runs…</p>}
+                    {currentSchedulePreview && (
+                      currentSchedulePreview.error ? (
+                        <span id="new-test-cron-error" className="setting-desc cron-preview-error" role="alert">{currentSchedulePreview.error}</span>
+                      ) : currentSchedulePreview.occurrences.length > 0 ? (
                         <div className="cron-next-runs">
                           <span className="setting-desc">Next runs ({scheduleDraft.timezone || 'UTC'}):</span>
                           <ul>
-                            {schedulePreview.occurrences.map((iso, idx) => (
+                            {currentSchedulePreview.occurrences.map((iso, idx) => (
                               <li key={idx}>{formatScheduleTimestampInZone(iso, scheduleDraft.timezone)}</li>
                             ))}
                           </ul>
@@ -2582,9 +2659,9 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         <span className="setting-desc">No upcoming runs match this schedule within the next year.</span>
                       )
                     )}
-                    {schedulePreview && !schedulePreview.error && schedulePreview.conflictSummary && (
+                    {currentSchedulePreview && !currentSchedulePreview.error && currentSchedulePreview.conflictSummary && (
                       <span className="setting-desc cron-preview-error" role="alert">
-                        ⚠ This schedule will be blocked until resolved: {schedulePreview.conflictSummary}
+                        ⚠ This schedule will be blocked until resolved: {currentSchedulePreview.conflictSummary}
                       </span>
                     )}
                   </div>
@@ -2626,6 +2703,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   </div>
                   <input className="settings-input" aria-labelledby="schedule-run-name-label" value={scheduleDraft.run_name_template} onChange={(event) => setScheduleDraft(prev => ({ ...prev, run_name_template: event.target.value }))} placeholder={scenario?.name || 'Scheduled run'} />
                 </div>
+                <section className="new-test-schedule-policy" aria-label="Effective schedule policies">
+                  <h4>Effective schedule policies</h4>
+                  {!editingScheduleId && scheduleDefaultsStatus !== 'ready' && <p role="alert">Scheduling defaults {scheduleDefaultsStatus === 'loading' ? 'are loading' : 'could not be loaded'}. Save is unavailable until they are verified.<button type="button" className="btn btn-secondary btn-sm" onClick={() => setScheduleDefaultsRetry(value => value + 1)}>Retry scheduling defaults</button></p>}
+                  <p>Source: {editingScheduleId ? 'saved schedule' : 'system scheduling defaults'}. These policies are submitted with this schedule.</p>
+                  <dl><dt>Approval</dt><dd>{formatScheduleToken(scheduleDraft.approval_policy)}</dd><dt>Missed runs</dt><dd>{formatScheduleToken(scheduleDraft.missed_run_policy)}</dd></dl>
+                  <p>To change defaults, review scheduling settings with your administrator.</p>
+                  {scenario && <p>Stored workload: <strong>{scenarioIdentity(scenario)}</strong> · {totalScenarioVUsers(scenario)} VUsers · {scenario.duration} · {scenario.scripts.length} groups. Run-only overrides do not apply.</p>}
+                </section>
                 <details className="schedule-policy-details"><summary>Optional schedule windows and pauses</summary>
                 <ScheduleWindowListEditor
                   title="Blackout windows"
@@ -2686,11 +2771,12 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               </div>
             </section>
 
-            <section className="new-test-step">
+            <section className="new-test-step" aria-label="Selected scenario schedules">
               <div className="new-test-step-header">
                 <span className="new-test-step-index">2</span>
                 <div>
                   <h3>Recurring Triggers</h3>
+                  <p>Schedules for {scenario ? scenarioIdentity(scenario) : 'the selected scenario'}</p>
                   <p>Review next run times, recent executions, and disable or remove stale schedules.</p>
                 </div>
               </div>
@@ -2868,8 +2954,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
         </div>
       ) : (
-      <div className="new-test-layout">
+      <div className="new-test-layout new-test-workspace">
         <div className="new-test-main">
+          {scenario && <section className="new-test-selected" aria-label="Selected scenario">
+            <span>Selected scenario</span><strong>{scenarioIdentity(scenario)}</strong>
+            <span>{formatScenarioWorkloadSummary(scenario)} · {scenario.duration} · Results release: {release?.name || 'Select a release'}</span>
+            <button className="btn btn-secondary btn-sm" type="button" onClick={() => { setScenarioQuery(scenario.id); setScenarioReleaseFilter(''); setExpandedScenarioId(scenario.id) }}>Show selected scenario</button>
+          </section>}
+
           <section className="new-test-step">
             <div className="new-test-step-header">
               <span className={`new-test-step-index${step1Complete ? ' complete' : ''}`}>{step1Complete ? '✓' : '1'}</span>
@@ -2914,6 +3006,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         placeholder="Find by scenario, script, protocol, release, or data pool..."
                       />
                     </label>
+                    <label className="library-filter"><span>Sort scenarios</span><select aria-label="Sort scenarios" value={scenarioSortField} onChange={event => setScenarioSortField(event.target.value as ScenarioSortField)}>
+                      <option value="name">Name</option><option value="releases">Releases</option><option value="last_run_at">Most recent run</option><option value="vusers">VUsers</option><option value="duration">Duration</option><option value="groups">Groups</option>
+                    </select></label>
+                    <button className="btn btn-secondary btn-sm" type="button" onClick={() => setScenarioSortDirection(value => value === 'asc' ? 'desc' : 'asc')}>{scenarioSortDirection === 'asc' ? 'Ascending' : 'Descending'}</button>
                     <div className="new-test-scenario-count">
                       {scenarioFiltersActive ? `${filteredScenarios.length} matching scenario${filteredScenarios.length === 1 ? '' : 's'}` : `${scenarios.length} available scenario${scenarios.length === 1 ? '' : 's'}`}
                     </div>
@@ -2962,7 +3058,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                     <td className="cell-name">
                                       <div className="new-test-scenario-name-cell">
                                         <span className="new-test-row-expander" aria-hidden="true">{expanded ? 'v' : '>'}</span>
-                                        <span>{item.name}</span>
+                                        <span>{item.name}<small className="new-test-reference">{item.ref_key || item.id}</small></span>
                                         <span className={`new-test-scenario-card-mode ${item.scenario_mode === 'goal_oriented' ? 'goal' : ''}`}>{formatScenarioModeShort(item.scenario_mode)}</span>
                                       </div>
                                       <div className="new-test-scenario-card-meta">{formatScenarioWorkloadSummary(item)}</div>
@@ -2989,40 +3085,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                     <tr className="no-hover new-test-scenario-expanded-row" id={`new-test-scenario-groups-${item.id}`}>
                               <td colSpan={7} aria-label="Scenario script groups">
                                         <div className="new-test-scenario-groups-panel">
+                                          <p>Releases: {formatScenarioReleaseSummary(item)} · Most recent run: {formatDate(item.last_run_at)}</p>
                                           <div className="new-test-scenario-groups-header">
                                             <strong>Script Groups</strong>
                                             <span>{formatCount(groupsForDisplay.length, 'group')}</span>
                                           </div>
                                           <div className="data-table">
                                             <table className="new-test-script-table">
-                                              <colgroup>
-                                                <col className="new-test-script-col-group" />
-                                                <col className="new-test-script-col-script" />
-                                                <col className="new-test-script-col-protocol" />
-                                                <col className="new-test-script-col-workload" />
-                                                <col className="new-test-script-col-iterations" />
-                                                <col className="new-test-script-col-pacing" />
-                                                <col className="new-test-script-col-think" />
-                                                <col className="new-test-script-col-log" />
-                                                <col className="new-test-script-col-auto" />
-                                                <col className="new-test-script-col-error" />
-                                                <col className="new-test-script-col-placement" />
-                                              </colgroup>
-                                              <thead>
-                                                <tr>
-                                                  <th>Group</th>
-                                                  <th>Script</th>
-                                                  <th>Protocol</th>
-                                                  <th>Workload</th>
-                                                  <th>Iterations</th>
-                                                  <th>Pacing</th>
-                                                  <th>Think Time</th>
-                                                  <th>Log Level</th>
-                                                  <th>Auto Tx</th>
-                                                  <th>Error Handling</th>
-                                                  <th>Placement</th>
-                                                </tr>
-                                              </thead>
+                                              <thead><tr><th>Group / script</th><th>Workload</th><th>Runtime / placement</th></tr></thead>
                                               <tbody>
                                                 {groupsForDisplay.length > 0 ? groupsForDisplay.map((group, index) => {
                                                   const sourceGroup = item.scripts[index] || group
@@ -3046,11 +3116,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                                       }}
                                                     >
                                                       <td className="cell-name">
-                                                        <span>{group.name || group.script_name}</span>
+                                                        <span>{group.name || group.script_name}</span><small>{group.script_name || group.script_id} · {group.protocol || 'http'}</small>
+                                                        {selected && <button type="button" className="btn btn-secondary btn-sm" aria-label={`Edit settings for ${group.name || group.script_name || 'script group'}`} onClick={event => { event.stopPropagation(); openGroupEditor(sourceGroup) }}>Edit settings</button>}
                                                         {rowOverridden && <em className="new-test-override-pill">Run override</em>}
                                                       </td>
-                                                      <td>{group.script_name || group.script_id}</td>
-                                                      <td><span className="protocol-badge">{group.protocol || 'http'}</span></td>
                                     <td aria-label="Group workload">
                                                         <div className="new-test-workload-stack">
                                                           <strong>{group.vusers} VUsers</strong>
@@ -3058,18 +3127,17 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                                           <span>{group.initialization === 'at_once' ? 'Init at once' : 'Init at runtime'}</span>
                                                         </div>
                                                       </td>
-                                                      <td className="new-test-runtime-cell">{runtimeValues.iterations}</td>
-                                                      <td className="new-test-runtime-cell">{runtimeValues.pacing}</td>
-                                                      <td className="new-test-runtime-cell">{runtimeValues.thinkTime}</td>
-                                                      <td className="new-test-runtime-cell">{runtimeValues.logLevel}</td>
-                                                      <td className="new-test-runtime-cell">{runtimeValues.autoTransactions}</td>
-                                                      <td className="new-test-runtime-cell">{runtimeValues.errorHandling}</td>
-                                                      <td className="new-test-runtime-cell">{formatGroupPlacement(override, sourceGroup)}</td>
+                                                      <td className="new-test-runtime-cell">
+                                                        <p>{formatGroupPlacement(override, sourceGroup)}</p>
+                                                        <details onClick={event => event.stopPropagation()}><summary>Runtime details</summary>
+                                                          <dl><dt>Iterations</dt><dd>{runtimeValues.iterations}</dd><dt>Pacing</dt><dd>{runtimeValues.pacing}</dd><dt>Think time</dt><dd>{runtimeValues.thinkTime}</dd><dt>Log level</dt><dd>{runtimeValues.logLevel}</dd><dt>Auto transactions</dt><dd>{runtimeValues.autoTransactions}</dd><dt>Error handling</dt><dd>{runtimeValues.errorHandling}</dd></dl>
+                                                        </details>
+                                                      </td>
                                                     </tr>
                                                   )
                                                 }) : (
                                                   <tr>
-                                                    <td colSpan={11} className="cell-muted">No script groups included in this scenario.</td>
+                                                    <td colSpan={3} className="cell-muted">No script groups included in this scenario.</td>
                                                   </tr>
                                                 )}
                                               </tbody>
@@ -3138,7 +3206,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <button className="btn btn-ghost btn-sm btn-accent-action new-test-add-release-link" onClick={() => setShowNewRelease(true)}>+ New Release</button>
                   )}
                 </div>
-                {bindableTimeslots.length > 0 && (
+                {(bindableTimeslots.length > 0 || selectedTimeslotId) && (
                   <div className="setting-row">
                     <div className="setting-info">
                       <span className="setting-label" id="new-test-timeslot-label">Reserved Timeslot</span>
@@ -3146,6 +3214,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     </div>
                     <select className="settings-input" aria-labelledby="new-test-timeslot-label" value={selectedTimeslotId} onChange={event => setSelectedTimeslotId(event.target.value)}>
                       <option value="">No reservation</option>
+                      {timeslotValidationError && <option value={selectedTimeslotId}>Unavailable saved reservation — review required</option>}
                       {bindableTimeslots.map(slot => (
                         <option key={slot.id} value={slot.id}>
                           {formatTimeslotLabel(slot)}
@@ -3215,6 +3284,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
             </section>
           </div>
 
+          {scenario && <NewTestReadiness scenario={scenario} projectId={activeProjectID} />}
         </div>
 
         <aside className="new-test-sidebar-column" hidden={!scenario}>
@@ -3372,7 +3442,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 </div>
                 <div className="new-test-profile-meta">
                   <span>{formatTimeCompact(runLoadProfilePreview.totalSeconds)} total</span>
-                  <span>{formatTimeCompact(runLoadProfilePreview.steadySeconds)} steady</span>
+                  <span>{formatTimeCompact(runLoadProfilePreview.steadySeconds)} load window (includes ramp-up)</span>
                 </div>
               </>
             ) : (
@@ -3380,9 +3450,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
             )}
           </section>
 
-          <section className="new-test-launch-card" aria-label="Hold for Manual Start or Schedule Run">
+          <section className="new-test-launch-card" aria-label="Run timing">
             <FormErrorSummary issues={[{ message: immediatePreflightError || '' }, { message: runSetupValidationError || '' }]} />
-            <h3>Hold for Manual Start / Schedule Run</h3>
+            <h3>Run timing</h3>
+            <p>Start now, hold for a manual start, or schedule once. For repetition, use Schedules.</p>
+            {scenario && <p><strong>{scenarioIdentity(scenario)}</strong> · {totalVUsers} VUsers · {effectiveRunDuration} · {release?.name || 'No release selected'}</p>}
               <div className="new-test-launch-actions">
 
               {immediatePreflightLoading && !immediatePreflight && (
@@ -3427,6 +3499,9 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
           <section className="new-test-summary">
             <h3>Run Summary</h3>
+            <p>Capacity is an estimate. The proposed window is not reserved until you hold or schedule the run.</p>
+            <p>{generatorInventoryError || (inventoryCheckedAt ? `${generatorInventory.length} live inventory hosts · checked ${inventoryCheckedAt}` : 'Live inventory not yet verified')}</p>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={generatorInventoryLoading} onClick={() => { setInventoryRefresh(value => value + 1); void refreshBindableTimeslots() }}>Refresh capacity and inventory</button>
             <dl className="new-test-summary-list" aria-label="Run settings summary">
               {launchSummaryItems.map(item => (
                 <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>
@@ -3534,13 +3609,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 </section>
                 <section>
                   <h4>Load Generator Sharding <ChangedBadge changed={groupEditChanges.assignment} /></h4>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setInventoryRefresh(value => value + 1)}>Refresh host inventory</button>
                   <p className="new-test-inline-note">Saved host placement applies only to this run. Multiple hosts split this group by available capacity.</p>
                   {generatorInventoryLoading ? (
                     <div className="new-test-empty compact">Loading generator inventory...</div>
                   ) : (
                     <>
                       {generatorInventory.length === 0 && (
-                        <div className="new-test-empty compact">{generatorInventoryError || 'No load generators are registered. Automatic placement and capability rules remain available.'}</div>
+                        <div className="new-test-empty compact">{generatorInventoryError || 'No live registered hosts are listed. Capacity estimates may include configured or local execution capacity; automatic placement remains available.'}</div>
                       )}
                     <GroupPlacementEditor
                       assignment={assignmentFromGroupEditDraft(groupEditDraft)}
@@ -3769,7 +3845,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     </label>
                   </div>
                 </section>
-                <section>
+                {editingGroup?.protocol === 'browser' && <section>
                   <h4>Browser Runtime</h4>
                   <div className="new-test-default-editor-grid">
                     <label className={changedFieldClass(groupEditChanges.browser_device_profile)}>
@@ -3801,7 +3877,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       </select>
                     </label>
                   </div>
-                </section>
+                </section>}
               </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setEditingGroupKey(null)}>Cancel</button>

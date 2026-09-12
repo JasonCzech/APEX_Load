@@ -1,3 +1,7 @@
+import HelpWorkspace from './HelpWorkspace'
+import { useHelpHash } from '../hooks/useHelpHash'
+import { ApiGuideTopbarToggle } from './ApiGuideTopbarToggle'
+import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import { useEffect, useMemo, useState } from 'react'
 import { loadApiEndpointCatalog, loadSwaggerYaml } from '../apiDocsClient'
 import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
@@ -70,9 +74,14 @@ export default function SwaggerDocsPage({
 }: SwaggerDocsPageProps) {
   const [docsState, setDocsState] = useState<SwaggerDocsState | null>(null)
   const [loadError, setLoadError] = useState('')
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const document = useMemo(() => parseSwaggerDocument(docsState?.swaggerYaml || ''), [docsState?.swaggerYaml])
   const categories = useMemo(() => Array.from(new Set(document.operations.map(operation => operation.category))).sort(), [document.operations])
-  const [query, setQuery] = useState('')
+  const hash = useHelpHash()
+  const hasTopbar = useHasTopbarContributionProvider()
+  const initialQuery = new URLSearchParams(hash.split('?')[1] || '').get('search') || ''
+  const [query, setQuery] = useState(initialQuery)
+  useEffect(() => { setQuery(initialQuery) }, [initialQuery])
   const [category, setCategory] = useState('all')
   const [myAccessOnly, setMyAccessOnly] = useState(false)
   const allowedOperations = useMemo(() => buildAllowedOperationSet(effectiveAccessResources), [effectiveAccessResources])
@@ -95,9 +104,9 @@ export default function SwaggerDocsPage({
   const groupedOperations = useMemo(() => groupByCategory(filteredOperations), [filteredOperations])
   // Mirror ApiGuidePage's "any administrator" gate so the admin-only guide chip stays
   // visible while navigating across the shared API-guide toggle from the Swagger tab.
-  const isAdmin = ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts', 'manage_system']
+  const isAdmin = effectiveAccessLoaded && !effectiveAccessError && ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts', 'manage_system']
     .some(operation => allowedOperations.has(operation))
-  useApiGuideTopbarContribution('swagger', 'Swagger Docs', undefined, isAdmin)
+  useApiGuideTopbarContribution('swagger', 'Help & documentation', undefined, isAdmin)
 
   useEffect(() => {
     let cancelled = false
@@ -115,21 +124,19 @@ export default function SwaggerDocsPage({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadAttempt])
+  useEffect(() => { window.document.querySelector('.main-content')?.scrollTo?.({ top: 0, behavior: 'instant' }) }, [])
 
   return (
-    <div className="page swagger-docs-page">
-      <div className="page-header">
-        <div>
-          <h2>Swagger Docs</h2>
-          <p className="page-subtitle">{stripMarkdown(document.description) || 'Searchable route and access reference generated from the APEX Load OpenAPI document.'}</p>
-        </div>
-      </div>
-
+    <div className="page swagger-docs-page help-page">
+      {!hasTopbar && <ApiGuideTopbarToggle active="swagger" includeAdminGuide={isAdmin} />}
+      <HelpWorkspace area="general" activeArticle="api-reference" isAdmin={isAdmin}>
+      <header className="help-article-header"><h2>API Reference (OpenAPI)</h2></header>
       {!docsState && (
         <section className="api-guide-callout">
           <h3>{loadError ? 'API Docs Unavailable' : 'Loading API Docs'}</h3>
-          <p>{loadError || 'Loading the controller-backed OpenAPI document and endpoint catalog.'}</p>
+          <p role={loadError ? 'alert' : 'status'}>{loadError || 'Loading the controller-backed OpenAPI document and endpoint catalog.'}</p>
+          {loadError && <button type="button" onClick={() => setLoadAttempt(value => value + 1)}>Retry API reference</button>}
         </section>
       )}
 
@@ -139,7 +146,7 @@ export default function SwaggerDocsPage({
         <div>
           <span className="api-guide-kicker">OpenAPI</span>
           <h3 id="swagger-docs-title">{document.title}</h3>
-          <p>{document.serverUrl || 'http://localhost:8080'} · Version {document.version || '1.0.0'}</p>
+          <p>{document.serverUrl || 'http://localhost:8080'} · API schema version {document.version || '1.0.0'} (separate from the application build)</p>
         </div>
         <div className="swagger-docs-stats">
           <div><span>Operations</span><strong>{document.operations.length}</strong></div>
@@ -204,6 +211,7 @@ export default function SwaggerDocsPage({
       </section>
         </>
       )}
+      </HelpWorkspace>
     </div>
   )
 }

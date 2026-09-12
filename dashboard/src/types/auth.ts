@@ -264,6 +264,8 @@ export interface DashboardOnboardUserRequest extends DashboardCreateUserRequest 
 export type DashboardUserUsageBucket = UsageAccountingBucket
 
 export interface DashboardUserActivityResponse {
+  has_more?: boolean
+  usage_runs?: { id: string; name: string; project_id: string; actor: string; created_at: string; status: string }[]
   events: DashboardAuditEvent[]
   usage: UsageAccountingResponse
   count: number
@@ -328,6 +330,9 @@ export interface DashboardAuditEventListResponse {
 }
 
 export interface DashboardAuditEventFilter {
+  category?: 'fleet'
+  all?: 'true'
+  report?: 'usage'
   limit?: number
   offset?: number
   action?: string

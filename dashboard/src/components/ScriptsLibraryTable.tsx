@@ -1,3 +1,5 @@
+import LibraryPagination from './LibraryPagination'
+import { useLibraryPagination } from './useLibraryPagination'
 import RowActions from './ux/RowActions'
 import { Fragment, lazy, Suspense, useState } from 'react'
 
@@ -322,8 +324,11 @@ export default function ScriptsLibraryTable({
   const showSource = Boolean(federation)
   const folderNameById = new Map(folders.map(folder => [folder.id, folder.name]))
   const showLocal = !federation || federation.sourceFilter !== 'host'
-  const localScripts = showLocal ? scripts : []
-  const remoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
+  const allLocalScripts = showLocal ? scripts : []
+  const allRemoteRows = federation && federation.sourceFilter !== 'local' ? federation.remoteRows : []
+  const pagination = useLibraryPagination(allLocalScripts.length + allRemoteRows.length, JSON.stringify([allLocalScripts.map(script => script.id), allRemoteRows.map(item => item.id)]))
+  const localScripts = allLocalScripts.slice(pagination.start, pagination.end)
+  const remoteRows = allRemoteRows.slice(Math.max(0, pagination.start - allLocalScripts.length), Math.max(0, pagination.end - allLocalScripts.length))
   const selectableScriptCount = localScripts.filter(script => isAddressableScriptId(script.id)).length
   const selectedVisibleScriptCount = localScripts.filter(script => isAddressableScriptId(script.id) && selectedScriptIds.has(script.id!)).length
   const showSelection = canManageScripts && Boolean(onToggleScriptSelection) && Boolean(onToggleAllVisibleScripts)
@@ -331,7 +336,8 @@ export default function ScriptsLibraryTable({
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
   return (
     <div className="data-table">
-      <table className={`scripts-library-table ${showDetailColumns ? 'show-detail-columns' : ''}`}>
+      <LibraryPagination label="Script library" pagination={pagination} />
+      <table data-table-pagination="off" className={`scripts-library-table ${showDetailColumns ? 'show-detail-columns' : ''}`}>
         <caption className="script-table-column-control"><button className="btn btn-secondary btn-sm" type="button" aria-expanded={showDetailColumns} onClick={() => setShowDetailColumns(value => !value)}>{showDetailColumns ? 'Hide usage & dates' : 'Show usage & dates'}</button></caption>
         <thead>
           <tr>
@@ -340,15 +346,15 @@ export default function ScriptsLibraryTable({
                 <SelectAllCheckbox
                   selectedCount={selectedVisibleScriptCount}
                   visibleCount={selectableScriptCount}
-                  ariaLabel="Select all visible scripts"
-                  onChange={checked => onToggleAllVisibleScripts?.(checked)}
+                  ariaLabel="Select all scripts on this page"
+                  onChange={checked => localScripts.forEach(script => { if (isAddressableScriptId(script.id) && selectedScriptIds.has(script.id!) !== checked) onToggleScriptSelection?.(script.id!) })}
                 />
               </th>
             )}
             {showSource && <th>Source</th>}
             <SortHeader field="name" activeField={sortField} direction={sortDirection} label="Script" onActivate={onSort} />
             <SortHeader field="folder" activeField={sortField} direction={sortDirection} label="Folder" onActivate={onSort} />
-            <SortHeader field="authoring_health" activeField={sortField} direction={sortDirection} label="Health" onActivate={onSort} />
+            <SortHeader field="authoring_health" activeField={sortField} direction={sortDirection} label="Authoring health" onActivate={onSort} />
             <SortHeader field="scenario_count" activeField={sortField} direction={sortDirection} label="Usage" onActivate={onSort} />
             <SortHeader field="associated_releases" activeField={sortField} direction={sortDirection} label="Associated Releases" onActivate={onSort} />
             <SortHeader field="created_at" activeField={sortField} direction={sortDirection} label="Create Date" onActivate={onSort} />
@@ -654,7 +660,7 @@ export default function ScriptsLibraryTable({
                           <div className="cell-muted">No linked scenario runs for this script yet.</div>
                         ) : (
                           <div className="data-table">
-                            <table className="scripts-library-runs-table">
+                            <table data-table-pagination="on" className="scripts-library-runs-table">
                               <thead>
                                 <tr>
                                   <SortHeader field="name" activeField={innerSortField} direction={innerSortDirection} label="Run Name" onActivate={onInnerSort} />
@@ -662,7 +668,7 @@ export default function ScriptsLibraryTable({
                                   <SortHeader field="scenario_id" activeField={innerSortField} direction={innerSortDirection} label="Scenario ID" onActivate={onInnerSort} />
                                   <SortHeader field="release_id" activeField={innerSortField} direction={innerSortDirection} label="Release ID" onActivate={onInnerSort} />
                                   <SortHeader field="start_time" activeField={innerSortField} direction={innerSortDirection} label="Started" onActivate={onInnerSort} />
-                                  <SortHeader field="duration" activeField={innerSortField} direction={innerSortDirection} label="Duration" onActivate={onInnerSort} />
+                                  <SortHeader field="duration" activeField={innerSortField} direction={innerSortDirection} label="Configured duration" onActivate={onInnerSort} />
                                 </tr>
                               </thead>
                               <tbody>

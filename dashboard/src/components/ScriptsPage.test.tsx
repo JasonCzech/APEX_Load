@@ -305,6 +305,7 @@ describe('ScriptsPage', () => {
   })
 
   beforeEach(() => {
+    sessionStorage.clear()
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -527,6 +528,11 @@ describe('ScriptsPage', () => {
       'project-1',
       Array.from({ length: 20 }, (_, index) => `TOKEN_${index + 1}`).sort(),
     )
+    await act(async () => {
+      const rows = container.querySelector<HTMLSelectElement>('select[aria-label="Script library rows per page"]')!
+      rows.value = 'all'
+      rows.dispatchEvent(new Event('change', { bubbles: true }))
+    })
     const readyRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 1'))
     const stillPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 2'))
     expect(readyRow?.textContent).not.toContain('Checking secrets')
@@ -793,7 +799,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Script Library')
     expect(container.textContent).not.toContain('Script Library (')
     expect(container.textContent).not.toContain('Start New Script')
-    expect(container.textContent).toContain('Library Sources')
+    expect(container.textContent).toContain('Script assets')
     expect(container.textContent).toContain('Associated Release')
     expect(container.textContent).toContain('Search scripts')
     expect(container.textContent).not.toContain('Asset Type')
@@ -1405,7 +1411,7 @@ describe('ScriptsPage', () => {
     })
     await flushPromises()
 
-    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all visible scripts"]')
+    const selectAll = container.querySelector<HTMLInputElement>('input[aria-label="Select all scripts on this page"]')
     expect(selectAll).not.toBeNull()
     await act(async () => {
       selectAll?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -1451,6 +1457,10 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('0 matching scripts')
     expect(container.textContent).toContain('No scripts match these filters.')
     expect(container.textContent).not.toContain('Existing Script')
+    await clickButton('Reset filters')
+    expect(searchInput.value).toBe('')
+    expect(container.textContent).toContain('Existing Script')
+    expect(container.querySelector('.script-health-filter[aria-pressed="true"]')?.textContent).toContain('All')
   })
 
   it('filters the script library by associated release and shows release and create date columns', async () => {

@@ -215,11 +215,13 @@ type AuthUserListResponse struct {
 }
 
 type AuthUserActivityResponse struct {
-	Events []*storage.AuditEvent   `json:"events"`
-	Usage  UsageAccountingResponse `json:"usage"`
-	Count  int                     `json:"count"`
-	Limit  int                     `json:"limit"`
-	Offset int                     `json:"offset"`
+	HasMore   bool                    `json:"has_more"`
+	UsageRuns []AccessUsageRun        `json:"usage_runs,omitempty"`
+	Events    []*storage.AuditEvent   `json:"events"`
+	Usage     UsageAccountingResponse `json:"usage"`
+	Count     int                     `json:"count"`
+	Limit     int                     `json:"limit"`
+	Offset    int                     `json:"offset"`
 }
 
 var authRoleCatalog = []AuthRoleDefinition{
@@ -1961,16 +1963,44 @@ func (s *Server) handleGetUserActivity(w http.ResponseWriter, r *http.Request) {
 	if !all && !applyActivityScope(w, &filter, scope) {
 		return
 	}
-	events, err := s.store.ListAuditEvents(filter)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if filter.Limit > 1000 {
+		filter.Limit = 1000
+	}
+	if !validateAccessActivityDates(w, r, filter) {
 		return
 	}
-	usage := s.scopedUsageAccounting(filter.ProjectID, scope, all)
-	if filter.ActorSubject != "" {
-		usage = usageAccountingForActor(filter.ActorSubject, usage, s.runner.listOperationalTestSnapshots())
+	tests, err := s.accessUsageTests(filter, scope, all)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "unable to load usage scope")
+		return
 	}
-	writeJSON(w, http.StatusOK, AuthUserActivityResponse{Events: events, Usage: usage, Count: len(events), Limit: filter.Limit, Offset: filter.Offset})
+	usage := usageAccountingFromTests(filter.ProjectID, tests)
+	response := AuthUserActivityResponse{Usage: usage, Limit: filter.Limit, Offset: filter.Offset, Events: []*storage.AuditEvent{}}
+	if r.URL.Query().Get("report") == "usage" {
+		start := min(filter.Offset, len(tests))
+		end := start + min(filter.Limit, len(tests)-start)
+		for i := start; i < end; i++ {
+			test := tests[i]
+			response.UsageRuns = append(response.UsageRuns, AccessUsageRun{ID: test.ID, Name: test.Name, ProjectID: normalizeProjectID(test.ProjectID), Actor: usageActorKey(test), CreatedAt: test.CreatedAt, Status: test.Status})
+		}
+		response.Count = len(response.UsageRuns)
+		response.HasMore = end < len(tests)
+	} else {
+		// A lookahead row avoids mistaking a full final page for more history.
+		query := filter
+		query.Limit++
+		events, err := s.store.ListAuditEvents(query)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		response.HasMore = len(events) > filter.Limit
+		if response.HasMore {
+			events = events[:filter.Limit]
+		}
+		response.Events, response.Count = events, len(events)
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request) {
@@ -1987,6 +2017,13 @@ func (s *Server) handleExportUserActivity(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if scope, all := s.administeredProjectScope(r); !all && !applyActivityScope(w, &filter, scope) {
+		return
+	}
+	if !validateAccessActivityDates(w, r, filter) {
+		return
+	}
+	if r.URL.Query().Get("all") == "true" {
+		s.exportAllAccessEvents(w, r, filter)
 		return
 	}
 	events, err := s.store.ListAuditEvents(filter)
@@ -2418,6 +2455,11 @@ func spreadsheetSafeCSVCell(value string) string {
 }
 
 func parseAuditEventFilter(w http.ResponseWriter, r *http.Request, defaultLimit int) (storage.AuditEventFilter, bool) {
+	category := r.URL.Query().Get("category")
+	if category != "" && category != "fleet" {
+		writeError(w, http.StatusBadRequest, "invalid audit category")
+		return storage.AuditEventFilter{}, false
+	}
 	limit := defaultLimit
 	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
 		if _, err := fmt.Sscanf(raw, "%d", &limit); err != nil || limit <= 0 {
@@ -2442,6 +2484,7 @@ func parseAuditEventFilter(w http.ResponseWriter, r *http.Request, defaultLimit 
 	}
 	return storage.AuditEventFilter{
 		Limit:         limit,
+		FleetOnly:     category == "fleet",
 		Offset:        offset,
 		Action:        strings.TrimSpace(r.URL.Query().Get("action")),
 		ActorType:     strings.TrimSpace(r.URL.Query().Get("actor_type")),

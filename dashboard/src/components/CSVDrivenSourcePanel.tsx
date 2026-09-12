@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 import type {
@@ -64,6 +64,12 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
   const [minVusers, setMinVusers] = useState(scenarioDraft.goal_config?.min_vusers || 1)
   const [maxVusers, setMaxVusers] = useState(scenarioDraft.goal_config?.max_vusers || 100)
   const [derived, setDerived] = useState<TrafficProfileDeriveResponse | null>(null)
+  const [derivedFingerprint, setDerivedFingerprint] = useState('')
+  const inputFingerprint = JSON.stringify([projectId, scenarioDraft, groupNames, mode, layout, timestampColumn, timestampMode, relativeStartTime, valueColumns, seriesColumn, artColumns, timezone, mappings, art, minVusers, maxVusers])
+  const currentFingerprint = useRef(inputFingerprint)
+  currentFingerprint.current = inputFingerprint
+  const requestGeneration = useRef(0)
+  useEffect(() => () => { requestGeneration.current++ }, [])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const selectedSheet = analysis?.sheets?.[0]
@@ -95,17 +101,28 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
     if (layout === 'long' && seriesColumn) form.set('series_column', seriesColumn)
     if (mode === 'goal_oriented') artColumns.forEach(column => form.append('art_column', column))
     form.set('timezone', timezone)
+    const generation = ++requestGeneration.current
+    const submittedFingerprint = inputFingerprint
     setBusy(true)
     setError('')
     setDerived(null)
     try {
       const result = await api.analyzeCSVDriven(form)
+      if (generation !== requestGeneration.current || submittedFingerprint !== currentFingerprint.current) return
       setAnalysis(result)
-      if (!result.series?.length) setMappings({})
+      if (!result.series?.length) {
+        setMappings({})
+        const columns = result.sheets?.[0]?.columns || []
+        const time = columns.find(column => /^(elapsed|time|timestamp|datetime)$/i.test(column))
+        if (!timestampColumn && time) { setTimestampColumn(time); if (/elapsed/i.test(time)) setTimestampMode('relative') }
+        if (!valueColumns.length && layout === 'wide') setValueColumns(columns.filter(column => groupNames.some(group => group.toLowerCase() === column.toLowerCase())))
+      } else {
+        setMappings(Object.fromEntries(result.series.map(item => [item.series.key, groupNames.find(group => group.toLowerCase() === item.series.name.toLowerCase() || group.toLowerCase() === item.series.key.toLowerCase()) || ''])))
+      }
     } catch (cause) {
-      setError(getErrorMessage(cause, 'Unable to analyze the CSV schedule.'))
+      if (generation === requestGeneration.current && submittedFingerprint === currentFingerprint.current) setError(getErrorMessage(cause, 'Unable to analyze the CSV schedule.'))
     } finally {
-      setBusy(false)
+      if (generation === requestGeneration.current) setBusy(false)
     }
   }
 
@@ -144,13 +161,15 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
         goal_config: { ...(scenarioDraft.goal_config || {}), min_vusers: minVusers, max_vusers: maxVusers },
       } : {}),
     }
+    const generation = ++requestGeneration.current
+    const submittedFingerprint = inputFingerprint
     setBusy(true)
     setError('')
     try {
       const source = mode === 'vuser_driven' && analysis.source.file
         ? { ...analysis.source, file: { ...analysis.source.file, art_columns: undefined } }
         : analysis.source
-      setDerived(await api.deriveCSVDriven({
+      const result = await api.deriveCSVDriven({
         project_id: projectId,
         source,
         series: (analysis.series || []).map(item => item.series),
@@ -160,16 +179,19 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
         gap_policy: 'drop',
         window: { mode: 'full' },
         scenario_draft: draft,
-      }))
+      })
+      if (generation !== requestGeneration.current || submittedFingerprint !== currentFingerprint.current) return
+      setDerived(result)
+      setDerivedFingerprint(submittedFingerprint)
     } catch (cause) {
-      setError(getErrorMessage(cause, 'Unable to build the CSV schedule preview.'))
+      if (generation === requestGeneration.current && submittedFingerprint === currentFingerprint.current) setError(getErrorMessage(cause, 'Unable to build the CSV schedule preview.'))
     } finally {
-      setBusy(false)
+      if (generation === requestGeneration.current) setBusy(false)
     }
   }
 
   const chart = useMemo(() => {
-    if (!derived) return { rows: [] as Array<Record<string, number>>, keys: [] as string[], duration: 1 }
+    if (!derived || derivedFingerprint !== inputFingerprint) return { rows: [] as Array<Record<string, number>>, keys: [] as string[], duration: 1 }
     const duration = durationMilliseconds(derived.traffic_profile.target_duration)
     const offsets = Array.from(new Set([
       ...derived.traffic_profile.mappings.flatMap(mapping => mapping.points.map(point => point.offset_ms)),
@@ -181,10 +203,10 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
       return row
     })
     return { rows, keys: derived.traffic_profile.mappings.map((_, index) => `group_${index}`), duration: Math.max(1, duration) }
-  }, [derived])
+  }, [derived, derivedFingerprint, inputFingerprint])
 
   return (
-    <div className="traffic-profile-panel csv-driven-panel">
+    <fieldset disabled={busy} className="traffic-profile-panel csv-driven-panel">
       <div className="stepped-ramp-heading">
         <span>Guided worksheet</span>
         <h3>CSV Driven Setup</h3>
@@ -208,6 +230,11 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
         <div className="stepped-ramp-section-body">
           <h4 id="csv-upload-title">Upload and describe the CSV</h4>
           <p>Wide files use one target column per group. Long files use a series column plus one target column.</p>
+          <p>Relative time requires a unit, such as <code>0s</code>, <code>60s</code> or <code>2m</code>; bare numbers are not elapsed seconds. Absolute time uses timestamps such as <code>2026-01-01T00:00:00Z</code>. Use increasing times and non-negative targets; VUser targets must be whole numbers.</p>
+          <a className="btn btn-secondary" download="scenario-schedule.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent([
+            ['elapsed', ...(groupNames.length ? groupNames : ['Group 1'])].map(value => '"' + value.replace(/"/g, '""') + '"').join(','),
+            ...['0s', '60s', '120s'].map((time, index) => [time, ...(groupNames.length ? groupNames : ['Group 1']).map(() => index === 1 ? '10' : '0')].join(',')),
+          ].join('\r\n'))}`}>Download sample for these groups</a>
           <ImportDropzone accept=".csv" file={file} onFile={next => { setFile(next); resetCandidate(); setTimestampColumn(''); setValueColumns([]); setSeriesColumn(''); setARTColumns([]) }} dropHint="Drop an exact workload schedule CSV" onError={setError} disabled={busy} />
           {file && !selectedSheet && <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void analyze()}>{busy ? 'Inspecting…' : 'Inspect columns'}</button>}
           {selectedSheet && <>
@@ -215,6 +242,8 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
               <button type="button" role="radio" aria-checked={layout === 'wide'} className={layout === 'wide' ? 'active' : ''} onClick={() => { setLayout('wide'); setSeriesColumn(''); invalidateColumnMapping() }}>Wide columns</button>
               <button type="button" role="radio" aria-checked={layout === 'long'} className={layout === 'long' ? 'active' : ''} onClick={() => { setLayout('long'); setValueColumns(current => current.slice(0, 1)); invalidateColumnMapping() }}>Long rows</button>
             </div>
+            {!!selectedSheet.samples?.length && <details><summary>Preview uploaded rows</summary><div className="data-table"><table><thead><tr>{selectedSheet.columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{selectedSheet.samples.slice(0, 5).map((row, index) => <tr key={index}>{row.map((value, col) => <td key={col}>{value}</td>)}</tr>)}</tbody></table></div></details>}
+            <p>Suggested columns are editable. Confirm time values and target columns, then analyze the schedule.</p>
             <div className="settings-grid compact-grid">
               <label><span>Time column</span><select value={timestampColumn} onChange={event => { setTimestampColumn(event.target.value); invalidateColumnMapping() }}><option value="">Select…</option>{selectedSheet.columns.map(column => <option key={column}>{column}</option>)}</select></label>
               <label><span>Time values</span><select value={timestampMode} onChange={event => { setTimestampMode(event.target.value as typeof timestampMode); invalidateColumnMapping() }}><option value="absolute">Absolute timestamps</option><option value="relative">Relative elapsed time</option></select></label>
@@ -250,15 +279,15 @@ export default function CSVDrivenSourcePanel({ projectId, groupNames, scenarioDr
         </div>
       </section>}
 
-      {derived && <section className="scenario-shape-guidance" role="status">
+      {derived && derivedFingerprint === inputFingerprint && <section className="scenario-shape-guidance" role="status">
         <strong>{derived.traffic_profile.runtime_target === 'tps' ? 'Goal-driven TPS schedule' : 'VUser schedule'} · {derived.traffic_profile.target_duration}</strong>
         <p>{derived.traffic_profile.mappings.reduce((sum, mapping) => sum + mapping.points.length, 0).toLocaleString()} exact step boundaries across {derived.traffic_profile.mappings.length} group{derived.traffic_profile.mappings.length === 1 ? '' : 's'}.</p>
         <div style={{ height: 280 }}><ResponsiveContainer width="100%" height="100%"><LineChart data={chart.rows}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="offset" type="number" domain={[0, chart.duration]} tickFormatter={value => formatTrafficProfileAxisTime(Number(value) / 1000)} /><YAxis /><Tooltip labelFormatter={value => `Elapsed ${formatTrafficProfileAxisTime(Number(value) / 1000)}`} /><Legend />{chart.keys.map((key, index) => <Line key={key} type="stepAfter" dataKey={key} name={derived.traffic_profile.mappings[index].group_name} stroke={colors[index % colors.length]} dot={false} isAnimationActive={false} />)}</LineChart></ResponsiveContainer></div>
         {derived.traffic_profile.sizing?.complete && <p><strong>Estimated peak capacity: {(derived.traffic_profile.sizing.estimated_peak_vusers ?? 0).toLocaleString()} VUsers.</strong> Suggested guardrails: {derived.traffic_profile.sizing.suggested_min_vusers}-{derived.traffic_profile.sizing.suggested_max_vusers} VUsers.</p>}
         {derived.warnings?.map(warning => <p key={warning} className="secondary">{warning}</p>)}
-        <button type="button" className="btn btn-primary" disabled={!scriptsReady} onClick={() => onApply(derived)}>Apply CSV schedule</button>
+        <button type="button" className="btn btn-primary" disabled={busy || !scriptsReady || !mappingsReady || !artReady || !guardrailsReady} onClick={() => { if (derivedFingerprint === currentFingerprint.current) onApply(derived) }}>Apply CSV schedule</button>
       </section>}
       {error && <div className="form-error" role="alert">{error}</div>}
-    </div>
+    </fieldset>
   )
 }

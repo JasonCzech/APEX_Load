@@ -1,3 +1,4 @@
+import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import { useCallback, useEffect, useReducer, useRef, useState, type CSSProperties } from 'react'
@@ -1021,7 +1022,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
           <p className="sample-import-subtitle">
             {isJavaHttpPreset
               ? 'Create a Java-over-HTTP draft from raw HTTP or cURL samples that already preserve base64-encoded serialized Java payloads.'
-              : 'Create a APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
+              : 'Create an APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
@@ -1029,6 +1030,8 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
           onClose()
         }}>Back</button>}
       </div>
+
+      <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
 
       <div className="sample-import-card">
         <div className="sample-import-section-header">
@@ -1095,7 +1098,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
                 </div>
               </div>
             )}
-            <textarea value={primaryContent} onChange={e => { invalidateSampleSource(); setPrimaryContent(e.target.value) }} rows={format === 'curl' ? 8 : 14} spellCheck={false} />
+            <textarea aria-label="Primary Sample" value={primaryContent} onChange={e => { invalidateSampleSource(); setPrimaryContent(e.target.value) }} rows={format === 'curl' ? 8 : 14} spellCheck={false} />
           </label>
 
           {(format === 'raw_http' || format === 'curl') && (
@@ -1136,7 +1139,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
                   </div>
                 </div>
               )}
-              <textarea value={secondaryContent} onChange={e => { invalidateSampleSource(); setSecondaryContent(e.target.value) }} rows={10} spellCheck={false} />
+              <textarea aria-label="Sample Response (optional)" value={secondaryContent} onChange={e => { invalidateSampleSource(); setSecondaryContent(e.target.value) }} rows={10} spellCheck={false} />
             </label>
           )}
         </div>
@@ -1246,7 +1249,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
         <button className="btn btn-secondary" onClick={() => handleFormatChange(format)}>Reset Template</button>
       </div>
 
-      {error && <div className="sample-import-error">{error}</div>}
+      {error && <div className="sample-import-error" role="alert">{error}</div>}
 
       {result && reviewedScript && (
         <div className="sample-import-result">

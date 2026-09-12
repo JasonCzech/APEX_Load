@@ -9,6 +9,7 @@ interface Props {
   suggestedCompareId?: string
   baselineName?: string
   deltas: BaselineOverviewDiff
+  optionsLoading?: boolean
   loading?: boolean
   error?: string
   onCompareChange: (id: string) => void
@@ -31,6 +32,7 @@ export default function RunReportCompareBar({
   baselineName,
   deltas,
   loading,
+  optionsLoading,
   error,
   onCompareChange,
   onPinBaseline,
@@ -78,8 +80,11 @@ export default function RunReportCompareBar({
           <p>{baselineName || (compareId ? `Comparing against ${compareId}` : 'No baseline selected')}</p>
         </div>
       </div>
+      <p>Choose another completed, archived run in this project, application and release. Older runs are included.</p>
+      {optionsLoading && <p role="status">Finding archived baseline runs…</p>}
+      {!optionsLoading && !error && options.length === 0 && !compareId && <p>No other archived runs are available in this scope. <a href={`#/results${window.location.hash.includes('?') ? `?${new URLSearchParams([...new URLSearchParams(window.location.hash.split('?')[1])].filter(([key]) => ['projectId', 'applicationId', 'releaseId'].includes(key)))}` : ''}`}>Open Results</a> to find another release, or enter a known archived run ID below.</p>}
       <div className="run-report-compare-controls">
-        <label><span>Completed baseline run</span><select aria-label="Completed baseline run" value={options.some(run => run.id === compareId) ? compareId : ""} onChange={event => onCompareChange(event.target.value)}><option value="">Select a baseline</option>{options.map(run => <option key={run.id} value={run.id}>{run.name || run.id} · {run.ref_key || run.id}</option>)}</select></label>
+        <label><span>Completed baseline run</span><select disabled={optionsLoading} aria-label="Completed baseline run" value={options.some(run => run.id === compareId) ? compareId : ""} onChange={event => onCompareChange(event.target.value)}><option value="">Select a baseline</option>{options.map(run => <option key={run.id} value={run.id}>{run.name || run.id} · {run.ref_key || run.id}</option>)}</select></label>
         <details><summary>Enter a run ID</summary><label>
           <span>Baseline run id</span>
           <input value={draft} onChange={event => setDraft(event.currentTarget.value)} placeholder={suggestedCompareId || 'run id'} />
@@ -99,13 +104,13 @@ export default function RunReportCompareBar({
       </div>
       {loading && <p role="status">Loading baseline...</p>}
       {error && <p className="run-report-error">{error}</p>}
-      <div className="run-report-compare-deltas">
+      {compareId && <div className="run-report-compare-deltas">
         <DeltaCell label="Avg latency" value={deltas.avgLatency} />
         <DeltaCell label="P95" value={deltas.p95} />
         <DeltaCell label="Error rate" value={deltas.errorRate} />
         <DeltaCell label="Peak attempts/s" value={deltas.peakTps} />
         <DeltaCell label="Peak VUsers" value={deltas.peakVusers} />
-      </div>
+      </div>}
     </section>
   )
 }

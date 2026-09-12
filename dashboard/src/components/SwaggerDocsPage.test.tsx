@@ -87,10 +87,7 @@ describe('SwaggerDocsPage', () => {
     return container.querySelector('[data-testid="topbar-contribution"]')?.textContent || ''
   }
 
-  function findTopbarButton(label: string) {
-    const topbar = container.querySelector('[data-testid="topbar-contribution"]')
-    return Array.from(topbar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === label)
-  }
+
 
   it('parses operation details from generated OpenAPI YAML', () => {
     const parsed = parseSwaggerDocument(`openapi: 3.0.3
@@ -227,17 +224,11 @@ paths:
   it('renders a searchable API list with endpoint details', async () => {
     await renderSwaggerDocsPage()
 
-    expect(container.textContent).toContain('Swagger Docs')
-    expect(topbarText()).toContain('Swagger Docs')
-    expect(topbarText()).toContain('General')
-    expect(topbarText()).toContain('MCP Server')
-    expect(topbarText()).toContain('Quick Start')
-    expect(topbarText()).toContain('Authentication')
-    expect(topbarText()).not.toContain('Endpoint Map')
-    expect(topbarText()).toContain('Swagger')
-    expect(topbarText()).toContain('Repo Guide')
-    expect(findTopbarButton('Swagger')?.getAttribute('aria-pressed')).toBe('true')
-    expect(container.querySelector('a[href="#/docs"]')).toBeNull()
+    expect(container.textContent).toContain('API Reference (OpenAPI)')
+    expect(topbarText()).toContain('Help & documentation')
+    expect(topbarText()).toContain('API & Automation')
+    expect(topbarText()).not.toContain('Repo Guide')
+    expect(container.querySelector('nav[aria-label="Help areas"] a[aria-current="page"]')?.textContent).toBe('API & Automation')
     expect(container.textContent).toContain('APEX Load API')
     expect(container.textContent).toContain('API Reference')
     expect(container.textContent).toContain('Categories')
@@ -250,7 +241,7 @@ paths:
     expect(container.textContent).toContain('Public')
     expect(container.textContent).toContain('Conditional auth')
 
-    const firstDetails = container.querySelector('details') as HTMLDetailsElement | null
+    const firstDetails = container.querySelector('.swagger-operation-card') as HTMLDetailsElement | null
     expect(firstDetails).not.toBeNull()
     await act(async () => {
       if (!firstDetails) return
@@ -298,12 +289,9 @@ paths:
     expect(container.textContent).toContain('/api/v1/tests')
     expect(container.textContent).not.toContain('/api/v1/scripts/import/openapi')
 
-    const authButton = findTopbarButton('Authentication')
-    expect(authButton).toBeDefined()
-    await act(async () => {
-      authButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(window.location.hash).toBe('#/docs?guide=authentication')
+    const authLink = Array.from(container.querySelectorAll('a')).find(link => link.getAttribute('href') === '#/docs?guide=general&article=authentication')
+    expect(authLink?.textContent, Array.from(container.querySelectorAll('a')).map(a => a.getAttribute('href')).join(' | ')).toBe('API authentication')
+
   }, 10_000)
 
   it('shows catalog-backed access badges and filters to current access on demand', async () => {
@@ -335,7 +323,7 @@ paths:
 
     expect(container.textContent).toContain('API Docs Unavailable')
     expect(container.textContent).toContain('swagger route unavailable')
-    expect(container.textContent).not.toContain('API Reference')
+    expect(container.querySelector('.swagger-docs-results')).toBeNull()
     expect(container.querySelector('.swagger-docs-controls')).toBeNull()
   })
 })

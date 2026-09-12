@@ -10,6 +10,12 @@ kept for planning or audit context only.
 
 | Document | Status | Purpose |
 | --- | --- | --- |
+| [HELP_API_OVERVIEW.md](HELP_API_OVERVIEW.md) | Current | In-app help: api overview |
+| [HELP_CAPABILITIES.md](HELP_CAPABILITIES.md) | Current | In-app help: capabilities |
+| [HELP_CHANGES.md](HELP_CHANGES.md) | Current | In-app help: changes |
+| [HELP_GETTING_STARTED.md](HELP_GETTING_STARTED.md) | Current | In-app help: getting started |
+| [HELP_SUPPORT.md](HELP_SUPPORT.md) | Current | In-app help: support |
+| [HELP_TROUBLESHOOTING.md](HELP_TROUBLESHOOTING.md) | Current | In-app help: troubleshooting |
 | [README.md](../README.md) | Current | Project overview, quick start, and primary links |
 | [ARCHITECTURE.md](../ARCHITECTURE.md) | Current | System architecture and runtime model |
 | [DEVELOPMENT.md](../DEVELOPMENT.md) | Current | Developer setup, package guide, testing policy |

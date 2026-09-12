@@ -554,9 +554,9 @@ func (a *solaceAMQPAdapter) handleLocked(ctx context.Context) (*amqp.Session, er
 		opts.TLSConfig = tlsConfig
 	}
 	username := strings.TrimSpace(a.cfg.Username)
-	if username != "" && a.cfg.MessageVPN != "" && !strings.Contains(username, "@") {
-		username += "@" + a.cfg.MessageVPN
-	}
+	// Solace AMQP selects the VPN by its listen port (or TLS SNI on a
+	// global port). The SMF username@vpn convention is not an AMQP login:
+	// appending it changes the SASL identity and rejects valid credentials.
 	if username != "" || a.cfg.Password != "" {
 		opts.SASLType = amqp.SASLTypePlain(username, a.cfg.Password)
 	}

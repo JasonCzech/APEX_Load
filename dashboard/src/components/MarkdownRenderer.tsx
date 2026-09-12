@@ -1,4 +1,5 @@
-import { Fragment, useMemo, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
+import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { parseMarkdown, type MarkdownBlock, type MarkdownListBlock } from './repositoryGuideMarkdown'
 
 interface MarkdownRendererProps {
@@ -6,6 +7,8 @@ interface MarkdownRendererProps {
   blocks?: MarkdownBlock[]
   className?: string
   blockKeyPrefix?: string
+  resolveLink?: (href: string) => string
+  copyExamples?: boolean
 }
 
 function safeMarkdownHref(href: string) {
@@ -31,7 +34,7 @@ function safeMarkdownHref(href: string) {
   return ''
 }
 
-function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
+function renderMarkdownInline(text: string, keyPrefix: string, options: MarkdownRendererProps): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)]+\))/g
   let lastIndex = 0
@@ -52,7 +55,7 @@ function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
       nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>)
     } else {
       const linkMatch = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
-      const href = linkMatch ? safeMarkdownHref(linkMatch[2]) : ''
+      const href = linkMatch ? safeMarkdownHref(options.resolveLink ? options.resolveLink(linkMatch[2]) : linkMatch[2]) : ''
       if (linkMatch && href) {
         const external = /^https?:\/\//i.test(href)
         nodes.push(
@@ -61,7 +64,7 @@ function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
           </a>,
         )
       } else {
-        nodes.push(token)
+        nodes.push(options.resolveLink && linkMatch ? linkMatch[1] : token)
       }
     }
     lastIndex = pattern.lastIndex
@@ -74,37 +77,38 @@ function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes
 }
 
-function renderMarkdownList(block: MarkdownListBlock, key: string): ReactNode {
+function renderMarkdownList(block: MarkdownListBlock, key: string, options: MarkdownRendererProps): ReactNode {
   const ListTag = block.ordered ? 'ol' : 'ul'
   const className = block.ordered ? 'markdown-list markdown-ordered-list' : 'markdown-list'
   return (
     <ListTag key={key} className={className} {...(block.ordered && block.start ? { start: block.start } : {})}>
       {block.items.map((item, itemIndex) => (
         <li key={`${key}-${itemIndex}`}>
-          {renderMarkdownInline(item.text, `${key}-${itemIndex}`)}
-          {item.children && renderMarkdownList(item.children, `${key}-${itemIndex}-sub`)}
+          {renderMarkdownInline(item.text, `${key}-${itemIndex}`, options)}
+          {item.children && renderMarkdownList(item.children, `${key}-${itemIndex}-sub`, options)}
         </li>
       ))}
     </ListTag>
   )
 }
 
-function renderMarkdownBlock(block: MarkdownBlock, key: string): ReactNode {
+function renderMarkdownBlock(block: MarkdownBlock, key: string, options: MarkdownRendererProps): ReactNode {
   switch (block.kind) {
     case 'heading': {
       const Tag = `h${Math.min(block.level + 1, 6)}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
-      return <Tag key={key} id={block.id}>{renderMarkdownInline(block.text, key)}</Tag>
+      return <Tag key={key} id={block.id} tabIndex={options.copyExamples ? -1 : undefined}>{renderMarkdownInline(block.text, key, options)}</Tag>
     }
     case 'paragraph':
-      return <p key={key}>{renderMarkdownInline(block.text, key)}</p>
+      return <p key={key}>{renderMarkdownInline(block.text, key, options)}</p>
     case 'code':
+      if (options.copyExamples) return <CopyCodeBlock key={key} code={block.code} language={block.language} />
       return (
         <pre key={key} className="markdown-code-block">
           <code data-language={block.language || undefined}>{block.code}</code>
         </pre>
       )
     case 'list':
-      return renderMarkdownList(block, key)
+      return renderMarkdownList(block, key, options)
     case 'table':
       return (
         <div key={key} className="markdown-table-wrap">
@@ -112,7 +116,7 @@ function renderMarkdownBlock(block: MarkdownBlock, key: string): ReactNode {
             <thead>
               <tr>
                 {block.headers.map((header, headerIndex) => (
-                  <th key={`${key}-h-${headerIndex}`}>{renderMarkdownInline(header, `${key}-h-${headerIndex}`)}</th>
+                  <th key={`${key}-h-${headerIndex}`}>{renderMarkdownInline(header, `${key}-h-${headerIndex}`, options)}</th>
                 ))}
               </tr>
             </thead>
@@ -120,7 +124,7 @@ function renderMarkdownBlock(block: MarkdownBlock, key: string): ReactNode {
               {block.rows.map((row, rowIndex) => (
                 <tr key={`${key}-r-${rowIndex}`}>
                   {row.map((cell, cellIndex) => (
-                    <td key={`${key}-r-${rowIndex}-c-${cellIndex}`}>{renderMarkdownInline(cell, `${key}-r-${rowIndex}-c-${cellIndex}`)}</td>
+                    <td key={`${key}-r-${rowIndex}-c-${cellIndex}`}>{renderMarkdownInline(cell, `${key}-r-${rowIndex}-c-${cellIndex}`, options)}</td>
                   ))}
                 </tr>
               ))}
@@ -138,14 +142,28 @@ export default function MarkdownRenderer({
   blocks,
   className,
   blockKeyPrefix = 'markdown',
+  resolveLink,
+  copyExamples,
 }: MarkdownRendererProps) {
   const parsedBlocks = useMemo(() => blocks ?? parseMarkdown(source), [blocks, source])
   const content = parsedBlocks.map((block, blockIndex) => (
-    <Fragment key={`${blockKeyPrefix}-${blockIndex}`}>{renderMarkdownBlock(block, `${blockKeyPrefix}-${blockIndex}`)}</Fragment>
+    <Fragment key={`${blockKeyPrefix}-${blockIndex}`}>{renderMarkdownBlock(block, `${blockKeyPrefix}-${blockIndex}`, { resolveLink, copyExamples })}</Fragment>
   ))
 
   if (className) {
     return <div className={className}>{content}</div>
   }
   return <>{content}</>
+}
+
+function CopyCodeBlock({ code, language }: { code: string; language: string }) {
+  const [status, setStatus] = useState('')
+  return <div className="help-code-example">
+    <div className="help-code-toolbar"><span>{language || 'Example'}</span><button className="btn btn-secondary btn-sm" type="button" onClick={async () => {
+      const copied = await copyTextToClipboard(code)
+      setStatus(copied ? 'Copied' : 'Copy unavailable. Select the example and copy manually.')
+    }}>Copy example</button></div>
+    <pre className="markdown-code-block"><code data-language={language || undefined}>{code}</code></pre>
+    <span role="status">{status}</span>
+  </div>
 }

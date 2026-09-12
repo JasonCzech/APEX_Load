@@ -32,7 +32,15 @@ type FleetAlertsResponse struct {
 	UnacknowledgedCount int          `json:"unacknowledged_count"`
 }
 
+type FleetPendingRun struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	VUsers int    `json:"vusers"`
+}
+
 type FleetCapacityResponse struct {
+	PendingRuns         []FleetPendingRun            `json:"pending_runs,omitempty"`
 	ProjectID           string                       `json:"project_id,omitempty"`
 	Region              string                       `json:"region,omitempty"`
 	Protocol            string                       `json:"protocol,omitempty"`
@@ -80,6 +88,7 @@ type FleetLoadZone struct {
 }
 
 type FleetProjectSlotAccounting struct {
+	ProjectName        string `json:"project_name,omitempty"`
 	ProjectID          string `json:"project_id"`
 	ActiveSlots        int    `json:"active_slots"`
 	PendingSlots       int    `json:"pending_slots"`
@@ -221,6 +230,22 @@ func (s *Server) handleGetFleetCapacity(w http.ResponseWriter, r *http.Request) 
 	capacity := buildFleetCapacity(s.systemInventory(r.Context()), s.runner.GetSystemSettings(), s.runner.listOperationalTestSnapshots(), projectID, region, protocolName)
 	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
 		capacity.ProjectSlots = fleetProjectSlotsForProject(capacity.ProjectSlots, authorizedProjectID)
+	}
+	for _, test := range s.runner.listOperationalTestSnapshots() {
+		if test == nil || (projectID != "" && normalizeProjectID(test.ProjectID) != normalizeProjectID(projectID)) {
+			continue
+		}
+		if test.Status == "QUEUED" || test.Status == "PENDING" || test.Status == "RESERVED" {
+			capacity.PendingRuns = append(capacity.PendingRuns, FleetPendingRun{ID: test.ID, Name: test.Name, Status: test.Status, VUsers: test.TotalVUsers})
+		}
+	}
+	for i := range capacity.ProjectSlots {
+		if s.store == nil {
+			break
+		}
+		if project, err := s.store.GetProject(capacity.ProjectSlots[i].ProjectID); err == nil {
+			capacity.ProjectSlots[i].ProjectName = project.Name
+		}
 	}
 	writeJSON(w, http.StatusOK, capacity)
 }

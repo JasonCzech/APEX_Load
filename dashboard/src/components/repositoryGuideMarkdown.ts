@@ -27,8 +27,8 @@ function splitTableRow(line: string) {
     .trim()
     .replace(/^\|/, '')
     .replace(/\|$/, '')
-    .split('|')
-    .map(cell => cell.trim())
+    .split(/(?<!\\)\|/)
+    .map(cell => cell.trim().replace(/\\\|/g, '|'))
 }
 
 function isTableSeparator(line: string) {
@@ -118,6 +118,7 @@ function parseList(lines: string[], startIndex: number, baseIndent: number): { b
 export function parseMarkdown(source: string): MarkdownBlock[] {
   const lines = source.replace(/\r\n/g, '\n').split('\n')
   const blocks: MarkdownBlock[] = []
+  const headingIds = new Set<string>()
   let index = 0
 
   while (index < lines.length) {
@@ -146,7 +147,12 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
     if (headingMatch) {
       const level = headingMatch[1].length
       const text = headingMatch[2].trim()
-      blocks.push({ kind: 'heading', level, text, id: slugify(text) })
+      const baseId = slugify(text) || 'section'
+      let id = baseId
+      let suffix = 1
+      while (headingIds.has(id)) id = `${baseId}-${suffix++}`
+      headingIds.add(id)
+      blocks.push({ kind: 'heading', level, text, id })
       index += 1
       continue
     }

@@ -265,7 +265,7 @@ export function LoadComparisonPanel({ applicationId, getLoadComparison, testOpti
       <div className="load-comparison-header">
         <div>
           <h3 className="dash-section-title">Load Comparison</h3>
-          <p>TPS and ART by release at matching VUser load levels.</p>
+          <p>TPS and average response time by release at matching VUser load levels.</p>
         </div>
         {comparison && (
           <span className="dash-context-chip">
@@ -310,6 +310,12 @@ export function LoadComparisonPanel({ applicationId, getLoadComparison, testOpti
           </button>
         )}
       </div>
+
+      {selectedOption && !error && <p className="dashboard-context-note" aria-label="Comparison metric population">
+        {scope === 'group' ? 'Population: stored group samples.' : selectedOption.source_kind === 'action' ? 'Population: request / action samples, grouped by action name.' : selectedOption.source_kind === 'source_transaction' ? 'Population: archive samples grouped by source transaction name; this grouping does not establish named transaction attempt evidence.' : 'Population: legacy archive samples; classification is unavailable.'}
+        {' '}Charts and graph totals cover the selected series and runs. The archive table below shows whole-run totals across stored populations. Release Trend Analysis uses named transaction attempts when available; its counts can differ.
+      </p>}
+      {comparison && !error && !loading && hasChartData && uniqueRunCount(comparison) < 2 && <p className="dashboard-context-note">One run is available. Select another comparable run at matching load to establish a comparison baseline; one point cannot establish a trend.</p>}
 
       {loading && !comparison ? (
         <div className="dash-empty small">
