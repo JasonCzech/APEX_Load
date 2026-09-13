@@ -68,6 +68,14 @@ describe('Help catalogue and content contracts', () => {
     const result = searchHelp(docs, '270')[0]
     expect(helpArticleHash(result.article, result.section)).toContain('section=sizing-from-a-goal')
   })
+  it.each(['goroutine', 'correlation', 'each_occurrence', 'fixed_delay', 'JMeter'])('finds operator guidance for %s with a valid destination', async query => {
+    const article = helpArticles.find(a => a.id === 'dsl-operator-guide')!
+    const source = await loadHelpSource(article)
+    const results = searchHelp([{ article, source }], query)
+    expect(results).toHaveLength(1)
+    expect(resolveHelpLink('HELP_DSL_OPERATOR_GUIDE.md', first, '')).toBe(helpArticleHash(article))
+    if (results[0].section) expect(articleForSection(article.path, results[0].section, source)?.id).toBe(article.id)
+  })
   it.each(['//evil.example/x', '/etc/passwd', 'javascript:alert(1)', 'file:///etc/passwd', '../../../secret.md', 'https://user:pass@example.com'])('does not turn an unapproved relative source into a document route: %s', href => {
     const result = resolveHelpLink(href, first, '')
     expect(result.startsWith('#/docs')).toBe(false)

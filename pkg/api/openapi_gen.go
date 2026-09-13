@@ -685,6 +685,10 @@ func openAPIComponentSchemas() map[string]oasSchema {
 		"ScriptDebugBreakpoint": {
 			Type: "object",
 			Properties: map[string]oasSchema{
+				"disabled":      {Type: "boolean"},
+				"once":          {Type: "boolean"},
+				"hit_count":     {Type: "integer", Description: "Pause on this eligible visit (1-based); zero means every visit."},
+				"iteration":     {Type: "integer", Description: "Innermost loop iteration, zero-based."},
 				"phase":         {Type: "string", Enum: []string{"init", "action", "teardown"}},
 				"action_index":  {Type: "integer"},
 				"request_index": {Type: "integer"},

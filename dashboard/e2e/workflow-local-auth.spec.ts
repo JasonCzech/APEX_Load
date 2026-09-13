@@ -14,7 +14,7 @@ test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve th
   const scriptName = `Orders_${Date.now()}`
   const scriptId = await importOpenAPI(page, scriptName, target.url)
   const workbench = page.getByRole('region', { name: 'Author center workbench' })
-  await expect(workbench.getByRole('tab', { name: 'Action List' })).toHaveAttribute('aria-selected', 'true')
+  await expect(workbench.getByRole('tab', { name: 'Action editor' })).toHaveAttribute('aria-selected', 'true')
   await workbench.getByRole('tab', { name: 'Runtime Settings' }).click()
   await workbench.getByRole('textbox', { name: 'Base URL' }).fill(target.url + '/')
   const updated = mutation(page, 'PUT', `/api/v1/scripts/${scriptId}`)

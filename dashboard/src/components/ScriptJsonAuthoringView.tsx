@@ -263,23 +263,12 @@ export function ScriptCodePane({
               Parameterize
             </button>
           )}
-          {allowDirectEdit && (
-            <button
-              type="button"
-              className={`btn btn-sm ${jsonEditEnabled ? 'btn-ghost' : 'btn-secondary'}`}
-              onClick={() => setJsonEditEnabled(enabled => !enabled)}
-              title={jsonEditEnabled ? 'Return the JSON to read-only' : 'Edit the raw JSON directly'}
-            >
-              {jsonEditEnabled ? 'Done' : 'Edit JSON'}
-            </button>
-          )}
-          {allowDirectEdit && jsonEditEnabled && (
-            <>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
-              <button type="button" className="btn btn-sm btn-secondary" onClick={onApply} disabled={status === 'invalid'}>Apply JSON</button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={onReset} disabled={!value}>Reset</button>
-            </>
-          )}
+          {allowDirectEdit && !jsonEditEnabled && <button type="button" className="btn btn-sm btn-secondary" onClick={() => setJsonEditEnabled(true)}>Edit JSON</button>}
+          {allowDirectEdit && (jsonEditEnabled || status !== 'synced') && <>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => { onApply(); if (status !== 'invalid') setJsonEditEnabled(false) }} disabled={status === 'invalid' || status === 'synced'}>Apply changes</button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => { onReset(); setJsonEditEnabled(false) }}>Discard JSON edits</button>
+          </>}
           <button type="button" className="btn btn-sm btn-ghost" onClick={onCopy}>Copy</button>
           <button type="button" className="btn btn-sm btn-ghost" onClick={onDownload}>Download</button>
         </div>
@@ -403,6 +392,7 @@ export function ScriptJsonDocument({
     return (
       <>
         {scopeBar}
+        <p className="author-source-scope-help">This view shows only the selected action. <button type="button" className="btn btn-sm btn-secondary" onClick={() => onShowFullScriptJson(true)}>Edit in Full Script JSON</button> Whole-script editing preserves all action fields.</p>
         <ScriptCodePane
           value={selectedJsonText}
           status="synced"

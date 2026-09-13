@@ -66,6 +66,47 @@ test('Help tasks, search and section links survive navigation and validate the f
   await expect(page.locator('.guide-markdown-article [aria-label*="pagination" i]')).toHaveCount(0)
 })
 
+test('DSL operators can discover the guide, validate its example, and follow reference links', async ({ page }, testInfo) => {
+  await page.getByRole('searchbox', { name: 'Search all help articles' }).fill('lightweight goroutine')
+  await page.locator('.help-search-results').getByRole('link', { name: 'DSL scripting for LoadRunner & JMeter operators', exact: true }).click()
+  await expect(page).toHaveURL(/article=dsl-operator-guide/)
+  await expect(page.locator('#understand-how-one-user-runs')).toBeFocused()
+  await page.reload()
+  await expect(page.locator('#understand-how-one-user-runs')).toBeFocused()
+
+  await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Walk through a complete HTTP example', exact: true }).click()
+  const examples = page.locator('.help-code-example code[data-language="json"]')
+  const script = JSON.parse((await examples.first().textContent())!)
+  const response = await page.request.post('/api/v1/scripts/validate', { data: { script } })
+  expect(response.ok()).toBe(true)
+  const validation = await response.json()
+  expect(validation.valid, JSON.stringify(validation)).toBe(true)
+  // Validate the documented control-flow fragment in its stated execution context.
+  const loop = JSON.parse((await examples.last().textContent())!)
+  const loopResponse = await page.request.post('/api/v1/scripts/validate', { data: { script: { ...script, actions: [...script.actions, loop] } } })
+  expect(loopResponse.ok()).toBe(true)
+  const loopValidation = await loopResponse.json()
+  expect(loopValidation.valid, JSON.stringify(loopValidation)).toBe(true)
+
+  await page.getByRole('navigation', { name: 'Help articles' }).getByRole('link', { name: 'DSL action reference', exact: true }).click()
+  await page.locator('.help-reading-pane').getByRole('link', { name: 'DSL scripting for LoadRunner & JMeter operators', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'DSL scripting for LoadRunner & JMeter operators', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('dsl-operator-guide-wide.png'), animations: 'disabled' })
+  await page.setViewportSize({ width: 760, height: 900 })
+  const codeRegion = page.getByRole('region', { name: 'json code example', exact: true }).first()
+  await expect(codeRegion).toHaveAttribute('tabindex', '0')
+  await codeRegion.focus()
+  await expect(codeRegion).toBeFocused()
+  await codeRegion.press('ArrowRight')
+  await expect.poll(() => codeRegion.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+  await page.getByRole('navigation', { name: 'On this page' }).getByRole('link', { name: 'Translate familiar concepts', exact: true }).click()
+  await expect(page.locator('#translate-familiar-concepts')).toBeFocused()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  const violations = await page.evaluate(async () => (await (window as typeof window & { axe: typeof axe }).axe.run('.help-workspace', { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations)
+  expect(violations).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('dsl-operator-guide-narrow.png'), animations: 'disabled' })
+})
+
 test('legacy URLs, generated API search and contextual guidance reach the right articles', async ({ page }) => {
   for (const [hash, title] of [['#/docs?guide=quick-start', 'Overview & first API calls'], ['#/docs?guide=mcp', 'MCP setup'], ['#/docs?guide=authentication', 'API authentication'], ['#/repository-guide', 'API workflows']]) {
     await page.goto(`/${hash}`)

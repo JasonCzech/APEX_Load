@@ -163,7 +163,32 @@ Scripts live under the **Scripts** page. From there you can create a new script,
 open an existing one in the **Script Editor**, clone one, or import from an external
 format.
 
+In **Author**, select a step in the outline to edit its properties in the main
+**Action editor**. **Overview & bulk** exposes multi-step selection and reusable
+block tools. **Add Action** stages a new action or block: choose its phase and
+place it before, after, inside a supported block, or at the end of the phase.
+Canceling insertion leaves the script unchanged.
+
+Use **Undo** and **Redo** for document changes, including action properties,
+runtime settings, and insertions. The keyboard shortcuts are Cmd/Ctrl+Z and
+Cmd/Ctrl+Shift+Z; code editors retain their own text history. **Review changes**
+compares the current script with its last saved version. Saving retains the
+selected action.
+
+**Author Problems** collects current draft issues and links action errors to their
+fields, including nested steps. Validation and debug evidence are tracked
+separately from saved state; an earlier debug result does not validate later edits.
+
+The request body editor supports JSON, XML, and plain text, with syntax checks,
+find, explicit formatting, template completion, and selection parameterization.
+Its masked template preview does not execute requests or resolve runtime values.
+In **Source**, use **Edit in Full Script JSON** for whole-document editing, then
+**Apply changes** or **Discard JSON edits**. Invalid JSON keeps recovery controls
+available and cannot be applied.
+
 ### Script Anatomy
+
+Coming from LoadRunner or JMeter? Start with [DSL scripting for LoadRunner & JMeter operators](HELP_DSL_OPERATOR_GUIDE.md) for the execution model, a worked script, correlation, data lifetimes, and pacing examples.
 
 The Script Editor is a structured editor over the JSON DSL. It presents your script as
 the DSL's logical sections rather than raw text:
@@ -310,9 +335,11 @@ transactions. To change the grouping, set `config.run_logic.auto_transactions`:
 - `per_action` — wrap every action in its own transaction.
 - `per_iteration` — treat one pass through `actions` as a single transaction.
 
-Imported LoadRunner scripts keep their original `lr_start_transaction` markers as
-`source_transaction` actions. Those preserve provenance for review; they are not the
-authoring primitive you should reach for in a new script.
+Imported LoadRunner scripts keep their original transaction markers as
+`source_transaction` actions, which start, end, or annotate named transactions.
+Review the converted boundaries and reported measurements before comparing them
+with the source run. For a new script, choose automatic transaction wrapping to
+match the measurement scope you need.
 
 ### Control Flow
 
@@ -397,7 +424,8 @@ The `strategy` field decides how VUsers walk the rows:
 
 - `sequential` — each VUser takes the next row in order, wrapping at the end.
 - `random` — each access picks a row at random.
-- `unique` — each VUser gets its own row, so no two users share an account.
+- `unique` — selects a row by VUser within its assigned data partition; wraps if
+  users outnumber available rows, so exclusive accounts require enough rows.
 - `pop` — rows are consumed and not reused.
 
 Rows can be overridden per execution-plan entry. A run receives an immutable, read-only

@@ -1,3 +1,4 @@
+import { bodyLanguage } from './actionBodyModel'
 import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
 // Per-protocol action field editors and the shared header/extractor/assertion
 // section editors used by the ScriptEditor ActionEditor. Extracted from
@@ -808,7 +809,7 @@ export function HttpActionFields({
         />
       )}
 
-      {!isBrowserScript && bodyVisible && openBody && <div className="sub-section"><h4>Request body</h4><p>{(action.body || '').length.toLocaleString()} characters · {action.body_encoding || 'Plain text'}</p><button type="button" className="btn btn-secondary" onClick={openBody}>Edit request body in center</button></div>}
+      {!isBrowserScript && bodyVisible && openBody && <div className="sub-section"><h4>Request body</h4><p>{(action.body || '').length.toLocaleString()} characters · {action.body_encoding ? 'Base64 wire bytes' : bodyLanguage(action).toUpperCase()}</p><button type="button" className="btn btn-secondary" onClick={openBody}>Edit request body in center</button></div>}
       {!isBrowserScript && bodyVisible && !openBody && (
         <div className="sub-section">
           <div className="sub-header">

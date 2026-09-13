@@ -9,6 +9,7 @@ test('keeps the debug parameter list below the action list when the bottom dock 
   await page.getByRole('button', { name: 'Use HTTP API Smoke' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Create Script' })).toBeVisible()
 
+  await page.locator('.author-main-action').getByRole('button', { name: '+ Add Action', exact: true }).click()
   await page.getByText('Add action from a block', { exact: true }).click()
   await page.getByRole('button', { name: /Shared User Data Pool/ }).click()
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug' }).click()

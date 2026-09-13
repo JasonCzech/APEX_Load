@@ -13,6 +13,7 @@ kept for planning or audit context only.
 | [HELP_API_OVERVIEW.md](HELP_API_OVERVIEW.md) | Current | In-app help: api overview |
 | [HELP_CAPABILITIES.md](HELP_CAPABILITIES.md) | Current | In-app help: capabilities |
 | [HELP_CHANGES.md](HELP_CHANGES.md) | Current | In-app help: changes |
+| [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |
 | [HELP_GETTING_STARTED.md](HELP_GETTING_STARTED.md) | Current | In-app help: getting started |
 | [HELP_SUPPORT.md](HELP_SUPPORT.md) | Current | In-app help: support |
 | [HELP_TROUBLESHOOTING.md](HELP_TROUBLESHOOTING.md) | Current | In-app help: troubleshooting |

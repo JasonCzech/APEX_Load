@@ -146,3 +146,25 @@ describe('script editor state', () => {
     expect(selectScriptEditorIsBusy(state)).toBe(true)
   })
 })
+
+describe('complete document edit history', () => {
+  it('groups typing in one field and separates other fields, structural edits and pauses', () => {
+    let state = createScriptEditorState(makeScript())
+    for (const [name, group, time] of [['C', 'name', 1000], ['Ch', 'name', 1200], ['Checkout2', 'name', 2200], ['Another', 'target', 2300]] as const) {
+      state = scriptEditorReducer(state, { type: 'document/edit', update: current => ({ ...current, name }), group, time })
+    }
+    expect(state.documentHistory.editorHistory.past.map(s => s.name)).toEqual(['Checkout', 'Ch', 'Checkout2'])
+    const snapshot = state.documentHistory.script
+    state = scriptEditorReducer(state, { type: 'document/edit', update: current => ({ ...current, actions: [] }), time: 2400 })
+    expect(state.documentHistory.editorHistory.past[state.documentHistory.editorHistory.past.length - 1]?.actions).toEqual(snapshot.actions)
+    expect(snapshot.actions).toHaveLength(1)
+  })
+  it('ignores no-op edits, invalidates redo on new edits and bounds snapshots', () => {
+    let state = createScriptEditorState(makeScript())
+    expect(scriptEditorReducer(state, { type: 'document/edit', update: current => ({ ...current }), time: 1 })).toBe(state)
+    state = scriptEditorReducer(state, { type: 'documentHistory/update', update: current => ({ ...current, editorHistory: { past: [], future: [makeScript('Future')] } }) })
+    for (let i = 0; i < 45; i++) state = scriptEditorReducer(state, { type: 'document/edit', update: current => ({ ...current, name: `Edit ${i}` }), time: i })
+    expect(state.documentHistory.editorHistory.past).toHaveLength(30)
+    expect(state.documentHistory.editorHistory.future).toEqual([])
+  })
+})

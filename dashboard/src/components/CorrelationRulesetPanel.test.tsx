@@ -44,12 +44,12 @@ async function flush() {
 }
 
 async function waitForDestructiveDialog() {
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const dialog = container.querySelector<HTMLElement>('[role="dialog"]')
-    if (dialog) return dialog
+  // The modal is lazy-loaded. Wait for its input rather than a fixed number of
+  // event-loop turns, which can finish before the module loads under suite load.
+  await vi.waitFor(async () => {
     await act(async () => { await new Promise(resolve => window.setTimeout(resolve, 0)) })
-  }
-  return container.querySelector<HTMLElement>('[role="dialog"]')
+    expect(container.querySelector('input[placeholder="Operational reason"]')).not.toBeNull()
+  }, { timeout: 3000, interval: 20 })
 }
 
 function ruleset(overrides: Partial<CorrelationRuleset>): CorrelationRuleset {

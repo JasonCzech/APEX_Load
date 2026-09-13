@@ -83,12 +83,14 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
     },
   })
 
+  await page.setViewportSize({ width: 1600, height: 1000 })
   await openEditor(page, workspace, scriptId)
 
   const workbench = page.getByRole('region', { name: 'Author center workbench' })
-  const actionListTab = workbench.getByRole('tab', { name: 'Action List' })
-  await expect(actionListTab, 'the primary editor surface must be Action List').toHaveAttribute('aria-selected', 'true')
-  await expect(workbench.getByRole('table', { name: 'Structured action list' }).getByRole('button', { name: 'listOrders' })).toBeVisible()
+  const actionListTab = workbench.getByRole('tab', { name: 'Action editor' })
+  await expect(actionListTab, 'the primary editor surface must be the action editor').toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /listOrders.*GET/ }).click()
+  await expect(workbench.getByLabel('Name', { exact: true })).toHaveValue('listOrders')
 
   const sourceMappingTab = workbench.getByRole('tab', { name: 'Source Mapping' })
   await expect(sourceMappingTab, 'an imported script must retain its source-review surface').toBeVisible()
@@ -108,7 +110,7 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
   await runtimeTab.click()
   await expect(workbench.getByRole('textbox', { name: 'Base URL' })).toHaveValue(editedBaseURL)
   await actionListTab.click()
-  await expect(workbench.getByRole('button', { name: 'listOrders' })).toBeVisible()
+  await expect(workbench.getByLabel('Name', { exact: true })).toHaveValue('listOrders')
 
   const updateResponsePromise = page.waitForResponse(response => isScriptUpdate(response, scriptId))
   await page.getByRole('button', { name: 'Save script' }).click()
@@ -132,8 +134,9 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
 
   await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible({ timeout: 15_000 })
   const reopenedWorkbench = page.getByRole('region', { name: 'Author center workbench' })
-  await expect(reopenedWorkbench.getByRole('tab', { name: 'Action List' })).toHaveAttribute('aria-selected', 'true')
-  await expect(reopenedWorkbench.getByRole('button', { name: 'listOrders' })).toBeVisible()
+  await expect(reopenedWorkbench.getByRole('tab', { name: 'Action editor' })).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('navigation', { name: 'Script outline' }).getByRole('button', { name: /listOrders.*GET/ }).click()
+  await expect(reopenedWorkbench.getByLabel('Name', { exact: true })).toHaveValue('listOrders')
   await reopenedWorkbench.getByRole('tab', { name: 'Runtime Settings' }).click()
   await expect(reopenedWorkbench.getByRole('textbox', { name: 'Base URL' })).toHaveValue(editedBaseURL)
 })
@@ -156,7 +159,7 @@ test('[U21] a large script renders a usable virtualized action list within a bou
   })
 
   await openEditor(page, workspace, scriptId)
-  await page.getByText('Bulk action tools',{exact:true}).click()
+  await page.getByRole('button', { name: 'Overview & bulk', exact: true }).click()
   await expect(
     page.getByRole('button', { name: `Action List ${actionCount} executables` }),
     'the large editor must become usable rather than hanging during full-list rendering',

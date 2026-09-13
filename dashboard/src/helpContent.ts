@@ -22,6 +22,7 @@ const sources = import.meta.glob<string>([
   '../../mcp/README.md',
   '../../docs/HELP_TROUBLESHOOTING.md',
   '../../docs/HELP_CAPABILITIES.md',
+  '../../docs/HELP_DSL_OPERATOR_GUIDE.md',
   '../../docs/DSL_ACTION_REFERENCE.md',
   '../../docs/MESSAGING_SUPPORT.md',
   '../../docs/BROWSER_AND_MOBILE_SUPPORT.md',

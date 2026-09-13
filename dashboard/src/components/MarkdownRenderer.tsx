@@ -163,7 +163,7 @@ function CopyCodeBlock({ code, language }: { code: string; language: string }) {
       const copied = await copyTextToClipboard(code)
       setStatus(copied ? 'Copied' : 'Copy unavailable. Select the example and copy manually.')
     }}>Copy example</button></div>
-    <pre className="markdown-code-block"><code data-language={language || undefined}>{code}</code></pre>
+    <pre className="markdown-code-block" tabIndex={0} role="region" aria-label={language ? `${language} code example` : 'Code example'}><code data-language={language || undefined}>{code}</code></pre>
     <span role="status">{status}</span>
   </div>
 }

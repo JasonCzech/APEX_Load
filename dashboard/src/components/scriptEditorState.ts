@@ -54,6 +54,7 @@ export interface ParameterCandidate {
 }
 
 export interface ReplayOptionsState {
+  capture?: 'diagnostic' | 'errors' | 'script'
   groupName: string
   ignoreThinkTime: boolean
   startPaused: boolean
@@ -87,6 +88,8 @@ export interface ScriptEditorDocumentHistoryState {
   jsonDirty: boolean
   jsonText: string
   editorHistory: EditorHistory
+  editGroup?: string
+  editTime?: number
 }
 
 export interface ScriptEditorNavigationState {
@@ -139,6 +142,7 @@ export interface ScriptEditorState {
 }
 
 export type ScriptEditorEvent =
+  | { type: 'document/edit'; update: ScriptEditorStateUpdate<ScriptDefinition>; group?: string; time: number }
   | { type: 'documentHistory/update'; update: ScriptEditorStateUpdate<ScriptEditorDocumentHistoryState> }
   | { type: 'navigation/update'; update: ScriptEditorStateUpdate<ScriptEditorNavigationState> }
   | { type: 'parametersData/update'; update: ScriptEditorStateUpdate<ScriptEditorParametersDataState> }
@@ -151,6 +155,7 @@ export type ScriptEditorEvent =
   | { type: 'replayDebug/closeScreenshot' }
 
 export const DEFAULT_REPLAY_OPTIONS: ReplayOptionsState = {
+  capture: 'diagnostic',
   groupName: '',
   ignoreThinkTime: true,
   startPaused: false,
@@ -253,8 +258,21 @@ export function createScriptEditorState(initialScript?: ScriptDefinition | null)
 
 export function scriptEditorReducer(state: ScriptEditorState, event: ScriptEditorEvent): ScriptEditorState {
   switch (event.type) {
+    case 'document/edit': {
+      const previous = state.documentHistory
+      const script = applyUpdate(previous.script, event.update)
+      if (script === previous.script || JSON.stringify(script) === JSON.stringify(previous.script)) return state
+      const past = previous.editorHistory.past
+      const grouped = event.group && event.group === previous.editGroup && event.time - (previous.editTime || 0) < 750
+      const alreadyRecorded = past.length > 0 && JSON.stringify(past[past.length - 1]) === JSON.stringify(previous.script)
+      return { ...state, documentHistory: { ...previous, script,
+        editGroup: event.group, editTime: event.time,
+        editorHistory: { past: grouped || alreadyRecorded ? past : [...past, JSON.parse(JSON.stringify(previous.script)) as ScriptDefinition].slice(-30), future: [] },
+      } }
+    }
     case 'documentHistory/update': {
-      const documentHistory = applyUpdate(state.documentHistory, event.update)
+      let documentHistory = applyUpdate(state.documentHistory, event.update)
+      if (documentHistory.editorHistory !== state.documentHistory.editorHistory) documentHistory = { ...documentHistory, editGroup: undefined }
       return documentHistory === state.documentHistory ? state : { ...state, documentHistory }
     }
     case 'navigation/update': {
@@ -310,6 +328,8 @@ export function scriptEditorReducer(state: ScriptEditorState, event: ScriptEdito
         documentHistory: {
           ...state.documentHistory,
           script: event.script,
+          editorHistory: { past: [], future: [] },
+          editGroup: undefined,
           jsonDirty: false,
           jsonText,
         },

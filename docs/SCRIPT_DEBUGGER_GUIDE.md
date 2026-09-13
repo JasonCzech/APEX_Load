@@ -14,6 +14,22 @@ At narrow widths, use **Outline**, **Editor**, and **Inspector** to select a pan
 
 Selecting a parameter in Debug shows its current definition and any explicitly captured parameter value for the selected event. A seed or extracted variable with the same unqualified name is not parameter evidence. Missing captures are labeled **Not captured**; values are masked until revealed, and evidence from a different draft is labeled separately.
 
+## Investigating a run
+
+The transport shows Run, Pause or Continue according to the session state. **Follow execution** follows new evidence; selecting an older execution turns following off. **Go to current action** returns to the current execution position. The selected evidence and the execution cursor are labeled separately. After a failure, Continue still follows the script error policy: stop-on-error ends the iteration rather than running subsequent actions.
+
+**Problems** separates runtime failures from validation/editor issues. Select a runtime failure to open that exact action and iteration. **Timeline** groups completed executions and supports action search, failure filtering, duration, and evidence navigation. Session lifecycle messages remain available in a disclosure. **Engine logs** includes a **Raw text** view; filtered-out logs are distinguished from uncaptured logs.
+
+**Variables** offers searchable, pinned watches, a changed-at-execution filter, and a choice between latest session values and values after a selected execution. Values are reconstructed only from retained seed/extraction evidence. The existing variable timeline links back to the action that changed a value.
+
+## Capture and run profiles
+
+**Evidence capture** is separate from log verbosity. Diagnostic capture requests successful HTTP/SOAP/Java HTTP message detail, bounded to 100 messages, 64 KiB per message and 4 MiB total; backend redaction and retention limits still apply. Browser diagnostic capture uses per-action screenshots. Other protocols use their native evidence support. **Failures only** reduces capture; **Use saved Runtime Settings (custom)** leaves the script's capture settings intact. These session overrides do not change the saved script.
+
+**Effective run configuration** identifies the target, draft/saved status, capture and failure policy, plus parameter selection controls. Named run profiles store only execution controls in the browser: they exclude seed-variable values, credentials, target URLs, and captured evidence.
+
+**Recent runs** retains up to five completed runs in the current editor session, with protocol-appropriate evidence. Pin a comparison baseline to inspect differences in outcomes, assertions, resolved requests, responses, variables and configuration. This is temporary editor history; use **Export session** before closing. The export includes the captured run controls and retained evidence; seed-variable names are exported without their original input values.
+
 ## Routes
 
 Use `/api/v1/replay/sessions/{session_id}` for session reads and transport controls. The older `/api/v1/script-debug/sessions/{session_id}` routes are deprecated compatibility aliases. Browser replay canary sessions still use `/api/v1/browser-replay/sessions/{session_id}`.
@@ -37,6 +53,10 @@ Session controls:
 ## Breakpoints And Stepping
 
 Breakpoints target a phase and action index. Optional `request_index` targets an `http_sequence` child, and optional `step_path` targets structured control-flow leaves such as `loop[0]`, `then[0]`, or `requests[1]`.
+
+**Breakpoint controls** can disable all breakpoints without deleting them. A hit count pauses on exactly that eligible visit (1-based); leaving it empty pauses on every eligible visit. An iteration condition on a nested action targets the innermost loop, zero-based. Editing the breakpoint set resets its hit counters.
+
+**Run to selected action** executes prerequisites from the beginning when no session is active. During a paused session it runs forward to the next matching execution. It adds a one-shot breakpoint, which is consumed when reached, while preserving ordinary breakpoints. Earlier breakpoints, failures, and the script's failure policy can stop execution before the target. It does not replay a request in isolation or reverse execution.
 
 Step modes:
 

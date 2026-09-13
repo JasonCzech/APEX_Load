@@ -80,7 +80,10 @@ function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticl
         setCopied(await copyTextToClipboard(url) ? 'Link copied' : 'Copy unavailable. Copy the address from your browser.')
       }}>Copy article link</button><span role="status">{copied}</span>
     </header>
-    {article.id === 'dsl' && <p><a href={dslSchemaURL} download="dsl.schema.json">Download the generated DSL JSON schema</a></p>}
+    {article.id === 'dsl' && <>
+      <p>New to APEX Load scripting? Start with <a href="#/docs?guide=user-guide&article=dsl-operator-guide">DSL scripting for LoadRunner & JMeter operators</a> for a worked example and an explanation of how virtual users execute it.</p>
+      <p><a href={dslSchemaURL} download="dsl.schema.json">Download the generated DSL JSON schema</a></p>
+    </>}
     {article.id === 'api-overview' && <label className="help-controller-url">Controller API URL
       <input type="url" value={controllerURL} onChange={event => setControllerURL(event.target.value)} aria-invalid={!validURL} />
       <span>{validURL ? 'Examples below use this URL. No request is sent.' : 'Enter an HTTP(S) URL without credentials, query parameters or shell characters.'}</span>

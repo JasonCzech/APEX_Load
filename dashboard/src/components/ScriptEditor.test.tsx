@@ -1642,10 +1642,11 @@ describe('ScriptEditor', () => {
       groupedAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action context')
+    expect(container.querySelector('.author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar')?.textContent).toContain('Sequence Summary')
+    expect(container.querySelector('.author-main-action')?.textContent).toContain('Sequence Summary')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Grouped Requests')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Address_Search_Aura')
     expect(container.querySelector('.editor-utility-sidebar')?.textContent).not.toContain('Checkout_Aura')
@@ -1920,7 +1921,7 @@ describe('ScriptEditor', () => {
       warmupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action context')
     const warmupName = Array.from(container.querySelectorAll<HTMLInputElement>('.action-editor-panel input'))
       .find(input => input.value === 'Warmup')
     const warmupTarget = Array.from(container.querySelectorAll<HTMLInputElement>('.action-editor-panel input'))
@@ -1978,7 +1979,7 @@ describe('ScriptEditor', () => {
 
     expect(actionRows().some(row => row.textContent?.includes('Open Cart'))).toBe(false)
     expect(container.querySelector('.action-item.active')?.textContent).toContain('Complete Checkout')
-    expect(Array.from(container.querySelectorAll<HTMLInputElement>('.editor-utility-sidebar .action-editor-panel input'))
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('.author-main-action .action-editor-panel input'))
       .some(input => input.value === 'Complete Checkout')).toBe(true)
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"name": "Complete Checkout"')
   })
@@ -2227,7 +2228,7 @@ describe('ScriptEditor', () => {
 
     expect(findWorkspaceTab(container, '{ } JSON')).toBeUndefined()
     expect(findWorkspaceTab(container, 'JSON')).toBeUndefined()
-    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Action editor')?.getAttribute('aria-selected')).toBe('true')
     expect(findCenterTab(container, 'Source')).not.toBeUndefined()
     await act(async () => {
       findCenterTab(container, 'Source')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2610,8 +2611,8 @@ describe('ScriptEditor', () => {
     await act(async () => {
       initRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')?.textContent).toContain('Init Login')
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action context')
+    expect(container.querySelector('.author-main-action .action-editor-panel')?.textContent).toContain('Init Login')
 
     const debugTab = findOpenDebuggerButton(container)
     await act(async () => {
@@ -2807,11 +2808,12 @@ describe('ScriptEditor', () => {
       firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Action editor')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('collapsed')).toBe(false)
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-inspector')).toBe(true)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action context')
+    expect(container.querySelector('.author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
     expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([])
     expect(container.querySelector('.json-source-map')).toBeNull()
@@ -2849,7 +2851,7 @@ describe('ScriptEditor', () => {
 
     expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
     expect(Array.from(container.querySelectorAll('.center-tab-button')).map(button => button.textContent?.trim())).toEqual([
-      'Action List',
+      'Action editor',
       'Source',
       'Parameter Data',
       'Runtime Settings',
@@ -2873,7 +2875,7 @@ describe('ScriptEditor', () => {
 
     expect(findCenterTab(container, 'Source Mapping')).toBeUndefined()
     expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
-    expect(findCenterTab(container, 'Action List')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Action editor')?.getAttribute('aria-selected')).toBe('true')
   })
 
   it('applies valid manual JSON edits into the structured authoring tools and save payload', async () => {
@@ -2922,7 +2924,7 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.script-code-status.dirty')?.textContent).toContain('Unsaved JSON edits')
 
-    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Apply JSON')
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Apply changes')
     expect(applyButton).toBeDefined()
     if (!applyButton) return
 
@@ -3327,8 +3329,8 @@ describe('ScriptEditor', () => {
       firstAction?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(findCenterTab(container, 'Parameter Data')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameters')
+    expect(findCenterTab(container, 'Action editor')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('.author-main-action .action-editor-panel')).not.toBeNull()
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
   })
 
@@ -4052,8 +4054,9 @@ describe('ScriptEditor', () => {
     expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-code-pane')?.textContent).toContain('actions[1]')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action context')
+    expect(container.querySelector('.author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
     expect(container.querySelector('.json-source-map')).toBeNull()
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
@@ -4094,6 +4097,8 @@ describe('ScriptEditor', () => {
     await act(async () => {
       restoredSidebarActions[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    expect(findCenterTab(container, 'Action editor')?.getAttribute('aria-selected')).toBe('true')
+    await act(async () => { findCenterTab(container, 'Source Mapping')?.click() })
 
     expect(findCenterTab(container, 'Source Mapping')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Source Mapping')
@@ -5496,7 +5501,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     expect(apiMock.getScriptDebugSession.mock.calls.length).toBeGreaterThanOrEqual(2)
-    expect(container.textContent).toContain('Replay start confirmed')
+    expect(container.textContent).toContain('Running · waiting for next action')
     expect(container.textContent).not.toContain('Debugger session expired')
   })
 
@@ -5511,7 +5516,7 @@ describe('ScriptEditor', () => {
     })
     await act(async () => findDebuggerRunButton(container)!.click())
     await flushReact()
-    expect(container.textContent).toContain(success ? 'Debugger completed successfully' : 'Debugger completed with failures')
+    expect(container.textContent).toContain(success ? 'Passed' : 'Failed')
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
   })
 
@@ -5650,7 +5655,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(findDebuggerRunButton(container)?.disabled).toBe(true)
-    expect(container.textContent).toContain('Debugger stopping')
+    expect(container.textContent).toContain('Stopping debugger')
 
     const finalReport = {
       replay_session_id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http',
@@ -5673,7 +5678,7 @@ describe('ScriptEditor', () => {
     })
 
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
-    expect(container.textContent).toContain('Debugger stopped')
+    expect(container.querySelector('.debugger-statusbar')?.textContent).toContain('Stopped')
     expect(container.textContent).toContain('Restart in step mode')
     expect(container.textContent).not.toContain('Stopping debugger…')
     expect(container.querySelector('.replay-live-badge')?.textContent).toBe('Stopped')
@@ -5724,7 +5729,7 @@ describe('ScriptEditor', () => {
 
     expect(apiMock.getScriptDebugSession).toHaveBeenCalledTimes(1)
     expect(findDebuggerRunButton(container)?.disabled).toBe(true)
-    expect(container.textContent).toContain('Debugger stopping')
+    expect(container.textContent).toContain('Stopping debugger')
 
     await act(async () => {
       await new Promise(resolve => window.setTimeout(resolve, 1250))
@@ -5851,7 +5856,7 @@ describe('ScriptEditor', () => {
     expect(requestedSessionId).toBeTruthy()
     expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith(requestedSessionId)
     expect(findDebuggerRunButton(container)?.disabled).toBe(true)
-    expect(container.textContent).toContain('Replay start confirmed')
+    expect(container.textContent).toContain('Running · waiting for next action')
     expect(container.textContent).not.toContain('Replay failed before completion')
 
     const terminalReport = {
@@ -5887,7 +5892,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
-    expect(container.textContent).toContain('Debugger completed successfully')
+    expect(container.textContent).toContain('Passed')
     expect(container.textContent).not.toContain('network connection closed')
     expect(container.textContent).not.toContain('controller response failed')
   })
@@ -5950,7 +5955,7 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     expect(findDebuggerRunButton(container)?.disabled).toBe(false)
-    expect(container.textContent).toContain('Debugger completed successfully')
+    expect(container.textContent).toContain('Passed')
     expect(container.textContent).not.toContain('Replay failed before completion')
     expect(container.textContent).not.toContain('No debugger session yet')
     expect(container.textContent).not.toContain('network connection closed')
@@ -6786,6 +6791,21 @@ describe('ScriptEditor', () => {
     expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')?.value).toBe('Project Two Replay')
   })
 
+  it('retains the selected action and undo history when save returns a normalized document', async () => {
+    const savedDefinition = { ...initialScript, version: '1.0.1' }
+    apiMock.updateScript.mockResolvedValueOnce({ id: 'script-1', script: savedDefinition })
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} initialFocusedActionName="Login" />) })
+    const name = container.querySelector<HTMLInputElement>('.side-panel-script-name input')!
+    await act(async () => { changeInputValue(name, 'Edited locally') })
+    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!.click(); await Promise.resolve() })
+    await flushReact()
+    // The parent supplies the API response back as initialScript after saving.
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={savedDefinition} />) })
+    expect(container.querySelector<HTMLInputElement>('.author-main-action [data-author-field="name"]')?.value).toBe('Login')
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Undo document change"]')?.disabled).toBe(false)
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')?.disabled).toBe(true)
+  })
+
   it('passes the stored script response through the save callback', async () => {
     const onSave = vi.fn()
     apiMock.createScript.mockResolvedValueOnce({
@@ -7598,7 +7618,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    const undoButton = findButtonByTitle(container, 'Undo last guided change')
+    const undoButton = findButtonByTitle(container, 'Undo document change')
     expect(undoButton).toBeDefined()
     if (!undoButton) {
       return
@@ -7713,7 +7733,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Browser replay started with warnings.')
+    expect(container.querySelector('.editor-toast.warning')).not.toBeNull()
     expect(container.textContent).toContain('WebKit controller host is missing the Playwright browser cache warmup.')
   })
 
@@ -7874,7 +7894,7 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('First failing action')
+    expect(container.querySelector('.replay-failure-pin')).toBeNull() // selected failure already shows the diagnosis
     expect(container.textContent).toContain('Auth Session')
     expect(container.textContent).toContain('Refresh session setup')
 
@@ -7975,7 +7995,7 @@ describe('ScriptEditor', () => {
       group_name: 'Checkout Flow-debug',
       ignore_think_time: true,
       start_paused: false,
-      variables: {},
+      seed_variable_names: [],
     })
     expect(parsed.session).toMatchObject({
       id: 'browser-replay-1',
@@ -8276,8 +8296,9 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.action-detail')).toBeNull()
     expect(container.querySelector('.editor-utility-sidebar')?.classList.contains('context-inspector')).toBe(true)
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action context')
+    expect(container.querySelector('.author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
 
     expect(Array.from(container.querySelectorAll('.script-json-sidebar-tab')).map(button => button.textContent?.trim())).toEqual([])
@@ -8348,7 +8369,7 @@ describe('ScriptEditor', () => {
     })
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
-    const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    const textarea = container.querySelector('.author-body-document textarea[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
     expect(textarea).not.toBeNull()
     if (!textarea) {
       return
@@ -8445,7 +8466,7 @@ describe('ScriptEditor', () => {
     })
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
-    const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    const textarea = container.querySelector('.author-body-document textarea[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
     expect(textarea).not.toBeNull()
     if (!textarea) {
       return
@@ -8891,7 +8912,7 @@ describe('ScriptEditor', () => {
     })
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
-    const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
+    const textarea = container.querySelector('.author-body-document textarea[data-testid="codemirror-mock"]') as HTMLTextAreaElement | null
     expect(textarea).not.toBeNull()
     if (!textarea) {
       return
@@ -9589,8 +9610,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Code: env:Sender')
     expect(container.textContent).toContain('Reason: Request validation failed')
     expect(container.textContent).toContain('Extractions')
-    expect(container.textContent).toContain('Snapshot Request')
-    expect(container.textContent).toContain('Snapshot Response')
+    expect(container.textContent).toContain('Request')
+    expect(container.textContent).toContain('Response')
     const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
     const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full request'))
     const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full response'))
@@ -10108,7 +10129,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Login_Request')
     expect(container.textContent).toContain('Login_Request_2')
 
-    const starterButton = Array.from(container.querySelectorAll('button')).find(button =>
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ Add Action')?.click() })
+    const starterButton = Array.from(document.querySelectorAll('button')).find(button =>
       button.textContent?.includes('POST JSON'),
     )
     expect(starterButton).toBeDefined()
@@ -10120,7 +10142,7 @@ describe('ScriptEditor', () => {
       starterButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Added starter block: POST JSON.')
+    expect(container.textContent).toContain('Inserted')
     expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(3)
   })
 
@@ -10166,9 +10188,10 @@ describe('ScriptEditor', () => {
       configurationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Core API Request Group')
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ Add Action')?.click() })
+    expect(document.body.textContent).toContain('Core API Request Group')
 
-    const insertButton = Array.from(container.querySelectorAll('.reusable-blocks-panel .starter-block-card')).find(button =>
+    const insertButton = Array.from(document.querySelectorAll('.reusable-blocks-panel .starter-block-card')).find(button =>
       button.textContent?.includes('Core API Request Group'),
     ) as HTMLButtonElement | undefined
     expect(insertButton).toBeDefined()
@@ -10184,7 +10207,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Health_Check')
     expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length + 1)
 
-    const undoButton = findButtonByTitle(container, 'Undo last guided change')
+    const undoButton = findButtonByTitle(container, 'Undo document change')
     expect(undoButton).toBeDefined()
     if (!undoButton) {
       return
@@ -10196,7 +10219,7 @@ describe('ScriptEditor', () => {
       undoButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Undid the last guided authoring change.')
+    expect(container.textContent).toContain('Undid the last document change.')
     expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length)
   })
 

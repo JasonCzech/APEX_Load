@@ -1169,6 +1169,16 @@ components:
       properties:
         action_index:
           type: integer
+        disabled:
+          type: boolean
+        hit_count:
+          type: integer
+          description: Pause on this eligible visit (1-based); zero means every visit.
+        iteration:
+          type: integer
+          description: Innermost loop iteration, zero-based.
+        once:
+          type: boolean
         phase:
           type: string
           enum:
@@ -73040,6 +73050,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -74060,6 +74081,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -75140,6 +75172,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -76166,6 +76209,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -77186,6 +77240,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -78211,6 +78276,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -79237,6 +79313,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -103498,6 +103585,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -104519,6 +104617,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -105601,6 +105710,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -106628,6 +106748,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -107649,6 +107780,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -108675,6 +108817,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -109702,6 +109855,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -122834,6 +122998,17 @@ paths:
                       action_index:
                         type: integer
                         format: int64
+                      disabled:
+                        type: boolean
+                      hit_count:
+                        type: integer
+                        format: int64
+                      iteration:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      once:
+                        type: boolean
                       phase:
                         type: string
                       request_index:
@@ -124672,6 +124847,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -128195,6 +128381,17 @@ paths:
                       action_index:
                         type: integer
                         format: int64
+                      disabled:
+                        type: boolean
+                      hit_count:
+                        type: integer
+                        format: int64
+                      iteration:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      once:
+                        type: boolean
                       phase:
                         type: string
                       request_index:
@@ -130033,6 +130230,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -152247,6 +152455,17 @@ paths:
                       action_index:
                         type: integer
                         format: int64
+                      disabled:
+                        type: boolean
+                      hit_count:
+                        type: integer
+                        format: int64
+                      iteration:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      once:
+                        type: boolean
                       phase:
                         type: string
                       request_index:
@@ -154085,6 +154304,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:
@@ -176967,6 +177197,17 @@ paths:
                       action_index:
                         type: integer
                         format: int64
+                      disabled:
+                        type: boolean
+                      hit_count:
+                        type: integer
+                        format: int64
+                      iteration:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      once:
+                        type: boolean
                       phase:
                         type: string
                       request_index:
@@ -178805,6 +179046,17 @@ paths:
                             action_index:
                               type: integer
                               format: int64
+                            disabled:
+                              type: boolean
+                            hit_count:
+                              type: integer
+                              format: int64
+                            iteration:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            once:
+                              type: boolean
                             phase:
                               type: string
                             request_index:

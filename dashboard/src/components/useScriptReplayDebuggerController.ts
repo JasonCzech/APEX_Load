@@ -34,7 +34,7 @@ import {
 } from './scriptEditorWorkbench'
 
 export type DebuggerTab = 'request' | 'browser' | 'variables'
-export type DebuggerBottomTab = 'console' | 'timeline' | 'problems' | 'output'
+export type DebuggerBottomTab = 'console' | 'timeline' | 'problems'
 
 export function selectDebugEvents(
   session: ScriptDebugSession | null,
@@ -218,7 +218,7 @@ export function useScriptReplayDebuggerController({
     () => resolveDebugRowForEvent(debugActionRows, selectedReplayEvent),
     [debugActionRows, selectedReplayEvent],
   )
-  const currentDebugAction = browserReplaySession?.current_action
+  const currentDebugAction = replaying ? browserReplaySession?.current_action : undefined
   const currentDebugActionKey = currentDebugAction
     ? debugBreakpointKey(currentDebugAction.phase, currentDebugAction.action_index, currentDebugAction.request_index)
     : null
@@ -282,7 +282,7 @@ export function useScriptReplayDebuggerController({
   }, [breakpointStorageKey])
   useEffect(() => {
     if (!breakpointStorageKey || !breakpointsLoadedRef.current) return
-    try { window.localStorage.setItem(breakpointStorageKey, JSON.stringify(debugBreakpoints)) } catch { /* storage may be unavailable */ }
+    try { window.localStorage.setItem(breakpointStorageKey, JSON.stringify(debugBreakpoints.filter(bp => !bp.once))) } catch { /* storage may be unavailable */ }
   }, [breakpointStorageKey, debugBreakpoints])
 
   useEffect(() => {

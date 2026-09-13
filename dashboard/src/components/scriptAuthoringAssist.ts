@@ -23,6 +23,7 @@ export interface AuthoringIssue {
   message: string
   phase?: AuthoringIssuePhase
   actionIndex?: number
+  stepPath?: string[]
 }
 
 export interface ActionTemplateDefinition {
@@ -294,13 +295,19 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
     !!condition && (!!(condition.expr || '').trim() || !!(condition.left || '').trim())
   const phasePrefix = actionIssuePhasePrefix(phase)
 
-  const recurse = (node: ScriptActionDefinition, pathKey: string, pathLabel: string): void => {
+  const recurse = (node: ScriptActionDefinition, pathKey: string, pathLabel: string, stepPath: string[] = []): void => {
+    const emit = (issue: AuthoringIssue) => pushIssue(issues, { ...issue, ...(stepPath.length ? { stepPath } : {}) })
+    if (stepPath.length > 32) { emit({ id: `${phasePrefix}:${actionIndex}:depth`, severity: 'error', phase, actionIndex, message: 'Control nesting exceeds the authoring limit of 32 levels.' }); return }
+    if (stepPath.length) {
+      if (!node.name?.trim()) emit({ id: `${phasePrefix}:${actionIndex}:${pathKey}:name`, severity: 'error', phase, actionIndex, message: 'Action name is required.' })
+      if (actionNeedsExplicitTarget(node) && !node.target?.trim()) emit({ id: `${phasePrefix}:${actionIndex}:${pathKey}:target`, severity: 'error', phase, actionIndex, message: 'Action target is required for this protocol step.' })
+    }
     const control = node.control || {}
     if (node.type === 'control_loop') {
       const hasForEachSource = !!(control.for_each && (control.for_each.source || '').trim())
       const hasCount = (control.count ?? 0) > 0
       if (!hasForEachSource && !hasCount && !conditionPresent(control.condition)) {
-        pushIssue(issues, {
+        emit({
           id: `${phasePrefix}:${actionIndex}:control:${pathKey}:loop-mode`,
           severity: 'error',
           phase,
@@ -309,7 +316,7 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
         })
       }
       if (control.for_each && !(control.for_each.source || '').trim()) {
-        pushIssue(issues, {
+        emit({
           id: `${phasePrefix}:${actionIndex}:control:${pathKey}:foreach-source`,
           severity: 'error',
           phase,
@@ -321,7 +328,7 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
       const stepCount = (control.steps || []).length
       const elseCount = (control.else || []).length
       if (stepCount === 0 && elseCount === 0) {
-        pushIssue(issues, {
+        emit({
           id: `${phasePrefix}:${actionIndex}:control:${pathKey}:if-empty`,
           severity: 'error',
           phase,
@@ -332,7 +339,7 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
 	} else if (node.type === 'control_switch') {
 		const cases = control.cases || []
 		if (cases.length === 0) {
-			pushIssue(issues, {
+			emit({
 				id: `${phasePrefix}:${actionIndex}:control:${pathKey}:switch-empty`,
 				severity: 'error', phase, actionIndex,
 				message: `${pathLabel}control_switch needs at least one case.`,
@@ -340,14 +347,14 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
 		}
 		cases.forEach((switchCase, caseIndex) => {
 			if (!conditionPresent(switchCase.condition)) {
-				pushIssue(issues, {
+				emit({
 					id: `${phasePrefix}:${actionIndex}:control:${pathKey}:case-${caseIndex}-condition`,
 					severity: 'error', phase, actionIndex,
 					message: `${pathLabel}control_switch case ${caseIndex + 1} needs a condition.`,
 				})
 			}
 			if ((switchCase.steps || []).length === 0) {
-				pushIssue(issues, {
+				emit({
 					id: `${phasePrefix}:${actionIndex}:control:${pathKey}:case-${caseIndex}-steps`,
 					severity: 'error', phase, actionIndex,
 					message: `${pathLabel}control_switch case ${caseIndex + 1} needs at least one step.`,
@@ -357,7 +364,7 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
 	} else if (node.type === 'control_parallel') {
 		const branches = control.branches || []
 		if (branches.length < 2) {
-			pushIssue(issues, {
+			emit({
 				id: `${phasePrefix}:${actionIndex}:control:${pathKey}:parallel-branches`,
 				severity: 'error', phase, actionIndex,
 				message: `${pathLabel}control_parallel needs at least two named branches.`,
@@ -367,7 +374,7 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
 		branches.forEach((branch, branchIndex) => {
 			const name = (branch.name || '').trim()
 			if (!name || names.has(name) || (branch.steps || []).length === 0) {
-				pushIssue(issues, {
+				emit({
 					id: `${phasePrefix}:${actionIndex}:control:${pathKey}:parallel-${branchIndex}`,
 					severity: 'error', phase, actionIndex,
 					message: `${pathLabel}parallel branch ${branchIndex + 1} needs a unique name and at least one step.`,
@@ -376,17 +383,15 @@ function collectControlFlowIssues(action: ScriptActionDefinition, phase: Authori
 			names.add(name)
 		})
     }
-	const children = [
-		...(control.steps || []),
-		...(control.else || []),
-		...(control.cases || []).flatMap(switchCase => switchCase.steps || []),
-		...(control.default || []),
-		...(control.branches || []).flatMap(branch => branch.steps || []),
-	]
-    children.forEach((child, childIndex) => {
-	  if (child && (child.type === 'control_if' || child.type === 'control_switch' || child.type === 'control_loop' || child.type === 'control_parallel')) {
-        recurse(child, `${pathKey}.${childIndex}`, `${pathLabel}nested step ${childIndex + 1} → `)
-      }
+    const children: Array<{ action: ScriptActionDefinition; segment: string }> = [
+      ...(control.steps || []).map((action, index) => ({ action, segment: `${node.type === 'control_loop' ? 'loop' : 'then'}[${index}]` })),
+      ...(control.else || []).map((action, index) => ({ action, segment: `else[${index}]` })),
+      ...(control.cases || []).flatMap((branch, branchIndex) => (branch.steps || []).map((action, index) => ({ action, segment: `case[${branchIndex}][${index}]` }))),
+      ...(control.default || []).map((action, index) => ({ action, segment: `default[${index}]` })),
+      ...(control.branches || []).flatMap((branch, branchIndex) => (branch.steps || []).map((action, index) => ({ action, segment: `branches[${branchIndex}].steps[${index}]` }))),
+    ]
+    children.forEach(({ action: child, segment }, childIndex) => {
+      if (child) recurse(child, `${pathKey}.${childIndex}`, `${pathLabel}${child.name || `Step ${childIndex + 1}`} → `, [...stepPath, segment])
     })
   }
 

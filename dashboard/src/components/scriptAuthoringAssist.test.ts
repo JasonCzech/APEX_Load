@@ -596,7 +596,7 @@ describe('scriptAuthoringAssist', () => {
 		const issues = collectAuthoringIssues(script)
 		expect(issues.some(issue => /case 1 needs a condition/.test(issue.message))).toBe(true)
 		expect(issues.some(issue => /case 1 needs at least one step/.test(issue.message))).toBe(true)
-		expect(issues.some(issue => /nested step 1 → control_loop needs/.test(issue.message))).toBe(true)
+		expect(issues.some(issue => /Nested → control_loop needs/.test(issue.message))).toBe(true)
 	})
 
     it('flags a for-each control_loop missing its data source', () => {
@@ -632,7 +632,13 @@ describe('scriptAuthoringAssist', () => {
         ] as unknown as ScriptDefinition['actions'],
       }
       const issues = collectAuthoringIssues(script)
-      expect(issues.some((i) => i.actionIndex === 0 && /nested step 1 → control_loop needs/.test(i.message))).toBe(true)
+      expect(issues.some((i) => i.actionIndex === 0 && /InnerLoop → control_loop needs/.test(i.message))).toBe(true)
     })
   })
+})
+
+it('locates missing targets on nested requests by their exact branch path', () => {
+  const script = { name: 'Nested', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Poll', type: 'control_loop', target: '', control: { count: 2, steps: [{ name: 'Read', type: 'GET', target: '' }] } }] }
+  const issue = collectAuthoringIssues(script).find(issue => issue.id.endsWith(':target'))
+  expect(issue).toMatchObject({ phase: 'action', actionIndex: 0, stepPath: ['loop[0]'] })
 })

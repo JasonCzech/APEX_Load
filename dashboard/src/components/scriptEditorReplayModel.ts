@@ -147,6 +147,10 @@ export function normalizeStoredBreakpoints(raw: unknown): ScriptDebugBreakpoint[
     if (Array.isArray(value.step_path) && value.step_path.every(segment => typeof segment === 'string')) {
       breakpoint.step_path = value.step_path as string[]
     }
+    if (value.once) continue // temporary run-to targets never survive an editor reload
+    if (value.disabled === true) breakpoint.disabled = true
+    if (Number.isInteger(value.hit_count) && Number(value.hit_count) > 0 && Number(value.hit_count) <= 1000000) breakpoint.hit_count = Number(value.hit_count)
+    if (Number.isInteger(value.iteration) && Number(value.iteration) >= 0 && Number(value.iteration) <= 1000000) breakpoint.iteration = Number(value.iteration)
     breakpoints.push(breakpoint)
   }
   return breakpoints

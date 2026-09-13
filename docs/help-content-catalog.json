@@ -30,6 +30,13 @@
     ]
   },
   {
+    "id": "dsl-operator-guide",
+    "area": "user-guide",
+    "title": "DSL scripting for LoadRunner & JMeter operators",
+    "path": "docs/HELP_DSL_OPERATOR_GUIDE.md",
+    "owner": "APEX Load maintainers"
+  },
+  {
     "id": "data",
     "area": "user-guide",
     "title": "Parameters, data & secrets",

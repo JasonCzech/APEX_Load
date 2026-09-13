@@ -2,6 +2,11 @@
 
 This documentation ships with the dashboard build shown below each article. It describes this checkout's capabilities; a remote controller or generator may run another version. Use the sidebar build information and current API capability responses to compare them.
 
+## September 13, 2026 DSL operator guide
+
+- Added [DSL scripting for LoadRunner & JMeter operators](HELP_DSL_OPERATOR_GUIDE.md), with terminology mappings, per-user execution, an annotated HTTP journey, correlation, data lifetimes, pacing, control flow, reporting, and troubleshooting.
+- Connected the guide to Help navigation, search, authoring guidance, and the generated action reference.
+
 ## September 12, 2026 documentation update
 
 - Organized help into Getting Started, User Guide, Administration, API & Automation, and Troubleshooting.

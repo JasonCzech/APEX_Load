@@ -384,6 +384,10 @@ export interface components {
     };
     "ScriptDebugBreakpoint": {
       "action_index": number;
+      "disabled"?: boolean;
+      "hit_count"?: number;
+      "iteration"?: number;
+      "once"?: boolean;
       "phase": "init" | "action" | "teardown";
       "request_index"?: number;
       "step_path"?: Array<string>;
@@ -41148,6 +41152,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -41504,6 +41512,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -54205,6 +54217,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -54566,6 +54582,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -70425,6 +70445,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -70786,6 +70810,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -77294,6 +77322,10 @@ export interface operations {
           "break_on_failure"?: boolean;
           "breakpoints"?: Array<{
             "action_index"?: number;
+            "disabled"?: boolean;
+            "hit_count"?: number;
+            "iteration"?: (number) | null;
+            "once"?: boolean;
             "phase"?: string;
             "request_index"?: (number) | null;
             "step_path"?: Array<string>;
@@ -78021,6 +78053,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -78395,6 +78431,10 @@ export interface operations {
           "break_on_failure"?: boolean;
           "breakpoints"?: Array<{
             "action_index"?: number;
+            "disabled"?: boolean;
+            "hit_count"?: number;
+            "iteration"?: (number) | null;
+            "once"?: boolean;
             "phase"?: string;
             "request_index"?: (number) | null;
             "step_path"?: Array<string>;
@@ -79122,6 +79162,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -79497,6 +79541,10 @@ export interface operations {
           "break_on_failure"?: boolean;
           "breakpoints"?: Array<{
             "action_index"?: number;
+            "disabled"?: boolean;
+            "hit_count"?: number;
+            "iteration"?: (number) | null;
+            "once"?: boolean;
             "phase"?: string;
             "request_index"?: (number) | null;
             "step_path"?: Array<string>;
@@ -80224,6 +80272,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -80598,6 +80650,10 @@ export interface operations {
           "break_on_failure"?: boolean;
           "breakpoints"?: Array<{
             "action_index"?: number;
+            "disabled"?: boolean;
+            "hit_count"?: number;
+            "iteration"?: (number) | null;
+            "once"?: boolean;
             "phase"?: string;
             "request_index"?: (number) | null;
             "step_path"?: Array<string>;
@@ -81325,6 +81381,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -81809,6 +81869,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -82179,6 +82243,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -82983,6 +83051,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -83339,6 +83411,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -92753,6 +92829,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -93123,6 +93203,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -93493,6 +93577,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;
@@ -93863,6 +93951,10 @@ export interface operations {
               "break_on_failure": boolean;
               "breakpoints"?: Array<{
                 "action_index": number;
+                "disabled"?: boolean;
+                "hit_count"?: number;
+                "iteration"?: (number) | null;
+                "once"?: boolean;
                 "phase": string;
                 "request_index"?: (number) | null;
                 "step_path"?: Array<string>;

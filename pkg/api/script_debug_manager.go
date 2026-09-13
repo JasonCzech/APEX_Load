@@ -43,6 +43,13 @@ var (
 )
 
 type ScriptDebugBreakpoint struct {
+	Disabled bool `json:"disabled,omitempty"`
+	// HitCount pauses on exactly this eligible visit (1-based). Zero means every visit.
+	HitCount int `json:"hit_count,omitempty"`
+	// Iteration targets the innermost loop, zero-based. Nil matches any iteration.
+	Iteration *int `json:"iteration,omitempty"`
+	// Once is a temporary run-to breakpoint; it is removed when reached.
+	Once        bool   `json:"once,omitempty"`
 	Phase       string `json:"phase"`
 	ActionIndex int    `json:"action_index"`
 	// Optional sub-request / sub-step targeting within a container action. When
@@ -98,6 +105,7 @@ type ScriptDebugSession struct {
 
 	mu                            sync.RWMutex
 	cancel                        context.CancelFunc
+	breakpointHits                map[int]int
 	stepOnce                      bool
 	stepMode                      string        // "" | over | loop_end while a step-through is in flight
 	stepBoundary                  *stepBoundary // resume-through subtree for stepMode
@@ -1293,6 +1301,7 @@ func (m *ScriptDebugManager) updateBreakpointsForProject(sessionID, projectID st
 	}
 	session.lastActivityAt = now
 	session.Breakpoints = normalizeDebugBreakpoints(breakpoints)
+	session.breakpointHits = nil
 	session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Updated %d breakpoint(s)", len(session.Breakpoints)), "", nil)
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
@@ -1592,6 +1601,10 @@ func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 		clone.Breakpoints = make([]ScriptDebugBreakpoint, len(s.Breakpoints))
 		for i, bp := range s.Breakpoints {
 			cloned := bp
+			if bp.Iteration != nil {
+				iteration := *bp.Iteration
+				cloned.Iteration = &iteration
+			}
 			if bp.RequestIndex != nil {
 				idx := *bp.RequestIndex
 				cloned.RequestIndex = &idx
@@ -2111,31 +2124,50 @@ func debugLeafSuffix(action engine.ReplayDebugAction) string {
 }
 
 func (s *ScriptDebugSession) hasBreakpointLocked(action engine.ReplayDebugAction) bool {
-	for _, breakpoint := range s.Breakpoints {
-		if breakpoint.Phase != action.Phase || breakpoint.ActionIndex != action.ActionIndex {
+	hit := false
+	var consumed []int
+	for index, breakpoint := range s.Breakpoints {
+		if breakpoint.Disabled || breakpoint.Phase != action.Phase || breakpoint.ActionIndex != action.ActionIndex {
 			continue
 		}
+		matches := false
 		switch {
 		case len(breakpoint.StepPath) > 0:
-			// Control-flow / general sub-step breakpoint: match the leaf's static
-			// path (so it fires on every loop iteration of that step).
-			if stepPathEqual(breakpoint.StepPath, action.StepPath) {
-				return true
-			}
+			matches = stepPathEqual(breakpoint.StepPath, action.StepPath)
 		case breakpoint.RequestIndex != nil:
-			// http_sequence sub-request breakpoint.
-			if action.RequestIndex != nil && *breakpoint.RequestIndex == *action.RequestIndex {
-				return true
-			}
+			matches = action.RequestIndex != nil && *breakpoint.RequestIndex == *action.RequestIndex
 		default:
-			// Whole-action breakpoint: stop once, at the first executed leaf, for
-			// any action type (plain action, http_sequence, or control flow).
-			if action.LeafOrdinal == 0 {
-				return true
-			}
+			matches = action.LeafOrdinal == 0
+		}
+		if !matches {
+			continue
+		}
+		if breakpoint.Iteration != nil && (action.Iteration == nil || *action.Iteration != *breakpoint.Iteration) {
+			continue
+		}
+		if s.breakpointHits == nil {
+			s.breakpointHits = make(map[int]int)
+		}
+		s.breakpointHits[index]++
+		if breakpoint.HitCount > 0 && s.breakpointHits[index] != breakpoint.HitCount {
+			continue
+		}
+		hit = true
+		if breakpoint.Once {
+			consumed = append(consumed, index)
 		}
 	}
-	return false
+	// Count every matching breakpoint before removing temporary stops. An
+	// overlapping run-to must not hide this visit from a permanent condition.
+	for n := len(consumed) - 1; n >= 0; n-- {
+		index := consumed[n]
+		s.Breakpoints = append(s.Breakpoints[:index], s.Breakpoints[index+1:]...)
+		for i := index; i < len(s.Breakpoints); i++ {
+			s.breakpointHits[i] = s.breakpointHits[i+1]
+		}
+		delete(s.breakpointHits, len(s.Breakpoints))
+	}
+	return hit
 }
 
 func stepPathEqual(a, b []string) bool {
@@ -2157,6 +2189,12 @@ func normalizeDebugBreakpoints(input []ScriptDebugBreakpoint) []ScriptDebugBreak
 	seen := make(map[string]struct{}, len(input))
 	output := make([]ScriptDebugBreakpoint, 0, len(input))
 	for _, breakpoint := range input {
+		if len(output) >= 1024 {
+			break
+		}
+		if breakpoint.HitCount < 0 || breakpoint.HitCount > 1000000 || (breakpoint.Iteration != nil && (*breakpoint.Iteration < 0 || *breakpoint.Iteration > 1000000)) {
+			continue
+		}
 		phase := strings.TrimSpace(breakpoint.Phase)
 		if phase == "" {
 			phase = "action"
@@ -2175,12 +2213,16 @@ func normalizeDebugBreakpoints(input []ScriptDebugBreakpoint) []ScriptDebugBreak
 			reqKey = strconv.Itoa(idx)
 		}
 		stepKey := strings.Join(breakpoint.StepPath, "/")
-		key := fmt.Sprintf("%s:%d:%s:%s", phase, breakpoint.ActionIndex, reqKey, stepKey)
+		key := fmt.Sprintf("%s:%d:%s:%s:%t", phase, breakpoint.ActionIndex, reqKey, stepKey, breakpoint.Once)
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		normalized := ScriptDebugBreakpoint{Phase: phase, ActionIndex: breakpoint.ActionIndex, RequestIndex: requestIndex}
+		normalized := ScriptDebugBreakpoint{Phase: phase, ActionIndex: breakpoint.ActionIndex, RequestIndex: requestIndex, Disabled: breakpoint.Disabled, HitCount: breakpoint.HitCount, Once: breakpoint.Once}
+		if breakpoint.Iteration != nil {
+			iteration := *breakpoint.Iteration
+			normalized.Iteration = &iteration
+		}
 		if len(breakpoint.StepPath) > 0 {
 			normalized.StepPath = append([]string(nil), breakpoint.StepPath...)
 		}

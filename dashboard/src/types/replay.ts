@@ -234,6 +234,10 @@ export interface BrowserReplaySessionResponse {
 export type ScriptDebugLogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace'
 
 export interface ScriptDebugBreakpoint {
+  disabled?: boolean
+  hit_count?: number
+  iteration?: number
+  once?: boolean
   phase: 'init' | 'action' | 'teardown' | string
   action_index: number
   // Optional sub-request / sub-step targeting within a container action. Absent

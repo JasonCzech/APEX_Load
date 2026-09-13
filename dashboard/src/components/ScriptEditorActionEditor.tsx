@@ -1,12 +1,13 @@
+import { humanActionType } from './authorExperience'
 import { useActionParameterMenu } from './useActionParameterMenu'
 import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext, useContext } from 'react'
 import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameterDefinition, ScriptValidationResponse } from '../types/scripts'
 import type { ActionEditorParameterDraft } from './scriptEditorState'
 import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
 import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
 import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField, actionTransactionName, setActionTransactionName } from './scriptEditorWorkbench'
-import { dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
+import { dslActionTypesForProtocol, dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
 import { ProtocolExtractorsSection, ProtocolAssertionsSection, BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
 import { type AuthoringIssue } from './scriptAuthoringAssist'
 
@@ -14,6 +15,7 @@ type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
 type ParameterConfig = ScriptParameterDefinition
 type ValidationEvidence = Pick<ScriptValidationResponse, 'data_source_fit' | 'ai_guardrails' | 'authoring_health'>
+const ActionProtocolContext = createContext('http')
 const HTTP_RUNTIME_ACTION_TYPES = new Set(['cookie_clear', 'cache_clear', 'http_connections_close'])
 
 function isHTTPRuntimeAction(action: Action): boolean {
@@ -61,11 +63,11 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
   })
 
   return (
-    <div className="action-editor-panel">
+    <ActionProtocolContext.Provider value={protocol}><div className="action-editor-panel">
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
       {inspector && <div className="inspector-section-tabs" role="group" aria-label="Action property sections">
-        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" key={value} aria-pressed={section === value} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
+        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" key={value} aria-pressed={section === value} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? isControlAction(action) ? 'Control flow' : isHTTPRuntimeControl ? 'State control' : 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
       </div>}
       <div hidden={inspector && section !== 'request'}>
       <OpenActionBody.Provider value={inspector ? onOpenBody : undefined}>
@@ -105,7 +107,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
             <ControlFlowFields action={action} index={index} onUpdate={onUpdate} />
           )}
 
-          {!isHTTPRuntimeControl && (isWebSocketScript ? (
+          {!isHTTPRuntimeControl && !isControlAction(action) && (isWebSocketScript ? (
             <WebSocketActionFields
               action={action}
               index={index}
@@ -208,8 +210,8 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
       </ManagedActionChecks.Provider>
       </OpenActionBody.Provider>
       </div>
-      {inspector && (isHTTPRuntimeControl || isHTTPSequence) && <div hidden={section !== 'checks'} className="sub-section"><p>{isHTTPSequence ? 'Select an individual request to configure its correlation and checks.' : 'This action changes HTTP state and has no response to extract or check.'}</p></div>}
-      {inspector && !isHTTPRuntimeControl && !isHTTPSequence && <div hidden={section !== 'checks'}>
+      {inspector && (isHTTPRuntimeControl || isHTTPSequence || isControlAction(action)) && <div hidden={section !== 'checks'} className="sub-section"><p>{isHTTPSequence ? 'Select an individual request to configure its correlation and checks.' : isHTTPRuntimeControl ? 'This action changes HTTP state and has no response to extract or check.' : 'Select a request inside this block to configure response extraction and checks.'}</p></div>}
+      {inspector && !isHTTPRuntimeControl && !isHTTPSequence && !isControlAction(action) && <div hidden={section !== 'checks'}>
         {!isBrowserScript && <ProtocolExtractorsSection action={action} index={index} protocol={protocol} onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />}
         <ProtocolAssertionsSection action={action} index={index} protocol={protocol} onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
       </div>}
@@ -231,7 +233,7 @@ export function ActionEditor({ inspector = false, initialSection = 'request', on
 
       </div>
       <ActionParameterMenu selectionState={selectionState} onOpenParameterEditor={openParameterEditor} />
-    </div>
+    </div></ActionProtocolContext.Provider>
   )
 }
 
@@ -295,7 +297,7 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
   return (
     <>
       <div className="form-grid">
-        <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
+        <label><span>Name</span><input data-author-field="name" value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
         <label><span>Action Type</span><input value="HTTP sequence" readOnly /></label>
         <label className="full-width"><span>Source Transaction</span><input value={sourceTransaction || action.name || ''} readOnly /></label>
       </div>
@@ -467,6 +469,9 @@ interface ControlBranchEditorProps {
 // row form can't express. Step edits preserve unknown keys (R1).
 // Exported for focused render tests.
 export function ControlBranchEditor({ label, steps, onChange, depth = 0 }: ControlBranchEditorProps) {
+  const protocol = useContext(ActionProtocolContext)
+  const types = dslActionTypesForProtocol(protocol).map(spec => spec.type)
+  const availableTypes = types.length ? types : [...HTTP_ACTION_TYPES, 'request', 'control_break', 'control_continue']
   const list = steps || []
   const [mode, setMode] = useState<'structured' | 'json'>('structured')
   const [jsonDraft, setJsonDraft] = useState(() => formatControlActions(list))
@@ -507,7 +512,7 @@ export function ControlBranchEditor({ label, steps, onChange, depth = 0 }: Contr
             return (
               <div className={`control-step-row${isContainer ? ' control-step-nested' : ''}`} key={i}>
                 <div className="control-step-fields">
-                  <input className="control-step-type" value={step.type || ''} placeholder="type" aria-label={`${label} step ${i + 1} type`} onChange={e => onChange(updateActionStepField(list, i, 'type', e.target.value))} />
+                  <select className="control-step-type" value={step.type || ''} aria-label={`${label} step ${i + 1} type`} onChange={e => onChange(updateActionStepField(list, i, 'type', e.target.value))}><option value="">Choose action type</option>{Array.from(new Set([step.type, ...availableTypes])).filter(Boolean).map(type => <option key={type} value={type}>{humanActionType(type)}</option>)}</select>
                   <input className="control-step-name" value={step.name || ''} placeholder="name" aria-label={`${label} step ${i + 1} name`} onChange={e => onChange(updateActionStepField(list, i, 'name', e.target.value))} />
                   {!isContainer && !isLeafControl && (
                     <input className="control-step-target" value={step.target || ''} placeholder="target" aria-label={`${label} step ${i + 1} target`} onChange={e => onChange(updateActionStepField(list, i, 'target', e.target.value))} />
@@ -716,7 +721,7 @@ export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: Contro
 
         {isLoop && (
           <label>
-            <span>Max Iterations</span>
+            <span>Max Iterations</span><small>0 uses the runtime limit of 1,000 for condition-driven loops. A positive value sets an explicit safety bound.</small>
             <input type="number" min="0" value={control.max_iterations ?? 0} onChange={e => updateControl({ max_iterations: Math.max(0, Number(e.target.value) || 0) })} />
           </label>
         )}
@@ -822,7 +827,7 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
   if (typeOnly) return typeField
   return (
     <div className="form-grid">
-      <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
+      <label><span>Name</span><input data-author-field="name" value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
       {!hideActionType && typeField}
       {actionTypes === HTTP_ACTION_TYPES && (action.type === 'request' || ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(action.type)) && <label><span>HTTP method</span>
         <select aria-label="HTTP method" value={action.method || (action.type === 'request' ? 'GET' : action.type)} onChange={e => onUpdate(index, 'method', e.target.value)}>
@@ -870,13 +875,13 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
             </>
           )}
         </>
-      ) : isRuntimeStateAction ? (
-        <div className="form-hint full-width">This action has no request target; it operates on the current VUser’s HTTP state at this exact position.</div>
+      ) : isRuntimeStateAction || isControlAction(action) ? (
+        <div className="form-hint full-width">This action controls execution and has no request target.</div>
       ) : (
-        <label className="full-width"><span>{targetLabel}</span><input value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
+        <label className="full-width"><span>{targetLabel}</span><input data-author-field="target" value={action.target} onChange={e => onUpdate(index, 'target', e.target.value)} placeholder={targetPlaceholder} /></label>
       )}
       {showSelector && (
-        <label className="full-width"><span>Selector Override</span><small>Overrides Target Selector for element lookup. An Object Repository Ref takes precedence when it resolves.</small><input value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
+        <label className="full-width"><span>Selector Override</span><small>Overrides Target Selector for element lookup. An Object Repository Ref takes precedence when it resolves.</small><input data-author-field="selector" value={action.selector || ''} onChange={e => onUpdate(index, 'selector', e.target.value)} placeholder="#submit, input[name=email], [data-testid=save]" /></label>
       )}
       {showSelector && (
         <label className="full-width">
