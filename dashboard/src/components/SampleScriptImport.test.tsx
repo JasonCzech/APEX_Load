@@ -349,6 +349,7 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('Source Comparison')
     expect(container.textContent).toContain('rest_json_request')
     expect(container.textContent).toContain('actions[0]')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     expect(container.textContent).toContain('session_id')
     const warningDetails = container.querySelector<HTMLButtonElement>('button[aria-label="View 1 import warning detail"]')
     expect(warningDetails).not.toBeNull()

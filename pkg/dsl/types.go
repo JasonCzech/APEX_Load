@@ -831,7 +831,7 @@ type DataSource struct {
 	StagedAsset    string   `json:"staged_asset,omitempty"` // controller-staged distributed asset (internal execution boundary)
 	Strategy       string   `json:"strategy"`               // "sequential", "random", "unique", "pop"
 	Delimiter      string   `json:"delimiter,omitempty"`    // default ","; accepts "auto", "comma", "tab"
-	FirstRowHeader bool     `json:"first_row_header,omitempty"`
+	FirstRowHeader bool     `json:"first_row_header"`
 	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
 }
 

@@ -1,3 +1,4 @@
+import { isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type {
@@ -57,6 +58,7 @@ export function ParameterDataCellDraftProvider({
 }
 
 interface ParameterDataCellInputProps {
+  sensitive?: boolean
   ariaLabel: string
   value: string
   onCommit: (value: string) => void
@@ -68,7 +70,7 @@ interface ParameterDataCellInputProps {
  * script on every character reparses and serializes the full DSL document, which
  * made large parameter files progressively slower to edit.
  */
-export function ParameterDataCellInput({ ariaLabel, value, onCommit, onDraftChange }: ParameterDataCellInputProps) {
+export function ParameterDataCellInput({ ariaLabel, value, onCommit, onDraftChange, sensitive = false }: ParameterDataCellInputProps) {
   const [draft, setDraft] = useState(value)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const cancelBlurCommitRef = useRef(false)
@@ -111,6 +113,9 @@ export function ParameterDataCellInput({ ariaLabel, value, onCommit, onDraftChan
     if (dirtyRef.current && draftRef.current !== storedValueRef.current) {
       dirtyRef.current = false
       onCommitRef.current(draftRef.current)
+      // A rejected structural edit must not leave an unsaved name looking committed.
+      setDraft(storedValueRef.current)
+      draftRef.current = storedValueRef.current
       onDraftChangeRef.current?.(null)
       return
     }
@@ -121,6 +126,8 @@ export function ParameterDataCellInput({ ariaLabel, value, onCommit, onDraftChan
   return (
     <input
       ref={inputRef}
+      type={sensitive ? 'password' : 'text'}
+      autoComplete="off"
       aria-label={ariaLabel}
       value={draft}
       onChange={event => {
@@ -558,6 +565,7 @@ function ParameterDataSourceRows({
 }
 
 interface ParameterDataEditorProps {
+  highlightedColumnIndexes?: number[]
   dataEditorMode: 'grid' | 'raw'
   focusedColumnIndexes?: number[]
   history?: DataSourceHistory
@@ -588,6 +596,7 @@ interface ParameterDataEditorProps {
 }
 
 export function ParameterDataEditor({
+  highlightedColumnIndexes = [],
   dataEditorMode,
   focusedColumnIndexes,
   history,
@@ -619,6 +628,9 @@ export function ParameterDataEditor({
   const onDataCellDraftChange = useContext(ParameterDataCellDraftContext)
   const [sortState, setSortState] = useState<{ column: number; direction: DataSourceSortDirection } | null>(null)
   const [filterText, setFilterText] = useState('')
+  const [jumpRow, setJumpRow] = useState('1')
+  const [showSensitive, setShowSensitive] = useState(false)
+  const hasSensitiveColumns = parsed.columns.some(isSensitiveCredentialPreviewName)
   const [filterColumn, setFilterColumn] = useState<number | 'all'>('all')
   const sourceLabel = source.name || `Source ${index + 1}`
   const isFocusedParameterView = Boolean(focusedColumnIndexes?.length)
@@ -660,6 +672,8 @@ export function ParameterDataEditor({
   const focusedRawData = isFocusedParameterView
     ? stringifyFocusedParameterData(source, parsed, visibleColumnIndexes)
     : source.inline_data || ''
+  const [rawDraft, setRawDraft] = useState<{ base: string; value: string } | null>(null)
+  const rawValue = rawDraft?.base === focusedRawData ? rawDraft.value : focusedRawData
   const updateRawData = (value: string) => {
     onUpdateDataSource(
       index,
@@ -707,6 +721,7 @@ export function ParameterDataEditor({
           </div>
         </div>
       </div>
+      {hasSensitiveColumns && <label className="checkbox-label"><input type="checkbox" aria-label="Reveal sensitive columns" checked={showSensitive} onChange={event => setShowSensitive(event.target.checked)} />Reveal sensitive columns (exports include source values)</label>}
       {warnings.length > 0 && (
         <div className="parameter-validation">
           <div className="parameter-validation-header">
@@ -723,10 +738,16 @@ export function ParameterDataEditor({
           ))}
         </div>
       )}
-      {dataEditorMode === 'grid' ? (
+      {dataEditorMode === 'raw' && hasSensitiveColumns && !showSensitive ? <p>Reveal sensitive columns to edit the raw source.</p> : dataEditorMode === 'grid' ? (
         <div className="parameter-grid-wrap">
           <div className="parameter-grid-actions">
             <div className="parameter-grid-action-buttons">
+              <label>Go to row <input aria-label={`Go to row for ${sourceLabel}`} type="number" min="1" max={filteredRows.length} value={jumpRow} onChange={event => setJumpRow(event.target.value)} /></label>
+              <button type="button" className="btn btn-sm btn-secondary" disabled={!filteredRows.length} onClick={() => {
+                const position = Math.max(0, Math.min(filteredRows.length - 1, Math.trunc(Number(jumpRow) || 1) - 1))
+                if (virtualizeRows) rowVirtualizer.scrollToIndex(position, { align: 'start' })
+                else gridScrollRef.current?.querySelectorAll('tbody tr')[position]?.scrollIntoView({ block: 'nearest' })
+              }}>Go</button>
               <button className="btn btn-sm btn-ghost" onClick={() => onAddDataRow(index)}>+ Row</button>
               {!isFocusedParameterView && (
                 <button className="btn btn-sm btn-ghost" onClick={() => onAddDataColumn(index)}>+ Column</button>
@@ -769,7 +790,7 @@ export function ParameterDataEditor({
             </div>
           </div>
           <div ref={gridScrollRef} className="parameter-grid-scroll">
-            <table className="parameter-grid">
+            <table className="parameter-grid" data-table-pagination="off" aria-label={`${sourceLabel} dataset`} aria-rowcount={filteredRows.length + 1}>
               <thead>
                 <tr>
                   <th className="parameter-grid-row-action" aria-label="Row actions" />
@@ -782,18 +803,14 @@ export function ParameterDataEditor({
                     return (
                       <th
                         key={`${index}-h-${colIdx}`}
+                        className={highlightedColumnIndexes.includes(colIdx) ? 'mapped-column' : undefined}
                         aria-sort={isSortedColumn ? (sortState.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
                       >
                         <div className="parameter-grid-head">
                           {isFocusedParameterView ? (
                             <span>{columnLabel}</span>
                           ) : (
-                            <input
-                              aria-label={`Column ${colIdx + 1} name for ${sourceLabel}`}
-                              value={column}
-                              onChange={e => onUpdateDataColumnName(index, colIdx, e.target.value)}
-                              placeholder={`col_${colIdx + 1}`}
-                            />
+                            <ParameterDataCellInput ariaLabel={`Column ${colIdx + 1} name for ${sourceLabel}`} value={column} onCommit={value => onUpdateDataColumnName(index, colIdx, value)} />
                           )}
                           <div className="parameter-grid-head-actions">
                             <button
@@ -805,7 +822,7 @@ export function ParameterDataEditor({
                               {isSortedColumn ? (sortState.direction === 'asc' ? '↑' : '↓') : '↕'}
                             </button>
                             {!isFocusedParameterView && (
-                              <button className="btn-icon danger" onClick={() => onRemoveDataColumn(index, colIdx)} title="Remove column">✕</button>
+                              <button className="btn-icon danger" onClick={() => onRemoveDataColumn(index, colIdx)} title="Remove column" aria-label={`Remove column ${columnLabel}`}>✕</button>
                             )}
                           </div>
                         </div>
@@ -819,7 +836,7 @@ export function ParameterDataEditor({
                   <tr aria-hidden="true"><td aria-label="Virtualized rows omitted" colSpan={visibleColumnIndexes.length + 2} style={{ height: paddingTop, padding: 0, border: 0 }} /></tr>
                 )}
                 {rowsToRender.map(({ row, rowIdx }) => (
-                  <tr key={`${index}-r-${rowIdx}`}>
+                  <tr key={`${index}-r-${rowIdx}`} aria-rowindex={filteredRows.findIndex(item => item.rowIdx === rowIdx) + 2}>
                     <td className="parameter-grid-row-action">
                       <button
                         className="btn-icon danger"
@@ -834,10 +851,11 @@ export function ParameterDataEditor({
                       {rowIdx + 1}
                     </td>
                     {visibleColumnIndexes.map((colIdx) => (
-                      <td key={`${index}-c-${rowIdx}-${colIdx}`}>
+                      <td key={`${index}-c-${rowIdx}-${colIdx}`} className={highlightedColumnIndexes.includes(colIdx) ? 'mapped-column' : undefined}>
                         <ParameterDataCellInput
                           ariaLabel={`Row ${rowIdx + 1}, ${formatDataSourceColumnLabel(parsed.columns[colIdx], colIdx)} for ${sourceLabel}`}
                           value={row[colIdx] || ''}
+                          sensitive={!showSensitive && isSensitiveCredentialPreviewName(parsed.columns[colIdx])}
                           onCommit={value => onUpdateDataCell(index, rowIdx, colIdx, value)}
                           onDraftChange={value => onDataCellDraftChange?.({
                             sourceIndex: index,
@@ -856,7 +874,7 @@ export function ParameterDataEditor({
                 {parsed.rows.length === 0 && (
                   <tr>
                     <td colSpan={visibleColumnIndexes.length + 2} className="parameter-grid-empty">
-                      No rows yet. Use + Row to add parameter records.
+                      {parsed.rows.length ? 'No matching rows. Clear the search to see all records.' : 'No rows yet. Use + Row to add parameter records.'}
                     </td>
                   </tr>
                 )}
@@ -872,13 +890,18 @@ export function ParameterDataEditor({
           </div>
         </div>
       ) : (
+        <div className="parameter-raw-editor">
+        <p>Raw changes stay in this editor until reviewed. Switching datasets discards an unreviewed raw draft.</p>
         <textarea
           aria-label={`Raw data for ${sourceLabel}`}
-          value={focusedRawData}
-          onChange={e => updateRawData(e.target.value)}
+          value={rawValue}
+          onChange={e => setRawDraft({ base: focusedRawData, value: e.target.value })}
           placeholder={source.first_row_header !== false ? 'username,password\nalice,pass1\nbob,pass2' : 'alice,pass1\nbob,pass2'}
           spellCheck={false}
         />
+        <button type="button" className="btn btn-secondary" disabled={rawValue === focusedRawData} onClick={() => updateRawData(rawValue)}>Review raw changes</button>
+        <button type="button" className="btn btn-ghost" disabled={rawValue === focusedRawData} onClick={() => setRawDraft(null)}>Discard raw changes</button>
+        </div>
       )}
     </div>
   )

@@ -38,10 +38,10 @@ function isScenarioCreate(response: Response): boolean {
     && new URL(response.url()).pathname === '/api/v1/scenarios'
 }
 
-// Tier-0 journey step S5 (docs/qa/TIER0_JOURNEY.md): traverse all six
+// Tier-0 journey step S5 (docs/qa/TIER0_JOURNEY.md): traverse all five
 // Scenario Builder steps, prove state survives backward/forward navigation,
 // and require the Review step and stored API resource to agree with the draft.
-test('[U09] the six-step scenario builder preserves the draft and reviews the saved values', async ({ page, request }) => {
+test('[U09] the five-step scenario builder preserves the draft and reviews the saved values', async ({ page, request }) => {
   test.setTimeout(120_000)
   const workspace = await createWorkspace(request)
   const scriptId = await createScript(request, workspace)
@@ -49,23 +49,22 @@ test('[U09] the six-step scenario builder preserves the draft and reviews the sa
 
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
   const steps = page.locator('[aria-label="Scenario builder steps"]')
-  await expect(page.getByRole('heading', { level: 4, name: 'Start With A Model' })).toBeVisible({ timeout: 15_000 })
-
-  await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
-
-  await expect(page.getByRole('heading', { level: 4, name: 'Scripts And Groups' })).toBeVisible()
+  // Scripts come first: the load model is chosen once the participating scripts are known.
+  await expect(page.getByRole('heading', { level: 4, name: 'Scripts And Groups' })).toBeVisible({ timeout: 15_000 })
   await page.getByPlaceholder('Scenario name').fill(scenarioName)
   await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
   const scriptRow = page.getByRole('row').filter({ hasText: 'Tier_0_Checkout_Script' })
   await scriptRow.getByRole('button', { name: 'Use for Group 1' }).click()
 
-  await steps.getByRole('button', { name: /^Shape/ }).click()
-  const advancedShapes = page.locator('.scenario-advanced-shapes')
-  await expect(advancedShapes).not.toHaveAttribute('open', '')
-  await expect(page.getByRole('button', { name: 'Use Stepped Ramp', exact: true })).toBeHidden()
-  await page.screenshot({ path: 'test-results/scenario-shapes-progressive.png', fullPage: true })
-  await advancedShapes.locator(':scope > summary').click()
+  await steps.getByRole('button', { name: /^Model/ }).click()
+  await expect(page.getByRole('heading', { level: 4, name: 'Choose A Load Model' })).toBeVisible()
+  // Shapes are revealed per model family rather than as one long catalog.
+  await expect(page.getByRole('button', { name: 'Use Closed VUser', exact: true })).toBeHidden()
+  await page.getByRole('button', { name: /^Stepped Ramp/ }).click()
   await expect(page.getByRole('button', { name: 'Use Stepped Ramp', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /^Fixed VUsers/ }).click()
+  await expect(page.getByRole('button', { name: 'Use Stepped Ramp', exact: true })).toBeHidden()
+  await page.screenshot({ path: 'test-results/scenario-model-families.png', fullPage: true })
   await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
   await steps.getByRole('button', { name: /^Run Settings/ }).click()
   await expect(page.getByRole('heading', { level: 4, name: 'Run Settings' })).toBeVisible()
@@ -130,7 +129,7 @@ test('[U09] canceling unsaved navigation keeps the scenario draft in the builder
   const draftName = 'Do Not Lose This Draft'
 
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-  await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Scripts/ }).click()
+  await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Start/ }).click()
   await page.getByPlaceholder('Scenario name').fill(draftName)
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
 
@@ -148,20 +147,21 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   const workspace = await createWorkspace(request)
   await createScript(request, workspace)
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
   await page.getByPlaceholder('Scenario name').fill('Scenario audit regression')
   await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
   await page.getByRole('row').filter({ hasText: 'Tier_0_Checkout_Script' }).getByRole('button', { name: 'Use for Group 1' }).click()
   await expect(page.getByRole('button', { name: 'Choose script for Tier_0_Checkout_Script' })).toBeFocused()
   const steps = page.locator('[aria-label="Scenario builder steps"]')
-  await steps.getByRole('button', { name: /^Shape/ }).click()
+  await steps.getByRole('button', { name: /^Model/ }).click()
+  await page.getByRole('button', { name: /^Fixed VUsers/ }).click()
   await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
-  await steps.getByRole('button', { name: /^Shape/ }).click()
-  await page.getByLabel('Workload source', { exact: true }).selectOption('csv_driven')
+  await steps.getByRole('button', { name: /^Model/ }).click()
+  await page.getByRole('button', { name: /^Traffic Profile/ }).click()
+  await page.getByRole('button', { name: 'Exact CSV schedule', exact: true }).click()
   await expect(page.locator('.scenario-builder-preview')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Save draft', exact: true })).toBeEnabled()
-  await expect(steps.getByRole('button', { name: /^Shape/ })).not.toHaveClass(/complete/)
-  await page.getByLabel('Workload source', { exact: true }).selectOption('shape')
+  await expect(steps.getByRole('button', { name: /^Model/ })).not.toHaveClass(/complete/)
+  await page.getByRole('button', { name: /^Fixed VUsers/ }).click()
   await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
   await steps.getByRole('button', { name: /^Run Settings/ }).click()
   await page.getByRole('tab', { name: 'Browser/Script Runtime', exact: true }).click()
@@ -208,7 +208,7 @@ test('[U09] source switching, runtime scope and save recovery keep the scenario 
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Scenario Library', level: 1 })).toBeVisible()
   await page.goBack()
-  await steps.getByRole('button', { name: /^Scripts/ }).click()
+  await steps.getByRole('button', { name: /^Start/ }).click()
   await expect(page.getByPlaceholder('Scenario name')).toHaveValue('')
   await expect(page.getByRole('button', { name: 'Choose script for Group 1' })).toContainText('Add Script')
 })
@@ -219,7 +219,6 @@ test('[U09] script groups fill horizontal rows and stack on narrow screens', asy
   await createScript(request, workspace)
   await page.setViewportSize({ width: 1440, height: 1000 })
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
   const groups = page.locator('.scenario-script-group-list-spacious .scenario-script-group-card')
   for (let index = 1; index <= 5; index++) {
     if (index > 1) await page.locator('.scenario-add-group-card').click()
@@ -251,8 +250,11 @@ test('[U09] script groups fill horizontal rows and stack on narrow screens', asy
 test('[U09] incomplete browser drafts survive reload without creating scenarios', async ({ page, request }) => {
   const workspace = await createWorkspace(request)
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
+  const steps = page.locator('[aria-label="Scenario builder steps"]')
   await expect(page.getByRole('heading', { name: 'Scripts And Groups' })).toBeVisible()
+  // Visiting the model step is progress worth checkpointing even before anything is chosen.
+  await steps.getByRole('button', { name: /^Model/ }).click()
+  await steps.getByRole('button', { name: /^Start/ }).click()
   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Saved browser draft' })).toContainText('Untitled draft')
   await page.reload()
@@ -270,11 +272,12 @@ test('[U09] CSV schedule suggestions round-trip through preview and scenario sto
   const workspace = await createWorkspace(request)
   await createScript(request, workspace)
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'CSV Driven Follow an authored schedule' }).click()
   await page.getByPlaceholder('Scenario name').fill('CSV roundtrip verification')
   await page.getByRole('button', { name: 'Choose script for Group 1', exact: true }).click()
   await page.getByRole('row').filter({ hasText: 'Tier_0_Checkout_Script' }).getByRole('button', { name: 'Use for Group 1', exact: true }).click()
-  await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Shape/ }).click()
+  await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Model/ }).click()
+  await page.getByRole('button', { name: /^Traffic Profile/ }).click()
+  await page.getByRole('button', { name: 'Exact CSV schedule', exact: true }).click()
   await expect(page.getByRole('link', { name: 'Download sample for these groups' })).toHaveAttribute('download', 'scenario-schedule.csv')
   await page.locator('.csv-driven-panel input[type=file]').setInputFiles({ name: 'schedule.csv', mimeType: 'text/csv', buffer: Buffer.from('elapsed,Tier_0_Checkout_Script\n0s,5\n60s,17\n120s,0\n') })
   await page.getByRole('button', { name: 'Inspect columns', exact: true }).click()
@@ -298,7 +301,6 @@ test('[U09] data pools support CSV preview, import and multiple editable binding
   const workspace = await createWorkspace(request)
   await createScript(request, workspace)
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
   await page.getByPlaceholder('Scenario name').fill('Data binding verification')
   await page.getByRole('button', { name: 'Choose script for Group 1', exact: true }).click()
   await page.getByRole('row').filter({ hasText: 'Tier_0_Checkout_Script' }).getByRole('button', { name: 'Use for Group 1' }).click()
@@ -330,7 +332,6 @@ test('[U09] narrow picker keeps actions visible and bulk-adds filtered scripts',
   await createScript(request, workspace, 'Tier_0_Second_Script')
   await page.setViewportSize({ width: 600, height: 900 })
   await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-  await page.getByRole('button', { name: 'Build from Workload Shape' }).click()
   await page.getByRole('button', { name: 'Choose script for Group 1', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose Script', exact: true })
   await dialog.getByRole('combobox', { name: 'Readiness', exact: true }).selectOption('unblocked')

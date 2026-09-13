@@ -19,6 +19,8 @@ const { codeMirrorProps } = vi.hoisted(() => ({
   codeMirrorProps: { extensions: [] as unknown[] },
 }))
 const dispatchSpy = vi.fn()
+const measuredScroll = { scrollTop: 0, clientHeight: 100 }
+const measureSpy = vi.fn((spec: { read: () => { top: number; height: number }; write: (block: { top: number; height: number }) => void }) => spec.write(spec.read()))
 vi.mock('@uiw/react-codemirror', () => ({
   default: function MockCodeMirror({
     extensions,
@@ -41,6 +43,9 @@ vi.mock('@uiw/react-codemirror', () => ({
           },
         },
         dispatch: dispatchSpy,
+        scrollDOM: measuredScroll,
+        lineBlockAt: () => ({ top: 200, height: 20 }),
+        requestMeasure: measureSpy,
       }
       onCreateEditor?.(fakeView)
     }, [onCreateEditor])
@@ -57,6 +62,8 @@ describe('LinkedCodePane', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     dispatchSpy.mockClear()
+    measureSpy.mockClear()
+    measuredScroll.scrollTop = 0
   })
 
   afterEach(() => {
@@ -90,6 +97,16 @@ describe('LinkedCodePane', () => {
     // A genuine, user-driven selection change scrolls the new line into view.
     await render({ startLine: 3, endLine: 3 })
     expect(scrollSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('centers initial and repeated reveals inside its own scroller without page scrolling', async () => {
+    const outerScroll = vi.spyOn(EditorView, 'scrollIntoView')
+    await act(async () => root.render(<LinkedCodePane value="a\nb\nc\nd" activeRange={{ startLine: 2, endLine: 2 }} revealOnMount revealRequestId={1} />))
+    expect(measuredScroll.scrollTop).toBe(160)
+    const initialMeasures = measureSpy.mock.calls.length
+    await act(async () => root.render(<LinkedCodePane value="a\nb\nc\nd" activeRange={{ startLine: 2, endLine: 2 }} revealOnMount revealRequestId={2} />))
+    expect(measureSpy.mock.calls.length).toBeGreaterThan(initialMeasures)
+    expect(outerScroll).not.toHaveBeenCalled()
   })
 
   it('updates the linked highlight without scrolling when there is no active range', async () => {

@@ -105,6 +105,8 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   await page.screenshot({ path: testInfo.outputPath('batch-import-saved.png'), fullPage: true })
   await page.getByRole('button', { name: `Open ${scripts[0].name} in Visual Editor`, exact: true }).click()
   await expect(page.getByRole('region', { name: 'Author center workbench' })).toBeVisible()
+  const authorPanes = page.getByRole('group', { name: 'Author panes' })
+  if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Outline', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Script Name', exact: true })).toHaveValue(scripts[0].name)
   await expect(page.getByRole('button', { name: 'Save script', exact: true })).toBeDisabled()
 })

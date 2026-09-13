@@ -1,3 +1,8 @@
+import { preserveMappingBindings, withMappingReviewState } from './sourceMappingReviewState'
+import { ActionBodyWorkspace } from './ActionBodyWorkspace'
+import { handleOutlineKeys, parameterUsageLabel } from './scriptSidebarModel'
+import { DatasetChangeReview, type DatasetChange } from './DatasetChangeReview'
+import { parameterUsages, renameScriptParameter, renameDatasetColumn, validateDatasetReplacement } from './parameterIntegrity'
 import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import PanelToggle from "./ux/PanelToggle"
@@ -289,7 +294,7 @@ interface CenterWorkbenchTabDescriptor {
   closeable: boolean
 }
 
-const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata'])
+const DEBUG_HIDDEN_CENTER_TABS = new Set<CenterWorkbenchTabId>(['imported-metadata', 'request-body'])
 
 type AuthorRightSidebarKind =
   | 'auto-parameterization'
@@ -643,6 +648,8 @@ function scriptHasAuthoredActions(script: ScriptData): boolean {
 
 
 export default function ScriptEditor({ scriptId, initialScript, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
+  const [datasetChange, setDatasetChange] = useState<DatasetChange | null>(null)
+
   const api = useApi()
   const [secretBindingsOpen, setSecretBindingsOpen] = useState(false)
   const saveAndConfigureRequestedRef = useRef(false)
@@ -926,7 +933,6 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     selectedOutlineParameterName,
     selectedParameterDataInfo,
     selectedParameterReferenceLines,
-    selectedParameterSameLineOptions,
     setActiveAutoParameterCandidateId,
     setActiveAutoParameterOccurrenceIndex,
     setAuthorCodeFocus,
@@ -950,6 +956,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const transactionBands = useMemo(() => computeTransactionBands(filteredActionRows), [filteredActionRows])
   // Container actions (http_sequence / control_*) the operator has expanded in the
   // Author outline to reveal their nested sub-requests / steps.
+  const editorElementRef = useRef<HTMLDivElement>(null)
+  const [inspectorFocusSection, setInspectorFocusSection] = useState('request')
+  const [narrowAuthorPane, setNarrowAuthorPane] = useState<'outline' | 'editor' | 'inspector'>('editor')
+  useEffect(() => {
+    if (narrowAuthorPane === 'inspector') editorElementRef.current?.querySelector<HTMLElement>('[data-inspector-focus]')?.focus()
+  }, [narrowAuthorPane])
   const [expandedAuthorContainers, setExpandedAuthorContainers] = useState<Set<string>>(() => new Set())
   const toggleAuthorContainer = useCallback((key: string) => {
     setExpandedAuthorContainers(prev => {
@@ -1065,6 +1077,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const centerTabDescriptors = useMemo<CenterWorkbenchTabDescriptor[]>(() => {
     const descriptors: CenterWorkbenchTabDescriptor[] = [
       { id: ACTION_LIST_TAB_ID, label: 'Action List', title: 'Action List', closeable: false },
+      { id: 'request-body', label: 'Request body', title: 'Request body', closeable: true },
       { id: SCRIPT_JSON_TAB_ID, label: 'Source', title: 'Source JSON', closeable: false },
       { id: 'runtime-settings', label: 'Runtime Settings', title: 'Runtime Settings', closeable: true },
       { id: 'parameter-data', label: 'Parameter Data', title: 'Parameter Data', closeable: true },
@@ -1097,6 +1110,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }, [centerTabDescriptorById, centerTabsState.tabs])
   const selectCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
     if (!availableCenterTabIds.has(tabId)) return
+    setNarrowAuthorPane('editor')
     setCenterTabsState(prev => prev.activeTabId === tabId ? prev : { ...prev, activeTabId: tabId })
   }, [availableCenterTabIds])
   const openCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
@@ -1108,12 +1122,17 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     })
   }, [availableCenterTabIds])
   const selectOutlineParameter = useCallback((parameterName: string) => {
+    setNarrowAuthorPane('inspector')
+    setAuthorRightSidebarCollapsed(false)
     setSelectedOutlineParameterName(parameterName)
+    setShowFullScriptJson(true)
+    setDebugDetailCollapsed(false)
+    setDebuggerTab('variables')
     // Show the selected parameter's details in the Parameter companion page.
     setParameterPaneShowAuto(false)
     setScriptJsonSidebarTab('auto-params')
     openCenterTab(SCRIPT_JSON_TAB_ID)
-  }, [openCenterTab, setParameterPaneShowAuto, setScriptJsonSidebarTab, setSelectedOutlineParameterName])
+  }, [openCenterTab, setParameterPaneShowAuto, setScriptJsonSidebarTab, setSelectedOutlineParameterName, setShowFullScriptJson, setDebugDetailCollapsed, setDebuggerTab, setAuthorRightSidebarCollapsed])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
     if (tabId === ACTION_LIST_TAB_ID || tabId === SCRIPT_JSON_TAB_ID || tabId === BROWSER_REPLAY_TAB_ID) return
     setCenterTabPanelElements(prev => prev[tabId] ? { ...prev, [tabId]: null } : prev)
@@ -1480,11 +1499,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
   const applyHistoryChange = useCallback((nextScript: ScriptData, successMessage: string) => {
     setScript(nextScript)
+    setDataSourceHistory({})
+    setDatasetChange(null)
     setJsonText(formatScriptJson(nextScript))
     setJsonDirty(false)
     setSuccess(successMessage)
     setError('')
-  }, [setError, setJsonDirty, setJsonText, setScript, setSuccess])
+  }, [setDataSourceHistory, setError, setJsonDirty, setJsonText, setScript, setSuccess])
 
   const undoEditorChange = useCallback(() => {
     if (!editorHistory.past.length) return
@@ -1738,6 +1759,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }
 
   const selectAuthorPhaseAction = (row: ScriptPhaseActionRow) => {
+    setInspectorFocusSection('request')
+    setNarrowAuthorPane('inspector')
+    setAuthorRightSidebarCollapsed(false)
+    setSelectedOutlineParameterName(null)
+    setScriptJsonSidebarTab('details')
     if (row.phase === 'action') {
       selectSidebarAction(row.actionIndex)
       return
@@ -1748,6 +1774,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   selectAuthorPhaseActionRef.current = selectAuthorPhaseAction
 
   const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>) => {
+    setInspectorFocusSection('request')
+    setNarrowAuthorPane('inspector')
+    setAuthorRightSidebarCollapsed(false)
+    setSelectedOutlineParameterName(null)
+    setScriptJsonSidebarTab('details')
     const { row } = item
     const label = item.kind === 'leaf'
       ? item.childAction.name || item.name || humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
@@ -2584,9 +2615,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     try {
       const resolvedScript = resolveCurrentScript()
       const {
-        script: currentScript,
+        script: flushedScript,
         editGeneration: parameterDataEditGenerationAtSave,
       } = flushPendingParameterDataCellEdits(resolvedScript)
+      const currentScript = await preserveMappingBindings(flushedScript, importBaselineScript || initialScript || null)
+      if (!requestIsCurrent()) return false
       // A new Java Vuser script with executable runner actions cannot be created
       // through POST /scripts — the backend answers 409 and requires governed
       // review. Save it as an authoring session and stop there; approval is a
@@ -3431,7 +3464,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const selectedDebugCodeRow = workspaceTab === 'debug'
     ? (selectedReplayEvent ? selectedDebugRow : (debugActionRows[0] ?? null))
     : null
-  const scriptCodeActivePath = workspaceTab === 'debug'
+  const scriptCodeActivePath = workspaceTab === 'debug' && selectedReplayEvent
     ? codePathForDebugRow(selectedDebugCodeRow)
     : activeAutoParameterPath
       ? activeAutoParameterPath
@@ -3512,6 +3545,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       onTrigger: () => {
         if (debuggerSettingsOpen) {
           setDebuggerSettingsOpen(false)
+          debuggerSettingsBtnRef.current?.focus()
           return
         }
         if (workspaceTab === 'debug') {
@@ -3615,6 +3649,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     selectedReplayEvent,
     selectedDebugRow,
     setDebuggerSettingsOpen,
+    debuggerSettingsBtnRef,
     toggleDebugBreakpoint,
     workspaceTab,
   ])
@@ -3733,16 +3768,34 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     return () => { cancelled = true; window.clearInterval(timer) }
   }, [activeReplaySessionId, replaying, replayStartPending, api, setActiveReplaySessionId, setBrowserReplaySession, setError, setReplayActivity, setReplayReport, setReplaying])
 
-  const addParameter = () => {
-    const nextIndex = (script.parameters?.length || 0) + 1
-    setScript(prev => ({
-      ...prev,
-      parameters: [...(prev.parameters || []), { ...EMPTY_PARAMETER, name: `param_${nextIndex}` }],
-    }))
-    setSelectedParameterIdx(nextIndex - 1)
+  const addParameter = (type = 'list') => {
+    const parameters = script.parameters || []
+    const name = ensureUniqueParameterName(`param_${parameters.length + 1}`, parameters)
+    replaceScriptWithHistory({ ...script, parameters: [...parameters, applyParameterTypeDefaults({ ...EMPTY_PARAMETER, name, type }, type)] })
+    setSelectedParameterIdx(parameters.length)
+    setOpenDataEditor(null)
+  }
+
+  const addParameterDataset = () => {
+    const sources = script.data_sources || []
+    let index = sources.length + 1
+    while (sources.some(source => source.name.toLowerCase() === `dataset_${index}`)) index++
+    replaceScriptWithHistory({ ...script, data_sources: [...sources, { ...EMPTY_DATA_SOURCE, name: `dataset_${index}`, type: 'csv', first_row_header: true, inline_data: 'value\n' }] })
+    setOpenDataEditor(sources.length)
   }
 
   const updateParameter = (idx: number, field: keyof ParameterConfig, value: unknown) => {
+    if (field === 'name') {
+      try {
+        const next = renameScriptParameter(script, idx, String(value))
+        if (next.parameters?.[idx]?.name === script.parameters?.[idx]?.name) return
+        replaceScriptWithHistory(next)
+        setSelectedOutlineParameterName(next.parameters?.[idx]?.name || null)
+        setError('')
+        setSuccess('Renamed parameter and updated all executable references. Undo is available.')
+      } catch (error) { setError(error instanceof Error ? error.message : 'Unable to rename parameter.') }
+      return
+    }
     setScript(prev => {
       const parameters = [...(prev.parameters || [])]
       const current = parameters[idx] || { ...EMPTY_PARAMETER }
@@ -4099,76 +4152,73 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setDataEditorMode(prev => ({ ...prev, [idx]: (prev[idx] || 'grid') === 'grid' ? 'raw' : 'grid' }))
   }
 
-  const mutateDataSource = (
-    idx: number,
-    mutator: (current: DataSourceConfig) => DataSourceConfig,
-    recordHistory = true,
-  ) => {
-    setScript(prev => {
-      const sources = [...(prev.data_sources || [])]
-      const current = sources[idx] || { ...EMPTY_DATA_SOURCE }
-      const next = mutator(cloneDataSource(current))
-      if (recordHistory) {
-        setDataSourceHistory(history => {
-          const entry = history[idx] || { past: [], future: [] }
-          const past = [...entry.past, cloneDataSource(current)].slice(-100)
-          return { ...history, [idx]: { past, future: [] } }
-        })
-      }
-      sources[idx] = cloneDataSource(next)
-      return { ...prev, data_sources: sources }
+  const mutateDataSource = (idx: number, mutator: (current: DataSourceConfig) => DataSourceConfig, recordHistory = true): boolean => {
+    const source = script.data_sources?.[idx]
+    if (!source) return false
+    const proposed = mutator(cloneDataSource(source))
+    try { validateDatasetReplacement(script, idx, proposed) }
+    catch (error) { setError(error instanceof Error ? error.message : 'Unable to change dataset.'); return false }
+    if (recordHistory) setDataSourceHistory(history => {
+      const entry = history[idx] || { past: [], future: [] }
+      return { ...history, [idx]: { past: [...entry.past, cloneDataSource(source)].slice(-100), future: [] } }
     })
+    setScript(prev => ({ ...prev, data_sources: prev.data_sources?.map((item, index) => index === idx ? proposed : item) }))
+    setError('')
+    return true
   }
 
-  const updateDataSource = (idx: number, field: keyof DataSourceConfig, value: unknown, recordHistory = true) => {
-    mutateDataSource(idx, current => ({ ...current, [field]: value }), recordHistory)
+  const updateDataSource = (idx: number, field: keyof DataSourceConfig, value: unknown) => {
+    proposeDatasetChange(idx, current => ({ ...current, [field]: value }), 'Review dataset format or raw data change')
   }
 
   const undoDataSource = (idx: number) => {
     const entry = dataSourceHistory[idx]
-    if (!entry || entry.past.length === 0) return
-
-    mutateDataSource(
-      idx,
-      current => {
-        const previous = cloneDataSource(entry.past[entry.past.length - 1])
-        setDataSourceHistory(history => {
-          const active = history[idx] || { past: [], future: [] }
-          const past = active.past.slice(0, -1)
-          const future = [cloneDataSource(current), ...active.future].slice(0, 100)
-          return { ...history, [idx]: { past, future } }
-        })
-        return previous
-      },
-      false,
-    )
+    const source = script.data_sources?.[idx]
+    if (!source || !entry?.past.length) return
+    if (mutateDataSource(idx, () => cloneDataSource(entry.past[entry.past.length - 1]), false)) {
+      setDataSourceHistory(history => ({ ...history, [idx]: { past: entry.past.slice(0, -1), future: [cloneDataSource(source), ...entry.future].slice(0, 100) } }))
+    }
   }
 
   const redoDataSource = (idx: number) => {
     const entry = dataSourceHistory[idx]
-    if (!entry || entry.future.length === 0) return
+    const source = script.data_sources?.[idx]
+    if (!source || !entry?.future.length) return
+    if (mutateDataSource(idx, () => cloneDataSource(entry.future[0]), false)) {
+      setDataSourceHistory(history => ({ ...history, [idx]: { past: [...entry.past, cloneDataSource(source)].slice(-100), future: entry.future.slice(1) } }))
+    }
+  }
 
-    mutateDataSource(
-      idx,
-      current => {
-        const [nextState, ...remainingFuture] = entry.future
-        setDataSourceHistory(history => {
-          const active = history[idx] || { past: [], future: [] }
-          const past = [...active.past, cloneDataSource(current)].slice(-100)
-          return { ...history, [idx]: { past, future: remainingFuture } }
-        })
-        return cloneDataSource(nextState)
-      },
-      false,
-    )
+  const proposeDatasetChange = (index: number, mutate: (source: DataSourceConfig) => DataSourceConfig, title = 'Review dataset transformation') => {
+    const before = script.data_sources?.[index]
+    if (!before) return
+    setDatasetChange({ index, before: cloneDataSource(before), after: mutate(cloneDataSource(before)), title })
+  }
+  const datasetChangeError = (() => {
+    if (!datasetChange) return ''
+    if (JSON.stringify(script.data_sources?.[datasetChange.index]) !== JSON.stringify(datasetChange.before)) return 'The dataset changed while this review was open. Cancel and prepare the change again.'
+    try { validateDatasetReplacement(script, datasetChange.index, datasetChange.after); return '' }
+    catch (error) { return error instanceof Error ? error.message : 'Dataset change is invalid.' }
+  })()
+  const applyDatasetChange = () => {
+    if (!datasetChange || datasetChangeError) return
+    const sources = [...(script.data_sources || [])]
+    sources[datasetChange.index] = datasetChange.after
+    replaceScriptWithHistory({ ...script, data_sources: sources })
+    setDataSourceHistory({})
+    setDatasetChange(null)
+    setError('')
+    setSuccess('Applied dataset change. Undo structural edit restores the previous source.')
   }
 
   const importDataSourceFile = async (idx: number, file: File | null) => {
     if (!file) return
+    if (file.size > 8 * 1024 * 1024) { setError('Inline dataset imports are limited to 8 MB.'); return }
+    const before = script.data_sources?.[idx]
+    if (!before) return
     try {
       const text = await file.text()
-      updateDataSource(idx, 'inline_data', text)
-      setSuccess(`Imported ${file.name}`)
+      setDatasetChange({ index: idx, before: cloneDataSource(before), after: { ...cloneDataSource(before), inline_data: text, path: undefined, storage_ref: undefined, staged_asset: undefined }, title: `Import ${file.name}` })
       setError('')
     } catch {
       setError('Failed to import parameter file')
@@ -4210,20 +4260,16 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     while (nextRows.length <= rowIdx) nextRows.push(Array(columns.length).fill(''))
     while (nextRows[rowIdx].length < columns.length) nextRows[rowIdx].push('')
     nextRows[rowIdx][colIdx] = value
-    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, nextRows))
+    mutateDataSource(sourceIdx, current => ({ ...current, inline_data: stringifyInlineData(source, columns, nextRows) }))
   }
 
   const updateDataColumnName = (sourceIdx: number, colIdx: number, value: string) => {
-    const source = (script.data_sources || [])[sourceIdx]
-    if (!source) return
-    const { columns, rows } = parseInlineData(source)
-    const nextColumns = [...columns]
-    nextColumns[colIdx] = value || `col_${colIdx + 1}`
-    mutateDataSource(sourceIdx, current => ({
-      ...current,
-      columns: current.first_row_header === false ? nextColumns : [],
-      inline_data: stringifyInlineData(current, nextColumns, rows),
-    }))
+    try {
+      replaceScriptWithHistory(renameDatasetColumn(script, sourceIdx, colIdx, value))
+      setDataSourceHistory({})
+      setError('')
+      setSuccess('Renamed column and updated parameter mappings and executable references. Undo is available.')
+    } catch (error) { setError(error instanceof Error ? error.message : 'Unable to rename column.') }
   }
 
   const addDataRow = (sourceIdx: number) => {
@@ -4231,7 +4277,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     if (!source) return
     const { columns, rows } = parseInlineData(source)
     const nextRows = [...rows, Array(columns.length).fill('')]
-    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, nextRows))
+    mutateDataSource(sourceIdx, current => ({ ...current, inline_data: stringifyInlineData(source, columns, nextRows) }))
   }
 
   const removeDataRow = (sourceIdx: number, rowIdx: number) => {
@@ -4239,7 +4285,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     if (!source) return
     const { columns, rows } = parseInlineData(source)
     const nextRows = rows.filter((_, idx) => idx !== rowIdx)
-    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, columns, nextRows))
+    mutateDataSource(sourceIdx, current => ({ ...current, inline_data: stringifyInlineData(source, columns, nextRows) }))
   }
 
   const addDataColumn = (sourceIdx: number) => {
@@ -4262,7 +4308,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     if (columns.length <= 1) return
     const nextColumns = columns.filter((_, idx) => idx !== colIdx)
     const nextRows = rows.map(row => row.filter((_, idx) => idx !== colIdx))
-    mutateDataSource(sourceIdx, current => ({
+    proposeDatasetChange(sourceIdx, current => ({
       ...current,
       columns: current.first_row_header === false ? nextColumns : [],
       inline_data: stringifyInlineData(current, nextColumns, nextRows),
@@ -4279,13 +4325,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       while (next.length < fixedColumns.length) next.push('')
       return next.slice(0, fixedColumns.length)
     })
-    mutateDataSource(sourceIdx, current => ({
+    proposeDatasetChange(sourceIdx, current => ({
       ...current,
       columns: current.first_row_header === false ? fixedColumns : [],
       inline_data: stringifyInlineData(current, fixedColumns, fixedRows),
     }))
-    setSuccess(`Applied data auto-fix to ${source.name || `source_${sourceIdx + 1}`}`)
-    setError('')
   }
 
   const applyFillHeaders = (sourceIdx: number) => {
@@ -4293,13 +4337,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     if (!source) return
     const parsed = parseInlineData(source)
     const fixedColumns = fillEmptyHeaders(parsed.columns)
-    mutateDataSource(sourceIdx, current => ({
+    proposeDatasetChange(sourceIdx, current => ({
       ...current,
       columns: current.first_row_header === false ? fixedColumns : [],
       inline_data: stringifyInlineData(current, fixedColumns, parsed.rows),
     }))
-    setSuccess(`Filled empty headers for ${source.name || `source_${sourceIdx + 1}`}`)
-    setError('')
   }
 
   const applyDedupeHeaders = (sourceIdx: number) => {
@@ -4307,13 +4349,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     if (!source) return
     const parsed = parseInlineData(source)
     const fixedColumns = dedupeHeaders(parsed.columns)
-    mutateDataSource(sourceIdx, current => ({
+    proposeDatasetChange(sourceIdx, current => ({
       ...current,
       columns: current.first_row_header === false ? fixedColumns : [],
       inline_data: stringifyInlineData(current, fixedColumns, parsed.rows),
     }))
-    setSuccess(`Deduplicated headers for ${source.name || `source_${sourceIdx + 1}`}`)
-    setError('')
   }
 
   const applyNormalizeRows = (sourceIdx: number) => {
@@ -4325,9 +4365,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       while (next.length < parsed.columns.length) next.push('')
       return next.slice(0, parsed.columns.length)
     })
-    updateDataSource(sourceIdx, 'inline_data', stringifyInlineData(source, parsed.columns, fixedRows))
-    setSuccess(`Normalized row widths for ${source.name || `source_${sourceIdx + 1}`}`)
-    setError('')
+    proposeDatasetChange(sourceIdx, current => ({ ...current, inline_data: stringifyInlineData(source, parsed.columns, fixedRows) }))
   }
 
   const selectAutoParameterCandidate = (candidateId: string, occurrenceIndex = 0) => {
@@ -4511,6 +4549,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }
 
   const openEditorSection = (section: 'config' | 'replay' | 'runtime' | 'import' | 'parameter-data' | 'object-descriptors' | 'http-conversion') => {
+    setNarrowAuthorPane('editor')
     const tabBySection: Record<typeof section, CenterWorkbenchTabId> = {
       config: 'runtime-settings',
       replay: SCRIPT_JSON_TAB_ID,
@@ -4974,7 +5013,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const renderActionInspectorContent = (): ReactNode => (
     activeInspectorScope ? (
       <>
-        <ActionEditor
+        <p className="inspector-selection-path">{activeInspectorScope.path} · Current draft</p>
+        <ActionEditor inspector initialSection={inspectorFocusSection} key={`${activeInspectorScope.path}:${inspectorFocusSection}`}
+          onOpenBody={() => { openCenterTab('request-body'); setNarrowAuthorPane('editor') }}
           action={activeInspectorScope.action}
           index={activeInspectorScope.actionIndex}
           parameters={script.parameters || []}
@@ -5094,1054 +5135,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   </section>
                 )}
   </div></details>
-  const renderActionListCenterDocument = () => renderStructuredCenterDocument('Action List', (
-    <section className="center-document action-list-center-document" aria-label="Action List">
-      <div className="center-document-header">
-        <div>
-          <h3 className="panel-title">Action List</h3>
-          <p>{scriptPhaseActionRows.length} executable{scriptPhaseActionRows.length === 1 ? '' : 's'} across init, action, and teardown phases.</p>
-        </div>
-        <button type="button" className="btn btn-sm btn-accent" onClick={() => addAction('action')}>
-          + Add Action
-        </button>
-      </div>
-      {renderActionLibrary()}
-      <div className="action-list-center-summary" aria-label="Lifecycle action counts">
-        <span><strong>{script.init?.length || 0}</strong> init</span>
-        <span><strong>{script.actions?.length || 0}</strong> actions</span>
-        <span><strong>{script.teardown?.length || 0}</strong> teardown</span>
-      </div>
-      {scriptPhaseActionRows.length === 0 ? (
-        <div className="action-list-center-empty">No actions yet.</div>
-      ) : (
-        <div className="action-list-center-table" role="table" aria-label="Structured action list">
-          <div className="action-list-center-head" role="row">
-            <span role="columnheader">Phase</span>
-            <span role="columnheader">Type</span>
-            <span role="columnheader">Name</span>
-            <span role="columnheader">Signals</span>
-            <span role="columnheader">Actions</span>
-          </div>
-          {scriptPhaseActionRows.map(row => {
-            const { action, phase, actionIndex, phaseLabel } = row
-            const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey(phase, actionIndex))
-            const issueBucket = actionIssueBuckets[phase]?.[actionIndex] || []
-            const phaseActionCount = scriptActionsForPhase(script, phase).length
-            const rowActionKind = phase === 'action' ? 'action' : `${phaseLabel.toLowerCase()} action`
-            const active = authorCodeFocus
-              ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === actionIndex && !authorCodeFocus.stepPath?.length
-              : phase === 'action' && activeAction === actionIndex
-            return (
-              <div key={`center-${phase}-${actionIndex}`} className={`action-list-center-row ${active ? 'active' : ''}`} role="row">
-                <div className="action-list-center-phase" role="cell">
-                  <button
-                    type="button"
-                    className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
-                    aria-label={`${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${phaseLabel} ${actionIndex + 1}`}
-                    title={`${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${phaseLabel} ${actionIndex + 1}`}
-                    onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
-                  >
-                    <span aria-hidden="true" />
-                  </button>
-                  <button type="button" className="action-list-center-select" onClick={() => selectAuthorPhaseAction(row)}>
-                    {phaseLabel} {actionIndex + 1}
-                  </button>
-                </div>
-                <span role="cell" className="action-list-center-type" style={{ color: methodColor(action.type) }}>{action.type}</span>
-                <div role="cell"><button type="button" className="action-list-center-name" title={actionRowLabel(action)} onClick={() => selectAuthorPhaseAction(row)}>
-                  {actionRowLabel(action)}
-                </button></div>
-                <span role="cell" className="action-list-center-signals">
-                  {issueBucket.length > 0 && (
-                    <span className={`action-signal-pill ${issueBucket.some(issue => issue.severity === 'error') ? 'error' : 'warning'}`}>
-                      {issueBucket.length}
-                    </span>
-                  )}
-                  {actionRequestCount(action) > 0 && <span className="metric-badge">{actionRequestCount(action)} req</span>}
-                  {actionExtractorCount(action) > 0 && <span className="metric-badge">{actionExtractorCount(action)} ext</span>}
-                  {isControlAction(action) && <span className="metric-badge">ctrl</span>}
-                </span>
-                <span role="cell" className="action-list-center-actions">
-                  <button className="btn-icon" onClick={() => movePhaseAction(phase, actionIndex, -1)} disabled={actionIndex === 0} aria-label={`Move ${rowActionKind} up`} title="Move up">↑</button>
-                  <button className="btn-icon" onClick={() => movePhaseAction(phase, actionIndex, 1)} disabled={actionIndex === phaseActionCount - 1} aria-label={`Move ${rowActionKind} down`} title="Move down">↓</button>
-                  <button className="btn-icon" onClick={() => duplicatePhaseAction(phase, actionIndex)} aria-label={`Duplicate ${rowActionKind}`} title="Duplicate">⧉</button>
-                  <button className="btn-icon danger" onClick={() => removePhaseAction(phase, actionIndex)} aria-label={`Delete ${rowActionKind}`} title="Delete">✕</button>
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </section>
-  ))
-  const editReplayAction = (event: BrowserReplayEvent) => {
-    if (!['init', 'action', 'teardown'].includes(event.phase)) return
-    const actionIndex = event.action_index ?? 0
-    const phase = event.phase as ScriptActionPhase
-    const path = event.step_path?.length ? event.step_path : event.request_index != null ? [`requests[${event.request_index}]`] : []
-    const key = `${phase}:${actionIndex}${path.length ? `#${path.join('/')}` : ''}`
-    const scope = resolveAuthorJsonScopeByKey(script, key)
-    if (!scope) return
-    activateWorkspaceTab('author')
-    openCenterTab(ACTION_LIST_TAB_ID)
-    setActiveAction(phase === 'action' && path.length === 0 ? actionIndex : null)
-    setAuthorCodeFocus({ phase, actionIndex, stepPath: path, key, label: event.action_name })
-    setAuthorRightSidebarCollapsed(false)
-    setShowFullScriptJson(false)
-    requestAnimationFrame(() => {
-      const assertions = document.querySelector('[data-action-section="assertions"]')
-      const field = assertions?.querySelector<HTMLElement>('input[aria-label*="expected"]')
-        || assertions?.querySelector<HTMLElement>('input')
-        || document.querySelector<HTMLElement>('.action-editor-panel input')
-      field?.focus()
-      field?.scrollIntoView({ block: 'nearest' })
-    })
-  }
-  const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
-    if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
-      return (
-        <ScriptBrowserEvidence
-          key={activeReplaySessionId || 'idle'}
-          event={selectedReplayEvent}
-          variables={mergeReplayVariables(replaySeedVariables, replayDebuggerController.debugEvents.slice(0, (replayDebuggerController.selectedReplayEventIndex ?? -1) + 1))}
-          running={replaying}
-          onEdit={!replaying && !jsonParseMessage && selectedReplayEvent && replayEditableActionsKey === currentEditableActionsKey ? () => editReplayAction(selectedReplayEvent) : undefined}
-          onApplyLocator={!replaying && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
-        />
-      )
-    }
-    if (tabId === ACTION_LIST_TAB_ID) return workspaceTab === 'debug' ? null : renderActionListCenterDocument()
-    if (tabId !== SCRIPT_JSON_TAB_ID) return null
-    return (
-      <ScriptJsonDocument
-        scope={selectedAuthorJsonScope}
-        selectedJsonText={selectedAuthorJsonText}
-        showSelectedActionJson={showSelectedActionJson}
-        showFullScriptJson={showFullScriptJson}
-        selectedJsonUnavailable={selectedJsonUnavailable}
-        onShowFullScriptJson={setShowFullScriptJson}
-        onCopySelected={() => void navigator.clipboard?.writeText(selectedAuthorJsonText)}
-        onDownloadSelected={() => {
-          if (selectedAuthorJsonScope) {
-            void exportGeneratedTextFile(selectedAuthorJsonText, `${sanitizeDownloadName(selectedAuthorJsonScope.label, 'selected-action')}.json`)
-          }
-        }}
-        sourcePane={{
-          value: jsonText,
-          status: jsonStatus,
-          statusMessage: jsonStatusMessage,
-          activePath: scriptCodeStatusPath,
-          activeRange: scriptCodeActiveRange,
-          activeParameterName: selectedOutlineParameterExists ? selectedOutlineParameterName : null,
-          activeCandidateName: autoParameterSidebarActive ? activeAutoParameterCandidate?.varName || activeAutoParameterCandidate?.keyHint || null : null,
-          actionCount: scriptPhaseActionRows.length,
-          assistExtensions: scriptAssistExtensions,
-          candidateMatchRanges: autoParameterCandidateMatchRanges,
-          jumpToLineRequest: jsonLineJumpRequest,
-          parameterMatchRanges: safeParameterMatchRanges,
-          resolvedValues: workspaceTab === 'debug' && hasReplayVariableInspectorData ? replayVariableInspector : null,
-          ariaLabel: 'Source',
-          title: 'Source',
-          onApply: handleApplyJsonDraft,
-          onChange: handleCodePaneChange,
-          onCopy: () => void navigator.clipboard?.writeText(jsonText),
-          onDownload: () => { void handleDownloadScript() },
-          onFormat: handleFormatJsonDraft,
-          onReset: handleResetJsonDraft,
-          onRequestParameterize: openJsonParameterSelectionMenu,
-        }}
-        selectionState={jsonParameterSelection}
-        onOpenParameterEditor={openJsonParameterEditor}
-        onOpenExistingParameter={openJsonExistingParameterChooser}
-        onOpenOccurrenceReview={openJsonParameterOccurrenceReview}
-      />
-    )
-  }
-  const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
-    const workbenchTabs = mode === 'debug'
-      ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Action evidence', title: 'Action evidence' } : tab)
-      : visibleCenterTabs.filter(tab => tab.id !== BROWSER_REPLAY_TAB_ID)
-    const fallbackTabs = centerTabDescriptors.filter(tab => mode !== 'debug' || !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
-    return (
-      <CenterTabbedPane
-        activeTabId={centerTabsState.activeTabId}
-        ariaLabel={ariaLabel}
-        className={className}
-        onCloseTab={closeCenterTab}
-        onPanelElement={setCenterTabPanelElement}
-        onSelectTab={selectCenterTab}
-        renderTabPanel={renderCenterTabPanel}
-        tabs={workbenchTabs.length > 0 ? workbenchTabs : fallbackTabs.slice(0, 1)}
-      />
-    )
-  }
-  const authorRightSidebarContext: AuthorRightSidebarContext = (() => {
-    switch (centerTabsState.activeTabId) {
-      case ACTION_LIST_TAB_ID:
-        if (activeInspectorScope) {
-          return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
-        }
-        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
-      case 'parameter-data':
-        return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
-      case SCRIPT_JSON_TAB_ID:
-        if (activeScriptJsonSidebarTab === 'auto-params') {
-          return { kind: 'auto-parameterization', title: selectedOutlineParameterExists && !parameterPaneShowAuto ? 'Parameter' : 'Parameters', railLabel: 'Parameters', wide: true }
-        }
-        if (activeScriptJsonSidebarTab === 'details' && activeInspectorScope) {
-          return { kind: 'inspector', title: 'Action Details', railLabel: 'Details', wide: true }
-        }
-        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
-      case 'imported-metadata':
-        return { kind: 'imported-metadata', title: 'Source Mapping', railLabel: 'Map' }
-      case 'object-descriptors':
-        return { kind: 'object-descriptors', title: 'Object Descriptors', railLabel: 'Objects' }
-      case 'http-conversion':
-        return { kind: 'http-conversion', title: 'HTTP Conversion', railLabel: 'HTTP' }
-      case BROWSER_REPLAY_TAB_ID:
-        return { kind: 'browser-replay', title: 'Browser Replay', railLabel: 'Replay' }
-      case 'runtime-settings':
-        if (activeRuntimeSettingsSection === 'script_config') {
-          return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
-        }
-        return { kind: 'runtime-settings', title: 'Runtime Settings', railLabel: 'Runtime' }
-      default:
-        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
-    }
-  })()
-  const renderReadinessValidationResult = () => {
-    if (!validationSidebarResult && !validationEvidence) return null
-    return (
-      <div className="readiness-validation-result" aria-live="polite">
-        {validationSidebarResult && (
-          <div className={`readiness-validation-message ${validationSidebarResult.tone}`}>
-            <strong>{validationSidebarResult.message}</strong>
-            {validationSidebarResult.issues.length > 0 && (
-              <ul>
-                {validationSidebarResult.issues.map((issue, index) => (
-                  <li key={`validation-issue-${index}`}>{issue}</li>
-                ))}
-              </ul>
-            )}
-            {validationSidebarResult.warnings.length > 0 && (
-              <ul>
-                {validationSidebarResult.warnings.map((warning, index) => (
-                  <li key={`validation-warning-${index}`}>{warning}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
-      </div>
-    )
-  }
-  const renderReadyToRunCard = ({ showChecklist = false }: { showChecklist?: boolean } = {}) => (
-    <div className="utility-card debug-readiness-card">
-      <div className="utility-card-header readiness-card-header">
-        <strong>Ready for debug?</strong>
-        <div className="readiness-header-actions">
-          <span>{replayPreflightStatusLabel(replayPreflight)}</span>
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary"
-            onClick={() => { void handleValidateScript() }}
-            disabled={validateScriptDisabled}
-            title={validateScriptTitle}
-          >
-            {validating ? 'Checking...' : 'Recheck'}
-          </button>
-        </div>
-      </div>
-      <ReplayPreflightCard
-        preflight={replayPreflight}
-        compact
-        onConfigureSecrets={projectId ? openProjectSecrets : undefined}
-        configureSecretsLabel={scriptId ? 'Configure secrets' : 'Save & configure secrets'}
-        secretStatusState={replaySecretStatusState}
-        onRetrySecretStatus={replaySecretStatusState === 'unavailable'
-          ? () => setProjectSecretProbeRetryGeneration(generation => generation + 1)
-          : undefined}
-      />
-      {renderReadinessValidationResult()}
-      {showChecklist && (
-        <details><summary>Evidence required for approval</summary><div className="utility-checklist">
-          {convergenceItems.map(item => (
-            <div key={item.key} className="utility-checklist-item">
-              <div>
-                <strong>{item.label}</strong>
-                <span>{item.status}</span>
-              </div>
-              {item.action && (
-                <button type="button" className="btn btn-sm btn-secondary" onClick={item.action} disabled={item.disabled}>
-                  {item.actionLabel || item.label}
-                </button>
-              )}
-            </div>
-          ))}
-        </div></details>
-      )}
-    </div>
-  )
-  const renderContextualRightSidebarContent = (): ReactNode => {
-    switch (authorRightSidebarContext.kind) {
-      case 'auto-parameterization': {
-        const showParameterDetails = selectedOutlineParameterExists && selectedOutlineParameter && !parameterPaneShowAuto
-        const parameterPaneToggle = selectedOutlineParameterExists ? (
-          <TabList className="parameter-pane-toggle" role="tablist" aria-label="Parameter view" onKeyDown={handleTabKey}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={!parameterPaneShowAuto}
-              className={!parameterPaneShowAuto ? 'active' : ''}
-              onClick={() => setParameterPaneShowAuto(false)}
-              title={`Settings for ${selectedOutlineParameterName}`} tabIndex={(!parameterPaneShowAuto) ? 0 : -1}
-            >
-              Parameters
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={parameterPaneShowAuto}
-              className={parameterPaneShowAuto ? 'active' : ''}
-              onClick={() => setParameterPaneShowAuto(true)} tabIndex={(parameterPaneShowAuto) ? 0 : -1}
-            >
-              Auto Params
-            </button>
-          </TabList>
-        ) : null
-        if (showParameterDetails) {
-          return (
-            <div className="parameter-pane">
-              {parameterPaneToggle}
-              <SelectedParameterDetails
-                parameter={selectedOutlineParameter}
-                parameterIndex={selectedOutlineParameterIndex}
-                referenceLines={selectedParameterReferenceLines}
-                dataInfo={selectedParameterDataInfo}
-                sameLineOptions={selectedParameterSameLineOptions}
-                saving={saving}
-                onRename={name => {
-                  updateParameter(selectedOutlineParameterIndex, 'name', name)
-                  setSelectedOutlineParameterName(name)
-                }}
-                onUpdateParameter={updateParameter}
-                onSave={handleSave}
-                onJumpToLine={requestJsonLineJump}
-                onEditInDataTab={() => {
-                  if (selectedOutlineParameterIndex >= 0) selectParameterData(selectedOutlineParameterIndex)
-                  openEditorSection('parameter-data')
-                }}
-              />
-            </div>
-          )
-        }
-        return (
-          <div className="parameter-pane">
-            {parameterPaneToggle}
-          <AutoParameterizationSidebar
-            activeCandidateId={activeAutoParameterCandidate?.id || null}
-            activeOccurrenceIndex={normalizedAutoParameterOccurrenceIndex}
-            activeOccurrenceLabel={formatParameterCandidateOccurrence(activeAutoParameterOccurrence)}
-            candidateMatchCount={autoParameterCandidateMatchRanges.length}
-            onApplyAutoParameterization={applyAutoParameterization}
-            onNextOccurrence={() => moveAutoParameterOccurrence(1)}
-            onPreviousOccurrence={() => moveAutoParameterOccurrence(-1)}
-            onSelectCandidate={selectAutoParameterCandidate}
-            onUpdateParameterCandidate={updateCandidate}
-            parameterCandidates={parameterCandidates}
-            seedRows={autoParamSeedRows}
-            onSeedRowsChange={setAutoParamSeedRows}
-          />
-          </div>
-        )
-      }
-      case 'parameters':
-        return (
-          <ParameterSidebar
-            mergeSummary={parameterMergeSummary}
-            onAddParameter={addParameter}
-            onMergeParameterSources={mergeParameterSourceFiles}
-            onSelectParameter={selectParameterData}
-            parameters={script.parameters || []}
-            selectedParameterIdx={selectedParameterIdx}
-          />
-        )
-      case 'inspector':
-        return renderActionInspectorContent()
-      case 'imported-metadata':
-        return (
-          <ImportedMetadataUtilityPanel
-            activeAction={activeAction}
-            controller={importReviewController}
-            migrationSuggestions={migrationSuggestions}
-            onApplyMigrationSuggestion={applyMigrationSuggestion}
-            onOpenMappedDataSource={openImportedDataSourceReview}
-            scriptName={script.name}
-          />
-        )
-      case 'object-descriptors':
-        return (
-          <ObjectDescriptorUtilityPanel
-            controller={importReviewController}
-            onApplyCandidate={applyObjectDescriptorCandidate}
-            onSelectAction={selectAuthorAction}
-          />
-        )
-      case 'http-conversion':
-        return (
-          <>
-            <div className="utility-card">
-              <div className="utility-card-header">
-                <strong>Conversion Gate</strong>
-                <span>{httpConversionReview.status.replace(/_/g, ' ')}</span>
-              </div>
-              <div className="utility-metric-row">
-                <span className="metric-badge">{httpConversionReview.browserActionCount} browser</span>
-                <span className="metric-badge">{httpConversionReview.candidateRequestCount} requests</span>
-                <span className="metric-badge">{httpConversionReview.replayEvidence ? 'replay' : 'no replay'}</span>
-              </div>
-              <div className="utility-stack">
-                {httpConversionReview.findings.map((finding, index) => (
-                  <div key={`http-sidebar-${index}`} className="utility-list-item">{finding}</div>
-                ))}
-              </div>
-            </div>
-            <div className="utility-card">
-              <div className="utility-card-header">
-                <strong>Review Actions</strong>
-                <span>{httpConversionPreview ? 'Preview ready' : 'No preview'}</span>
-              </div>
-              <div className="utility-stack">
-                <button type="button" className="btn btn-sm btn-primary" onClick={handleGenerateBrowserHTTPPreview} disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}>
-                  {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
-                </button>
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Debug</button>
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Review Parameter Data</button>
-                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('runtime')}>Review Runtime Settings</button>
-              </div>
-            </div>
-          </>
-        )
-      case 'browser-replay':
-        return (
-          <>
-            {renderReadyToRunCard()}
-            <div className="utility-card">
-              <div className="utility-card-header">
-                <strong>Replay Evidence</strong>
-                <span>{debugEvidenceStatus}</span>
-              </div>
-              <ul className="utility-list">
-                <li className="utility-list-item">{replayReport ? `${replayReport.events.length} captured event${replayReport.events.length === 1 ? '' : 's'}` : 'No completed replay report attached.'}</li>
-                <li className="utility-list-item">{browserReplaySession?.events?.length || 0} live session event{(browserReplaySession?.events?.length || 0) === 1 ? '' : 's'}</li>
-              </ul>
-              <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Open Debugger</button>
-            </div>
-          </>
-        )
-      case 'runtime-settings':
-        return (
-          <ScriptRuntimeSettingsSidebar
-            parityEntries={importSummary.runtimeSettingsParity}
-            paritySummary={runtimeSettingParitySummary}
-            readiness={renderReadyToRunCard()}
-            script={script}
-            // Only imported scripts have the read-only source panel; an authored
-            // script's parity entries are config-derived with no source rows to show.
-            onOpenImportedSource={script.metadata?.import?.preserved?.runtime_files
-              ? () => {
-                  openCenterTab('runtime-settings')
-                  selectRuntimeSettingsSection('imported_source')
-                }
-              : undefined}
-          />
-        )
-      default:
-        return null
-    }
-  }
-
-  return (
-    <div className="script-editor">
-      <div className="script-evidence-states" aria-label="Script evidence states">
-        {workspaceTab === 'author' && <button type="button" className="btn btn-sm btn-ghost" aria-pressed={!authorOutlineCollapsed} onClick={() => setAuthorOutlineCollapsed(value => !value)}>Toggle tools</button>}
-        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
-        <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
-        <span>Validation evidence: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
-        <span>Debugged: {debugEvidenceStatus}</span>
-        <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
-      </div>
-      <datalist id="object-ref-suggestions">
-        {objectRefSuggestions.map(name => <option key={name} value={name} aria-label={name} />)}
-      </datalist>
-      {projectId && (missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus) && (
-        <div className="script-secret-banner" role="status">
-          <div>
-            <strong>
-              {replayBlockedByUnknownSecretStatus
-                ? replaySecretStatusState === 'unavailable' ? 'Project secret status is unavailable' : 'Checking project secret configuration'
-                : `${missingProjectSecrets.length} project secret${missingProjectSecrets.length === 1 ? ' still needs' : 's still need'} configuration`}
-            </strong>
-            <span>
-              {replayBlockedByUnknownSecretStatus
-                ? 'The script is safely saved with references, but replay remains blocked until credential status can be verified.'
-                : 'The script is safely saved with references, but replay will remain blocked until values are available.'}
-            </span>
-          </div>
-          <div className="settings-inline-actions">
-            <button className="btn btn-secondary btn-sm" type="button" onClick={openProjectSecrets}>{scriptId ? 'Configure secrets' : 'Save & configure secrets'}</button>
-            {replaySecretStatusState === 'unavailable' && (
-              <button className="btn btn-secondary btn-sm" type="button" onClick={() => setProjectSecretProbeRetryGeneration(generation => generation + 1)}>
-                Retry credential check
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-      {secretBindingsOpen && scriptId && projectId && (
-        <ScriptSecretBindingsDialog
-          scriptId={scriptId}
-          script={currentDraftScript}
-          projectId={projectId}
-          scriptName={currentDraftScript.name || 'Script'}
-          onClose={() => setSecretBindingsOpen(false)}
-          onConfigured={async () => {
-            await refreshScriptSecretStatus()
-            setProjectSecretProbeRetryGeneration(generation => generation + 1)
-          }}
-          onRebound={(rebound, changedLocations, outcome) => {
-            commitJsonDraft(rebound)
-            if (outcome?.createdSecretName) {
-              pendingCreatedSecretNamesRef.current = Array.from(new Set([
-                ...pendingCreatedSecretNamesRef.current,
-                outcome.createdSecretName,
-              ]))
-            }
-            setSuccess(`Updated ${changedLocations.length} secret reference location${changedLocations.length === 1 ? '' : 's'} in the draft. Save the script to make the rebind authoritative.`)
-          }}
-        />
-      )}
-      <ScriptImportReviewDialogs
-        controller={importReviewController}
-        onOpenMappedDataSource={openImportedDataSourceReview}
-      />
-      {serverParameterization && (
-        <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(closeServerParameterizationDialog)}>
-          <div
-            ref={serverParameterizationDialogRef}
-            className="editor-dialog server-parameterization-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Server parameterization scan"
-          >
-            <div className="editor-dialog-header">
-              <div>
-                <h3 className="panel-title">Server Parameterization Scan</h3>
-                <p className="editor-dialog-subtitle">
-                  {serverParameterization.note || 'Review and apply the detected data parameters and secrets.'}
-                </p>
-              </div>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={closeServerParameterizationDialog}>Close</button>
-            </div>
-            <div className="editor-dialog-body">
-              <ParameterizationReview
-                parameterization={serverParameterization}
-                script={script}
-                disabled={saving || validating || replaying}
-                onApplied={(applied, diffs) => {
-                  replaceScriptWithHistory(applied)
-                  recordAssistantChange('Applied server parameterization', `${diffs.length} change${diffs.length === 1 ? '' : 's'}`)
-                  setServerParameterization(null)
-                  setSuccess(`Applied server parameterization (${diffs.length} change${diffs.length === 1 ? '' : 's'}).`)
-                  setError('')
-                }}
-              />
-            </div>
-          </div>
-        </div></DialogLayer>
-      )}
-      {showSaveBlockModal && (
-        <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(closeSaveBlockDialog)}>
-          <div
-            ref={saveBlockDialogRef}
-            className="editor-dialog save-block-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Save selected actions as a reusable block"
-          >
-            <div className="editor-dialog-header">
-              <div>
-                <h3 className="panel-title">Save as Reusable Block</h3>
-                <p className="editor-dialog-subtitle">
-                  {selectedBlockScopes.length} action{selectedBlockScopes.length === 1 ? '' : 's'} will be saved to this project's block library.
-                </p>
-              </div>
-              <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Close</button>
-            </div>
-            <div className="editor-dialog-body save-block-dialog-body">
-              <label className="save-block-field">
-                <span>Block name</span>
-                <input
-                  type="text"
-                  value={saveBlockName}
-                  placeholder="e.g. Login transaction"
-                  onChange={event => setSaveBlockName(event.target.value)}
-                />
-              </label>
-              <label className="save-block-field">
-                <span>Kind</span>
-                <select value={saveBlockKind} onChange={event => setSaveBlockKind(event.target.value)}>
-                  {AUTHORING_COMPONENT_GROUPS.map(group => (
-                    <option key={group.kind} value={group.kind}>{group.label}</option>
-                  ))}
-                </select>
-              </label>
-              {!projectId && (
-                <p className="save-block-warning">This script isn't associated with a project, so the block can't be saved.</p>
-              )}
-              <div className="save-block-actions">
-                <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Cancel</button>
-                <button type="button" className="btn btn-sm btn-accent" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
-                  {savingBlock ? 'Saving…' : 'Save block'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div></DialogLayer>
-      )}
-      {parameterizeChoice && (
-        <ParameterizeDialog
-          draft={parameterizeChoice}
-          onClose={() => setParameterizeChoice(null)}
-          onChooseFile={chooseParameterizeFile}
-          onConfirmBuiltin={confirmBuiltinParameterize}
-        />
-      )}
-      {existingParameterChoice && (
-        <ExistingParameterDialog
-          draft={existingParameterChoice}
-          onClose={() => setExistingParameterChoice(null)}
-          onSelect={parameterName => applyExistingParameterChoice(parameterName)}
-          parameters={currentDraftScript.parameters || []}
-        />
-      )}
-      {jsonOccurrenceReview && (
-        <JsonOccurrenceReviewDialog
-          onClose={() => setJsonOccurrenceReview(null)}
-          onCreateNew={createParameterFromOccurrenceReview}
-          onUseExisting={applyExistingParameterChoice}
-          parameters={currentDraftScript.parameters || []}
-          review={jsonOccurrenceReview}
-        />
-      )}
-      {!hasTopbarContributionProvider && (
-        <div className="editor-header script-editor-local-action-proxy" hidden>
-          <div className="editor-title-row">
-            <div className="editor-actions">
-              <button className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
-                {saving ? 'Saving...' : 'Save Script'}
-              </button>
-              {onClose && <button className="btn btn-ghost" onClick={handleCloseEditor}>Close</button>}
-            </div>
-          </div>
-          <div className="script-ide-command-bar" aria-label="Script IDE command bar">
-            <TabList className="script-ide-tabs" role="tablist" aria-label="Script workspace" onKeyDown={handleTabKey}>
-              <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')} tabIndex={(workspaceTab === 'author') ? 0 : -1}>
-                Author
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={workspaceTab === 'debug'}
-                className={workspaceTab === 'debug' ? 'active' : ''}
-                data-debug-status={debugWorkspaceStatusLabel || undefined}
-                onClick={() => activateWorkspaceTab('debug')} tabIndex={(workspaceTab === 'debug') ? 0 : -1}
-              >
-                Debug
-              </button>
-            </TabList>
-            <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
-              <button type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
-                <span className="debugger-icon" aria-hidden="true">&#9654;</span>
-                <span>{replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
-              </button>
-              {workspaceTab === 'debug' && (
-                <>
-                  <button type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
-                    <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
-                    <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
-                    <span className="debugger-icon" aria-hidden="true">&#10551;</span>
-                    <span>{replayReport?.completed_at ? 'Restart in step mode' : 'Step'}</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
-                    <span className="debugger-icon" aria-hidden="true">&#10550;</span>
-                    <span>{replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over'}</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
-                    <span className="debugger-icon" aria-hidden="true">&#8635;</span>
-                    <span>Finish Loop</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
-                    <span className="debugger-icon" aria-hidden="true">&#9209;</span>
-                    <span>Stop</span>
-                  </button>
-                  <button type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
-                    <span className="debugger-icon" aria-hidden="true">●</span>
-                    <span>Breakpoint</span>
-                  </button>
-                  <button
-                    ref={debuggerSettingsBtnRef}
-                    type="button"
-                    className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
-                    title="Session overrides"
-                    aria-pressed={centerTabsState.activeTabId === 'runtime-settings'}
-                    onClick={() => {
-                      activateWorkspaceTab('debug')
-                      setDebuggerTab('request')
-                      setDebuggerSettingsOpen(false)
-                      openCenterTab('runtime-settings')
-                    }}
-                  >
-                    <span className="debugger-icon" aria-hidden="true">&#9881;</span>
-                    <span>Settings</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
-                    title={debugDetailCollapsed ? 'Show detail panel (request/response + variables)' : 'Hide detail panel'}
-                    aria-pressed={!debugDetailCollapsed}
-                    onClick={() => setDebugDetailCollapsed(value => !value)}
-                  >
-                    <span className="debugger-icon" aria-hidden="true">▣</span>
-                    <span>Panel</span>
-                  </button>
-                  {replayReport && (
-                    <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
-                      <span className="debugger-icon" aria-hidden="true">&#8675;</span>
-                      <span>Export</span>
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      {(error || warnings.length > 0 || success) && (
-        <div className="editor-feedback-strip">
-          {error && <div className="editor-toast error">{error}</div>}
-          {warnings.length > 0 && (
-            <div className="editor-toast warning">
-              {warnings.map((warning, index) => (
-                <div key={`${warning}-${index}`}>{warning}</div>
-              ))}
-            </div>
-          )}
-          {success && <div className="editor-toast success">{success}</div>}
-        </div>
-      )}
-
-      <div className={`editor-body workspace-${workspaceTab}`}>
-          {workspaceTab === 'debug' && (
-          <ScriptReplayDebuggerView
-            actionProblemRows={actionProblemRows}
-            activeReplaySessionId={activeReplaySessionId}
-            addExtractorDefinition={addExtractorDefinition}
-            api={api}
-            applyReplaySuggestedLocator={applyReplaySuggestedLocator}
-            breakpointSummary={breakpointSummary}
-            browserReplaySession={browserReplaySession}
-            clearDebugBreakpoints={clearDebugBreakpoints}
-            controller={replayDebuggerController}
-            copiedReplaySnapshotSection={copiedReplaySnapshotSection}
-            debugActionRows={debugActionRows}
-            debugBreakpointKeys={debugBreakpointKeys}
-            debugDetailHost={!isBrowserScript && centerTabsState.activeTabId === ACTION_LIST_TAB_ID ? centerTabPanelElements[ACTION_LIST_TAB_ID] : null}
-            debuggerWorkbench={renderCenterWorkbench('debugger-code-center', 'Debugger center workbench', 'debug')}
-            error={error}
-            expandedReplayBrowserArtifacts={expandedReplayBrowserArtifacts}
-            expandedReplayEvent={expandedReplayEvent}
-            exportGeneratedTextFile={exportGeneratedTextFile}
-            handleCopyReplaySnapshotSection={handleCopyReplaySnapshotSection}
-            handleValidateScript={handleValidateScript}
-            isBrowserScript={isBrowserScript}
-            jsonParseMessage={jsonParseMessage}
-            onEditReplayAction={editReplayAction}
-            onActivateDebug={() => activateWorkspaceTab('debug')}
-            onSelectProblemAction={row => {
-              activateWorkspaceTab('author')
-              openCenterTab(ACTION_LIST_TAB_ID)
-              selectAuthorPhaseAction(row)
-            }}
-            parameterReferenceCounts={parameterReferenceCounts}
-            problemCount={problemCount}
-            projectId={projectId}
-            replayActivity={replayActivity}
-            replayEventRefs={replayEventRefs}
-            replayFailingEvent={replayFailingEvent}
-            replayFailingEventIndex={replayFailingEventIndex}
-            replaying={replaying}
-            replayLatestActivity={replayLatestActivity}
-            replayOptions={replayOptions}
-            replayReport={replayReport}
-            replayEditableActionsKey={replayEditableActionsKey}
-            currentEditableActionsKey={currentEditableActionsKey}
-            previousReplayReport={previousReplayReport}
-            replayStatusLabel={replayStatusLabel}
-            replayVariableDiffs={replayVariableDiffs}
-            replayVariableInspector={replayVariableInspector}
-            replayVariableTimeline={replayVariableTimeline}
-            saving={saving}
-            script={script}
-            scriptId={scriptId}
-            scriptLevelIssues={scriptLevelIssues}
-            scriptRecordingStatus={scriptRecordingStatus}
-            scriptRecordingStatusState={scriptRecordingStatusState}
-            retryScriptRecordingStatus={retryScriptRecordingStatus}
-            selectedOutlineParameterName={selectedOutlineParameterName}
-            selectOutlineParameter={selectOutlineParameter}
-            setActiveAction={setActiveAction}
-            setBreakOnFailure={setBreakOnFailure}
-            setExpandedReplayEvent={setExpandedReplayEvent}
-            setReplayOptions={setReplayOptions}
-            setReplayScreenshotSelection={setReplayScreenshotSelection}
-            setSequenceChildBreakpoints={setSequenceChildBreakpoints}
-            toggleDebugBreakpoint={toggleDebugBreakpoint}
-            toggleReplayBrowserArtifact={toggleReplayBrowserArtifact}
-            toggleStepPathBreakpoint={toggleStepPathBreakpoint}
-            validating={validating}
-            warnings={warnings}
-          />
-          )}
-
-          {objectDescriptorReview.rows.length > 0 && centerTabPanelElements['object-descriptors'] && createPortal(
-            renderStructuredCenterDocument('Object Descriptors', (
-              <ObjectDescriptorReviewDocument
-                controller={importReviewController}
-                onApplyCandidate={applyObjectDescriptorCandidate}
-                onSelectAction={selectAuthorAction}
-              />
-            )), centerTabPanelElements['object-descriptors'])}
-
-          {isBrowserScript && centerTabPanelElements['http-conversion'] && createPortal(
-            renderStructuredCenterDocument('Browser To HTTP Conversion Review', (
-              <section className="center-document config-panel center-document-conversion" style={{ padding: 0 }} aria-label="Browser To HTTP Conversion Review">
-                <div className="center-document-header">
-                  <div>
-                    <h3 className="panel-title">Browser To HTTP Conversion Review</h3>
-                    <p>Gate generated HTTP load scripts behind replay, network, correlation, and approval evidence.</p>
-                  </div>
-                </div>
-              <div className="panel-body" style={{ padding: '0 20px 20px' }}>
-                <div className="import-metadata-grid">
-                  <div className="import-metadata-card">
-                    <span>Status</span>
-                    <strong>{httpConversionReview.status.replace(/_/g, ' ')}</strong>
-                    <small>{httpConversionReview.networkEvidence ? 'Network evidence captured' : 'Network evidence required'}</small>
-                  </div>
-                  <div className="import-metadata-card">
-                    <span>Browser Actions</span>
-                    <strong>{httpConversionReview.browserActionCount}</strong>
-                    <small>Canary flow context</small>
-                  </div>
-                  <div className="import-metadata-card">
-                    <span>Replay Evidence</span>
-                    <strong>{httpConversionReview.replayEvidence ? 'Attached' : 'Missing'}</strong>
-                    <small>Required before conversion</small>
-                  </div>
-                  <div className="import-metadata-card">
-                    <span>Request Candidates</span>
-                    <strong>{httpConversionReview.candidateRequestCount}</strong>
-                    <small>Captured replay requests</small>
-                  </div>
-                </div>
-                <div className="import-correlation-section">
-                  <h4>Conversion Gate</h4>
-                  <p>Keep Web 2.0 browser scripts as canaries until an HTTP draft is generated from captured traffic and passes validation/replay independently.</p>
-                  <div className="import-correlation-list">
-                    {httpConversionReview.findings.map((finding, index) => (
-                      <div key={`http-conversion-${index}`} className="import-correlation-card">
-                        <strong>{index === 0 ? 'Flow' : index === 1 ? 'Replay' : index === 2 ? 'Network' : 'Approval'}</strong>
-                        <span>{finding}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {httpConversionError && <div className="error-message">{httpConversionError}</div>}
-                {httpConversionPreview && (
-                  <div className="import-correlation-section">
-                    <h4>Generated HTTP Draft Preview</h4>
-					<p>
-					  {httpConversionPreview.generated_script?.name || 'HTTP draft'}{' '}
-					  {httpConversionBlockingFindings.length > 0
-						? 'is blocked from promotion until the findings below are resolved.'
-						: 'is ready for validation, replay, correlation repair, and approval review.'}
-					</p>
-                    <div className="import-metadata-grid">
-                      <div className="import-metadata-card">
-                        <span>Backend Status</span>
-                        <strong>{httpConversionPreview.review.status.replace(/_/g, ' ')}</strong>
-                        <small>{httpConversionPreview.review.generated_http_actions} HTTP actions generated</small>
-                      </div>
-                      <div className="import-metadata-card">
-                        <span>Captured Requests</span>
-                        <strong>{httpConversionPreview.review.captured_requests}</strong>
-                        <small>{httpConversionPreview.review.skipped_static_assets} static assets skipped</small>
-                      </div>
-                      <div className="import-metadata-card">
-                        <span>Correlation Candidates</span>
-                        <strong>{httpConversionPreview.review.correlation_candidates?.length || 0}</strong>
-                        <small>Review before approval</small>
-                      </div>
-                      <div className="import-metadata-card">
-                        <span>Data Candidates</span>
-                        <strong>{httpConversionPreview.review.data_source_candidates?.length || 0}</strong>
-                        <small>Bind to parameters or data pools</small>
-                      </div>
-					  <div className="import-metadata-card">
-						<span>Evidence</span>
-						<strong>{httpConversionPreview.review.evidence.verification_status.replace(/_/g, ' ')}</strong>
-						<small>{httpConversionPreview.review.evidence.durable ? 'Durable replay and correlation evidence' : 'Evidence is not durable'}</small>
-					  </div>
-					  <div className="import-metadata-card">
-						<span>Promotion</span>
-						<strong>{httpConversionPreview.review.promotion_status.replace(/_/g, ' ')}</strong>
-						<small>{httpConversionPreview.governance.status.replace(/_/g, ' ')} · approval {httpConversionPreview.governance.approval_status.replace(/_/g, ' ')}</small>
-					  </div>
-                    </div>
-					{httpConversionBlockingFindings.length > 0 && (
-					  <div className="import-correlation-section" aria-label="HTTP draft promotion blockers">
-						<h4>Promotion Blockers</h4>
-						<div className="import-correlation-list">
-						  {httpConversionBlockingFindings.map((finding, index) => (
-							<div key={`${finding.severity}-${finding.summary}-${index}`} className="import-correlation-card">
-							  <strong>{finding.severity.toUpperCase()} · {finding.summary}</strong>
-							  {finding.evidence && <span>{finding.evidence}</span>}
-							  {finding.action && <span>Next: {finding.action}</span>}
-							</div>
-						  ))}
-						</div>
-					  </div>
-					)}
-                    <div className="import-correlation-list">
-                      {(httpConversionPreview.review.correlation_candidates || []).slice(0, 4).map((candidate, index) => (
-                        <div key={`http-correlation-${candidate.name}-${candidate.source}-${index}`} className="import-correlation-card">
-                          <strong>Correlation · {candidate.name}</strong>
-                          <span>{candidate.evidence || candidate.source}</span>
-                        </div>
-                      ))}
-                      {(httpConversionPreview.review.data_source_candidates || []).slice(0, 4).map((candidate, index) => (
-                        <div key={`http-data-${candidate.name}-${candidate.value}-${index}`} className="import-correlation-card">
-                          <strong>Data Source · {candidate.name}</strong>
-                          <span>{candidate.evidence || candidate.source}</span>
-                          {candidate.value && <code>{candidate.value}</code>}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="import-correlation-card">
-                      <strong>{httpConversionPreview.scenario_template.name}</strong>
-                      <span>{httpConversionPreview.scenario_template.groups.map(group => `${group.name}: ${group.protocol} / ${group.vusers} VUsers`).join(' · ')}</span>
-                    </div>
-                  </div>
-                )}
-                <div className="replay-panel-actions" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleGenerateBrowserHTTPPreview}
-                    disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}
-                  >
-                    {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
-                  </button>
-                  <button type="button" className="btn btn-secondary" onClick={() => activateWorkspaceTab('debug')}>
-                    Debug
-                  </button>
-                  <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('parameter-data')}>
-                    Review Parameter Data
-                  </button>
-                  <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('runtime')}>
-                    Review Runtime Settings
-                  </button>
-                </div>
-              </div>
-              </section>
-            )), centerTabPanelElements['http-conversion'])}
-
-          {/* Runtime Settings Panels */}
-          {centerTabPanelElements['runtime-settings'] && createPortal(
-            renderStructuredCenterDocument('Runtime Settings', (
-              <ScriptRuntimeSettingsView
-                activeHTTPTransportTab={activeHTTPTransportTab}
-                activeSection={activeRuntimeSettingsSection}
-                canEditProtocol={canEditProtocol}
-                draftScope={`script-editor:${editorResourceScopeVersionRef.current}`}
-                onAddHTTPRuntimeAction={addHTTPRuntimeAction}
-                onSave={handleSave}
-                onSelectHTTPTransportTab={setActiveHTTPTransportTab}
-                onSelectSection={selectRuntimeSettingsSection}
-                onUpdateField={updateField}
-                onUpdateProtocol={updateProtocol}
-                saveDisabled={saveScriptDisabled}
-                saveTitle={saveScriptTitle}
-                saving={saving}
-                script={script}
-              />
-            )), centerTabPanelElements['runtime-settings'])}
-
-          {/* Actions List + Detail */}
-          {workspaceTab === 'author' && (
-          <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
-            <div
-              className={`actions-content-grid ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}
-              style={!authorOutlineCollapsed && authorRailWidth != null ? ({ ['--author-rail-width']: `${authorRailWidth}px` } as React.CSSProperties) : undefined}
-            >
-              {!authorOutlineCollapsed && (
-                <div
-                  className={`author-rail-resize ${authorRailResizing ? 'resizing' : ''}`}
-                  role="separator"
-                  aria-orientation="vertical"
-                  aria-label="Resize outline panel (double-click to fit content)"
-                  title="Drag to resize · double-click to fit content"
-                  onPointerDown={startAuthorRailDrag}
-                  onDoubleClick={fitAuthorRailToContent}
-                />
-              )}
-              <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`} ref={authorRailRef} id="script-outline-panel">
-                {authorOutlineCollapsed ? (
-                  <PanelToggle className="actions-sidebar-restore" expanded={false} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(false)} />
-                ) : (
-                <>
-                <div className="editor-outline-nav">
-                  <div className="editor-outline-header editor-outline-header-actions-only">
-                    <div className="editor-outline-actions">
-                      <button type="button" className="btn-icon editor-outline-action-button" onClick={undoEditorChange} disabled={editorHistory.past.length === 0} title="Undo last guided change" aria-label="Undo last guided change">
-                        <EditorRailActionIcon kind="undo" />
-                      </button>
-                      <button type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={editorHistory.future.length === 0} title="Redo guided change" aria-label="Redo guided change">
-                        <EditorRailActionIcon kind="redo" />
-                      </button>
-                      {!hasTopbarContributionProvider && <button type="button" className="btn-icon editor-outline-action-button primary" onClick={() => { void handleSave() }} disabled={saveScriptDisabled} title={saveScriptTitle} aria-label="Save script">
-                        <EditorRailActionIcon kind="save" />
-                      </button>}
-                      {onClose && (
-                        <button type="button" className="btn-icon editor-outline-action-button" onClick={handleCloseEditor} title="Close script editor" aria-label="Close script editor">
-                          <EditorRailActionIcon kind="close" />
-                        </button>
-                      )}
-                      <PanelToggle className="" expanded={true} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(true)} />
-                    </div>
-                  </div>
-                </div>
-                <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
-                  <label className="script-name-field">
-                    <span>Script Name</span>
-                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
-                  </label>
-                </div>
-                <details className="advanced-action-tools"><summary>Advanced action tools</summary>
+  const renderBulkActionTools = () => (
+                <details className="advanced-action-tools"><summary>Bulk action tools</summary>
                 <section className="outline-section">
                   <div className="actions-sidebar-header outline-section-header">
                     <button
@@ -6497,7 +5492,1085 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   )}
                 </section>
                 </details>
-                <details className="author-data-tools"><summary>Data &amp; variables ({script.parameters?.length || 0})</summary>
+  )
+  const renderActionListCenterDocument = () => renderStructuredCenterDocument('Action List', (
+    <section className="center-document action-list-center-document" aria-label="Action List">
+      <div className="center-document-header">
+        <div>
+          <h3 className="panel-title">Action List</h3>
+          <p>{scriptPhaseActionRows.length} executable{scriptPhaseActionRows.length === 1 ? '' : 's'} across init, action, and teardown phases.</p>
+        </div>
+        <button type="button" className="btn btn-sm btn-accent" onClick={() => addAction('action')}>
+          + Add Action
+        </button>
+      </div>
+      {renderActionLibrary()}
+      {renderBulkActionTools()}
+      <div className="action-list-center-summary" aria-label="Lifecycle action counts">
+        <span><strong>{script.init?.length || 0}</strong> init</span>
+        <span><strong>{script.actions?.length || 0}</strong> actions</span>
+        <span><strong>{script.teardown?.length || 0}</strong> teardown</span>
+      </div>
+      {scriptPhaseActionRows.length === 0 ? (
+        <div className="action-list-center-empty">No actions yet.</div>
+      ) : (
+        <div className="action-list-center-table" role="table" aria-label="Structured action list">
+          <div className="action-list-center-head" role="row">
+            <span role="columnheader">Phase</span>
+            <span role="columnheader">Type</span>
+            <span role="columnheader">Name</span>
+            <span role="columnheader">Signals</span>
+            <span role="columnheader">Actions</span>
+          </div>
+          {scriptPhaseActionRows.map(row => {
+            const { action, phase, actionIndex, phaseLabel } = row
+            const actionBreakpointActive = debugBreakpointKeys.has(debugBreakpointKey(phase, actionIndex))
+            const issueBucket = actionIssueBuckets[phase]?.[actionIndex] || []
+            const phaseActionCount = scriptActionsForPhase(script, phase).length
+            const rowActionKind = phase === 'action' ? 'action' : `${phaseLabel.toLowerCase()} action`
+            const active = authorCodeFocus
+              ? authorCodeFocus.phase === phase && authorCodeFocus.actionIndex === actionIndex && !authorCodeFocus.stepPath?.length
+              : phase === 'action' && activeAction === actionIndex
+            return (
+              <div key={`center-${phase}-${actionIndex}`} className={`action-list-center-row ${active ? 'active' : ''}`} role="row">
+                <div className="action-list-center-phase" role="cell">
+                  <button
+                    type="button"
+                    className={`action-breakpoint-button ${actionBreakpointActive ? 'active' : ''}`}
+                    aria-label={`${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${phaseLabel} ${actionIndex + 1}`}
+                    title={`${actionBreakpointActive ? 'Remove' : 'Set'} breakpoint on ${phaseLabel} ${actionIndex + 1}`}
+                    onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                  <button type="button" className="action-list-center-select" onClick={() => selectAuthorPhaseAction(row)}>
+                    {phaseLabel} {actionIndex + 1}
+                  </button>
+                </div>
+                <span role="cell" className="action-list-center-type" style={{ color: methodColor(action.type) }}>{action.type}</span>
+                <div role="cell"><button type="button" className="action-list-center-name" title={actionRowLabel(action)} onClick={() => selectAuthorPhaseAction(row)}>
+                  {actionRowLabel(action)}
+                </button></div>
+                <span role="cell" className="action-list-center-signals">
+                  {issueBucket.length > 0 && (
+                    <span className={`action-signal-pill ${issueBucket.some(issue => issue.severity === 'error') ? 'error' : 'warning'}`}>
+                      {issueBucket.length}
+                    </span>
+                  )}
+                  {actionRequestCount(action) > 0 && <span className="metric-badge">{actionRequestCount(action)} req</span>}
+                  {actionExtractorCount(action) > 0 && <span className="metric-badge">{actionExtractorCount(action)} ext</span>}
+                  {isControlAction(action) && <span className="metric-badge">ctrl</span>}
+                </span>
+                <span role="cell" className="action-list-center-actions">
+                  <button className="btn-icon" onClick={() => movePhaseAction(phase, actionIndex, -1)} disabled={actionIndex === 0} aria-label={`Move ${rowActionKind} up`} title="Move up">↑</button>
+                  <button className="btn-icon" onClick={() => movePhaseAction(phase, actionIndex, 1)} disabled={actionIndex === phaseActionCount - 1} aria-label={`Move ${rowActionKind} down`} title="Move down">↓</button>
+                  <button className="btn-icon" onClick={() => duplicatePhaseAction(phase, actionIndex)} aria-label={`Duplicate ${rowActionKind}`} title="Duplicate">⧉</button>
+                  <button className="btn-icon danger" onClick={() => removePhaseAction(phase, actionIndex)} aria-label={`Delete ${rowActionKind}`} title="Delete">✕</button>
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </section>
+  ))
+  const editReplayAction = (event: BrowserReplayEvent) => {
+    if (!['init', 'action', 'teardown'].includes(event.phase)) return
+    const actionIndex = event.action_index ?? 0
+    const phase = event.phase as ScriptActionPhase
+    const path = event.step_path?.length ? event.step_path : event.request_index != null ? [`requests[${event.request_index}]`] : []
+    const key = `${phase}:${actionIndex}${path.length ? `#${path.join('/')}` : ''}`
+    const scope = resolveAuthorJsonScopeByKey(script, key)
+    if (!scope) return
+    setInspectorFocusSection(scope.action.assertions?.length ? 'checks' : 'request')
+    setNarrowAuthorPane('inspector')
+    setSelectedOutlineParameterName(null)
+    activateWorkspaceTab('author')
+    openCenterTab(ACTION_LIST_TAB_ID)
+    setActiveAction(phase === 'action' && path.length === 0 ? actionIndex : null)
+    setAuthorCodeFocus({ phase, actionIndex, stepPath: path, key, label: event.action_name })
+    setAuthorRightSidebarCollapsed(false)
+    setShowFullScriptJson(false)
+    requestAnimationFrame(() => {
+      const assertions = document.querySelector('[data-action-section="assertions"]')
+      const field = assertions?.querySelector<HTMLElement>('input[aria-label*="expected"]')
+        || assertions?.querySelector<HTMLElement>('input')
+        || document.querySelector<HTMLElement>('.action-editor-panel input')
+      field?.focus()
+      field?.scrollIntoView({ block: 'nearest' })
+    })
+  }
+  const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
+    if (tabId === BROWSER_REPLAY_TAB_ID && isBrowserScript) {
+      return (
+        <ScriptBrowserEvidence
+          key={activeReplaySessionId || 'idle'}
+          event={selectedReplayEvent}
+          variables={mergeReplayVariables(replaySeedVariables, replayDebuggerController.debugEvents.slice(0, (replayDebuggerController.selectedReplayEventIndex ?? -1) + 1))}
+          running={replaying}
+          onEdit={!replaying && !jsonParseMessage && selectedReplayEvent && replayEditableActionsKey === currentEditableActionsKey ? () => editReplayAction(selectedReplayEvent) : undefined}
+          onApplyLocator={!replaying && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
+        />
+      )
+    }
+    if (tabId === 'request-body') return renderStructuredCenterDocument('Request body', activeInspectorScope ? <ActionBodyWorkspace key={activeInspectorScope.path} action={activeInspectorScope.action} index={activeInspectorScope.actionIndex} path={activeInspectorScope.path} parameters={script.parameters || []} onUpdate={(field, value) => updatePhaseAction(activeInspectorScope.phase, activeInspectorScope.actionIndex, field, value)} onParameterize={draft => openParameterizeChoice({ ...draft, phase: activeInspectorScope.phase, stepPath: authorCodeFocus?.stepPath })} /> : <p>Select an action to edit its request body.</p>)
+    if (tabId === ACTION_LIST_TAB_ID) return workspaceTab === 'debug' ? null : renderActionListCenterDocument()
+    if (tabId !== SCRIPT_JSON_TAB_ID) return null
+    return (
+      <ScriptJsonDocument fullScriptOnly={workspaceTab === 'debug'}
+        scope={selectedAuthorJsonScope}
+        selectedJsonText={selectedAuthorJsonText}
+        showSelectedActionJson={showSelectedActionJson}
+        showFullScriptJson={workspaceTab === 'debug' || showFullScriptJson}
+        selectedJsonUnavailable={selectedJsonUnavailable}
+        onShowFullScriptJson={setShowFullScriptJson}
+        onCopySelected={() => void navigator.clipboard?.writeText(selectedAuthorJsonText)}
+        onDownloadSelected={() => {
+          if (selectedAuthorJsonScope) {
+            void exportGeneratedTextFile(selectedAuthorJsonText, `${sanitizeDownloadName(selectedAuthorJsonScope.label, 'selected-action')}.json`)
+          }
+        }}
+        sourcePane={{
+          value: jsonText,
+          status: jsonStatus,
+          statusMessage: jsonStatusMessage,
+          activePath: scriptCodeStatusPath,
+          activeRange: scriptCodeActiveRange,
+          activeParameterName: selectedOutlineParameterExists ? selectedOutlineParameterName : null,
+          activeCandidateName: autoParameterSidebarActive ? activeAutoParameterCandidate?.varName || activeAutoParameterCandidate?.keyHint || null : null,
+          actionCount: scriptPhaseActionRows.length,
+          assistExtensions: scriptAssistExtensions,
+          candidateMatchRanges: autoParameterCandidateMatchRanges,
+          jumpToLineRequest: jsonLineJumpRequest,
+          parameterMatchRanges: safeParameterMatchRanges,
+          resolvedValues: workspaceTab === 'debug' && hasReplayVariableInspectorData ? replayVariableInspector : null,
+          ariaLabel: 'Source',
+          title: 'Source',
+          onApply: handleApplyJsonDraft,
+          onChange: handleCodePaneChange,
+          onCopy: () => void navigator.clipboard?.writeText(jsonText),
+          onDownload: () => { void handleDownloadScript() },
+          onFormat: handleFormatJsonDraft,
+          onReset: handleResetJsonDraft,
+          onRequestParameterize: openJsonParameterSelectionMenu,
+        }}
+        selectionState={jsonParameterSelection}
+        onOpenParameterEditor={openJsonParameterEditor}
+        onOpenExistingParameter={openJsonExistingParameterChooser}
+        onOpenOccurrenceReview={openJsonParameterOccurrenceReview}
+      />
+    )
+  }
+  const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
+    const workbenchTabs = mode === 'debug'
+      ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Action evidence', title: 'Action evidence' } : tab)
+      : visibleCenterTabs.filter(tab => tab.id !== BROWSER_REPLAY_TAB_ID)
+    const fallbackTabs = centerTabDescriptors.filter(tab => mode !== 'debug' || !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
+    return (
+      <CenterTabbedPane
+        activeTabId={centerTabsState.activeTabId}
+        ariaLabel={ariaLabel}
+        className={className}
+        onCloseTab={closeCenterTab}
+        onPanelElement={setCenterTabPanelElement}
+        onSelectTab={selectCenterTab}
+        renderTabPanel={renderCenterTabPanel}
+        tabs={workbenchTabs.length > 0 ? workbenchTabs : fallbackTabs.slice(0, 1)}
+      />
+    )
+  }
+  const authorRightSidebarContext: AuthorRightSidebarContext = (() => {
+    switch (centerTabsState.activeTabId) {
+      case 'request-body':
+      case ACTION_LIST_TAB_ID:
+        if (activeInspectorScope) {
+          return { kind: 'inspector', title: 'Action Details', railLabel: 'Details' }
+        }
+        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
+      case 'parameter-data':
+        return { kind: 'parameters', title: 'Parameters', railLabel: 'Parameters' }
+      case SCRIPT_JSON_TAB_ID:
+        if (activeScriptJsonSidebarTab === 'auto-params') {
+          return { kind: 'auto-parameterization', title: selectedOutlineParameterExists && !parameterPaneShowAuto ? 'Parameter' : 'Parameters', railLabel: 'Parameters', wide: true }
+        }
+        if (activeScriptJsonSidebarTab === 'details' && activeInspectorScope) {
+          return { kind: 'inspector', title: 'Action Details', railLabel: 'Details' }
+        }
+        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
+      case 'imported-metadata':
+        return { kind: 'imported-metadata', title: 'Source Mapping', railLabel: 'Map' }
+      case 'object-descriptors':
+        return { kind: 'object-descriptors', title: 'Object Descriptors', railLabel: 'Objects' }
+      case 'http-conversion':
+        return { kind: 'http-conversion', title: 'HTTP Conversion', railLabel: 'HTTP' }
+      case BROWSER_REPLAY_TAB_ID:
+        return { kind: 'browser-replay', title: 'Browser Replay', railLabel: 'Replay' }
+      case 'runtime-settings':
+        if (activeRuntimeSettingsSection === 'script_config') {
+          return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
+        }
+        return { kind: 'runtime-settings', title: 'Runtime Settings', railLabel: 'Runtime' }
+      default:
+        return { kind: 'signals', title: 'Insights', railLabel: 'Insights' }
+    }
+  })()
+  const renderReadinessValidationResult = () => {
+    if (!validationSidebarResult && !validationEvidence) return null
+    return (
+      <div className="readiness-validation-result" aria-live="polite">
+        {validationSidebarResult && (
+          <div className={`readiness-validation-message ${validationSidebarResult.tone}`}>
+            <strong>{validationSidebarResult.message}</strong>
+            {validationSidebarResult.issues.length > 0 && (
+              <ul>
+                {validationSidebarResult.issues.map((issue, index) => (
+                  <li key={`validation-issue-${index}`}>{issue}</li>
+                ))}
+              </ul>
+            )}
+            {validationSidebarResult.warnings.length > 0 && (
+              <ul>
+                {validationSidebarResult.warnings.map((warning, index) => (
+                  <li key={`validation-warning-${index}`}>{warning}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {validationEvidence && <ValidationEvidencePanel evidence={validationEvidence} />}
+      </div>
+    )
+  }
+  const renderReadyToRunCard = ({ showChecklist = false }: { showChecklist?: boolean } = {}) => (
+    <div className="utility-card debug-readiness-card">
+      <div className="utility-card-header readiness-card-header">
+        <strong>Ready for debug?</strong>
+        <div className="readiness-header-actions">
+          <span>{replayPreflightStatusLabel(replayPreflight)}</span>
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            onClick={() => { void handleValidateScript() }}
+            disabled={validateScriptDisabled}
+            title={validateScriptTitle}
+          >
+            {validating ? 'Checking...' : 'Recheck'}
+          </button>
+        </div>
+      </div>
+      <ReplayPreflightCard
+        preflight={replayPreflight}
+        compact
+        onConfigureSecrets={projectId ? openProjectSecrets : undefined}
+        configureSecretsLabel={scriptId ? 'Configure secrets' : 'Save & configure secrets'}
+        secretStatusState={replaySecretStatusState}
+        onRetrySecretStatus={replaySecretStatusState === 'unavailable'
+          ? () => setProjectSecretProbeRetryGeneration(generation => generation + 1)
+          : undefined}
+      />
+      {renderReadinessValidationResult()}
+      {showChecklist && (
+        <details><summary>Evidence required for approval</summary><div className="utility-checklist">
+          {convergenceItems.map(item => (
+            <div key={item.key} className="utility-checklist-item">
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.status}</span>
+              </div>
+              {item.action && (
+                <button type="button" className="btn btn-sm btn-secondary" onClick={item.action} disabled={item.disabled}>
+                  {item.actionLabel || item.label}
+                </button>
+              )}
+            </div>
+          ))}
+        </div></details>
+      )}
+    </div>
+  )
+  const renderContextualRightSidebarContent = (): ReactNode => {
+    switch (authorRightSidebarContext.kind) {
+      case 'auto-parameterization': {
+        const showParameterDetails = selectedOutlineParameterExists && selectedOutlineParameter && !parameterPaneShowAuto
+        const parameterPaneToggle = selectedOutlineParameterExists ? (
+          <TabList className="parameter-pane-toggle" role="tablist" aria-label="Parameter view" onKeyDown={handleTabKey}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!parameterPaneShowAuto}
+              className={!parameterPaneShowAuto ? 'active' : ''}
+              onClick={() => setParameterPaneShowAuto(false)}
+              title={`Settings for ${selectedOutlineParameterName}`} tabIndex={(!parameterPaneShowAuto) ? 0 : -1}
+            >
+              Parameters
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={parameterPaneShowAuto}
+              className={parameterPaneShowAuto ? 'active' : ''}
+              onClick={() => setParameterPaneShowAuto(true)} tabIndex={(parameterPaneShowAuto) ? 0 : -1}
+            >
+              Auto Params
+            </button>
+          </TabList>
+        ) : null
+        if (showParameterDetails) {
+          return (
+            <div className="parameter-pane">
+              <SelectedParameterDetails
+                parameter={selectedOutlineParameter}
+                referenceLines={selectedParameterReferenceLines}
+                usages={jsonDirty ? undefined : parameterUsages(script, selectedOutlineParameter.name).map(usage => ({ path: usage.path, label: parameterUsageLabel(script, usage.path), line: lineRangeForTargetPath(scriptDslDocument.ranges, `script.${usage.path}`)?.startLine || 0 })).filter(usage => usage.line > 0)}
+                dataInfo={selectedParameterDataInfo}
+                onJumpToLine={line => { setNarrowAuthorPane('editor'); setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID); requestJsonLineJump(line) }}
+                onEditInDataTab={() => {
+                  if (selectedOutlineParameterIndex >= 0) selectParameterData(selectedOutlineParameterIndex)
+                  openEditorSection('parameter-data')
+                }}
+              />
+            </div>
+          )
+        }
+        return (
+          <div className="parameter-pane">
+            {parameterPaneToggle}
+          <AutoParameterizationSidebar
+            activeCandidateId={activeAutoParameterCandidate?.id || null}
+            activeOccurrenceIndex={normalizedAutoParameterOccurrenceIndex}
+            activeOccurrenceLabel={formatParameterCandidateOccurrence(activeAutoParameterOccurrence)}
+            candidateMatchCount={autoParameterCandidateMatchRanges.length}
+            onApplyAutoParameterization={applyAutoParameterization}
+            onNextOccurrence={() => moveAutoParameterOccurrence(1)}
+            onPreviousOccurrence={() => moveAutoParameterOccurrence(-1)}
+            onSelectCandidate={selectAutoParameterCandidate}
+            onUpdateParameterCandidate={updateCandidate}
+            parameterCandidates={parameterCandidates}
+            seedRows={autoParamSeedRows}
+            onSeedRowsChange={setAutoParamSeedRows}
+          />
+          </div>
+        )
+      }
+      case 'parameters':
+        return (
+          <ParameterSidebar
+            mergeSummary={parameterMergeSummary}
+            onAddParameter={addParameter}
+            onMergeParameterSources={mergeParameterSourceFiles}
+            onSelectParameter={selectParameterData}
+            parameters={script.parameters || []}
+            selectedParameterIdx={selectedParameterIdx}
+          />
+        )
+      case 'inspector':
+        return renderActionInspectorContent()
+      case 'imported-metadata':
+        return (
+          <ImportedMetadataUtilityPanel
+            activeAction={activeAction}
+            controller={importReviewController}
+            migrationSuggestions={migrationSuggestions}
+            onApplyMigrationSuggestion={applyMigrationSuggestion}
+            onOpenMappedDataSource={openImportedDataSourceReview}
+            scriptName={script.name}
+          />
+        )
+      case 'object-descriptors':
+        return (
+          <ObjectDescriptorUtilityPanel
+            controller={importReviewController}
+            onApplyCandidate={applyObjectDescriptorCandidate}
+            onSelectAction={selectAuthorAction}
+          />
+        )
+      case 'http-conversion':
+        return (
+          <>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Conversion Gate</strong>
+                <span>{httpConversionReview.status.replace(/_/g, ' ')}</span>
+              </div>
+              <div className="utility-metric-row">
+                <span className="metric-badge">{httpConversionReview.browserActionCount} browser</span>
+                <span className="metric-badge">{httpConversionReview.candidateRequestCount} requests</span>
+                <span className="metric-badge">{httpConversionReview.replayEvidence ? 'replay' : 'no replay'}</span>
+              </div>
+              <div className="utility-stack">
+                {httpConversionReview.findings.map((finding, index) => (
+                  <div key={`http-sidebar-${index}`} className="utility-list-item">{finding}</div>
+                ))}
+              </div>
+            </div>
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Review Actions</strong>
+                <span>{httpConversionPreview ? 'Preview ready' : 'No preview'}</span>
+              </div>
+              <div className="utility-stack">
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleGenerateBrowserHTTPPreview} disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}>
+                  {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                </button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Debug</button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('parameter-data')}>Review Parameter Data</button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => openEditorSection('runtime')}>Review Runtime Settings</button>
+              </div>
+            </div>
+          </>
+        )
+      case 'browser-replay':
+        return (
+          <>
+            {renderReadyToRunCard()}
+            <div className="utility-card">
+              <div className="utility-card-header">
+                <strong>Replay Evidence</strong>
+                <span>{debugEvidenceStatus}</span>
+              </div>
+              <ul className="utility-list">
+                <li className="utility-list-item">{replayReport ? `${replayReport.events.length} captured event${replayReport.events.length === 1 ? '' : 's'}` : 'No completed replay report attached.'}</li>
+                <li className="utility-list-item">{browserReplaySession?.events?.length || 0} live session event{(browserReplaySession?.events?.length || 0) === 1 ? '' : 's'}</li>
+              </ul>
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => activateWorkspaceTab('debug')}>Open Debugger</button>
+            </div>
+          </>
+        )
+      case 'runtime-settings':
+        return (
+          <ScriptRuntimeSettingsSidebar
+            parityEntries={importSummary.runtimeSettingsParity}
+            paritySummary={runtimeSettingParitySummary}
+            readiness={renderReadyToRunCard()}
+            script={script}
+            // Only imported scripts have the read-only source panel; an authored
+            // script's parity entries are config-derived with no source rows to show.
+            onOpenImportedSource={script.metadata?.import?.preserved?.runtime_files
+              ? () => {
+                  openCenterTab('runtime-settings')
+                  selectRuntimeSettingsSection('imported_source')
+                }
+              : undefined}
+          />
+        )
+      default:
+        return null
+    }
+  }
+
+  return (
+<div className="script-editor" ref={editorElementRef} data-author-pane={narrowAuthorPane}>
+      {datasetChange && <DatasetChangeReview change={datasetChange} affected={(script.parameters || []).filter(parameter => parameter.data_source?.trim().toLowerCase() === datasetChange.before.name.trim().toLowerCase()).map(parameter => parameter.name)} error={datasetChangeError} onApply={applyDatasetChange} onCancel={() => setDatasetChange(null)} />}
+      <div className="script-evidence-states" aria-label="Script evidence states">
+        {workspaceTab === 'author' && !(isParameterDataTabActive || centerTabsState.activeTabId === 'runtime-settings') && <button type="button" className="btn btn-sm btn-ghost" aria-pressed={!authorOutlineCollapsed} onClick={() => setAuthorOutlineCollapsed(value => !value)}>Outline</button>}
+        {onClose && <button type="button" className="btn btn-sm btn-ghost" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>}
+        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
+        <span>Saved: {scriptEditorDirty ? 'unsaved changes' : 'up to date'}</span>
+        <span>Validation evidence: {validationEvidenceMatchesCurrentDraft && validationPassed ? 'passed' : validationEvidence ? 'stale or needs changes' : 'not yet'}</span>
+        <span>Debugged: {debugEvidenceStatus}</span>
+        <span>Approval readiness: {approvalReady ? 'ready for review' : 'needs evidence'}</span>
+        <details className="script-health-summary"><summary>Checks &amp; readiness ({problemCount})</summary>
+          <p>Static checks inspect the draft. Runtime prerequisites are verified when debugging starts. Replay evidence belongs to its recorded revision.</p>
+          {renderReadyToRunCard({ showChecklist: true })}
+        </details>
+      </div>
+      {workspaceTab === 'author' && !isParameterDataTabActive && centerTabsState.activeTabId !== 'runtime-settings' && <div className="script-pane-switch" role="group" aria-label="Author panes">
+        {(['outline', 'editor', 'inspector'] as const).map(pane => <button type="button" key={pane} aria-pressed={narrowAuthorPane === pane} onClick={() => { setNarrowAuthorPane(pane); if (pane === 'outline') setAuthorOutlineCollapsed(false); if (pane === 'inspector') setAuthorRightSidebarCollapsed(false) }}>{pane === 'outline' ? 'Outline' : pane === 'editor' ? 'Editor' : 'Inspector'}</button>)}
+      </div>}
+      <datalist id="object-ref-suggestions">
+        {objectRefSuggestions.map(name => <option key={name} value={name} aria-label={name} />)}
+      </datalist>
+      {projectId && (missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus) && (
+        <div className="script-secret-banner" role="status">
+          <div>
+            <strong>
+              {replayBlockedByUnknownSecretStatus
+                ? replaySecretStatusState === 'unavailable' ? 'Project secret status is unavailable' : 'Checking project secret configuration'
+                : `${missingProjectSecrets.length} project secret${missingProjectSecrets.length === 1 ? ' still needs' : 's still need'} configuration`}
+            </strong>
+            <span>
+              {replayBlockedByUnknownSecretStatus
+                ? 'The script is safely saved with references, but replay remains blocked until credential status can be verified.'
+                : 'The script is safely saved with references, but replay will remain blocked until values are available.'}
+            </span>
+          </div>
+          <div className="settings-inline-actions">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={openProjectSecrets}>{scriptId ? 'Configure secrets' : 'Save & configure secrets'}</button>
+            {replaySecretStatusState === 'unavailable' && (
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => setProjectSecretProbeRetryGeneration(generation => generation + 1)}>
+                Retry credential check
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {secretBindingsOpen && scriptId && projectId && (
+        <ScriptSecretBindingsDialog
+          scriptId={scriptId}
+          script={currentDraftScript}
+          projectId={projectId}
+          scriptName={currentDraftScript.name || 'Script'}
+          onClose={() => setSecretBindingsOpen(false)}
+          onConfigured={async () => {
+            await refreshScriptSecretStatus()
+            setProjectSecretProbeRetryGeneration(generation => generation + 1)
+          }}
+          onRebound={(rebound, changedLocations, outcome) => {
+            commitJsonDraft(rebound)
+            if (outcome?.createdSecretName) {
+              pendingCreatedSecretNamesRef.current = Array.from(new Set([
+                ...pendingCreatedSecretNamesRef.current,
+                outcome.createdSecretName,
+              ]))
+            }
+            setSuccess(`Updated ${changedLocations.length} secret reference location${changedLocations.length === 1 ? '' : 's'} in the draft. Save the script to make the rebind authoritative.`)
+          }}
+        />
+      )}
+      <ScriptImportReviewDialogs
+        controller={importReviewController}
+        onOpenMappedDataSource={openImportedDataSourceReview}
+      />
+      {serverParameterization && (
+        <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(closeServerParameterizationDialog)}>
+          <div
+            ref={serverParameterizationDialogRef}
+            className="editor-dialog server-parameterization-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Server parameterization scan"
+          >
+            <div className="editor-dialog-header">
+              <div>
+                <h3 className="panel-title">Server Parameterization Scan</h3>
+                <p className="editor-dialog-subtitle">
+                  {serverParameterization.note || 'Review and apply the detected data parameters and secrets.'}
+                </p>
+              </div>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={closeServerParameterizationDialog}>Close</button>
+            </div>
+            <div className="editor-dialog-body">
+              <ParameterizationReview
+                parameterization={serverParameterization}
+                script={script}
+                disabled={saving || validating || replaying}
+                onApplied={(applied, diffs) => {
+                  replaceScriptWithHistory(applied)
+                  recordAssistantChange('Applied server parameterization', `${diffs.length} change${diffs.length === 1 ? '' : 's'}`)
+                  setServerParameterization(null)
+                  setSuccess(`Applied server parameterization (${diffs.length} change${diffs.length === 1 ? '' : 's'}).`)
+                  setError('')
+                }}
+              />
+            </div>
+          </div>
+        </div></DialogLayer>
+      )}
+      {showSaveBlockModal && (
+        <DialogLayer><div className="editor-dialog-backdrop" {...dialogBackdropProps(closeSaveBlockDialog)}>
+          <div
+            ref={saveBlockDialogRef}
+            className="editor-dialog save-block-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Save selected actions as a reusable block"
+          >
+            <div className="editor-dialog-header">
+              <div>
+                <h3 className="panel-title">Save as Reusable Block</h3>
+                <p className="editor-dialog-subtitle">
+                  {selectedBlockScopes.length} action{selectedBlockScopes.length === 1 ? '' : 's'} will be saved to this project's block library.
+                </p>
+              </div>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Close</button>
+            </div>
+            <div className="editor-dialog-body save-block-dialog-body">
+              <label className="save-block-field">
+                <span>Block name</span>
+                <input
+                  type="text"
+                  value={saveBlockName}
+                  placeholder="e.g. Login transaction"
+                  onChange={event => setSaveBlockName(event.target.value)}
+                />
+              </label>
+              <label className="save-block-field">
+                <span>Kind</span>
+                <select value={saveBlockKind} onChange={event => setSaveBlockKind(event.target.value)}>
+                  {AUTHORING_COMPONENT_GROUPS.map(group => (
+                    <option key={group.kind} value={group.kind}>{group.label}</option>
+                  ))}
+                </select>
+              </label>
+              {!projectId && (
+                <p className="save-block-warning">This script isn't associated with a project, so the block can't be saved.</p>
+              )}
+              <div className="save-block-actions">
+                <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Cancel</button>
+                <button type="button" className="btn btn-sm btn-accent" disabled={savingBlock || !saveBlockName.trim() || !projectId} onClick={saveSelectedAsBlock}>
+                  {savingBlock ? 'Saving…' : 'Save block'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div></DialogLayer>
+      )}
+      {parameterizeChoice && (
+        <ParameterizeDialog
+          draft={parameterizeChoice}
+          onClose={() => setParameterizeChoice(null)}
+          onChooseFile={chooseParameterizeFile}
+          onConfirmBuiltin={confirmBuiltinParameterize}
+        />
+      )}
+      {existingParameterChoice && (
+        <ExistingParameterDialog
+          draft={existingParameterChoice}
+          onClose={() => setExistingParameterChoice(null)}
+          onSelect={parameterName => applyExistingParameterChoice(parameterName)}
+          parameters={currentDraftScript.parameters || []}
+        />
+      )}
+      {jsonOccurrenceReview && (
+        <JsonOccurrenceReviewDialog
+          onClose={() => setJsonOccurrenceReview(null)}
+          onCreateNew={createParameterFromOccurrenceReview}
+          onUseExisting={applyExistingParameterChoice}
+          parameters={currentDraftScript.parameters || []}
+          review={jsonOccurrenceReview}
+        />
+      )}
+      {!hasTopbarContributionProvider && (
+        <div className="editor-header script-editor-local-action-proxy" hidden>
+          <div className="editor-title-row">
+            <div className="editor-actions">
+              <button className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
+                {saving ? 'Saving...' : 'Save Script'}
+              </button>
+              {onClose && <button className="btn btn-ghost" onClick={handleCloseEditor}>Close</button>}
+            </div>
+          </div>
+          <div className="script-ide-command-bar" aria-label="Script IDE command bar">
+            <TabList className="script-ide-tabs" role="tablist" aria-label="Script workspace" onKeyDown={handleTabKey}>
+              <button type="button" role="tab" aria-selected={workspaceTab === 'author'} className={workspaceTab === 'author' ? 'active' : ''} onClick={() => activateWorkspaceTab('author')} tabIndex={(workspaceTab === 'author') ? 0 : -1}>
+                Author
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={workspaceTab === 'debug'}
+                className={workspaceTab === 'debug' ? 'active' : ''}
+                data-debug-status={debugWorkspaceStatusLabel || undefined}
+                onClick={() => activateWorkspaceTab('debug')} tabIndex={(workspaceTab === 'debug') ? 0 : -1}
+              >
+                Debug
+              </button>
+            </TabList>
+            <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
+              <button type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
+                <span className="debugger-icon" aria-hidden="true">&#9654;</span>
+                <span>{replaying ? 'Running...' : replayReport ? 'Debug again' : 'Debug one iteration'}</span>
+              </button>
+              {workspaceTab === 'debug' && (
+                <>
+                  <button type="button" className="debugger-icon-btn" title={isReplayPaused ? 'Continue' : 'Pause'} onClick={handlePauseResumeReplay} disabled={!activeReplaySessionId || !replaying || !browserReplaySession || browserReplaySession.status === 'completed' || browserReplaySession.status === 'failed' || browserReplaySession.status === 'stopped'}>
+                    <span className="debugger-icon" aria-hidden="true">{isReplayPaused ? '▶' : '⏸'}</span>
+                    <span>{isReplayPaused ? 'Continue' : 'Pause'}</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Step to next action" onClick={() => void handleStepReplay('into')} disabled={stepReplayDisabled}>
+                    <span className="debugger-icon" aria-hidden="true">&#10551;</span>
+                    <span>{replayReport?.completed_at ? 'Restart in step mode' : 'Step'}</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Step over the current block (run the rest of it, pause after)" onClick={() => void handleStepReplay('over')} disabled={stepReplayDisabled}>
+                    <span className="debugger-icon" aria-hidden="true">&#10550;</span>
+                    <span>{replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over'}</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Run to the end of the enclosing loop" onClick={() => void handleStepReplay('loop_end')} disabled={stepReplayDisabled}>
+                    <span className="debugger-icon" aria-hidden="true">&#8635;</span>
+                    <span>Finish Loop</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
+                    <span className="debugger-icon" aria-hidden="true">&#9209;</span>
+                    <span>Stop</span>
+                  </button>
+                  <button type="button" className="debugger-icon-btn" title="Toggle breakpoint on selected action" onClick={toggleSelectedBreakpoint} disabled={debugActionRows.length === 0}>
+                    <span className="debugger-icon" aria-hidden="true">●</span>
+                    <span>Breakpoint</span>
+                  </button>
+                  <button
+                    ref={debuggerSettingsBtnRef}
+                    type="button"
+                    className={`debugger-icon-btn ${centerTabsState.activeTabId === 'runtime-settings' ? 'active' : ''}`}
+                    title="Session overrides"
+                    aria-pressed={centerTabsState.activeTabId === 'runtime-settings'}
+                    onClick={() => {
+                      activateWorkspaceTab('debug')
+                      setDebuggerTab('request')
+                      setDebuggerSettingsOpen(false)
+                      openCenterTab('runtime-settings')
+                    }}
+                  >
+                    <span className="debugger-icon" aria-hidden="true">&#9881;</span>
+                    <span>Settings</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`debugger-icon-btn ${!debugDetailCollapsed ? 'active' : ''}`}
+                    title={debugDetailCollapsed ? 'Show detail panel (request/response + variables)' : 'Hide detail panel'}
+                    aria-pressed={!debugDetailCollapsed}
+                    onClick={() => setDebugDetailCollapsed(value => !value)}
+                  >
+                    <span className="debugger-icon" aria-hidden="true">▣</span>
+                    <span>Panel</span>
+                  </button>
+                  {replayReport && (
+                    <button type="button" className="debugger-icon-btn" title="Download Debug JSON" onClick={handleDownloadBrowserReplayExport}>
+                      <span className="debugger-icon" aria-hidden="true">&#8675;</span>
+                      <span>Export</span>
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {(error || warnings.length > 0 || success) && (
+        <div className="editor-feedback-strip">
+          {error && <div className="editor-toast error">{error}</div>}
+          {warnings.length > 0 && (
+            <div className="editor-toast warning">
+              {warnings.map((warning, index) => (
+                <div key={`${warning}-${index}`}>{warning}</div>
+              ))}
+            </div>
+          )}
+          {success && <div className="editor-toast success">{success}</div>}
+        </div>
+      )}
+
+      <div className={`editor-body workspace-${workspaceTab}`}>
+          {workspaceTab === 'debug' && (
+          <ScriptReplayDebuggerView
+            actionProblemRows={actionProblemRows}
+            activeReplaySessionId={activeReplaySessionId}
+            addExtractorDefinition={addExtractorDefinition}
+            api={api}
+            applyReplaySuggestedLocator={applyReplaySuggestedLocator}
+            breakpointSummary={breakpointSummary}
+            browserReplaySession={browserReplaySession}
+            clearDebugBreakpoints={clearDebugBreakpoints}
+            controller={replayDebuggerController}
+            copiedReplaySnapshotSection={copiedReplaySnapshotSection}
+            debugActionRows={debugActionRows}
+            debugBreakpointKeys={debugBreakpointKeys}
+            debugDetailHost={!isBrowserScript && centerTabsState.activeTabId === ACTION_LIST_TAB_ID ? centerTabPanelElements[ACTION_LIST_TAB_ID] : null}
+            debuggerWorkbench={renderCenterWorkbench('debugger-code-center', 'Debugger center workbench', 'debug')}
+            error={error}
+            expandedReplayBrowserArtifacts={expandedReplayBrowserArtifacts}
+            expandedReplayEvent={expandedReplayEvent}
+            exportGeneratedTextFile={exportGeneratedTextFile}
+            handleCopyReplaySnapshotSection={handleCopyReplaySnapshotSection}
+            handleValidateScript={handleValidateScript}
+            isBrowserScript={isBrowserScript}
+            jsonParseMessage={jsonParseMessage}
+            onEditReplayAction={editReplayAction}
+            onActivateDebug={() => activateWorkspaceTab('debug')}
+            onSelectProblemAction={row => {
+              activateWorkspaceTab('author')
+              openCenterTab(ACTION_LIST_TAB_ID)
+              selectAuthorPhaseAction(row)
+            }}
+            parameterReferenceCounts={parameterReferenceCounts}
+            problemCount={problemCount}
+            projectId={projectId}
+            replayActivity={replayActivity}
+            replayEventRefs={replayEventRefs}
+            replayFailingEvent={replayFailingEvent}
+            replayFailingEventIndex={replayFailingEventIndex}
+            replaying={replaying}
+            replayLatestActivity={replayLatestActivity}
+            replayOptions={replayOptions}
+            replayReport={replayReport}
+            replayEditableActionsKey={replayEditableActionsKey}
+            currentEditableActionsKey={currentEditableActionsKey}
+            previousReplayReport={previousReplayReport}
+            replayStatusLabel={replayStatusLabel}
+            replayVariableDiffs={replayVariableDiffs}
+            replayVariableInspector={replayVariableInspector}
+            replayVariableTimeline={replayVariableTimeline}
+            saving={saving}
+            script={script}
+            scriptId={scriptId}
+            scriptLevelIssues={scriptLevelIssues}
+            scriptRecordingStatus={scriptRecordingStatus}
+            scriptRecordingStatusState={scriptRecordingStatusState}
+            retryScriptRecordingStatus={retryScriptRecordingStatus}
+            selectedActionKey={authorCodeFocus ? authorCodeFocus.key || `${authorCodeFocus.phase}:${authorCodeFocus.actionIndex}` : activeAction !== null ? `action:${activeAction}` : undefined}
+            selectedOutlineParameterName={selectedOutlineParameterName}
+            onEditParameterDefinition={name => { activateWorkspaceTab('author'); const index = (script.parameters || []).findIndex(parameter => parameter.name === name); if (index >= 0) selectParameterData(index); openEditorSection('parameter-data') }}
+            selectOutlineParameter={selectOutlineParameter}
+            onSelectDebugItem={(item, hasEvidence) => {
+              if (item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0)) selectAuthorNestedItem(item)
+              else selectAuthorPhaseAction(item.row)
+              setShowFullScriptJson(true)
+              if (!hasEvidence) { setExpandedReplayEvent(null); openCenterTab(SCRIPT_JSON_TAB_ID) }
+            }}
+            setBreakOnFailure={setBreakOnFailure}
+            setExpandedReplayEvent={setExpandedReplayEvent}
+            setReplayOptions={setReplayOptions}
+            setReplayScreenshotSelection={setReplayScreenshotSelection}
+            setSequenceChildBreakpoints={setSequenceChildBreakpoints}
+            toggleDebugBreakpoint={toggleDebugBreakpoint}
+            toggleReplayBrowserArtifact={toggleReplayBrowserArtifact}
+            toggleStepPathBreakpoint={toggleStepPathBreakpoint}
+            validating={validating}
+            warnings={warnings}
+          />
+          )}
+
+          {objectDescriptorReview.rows.length > 0 && centerTabPanelElements['object-descriptors'] && createPortal(
+            renderStructuredCenterDocument('Object Descriptors', (
+              <ObjectDescriptorReviewDocument
+                controller={importReviewController}
+                onApplyCandidate={applyObjectDescriptorCandidate}
+                onSelectAction={selectAuthorAction}
+              />
+            )), centerTabPanelElements['object-descriptors'])}
+
+          {isBrowserScript && centerTabPanelElements['http-conversion'] && createPortal(
+            renderStructuredCenterDocument('Browser To HTTP Conversion Review', (
+              <section className="center-document config-panel center-document-conversion" style={{ padding: 0 }} aria-label="Browser To HTTP Conversion Review">
+                <div className="center-document-header">
+                  <div>
+                    <h3 className="panel-title">Browser To HTTP Conversion Review</h3>
+                    <p>Gate generated HTTP load scripts behind replay, network, correlation, and approval evidence.</p>
+                  </div>
+                </div>
+              <div className="panel-body" style={{ padding: '0 20px 20px' }}>
+                <div className="import-metadata-grid">
+                  <div className="import-metadata-card">
+                    <span>Status</span>
+                    <strong>{httpConversionReview.status.replace(/_/g, ' ')}</strong>
+                    <small>{httpConversionReview.networkEvidence ? 'Network evidence captured' : 'Network evidence required'}</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Browser Actions</span>
+                    <strong>{httpConversionReview.browserActionCount}</strong>
+                    <small>Canary flow context</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Replay Evidence</span>
+                    <strong>{httpConversionReview.replayEvidence ? 'Attached' : 'Missing'}</strong>
+                    <small>Required before conversion</small>
+                  </div>
+                  <div className="import-metadata-card">
+                    <span>Request Candidates</span>
+                    <strong>{httpConversionReview.candidateRequestCount}</strong>
+                    <small>Captured replay requests</small>
+                  </div>
+                </div>
+                <div className="import-correlation-section">
+                  <h4>Conversion Gate</h4>
+                  <p>Keep Web 2.0 browser scripts as canaries until an HTTP draft is generated from captured traffic and passes validation/replay independently.</p>
+                  <div className="import-correlation-list">
+                    {httpConversionReview.findings.map((finding, index) => (
+                      <div key={`http-conversion-${index}`} className="import-correlation-card">
+                        <strong>{index === 0 ? 'Flow' : index === 1 ? 'Replay' : index === 2 ? 'Network' : 'Approval'}</strong>
+                        <span>{finding}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {httpConversionError && <div className="error-message">{httpConversionError}</div>}
+                {httpConversionPreview && (
+                  <div className="import-correlation-section">
+                    <h4>Generated HTTP Draft Preview</h4>
+					<p>
+					  {httpConversionPreview.generated_script?.name || 'HTTP draft'}{' '}
+					  {httpConversionBlockingFindings.length > 0
+						? 'is blocked from promotion until the findings below are resolved.'
+						: 'is ready for validation, replay, correlation repair, and approval review.'}
+					</p>
+                    <div className="import-metadata-grid">
+                      <div className="import-metadata-card">
+                        <span>Backend Status</span>
+                        <strong>{httpConversionPreview.review.status.replace(/_/g, ' ')}</strong>
+                        <small>{httpConversionPreview.review.generated_http_actions} HTTP actions generated</small>
+                      </div>
+                      <div className="import-metadata-card">
+                        <span>Captured Requests</span>
+                        <strong>{httpConversionPreview.review.captured_requests}</strong>
+                        <small>{httpConversionPreview.review.skipped_static_assets} static assets skipped</small>
+                      </div>
+                      <div className="import-metadata-card">
+                        <span>Correlation Candidates</span>
+                        <strong>{httpConversionPreview.review.correlation_candidates?.length || 0}</strong>
+                        <small>Review before approval</small>
+                      </div>
+                      <div className="import-metadata-card">
+                        <span>Data Candidates</span>
+                        <strong>{httpConversionPreview.review.data_source_candidates?.length || 0}</strong>
+                        <small>Bind to parameters or data pools</small>
+                      </div>
+					  <div className="import-metadata-card">
+						<span>Evidence</span>
+						<strong>{httpConversionPreview.review.evidence.verification_status.replace(/_/g, ' ')}</strong>
+						<small>{httpConversionPreview.review.evidence.durable ? 'Durable replay and correlation evidence' : 'Evidence is not durable'}</small>
+					  </div>
+					  <div className="import-metadata-card">
+						<span>Promotion</span>
+						<strong>{httpConversionPreview.review.promotion_status.replace(/_/g, ' ')}</strong>
+						<small>{httpConversionPreview.governance.status.replace(/_/g, ' ')} · approval {httpConversionPreview.governance.approval_status.replace(/_/g, ' ')}</small>
+					  </div>
+                    </div>
+					{httpConversionBlockingFindings.length > 0 && (
+					  <div className="import-correlation-section" aria-label="HTTP draft promotion blockers">
+						<h4>Promotion Blockers</h4>
+						<div className="import-correlation-list">
+						  {httpConversionBlockingFindings.map((finding, index) => (
+							<div key={`${finding.severity}-${finding.summary}-${index}`} className="import-correlation-card">
+							  <strong>{finding.severity.toUpperCase()} · {finding.summary}</strong>
+							  {finding.evidence && <span>{finding.evidence}</span>}
+							  {finding.action && <span>Next: {finding.action}</span>}
+							</div>
+						  ))}
+						</div>
+					  </div>
+					)}
+                    <div className="import-correlation-list">
+                      {(httpConversionPreview.review.correlation_candidates || []).slice(0, 4).map((candidate, index) => (
+                        <div key={`http-correlation-${candidate.name}-${candidate.source}-${index}`} className="import-correlation-card">
+                          <strong>Correlation · {candidate.name}</strong>
+                          <span>{candidate.evidence || candidate.source}</span>
+                        </div>
+                      ))}
+                      {(httpConversionPreview.review.data_source_candidates || []).slice(0, 4).map((candidate, index) => (
+                        <div key={`http-data-${candidate.name}-${candidate.value}-${index}`} className="import-correlation-card">
+                          <strong>Data Source · {candidate.name}</strong>
+                          <span>{candidate.evidence || candidate.source}</span>
+                          {candidate.value && <code>{candidate.value}</code>}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="import-correlation-card">
+                      <strong>{httpConversionPreview.scenario_template.name}</strong>
+                      <span>{httpConversionPreview.scenario_template.groups.map(group => `${group.name}: ${group.protocol} / ${group.vusers} VUsers`).join(' · ')}</span>
+                    </div>
+                  </div>
+                )}
+                <div className="replay-panel-actions" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleGenerateBrowserHTTPPreview}
+                    disabled={httpConversionGenerating || !httpConversionReview.networkEvidence}
+                  >
+                    {httpConversionGenerating ? 'Generating...' : 'Generate HTTP Draft Preview'}
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => activateWorkspaceTab('debug')}>
+                    Debug
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('parameter-data')}>
+                    Review Parameter Data
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => openEditorSection('runtime')}>
+                    Review Runtime Settings
+                  </button>
+                </div>
+              </div>
+              </section>
+            )), centerTabPanelElements['http-conversion'])}
+
+          {/* Runtime Settings Panels */}
+          {centerTabPanelElements['runtime-settings'] && createPortal(
+            renderStructuredCenterDocument('Runtime Settings', (
+              <ScriptRuntimeSettingsView
+                hideSave
+                debugContext={replayOptions}
+                baselineConfig={(() => { const parsed = parseScriptJsonDraft(baselineJsonRef.current); return parsed.ok ? parsed.script.config : undefined })()}
+                activeHTTPTransportTab={activeHTTPTransportTab}
+                activeSection={activeRuntimeSettingsSection}
+                canEditProtocol={canEditProtocol}
+                draftScope={`script-editor:${editorResourceScopeVersionRef.current}`}
+                onAddHTTPRuntimeAction={addHTTPRuntimeAction}
+                onSave={handleSave}
+                onSelectHTTPTransportTab={setActiveHTTPTransportTab}
+                onSelectSection={selectRuntimeSettingsSection}
+                onUpdateField={updateField}
+                onUpdateProtocol={updateProtocol}
+                saveDisabled={saveScriptDisabled}
+                saveTitle={saveScriptTitle}
+                saving={saving}
+                script={script}
+              />
+            )), centerTabPanelElements['runtime-settings'])}
+
+          {/* Actions List + Detail */}
+          {workspaceTab === 'author' && (
+          <div className="actions-layout" role="tabpanel" aria-label="Authoring workspace">
+            <div
+              className={`actions-content-grid ${isParameterDataTabActive || centerTabsState.activeTabId === 'runtime-settings' ? 'settings-workspace-expanded' : ''} ${authorOutlineCollapsed ? 'author-outline-collapsed' : ''} ${authorRightSidebarCollapsed ? 'author-right-sidebar-collapsed' : ''} ${authorRightSidebarContext.wide ? 'author-right-sidebar-wide' : ''}`}
+              style={!authorOutlineCollapsed && authorRailWidth != null ? ({ ['--author-rail-width']: `${authorRailWidth}px` } as React.CSSProperties) : undefined}
+            >
+              {!authorOutlineCollapsed && (
+                <div
+                  className={`author-rail-resize ${authorRailResizing ? 'resizing' : ''}`}
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="Resize outline panel (double-click to fit content)"
+                  title="Drag to resize · double-click to fit content"
+                  onPointerDown={startAuthorRailDrag}
+                  onDoubleClick={fitAuthorRailToContent}
+                />
+              )}
+              <div className={`actions-sidebar ${authorOutlineCollapsed ? 'collapsed' : ''}`} ref={authorRailRef} id="script-outline-panel">
+                {authorOutlineCollapsed ? (
+                  <PanelToggle className="actions-sidebar-restore" expanded={false} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(false)} />
+                ) : (
+                <>
+                <div className="editor-outline-nav">
+                  <div className="editor-outline-header editor-outline-header-actions-only">
+                    <div className="editor-outline-actions">
+                      <button type="button" className="btn-icon editor-outline-action-button" onClick={undoEditorChange} disabled={editorHistory.past.length === 0} title="Undo last guided change" aria-label="Undo last guided change">
+                        <EditorRailActionIcon kind="undo" />
+                      </button>
+                      <button type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={editorHistory.future.length === 0} title="Redo guided change" aria-label="Redo guided change">
+                        <EditorRailActionIcon kind="redo" />
+                      </button>
+                      {!hasTopbarContributionProvider && <button type="button" className="btn-icon editor-outline-action-button primary" onClick={() => { void handleSave() }} disabled={saveScriptDisabled} title={saveScriptTitle} aria-label="Save script">
+                        <EditorRailActionIcon kind="save" />
+                      </button>}
+
+                      <PanelToggle className="" expanded={true} panelName="outline side panel" collapsedLabel="Outline" controls="script-outline-panel" onToggle={() => setAuthorOutlineCollapsed(true)} />
+                    </div>
+                  </div>
+                </div>
+                <div className="script-name-panel side-panel-script-name" aria-label="Script identity">
+                  <label className="script-name-field">
+                    <span>Script Name</span>
+                    <input value={script.name} onChange={e => updateField('name', e.target.value)} placeholder="My_Test_Script" />
+                  </label>
+                </div>
+                <nav className="script-action-navigator" aria-label="Script outline" onKeyDown={handleOutlineKeys}>
+                  <label>Find action<input type="search" value={outlineActionFilter} onChange={event => setOutlineActionFilter(event.target.value)} /></label>
+                  {(['init', 'action', 'teardown'] as const).map(phase => <section key={phase}>
+                    <h4>{phase === 'action' ? 'Actions' : phase === 'init' ? 'Init' : 'Teardown'}</h4>
+                    {authorRenderRows.filter(item => item.row.phase === phase).map(item => {
+                      const action = item.kind === 'leaf' ? item.childAction : item.row.action
+                      const name = item.kind === 'leaf' || item.kind === 'container' ? item.name || action.name : action.name
+                      const selected = !selectedOutlineParameterName && (authorCodeFocus?.key === item.key || (!authorCodeFocus?.stepPath?.length && authorCodeFocus?.phase === phase && authorCodeFocus.actionIndex === item.row.actionIndex && item.depth === 0))
+                      return <div key={item.key} className="script-outline-row" style={{ paddingLeft: `${Math.min(item.depth, 8) * 12}px` }}>
+                        {item.kind === 'container' && <button type="button" aria-label={`${expandedAuthorContainers.has(item.key) ? 'Collapse' : 'Expand'} ${name}`} aria-expanded={expandedAuthorContainers.has(item.key)} onClick={() => toggleAuthorContainer(item.key)}>{expandedAuthorContainers.has(item.key) ? '▾' : '▸'}</button>}
+                        <button type="button" data-outline-select aria-current={selected ? 'true' : undefined} title={name} onClick={() => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item) : selectAuthorPhaseAction(item.row)}>
+                          <strong>{name || `${phase} ${item.row.actionIndex + 1}`}</strong><small>{item.kind === 'container' ? item.containerType : action.method || action.type} · {item.row.phaseLabel} {item.row.actionIndex + 1}{debugBreakpointKeys.has(item.key) ? ' · Breakpoint' : ''}{(actionIssueBuckets[phase]?.[item.row.actionIndex] || []).length ? ' · Needs attention' : ''}</small>
+                        </button>
+                      </div>
+                    })}
+                    {!authorRenderRows.some(item => item.row.phase === phase) && <small>{outlineActionFilter ? 'No matching actions' : 'No actions'}</small>}
+                  </section>)}
+                </nav>
+                <details className="author-data-tools"><summary>Parameters &amp; data ({script.parameters?.length || 0})</summary>
                 <ScriptJsonParameterOutline
                   collapsed={outlineParameterListCollapsed}
                   deepScanning={deepScanning}
@@ -6534,6 +6607,15 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 renderStructuredCenterDocument('Source Mapping', (
                   <SourceMappingReviewDocument
                     controller={importReviewController}
+                    baselineScript={importBaselineScript || initialScript}
+                    onChangeReview={state => replaceScriptWithHistory(withMappingReviewState(script, state))}
+                    draftDirty={scriptEditorDirty}
+                    onEditTarget={path => {
+                      const action = /^(actions|init|teardown)\[(\d+)\]/.exec(path)
+                      if (action) { selectAuthorPhaseIndex(action[1] === 'actions' ? 'action' : action[1] as 'init' | 'teardown', Number(action[2])); setNarrowAuthorPane('inspector') }
+                      else if (path.startsWith('config.')) openImportedRuntimeSettings()
+                      else { setNarrowAuthorPane('editor'); setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID) }
+                    }}
                     onOpenRuntimeSettings={openImportedRuntimeSettings}
                     onSelectAction={selectAuthorAction}
                     script={script}
@@ -6614,6 +6696,21 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             <ParameterDataCellDraftProvider onDraftChange={stageParameterDataCellEdit}>
               {renderStructuredCenterDocument('Parameter Data', (
                 <ParameterDataDialog
+              onAddDataset={addParameterDataset}
+              onInspectUsage={path => {
+                const match = /^(init|actions|teardown)\[(\d+)\]/.exec(path)
+                if (match) {
+                  const phase = match[1] === 'actions' ? 'action' : match[1] as 'init' | 'teardown'
+                  const key = `${phase}:${match[2]}`
+                  setAuthorCodeFocus({ phase, actionIndex: Number(match[2]), key })
+                }
+                openCenterTab(SCRIPT_JSON_TAB_ID)
+                setSuccess(`Parameter reference: ${path}`)
+              }}
+              onUndoStructure={undoEditorChange}
+              canUndoStructure={editorHistory.past.length > 0}
+              onMergeSources={mergeParameterSourceFiles}
+              mergeSummary={parameterMergeSummary}
               dataEditorMode={dataEditorMode}
               dataSourceHistory={dataSourceHistory}
               onAddDataColumn={addDataColumn}

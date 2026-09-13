@@ -48,6 +48,11 @@ describe('scenarioBuilderDraft', () => {
     expect(hasScenarioBuilderProgress(makeDraft({ form: { name: 'My run' } as ScenarioFormState }))).toBe(true)
   })
 
+  it('detects progress from a selected script before a name or model exists', () => {
+    expect(hasScenarioBuilderProgress(makeDraft({ form: { name: '', groups: [{ script_id: '' }] } as ScenarioFormState }))).toBe(false)
+    expect(hasScenarioBuilderProgress(makeDraft({ form: { name: '', groups: [{ script_id: 'script-1' }] } as ScenarioFormState }))).toBe(true)
+  })
+
   it('detects progress once the user has advanced past the first step', () => {
     expect(hasScenarioBuilderProgress(makeDraft({ maxVisitedWizardIndex: 1 }))).toBe(true)
   })

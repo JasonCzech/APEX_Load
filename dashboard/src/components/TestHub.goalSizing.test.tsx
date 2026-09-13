@@ -20,7 +20,6 @@ const apiMock = {
   listTests: vi.fn(),
   getTestArchiveReport: vi.fn(),
   getTestArchiveAnalysis: vi.fn(),
-  sizeScenarioFromGoal: vi.fn(),
   getConfigDefaults: vi.fn().mockResolvedValue({ config: {} }),
 }
 const projectMockState = vi.hoisted(() => ({ activeProjectId: 'project-1' }))
@@ -115,19 +114,6 @@ describe('TestHub build-from-goal', () => {
         : { Search: { transactions: 20, errors: 1, error_pct: 5, avg_response_ms: 500, min_response_ms: 150, max_response_ms: 900, peak_tps: 12.2 } },
       resource_peaks: { cpu_process_pct: 0, mem_process_mb: 0, net_sent_kbps: 0, net_recv_kbps: 0, disk_read_kbps: 0, disk_write_kbps: 0 },
     }))
-    apiMock.sizeScenarioFromGoal.mockResolvedValue({
-      baseline_test_id: 'run-1',
-      groups: [{ group: 'Checkout', script_id: 'script-a', baseline_art_ms: 3000, target_tps: 100, computed_vusers: 300, basis: 'group' }],
-      total_target_tps: 100,
-      total_vusers: 300,
-      scenario_draft: {
-        name: 'Goal 100 TPS',
-        duration: '10m',
-        scenario_mode: 'goal_oriented',
-        goal_config: { target_average_tps: 100, min_vusers: 150, max_vusers: 600 },
-        groups: [{ name: 'Checkout', script_id: 'script-a', vusers: 300, ramp_up: '10s' }],
-      },
-    })
   })
 
   afterEach(async () => {
@@ -141,6 +127,17 @@ describe('TestHub build-from-goal', () => {
     await act(async () => { await Promise.resolve() })
   }
 
+  // Goal setup is started from the Goal-Driven family on the Model & Shape step.
+  async function openBuildFromGoal() {
+    const click = async (element: Element | undefined) => {
+      expect(element).toBeDefined()
+      await act(async () => { element?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    }
+    await click(Array.from(container.querySelectorAll('.scenario-wizard-step')).find(step => step.textContent?.includes('Model & Shape')))
+    await click(Array.from(container.querySelectorAll('.scenario-source-card')).find(card => card.querySelector('span')?.textContent === 'Goal-Driven'))
+    await click(findButton(container, 'Use Goal-Driven Scenario'))
+  }
+
   it('opens Build from Goal in the guided worksheet and imports matching baseline ART', async () => {
     await act(async () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
@@ -148,7 +145,7 @@ describe('TestHub build-from-goal', () => {
     await flush()
 
     await act(async () => { findButton(container, 'Scenario Builder')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
-    await act(async () => { findButton(container, 'Build from Goal')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await openBuildFromGoal()
     await flush()
 
     expect(apiMock.listTests).toHaveBeenCalled()
@@ -196,7 +193,7 @@ describe('TestHub build-from-goal', () => {
     })
     await flush()
     await act(async () => { findButton(container, 'Scenario Builder')?.click() })
-    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    await openBuildFromGoal()
     await flush()
 
     expect(apiMock.listTests).toHaveBeenNthCalledWith(1, { limit: 1000, offset: 0, project_id: 'project-1', summary: true })
@@ -216,7 +213,7 @@ describe('TestHub build-from-goal', () => {
     })
     await flush()
     await act(async () => { findButton(container, 'Scenario Builder')?.click() })
-    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    await openBuildFromGoal()
     expect(apiMock.listTests).toHaveBeenCalledWith({ limit: 1000, offset: 0, project_id: 'project-1', summary: true })
 
     projectMockState.activeProjectId = 'project-2'
@@ -236,7 +233,7 @@ describe('TestHub build-from-goal', () => {
     apiMock.listTests.mockResolvedValueOnce({
       tests: [{ id: 'project-b-run', name: 'Project B Baseline', status: 'COMPLETE', groups: [], total_vusers: 2, duration: '2m', created_at: '2026-05-02T10:00:00Z' }],
     })
-    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    await openBuildFromGoal()
     await flush()
 
     expect(apiMock.listTests).toHaveBeenLastCalledWith({ limit: 1000, offset: 0, project_id: 'project-2', summary: true })
@@ -251,7 +248,7 @@ describe('TestHub build-from-goal', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
     await flush()
-    await act(async () => findButton(container, 'Build from Goal')?.click())
+    await openBuildFromGoal()
     await flush()
     expect(container.querySelector('[aria-label="Average response time for Group 1"]')).not.toBeNull()
     await act(async () => { findButton(container, 'Import completed baseline')?.click() })
@@ -269,6 +266,21 @@ describe('TestHub build-from-goal', () => {
     confirm.mockRestore()
   })
 
+  it('shows baseline import failures on the Goal-Driven worksheet', async () => {
+    apiMock.getTestArchiveReport.mockRejectedValueOnce(new Error('Archive unavailable'))
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flush()
+    await openBuildFromGoal()
+    await flush()
+    await act(async () => { findButton(container, 'Import completed baseline')?.click() })
+    const picker = container.querySelector<HTMLSelectElement>('[aria-label="Completed baseline run"]')!
+    await act(async () => { picker.value = 'run-1'; picker.dispatchEvent(new Event('change', { bubbles: true })) })
+    await flush()
+    await flush()
+
+    expect(container.querySelector('.goal-driven-baseline-picker [role="alert"]')?.textContent).toContain('Archive unavailable')
+  })
+
   it('keeps the latest baseline selection when an older report resolves later', async () => {
     const firstReport = deferred<Awaited<ReturnType<typeof apiMock.getTestArchiveReport>>>()
     apiMock.getTestArchiveReport.mockImplementationOnce(() => firstReport.promise)
@@ -278,7 +290,7 @@ describe('TestHub build-from-goal', () => {
     })
     await flush()
     await act(async () => { findButton(container, 'Scenario Builder')?.click() })
-    await act(async () => { findButton(container, 'Build from Goal')?.click() })
+    await openBuildFromGoal()
     await flush()
 
     expect(container.querySelector('[aria-label="Average response time for Group 1"]')).not.toBeNull()

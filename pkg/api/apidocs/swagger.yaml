@@ -2531,6 +2531,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -11381,6 +11382,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -29072,6 +29074,182 @@ paths:
       tags:
         - Dsl
       x-handler: handleConfigDefaults
+  /api/v1/dsl/parameter-preview:
+    post:
+      summary: Preview Parameter
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: write'
+      operationId: handlePreviewParameter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                data_sources:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      columns:
+                        type: array
+                        items:
+                          type: string
+                      content_type:
+                        type: string
+                      delimiter:
+                        type: string
+                      encoding:
+                        type: string
+                      file_name:
+                        type: string
+                      first_row_header:
+                        type: boolean
+                      inline_data:
+                        type: string
+                      name:
+                        type: string
+                      path:
+                        type: string
+                      staged_asset:
+                        type: string
+                      storage_ref:
+                        type: string
+                      strategy:
+                        type: string
+                      type:
+                        type: string
+                iteration:
+                  type: integer
+                  format: int64
+                name:
+                  type: string
+                occurrence:
+                  type: integer
+                  format: int64
+                parameters:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      block_size:
+                        type: integer
+                        format: int64
+                      charset:
+                        type: string
+                      column:
+                        type: string
+                      data_source:
+                        type: string
+                      end:
+                        type: integer
+                        format: int64
+                      format:
+                        type: string
+                      length:
+                        type: integer
+                        format: int64
+                      max:
+                        type: integer
+                        format: int64
+                      min:
+                        type: integer
+                        format: int64
+                      name:
+                        type: string
+                      offset_seconds:
+                        type: integer
+                        format: int64
+                      on_exhaustion:
+                        type: string
+                      pad_char:
+                        type: string
+                      pad_width:
+                        type: integer
+                        format: int64
+                      same_line_as:
+                        type: string
+                      seed:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      selection:
+                        type: string
+                      start:
+                        type: integer
+                        format: int64
+                      start_row:
+                        type: integer
+                        format: int64
+                      step:
+                        type: integer
+                        format: int64
+                      timezone:
+                        type: string
+                      type:
+                        type: string
+                      update:
+                        type: string
+                      value_for_each_vuser:
+                        type: boolean
+                      values:
+                        type: array
+                        items:
+                          type: string
+                vuser:
+                  type: integer
+                  format: int64
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  masked:
+                    type: boolean
+                  note:
+                    type: string
+                  resolved:
+                    type: boolean
+                  value:
+                    type: string
+                required:
+                  - masked
+                  - note
+                  - resolved
+                  - value
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: write'
+      tags:
+        - Dsl
+      x-handler: handlePreviewParameter
   /api/v1/execution-plans:
     get:
       summary: List Execution Plans
@@ -113487,6 +113665,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -115308,6 +115487,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -118875,6 +119055,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -133505,6 +133686,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -135153,6 +135335,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -136892,6 +137075,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -140146,6 +140330,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -141206,6 +141391,7 @@ paths:
                                 type:
                                   type: string
                               required:
+                                - first_row_header
                                 - name
                                 - strategy
                                 - type
@@ -141819,6 +142005,7 @@ paths:
                                 type:
                                   type: string
                               required:
+                                - first_row_header
                                 - name
                                 - strategy
                                 - type
@@ -143363,6 +143550,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -149514,6 +149702,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -151360,6 +151549,7 @@ paths:
                             type:
                               type: string
                           required:
+                            - first_row_header
                             - name
                             - strategy
                             - type
@@ -156591,6 +156781,7 @@ paths:
                       type:
                         type: string
                     required:
+                      - first_row_header
                       - name
                       - strategy
                       - type

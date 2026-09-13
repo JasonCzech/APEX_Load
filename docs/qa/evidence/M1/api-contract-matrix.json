@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 572,
+    "routes": 573,
     "public": 22,
-    "protected": 550,
-    "rbac": 548,
+    "protected": 551,
+    "rbac": 549,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 572,
+    "green": 573,
     "partial": 0,
     "missing": 0
   },
@@ -3110,6 +3110,28 @@
       },
       "denied_role": "qa_contract_unlisted",
       "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/dsl/parameter-preview",
+      "operation_id": "handlePreviewParameter",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
     },
     {
       "method": "GET",

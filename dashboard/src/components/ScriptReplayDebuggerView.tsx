@@ -1,12 +1,14 @@
+import { debugOverrideCount, sessionVariablesError, handleOutlineKeys } from './scriptSidebarModel'
+import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
+import { DebugParameterInspector } from './DebugParameterInspector'
+import { ParameterDefinitionGuide } from './ParameterDefinitionGuide'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import type * as React from 'react'
-import { memo, useMemo, useState } from 'react'
+import { memo, useMemo, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
-import CodeMirror from '@uiw/react-codemirror'
-import { json } from '@codemirror/lang-json'
 import type {
   BrowserReplayEvent,
   BrowserReplayReport,
@@ -26,7 +28,6 @@ import { ExtractorTester } from './ExtractorTester'
 import RepairSuggestionList from './RepairSuggestionList'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
-import { apexCodeMirrorTheme } from './codeMirrorTheme'
 import type { CorrelationApplyResult, CorrelationExtractorRepair } from './scriptCorrelationRepair'
 import {
   type AuthoringIssue,
@@ -43,6 +44,7 @@ import {
 import {
   DEBUGGER_LAYOUT_LIMITS,
   buildDebugRailRenderRows,
+  type DebugRailRenderRow,
   debugStepPathKey,
   formatDebugPhaseLabel,
   formatProtocolEvidenceSummary,
@@ -137,6 +139,7 @@ export interface ScriptReplayDebuggerViewProps {
   isBrowserScript: boolean
   jsonParseMessage: string
   onEditReplayAction: (event: BrowserReplayEvent) => void
+  onEditParameterDefinition: (name: string) => void
   onActivateDebug: () => void
   onSelectProblemAction: (row: ScriptPhaseActionRow) => void
   parameterReferenceCounts: Map<string, number>
@@ -164,9 +167,10 @@ export interface ScriptReplayDebuggerViewProps {
   scriptRecordingStatus: ScriptRecordingStatus | null
   scriptRecordingStatusState: RecordingStatusState
   retryScriptRecordingStatus: () => void
+  selectedActionKey?: string
   selectedOutlineParameterName: string | null
   selectOutlineParameter: (parameterName: string) => void
-  setActiveAction: ScriptEditorStateSetter<number | null>
+  onSelectDebugItem: (item: DebugRailRenderRow, hasEvidence: boolean) => void
   setBreakOnFailure: (enabled: boolean) => Promise<void>
   setExpandedReplayEvent: ScriptEditorStateSetter<number | null>
   setReplayOptions: ScriptEditorStateSetter<ReplayOptionsState>
@@ -207,6 +211,7 @@ export function ScriptReplayDebuggerView({
   jsonParseMessage,
   onEditReplayAction,
   onActivateDebug,
+  onEditParameterDefinition,
   onSelectProblemAction,
   parameterReferenceCounts,
   problemCount,
@@ -233,9 +238,10 @@ export function ScriptReplayDebuggerView({
   scriptRecordingStatus,
   scriptRecordingStatusState,
   retryScriptRecordingStatus,
+  selectedActionKey,
   selectedOutlineParameterName,
   selectOutlineParameter,
-  setActiveAction,
+  onSelectDebugItem,
   setBreakOnFailure,
   setExpandedReplayEvent,
   setReplayOptions,
@@ -333,6 +339,9 @@ export function ScriptReplayDebuggerView({
     replayEditableActionsKey,
   }), [scriptId, replayReport, activeReplaySessionId, replayEditableActionsKey])
 
+  useEffect(() => { if (debuggerSettingsOpen) debuggerSettingsRef.current?.querySelector<HTMLInputElement>('input')?.focus() }, [debuggerSettingsOpen, debuggerSettingsRef])
+  const optionsError = sessionVariablesError(replayOptions.variablesText)
+  const [narrowPane, setNarrowPane] = useState<'outline' | 'editor' | 'inspector'>('editor')
   const [dockCollapsed, setDockCollapsed] = useState(true)
   const [previousEvidenceOpen, setPreviousEvidenceOpen] = useState(false)
   return (
@@ -341,14 +350,20 @@ export function ScriptReplayDebuggerView({
             role="region"
             aria-label="Script Debugger"
           >
+            <div className="debug-options-toolbar">
+              <button type="button" className="btn btn-sm btn-secondary" ref={controller.debuggerSettingsBtnRef} aria-expanded={debuggerSettingsOpen} aria-controls="debug-session-options" onClick={() => setDebuggerSettingsOpen(value => !value)}>Debug options ({debugOverrideCount(replayOptions)})</button>
+              <span>1 virtual user · {replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · {replayOptions.logLevel} logging{replayOptions.startPaused ? ' · Start paused' : ''}</span>
+              {optionsError && <span role="alert">{optionsError}</span>}
+            </div>
             {debuggerSettingsOpen && (
-              <div className="debugger-settings-popover" ref={debuggerSettingsRef}>
+              <div id="debug-session-options" role="region" aria-label="Session Overrides" className="debugger-settings-popover" ref={debuggerSettingsRef}>
                 <div className="debugger-settings-head">
                   <strong>Session Overrides</strong>
-                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebuggerSettingsOpen(false)}>Done</button>
+                  <button type="button" className="btn btn-sm btn-ghost" disabled={replaying} onClick={() => setReplayOptions({ ...DEFAULT_REPLAY_OPTIONS })}>Reset session options</button>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setDebuggerSettingsOpen(false); controller.debuggerSettingsBtnRef.current?.focus() }}>Done</button>
                 </div>
                 <p className="replay-panel-subtitle">Temporary settings for this debugger session. They do not change saved Runtime Settings.</p>
-                <div className="replay-options-grid">
+                <fieldset className="replay-options-grid" disabled={replaying}>
                   <label>
                     <span>Debugger Group</span>
                     <input
@@ -395,24 +410,15 @@ export function ScriptReplayDebuggerView({
                   <div className="full-width replay-variables-field">
                     <span>Session Variables JSON</span>
                     <div className="replay-variables-editor" style={{ border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', marginTop: '6px' }}>
-                      <CodeMirror
-                        value={replayOptions.variablesText}
-                        onChange={value => setReplayOptions(prev => ({ ...prev, variablesText: value }))}
-                        extensions={[json(), apexCodeMirrorTheme]}
-                        theme="none"
-                        maxHeight="200px"
-                        basicSetup={{
-                          lineNumbers: true,
-                          foldGutter: true,
-                        }}
-                      />
+                      <textarea aria-label="Session Variables JSON" aria-invalid={Boolean(optionsError)} value={replayOptions.variablesText} onChange={event => setReplayOptions(prev => ({ ...prev, variablesText: event.target.value }))} rows={5} />
                     </div>
                   </div>
-                </div>
+                </fieldset>
               </div>
             )}
 
             <div className="debugger-body">
+              {isBrowserScript && selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} onEdit={onEditParameterDefinition} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} />}
               {isBrowserScript && <details className="debugger-evidence-hint"><summary>About debug evidence</summary><p>Recording verification checks a conversion draft. Debugging here checks the current saved or edited script; changes require a new debug run.</p></details>}
               {previousReplayReport && <details className="debugger-previous-evidence" onToggle={event => setPreviousEvidenceOpen(event.currentTarget.open)}><summary>Previous replay evidence · {previousReplayReport.stopped ? 'Stopped' : previousReplayReport.success ? 'Passed' : 'Failed'}</summary><p>{previousReplayReport.completed_at} · {previousReplayReport.error}</p>{previousEvidenceOpen && <BrowserReplayDebugger report={previousReplayReport} running={false} />}</details>}
               {(replaying || replayReport) && (
@@ -455,7 +461,8 @@ export function ScriptReplayDebuggerView({
                 </div>
               )}
 
-              <div
+              <div className="script-pane-switch" role="group" aria-label="Debug panes">{(isBrowserScript ? ['outline', 'editor'] as const : ['outline', 'editor', 'inspector'] as const).map(pane => <button type="button" key={pane} aria-pressed={narrowPane === pane} onClick={() => { setNarrowPane(pane); if (pane === 'inspector') setDebugDetailCollapsed(false) }}>{pane === 'outline' ? 'Outline' : pane === 'editor' ? 'Editor' : 'Inspector'}</button>)}</div>
+              <div data-narrow-pane={narrowPane}
                 className={`debugger-shell ${debugDetailCollapsed || isBrowserScript || debugDetailHost ? 'debugger-detail-collapsed' : ''} ${isBrowserScript ? 'browser-evidence-workspace' : ''} ${dockCollapsed ? 'debug-dock-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
                 style={{
                   '--rail-w': `${debuggerRailWidth}px`,
@@ -487,7 +494,7 @@ export function ScriptReplayDebuggerView({
                         <div className="debugger-rail-filter">
                           <input value={debugRailFilter} onChange={e => setDebugRailFilter(e.target.value)} placeholder="Filter actions" aria-label="Filter actions" />
                           <label className="checkbox-label replay-checkbox">
-                            <input type="checkbox" checked={debugRailFailuresOnly} onChange={e => setDebugRailFailuresOnly(e.target.checked)} />
+                            <input type="checkbox" checked={debugRailFailuresOnly} disabled={!debugEvents.length} onChange={e => setDebugRailFailuresOnly(e.target.checked)} />
                             <span>Failures</span>
                           </label>
                         </div>
@@ -502,17 +509,7 @@ export function ScriptReplayDebuggerView({
                           role="region"
                           aria-label="Debugger actions"
                           tabIndex={0}
-                          onKeyDownCapture={e => {
-                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                              e.preventDefault()
-                              const dir = e.key === 'ArrowDown' ? 1 : -1
-                              const total = debugEvents.length
-                              if (total === 0) return
-                              const current = selectedReplayEventIndex ?? 0
-                              const next = Math.max(0, Math.min(total - 1, current + dir))
-                              setExpandedReplayEvent(next)
-                            }
-                          }}
+                          onKeyDownCapture={handleOutlineKeys}
                         >
                           {(() => {
                             const renderRows = buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences)
@@ -576,7 +573,7 @@ export function ScriptReplayDebuggerView({
                                         type="button"
                                         className={`debugger-gutter ${gutterState}`}
                                         title={wholeActive ? `Remove breakpoint (whole ${typeLabel === 'SEQ' ? 'sequence' : 'block'})` : childBpCount > 0 ? `${childBpCount} sub-step breakpoint${childBpCount === 1 ? '' : 's'} — click to break before this block` : 'Break before this block'}
-                                        aria-label={wholeActive ? 'Remove breakpoint' : 'Add breakpoint'}
+                                        aria-label={`${wholeActive ? 'Remove' : 'Add'} breakpoint on ${action.name || `action ${actionIndex + 1}`}`}
                                         onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
                                       >
                                         <span className="debugger-breakpoint-dot" />
@@ -640,7 +637,7 @@ export function ScriptReplayDebuggerView({
                                         type="button"
                                         className={`debugger-gutter ${stepBpActive ? 'active' : ''}`}
                                         title={stepBpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint (fires every iteration)'}
-                                        aria-label={stepBpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
+                                        aria-label={`${stepBpActive ? 'Remove' : 'Add'} sub-step breakpoint on ${item.name}`}
                                         onClick={() => void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
                                       >
                                         <span className="debugger-breakpoint-dot" />
@@ -707,7 +704,7 @@ export function ScriptReplayDebuggerView({
                                 const bpKey = isHttpChild ? item.key : stepKey
                                 const bpActive = debugBreakpointKeys.has(bpKey)
                                 const isCurrentRow = currentDebugActionKey === item.key || (currentDebugStepKey != null && currentDebugStepKey === stepKey)
-                                const isSelectedRow = selectedReplayEventIndex != null && selectedReplayEventIndex === eventIndex
+                                const isSelectedRow = selectedReplayEventIndex != null ? selectedReplayEventIndex === eventIndex : selectedActionKey === item.key
                                 const hasEvent = leafEvent != null || iterationIndices.length > 0
                                 const rowStatus = hasEvent ? (anyFail ? 'fail' : 'pass') : isCurrentRow ? 'current' : 'pending'
                                 if (debugRailFailuresOnly && !anyFail) continue
@@ -724,7 +721,7 @@ export function ScriptReplayDebuggerView({
                                       type="button"
                                       className={`debugger-gutter ${bpActive ? 'active' : ''}`}
                                       title={bpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
-                                      aria-label={bpActive ? 'Remove sub-step breakpoint' : 'Add sub-step breakpoint'}
+                                      aria-label={`${bpActive ? 'Remove' : 'Add'} sub-step breakpoint on ${item.name}`}
                                       onClick={() => isHttpChild ? void toggleDebugBreakpoint(phase, actionIndex, item.requestIndex) : void toggleStepPathBreakpoint(phase, actionIndex, item.stepPath)}
                                     >
                                       <span className="debugger-breakpoint-dot" />
@@ -732,8 +729,10 @@ export function ScriptReplayDebuggerView({
                                     <button
                                       type="button"
                                       className="debugger-action-row-main"
-                                      disabled={eventIndex == null}
                                       onClick={() => {
+                                        onSelectDebugItem(item, eventIndex != null)
+                                        setNarrowPane('editor')
+                                        setDebuggerTab('request')
                                         if (eventIndex == null) return
                                         setExpandedReplayEvent(eventIndex)
                                         setDebugDetailCollapsed(false)
@@ -756,7 +755,7 @@ export function ScriptReplayDebuggerView({
                               const rowEvent = eventIndex != null ? debugEvents[eventIndex] : undefined
                               const breakpointActive = debugBreakpointKeys.has(rowKey)
                               const isCurrentRow = currentDebugActionKey === rowKey
-                              const isSelectedRow = selectedReplayEventIndex != null && selectedReplayEventIndex === eventIndex
+                              const isSelectedRow = selectedReplayEventIndex != null ? selectedReplayEventIndex === eventIndex : selectedActionKey === item.key
                               const rowStatus = rowEvent ? (rowEvent.success ? 'pass' : 'fail') : isCurrentRow ? 'current' : 'pending'
                               const haystack = `${action.name || ''} ${action.target || ''} ${action.selector || ''} ${rowEvent?.action_name || ''} ${rowEvent?.target || ''}`
                               if (debugRailFailuresOnly && !(rowEvent && !rowEvent.success)) continue
@@ -771,7 +770,7 @@ export function ScriptReplayDebuggerView({
                                     type="button"
                                     className={`debugger-gutter ${breakpointActive ? 'active' : ''}`}
                                     title={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
-                                    aria-label={breakpointActive ? 'Remove breakpoint' : 'Add breakpoint'}
+                                    aria-label={`${breakpointActive ? 'Remove' : 'Add'} breakpoint on ${action.name || `action ${actionIndex + 1}`}`}
                                     onClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
                                   >
                                     <span className="debugger-breakpoint-dot" />
@@ -781,7 +780,9 @@ export function ScriptReplayDebuggerView({
                                     className="debugger-action-row-main"
                                     onDoubleClick={() => void toggleDebugBreakpoint(phase, actionIndex)}
                                     onClick={() => {
-                                      if (phase === 'action') setActiveAction(actionIndex)
+                                      onSelectDebugItem(item, eventIndex != null)
+                                      setNarrowPane('editor')
+                                      setDebuggerTab('request')
                                       if (eventIndex != null) {
                                         setExpandedReplayEvent(eventIndex)
                                         setDebugDetailCollapsed(false)
@@ -799,7 +800,7 @@ export function ScriptReplayDebuggerView({
                                 </div>
                               )
                             }
-                            return out.length > 0 ? out : <div className="debugger-rail-empty">No actions match the filter.</div>
+                            return out.length > 0 ? out : <div className="debugger-rail-empty">{debugRailFailuresOnly ? 'No failures match the current filter.' : 'No actions match the current filter.'}</div>
                           })()}
                         </div>
                       )
@@ -829,7 +830,7 @@ export function ScriptReplayDebuggerView({
                               key={`debug-${parameter.name || 'parameter'}-${index}`}
                               type="button"
                               className={`parameter-outline-item debugger-parameter-item ${selected ? 'selected' : ''}`}
-                              onClick={() => parameter.name && selectOutlineParameter(parameter.name)}
+                              onClick={() => { if (parameter.name) { selectOutlineParameter(parameter.name); setNarrowPane(isBrowserScript ? 'editor' : 'inspector') } }}
                               disabled={!parameter.name}
                             >
                               <strong>{parameterName}</strong>
@@ -888,7 +889,7 @@ export function ScriptReplayDebuggerView({
                       className="debugger-pane-close"
                       title="Close debug detail panel"
                       aria-label="Close debug detail panel"
-                      onClick={() => setDebugDetailCollapsed(true)}
+                      onClick={() => { setDebugDetailCollapsed(true); setNarrowPane('editor') }}
                     >
                       ×
                     </button>
@@ -896,6 +897,8 @@ export function ScriptReplayDebuggerView({
                   <div className="debugger-center-body">
                     {debuggerTab === 'variables' ? (
                       <div className="debugger-variables-body">
+                        {selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} onEdit={onEditParameterDefinition} />}
+                        <ParameterDefinitionGuide script={script} />
                         {replayVariableInspector && Object.keys(replayVariableInspector).length > 0 ? (
                           <SnapshotBodyPreview
                             body={JSON.stringify(replayVariableInspector, null, 2)}
@@ -948,7 +951,7 @@ export function ScriptReplayDebuggerView({
                       /></details>
                     )}
                     {!replayReport ? (
-                      <div className="debugger-empty">No debugger session yet. Place optional breakpoints in the gutter, adjust settings, then press Run.</div>
+                      <div className="debugger-empty">No debugger session yet. Review Debug options, place optional breakpoints beside actions, then select Debug to run one iteration.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
                       (() => {
                         const event = selectedReplayEvent

@@ -1,9 +1,10 @@
+import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
 // Per-protocol action field editors and the shared header/extractor/assertion
 // section editors used by the ScriptEditor ActionEditor. Extracted from
 // ScriptEditor.tsx: these are self-contained presentational components driven
 // entirely by props (no parent state, hooks, or shared mutable helpers).
 
-import { type MouseEvent as ReactMouseEvent, useMemo } from 'react'
+import { type MouseEvent as ReactMouseEvent, useMemo, useContext } from 'react'
 import type {
   ScriptActionDefinition,
   ScriptAssertionDefinition,
@@ -774,6 +775,7 @@ export function HttpActionFields({
   onUpdateExtractor,
   onUpdateHeader,
 }: HttpActionFieldsProps) {
+  const openBody = useContext(OpenActionBody)
   const [wrapLines, setWrapLines] = useCodeLineWrapPreference()
   const method = (action.method || action.type || '').trim().toUpperCase()
   const bodyVisible = action.body !== undefined
@@ -806,7 +808,8 @@ export function HttpActionFields({
         />
       )}
 
-      {!isBrowserScript && bodyVisible && (
+      {!isBrowserScript && bodyVisible && openBody && <div className="sub-section"><h4>Request body</h4><p>{(action.body || '').length.toLocaleString()} characters · {action.body_encoding || 'Plain text'}</p><button type="button" className="btn btn-secondary" onClick={openBody}>Edit request body in center</button></div>}
+      {!isBrowserScript && bodyVisible && !openBody && (
         <div className="sub-section">
           <div className="sub-header">
             <h4>Body</h4>
@@ -1074,22 +1077,24 @@ function extractorExpressionPlaceholder(protocol: string, source: string) {
 }
 
 export function ProtocolExtractorsSection({ action, index, protocol, onAddExtractor, onRemoveExtractor, onUpdateExtractor }: ProtocolExtractorsSectionProps) {
+  const managed = useContext(ManagedActionChecks)
   const sourceOptions = extractorSourceOptions(protocol)
   const typeOptions = extractorTypeOptions(protocol)
+  if (managed) return null
   return (
     <div className="sub-section">
       <div className="sub-header"><h4>Extractors</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddExtractor(index)}>+ Add</button></div>
       {(action.extractors || []).map((extractor, extractorIndex) => (
         <div key={extractorIndex} className="extractor-row">
-          <input value={extractor.name} onChange={e => onUpdateExtractor(index, extractorIndex, 'name', e.target.value)} placeholder="Variable name" />
-          <select value={extractor.source} onChange={e => onUpdateExtractor(index, extractorIndex, 'source', e.target.value)}>
+          <input aria-label={`Extractor ${extractorIndex + 1} variable name`} value={extractor.name} onChange={e => onUpdateExtractor(index, extractorIndex, 'name', e.target.value)} placeholder="Variable name" />
+          <select aria-label={`Extractor ${extractorIndex + 1} source`} value={extractor.source} onChange={e => onUpdateExtractor(index, extractorIndex, 'source', e.target.value)}>
             {sourceOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <select value={extractor.type} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
+          <select aria-label={`Extractor ${extractorIndex + 1} type`} value={extractor.type} onChange={e => onUpdateExtractor(index, extractorIndex, 'type', e.target.value)}>
             {typeOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
-          <input value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder={extractorExpressionPlaceholder(protocol, extractor.source)} className="ext-expr" />
-          <button className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>
+          <input aria-label={`Extractor ${extractorIndex + 1} expression`} value={extractor.expression} onChange={e => onUpdateExtractor(index, extractorIndex, 'expression', e.target.value)} placeholder={extractorExpressionPlaceholder(protocol, extractor.source)} className="ext-expr" />
+          <button aria-label={`Remove extractor ${extractorIndex + 1}`} className="btn-icon danger" onClick={() => onRemoveExtractor(index, extractorIndex)}>✕</button>
         </div>
       ))}
     </div>
@@ -1146,6 +1151,8 @@ function assertionValuePlaceholder(type: string) {
 }
 
 export function ProtocolAssertionsSection({ action, index, protocol, onAddAssertion, onRemoveAssertion, onUpdateAssertion }: ProtocolAssertionsSectionProps) {
+  const managed = useContext(ManagedActionChecks)
+  if (managed) return null
   const options = assertionOptions(protocol)
   return (
     <div className="sub-section" data-action-section="assertions">

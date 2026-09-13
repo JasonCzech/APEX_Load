@@ -133,10 +133,10 @@ then filters to the last action to prove the windowed outline still addresses th
 |---|---|
 | Route | `#/tests?view=builder` |
 | Component | `TestHub.tsx` |
-| Wizard | `Start` → `Shape/Source` → `Scripts` → `Run Settings` → `Data` → `Review` |
+| Wizard | `Start` (new scenario from scripts, or copy an existing scenario) → `Model & Shape` → `Run Settings` → `Data` → `Review` |
 | API | `/api/v1/scenarios` |
 
-Walk all six steps. Assert forward/back navigation preserves entered values, and that Review shows
+Walk all five steps. Assert forward/back navigation preserves entered values, and that Review shows
 what was actually entered. The unsaved-changes guard (`guardedNavigation.ts`,
 `NavigationGuardProvider.tsx`) has its own spec: it navigates away mid-wizard, requires the modal,
 and proves that cancelling keeps the draft.

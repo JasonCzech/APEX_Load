@@ -1,12 +1,13 @@
-import { useState, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react'
+import { useActionParameterMenu } from './useActionParameterMenu'
+import { ManagedActionChecks, OpenActionBody } from './actionInspectorContext'
+import { useState, useEffect } from 'react'
 import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameterDefinition, ScriptValidationResponse } from '../types/scripts'
 import type { ActionEditorParameterDraft } from './scriptEditorState'
 import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
-import { sanitizeVarName } from './scriptEditorUtils'
 import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
 import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField, actionTransactionName, setActionTransactionName } from './scriptEditorWorkbench'
 import { dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
-import { BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
+import { ProtocolExtractorsSection, ProtocolAssertionsSection, BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
 import { type AuthoringIssue } from './scriptAuthoringAssist'
 
 type Action = ScriptActionDefinition
@@ -19,7 +20,10 @@ function isHTTPRuntimeAction(action: Action): boolean {
   return HTTP_RUNTIME_ACTION_TYPES.has(action.type)
 }
 
-export function ActionEditor({ action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, isBrowserScript, isJmsScript, isSoapScript, issues }: {
+export function ActionEditor({ inspector = false, initialSection = 'request', onOpenBody, action, index, parameters, onUpdate, onAddExtractor, onUpdateExtractor, onRemoveExtractor, onAddAssertion, onUpdateAssertion, onRemoveAssertion, onAddHeader, onUpdateHeader, onRemoveHeader, onAddMetadata, onUpdateMetadata, onRemoveMetadata, onBeginParameterEdit, methodColor, protocol, isBrowserScript, isJmsScript, isSoapScript, issues }: {
+  inspector?: boolean
+  initialSection?: string
+  onOpenBody?: () => void
   action: Action; index: number
   parameters: ParameterConfig[]
   onUpdate: (i: number, f: keyof Action, v: unknown) => void
@@ -43,6 +47,7 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
   isSoapScript: boolean
   issues: AuthoringIssue[]
 }) {
+  const [section, setSection] = useState(initialSection)
   const isWebSocketScript = protocol === 'websocket'
   const isGrpcScript = protocol === 'grpc'
   const isDatabaseScript = protocol === 'database'
@@ -59,11 +64,17 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
     <div className="action-editor-panel">
       <ActionEditorHeader action={action} issues={issues} methodColor={methodColor} />
 
+      {inspector && <div className="inspector-section-tabs" role="group" aria-label="Action property sections">
+        {['request', 'checks', 'timing', 'metadata'].map(value => <button type="button" key={value} aria-pressed={section === value} onClick={() => setSection(value)}>{value === 'checks' ? `Correlation & checks (${(action.extractors?.length || 0) + (action.assertions?.length || 0)})` : value === 'request' ? 'Request' : value === 'timing' ? 'Timing' : 'Metadata'}</button>)}
+      </div>}
+      <div hidden={inspector && section !== 'request'}>
+      <OpenActionBody.Provider value={inspector ? onOpenBody : undefined}>
+      <ManagedActionChecks.Provider value={inspector}>
       {isHTTPSequence ? (
         <HTTPSequenceFields action={action} index={index} onUpdate={onUpdate} />
       ) : (
         <>
-          <ActionCoreFields
+          <ActionCoreFields hideActionType={inspector}
             action={action}
             index={index}
             protocol={protocol}
@@ -71,18 +82,7 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
             isJmsScript={isJmsScript}
             onUpdate={onUpdate}
           />
-		  <details className="sub-section"><summary>Advanced: analytics attribution</summary>
-			<div className="form-grid">
-			  <label>
-				<span>Hierarchy path</span>
-				<input value={action.attribution?.hierarchy_path || ''} placeholder="checkout/payment/submit" onChange={event => onUpdate(index, 'attribution', { ...(action.attribution || {}), hierarchy_path: event.target.value })} />
-			  </label>
-			  <label>
-				<span>Page name</span>
-				<input value={action.attribution?.page_name || ''} placeholder="Checkout" onChange={event => onUpdate(index, 'attribution', { ...(action.attribution || {}), page_name: event.target.value })} />
-			  </label>
-			</div>
-		  </details>
+
 
           {isHTTPRuntimeControl ? (
             <div className="sub-section http-runtime-action-card" role="note">
@@ -205,8 +205,31 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
         </>
       )}
 
+      </ManagedActionChecks.Provider>
+      </OpenActionBody.Provider>
+      </div>
+      {inspector && (isHTTPRuntimeControl || isHTTPSequence) && <div hidden={section !== 'checks'} className="sub-section"><p>{isHTTPSequence ? 'Select an individual request to configure its correlation and checks.' : 'This action changes HTTP state and has no response to extract or check.'}</p></div>}
+      {inspector && !isHTTPRuntimeControl && !isHTTPSequence && <div hidden={section !== 'checks'}>
+        {!isBrowserScript && <ProtocolExtractorsSection action={action} index={index} protocol={protocol} onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />}
+        <ProtocolAssertionsSection action={action} index={index} protocol={protocol} onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
+      </div>}
+      <div hidden={inspector && section !== 'metadata'}>
+        {inspector && <ActionCoreFields typeOnly action={action} index={index} protocol={protocol} isBrowserScript={isBrowserScript} isJmsScript={isJmsScript} onUpdate={onUpdate} />}		  <details className="sub-section"><summary>Advanced: analytics attribution</summary>
+			<div className="form-grid">
+			  <label>
+				<span>Hierarchy path</span>
+				<input value={action.attribution?.hierarchy_path || ''} placeholder="checkout/payment/submit" onChange={event => onUpdate(index, 'attribution', { ...(action.attribution || {}), hierarchy_path: event.target.value })} />
+			  </label>
+			  <label>
+				<span>Page name</span>
+				<input value={action.attribution?.page_name || ''} placeholder="Checkout" onChange={event => onUpdate(index, 'attribution', { ...(action.attribution || {}), page_name: event.target.value })} />
+			  </label>
+			</div>
+		  </details></div>
+      <div hidden={inspector && section !== 'timing'}>
       {!isHTTPRuntimeControl && <ActionThinkTimeToggle action={action} index={index} onUpdate={onUpdate} />}
 
+      </div>
       <ActionParameterMenu selectionState={selectionState} onOpenParameterEditor={openParameterEditor} />
     </div>
   )
@@ -312,7 +335,7 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
     <>
       <div className="action-editor-top">
         <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{badgeLabel}</span>
-        <h3>{action.name || 'Unnamed Action'}</h3>
+        <h3 tabIndex={-1} data-inspector-focus>{action.name || 'Unnamed Action'}</h3>
         {(isControlAction(action) || reviewGated || executionBlocked || fallbackCount > 0) && (
           <div className="action-editor-issue-pills">
             {isControlAction(action) && <span className="action-signal-pill control">control</span>}
@@ -345,6 +368,8 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
 }
 
 interface ActionCoreFieldsProps {
+  hideActionType?: boolean
+  typeOnly?: boolean
   action: Action
   index: number
   protocol: string
@@ -705,7 +730,7 @@ export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: Contro
   )
 }
 
-function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
+function ActionCoreFields({ hideActionType = false, typeOnly = false, action, index, protocol, isBrowserScript, isJmsScript, onUpdate }: ActionCoreFieldsProps) {
   const showSelector = isBrowserScript && dslActionUsesSelector(action.type)
   const showValue = isBrowserScript && dslActionUsesValue(action.type)
   const isWebSocketScript = protocol === 'websocket'
@@ -789,14 +814,16 @@ function ActionCoreFields({ action, index, protocol, isBrowserScript, isJmsScrip
 		}
 	}
 
-  return (
-    <div className="form-grid">
-      <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
-      <label><span>{actionTypeLabel}</span>
+  const typeField = (<label><span>{actionTypeLabel}</span>
         <select value={action.type} onChange={e => changeActionType(e.target.value)}>
           {selectableActionTypes.map(type => <option key={type}>{type}</option>)}
         </select>
-      </label>
+      </label>)
+  if (typeOnly) return typeField
+  return (
+    <div className="form-grid">
+      <label><span>Name</span><input value={action.name} onChange={e => onUpdate(index, 'name', e.target.value)} /></label>
+      {!hideActionType && typeField}
       {actionTypes === HTTP_ACTION_TYPES && (action.type === 'request' || ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(action.type)) && <label><span>HTTP method</span>
         <select aria-label="HTTP method" value={action.method || (action.type === 'request' ? 'GET' : action.type)} onChange={e => onUpdate(index, 'method', e.target.value)}>
           {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(method => <option key={method}>{method}</option>)}
@@ -1003,77 +1030,4 @@ function formatDataSourceFitContext(item: NonNullable<ValidationEvidence['data_s
     item.required_rows || item.available_rows ? `${item.available_rows || 0}/${item.required_rows || 0} rows` : '',
   ].filter(Boolean)
   return parts.join(' · ')
-}
-
-function useActionParameterMenu({
-  index,
-  onBeginParameterEdit,
-  parameters,
-}: {
-  index: number
-  onBeginParameterEdit: (draft: ActionEditorParameterDraft) => void
-  parameters: ParameterConfig[]
-}) {
-  const [selectionState, setSelectionState] = useState<ActionEditorSelectionState | null>(null)
-
-  useEffect(() => {
-    if (!selectionState) return
-    const closeMenu = () => setSelectionState(null)
-    window.addEventListener('click', closeMenu)
-    return () => window.removeEventListener('click', closeMenu)
-  }, [selectionState])
-
-  const detectSelectedParameter = useCallback((selectedText: string): ParameterConfig | null => {
-    const match = selectedText.trim().match(/^{{\s*param\.([a-zA-Z0-9_]+)\s*}}$/)
-    if (!match) return null
-    const normalizedName = sanitizeVarName(match[1])
-    return parameters.find(parameter => sanitizeVarName(parameter.name || '') === normalizedName) || null
-  }, [parameters])
-
-  const openSelectionMenu = useCallback((event: ReactMouseEvent<HTMLTextAreaElement>) => {
-    const textarea = event.currentTarget
-    const start = textarea.selectionStart ?? 0
-    const end = textarea.selectionEnd ?? 0
-    const selectedText = (textarea.value || '').slice(start, end)
-    if (!selectedText.trim()) {
-      setSelectionState(null)
-      return
-    }
-
-    event.preventDefault()
-    const existingParameter = detectSelectedParameter(selectedText)
-    setSelectionState({
-      start,
-      end,
-      selectedText,
-      x: event.clientX,
-      y: event.clientY,
-      existingName: existingParameter?.name || null,
-    })
-  }, [detectSelectedParameter])
-
-  const openParameterEditor = useCallback((nextExistingName?: string | null) => {
-    if (!selectionState) return
-    const existingParameter = nextExistingName
-      ? parameters.find(parameter => sanitizeVarName(parameter.name || '') === sanitizeVarName(nextExistingName))
-      : detectSelectedParameter(selectionState.selectedText)
-
-    const requestedName = existingParameter?.name
-      || sanitizeVarName(selectionState.selectedText.replace(/^{{\s*param\.|\s*}}$/g, ''))
-    const seedValue = existingParameter?.values?.[0] || selectionState.selectedText
-
-    setSelectionState(null)
-    onBeginParameterEdit({
-      source: 'action',
-      actionIndex: index,
-      start: selectionState.start,
-      end: selectionState.end,
-      selectedText: selectionState.selectedText,
-      existingName: existingParameter?.name || null,
-      requestedName,
-      seedValue,
-    })
-  }, [detectSelectedParameter, index, onBeginParameterEdit, parameters, selectionState])
-
-  return { openParameterEditor, openSelectionMenu, selectionState }
 }

@@ -1,3 +1,4 @@
+import type { MappingReviewState } from './sourceMappingReviewState'
 import DialogLayer from './ux/DialogLayer'
 import { useMemo, useState } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
@@ -486,11 +487,16 @@ export function ObjectDescriptorReviewDocument({
 
 export function SourceMappingReviewDocument({
   controller,
+  baselineScript, onChangeReview, draftDirty, onEditTarget,
   onOpenRuntimeSettings,
   onSelectAction,
   script,
 }: {
   controller: ImportReviewController
+  onEditTarget?: (path: string) => void
+  baselineScript?: ScriptDefinition | null
+  onChangeReview?: (state: MappingReviewState) => void
+  draftDirty?: boolean
   onOpenRuntimeSettings: (area?: string | null) => void
   onSelectAction: (actionIndex: number) => void
   script: ScriptDefinition
@@ -504,6 +510,10 @@ export function SourceMappingReviewDocument({
             focusRequestId={controller.sourceMappingFocus.requestId}
             focusedMappingId={controller.sourceMappingFocus.mappingId}
             id="imported-source-mapping"
+            baselineScript={baselineScript}
+            onChangeReview={onChangeReview}
+            onEditTarget={onEditTarget}
+            draftDirty={draftDirty}
             onToggleWorkspaceMaximized={controller.toggleSourceMappingWorkspaceMaximized}
             showTitle={false}
             sourceReview={sourceReview}

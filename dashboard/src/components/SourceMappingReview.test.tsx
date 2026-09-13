@@ -127,7 +127,7 @@ const script = {
 
 async function flushPromises() {
   await act(async () => {
-    await Promise.resolve()
+    await new Promise(resolve => setTimeout(resolve, 30))
   })
 }
 
@@ -246,6 +246,7 @@ describe('SourceMappingReview', () => {
     await flushPromises()
 
     expect(Array.from(sourceFileSelect(container).options).map(option => option.value)).toEqual([
+      'aaa-backup/Actions.java',
       'src/Actions.java',
     ])
     expect(container.querySelector('pre[aria-label="aaa-backup/Actions.java source"]')).toBeNull()
@@ -478,6 +479,7 @@ describe('SourceMappingReview', () => {
       'src/Known.java',
       'a/Actions.java',
       'b/Actions.java',
+      'backup/Unrelated.java',
     ])
 
     const select = sourceFileSelect(container)
@@ -705,7 +707,7 @@ describe('SourceMappingReview', () => {
     expect(convertedPill?.disabled).toBe(false)
   })
 
-  it('omits source files that have no mappings from the source file selector', async () => {
+  it('includes captured source files with no mappings for inspection', async () => {
     await act(async () => {
       root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
     })
@@ -714,8 +716,8 @@ describe('SourceMappingReview', () => {
     const select = sourceFileSelect(container)
     const optionValues = Array.from(select.options).map(option => option.value)
 
-    expect(optionValues).toEqual(['Action.c', 'vuser_end.c'])
-    expect(optionValues).not.toContain('globals.h')
+    expect(optionValues).toEqual(['Action.c', 'vuser_end.c', 'globals.h'])
+    expect(optionValues).toContain('globals.h')
     expect(generatedDslPane(container).textContent).toContain('"name": "Homepage"')
   })
 
@@ -750,7 +752,7 @@ describe('SourceMappingReview', () => {
     await flushPromises()
 
     const exportButton = Array.from(container.querySelectorAll('button')).find(
-      button => button.textContent?.trim() === 'Export CSV',
+      button => button.textContent?.trim() === 'Export filtered mappings',
     )
     await act(async () => {
       exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -781,7 +783,7 @@ describe('SourceMappingReview', () => {
     await flushPromises()
 
     const maximizeButton = Array.from(container.querySelectorAll('.source-map-header button')).find(
-      button => button.textContent?.trim() === 'Maximize',
+      button => button.textContent?.trim() === 'Expand workspace',
     ) as HTMLButtonElement | undefined
     expect(container.querySelector('.source-map-summary')).toBeNull()
     expect(container.querySelector('.source-map-header .source-map-coverage')).not.toBeNull()
@@ -805,7 +807,7 @@ describe('SourceMappingReview', () => {
     })
 
     const restoreButton = Array.from(container.querySelectorAll('.source-map-header button')).find(
-      button => button.textContent?.trim() === 'Restore',
+      button => button.textContent?.trim() === 'Restore workspace',
     ) as HTMLButtonElement | undefined
     expect(restoreButton).toBeDefined()
     expect(restoreButton?.getAttribute('aria-pressed')).toBe('true')
@@ -830,7 +832,7 @@ describe('SourceMappingReview', () => {
     expect(container.querySelector('.source-map-header')?.classList.contains('title-hidden')).toBe(true)
     expect(container.querySelector('.source-map-header .source-map-coverage')?.textContent).toContain('Converted:')
     expect(Array.from(container.querySelectorAll('.source-map-header button')).some(
-      button => button.textContent?.trim() === 'Maximize',
+      button => button.textContent?.trim() === 'Expand workspace',
     )).toBe(true)
   })
 
@@ -871,7 +873,7 @@ describe('SourceMappingReview', () => {
     })
     await flushPromises()
 
-    const sourceMaximize = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Maximize') as HTMLButtonElement | undefined
+    const sourceMaximize = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Focus source') as HTMLButtonElement | undefined
     expect(sourceMaximize).toBeDefined()
     if (!sourceMaximize) return
 
@@ -879,7 +881,7 @@ describe('SourceMappingReview', () => {
       sourceMaximize.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Reset')
+    expect(container.textContent).toContain('Return to comparison')
     expect(container.textContent).not.toContain('Restore')
   })
 

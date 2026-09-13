@@ -31,7 +31,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 932, height: 1096
     await page.setViewportSize(viewport)
     const workspace = await createWorkspace(request)
     await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
-    await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Scripts/ }).click()
+    await page.locator('[aria-label="Scenario builder steps"]').getByRole('button', { name: /^Start/ }).click()
     await page.getByPlaceholder('Scenario name').fill('Keyboard draft')
     const destination = page.locator('nav.sidebar-nav').getByRole('button', { name: 'Scripts', exact: true })
     await destination.focus(); await page.keyboard.press('Enter')

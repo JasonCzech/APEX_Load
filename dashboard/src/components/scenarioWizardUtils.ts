@@ -12,9 +12,83 @@ import { type PacingConfig, type ThinkTimeConfig } from '../types/scripts'
 import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds } from '../utils/timeUtils'
 import { trafficProfileMappingForGroup, trafficProfileTargetAt, trafficProfileTimelineSeconds, trafficProfileTpsStatistics } from './trafficProfilePreviewModel'
 
-export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
+export type ScenarioWizardStep = 'scripts' | 'source' | 'run' | 'data' | 'review'
 
 export type ScenarioSourceMode = 'shape' | 'existing' | 'traffic_profile' | 'csv_driven'
+
+export type ScenarioModelFamilyId = 'fixed-vusers' | 'stepped' | 'goal' | 'traffic-profile'
+
+export interface ScenarioModelFamily {
+  id: ScenarioModelFamilyId
+  label: string
+  eyebrow: string
+  description: string
+  primaryShapeId: string
+  variantShapeIds: string[]
+}
+
+// The picker groups the support matrix into the four load contracts the runtime
+// actually distinguishes. Variants are preset bundles over their family's contract;
+// they keep their own workload_shape_id and feature gate, so stored scenarios,
+// library bundles and domain policies are unaffected by this grouping.
+export const SCENARIO_MODEL_FAMILIES: ScenarioModelFamily[] = [
+  {
+    id: 'fixed-vusers',
+    label: 'Fixed VUsers',
+    eyebrow: 'Closed VUser timeline',
+    description: 'Ramp to a fixed VUser load and hold it. Soak, spike and resilience runs are variants of this model.',
+    primaryShapeId: 'closed-vuser',
+    variantShapeIds: ['soak', 'spike-rendezvous', 'chaos-resilience'],
+  },
+  {
+    id: 'stepped',
+    label: 'Stepped Ramp',
+    eyebrow: 'Escalating load levels',
+    description: 'Measure performance at equal-duration load levels. Stress runs are a variant of this model.',
+    primaryShapeId: 'stepped-ramp',
+    variantShapeIds: ['stress'],
+  },
+  {
+    id: 'goal',
+    label: 'Goal-Driven',
+    eyebrow: 'Target throughput',
+    description: 'Enter target TPS and average response time for each group. VUsers are sized and adapted automatically.',
+    primaryShapeId: 'open-arrival-rate',
+    variantShapeIds: [],
+  },
+  {
+    id: 'traffic-profile',
+    label: 'Traffic Profile',
+    eyebrow: 'Replay a demand schedule',
+    description: 'Replay production demand or follow an exact CSV schedule mapped to your script groups.',
+    primaryShapeId: 'production-replay',
+    variantShapeIds: ['csv-driven'],
+  },
+]
+
+const SHAPE_FAMILY_ALIASES: Record<string, ScenarioModelFamilyId> = { 'goal-based': 'goal' }
+
+export function shapeFamilyFor(shapeId?: string): ScenarioModelFamilyId | null {
+  const id = String(shapeId || '').trim()
+  if (!id) return null
+  if (SHAPE_FAMILY_ALIASES[id]) return SHAPE_FAMILY_ALIASES[id]
+  return SCENARIO_MODEL_FAMILIES.find(family => family.primaryShapeId === id || family.variantShapeIds.includes(id))?.id ?? null
+}
+
+/**
+ * Families whose primary shape or any variant is enabled by the (feature-filtered)
+ * support matrix, each carrying only its enabled shape IDs. A null set means the
+ * matrix has not loaded yet, which is treated as "everything enabled" so cards do
+ * not flicker.
+ */
+export function availableScenarioModelFamilies(enabledShapeIds: ReadonlySet<string> | null): Array<ScenarioModelFamily & { shapeIds: string[] }> {
+  return SCENARIO_MODEL_FAMILIES
+    .map(family => ({
+      ...family,
+      shapeIds: [family.primaryShapeId, ...family.variantShapeIds].filter(id => !enabledShapeIds || enabledShapeIds.has(id)),
+    }))
+    .filter(family => family.shapeIds.length > 0)
+}
 
 export interface ScenarioShapeCatalogOption {
   id: string
@@ -300,8 +374,22 @@ export function buildSteppedRampPlan(input: SteppedRampPlanInput): SteppedRampPl
  * selects a workload shape via "Use Manual Shape". It seeds the scenario form so the
  * later wizard steps reflect the chosen shape (mode, groups, stages, goal envelope).
  *
- * Numbers mirror pkg/api/load_model_support.go so the manual-shape path and the matching
- * starter-template button produce the same draft. Invariants (enforced in tests):
+ * Presets are the frontend starting points; the starter templates in
+ * pkg/api/load_model_support.go are the backend ones. Both seed the form through the same
+ * path but are kept in step by hand, so check the other side when changing either.
+ * As of 2026-09-12:
+ *   - chaos-resilience and mixed-protocol mirror their templates exactly.
+ *   - closed-vuser is a short first test (2m ramp + 3m sustain); the "CI API Smoke"
+ *     template is a 67m gate (2m ramp + 65m sustain) with the same 5-VUser peak.
+ *   - open-arrival-rate seeds 5–50 VUser guardrails; the "Goal-Driven API" template uses 10–20.
+ *   - spike-rendezvous derives 1m12s / 48s ramps from its stages; the template uses plain
+ *     1m / 1m ramps without stages.
+ *   - stepped-ramp, soak, stress and goal-based have no backend template.
+ * The scenario mode must match what the runtime executes: stages only run as a schedule in
+ * vuser_driven mode, and goal_oriented mode only scales toward target_average_tps
+ * (pkg/api/stress_preset_mode_test.go). The stress preset does not meet this yet: it pairs
+ * escalation stages with goal_oriented mode and no TPS target, pending a product decision.
+ * Invariants (enforced in tests):
  *   - staged groups: Σ(stage durations) <= scenario `duration`, and group.vusers == staged peak.
  *   - closed-vuser keeps exactly one group with canonical ramp/hold stages.
  */

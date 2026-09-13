@@ -29,6 +29,7 @@ export type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
 
 export type CenterWorkbenchTabId =
   | 'action-list'
+  | 'request-body'
   | 'source'
   | 'runtime-settings'
   | 'imported-metadata'
@@ -65,6 +66,7 @@ export const CENTER_TABS_STORAGE_PREFIX = 'scriptEditorCenterTabs'
 export const CENTER_WORKBENCH_TAB_IDS: readonly CenterWorkbenchTabId[] = [
   'action-list',
   'source',
+  'request-body',
   'runtime-settings',
   'imported-metadata',
   'metadata-json',

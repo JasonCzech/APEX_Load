@@ -1,3 +1,6 @@
+import { MappingReviewDetails } from './MappingReviewDetails'
+import { useMappingReviewState } from './useMappingReviewState'
+import { decisionMatches, type MappingReviewState } from './sourceMappingReviewState'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
@@ -25,7 +28,6 @@ import {
   mappingForSourceLine,
   mappingMatchesFile,
   resolveSourceFilePath,
-  sourceFilePathCandidates,
   statusCategory,
 } from './sourceMappingModel'
 import './SourceMappingReview.css'
@@ -38,6 +40,10 @@ type SortField = 'source' | 'function' | 'target' | 'status'
 type SortDirection = 'asc' | 'desc'
 
 interface Props {
+  baselineScript?: ScriptDefinition | null
+  onChangeReview?: (state: MappingReviewState) => void
+  draftDirty?: boolean
+  onEditTarget?: (path: string) => void
   focusRequestId?: number
   focusedMappingId?: string
   id?: string
@@ -175,6 +181,7 @@ const COVERAGE_TOOLTIPS: Record<string, string> = {
 }
 
 export default function SourceMappingReview({
+  baselineScript, onChangeReview, draftDirty, onEditTarget,
   focusRequestId = 0,
   focusedMappingId = '',
   id,
@@ -214,19 +221,7 @@ export default function SourceMappingReview({
     omittedJavaFiles.length > 0 ||
     truncatedJavaFiles.length > 0
   )
-  const sourceFileOptions = useMemo(() => {
-    const relevantPaths = new Set<string>()
-    let hasSourceMapping = false
-    for (const mapping of mappings) {
-      if (!mapping.source_file) continue
-      hasSourceMapping = true
-      for (const candidate of sourceFilePathCandidates(mapping.source_file, sourcePathResolver)) {
-        relevantPaths.add(candidate)
-      }
-    }
-    if (!hasSourceMapping) return files
-    return files.filter(file => relevantPaths.has(file.path))
-  }, [files, mappings, sourcePathResolver])
+  const sourceFileOptions = files
   const [selectedMappingId, setSelectedMappingId] = useState('')
   const [selectedFilePath, setSelectedFilePath] = useState('')
   // A reviewer may explicitly inspect a captured file even when an ambiguous
@@ -240,9 +235,18 @@ export default function SourceMappingReview({
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
   const [exportError, setExportError] = useState('')
-  const [isTableCollapsed, setIsTableCollapsed] = useState(false)
+  const [isTableCollapsed, setIsTableCollapsed] = useState(true)
   const [maximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
-  const [approvedMappingIds, setApprovedMappingIds] = useState<Set<string>>(new Set())
+  const [destinationView, setDestinationView] = useState<'current' | 'baseline'>('current')
+  const [contextOnly, setContextOnly] = useState(true)
+  const [revealRequestId, setRevealRequestId] = useState(1)
+  const [noOriginTarget, setNoOriginTarget] = useState('')
+  const [showNoOrigin, setShowNoOrigin] = useState(false)
+  const keyboardSelection = useRef(false)
+  const openingScript = useRef(script)
+  const identity = useMappingReviewState(script, baselineScript || openingScript.current, sourceReview)
+  const effectiveMappings = useMemo(() => mappings.map(mapping => ({ ...mapping, target_path: identity.resolved[mapping.id]?.path })), [mappings, identity.resolved])
+  const acknowledgedMappingIds = useMemo(() => new Set(mappings.filter(mapping => identity.state && decisionMatches(identity.state.decisions[mapping.id], identity.state, identity.resolved[mapping.id]) && identity.state.decisions[mapping.id]?.outcome === 'acknowledged').map(mapping => mapping.id)), [mappings, identity.state, identity.resolved])
   const tableWrapRef = useRef<HTMLDivElement | null>(null)
   const reviewRootRef = useRef<HTMLElement | null>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
@@ -260,10 +264,11 @@ export default function SourceMappingReview({
     [files, selectedFilePath, selectedMapping?.source_file, sourcePathResolver],
   )
 
-  const dslDocument = useMemo(() => (script ? buildDslDocument(script) : null), [script])
+  const destinationScript = destinationView === 'baseline' ? identity.state?.snapshot : script
+  const dslDocument = useMemo(() => (destinationScript ? buildDslDocument(destinationScript) : null), [destinationScript])
   const dslStatus = useMemo(
-    () => (dslDocument ? dslLineStatus(dslDocument.ranges, mappings) : { lines: new Map<number, never>(), withoutOrigin: [] }),
-    [dslDocument, mappings],
+    () => (dslDocument ? dslLineStatus(dslDocument.ranges, destinationView === 'baseline' ? mappings : effectiveMappings) : { lines: new Map<number, never>(), withoutOrigin: [] }),
+    [dslDocument, mappings, effectiveMappings, destinationView],
   )
   const coverage = useMemo(
     () => computeCoverage(mappings, dslStatus.withoutOrigin.length),
@@ -343,6 +348,8 @@ export default function SourceMappingReview({
     }
     setCategoryFilter('')
     setFilter('')
+    setNoOriginTarget('')
+    setRevealRequestId(value => value + 1)
     setCopied('')
   }, [files, focusedMappingId, focusRequestId, mappings, sourcePathResolver])
 
@@ -361,11 +368,13 @@ export default function SourceMappingReview({
         mapping.status,
         mapping.support_mode,
         mapping.notes,
-        approvedMappingIds.has(mapping.id) ? 'approved' : ''
+        acknowledgedMappingIds.has(mapping.id) ? 'acknowledged' : '',
+        identity.state?.decisions[mapping.id]?.outcome,
+        identity.resolved[mapping.id]?.path
       ].some(value => String(value || '').toLowerCase().includes(needle)))
     }
     return [...next].sort((a, b) => compareText(mappingSortValue(a, sortField), mappingSortValue(b, sortField), sortDirection))
-  }, [filter, mappings, sortDirection, sortField, categoryFilter, approvedMappingIds])
+  }, [filter, mappings, sortDirection, sortField, categoryFilter, acknowledgedMappingIds, identity.state, identity.resolved])
 
   // Virtualize the mappings table — a large LoadRunner import can carry thousands of
   // mappings, and rendering one <tr> per mapping would commit thousands of DOM rows.
@@ -391,6 +400,8 @@ export default function SourceMappingReview({
     if (!mapping) return
     setInspectedUnmappedFilePath('')
     setSelectedMappingId(mapping.id)
+    setNoOriginTarget('')
+    setRevealRequestId(value => value + 1)
     if (mapping.source_file) {
       const nextFile = findSourceFile(files, mapping.source_file, sourcePathResolver)
       setSelectedFilePath(nextFile?.path || '')
@@ -416,11 +427,13 @@ export default function SourceMappingReview({
       const row = rowRefs.current[idToScroll]
       if (tableWrap && row) {
         scrollMappingRowIntoTableView(tableWrap, row)
+        if (keyboardSelection.current) { row.querySelector<HTMLButtonElement>('[data-mapping-select]')?.focus({ preventScroll: true }); keyboardSelection.current = false }
       }
     })
   }, [focusedMappingId, focusRequestId, isTableCollapsed, selectedMappingId, filteredMappings, rowVirtualizer, virtualizeRows])
 
   const toggleCategoryFilter = (category: MappingCategory) => {
+    setIsTableCollapsed(false)
     setCategoryFilter(current => (current === category ? '' : category))
   }
 
@@ -429,23 +442,13 @@ export default function SourceMappingReview({
     setInspectedUnmappedFilePath(nextMapping ? '' : filePath)
     setSelectedFilePath(filePath)
     setSelectedMappingId(nextMapping?.id || '')
+    setNoOriginTarget('')
+    setRevealRequestId(value => value + 1)
     setCopied('')
   }
 
   const isNeedsReview = (mapping: SourceReviewMapping) => {
-    return statusCategory(mapping.status) === 'review' || mapping.status === 'review_only'
-  }
-
-  const toggleApprove = (mappingId: string) => {
-    setApprovedMappingIds(prev => {
-      const next = new Set(prev)
-      if (next.has(mappingId)) {
-        next.delete(mappingId)
-      } else {
-        next.add(mappingId)
-      }
-      return next
-    })
+    return ['review', 'unsupported'].includes(statusCategory(mapping.status))
   }
 
   // csvCell quotes a value, doubling interior quotes (so embedded `"` in
@@ -459,16 +462,21 @@ export default function SourceMappingReview({
 
   const exportCsv = async () => {
     setExportError('')
-    const header = ['Source File', 'Start Line', 'Function', 'Target Path', 'Status', 'Approved', 'Support Mode', 'Notes'].join(',')
+    const header = ['Source File', 'Start Line', 'Function', 'Target Path', 'Status', 'Review Decision', 'Reviewer', 'Reviewed At', 'Review Note', 'Current Target Path', 'Target Identity', 'Support Mode', 'Notes'].join(',')
     const rows = filteredMappings.map(m => {
-      const isApproved = approvedMappingIds.has(m.id)
+      const isApproved = acknowledgedMappingIds.has(m.id)
       return [
         csvCell(m.source_file || ''),
         m.start_line || '',
         csvCell(m.function || ''),
         csvCell(m.target_path || m.target_name || ''),
         csvCell(m.status || ''),
-        isApproved ? 'Yes' : 'No',
+        csvCell(isApproved ? 'acknowledged' : identity.state?.decisions[m.id] ? decisionMatches(identity.state.decisions[m.id], identity.state, identity.resolved[m.id]) ? identity.state.decisions[m.id].outcome : 'stale' : ''),
+        csvCell(identity.state?.decisions[m.id]?.reviewer || ''),
+        csvCell(identity.state?.decisions[m.id]?.reviewedAt || ''),
+        csvCell(identity.state?.decisions[m.id]?.note || ''),
+        csvCell(identity.resolved[m.id]?.path || ''),
+        csvCell(identity.resolved[m.id]?.status || 'unverified'),
         csvCell(m.support_mode || ''),
         csvCell(m.notes || '')
       ].join(',')
@@ -487,7 +495,7 @@ export default function SourceMappingReview({
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (reviewRootRef.current?.closest('[hidden], [aria-hidden="true"]')) {
+      if (!reviewRootRef.current?.contains(document.activeElement) || reviewRootRef.current?.closest('[hidden], [aria-hidden="true"]')) {
         return
       }
       const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -499,7 +507,7 @@ export default function SourceMappingReview({
       }
 
       if (e.key === '[' || e.key === ']') {
-        const reviewItems = filteredMappings.filter(m => isNeedsReview(m) && !approvedMappingIds.has(m.id))
+        const reviewItems = filteredMappings.filter(m => isNeedsReview(m) && !acknowledgedMappingIds.has(m.id))
         if (reviewItems.length === 0) return
 
         const currentIndex = reviewItems.findIndex(m => m.id === selectedMappingId)
@@ -510,19 +518,21 @@ export default function SourceMappingReview({
         } else {
           nextIndex = currentIndex === -1 ? reviewItems.length - 1 : (currentIndex - 1 + reviewItems.length) % reviewItems.length
         }
+        e.preventDefault()
         selectMapping(reviewItems[nextIndex])
       }
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [approvedMappingIds, filteredMappings, selectMapping, selectedMappingId])
+  }, [acknowledgedMappingIds, filteredMappings, selectMapping, selectedMappingId])
 
   if (files.length === 0 && mappings.length === 0) {
     return null
   }
 
   const handleTableKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    if ((e.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]')) return
+    if (['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) {
       e.preventDefault()
       if (filteredMappings.length === 0) return
 
@@ -537,15 +547,19 @@ export default function SourceMappingReview({
         }
       }
 
+      if (e.key === 'Home') nextIndex = 0
+      if (e.key === 'End') nextIndex = filteredMappings.length - 1
+      keyboardSelection.current = true
       selectMapping(filteredMappings[nextIndex])
     }
   }
 
-  const sourceActiveRange = selectedMapping && selectedFile &&
+  const sourceActiveRange = !noOriginTarget && selectedMapping && selectedFile &&
     mappingMatchesFile(selectedMapping, selectedFile.path, sourcePathResolver)
     ? { startLine: selectedMapping.start_line, endLine: selectedMapping.end_line || selectedMapping.start_line }
     : null
-  const dslActiveRange = dslDocument ? lineRangeForTargetPath(dslDocument.ranges, selectedMapping?.target_path) : null
+  const destinationPath = noOriginTarget || (destinationView === 'baseline' ? selectedMapping?.target_path : selectedMapping ? identity.resolved[selectedMapping.id]?.path : undefined)
+  const dslActiveRange = dslDocument ? lineRangeForTargetPath(dslDocument.ranges, destinationPath) : null
 
   const sourceExcerpt = excerptFromText(selectedFile?.content || '', sourceActiveRange?.startLine, sourceActiveRange?.endLine)
   const dslExcerpt = excerptFromText(dslDocument?.text || '', dslActiveRange?.startLine, dslActiveRange?.endLine)
@@ -571,7 +585,7 @@ export default function SourceMappingReview({
   }
   const handleDslLineClick = (line: number) => {
     if (!dslDocument) return
-    selectMapping(mappingForDslLine(dslDocument.ranges, mappings, line))
+    selectMapping(mappingForDslLine(dslDocument.ranges, destinationView === 'baseline' ? mappings : effectiveMappings, line))
   }
 
   const coverageChips: Array<{ key: string; label: string; value: number; tooltip: string }> = [
@@ -611,13 +625,13 @@ export default function SourceMappingReview({
               )
             })}
             {dslDocument && (
-              <span
+              <button type="button" disabled={identity.checking} aria-expanded={showNoOrigin} onClick={() => setShowNoOrigin(value => !value)}
                 className={`source-map-status ${coverage.dslWithoutOrigin > 0 ? 'unsupported' : 'converted'}`}
                 title={COVERAGE_TOOLTIPS.dslWithoutOrigin}
                 data-tooltip={COVERAGE_TOOLTIPS.dslWithoutOrigin}
               >
-                DSL without source origin: {coverage.dslWithoutOrigin}
-              </span>
+                DSL without source origin: {identity.checking ? 'Verifying…' : coverage.dslWithoutOrigin}
+              </button>
             )}
           </div>
           {onToggleWorkspaceMaximized && (
@@ -626,10 +640,10 @@ export default function SourceMappingReview({
                 type="button"
                 className="btn btn-sm btn-ghost source-map-workspace-toggle"
                 aria-pressed={workspaceMaximized}
-                title={workspaceMaximized ? 'Restore side panels' : 'Maximize source mapping'}
+                title={workspaceMaximized ? 'Restore side panels' : 'Expand source mapping workspace'}
                 onClick={onToggleWorkspaceMaximized}
               >
-                {workspaceMaximized ? 'Restore' : 'Maximize'}
+                {workspaceMaximized ? 'Restore workspace' : 'Expand workspace'}
               </button>
             </div>
           )}
@@ -669,7 +683,7 @@ export default function SourceMappingReview({
 
       <div className="source-map-toolbar">
         <label>
-          <span>Source File</span>
+          <span>Captured source file ({files.length})</span>
           <select value={selectedFile?.path || ''} onChange={event => selectSourceFile(event.target.value)}>
             {!selectedFile && <option value="">No unambiguous source file</option>}
             {sourceFileOptions.map(file => (
@@ -681,7 +695,7 @@ export default function SourceMappingReview({
         </label>
         <label>
           <span>Filter Mappings</span>
-          <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Function, target, status..." />
+          <input value={filter} onChange={event => { setFilter(event.target.value); setIsTableCollapsed(false) }} placeholder="Function, target, status..." />
         </label>
         <div style={{ alignSelf: 'flex-end', marginLeft: 'auto', display: 'flex', gap: '8px' }}>
           <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
@@ -691,7 +705,7 @@ export default function SourceMappingReview({
             style={{ border: '1px solid var(--border)' }}
             onClick={() => { void exportCsv() }}
           >
-            Export CSV
+            Export filtered mappings
           </button>
           <button
             type="button"
@@ -699,13 +713,33 @@ export default function SourceMappingReview({
             style={{ border: '1px solid var(--border)' }}
             onClick={() => setIsTableCollapsed(prev => !prev)}
           >
-            {isTableCollapsed ? 'Show Table' : 'Collapse Table'}
+            {isTableCollapsed ? `Show mappings (${filteredMappings.length})` : 'Hide mappings'}
           </button>
         </div>
       </div>
+      <div className="source-map-review-controls">
+        <label>Comparison scope<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
+        <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>
+        <span>{filteredMappings.length} of {mappings.length} mappings</span>
+        {(filter || categoryFilter !== '') && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setFilter(''); setCategoryFilter('') }}>Clear filters</button>}
+        <details><summary>Keyboard shortcuts</summary><p>In the mapping list, use ↑/↓ and Home/End to select. Use [ and ] to move between unacknowledged review items while focus is in this workspace.</p></details>
+      </div>
+      {destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? new Date(identity.state.capturedAt).toLocaleString() : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
+      {identity.error && <p role="alert">{identity.error}</p>}
+      {(omittedFiles.length > 0 || truncatedFiles.length > 0) && <details><summary>Inspect omitted and truncated files</summary><ul>{omittedFiles.map(path => <li key={path}>Omitted: {path}</li>)}{truncatedFiles.map(file => <li key={file.path}><button type="button" onClick={() => selectSourceFile(file.path)}>Truncated: {file.path}</button></li>)}</ul></details>}
+      {showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
+      {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
+        <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
+        <span>Conversion: {formatStatusLabel(selectedMapping.status)} · Runtime support: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
+        <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}</span>
+        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}
+        {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
+        <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />
+      </div>}
+      {onEditTarget && destinationPath && destinationView === 'current' && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditTarget(destinationPath)}>Edit destination in Author</button>}
       {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
-      <div ref={tableWrapRef} className="source-map-table-wrap" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
+      <div ref={tableWrapRef} className="source-map-table-wrap" data-table-pagination="off" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">
           <colgroup>
             <col className="source-map-col-source" />
@@ -715,10 +749,10 @@ export default function SourceMappingReview({
           </colgroup>
           <thead>
             <tr>
-              <th scope="col"><button type="button" onClick={() => handleSort('source')}>Source</button></th>
-              <th scope="col"><button type="button" onClick={() => handleSort('function')}>Function</button></th>
-              <th scope="col"><button type="button" onClick={() => handleSort('target')}>Generated DSL</button></th>
-              <th scope="col"><button type="button" onClick={() => handleSort('status')}>Status</button></th>
+              <th scope="col" aria-sort={sortField === 'source' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('source')}>Source</button></th>
+              <th scope="col" aria-sort={sortField === 'function' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('function')}>Function</button></th>
+              <th scope="col" aria-sort={sortField === 'target' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('target')}>Imported target</button></th>
+              <th scope="col" aria-sort={sortField === 'status' ? sortDirection === 'asc' ? 'ascending' : 'descending' : 'none'}><button type="button" onClick={() => handleSort('status')}>Status</button></th>
             </tr>
           </thead>
           <tbody>
@@ -737,28 +771,20 @@ export default function SourceMappingReview({
                 data-target-path={mapping.target_path || ''}
                 onClick={() => selectMapping(mapping)}
               >
-                <td className="cell-mono source-map-source-cell" title={formatSourceRange(mapping)}>{formatSourceRange(mapping)}</td>
+                <td className="cell-mono source-map-source-cell" title={formatSourceRange(mapping)}><button type="button" data-mapping-select aria-current={mapping.id === selectedMappingId ? 'true' : undefined} tabIndex={mapping.id === selectedMappingId ? 0 : -1} onClick={event => { event.stopPropagation(); selectMapping(mapping) }}>{formatSourceRange(mapping)}</button></td>
                 <td className="source-map-function-cell" title={mapping.function || '-'}>{mapping.function || '-'}</td>
-                <td className="cell-mono source-map-target-cell" title={mapping.target_path || mapping.target_name || 'review-only'}>{mapping.target_path || mapping.target_name || 'review-only'}</td>
+                <td className="cell-mono source-map-target-cell" title={mapping.target_path || mapping.target_name || 'review-only'}>{mapping.target_path || mapping.target_name || 'review-only'}{identity.resolved[mapping.id]?.status === 'moved' && <small>Current: {identity.resolved[mapping.id].path}</small>}{['changed', 'missing', 'ambiguous'].includes(identity.resolved[mapping.id]?.status) && <small>Identity: {identity.resolved[mapping.id].status}</small>}</td>
                 <td className="source-map-status-cell">
                   <div className="source-map-status-stack">
-                    <span className={`source-map-status ${approvedMappingIds.has(mapping.id) ? 'converted' : CATEGORY_CLASS[statusCategory(mapping.status)]}`}>
-                      {approvedMappingIds.has(mapping.id) ? 'Approved' : formatStatusLabel(mapping.status)}
+                    <span className={`source-map-status ${CATEGORY_CLASS[statusCategory(mapping.status)]}`}>
+                      {formatStatusLabel(mapping.status)}
                     </span>
                     {mapping.support_mode && (
                       <span className={`source-map-support-mode ${supportModeClass(mapping.support_mode)}`.trim()}>
                         {formatSupportModeLabel(mapping.support_mode)}
                       </span>
                     )}
-                    {isNeedsReview(mapping) && (
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-ghost source-map-approve-button"
-                        onClick={(e) => { e.stopPropagation(); toggleApprove(mapping.id); }}
-                      >
-                        {approvedMappingIds.has(mapping.id) ? 'Undo' : 'Approve'}
-                      </button>
-                    )}
+                    <span>{identity.state?.decisions[mapping.id] ? acknowledgedMappingIds.has(mapping.id) ? 'Acknowledged' : 'Review decision recorded — inspect details' : 'Not reviewed'}</span>
                   </div>
                 </td>
               </tr>
@@ -780,17 +806,18 @@ export default function SourceMappingReview({
       <div className="source-map-panels">
         <div className={`source-map-panel ${maximizedPane === 'dsl' ? 'hidden' : maximizedPane === 'source' ? 'maximized' : ''}`}>
           <div className="source-map-panel-header">
-            <strong>{selectedFile?.path || 'Source'}</strong>
+            <strong title={selectedFile?.path}>Original source · {selectedFile?.path || 'Unavailable'}</strong>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('source', sourceExcerpt)} disabled={!copySupported || !sourceExcerpt}>
-                {copied === 'source' ? 'Copied' : 'Copy Source'}
+                {copied === 'source' ? 'Copied' : 'Copy mapped source'}
               </button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !selectedFile} onClick={() => void copyValue('source', selectedFile?.content || '')}>Copy whole source file</button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
-                {maximizedPane === 'source' ? 'Reset' : 'Maximize'}
+                {maximizedPane === 'source' ? 'Return to comparison' : 'Focus source'}
               </button>
             </div>
           </div>
-          {selectedFile ? (
+          {selectedFile && !noOriginTarget ? (
             <Suspense fallback={<PaneFallback />}>
               <LinkedCodePane
                 value={selectedFile.content}
@@ -802,26 +829,30 @@ export default function SourceMappingReview({
                 ariaLabel={`${selectedFile.path} source`}
                 maxHeight="100%"
                 wrapLines={wrapLines}
+                contextLines={contextOnly ? 4 : undefined}
+                revealRequestId={revealRequestId}
+                revealOnMount
               />
             </Suspense>
           ) : (
-            <div className="source-map-empty">No source file content was captured.</div>
+            <div className="source-map-empty">{noOriginTarget ? 'This destination item has no source mapping.' : 'No source file content was captured.'}</div>
           )}
         </div>
 
         <div className={`source-map-panel ${maximizedPane === 'source' ? 'hidden' : maximizedPane === 'dsl' ? 'maximized' : ''}`}>
           <div className="source-map-panel-header">
-            <strong>{selectedMapping?.target_path || 'Generated DSL'}</strong>
+            <strong title={destinationPath}>Destination · {destinationView === 'baseline' ? 'Review baseline' : 'Current draft'} · {destinationPath || 'No verified mapping'}</strong>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => void copyValue('dsl', dslExcerpt)} disabled={!copySupported || !dslExcerpt}>
-                {copied === 'dsl' ? 'Copied' : 'Copy DSL'}
+                {copied === 'dsl' ? 'Copied' : 'Copy mapped destination'}
               </button>
+              <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !dslDocument} onClick={() => void copyValue('dsl', dslDocument?.text || '')}>Copy whole destination</button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'dsl' ? null : 'dsl')}>
-                {maximizedPane === 'dsl' ? 'Reset' : 'Maximize'}
+                {maximizedPane === 'dsl' ? 'Return to comparison' : 'Focus destination'}
               </button>
             </div>
           </div>
-          {dslDocument ? (
+          {dslDocument && destinationPath && dslActiveRange ? (
             <Suspense fallback={<PaneFallback />}>
               <LinkedCodePane
                 value={dslDocument.text}
@@ -834,10 +865,13 @@ export default function SourceMappingReview({
                 ariaLabel="Generated DSL"
                 maxHeight="100%"
                 wrapLines={wrapLines}
+                contextLines={contextOnly ? 4 : undefined}
+                revealRequestId={revealRequestId}
+                revealOnMount
               />
             </Suspense>
           ) : (
-            <div className="source-map-empty">DSL has not been generated yet. Complete the import to compare the native script.</div>
+            <div className="source-map-empty">{!dslDocument ? 'Destination is not available yet.' : identity.checking ? 'Verifying mapping identity…' : !selectedMapping ? 'This captured file has no destination mappings. Select a mapped file or inspect destination items without source origin.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path ? 'This source construct has no mapped destination. Its conversion status and review notes explain what needs attention.' : 'No verified destination. Inspect mapping details to re-link an edited, removed, or ambiguous target.'}</div>
           )}
         </div>
       </div>

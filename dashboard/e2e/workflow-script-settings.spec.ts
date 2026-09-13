@@ -1,0 +1,101 @@
+import { test, expect, idOf, mutation, json, login } from './support/workflow'
+import { createWorkspace, scopeQuery } from './support/workspace'
+
+// Exercises the real app shell's pagination observer and persisted controller DSL.
+test('parameter workspace preserves 4000 rows, references, masked values and runtime settings', async ({ page }) => {
+  test.setTimeout(120_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name: 'Settings_workflow', version: '1.0.0', protocol: 'http',
+      config: { base_url: 'http://127.0.0.1:1', think_time: { type: 'fixed', mean_ms: 2000, ignore: true }, run_logic: { iterations: 2, global_iterations: 100, max_transactions: 30, block_scheduling: 'random', action_sequence: ['teardown', 'action', 'init'] } },
+      parameters: [{ name: 'customer', type: 'file', data_source: 'users', column: 'id', update: 'each_iteration' }, { name: 'paired', type: 'file', data_source: 'users', column: 'segment', same_line_as: 'customer' }],
+      data_sources: [{ name: 'users', type: 'csv', first_row_header: true, strategy: 'sequential', inline_data: 'id,segment\n' + Array.from({ length: 4000 }, (_, i) => `user${i + 1},example${i + 1}`).join('\n') }],
+      actions: [{ name: 'orders', type: 'request', method: 'GET', target: '/orders/{{param.customer}}/{{data.users.id}}' }],
+    },
+  } })))
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  // Login hydrated workspace providers before the API fixture was created.
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await expect(page.getByRole('region', { name: 'Author center workbench' })).toBeVisible()
+  const authorPanes = page.getByRole('group', { name: 'Author panes' })
+  if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Outline', exact: true }).click()
+  await page.getByRole('button', { name: 'Parameter Data', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Close script editor', exact: true })).toBeVisible()
+  const panel = page.getByRole('region', { name: 'Parameter Data', exact: true })
+  await panel.getByRole('textbox', { name: 'Parameter name', exact: true }).fill('account')
+  await panel.getByRole('button', { name: 'Rename references' }).click()
+  await panel.getByRole('tab', { name: 'Usage', exact: true }).click()
+  await expect(panel.getByRole('tabpanel', { name: 'Parameter usage' })).toContainText('parameters[1].same_line_as')
+  await panel.getByRole('button', { name: 'Undo structural edit' }).click()
+  await expect(panel.getByRole('navigation', { name: 'Parameter selection' })).toContainText('customer')
+  await panel.getByRole('tab', { name: 'Settings', exact: true }).click()
+  await panel.getByRole('textbox', { name: 'Parameter name', exact: true }).fill('account')
+  await panel.getByRole('button', { name: 'Rename references' }).click()
+  await panel.getByRole('button', { name: 'Preview value', exact: true }).click()
+  await expect(panel.getByRole('button', { name: 'Reveal value', exact: true })).toBeVisible()
+  await expect(panel.locator('output')).toHaveText('••••••••')
+  await panel.getByRole('button', { name: 'Reveal value', exact: true }).click()
+  await expect(panel.locator('output')).toHaveText('user1')
+  await panel.getByRole('button', { name: 'Datasets', exact: true }).click()
+  await expect(panel).toContainText('4000 rows')
+  await expect(panel.locator('.table-pagination-toolbar')).toHaveCount(0)
+  for (const row of [2000, 4000, 1]) {
+    await panel.getByRole('spinbutton', { name: 'Go to row for users' }).fill(String(row))
+    await panel.getByRole('button', { name: 'Go', exact: true }).click()
+    await expect(panel.getByLabel(`Row ${row}, id for users`, { exact: true })).toHaveValue(`user${row}`)
+  }
+  const firstCell = panel.getByLabel('Row 1, id for users', { exact: true })
+  await firstCell.fill('edited1')
+  await firstCell.press('Tab')
+  await panel.getByLabel('Search rows for users').fill('user4000')
+  await expect(panel.getByLabel('Row 4000, id for users', { exact: true })).toHaveValue('user4000')
+  await panel.getByLabel('Search rows for users').fill('')
+  const column = panel.getByLabel('Column 1 name for users')
+  await column.fill('account_id')
+  await column.press('Enter')
+  await panel.getByRole('button', { name: 'Remove column account_id', exact: true }).click()
+  const review = page.getByRole('dialog', { name: 'Review dataset change' })
+  await expect(review).toContainText('Remap these references')
+  await expect(review.getByRole('button', { name: 'Apply dataset change' })).toBeDisabled()
+  await review.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+  await page.getByRole('tab', { name: 'Runtime Settings', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Close script editor', exact: true })).toBeVisible()
+  const runtime = page.getByRole('region', { name: 'Runtime Settings', exact: true })
+  const navigation = runtime.getByRole('navigation', { name: 'Runtime setting categories' })
+  await navigation.getByRole('button', { name: /^Think Time/ }).click()
+  await expect(runtime.getByRole('checkbox', { name: 'Enable think time' })).not.toBeChecked()
+  await expect(runtime.locator('fieldset')).toHaveAttribute('disabled', '')
+  await expect(runtime.locator('fieldset input').first()).toBeDisabled()
+  await runtime.getByRole('checkbox', { name: 'Enable think time' }).check()
+  await expect(runtime.locator('fieldset input').first()).toBeEnabled()
+  await navigation.getByRole('button', { name: /^Preserved run order/ }).click()
+  await expect(runtime.getByRole('region', { name: 'Preserved run order' })).toContainText('does not affect execution')
+  await expect(runtime.getByRole('combobox', { name: 'Block Scheduling' })).toHaveCount(0)
+  await navigation.getByRole('button', { name: /^Run Logic/ }).click()
+  await runtime.getByRole('combobox', { name: 'Workload Model' }).selectOption('open')
+  await expect(runtime.getByRole('spinbutton', { name: 'Arrival target', exact: true })).toHaveValue('1')
+  await runtime.getByRole('spinbutton', { name: 'Maximum in-flight iterations' }).fill('20')
+  await runtime.getByRole('combobox', { name: 'Runtime preview context' }).selectOption('debug')
+  await expect(runtime.getByRole('region', { name: 'Effective runtime context' })).toContainText('Replay executes one virtual user')
+  const saved = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
+  await page.getByRole('button', { name: 'Save script', exact: true }).click()
+  await json(await saved)
+  const stored = (await json(await request.get(`/api/v1/scripts/${id}`))).script as { actions: { target: string }[]; parameters: { name: string; column: string; same_line_as?: string }[]; data_sources: { inline_data: string }[]; config: Record<string, unknown> }
+  expect(stored.actions[0].target).toBe('/orders/{{param.account}}/{{data.users.account_id}}')
+  expect(stored.parameters[1].same_line_as).toBe('account')
+  expect(stored.data_sources[0].inline_data).toContain('edited1,example1')
+  expect(stored.data_sources[0].inline_data).toContain('user4000,example4000')
+  expect(stored.config).toMatchObject({ run_logic: { workload_model: 'open', max_in_flight: 20, block_scheduling: 'random' }, pacing: { type: 'tps', tps: 1 }, think_time: { mean_ms: 2000 } })
+  expect((stored.config.think_time as { ignore?: boolean }).ignore ?? false).toBe(false)
+  await page.reload()
+  await page.getByRole('tab', { name: 'Parameter Data', exact: true }).click()
+  await expect(page.getByRole('navigation', { name: 'Parameter selection' })).toContainText('account')
+  await page.setViewportSize({ width: 900, height: 1000 })
+  await expect(page.getByRole('searchbox', { name: 'Find parameter' })).toBeVisible()
+  await page.getByRole('searchbox', { name: 'Find parameter' }).fill('paired')
+  await expect(page.getByRole('navigation', { name: 'Parameter selection' }).getByRole('button')).toHaveCount(1)
+})

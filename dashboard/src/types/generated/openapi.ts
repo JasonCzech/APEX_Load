@@ -902,7 +902,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -4290,7 +4290,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -8640,7 +8640,7 @@ export interface operations {
                   "delimiter"?: string;
                   "encoding"?: string;
                   "file_name"?: string;
-                  "first_row_header"?: boolean;
+                  "first_row_header": boolean;
                   "inline_data"?: string;
                   "name": string;
                   "path"?: string;
@@ -8832,7 +8832,7 @@ export interface operations {
                   "delimiter"?: string;
                   "encoding"?: string;
                   "file_name"?: string;
-                  "first_row_header"?: boolean;
+                  "first_row_header": boolean;
                   "inline_data"?: string;
                   "name": string;
                   "path"?: string;
@@ -13303,7 +13303,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -13929,7 +13929,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -21145,7 +21145,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -32417,7 +32417,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -40878,7 +40878,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -57967,7 +57967,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -59363,7 +59363,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -60059,7 +60059,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -60447,6 +60447,96 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePreviewParameter": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "data_sources"?: Array<{
+            "columns"?: Array<string>;
+            "content_type"?: string;
+            "delimiter"?: string;
+            "encoding"?: string;
+            "file_name"?: string;
+            "first_row_header"?: boolean;
+            "inline_data"?: string;
+            "name"?: string;
+            "path"?: string;
+            "staged_asset"?: string;
+            "storage_ref"?: string;
+            "strategy"?: string;
+            "type"?: string;
+          }>;
+          "iteration"?: number;
+          "name"?: string;
+          "occurrence"?: number;
+          "parameters"?: Array<{
+            "block_size"?: number;
+            "charset"?: string;
+            "column"?: string;
+            "data_source"?: string;
+            "end"?: number;
+            "format"?: string;
+            "length"?: number;
+            "max"?: number;
+            "min"?: number;
+            "name"?: string;
+            "offset_seconds"?: number;
+            "on_exhaustion"?: string;
+            "pad_char"?: string;
+            "pad_width"?: number;
+            "same_line_as"?: string;
+            "seed"?: (number) | null;
+            "selection"?: string;
+            "start"?: number;
+            "start_row"?: number;
+            "step"?: number;
+            "timezone"?: string;
+            "type"?: string;
+            "update"?: string;
+            "value_for_each_vuser"?: boolean;
+            "values"?: Array<string>;
+          }>;
+          "vuser"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "masked": boolean;
+            "note": string;
+            "resolved": boolean;
+            "value": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -87235,7 +87325,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -92369,7 +92459,7 @@ export interface operations {
                 "delimiter"?: string;
                 "encoding"?: string;
                 "file_name"?: string;
-                "first_row_header"?: boolean;
+                "first_row_header": boolean;
                 "inline_data"?: string;
                 "name": string;
                 "path"?: string;
@@ -95420,7 +95510,7 @@ export interface operations {
               "delimiter"?: string;
               "encoding"?: string;
               "file_name"?: string;
-              "first_row_header"?: boolean;
+              "first_row_header": boolean;
               "inline_data"?: string;
               "name": string;
               "path"?: string;
@@ -98249,6 +98339,9 @@ export interface paths {
   };
   "/api/v1/dsl/config-defaults": {
     "get": operations["handleConfigDefaults"];
+  };
+  "/api/v1/dsl/parameter-preview": {
+    "post": operations["handlePreviewParameter"];
   };
   "/api/v1/execution-plans": {
     "get": operations["handleListExecutionPlans"];

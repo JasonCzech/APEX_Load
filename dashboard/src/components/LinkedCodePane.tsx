@@ -5,7 +5,7 @@ import { javascript } from '@codemirror/lang-javascript'
 import { json } from '@codemirror/lang-json'
 import { xml } from '@codemirror/lang-xml'
 import { type Extension, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state'
-import { Decoration, type DecorationSet, EditorView, GutterMarker, gutter } from '@codemirror/view'
+import { Decoration, type DecorationSet, EditorView, GutterMarker, gutter, lineNumbers } from '@codemirror/view'
 
 import { type LineRange } from './dslJsonPointers'
 import { type GutterStatus } from './sourceMappingModel'
@@ -110,6 +110,9 @@ function languageExtension(language?: string): Extension[] {
 }
 
 interface Props {
+  contextLines?: number
+  revealRequestId?: number
+  revealOnMount?: boolean
   value: string
   language?: string
   semanticMode?: 'apex-dsl'
@@ -123,17 +126,24 @@ interface Props {
 }
 
 export default function LinkedCodePane({
-  value,
+  value: fullValue,
+  contextLines, revealRequestId = 0, revealOnMount = false,
   language,
   semanticMode,
-  gutterStatuses,
-  activeRange,
+  gutterStatuses: fullStatuses,
+  activeRange: fullRange,
   searchQuery,
   onLineClick,
   ariaLabel,
   maxHeight = '420px',
   wrapLines = true,
 }: Props) {
+  const offset = contextLines != null && fullRange ? Math.max(0, fullRange.startLine - contextLines - 1) : 0
+  const value = contextLines != null && fullRange ? fullValue.split('\n').slice(offset, fullRange.endLine + contextLines).join('\n') : fullValue
+  const activeRange = fullRange ? { startLine: fullRange.startLine - offset, endLine: fullRange.endLine - offset } : null
+  const gutterStatuses = useMemo(() => fullStatuses ? new Map([...fullStatuses].map(([line, status]) => [line - offset, status])) : undefined, [fullStatuses, offset])
+  const offsetRef = useRef(offset)
+  offsetRef.current = offset
   const viewRef = useRef<EditorView | null>(null)
   const clickRef = useRef(onLineClick)
   clickRef.current = onLineClick
@@ -146,6 +156,7 @@ export default function LinkedCodePane({
   const extensions = useMemo<Extension[]>(() => {
     const exts: Extension[] = [
       apexCodeMirrorTheme,
+      lineNumbers({ formatNumber: line => String(line + offset) }),
       linkedRangeField,
       filterDecorationsField,
       ...(wrapLines ? [EditorView.lineWrapping] : []),
@@ -158,7 +169,7 @@ export default function LinkedCodePane({
           const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
           if (pos == null) return false
           const lineNo = view.state.doc.lineAt(pos).number
-          clickRef.current?.(lineNo)
+          clickRef.current?.(lineNo + offsetRef.current)
           return false
         },
       }),
@@ -171,7 +182,7 @@ export default function LinkedCodePane({
       exts.push(statusGutter(gutterStatuses))
     }
     return exts
-  }, [language, semanticMode, gutterStatuses, wrapLines])
+  }, [language, semanticMode, gutterStatuses, wrapLines, offset])
 
   // Apply the linked-line highlight and scroll it into view whenever the active
   // range (or the underlying document) changes. Depend on the range's line
@@ -200,9 +211,14 @@ export default function LinkedCodePane({
     const range = activeStartLine != null ? { startLine: activeStartLine, endLine: activeEndLine ?? activeStartLine } : null
     effects.push(setLinkedRange.of(range))
 
-    if (!isInitialRange && range && range.startLine >= 1 && range.startLine <= view.state.doc.lines && isSelectionChange) {
+    if (range && range.startLine >= 1 && range.startLine <= view.state.doc.lines && (revealOnMount || (!isInitialRange && isSelectionChange))) {
       const line = view.state.doc.line(range.startLine)
-      effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
+      if (revealOnMount) {
+        view.requestMeasure({
+          read: () => view.lineBlockAt(line.from),
+          write: block => { view.scrollDOM.scrollTop = Math.max(0, block.top - view.scrollDOM.clientHeight / 2 + block.height / 2) },
+        })
+      } else effects.push(EditorView.scrollIntoView(line.from, { y: 'center' }))
     }
 
     // 2. Search Query Highlighting
@@ -228,7 +244,7 @@ export default function LinkedCodePane({
     }
 
     view.dispatch({ effects })
-  }, [activeStartLine, activeEndLine, searchQuery, value, isSelectionChange])
+  }, [activeStartLine, activeEndLine, searchQuery, value, isSelectionChange, revealRequestId, revealOnMount])
 
   return (
     <div className="linked-code-pane" role="region" aria-label={ariaLabel}>
@@ -241,7 +257,7 @@ export default function LinkedCodePane({
         readOnly
         theme="none"
         basicSetup={{
-          lineNumbers: true,
+          lineNumbers: false,
           foldGutter: false,
           highlightActiveLine: false,
           highlightActiveLineGutter: false,

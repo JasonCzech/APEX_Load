@@ -1,3 +1,7 @@
+import { ParameterValuePreview } from './ParameterValuePreview'
+import ParameterRenameInput from './ParameterRenameInput'
+import { parameterUsages } from './parameterIntegrity'
+import { ParameterDatasetWorkspace } from './ParameterDatasetWorkspace'
 import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import { handleTabKey } from './tabKeyboard'
@@ -117,12 +121,18 @@ function getSelectedParameterHeaderDetails(
   }
 }
 
-interface ParameterDataDialogProps {
+export interface ParameterDataDialogProps {
+  onAddDataset?: () => void
+  onInspectUsage?: (path: string) => void
+  onUndoStructure?: () => void
+  canUndoStructure?: boolean
+  onMergeSources?: () => void
+  mergeSummary?: ParameterSourceMergeSummary
   dataEditorMode: Record<number, 'grid' | 'raw'>
   dataSourceHistory: Record<number, DataSourceHistory>
   onAddDataColumn: (idx: number) => void
   onAddDataRow: (idx: number) => void
-  onAddParameter: () => void
+  onAddParameter: (type?: string) => void
   onApplyDedupeHeaders: (idx: number) => void
   onApplyFillHeaders: (idx: number) => void
   onApplyNormalizeRows: (idx: number) => void
@@ -152,7 +162,8 @@ interface ParameterDataDialogProps {
   variant?: 'modal' | 'document'
 }
 
-export function ParameterDataDialog({
+export function ParameterDataDialog(props: ParameterDataDialogProps) {
+  const {
   dataEditorMode,
   dataSourceHistory,
   onAddDataColumn,
@@ -185,7 +196,10 @@ export function ParameterDataDialog({
   selectedParameterIdx,
   script,
   variant = 'modal',
-}: ParameterDataDialogProps) {
+} = props
+  const [newParameterType, setNewParameterType] = useState('list')
+  const [workspaceView, setWorkspaceView] = useState<'parameters' | 'datasets'>('parameters')
+  const [parameterSearch, setParameterSearch] = useState('')
   const dialogRef = useRef<HTMLDivElement | null>(null)
   useModalDialog({
     dialogRef,
@@ -243,6 +257,31 @@ export function ParameterDataDialog({
         aria-modal={variant === 'document' ? undefined : true}
         aria-label="Parameter Data"
       >
+        <div className="parameter-workspace-toolbar">
+          <div><h3>Parameters &amp; datasets</h3><p>Define values, allocate rows, and inspect where each parameter is used.</p></div>
+          <div className="parameter-workspace-actions">
+            <button type="button" className="btn btn-sm btn-secondary" aria-pressed={workspaceView === 'parameters'} onClick={() => setWorkspaceView('parameters')}>Parameters</button>
+            <button type="button" className="btn btn-sm btn-secondary" aria-pressed={workspaceView === 'datasets'} onClick={() => setWorkspaceView('datasets')}>Datasets</button>
+            <button type="button" className="btn btn-sm btn-secondary" disabled={!props.canUndoStructure} onClick={props.onUndoStructure}>Undo structural edit</button>
+            <label>New parameter type<select aria-label="New parameter type" value={newParameterType} onChange={event => setNewParameterType(event.target.value)}>{PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <button type="button" className="btn btn-sm btn-accent" onClick={() => { setWorkspaceView('parameters'); onAddParameter(newParameterType) }}>+ Add Parameter</button>
+          </div>
+        </div>
+        {workspaceView === 'datasets' ? <ParameterDatasetWorkspace {...props} onShowParameter={index => { onSelectParameter(index); setWorkspaceView('parameters') }} /> : <div className="parameter-workspace-layout">
+          <nav className="parameter-workspace-nav" aria-label="Parameter selection">
+            <label>Find parameter<input type="search" value={parameterSearch} onChange={event => setParameterSearch(event.target.value)} /></label>
+            {(script.parameters || []).map((parameter, index) => ({ parameter, index })).filter(({ parameter }) => `${parameter.name} ${parameter.type} ${parameter.data_source || ''}`.toLowerCase().includes(parameterSearch.toLowerCase())).map(({ parameter, index }) => (
+              <button type="button" aria-current={index === selectedParameterIdx ? 'true' : undefined} key={index} onClick={() => {
+                onSelectParameter(index)
+                onSelectDataSource(findDataSourceIndexByName(script.data_sources, parameter.data_source))
+              }}>
+                <strong>{parameter.name}</strong><small>{parameter.type} · {parameterUsages(script, parameter.name).length} references</small>
+                <small>{parameter.data_source || 'Generated / inline value'}</small>{parameter.data_source && findDataSourceIndexByName(script.data_sources, parameter.data_source) === null && <small role="status">Missing dataset</small>}
+              </button>
+            ))}
+            {!(script.parameters || []).some(parameter => `${parameter.name} ${parameter.type} ${parameter.data_source || ''}`.toLowerCase().includes(parameterSearch.toLowerCase())) && <p>No matching parameters.</p>}
+          </nav>
+          <div className="parameter-workspace-detail">
         <div className="editor-dialog-header">
           <div className="parameter-data-selected-heading">
             <h3 className="panel-title">
@@ -268,6 +307,7 @@ export function ParameterDataDialog({
             />
           )}
           <ParameterDataDetail
+            onInspectUsage={props.onInspectUsage}
             dataEditorMode={dataEditorMode}
             dataSourceHistory={dataSourceHistory}
             onAddParameter={onAddParameter}
@@ -299,6 +339,7 @@ export function ParameterDataDialog({
             script={script}
           />
         </div>
+        </div></div>}
       </div>
   )
 
@@ -314,6 +355,7 @@ export function ParameterDataDialog({
 }
 
 interface ParameterDataDetailProps {
+  onInspectUsage?: (path: string) => void
   dataEditorMode: Record<number, 'grid' | 'raw'>
   dataSourceHistory: Record<number, DataSourceHistory>
   onAddDataColumn: (idx: number) => void
@@ -340,6 +382,7 @@ interface ParameterDataDetailProps {
 }
 
 function ParameterDataDetail({
+  onInspectUsage,
   dataEditorMode,
   dataSourceHistory,
   onAddDataColumn,
@@ -364,7 +407,7 @@ function ParameterDataDetail({
   selectedParameter,
   selectedParameterIdx,
 }: ParameterDataDetailProps) {
-  const [detailTab, setDetailTab] = useState<'info' | 'data'>('info')
+  const [detailTab, setDetailTab] = useState<'info' | 'data' | 'usage'>('info')
   if (!selectedParameter || selectedParameterIdx === null) {
     return (
       <div className="parameter-detail-panel empty">
@@ -430,6 +473,7 @@ function ParameterDataDetail({
 
     return (
       <div className="parameter-data-selected-view">
+        <p className="parameter-scope-note">Shared dataset: {selectedSource.name}. Edits affect {(script.parameters || []).filter(parameter => normalizeParameterDataLookup(parameter.data_source) === normalizeParameterDataLookup(selectedSource.name)).length} parameters. Selected column: <strong>{selectedParameter.column}</strong>. Open Datasets for a wider view.</p>
         <ParameterDataEditor
           dataEditorMode={dataEditorMode[selectedSourceIndex] || 'grid'}
           history={dataSourceHistory[selectedSourceIndex]}
@@ -452,6 +496,7 @@ function ParameterDataDetail({
           onUpdateDataColumnName={onUpdateDataColumnName}
           onUpdateDataSource={onUpdateDataSource}
           parsed={selectedParsed}
+          highlightedColumnIndexes={selectedColumnIndexes}
           selectedParameterName={parameterName}
           showHeaderTitle={false}
           source={selectedSource}
@@ -462,11 +507,11 @@ function ParameterDataDetail({
     )
   }
 
-  const activeTab = detailTab === 'data' && isDataBacked ? 'data' : 'info'
+  const activeTab = detailTab === 'usage' ? 'usage' : detailTab === 'data' && isDataBacked ? 'data' : 'info'
 
   return (
     <div className="parameter-detail-panel">
-      {isDataBacked && (
+      {(
         <TabList className="parameter-detail-tabs" role="tablist" aria-label="Parameter detail tabs" onKeyDown={handleTabKey}>
           <button
             type="button"
@@ -477,7 +522,7 @@ function ParameterDataDetail({
           >
             Settings
           </button>
-          <button
+          {isDataBacked && <button
             type="button"
             role="tab"
             aria-selected={activeTab === 'data'}
@@ -485,10 +530,13 @@ function ParameterDataDetail({
             onClick={() => setDetailTab('data')} tabIndex={(activeTab === 'data') ? 0 : -1}
           >
             Data
-          </button>
+          </button>}
+          <button type="button" role="tab" aria-selected={activeTab === 'usage'} tabIndex={activeTab === 'usage' ? 0 : -1} onClick={() => setDetailTab('usage')}>Usage</button>
         </TabList>
       )}
-      <section className="parameter-detail-info" role="tabpanel" hidden={activeTab !== 'info'}>
+      {activeTab === 'usage' && <section role="tabpanel" aria-label="Parameter usage"><h4>Usage of <code>{`{{param.${parameterName}}}`}</code></h4><p>Renaming updates these executable references together.</p><ul>{parameterUsages(script, parameterName).map((usage, index) => <li key={index}>{onInspectUsage ? <button type="button" className="btn btn-sm btn-ghost" onClick={() => onInspectUsage(usage.path)}><code>{usage.path}</code></button> : <code>{usage.path}</code>}</li>)}</ul>{!parameterUsages(script, parameterName).length && <p>This parameter is not referenced by the script yet.</p>}</section>}
+      <section className="parameter-detail-info" aria-label="Parameter settings" role="tabpanel" hidden={activeTab !== 'info'}>
+        <ParameterValuePreview key={selectedParameterIdx} script={script} name={parameterName} />
         <ParameterInfoPanel
           columnIndexes={selectedColumnIndexes}
           dataSources={script.data_sources || []}
@@ -504,7 +552,7 @@ function ParameterDataDetail({
         />
       </section>
       {isDataBacked && (
-        <section className="parameter-detail-data" role="tabpanel" hidden={activeTab !== 'data'}>
+        <section className="parameter-detail-data" aria-label="Parameter data" role="tabpanel" hidden={activeTab !== 'data'}>
           {renderDataSourceDetail()}
         </section>
       )}
@@ -588,7 +636,7 @@ function ParameterInfoPanel({
           <tbody>
             <tr>
               <th scope="row">Parameter Name</th>
-              <td><input aria-label="Parameter name" value={parameter.name || ''} onChange={event => onUpdateParameter('name', event.target.value)} placeholder="session_id" /></td>
+              <td><ParameterRenameInput key={parameter.name} name={parameter.name} onRename={name => onUpdateParameter('name', name)} /></td>
             </tr>
             <tr>
               <th scope="row">Parameter Type</th>
@@ -616,6 +664,7 @@ function ParameterInfoPanel({
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
+                <p className="parameter-info-help">{PARAMETER_CHOICE_DEFINITIONS.update.options.find(option => option.value === getParameterChoiceValue(parameter, 'update'))?.description}</p>
               </td>
             </tr>
             {isDataBacked && (
@@ -840,13 +889,24 @@ function ParameterInfoPanel({
         </section>
       )}
 
+      {isDataBacked && <section className="parameter-info-group">
+        <h5>Allocation</h5>
+        <p>Rows are allocated within the generator's data shard. Row numbers below start at 1.</p>
+        <div className="form-grid">
+          <label>Start row<input aria-label="Start row" type="number" min="1" value={parameter.start_row ?? 1} onChange={event => onUpdateParameter('start_row', Math.max(1, Number(event.target.value) || 1))} /></label>
+          <label>Rows per virtual user<input aria-label="Rows per virtual user" type="number" min="0" value={parameter.block_size ?? 0} onChange={event => onUpdateParameter('block_size', Math.max(0, Number(event.target.value) || 0))} /><small>0 uses the available source rows.</small></label>
+          <label className="checkbox-label"><input type="checkbox" disabled={Boolean(parameter.block_size)} checked={parameter.value_for_each_vuser ?? false} onChange={event => onUpdateParameter('value_for_each_vuser', event.target.checked)} />One stable row per virtual user</label>
+        </div>
+        {Boolean(parameter.block_size) && <p>The row block takes precedence over one stable row per virtual user.</p>}
+      </section>}
+      {showsDataMapping && selectedSource && <p className="parameter-scope-note">File type, delimiter, and header options affect all {parameters.filter(candidate => normalizeParameterDataLookup(candidate.data_source) === normalizeParameterDataLookup(selectedSource.name)).length} parameters using this dataset.</p>}
       {showsStats && (
         <section className="parameter-info-group">
           <h5 className="parameter-info-group-title">Data Statistics</h5>
           <table className="parameter-info-table parameter-info-stats-table">
             <tbody>
               <tr><th scope="row">Record Count</th><td className="cell-mono parameter-info-stat-value">{statsUnavailable ? '—' : (summary?.rows ?? 0)}</td></tr>
-              <tr><th scope="row">Unique Records</th><td className="cell-mono parameter-info-stat-value">{statsUnavailable ? '—' : uniqueCount}</td></tr>
+              <tr><th scope="row">Distinct mapped values</th><td className="cell-mono parameter-info-stat-value">{statsUnavailable ? '—' : uniqueCount}</td></tr>
               <tr><th scope="row">Columns</th><td className="cell-mono parameter-info-stat-value">{statsUnavailable ? '—' : (summary?.columns ?? 0)}</td></tr>
               <tr><th scope="row">Mapped Column</th><td className="cell-mono">{mappedColumnLabel}</td></tr>
             </tbody>
@@ -1025,133 +1085,30 @@ interface AutoParameterizationSidebarProps {
   onSeedRowsChange: (rows: number) => void
 }
 
-// Parameter settings the sidebar edits inline. Choice fields use the shared
-// PARAMETER_CHOICE_DEFINITIONS selects; the rest get a type-appropriate input.
-// The actual data values (CSV rows for file params) are not edited here.
-const PARAM_CHOICE_KEYS = new Set<string>(['update', 'selection', 'on_exhaustion'])
-const PARAM_BOOL_KEYS = new Set<string>(['value_for_each_vuser'])
-const PARAM_NUMBER_KEYS = new Set<string>(['start_row', 'block_size', 'offset_seconds', 'step', 'start', 'end', 'min', 'max', 'length', 'pad_width', 'seed'])
-// Handled outside the generic Settings loop: data_source/column live under the
-// Data file header; same_line_as is a dropdown; name/type render in the header.
-const PARAM_SETTINGS_EXCLUDED = new Set<string>(['name', 'type', 'data_source', 'column', 'same_line_as'])
-
 interface SelectedParameterDetailsProps {
   parameter: ParameterConfig
-  parameterIndex: number
   referenceLines: number[]
+  usages?: { path: string; label?: string; line: number }[]
   dataInfo: { fileName: string; rows: number | null; unique: number | null } | null
-  sameLineOptions: { label: string; value: string }[]
-  saving: boolean
-  onRename: (name: string) => void
-  onUpdateParameter: (idx: number, field: keyof ParameterConfig, value: unknown) => void
-  onSave: () => void
   onJumpToLine: (line: number) => void
   onEditInDataTab: () => void
 }
 
-// The Parameter companion page when a parameter is selected in the left list:
-// rename it, see its data file (name/source/column + row counts), edit its
-// runtime settings inline, jump to references, and Save.
-export function SelectedParameterDetails({ parameter, parameterIndex, referenceLines, dataInfo, sameLineOptions, saving, onRename, onUpdateParameter, onSave, onJumpToLine, onEditInDataTab }: SelectedParameterDetailsProps) {
-  const settingKeys = Object.keys(parameter).filter(
-    key => !PARAM_SETTINGS_EXCLUDED.has(key)
-      && (parameter as unknown as Record<string, unknown>)[key] !== undefined
-      && (parameter as unknown as Record<string, unknown>)[key] !== null,
-  )
-  const showSameLine = Boolean(parameter.same_line_as) || sameLineOptions.length > 0
-  const renderControl = (key: string) => {
-    const value = (parameter as unknown as Record<string, unknown>)[key]
-    const field = key as keyof ParameterConfig
-    if (key === 'values') {
-      const values = Array.isArray(value) ? value.map(item => String(item)) : []
-      return <textarea value={values.join('\n')} onChange={event => onUpdateParameter(parameterIndex, field, parseParameterListInput(event.target.value))} />
-    }
-    if (PARAM_CHOICE_KEYS.has(key)) {
-      const definition = PARAMETER_CHOICE_DEFINITIONS[key as MutableParameterChoiceField]
-      return (
-        <select value={String(value ?? '')} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value)}>
-          {definition.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      )
-    }
-    if (PARAM_BOOL_KEYS.has(key)) {
-      return <input type="checkbox" checked={Boolean(value)} onChange={event => onUpdateParameter(parameterIndex, field, event.target.checked)} />
-    }
-    if (PARAM_NUMBER_KEYS.has(key)) {
-      return <input type="number" value={value === '' || value === undefined ? '' : Number(value)} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value === '' ? undefined : Number(event.target.value))} />
-    }
-    return <input value={String(value ?? '')} onChange={event => onUpdateParameter(parameterIndex, field, event.target.value)} />
-  }
-  return (
-    <div className="selected-parameter-details">
-      <div className="selected-parameter-header">
-        <div className="selected-parameter-title">
-          <strong title={parameter.name || 'Unnamed parameter'}>{parameter.name || 'Unnamed parameter'}</strong>
-          <span className="selected-parameter-type" title="Parameter type (set in Parameter Data)">{parameter.type || 'list'}</span>
-        </div>
-      </div>
-
-      {dataInfo && (
-        <div className="selected-parameter-section">
-          <span className="selected-parameter-section-label">Data file</span>
-          {dataInfo.rows !== null && (
-            <p className="selected-parameter-stats">{dataInfo.rows} row{dataInfo.rows === 1 ? '' : 's'} · {dataInfo.unique} unique</p>
-          )}
-          <div className="selected-parameter-form">
-            <label className="selected-parameter-field"><span>File name</span><span className="selected-parameter-static">{dataInfo.fileName || '—'}</span></label>
-            <label className="selected-parameter-field"><span>Data Source</span><span className="selected-parameter-static">{parameter.data_source || '—'}</span></label>
-            <label className="selected-parameter-field"><span>Column Name</span><span className="selected-parameter-static">{parameter.column || '—'}</span></label>
-          </div>
-        </div>
-      )}
-
-      <div className="selected-parameter-section">
-        <span className="selected-parameter-section-label">Settings</span>
-        <div className="selected-parameter-form">
-          <label className="selected-parameter-field">
-            <span>Parameter Name</span>
-            <input className="selected-parameter-name" value={parameter.name || ''} aria-label="Parameter name" placeholder="parameter_name" onChange={event => onRename(event.target.value)} />
-          </label>
-          {settingKeys.map(key => (
-            <label key={key} className={`selected-parameter-field ${PARAM_BOOL_KEYS.has(key) ? 'is-bool' : ''}`}>
-              <span>{key.replace(/_/g, ' ')}</span>
-              {renderControl(key)}
-            </label>
-          ))}
-          {showSameLine && (
-            <label className="selected-parameter-field">
-              <span>Same line as</span>
-              <select value={parameter.same_line_as || ''} onChange={event => onUpdateParameter(parameterIndex, 'same_line_as', event.target.value || undefined)}>
-                <option value="">(none)</option>
-                {sameLineOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
-            </label>
-          )}
-        </div>
-        <p className="selected-parameter-empty">Editing settings only — change the data values in Parameter Data.</p>
-      </div>
-
-      <div className="selected-parameter-section">
-        <span className="selected-parameter-section-label">References ({referenceLines.length})</span>
-        {referenceLines.length === 0 ? (
-          <p className="selected-parameter-empty">{`Not referenced yet — use {{param.${parameter.name}}} in an action.`}</p>
-        ) : (
-          <div className="selected-parameter-refs">
-            {referenceLines.map(line => (
-              <button key={line} type="button" className="selected-parameter-ref" onClick={() => onJumpToLine(line)} title={`Jump to line ${line}`}>
-                Line {line}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="selected-parameter-actions">
-        <button type="button" className="btn btn-sm btn-accent" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-        <button type="button" className="btn btn-sm btn-ghost" onClick={onEditInDataTab}>Edit in Parameter Data →</button>
-      </div>
-    </div>
-  )
+export function SelectedParameterDetails({ parameter, referenceLines, usages, dataInfo, onJumpToLine, onEditInDataTab }: SelectedParameterDetailsProps) {
+  return <section className="selected-parameter-details" aria-label={`Parameter ${parameter.name}`}>
+    <h3 tabIndex={-1} data-inspector-focus>{parameter.name} <small>{parameter.type}</small></h3>
+    <p>Current draft definition</p>
+    <dl className="sidebar-definition">
+      <dt>Value source</dt><dd>{parameter.data_source ? `${parameter.data_source}.${parameter.column || ''}` : parameter.values?.length ? `${parameter.values.length} inline values` : `${parameter.type} generator`}</dd>
+      <dt>Refresh cadence</dt><dd>{parameter.update === 'once' ? 'Once per virtual user' : parameter.update === 'each_occurrence' ? 'Every template reference' : 'Each iteration'}</dd>
+      <dt>Allocation</dt><dd>{parameter.same_line_as ? `Same row as ${parameter.same_line_as}` : parameter.selection || 'Sequential'}</dd>
+      {dataInfo && <><dt>Dataset</dt><dd>{dataInfo.fileName}{dataInfo.rows !== null ? ` · ${dataInfo.rows} rows` : ''}</dd></>}
+    </dl>
+    <button type="button" className="btn btn-sm btn-primary" onClick={onEditInDataTab}>Edit in Parameter Data →</button>
+    <h4>Usages ({referenceLines.length})</h4>
+    {!referenceLines.length && <p>No references in the current source.</p>}
+    {(usages?.length ? usages : referenceLines.map(line => ({ line, path: 'Full script', label: 'Full script' }))).map(({ line, path, label }, index) => <button key={`${path}:${index}`} type="button" className="selected-parameter-ref" onClick={() => onJumpToLine(line)} aria-label={`Open ${parameter.name} usage in ${path} at line ${line}`}>{label || path} · line {line}</button>)}
+  </section>
 }
 
 export function AutoParameterizationSidebar({
@@ -1814,12 +1771,7 @@ function ParameterDefinitionRow({
     >
       <td className="parameter-source-type-cell" aria-label="Source file or type inherited from expanded row" />
       <td>
-        <input
-          aria-label={`Parameter name for row ${idx + 1}`}
-          value={parameter.name || ''}
-          onChange={e => onUpdateParameter(idx, 'name', e.target.value)}
-          placeholder="session_id"
-        />
+        <ParameterRenameInput key={parameter.name} name={parameter.name} onRename={name => onUpdateParameter(idx, 'name', name)} />
       </td>
       <td className="cell-mono">{formatParameterRowCount(rowCount)}</td>
       <td>

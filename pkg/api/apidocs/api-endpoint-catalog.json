@@ -1416,6 +1416,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/dsl/parameter-preview",
+      "operationId": "handlePreviewParameter",
+      "summary": "Preview Parameter",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: write"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/execution-plans",
       "operationId": "handleListExecutionPlans",

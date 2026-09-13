@@ -860,6 +860,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('username')
 
     await clickButton(findButton(container, 'Source Mapping')!)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     expect(conversionReviewTabs[3]?.getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Source Mapping')
     expect(container.textContent).toContain('Validate the conversion line by line')
@@ -3419,8 +3420,9 @@ describe('EnterpriseArchiveImport', () => {
     await flushPromises()
 
     await clickButton(findButton(container, 'Source Mapping')!)
-    const copySource = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy Source'))
-    const copyDsl = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy DSL'))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
+    const copySource = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy mapped source'))
+    const copyDsl = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy mapped destination'))
     expect(copySource).toBeDefined()
     expect(copyDsl).toBeDefined()
     if (!copySource || !copyDsl) return
@@ -4232,6 +4234,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('SAP GUI review artifact')
     expect(container.textContent).toContain('sapgui_set')
     await clickButton(findButton(container, 'Source Mapping')!)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     expect(container.textContent).toContain('external required')
     expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))).toBeUndefined()
 
@@ -4352,6 +4355,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.querySelector('.script-import-review-preview-aside')).toBeNull()
 
     await clickButton(findButton(container, 'Source Mapping')!)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     expect(reviewTabs[3]?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-import-review-preview')).toBeNull()
     expect(container.querySelector('.script-import-review-preview-aside .source-map-review')).not.toBeNull()

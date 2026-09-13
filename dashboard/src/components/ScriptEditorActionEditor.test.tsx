@@ -195,13 +195,14 @@ describe('ActionEditor transaction field', () => {
 
   const renderEditor = (
     action: ScriptActionDefinition,
-    options: { protocol?: string; isJmsScript?: boolean } = {},
+    options: { protocol?: string; isJmsScript?: boolean; inspector?: boolean } = {},
   ) => {
     const updates: Array<[number, string, unknown]> = []
     const noop = () => {}
     act(() => {
       root.render(
         <ActionEditor
+          inspector={options.inspector}
           action={action}
           index={0}
           parameters={[]}
@@ -454,6 +455,17 @@ describe('ActionEditor transaction field', () => {
 
     expect(container.querySelector<HTMLInputElement>('input[placeholder="RE2 pattern"]')?.value).toBe('<code>([^<]+)</code>')
     expect(container.querySelector<HTMLInputElement>('input[placeholder="Expected value"]')?.value).toBe('500')
+  })
+
+  it.each([
+    ['cookie_clear', 'has no response to extract or check'],
+    ['http_sequence', 'Select an individual request'],
+  ])('explains unavailable response checks for %s in the inspector', (type, explanation) => {
+    renderEditor({ name: 'Control', type } as ScriptActionDefinition, { inspector: true })
+    act(() => button('Correlation & checks (0)')!.click())
+    const note = [...container.querySelectorAll('.sub-section')].find(element => element.textContent?.includes(explanation))
+    expect(note).toBeTruthy()
+    expect(note?.closest('[hidden]')).toBeNull()
   })
 
   it('summarizes an http_sequence action without listing grouped child requests', () => {

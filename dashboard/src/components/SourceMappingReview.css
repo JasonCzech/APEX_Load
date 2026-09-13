@@ -359,6 +359,7 @@
 }
 
 .source-map-panel {
+  flex: 1 1 0;
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--border);
@@ -366,30 +367,24 @@
   background: var(--bg-primary);
   display: flex;
   flex-direction: column;
-}
-
-.source-map-panel:first-child {
-  flex: 1 1 50%;
-  resize: horizontal;
   overflow: hidden;
-  min-width: 250px;
-  max-width: calc(100% - 250px);
-}
-
-.source-map-panel:last-child {
-  flex: 1 1 auto;
 }
 
 .source-map-panel-header {
   align-items: center;
+  flex-wrap: wrap;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-card);
 }
 
 .source-map-panel.maximized {
-  flex: 1 1 100%;
-  max-width: 100%;
+  flex-basis: 100%;
+}
+
+.source-map-panel-header > div {
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .source-map-panel.hidden {
@@ -550,12 +545,35 @@
   border-radius: 2px;
 }
 
-@media (max-width: 960px) {
-  .source-map-panels {
-    flex-direction: column;
-  }
-  .source-map-panel:first-child {
-    max-width: none;
-    resize: vertical;
-  }
+.source-map-review-controls,
+.source-map-selected-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
+.source-map-review-controls label,
+.mapping-review-details label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.source-map-selected-details > p,
+.source-map-selected-details > details { flex-basis: 100%; margin: 0; }
+.mapping-review-details fieldset { display: grid; gap: 10px; border: 0; padding: 12px 0; }
+.mapping-review-details textarea { min-height: 72px; }
+.source-map-origin-list { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow: auto; }
+.source-map-source-cell button { color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; font: inherit; }
+.source-map-review button:focus-visible, .source-map-review summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.source-map-panel-header > div { flex-wrap: wrap; }
+.source-map-review-controls, .source-map-selected-details { flex-shrink: 0; font-size: 12px; }
+.source-map-review-controls select { font-size: 12px; padding: 5px 8px; min-height: 30px; }
+.source-map-toolbar label { flex: 1 1 180px; min-width: 0; max-width: 100%; }
+.source-map-toolbar select, .source-map-toolbar input { width: 100%; min-width: 0; }
+.source-map-toolbar > div { flex-wrap: wrap; }
+.source-map-selected-details p { margin: 0; }
+.mapping-review-details { overflow-wrap: anywhere; }
+.source-map-target-cell small { display: block; color: var(--text-muted); }

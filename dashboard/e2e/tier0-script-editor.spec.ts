@@ -93,6 +93,7 @@ test('[U21] the imported script editor preserves tab state and saved changes acr
   const sourceMappingTab = workbench.getByRole('tab', { name: 'Source Mapping' })
   await expect(sourceMappingTab, 'an imported script must retain its source-review surface').toBeVisible()
   await sourceMappingTab.click()
+  await workbench.getByRole('button', { name: /^Show mappings/ }).click()
   await expect(workbench.getByRole('cell', { name: 'GET /orders' })).toBeVisible()
 
   const runtimeTab = workbench.getByRole('tab', { name: 'Runtime Settings' })
@@ -155,7 +156,7 @@ test('[U21] a large script renders a usable virtualized action list within a bou
   })
 
   await openEditor(page, workspace, scriptId)
-  await page.getByText('Advanced action tools',{exact:true}).click()
+  await page.getByText('Bulk action tools',{exact:true}).click()
   await expect(
     page.getByRole('button', { name: `Action List ${actionCount} executables` }),
     'the large editor must become usable rather than hanging during full-list rendering',

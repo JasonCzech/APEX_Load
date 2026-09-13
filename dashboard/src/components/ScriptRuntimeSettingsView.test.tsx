@@ -445,7 +445,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
       )
     })
 
-    expect(container.textContent).toContain('Target transactions per second')
+    expect(container.textContent).toContain('Target iteration rate (TPS)')
     expect(container.textContent).toContain('Target TPS')
     expect(container.querySelector<HTMLInputElement>('input[type="number"]')?.value).toBe('12.5')
   })

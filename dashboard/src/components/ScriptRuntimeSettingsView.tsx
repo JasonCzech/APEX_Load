@@ -1,8 +1,12 @@
+import { RuntimeCountLimit } from './RuntimeCountLimit'
+import { RuntimeContextSummary, type DebugRuntimeContext } from './RuntimeContextSummary'
+import { RuntimeFieldEvidence } from './RuntimeFieldEvidence'
+import { RUNTIME_WORKSPACE_CATEGORIES, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
-import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import type { ScriptActionDefinition, ScriptDefinition, ScriptConfig } from '../types/scripts'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import { jmsProviderForProtocol } from './scriptEditorHelpers'
 import { JavaEnvSettingsFields } from './JavaEnvSettingsFields'
@@ -42,6 +46,7 @@ import {
   readImportedRuntimeFiles,
   readImportedRuntimeSettingDispositions,
   summarizeImportedRuntimeDispositions,
+  runtimeSettingsSectionIsAvailable,
   type HTTPTransportTabId,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
@@ -146,6 +151,9 @@ export function ScriptRuntimeSettingsSidebar({
 }
 
 interface ScriptRuntimeSettingsViewProps {
+  debugContext?: DebugRuntimeContext
+  baselineConfig?: ScriptConfig
+  hideSave?: boolean
   activeHTTPTransportTab: HTTPTransportTabId
   activeSection: RuntimeSettingsSectionId
   canEditProtocol: boolean
@@ -163,6 +171,9 @@ interface ScriptRuntimeSettingsViewProps {
 }
 
 export function ScriptRuntimeSettingsView({
+  debugContext,
+  baselineConfig,
+  hideSave = false,
   activeHTTPTransportTab,
   activeSection,
   canEditProtocol,
@@ -178,6 +189,9 @@ export function ScriptRuntimeSettingsView({
   saving,
   script,
 }: ScriptRuntimeSettingsViewProps) {
+  const [search, setSearch] = useState('')
+  const [modifiedOnly, setModifiedOnly] = useState(false)
+  const timingIssues = runtimeTimingIssues(script.config)
   const capabilities = getRuntimeProtocolCapabilities(script.protocol)
   const {
     browser: isBrowserScript,
@@ -206,7 +220,6 @@ export function ScriptRuntimeSettingsView({
       ? WEBKIT_INSTALL_ADVISORY
       : ''
   const { httpProxyMode, httpProxySummary } = buildScriptRuntimeSummary(script)
-  const httpVersionSummary = formatHTTPVersion(script.config.http?.version)
   const runtimeSectionIsActive = (section: RuntimeSettingsSectionId) => activeSection === section
   const selectRuntimeSettingsSection = onSelectSection
   const setActiveHTTPTransportTab = onSelectHTTPTransportTab
@@ -283,6 +296,14 @@ export function ScriptRuntimeSettingsView({
     }
   }
 
+  const categoryModified = (category: typeof RUNTIME_WORKSPACE_CATEGORIES[number]) => category.id === 'compatibility'
+    ? ['block_scheduling', 'action_sequence'].some(field => JSON.stringify(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) !== JSON.stringify(baselineConfig?.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]))
+    : category.fields.some(field => JSON.stringify(script.config[field]) !== JSON.stringify(baselineConfig?.[field]))
+  const visibleCategories = RUNTIME_WORKSPACE_CATEGORIES.filter(category => {
+    const terms = `${category.label} ${category.group} ${category.fields.join(' ')} ${RUNTIME_SEARCH_TERMS[category.id] || ''}`.toLowerCase()
+    return runtimeSettingsSectionIsAvailable(category.id, script.protocol) && (category.id !== 'imported_source' || hasImportedRuntimeFiles) && search.toLowerCase().trim().split(/\s+/).every(term => terms.includes(term)) && (!modifiedOnly || categoryModified(category))
+  })
+
   return (
 <section className="center-document runtime-settings config-panel center-document-runtime" style={{ padding: 0 }} aria-label="Runtime Settings">
   <div className="center-document-header">
@@ -290,155 +311,37 @@ export function ScriptRuntimeSettingsView({
       <h3 className="panel-title">Runtime Settings</h3>
       <p>Execution, pacing, browser, protocol, and source runtime compatibility controls.</p>
     </div>
-    <div className="runtime-settings-header-actions">
+    {!hideSave && <div className="runtime-settings-header-actions">
       <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
         {saving ? 'Saving...' : 'Save Script'}
       </button>
-    </div>
+    </div>}
   </div>
+  <RuntimeContextSummary script={script} debug={debugContext} />
+  {timingIssues.length > 0 && <ul className="runtime-timing-issues" role="alert">{timingIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
   <div className="runtime-settings-grid">
   <nav className="runtime-settings-nav" aria-label="Runtime setting categories">
-    <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('script_config') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('script_config')}>
-      <RuntimeSectionIcon section="script_config" />
-      <span className="section-label">Script Configuration</span>
-      <span className="section-summary">{formatScriptProtocolLabel(script.protocol)}</span>
-    </button>
-    <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('think') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('think')}>
-      <RuntimeSectionIcon section="think" />
-      <span className="section-label">Think Time</span>
-      <span className="section-summary">{script.config.think_time?.ignore ? 'Disabled' : script.config.think_time?.type === 'recorded' ? 'Replay recorded think time' : `${script.config.think_time?.type || 'fixed'} - ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}</span>
-    </button>
-    <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('pacing') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('pacing')}>
-      <RuntimeSectionIcon section="pacing" />
-      <span className="section-label">Iteration Pacing</span>
-      <span className="section-summary">{formatPacingTiming(script.config.pacing) || 'None'}</span>
-    </button>
-    <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('runlogic') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('runlogic')}>
-      <RuntimeSectionIcon section="runlogic" />
-      <span className="section-label">Run Logic</span>
-      <span className="section-summary">
-        {script.config.run_logic?.global_iterations
-          ? `${script.config.run_logic.global_iterations} shared iterations`
-          : script.config.run_logic?.max_transactions
-            ? `${script.config.run_logic.max_transactions} max transactions`
-            : script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Run until duration'}
-      </span>
-    </button>
-    <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('errors') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('errors')}>
-      <RuntimeSectionIcon section="errors" />
-      <span className="section-label">Error Handling</span>
-      <span className="section-summary">{script.config.error_handling?.continue_on_error ? 'Continue on error' : 'Stop on error'}</span>
-    </button>
-    {isJmsScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('jms') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('jms')}>
-        <RuntimeSectionIcon section="jms" />
-        <span className="section-label">{formatScriptProtocolLabel(script.protocol)}</span>
-        <span className="section-summary">{script.config.jms?.mock ? 'Mock broker' : script.config.jms?.broker_url ? 'Broker configured' : 'Not configured'}</span>
-      </button>
-    )}
-    {isEventHubsScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('eventhubs') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('eventhubs')}>
-        <RuntimeSectionIcon section="eventhubs" />
-        <span className="section-label">Event Hubs Runtime</span>
-        <span className="section-summary">{eventHubsSummary}</span>
-      </button>
-    )}
-    {isWebSocketScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('websocket') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('websocket')}>
-        <RuntimeSectionIcon section="websocket" />
-        <span className="section-label">WebSocket Runtime</span>
-        <span className="section-summary">{script.config.websocket?.reconnect ? 'Reconnect enabled' : 'Single connection'}</span>
-      </button>
-    )}
-    {isGrpcScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('grpc') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('grpc')}>
-        <RuntimeSectionIcon section="grpc" />
-        <span className="section-label">gRPC Runtime</span>
-        <span className="section-summary">{script.config.grpc?.use_reflection ? 'Reflection' : script.config.grpc?.proto_files?.length ? 'Proto files' : 'Contract pending'}</span>
-      </button>
-    )}
-    {isDatabaseScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('database') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('database')}>
-        <RuntimeSectionIcon section="database" />
-        <span className="section-label">Database Runtime</span>
-        <span className="section-summary">{script.config.database?.driver || 'sql'}</span>
-      </button>
-    )}
-    {isNetworkScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('network') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('network')}>
-        <RuntimeSectionIcon section="network" />
-        <span className="section-label">Network Runtime</span>
-        <span className="section-summary">{script.config.network?.subprotocol || 'tcp'}</span>
-      </button>
-    )}
-    {isHttpTransportScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('http') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('http')}>
-        <RuntimeSectionIcon section="http" />
-        <span className="section-label">HTTP Transport</span>
-        <span className="section-summary">
-          {httpVersionSummary}{httpProxySummary !== 'Default' ? ` · ${httpProxySummary}` : ''}
-        </span>
-      </button>
-    )}
-    {supportsBrowserEmulation && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('browser_emulation') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('browser_emulation')}>
-        <RuntimeSectionIcon section="browser_emulation" />
-        <span className="section-label">Browser Emulation</span>
-        <span className="section-summary">{formatBrowserEmulationSummary(script.config.browser_emulation)}</span>
-      </button>
-    )}
-    {isSoapScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('soap') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('soap')}>
-        <RuntimeSectionIcon section="soap" />
-        <span className="section-label">SOAP Settings</span>
-        <span className="section-summary">{script.config.soap?.version || 'soap11'}</span>
-      </button>
-    )}
-    {isJavaHttpScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('java_http') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('java_http')}>
-        <RuntimeSectionIcon section="java_http" />
-        <span className="section-label">Java over HTTP</span>
-        <span className="section-summary">{script.config.java_http?.codec || 'java_serialized_object_base64'}</span>
-      </button>
-    )}
-    {isJavaVuserScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('java_vuser') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('java_vuser')}>
-        <RuntimeSectionIcon section="java_vuser" />
-        <span className="section-label">Java VM</span>
-        <span className="section-summary">{script.config.java_vuser?.jdk_selection === 'specified' ? 'Specified JDK' : 'Internal JDK logic'}</span>
-      </button>
-    )}
-    {isHttpTransportScript && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('web_runtime') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('web_runtime')}>
-        <RuntimeSectionIcon section="web_runtime" />
-        <span className="section-label">Web HTTP/HTML Compatibility</span>
-        <span className="section-summary">
-          {httpProxySummary !== 'Default'
-            ? httpProxySummary
-            : script.config.web_runtime?.content_checks?.length
-            ? `${script.config.web_runtime.content_checks.length} content checks`
-            : script.config.web_runtime?.network_simulation?.mode || 'Compatibility settings'}
-        </span>
-      </button>
-    )}
-    <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('log') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('log')}>
-      <RuntimeSectionIcon section="log" />
-      <span className="section-label">Logging</span>
-      <span className="section-summary">{script.config.log?.level || 'standard'}</span>
-    </button>
-    {hasImportedRuntimeFiles && (
-      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('imported_source') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('imported_source')}>
-        <RuntimeSectionIcon section="imported_source" />
-        <span className="section-label">Imported Source Runtime Settings</span>
-        <span className="section-summary">
-          {importedDispositionSummary.total > 0
-            ? `${importedDispositionSummary.total} settings dispositioned`
-            : `${importedRuntimeFileNames.length} preserved file${importedRuntimeFileNames.length === 1 ? '' : 's'}`}
-        </span>
-      </button>
-    )}
+    <label>Find setting<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Timing, proxy, logging…" /></label>
+    <label className="checkbox-label"><input type="checkbox" checked={modifiedOnly} onChange={event => setModifiedOnly(event.target.checked)} />Modified only</label>
+    {visibleCategories.length === 0 && <p role="status">No categories match. Clear the search or turn off Modified only.</p>}
+    {Array.from(new Set(RUNTIME_WORKSPACE_CATEGORIES.map(category => category.group))).map(group => {
+      const categories = visibleCategories.filter(category => category.group === group)
+      return categories.length > 0 && <section key={group}><h4>{group}</h4>{categories.map(category => {
+        const changed = categoryModified(category)
+        return <button type="button" key={category.id} className={`runtime-settings-nav-button ${runtimeSectionIsActive(category.id) ? 'active' : ''}`} aria-current={runtimeSectionIsActive(category.id) ? 'true' : undefined} onClick={() => selectRuntimeSettingsSection(category.id)}>
+          <RuntimeSectionIcon section={category.id} /><span className="section-label">{category.label}</span><span className="section-summary">{category.id === 'imported_source' ? `${importedDispositionSummary.total} settings dispositioned` : changed ? (baselineConfig ? 'Modified' : 'Configured') : 'Saved / default'}{['think', 'pacing', 'runlogic'].includes(category.id) && timingIssues.length ? ` · ${timingIssues.length} timing issues` : ''}</span>
+        </button>
+      })}</section>
+    })}
   </nav>
-  <div className="runtime-settings-detail" aria-live="polite">
+  <div className="runtime-settings-detail">
+  <h3 className="runtime-active-heading">{RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.label}</h3>
+  <RuntimeFieldEvidence script={script} baseline={baselineConfig} fields={RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.fields || []} />
+  {activeSection === 'compatibility' && <section className="section-body" aria-label="Preserved run order">
+    <h3>Preserved run order</h3><p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
+    <dl><dt>Block Scheduling</dt><dd>{script.config.run_logic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{script.config.run_logic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
+    <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action List.</p>
+  </section>}
   {/* Script Configuration */}
   <div className={`settings-section ${runtimeSectionIsActive('script_config') ? 'open' : ''}`}>
     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('script_config')}>
@@ -592,7 +495,9 @@ export function ScriptRuntimeSettingsView({
     </button>
     {runtimeSectionIsActive('think') && (
       <div className="section-body">
-        <div className="form-grid">
+        <label className="checkbox-label"><input type="checkbox" aria-label="Enable think time" checked={!script.config.think_time?.ignore && thinkTimeType !== 'none'} onChange={event => updateField('config.think_time', { ...script.config.think_time, ignore: !event.target.checked, type: thinkTimeType === 'none' ? 'fixed' : thinkTimeType })} />Enable think time</label>
+        <p>{effectiveThinkTimeLabel(script.config)}. Think time occurs between actions; iteration pacing controls when the next iteration begins.</p>
+        <fieldset disabled={script.config.think_time?.ignore || thinkTimeType === 'none'}><legend className="sr-only">Think time distribution</legend><div className="form-grid">
           <label>
             <span>Distribution</span>
             <select value={thinkTimeType}
@@ -600,7 +505,6 @@ export function ScriptRuntimeSettingsView({
                 'config.think_time',
                 thinkTimeConfigForType(script.config.think_time, e.target.value),
               )}>
-              <option value="none">None</option>
               <option value="fixed">Fixed</option>
               <option value="recorded">Replay think time as recorded</option>
               <option value="gaussian">Gaussian (Normal)</option>
@@ -646,14 +550,8 @@ export function ScriptRuntimeSettingsView({
             <SecondsFromMillisecondsInput valueMs={script.config.think_time?.limit_ms} placeholder="0 = no limit"
               onChangeMs={value => updateThinkTime({ limit_ms: value ?? 0 })} />
           </label>
-          <div className="runtime-checkbox-list">
-            <label className="checkbox-label">
-              <input type="checkbox" checked={script.config.think_time?.ignore || false}
-                onChange={e => updateThinkTime({ ignore: e.target.checked })} />
-              <span>Ignore all think times</span>
-            </label>
-          </div>
-        </div>
+
+        </div></fieldset>
       </div>
     )}
   </div>
@@ -668,17 +566,19 @@ export function ScriptRuntimeSettingsView({
     </button>
     {runtimeSectionIsActive('pacing') && (
       <div className="section-body">
+        <p>TPS controls the group iteration rate: open mode schedules arrivals, and closed mode shares a limiter across virtual users. It is not the number of HTTP requests per second. Scenario distribution determines each generator&apos;s share.</p>
+        {script.config.run_logic?.workload_model === 'open' && <p>Open workloads require TPS pacing. Change the workload model in Run Logic to choose a delay or interval mode.</p>}
         <div className="form-grid">
           <label className="full-width">
             <span>Pacing Mode</span>
-            <select value={script.config.pacing?.type || 'none'}
+            <select disabled={script.config.run_logic?.workload_model === 'open'} value={script.config.pacing?.type || 'none'}
               onChange={e => updateField('config.pacing', { ...script.config.pacing, type: e.target.value })}>
               <option value="none">No delay (as fast as possible)</option>
               <option value="fixed_delay">Fixed delay after iteration</option>
               <option value="random_delay">Random delay after iteration</option>
               <option value="fixed_interval">Fixed interval from iteration start</option>
               <option value="random_interval">Random interval from iteration start</option>
-              <option value="tps">Target transactions per second</option>
+              <option value="tps">Target iteration rate (TPS)</option>
             </select>
           </label>
           {script.config.pacing?.type === 'fixed_delay' && (
@@ -734,40 +634,28 @@ export function ScriptRuntimeSettingsView({
       <RuntimeSectionIcon section="runlogic" />
       <span className="section-label">Run Logic</span>
       <span className="section-summary">
-        {script.config.run_logic?.global_iterations
-          ? `${script.config.run_logic.global_iterations} shared iterations`
-          : script.config.run_logic?.max_transactions
-            ? `${script.config.run_logic.max_transactions} max transactions`
-            : script.config.run_logic?.iterations ? `${script.config.run_logic.iterations} iterations` : 'Run until duration'}
+        {['iterations', 'global_iterations', 'max_transactions'].filter(field => Number(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) > 0).length} active count limits
       </span>
       <span className="chevron">{runtimeSectionIsActive('runlogic') ? '▾' : '▸'}</span>
     </button>
     {runtimeSectionIsActive('runlogic') && (
       <div className="section-body">
         <div className="form-grid">
-          <label>
-            <span>Iterations</span>
-            <input type="number" value={script.config.run_logic?.iterations || 0} placeholder="0 = run until duration"
-              onChange={e => updateField('config.run_logic', { ...script.config.run_logic, iterations: Number(e.target.value) })} />
-          </label>
-          <label>
-            <span>Global Iterations</span>
-            <input type="number" value={script.config.run_logic?.global_iterations || 0} placeholder="0 = no shared cap"
-              onChange={e => updateField('config.run_logic', { ...script.config.run_logic, global_iterations: Number(e.target.value) })} />
-          </label>
-          <label>
-            <span>Max Transactions</span>
-            <input type="number" value={script.config.run_logic?.max_transactions || 0} placeholder="0 = no transaction cap"
-              onChange={e => updateField('config.run_logic', { ...script.config.run_logic, max_transactions: Number(e.target.value) })} />
-          </label>
+          <RuntimeCountLimit label="Iterations" value={script.config.run_logic?.iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, iterations: value })} help={script.config.run_logic?.workload_model === 'open' ? 'Open workloads convert this to an arrival budget multiplied by the assigned worker count.' : 'Per virtual user. Zero means no per-user iteration cap.'} />
+          <RuntimeCountLimit label="Global Iterations" value={script.config.run_logic?.global_iterations} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, global_iterations: value })} help="Shared execution budget. Already admitted work can finish when the budget is reached." />
+          <RuntimeCountLimit label="Max Transactions" value={script.config.run_logic?.max_transactions} onChange={value => updateField('config.run_logic', { ...script.config.run_logic, max_transactions: value })} help="Counts explicit business transactions and enabled auto-transactions; this is not an HTTP request count." />
           <label>
             <span>Workload Model</span>
             <select value={script.config.run_logic?.workload_model || 'closed'}
-              onChange={e => updateField('config.run_logic', { ...script.config.run_logic, workload_model: e.target.value })}>
+              onChange={e => updateField('config', { ...script.config, run_logic: { ...script.config.run_logic, workload_model: e.target.value }, ...(e.target.value === 'open' ? { pacing: { ...script.config.pacing, type: 'tps', tps: Number.isFinite(script.config.pacing?.tps) && (script.config.pacing?.tps ?? 0) > 0 ? script.config.pacing!.tps : 1 } } : {}) })}>
               <option value="closed">Closed VUser</option>
               <option value="open">Open arrival-rate</option>
             </select>
           </label>
+          {script.config.run_logic?.workload_model === 'open' && <>
+            <label>Arrival target (iterations / second)<input aria-label="Arrival target" type="number" min="0" step="any" value={script.config.pacing?.tps ?? ''} onChange={event => updateField('config.pacing', { ...script.config.pacing, type: 'tps', tps: Number(event.target.value) })} /></label>
+            <label>Maximum in-flight iterations<input aria-label="Maximum in-flight iterations" type="number" min="0" value={script.config.run_logic.max_in_flight ?? 0} onChange={event => updateField('config.run_logic', { ...script.config.run_logic, max_in_flight: Number(event.target.value) })} /><small>0 uses the engine-derived limit. Excess arrivals are shed when the limit is reached.</small></label>
+          </>}
           <label>
             <span>Auto-Transactions</span>
             <select value={script.config.run_logic?.auto_transactions || 'none'}
@@ -777,23 +665,8 @@ export function ScriptRuntimeSettingsView({
               <option value="per_iteration">Per Iteration</option>
             </select>
           </label>
-          <label>
-            <span>Block Scheduling</span>
-            <select value={script.config.run_logic?.block_scheduling || 'sequential'}
-              onChange={e => updateField('config.run_logic', { ...script.config.run_logic, block_scheduling: e.target.value })}>
-              <option value="sequential">Sequential</option>
-              <option value="random">Random</option>
-              <option value="percentage">Percentage-based</option>
-            </select>
-          </label>
-          <label className="full-width">
-            <span>Action Sequence</span>
-            <input value={(script.config.run_logic?.action_sequence || []).join(', ')} placeholder="init, action, teardown"
-              onChange={e => updateField('config.run_logic', {
-                ...script.config.run_logic,
-                action_sequence: e.target.value.split(',').map(value => value.trim()).filter(Boolean),
-              })} />
-          </label>
+          <p className="full-width">Lifecycle: init → authored actions → teardown. Imported scheduling and order values are read-only under Preserved run order.</p>
+
         </div>
       </div>
     )}

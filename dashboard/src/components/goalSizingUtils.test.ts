@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
-import { GoalSizingReport, GoalSizingScenarioDraft, RunArchiveProvenance, RunArchiveReport } from '../types'
+import { baselineGroupOptions, littlesLawVUsers } from './goalSizingUtils'
+import { RunArchiveProvenance, RunArchiveReport } from '../types'
 
 function archiveReport(partial: Partial<RunArchiveReport>): RunArchiveReport {
   return {
@@ -62,39 +62,5 @@ describe('baselineGroupOptions', () => {
   it('returns nothing when there is no response-time data', () => {
     expect(baselineGroupOptions(archiveReport({}))).toEqual([])
     expect(baselineGroupOptions(null)).toEqual([])
-  })
-})
-
-describe('goalSized draft mapping', () => {
-  const draft: GoalSizingScenarioDraft = {
-    name: 'Goal 100 TPS',
-    duration: '10m',
-    scenario_mode: 'goal_oriented',
-    goal_config: { target_average_tps: 100, min_vusers: 150, max_vusers: 600 },
-    groups: [{ name: 'Checkout', script_id: 'script-a', vusers: 300, ramp_up: '10s' }],
-  }
-
-  it('maps draft groups to form groups', () => {
-    expect(goalSizedGroups(draft)).toEqual([{ name: 'Checkout', script_id: 'script-a', vusers: 300, ramp_up: '10s' }])
-  })
-
-  it('extracts goal-oriented form fields', () => {
-    expect(goalSizedGoalFields(draft)).toEqual({
-      scenario_mode: 'goal_oriented',
-      goal_target_average_tps: 100,
-      goal_min_vusers: 150,
-      goal_max_vusers: 600,
-    })
-  })
-
-  it('summarizes a sizing report', () => {
-    const report: GoalSizingReport = {
-      baseline_test_id: 'b',
-      groups: [{ group: 'Checkout', script_id: 'script-a', baseline_art_ms: 3000, target_tps: 100, computed_vusers: 300, basis: 'group' }],
-      total_target_tps: 100,
-      total_vusers: 300,
-      scenario_draft: draft,
-    }
-    expect(formatGoalSizingSummary(report)).toBe('300 VUsers across 1 group for 100 TPS')
   })
 })

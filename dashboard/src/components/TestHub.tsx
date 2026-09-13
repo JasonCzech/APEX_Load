@@ -15,7 +15,7 @@ import { scenarioScriptReadiness } from './scenarioScriptReadiness'
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { Area, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, GoalSizingReport, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveActionStats, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfile, TrafficProfileDeriveResponse } from '../types'
+import { ApplicationRepository, DashboardAuthEffectiveAccessResource, DraftCapacityEstimate, GeneratorAssignmentSettings, GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadModelValidationReport, LoadStageDraft, RunArchiveReport, RuntimeSettingsOverride, ScenarioDataPoolBinding, ScenarioMode, ScenarioRuntimeSettingsDraft, SharedDataPool, StoredScenario, StoredScript, SystemInventoryGenerator, TestSummary, TrafficProfile, TrafficProfileDeriveResponse } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
@@ -32,9 +32,10 @@ import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { formatPacing, formatThinkTime, formatErrorHandling, overrideFromRuntimeDraft } from './runtimeSettingsModel'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
-import { adaptScenarioShapeDefaults, buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, remapGoalDrivenIndexedState, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
+import { adaptScenarioShapeDefaults, availableScenarioModelFamilies, shapeFamilyFor, type ScenarioModelFamilyId,buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, remapGoalDrivenIndexedState, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
+import ReplaceScenarioScriptsModal from './ReplaceScenarioScriptsModal'
 import type { ClosedVUserConfig, ClosedVUserDefinition, GoalDrivenARTConfig, GoalDrivenConfig, GoalDrivenGroupDefinition, SteppedRampConfig, SteppedRampDefinition } from '../types/goals'
-import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
+import { BaselineGroupOption, baselineGroupOptions, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
 import CreateTestGoalSettings from './CreateTestGoalSettings'
 import TransactionResponseTimeSLASettings from './TransactionResponseTimeSLASettings'
@@ -55,6 +56,7 @@ import { dialogBackdropProps } from './dialogBackdropProps'
 import { clampVUsersForRole, maxSharedVUsersForRoles, maxVUsersForRole, OBSERVER_MAX_VUSERS, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 import {
+  scenarioScriptConflict,
   assignmentFromForm,
   cloneAssignment,
   ensureScenarioGroups,
@@ -164,7 +166,6 @@ export interface ScenarioFormGroup {
 
 type ScenarioSortField = 'updated_at' | 'name' | 'scripts' | 'data_pools' | 'created_at' | 'associated_releases' | 'last_run_test_id' | 'last_run_at' | 'last_run_ended_at' | 'result_count'
 type ScriptLibrarySortField = 'name' | 'created_at' | 'last_run_at' | 'associated_scenarios' | 'associated_releases' | 'protocol'
-type GoalBaselineSortField = 'name' | 'id' | 'started_at' | 'duration' | 'vusers' | 'peak_tps' | 'art' | 'error_rate'
 export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 
 // Workload shape backing the production traffic-profile workflow. Its domain
@@ -174,9 +175,8 @@ const CSV_DRIVEN_SHAPE_ID = 'csv-driven'
 type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
-  { id: 'start', label: 'Start' },
-  { id: 'scripts', label: 'Scripts' },
-  { id: 'source', label: 'Shape / Source' },
+  { id: 'scripts', label: 'Start' },
+  { id: 'source', label: 'Model & Shape' },
   { id: 'run', label: 'Run Settings' },
   { id: 'data', label: 'Data' },
   { id: 'review', label: 'Review' },
@@ -660,152 +660,6 @@ function getRunSortValue(run: TestSummary, field: 'name' | 'status' | 'release_i
   return String(run[field] || '').toLowerCase()
 }
 
-function latestRunTimestamp(run: TestSummary): string {
-  return run.start_time || run.started_at || run.created_at || ''
-}
-
-function maxFinite(values: Array<number | undefined>): number | undefined {
-  const finite = values.filter((value): value is number => Number.isFinite(value))
-  if (finite.length === 0) return undefined
-  return Math.max(...finite)
-}
-
-function firstFinite(values: Array<number | undefined>): number | undefined {
-  return values.find((value): value is number => Number.isFinite(value))
-}
-
-function formatOptionalNumber(value: number | undefined, digits = 0): string {
-  if (!Number.isFinite(value)) return '—'
-  return Number(value).toLocaleString(undefined, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })
-}
-
-function formatOptionalMs(value: number | undefined): string {
-  const formatted = formatOptionalNumber(value, 0)
-  return formatted === '—' ? formatted : `${formatted} ms`
-}
-
-function formatOptionalTps(value: number | undefined): string {
-  const formatted = formatOptionalNumber(value, 1)
-  return formatted === '—' ? formatted : formatted
-}
-
-function formatOptionalPercent(value: number | undefined): string {
-  const formatted = formatOptionalNumber(value, 2)
-  return formatted === '—' ? formatted : `${formatted}%`
-}
-
-function formatGoalSizingBasis(value: string): string {
-  if (value === 'group') return 'Group metrics'
-  if (value === 'overview') return 'Run overview'
-  return value || '—'
-}
-
-function goalBaselinePeakTps(run: TestSummary, report?: RunArchiveReport): number | undefined {
-  return maxFinite([
-    report?.overview?.peak_tps,
-    run.live_metrics?.tps,
-    ...(run.sparkline || []).map(point => point.tps),
-  ])
-}
-
-function goalBaselineArt(run: TestSummary, report?: RunArchiveReport): number | undefined {
-  return firstFinite([
-    report?.overview?.avg_response_ms,
-    run.live_metrics?.avg_response_ms,
-  ])
-}
-
-function goalBaselineErrorRate(run: TestSummary, report?: RunArchiveReport): number | undefined {
-  return firstFinite([
-    report?.overview?.error_pct,
-    run.live_metrics?.error_pct,
-  ])
-}
-
-function goalBaselineVusers(run: TestSummary, report?: RunArchiveReport): number | undefined {
-  return firstFinite([
-    run.total_vusers,
-    report?.overview?.peak_active_vusers,
-    run.live_metrics?.active_vusers,
-  ])
-}
-
-function getGoalBaselineSortValue(run: TestSummary, report: RunArchiveReport | undefined, field: GoalBaselineSortField): string | number {
-  switch (field) {
-    case 'id':
-      return run.id.toLowerCase()
-    case 'started_at':
-      return new Date(latestRunTimestamp(run) || 0).getTime()
-    case 'duration':
-      return parseDurationToSeconds(run.duration || '') || 0
-    case 'vusers':
-      return goalBaselineVusers(run, report) || 0
-    case 'peak_tps':
-      return goalBaselinePeakTps(run, report) || 0
-    case 'art':
-      return goalBaselineArt(run, report) || 0
-    case 'error_rate':
-      return goalBaselineErrorRate(run, report) || 0
-    case 'name':
-    default:
-      return `${run.name || ''} ${run.id || ''}`.toLowerCase()
-  }
-}
-
-interface GoalBaselineScriptRow {
-  key: string
-  group: string
-  scriptId?: string
-  scriptName: string
-  protocol?: string
-  vusers?: number
-  metrics?: RunArchiveActionStats
-}
-
-function goalBaselineScriptRows(run: TestSummary, report?: RunArchiveReport): GoalBaselineScriptRow[] {
-  const archiveGroups = report?.manifest?.provenance?.groups || []
-  const sourceGroups = archiveGroups.length > 0 ? archiveGroups : (run.groups || [])
-  if (sourceGroups.length === 0 && (run.script_id || run.script_name)) {
-    return [{
-      key: run.script_id || run.id,
-      group: run.script_name || run.name,
-      scriptId: run.script_id,
-      scriptName: run.script_name || run.name,
-      protocol: undefined,
-      vusers: run.total_vusers,
-      metrics: report?.by_group?.[run.script_name || run.name],
-    }]
-  }
-  return sourceGroups.map((group, index) => {
-    const groupName = group.name || group.script_name || group.script_id || `Group ${index + 1}`
-    return {
-      key: `${groupName}-${group.script_id || index}`,
-      group: groupName,
-      scriptId: group.script_id,
-      scriptName: group.script_name || group.name || group.script_id || `Script ${index + 1}`,
-      protocol: group.protocol,
-      vusers: group.vusers,
-      metrics: report?.by_group?.[groupName],
-    }
-  })
-}
-
-function goalBaselineSearchText(run: TestSummary, report?: RunArchiveReport): string {
-  return [
-    run.id,
-    run.ref_key,
-    run.name,
-    run.status,
-    run.release_id,
-    run.duration,
-    formatDateTime(latestRunTimestamp(run)),
-    ...goalBaselineScriptRows(run, report).flatMap(row => [row.group, row.scriptId, row.scriptName, row.protocol]),
-  ].filter(Boolean).join(' ').toLowerCase()
-}
-
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
 }
@@ -1101,7 +955,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [planSeedScenarioId, setPlanSeedScenarioId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const wizardPanelRef = useRef<HTMLDivElement>(null)
-  const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('start')
+  const [wizardStep, setWizardStep] = useState<ScenarioWizardStep>('scripts')
   const [maxVisitedWizardIndex, setMaxVisitedWizardIndex] = useState(0)
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const navigationRunner = useNavigationGuardRunner()
@@ -1110,6 +964,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [scenarioStartChoice, setScenarioStartChoice] = useState<ScenarioStartChoice>('')
   const [scenarioCloneQuery, setScenarioCloneQuery] = useState('')
   const [selectedCloneScenarioId, setSelectedCloneScenarioId] = useState('')
+  // A family clicked before one of its shapes is applied. Once a model is applied the
+  // highlighted family is derived from it, so this is cleared on every model change.
+  const [modelFamilyChoice, setModelFamilyChoice] = useState<ScenarioModelFamilyId | ''>('')
+  const [pendingCloneScenario, setPendingCloneScenario] = useState<StoredScenario | null>(null)
+  // Step 1 is a fork: build a new scenario from scripts, or copy a saved scenario.
+  const [scenarioStartPath, setScenarioStartPath] = useState<'new' | 'copy'>('new')
   const [selectedShapeId, setSelectedShapeId] = useState('')
   const [prerequisiteScript, setPrerequisiteScript] = useState<'start-new' | 'source' | null>(null)
   const [newPoolRow, setNewPoolRow] = useState('{}')
@@ -1161,21 +1021,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string>>(new Set())
   const [deletingScenarioIds, setDeletingScenarioIds] = useState<Set<string>>(new Set())
-  // Build-from-goal (Little's Law) sizing panel state.
-  const [goalSizingOpen, setGoalSizingOpen] = useState(false)
+  // Goal-Driven worksheet: completed-baseline import for per-group ART.
   const [goalBaselineTests, setGoalBaselineTests] = useState<TestSummary[]>([])
   const [goalBaselineId, setGoalBaselineId] = useState('')
-  const [goalBaselineQuery, setGoalBaselineQuery] = useState('')
-  const [goalBaselineSortField, setGoalBaselineSortField] = useState<GoalBaselineSortField>('started_at')
-  const [goalBaselineSortDirection, setGoalBaselineSortDirection] = useState<'asc' | 'desc'>('desc')
-  const [expandedGoalBaselineId, setExpandedGoalBaselineId] = useState<string | null>(null)
   const [goalBaselineReports, setGoalBaselineReports] = useState<Record<string, RunArchiveReport>>({})
-  const [goalBaselineReportErrors, setGoalBaselineReportErrors] = useState<Record<string, string>>({})
   const [goalBaselineLoadingId, setGoalBaselineLoadingId] = useState('')
-  const [goalBaselineGroups, setGoalBaselineGroups] = useState<BaselineGroupOption[]>([])
-  const [goalTargetTps, setGoalTargetTps] = useState<Record<string, string>>({})
-  const [goalSizingResult, setGoalSizingResult] = useState<GoalSizingReport | null>(null)
-  const [goalSizingLoading, setGoalSizingLoading] = useState(false)
   const [goalSizingError, setGoalSizingError] = useState('')
   const [goalArtModes, setGoalArtModes] = useState<Record<string, 'manual' | 'baseline'>>({})
   const [goalArtUnits, setGoalArtUnits] = useState<Record<string, 'ms' | 's'>>({})
@@ -1187,8 +1037,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const scriptLibraryDialogRef = useRef<HTMLDivElement | null>(null)
   const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
-  const goalBaselineTableRef = useRef<HTMLDivElement | null>(null)
-  const goalSizingResultRef = useRef<HTMLDivElement | null>(null)
   const deleteScenarioDialogRef = useRef<HTMLDivElement | null>(null)
   const deleteScenarioInitialFocusRef = useRef<HTMLButtonElement | null>(null)
   const editingBaselineFormRef = useRef('')
@@ -1247,17 +1095,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setDeletingScenarioIds(new Set())
     setGoalBaselineTests([])
     setGoalBaselineId('')
-    setGoalBaselineQuery('')
-    setExpandedGoalBaselineId(null)
     setGoalBaselineReports({})
-    setGoalBaselineReportErrors({})
     setGoalBaselineLoadingId('')
-    setGoalBaselineGroups([])
-    setGoalTargetTps({})
-    setGoalSizingResult(null)
     setGoalSizingError('')
-    setGoalSizingLoading(false)
-    setGoalSizingOpen(false)
     setEffectiveAuthAccessResources([])
     setEffectiveAccessLoaded(false)
     setError('')
@@ -1273,8 +1113,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setSelectedShapeId('')
     setScenarioSourceMode('shape')
     setScenarioStartChoice('')
+    setModelFamilyChoice('')
+    setPendingCloneScenario(null)
+    setScenarioStartPath('new')
     setScenarioCloneQuery('')
-    setWizardStep('start')
+    setWizardStep('scripts')
     setMaxVisitedWizardIndex(0)
     setStageGroupIndex(0)
     setRuntimeGroupIndex(0)
@@ -1284,9 +1127,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setLoadModelValidationError('')
     setPlanSeedScenarioId(null)
   }, [activeProjectId])
-  const resetGoalBaselineTableScroll = () => {
-    if (goalBaselineTableRef.current) goalBaselineTableRef.current.scrollLeft = 0
-  }
   const formGroups = useMemo(
     () => form.groups.length > 0 ? form.groups : [emptyScenarioGroup()],
     [form.groups],
@@ -1477,6 +1317,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   )
   const selectedShape = shapeCatalog.find(option => option.id === selectedShapeId)
   const selectedShapePreset: ScenarioShapePreset | undefined = selectedShape ? getScenarioShapePreset(selectedShape.id) : undefined
+  const modelFamilies = useMemo(
+    () => availableScenarioModelFamilies(loadModelSupportMatrix.length === 0 ? null : new Set(loadModelSupportMatrix.map(shape => shape.id))),
+    [loadModelSupportMatrix],
+  )
+  const derivedModelFamily: ScenarioModelFamilyId | null = scenarioSourceMode === 'traffic_profile' || scenarioSourceMode === 'csv_driven'
+    ? 'traffic-profile'
+    : scenarioStartChoice === 'goal' ? 'goal' : shapeFamilyFor(selectedShapeId)
+  const activeModelFamily = modelFamilies.find(family => family.id === (modelFamilyChoice || derivedModelFamily)) || null
   const selectedTemplate = loadModelTemplates.find(template => template.id === selectedLoadModelTemplateId)
   const selectedCloneScenario = useMemo(
     () => scenarios.find(scenario => scenario.id === selectedCloneScenarioId) || null,
@@ -1520,21 +1368,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * direction
     })
   }, [scriptLibraryQuery, scriptLibrarySortDirection, scriptLibrarySortField, scripts, scriptReadinessFilter, scriptProtocolFilter])
-  const visibleGoalBaselineTests = useMemo(() => {
-    const query = goalBaselineQuery.trim().toLowerCase()
-    const filtered = query
-      ? goalBaselineTests.filter(test => goalBaselineSearchText(test, goalBaselineReports[test.id]).includes(query))
-      : goalBaselineTests
-    return [...filtered].sort((left, right) => {
-      const leftValue = getGoalBaselineSortValue(left, goalBaselineReports[left.id], goalBaselineSortField)
-      const rightValue = getGoalBaselineSortValue(right, goalBaselineReports[right.id], goalBaselineSortField)
-      const direction = goalBaselineSortDirection === 'asc' ? 1 : -1
-      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
-        return (leftValue - rightValue) * direction
-      }
-      return String(leftValue).localeCompare(String(rightValue), undefined, { numeric: true, sensitivity: 'base' }) * direction
-    })
-  }, [goalBaselineQuery, goalBaselineReports, goalBaselineSortDirection, goalBaselineSortField, goalBaselineTests])
   const showScenarioLibrary = !showForm && !showPlans
   const sourcePending = scenarioSourceMode === 'csv_driven'
     ? selectedShapeId !== CSV_DRIVEN_SHAPE_ID || !form.traffic_profile
@@ -1554,7 +1387,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [wizardStep, showForm])
 
   const showScriptLibrary = showForm && wizardStep === 'scripts'
-  const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts' && !sourcePending
+  const showModelPreview = showForm && wizardStep !== 'scripts' && !sourcePending && (wizardStep !== 'source' || Boolean(scenarioStartChoice))
 
   const scenarioBindings: ScenarioDataPoolBinding[] = form.data_pools?.length ? form.data_pools.map((binding, index) => index === 0 ? {
     ...binding, pool_id: form.data_pool_id || binding.pool_id, alias: form.data_pool_alias ?? binding.alias,
@@ -1863,16 +1696,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
   }
 
-  const handleGoalBaselineSort = (field: GoalBaselineSortField) => {
-    resetGoalBaselineTableScroll()
-    if (goalBaselineSortField === field) {
-      setGoalBaselineSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
-    } else {
-      setGoalBaselineSortField(field)
-      setGoalBaselineSortDirection(['started_at', 'vusers', 'peak_tps', 'art', 'error_rate'].includes(field) ? 'desc' : 'asc')
-    }
-  }
-
   const handleInnerSort = (field: typeof innerSortField) => {
     if (innerSortField === field) setInnerSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
     else { setInnerSortField(field); setInnerSortDirection('asc') }
@@ -1920,13 +1743,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const resetBuilderToBlank = useCallback(() => {
     activeCheckpointSavedAtRef.current = ''
     scenarioDraftGenerationRef.current += 1
-    setGoalSizingOpen(false)
-    setGoalSizingLoading(false)
     setGoalSizingError('')
     setGoalBaselineLoadingId('')
-    setGoalBaselineGroups([])
-    setGoalTargetTps({})
-    setExpandedGoalBaselineId(null)
     setCreatedPoolId(null)
     setNewPoolName('')
     setNewPoolRow('{}')
@@ -1940,11 +1758,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setSelectedCloneScenarioId('')
     setScenarioSourceMode('shape')
     setScenarioStartChoice('')
-    setGoalSizingResult(null)
+    setModelFamilyChoice('')
+    setPendingCloneScenario(null)
+    setScenarioStartPath('new')
     setGoalArtModes({})
     setGoalArtUnits({})
     setGoalBaselineId('')
-    setWizardStep('start')
+    setWizardStep('scripts')
     setMaxVisitedWizardIndex(0)
     setStageGroupIndex(0)
     setScenarioCloneQuery('')
@@ -2060,6 +1880,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     const storedSourceMode: ScenarioSourceMode = scenario.workload_shape_id === CSV_DRIVEN_SHAPE_ID ? 'csv_driven' : scenario.traffic_profile ? 'traffic_profile' : 'existing'
     setScenarioSourceMode(storedSourceMode)
     setScenarioStartChoice(storedSourceMode)
+    setModelFamilyChoice('')
+    setScenarioStartPath('new')
     setScenarioCloneQuery('')
     setScriptSelectionTargetIndex(null)
     setRuntimeScope('defaults')
@@ -2103,10 +1925,36 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setSelectedLoadModelTemplateId('')
       setSelectedShapeId('')
     }
-    setWizardStep(mode === 'existing' ? 'source' : form.groups.some(group => !group.script_id) ? 'scripts' : 'source')
+    setModelFamilyChoice('')
+    setWizardStep(mode === 'existing' ? 'scripts' : 'source')
   }
 
-  const cloneScenarioDraft = (scenario: StoredScenario) => {
+  // Script and group fixes live on the New Scenario path of the Start step.
+  const openScriptComposition = () => {
+    setScenarioStartPath('new')
+    setWizardStep('scripts')
+  }
+
+  const selectModelFamily = (familyId: ScenarioModelFamilyId) => {
+    if (familyId === 'traffic-profile' && scenarioSourceMode !== 'traffic_profile' && scenarioSourceMode !== 'csv_driven') {
+      selectScenarioSourceMode(trafficProfileShapeEnabled ? 'traffic_profile' : 'csv_driven')
+    }
+    setModelFamilyChoice(familyId)
+  }
+
+  // Copying brings the source scenario's scripts. When the draft already has scripts,
+  // the operator decides whether they are replaced or kept.
+  const requestCloneScenario = (scenario: StoredScenario) => {
+    const incoming = scenarioFormStateFromStoredScenario(scenario, scripts[0]?.id || '', true)
+    if (scenarioScriptConflict(form.groups, incoming.groups)) {
+      setPendingCloneScenario(scenario)
+      return
+    }
+    cloneScenarioDraft(scenario, 'replace')
+  }
+
+  const cloneScenarioDraft = (scenario: StoredScenario, scriptChoice: 'replace' | 'keep') => {
+    setPendingCloneScenario(null)
     const fallbackScriptId = scripts[0]?.id || ''
     const clonedForm = scenarioFormStateFromStoredScenario(scenario, fallbackScriptId, true)
     const storedClosed = clonedForm.goal_config?.workload_shape_config?.closed_vuser
@@ -2123,7 +1971,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       : [])
     setEditingId(null)
     editingBaselineFormRef.current = ''
-    setForm(current => mergeCloneWithScriptSelections(current, clonedForm))
+    setForm(current => scriptChoice === 'keep'
+      ? mergeCloneWithScriptSelections(current, clonedForm)
+      : { ...clonedForm, name: current.name.trim() ? current.name : clonedForm.name })
     setStageGroupIndex(0)
     setSelectedLoadModelTemplateId('')
     setSelectedShapeId(scenario.workload_shape_id || (scenario.traffic_profile ? PRODUCTION_REPLAY_SHAPE_ID : ''))
@@ -2136,6 +1986,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     setRunSettingsTab('scenario')
     setLoadModelValidation(null)
     setLoadModelValidationError('')
+    setModelFamilyChoice('')
     markWizardStepVisited('source')
     void loadScenarioRuns(scenario)
   }
@@ -2190,6 +2041,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const selectShapeOption = (shapeId: string) => {
+    setModelFamilyChoice('')
     if (shapeId === PRODUCTION_REPLAY_SHAPE_ID) {
       setSelectedShapeId('')
       setSelectedCloneScenarioId('')
@@ -2292,23 +2144,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       return
     }
 	selectShapeOption('open-arrival-rate')
-	setGoalSizingOpen(false)
 	setGoalArtModes({ group_0: 'manual' })
     setScenarioStartChoice('goal')
     setGoalBaselineId('')
-    setGoalBaselineQuery('')
-    setExpandedGoalBaselineId(null)
     setGoalBaselineReports({})
-    setGoalBaselineReportErrors({})
     setGoalBaselineLoadingId('')
-    setGoalBaselineGroups([])
-    setGoalTargetTps({})
-    setGoalSizingResult(null)
     setGoalSizingError('')
 	setWizardStep('run')
-    setShowForm(true)
-    setEditingId(null)
-    editingBaselineFormRef.current = ''
+	// Reached from the Model & Shape step, so an edit must stay bound to its scenario.
 	await loadCompletedGoalBaselines()
   }
 
@@ -2323,7 +2166,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     )
     if (isCurrentScope()) {
       setGoalBaselineLoadingId(testId)
-      setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: '' }))
     }
     try {
       const report = await api.getTestArchiveReport(testId)
@@ -2332,11 +2174,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       }
       return report
     } catch (err: unknown) {
-      const message = getErrorMessage(err, 'Unable to load the baseline run report')
-      if (isCurrentScope()) {
-        setGoalBaselineReportErrors(prev => ({ ...prev, [testId]: message }))
-      }
-      throw new Error(message)
+      throw new Error(getErrorMessage(err, 'Unable to load the baseline run report'))
     } finally {
       if (isCurrentScope()) {
         setGoalBaselineLoadingId(current => current === testId ? '' : current)
@@ -2353,12 +2191,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       && scenarioDraftGenerationRef.current === scopeGeneration
       && goalBaselineSelectionGenerationRef.current === selectionGeneration
     )
-    resetGoalBaselineTableScroll()
     setGoalBaselineId(testId)
-    setExpandedGoalBaselineId(testId || null)
-    setGoalBaselineGroups([])
-    setGoalTargetTps({})
-    setGoalSizingResult(null)
     setGoalSizingError('')
     if (!testId) return
     try {
@@ -2369,116 +2202,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         setGoalSizingError('This run has no response-time data to size from.')
         return
       }
-      setGoalBaselineGroups(options)
-      setGoalTargetTps(Object.fromEntries(options.map(option => [option.group, ''])))
 	  applyGoalBaselineOptions(testId, options)
     } catch (err: unknown) {
       if (!isCurrentSelection()) return
       setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
     }
-  }
-
-  const toggleGoalBaselineExpanded = async (testId: string) => {
-    const projectId = activeProjectId
-    const scopeGeneration = scenarioDraftGenerationRef.current
-    const isCurrentScope = () => (
-      currentProjectIdRef.current === projectId
-      && scenarioDraftGenerationRef.current === scopeGeneration
-    )
-    resetGoalBaselineTableScroll()
-    if (expandedGoalBaselineId === testId) {
-      setExpandedGoalBaselineId(null)
-      return
-    }
-    setExpandedGoalBaselineId(testId)
-    setGoalSizingError('')
-    try {
-      await loadGoalBaselineReport(testId)
-    } catch (err: unknown) {
-      if (!isCurrentScope()) return
-      setGoalSizingError(getErrorMessage(err, 'Unable to load the baseline run report'))
-    }
-  }
-
-  const runGoalSizing = async () => {
-    const generation = scenarioDraftGenerationRef.current
-    const selection = goalBaselineSelectionGenerationRef.current
-    const isCurrent = () => generation === scenarioDraftGenerationRef.current && selection === goalBaselineSelectionGenerationRef.current
-    setGoalSizingError('')
-    const groups = goalBaselineGroups
-      .map(option => ({ option, tps: Number(goalTargetTps[option.group]) }))
-      .filter(entry => Number.isFinite(entry.tps) && entry.tps > 0)
-    if (groups.length === 0) {
-      setGoalSizingError('Enter a target TPS greater than zero for at least one group.')
-      return
-    }
-    setGoalSizingLoading(true)
-    try {
-      const result = await api.sizeScenarioFromGoal({
-        baseline_test_id: goalBaselineId,
-        groups: groups.map(({ option, tps }) => ({
-          script_id: option.script_id,
-          group: option.basis === 'group' ? option.group : undefined,
-          target_tps: tps,
-        })),
-      })
-      if (!isCurrent()) return
-      setGoalSizingResult(result)
-    } catch (err: unknown) {
-      if (!isCurrent()) return
-      setGoalSizingResult(null)
-      setGoalSizingError(getErrorMessage(err, 'Unable to size scenario from goal'))
-    } finally {
-      if (isCurrent()) setGoalSizingLoading(false)
-    }
-  }
-
-  const applyGoalSizing = () => {
-    if (!goalSizingResult) return
-    const draft = goalSizingResult.scenario_draft
-    const sizedGroups = goalSizedGroups(draft)
-    const goalFields = goalSizedGoalFields(draft)
-    setEditingId(null)
-    editingBaselineFormRef.current = ''
-    setForm(prev => ({
-      ...prev,
-      name: draft.name || prev.name,
-      duration: draft.duration || prev.duration,
-      scenario_mode: goalFields.scenario_mode,
-      goal_target_average_tps: goalFields.goal_target_average_tps,
-      goal_min_vusers: goalFields.goal_min_vusers,
-      goal_max_vusers: goalFields.goal_max_vusers,
-      groups: ensureScenarioGroups(
-        sizedGroups.map((group, index) => ({
-          name: group.name,
-          script_id: group.script_id || prev.groups[index]?.script_id || '',
-          vusers: group.vusers,
-          ramp_up: group.ramp_up,
-          ramp_down: '',
-          stages: [],
-          initialization: 'at_runtime' as const,
-          assignment: prev.groups[index]?.assignment,
-        })),
-      ),
-    }))
-    setSelectedShapeId('')
-    setSelectedLoadModelTemplateId('')
-    setSelectedCloneScenarioId('')
-    setScenarioSourceMode('shape')
-    setScenarioStartChoice('goal')
-    setStageGroupIndex(0)
-    setLoadModelValidation(null)
-    setLoadModelValidationError('')
-    setGoalSizingOpen(false)
-    setRuntimeScope('defaults')
-    setRunSettingsTab('scenario')
-    markWizardStepVisited('source')
-    setWizardStep('scripts')
-  }
-
-  const closeGoalSizing = () => {
-    setGoalSizingOpen(false)
-    setWizardStep('start')
   }
 
   const updateScenarioGroup = (index: number, patch: Partial<ScenarioFormGroup>) => {
@@ -3062,7 +2790,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
     if (scenarioGroupNameError) {
       setLoadModelValidationError(scenarioGroupNameError)
-      setWizardStep('scripts')
+      openScriptComposition()
       return
     }
     if (blockingStageTimelineMessage) {
@@ -3130,7 +2858,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
     if (scenarioGroupNameError) {
       setError(scenarioGroupNameError)
-      setWizardStep('scripts')
+      openScriptComposition()
       return null
     }
     if (!isValidDurationInput(form.duration)) {
@@ -3215,7 +2943,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     if (!canManageTests) return false
     try {
       const draft: ScenarioAuthoringDraft = {
-        version: 1, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
+        version: 2, projectId: activeProjectId || '', savedAt: new Date().toISOString(),
         editingId, editingUpdatedAt: scenarios.find(item => item.id === editingId)?.updated_at || '',
         form, source: scenarioSourceMode, startChoice: scenarioStartChoice,
         shapeId: selectedShapeId, templateId: selectedLoadModelTemplateId, cloneId: selectedCloneScenarioId,
@@ -3275,7 +3003,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     const canResumeEdit = existing && existing.updated_at === draft.editingUpdatedAt
     setEditingId(canResumeEdit ? draft.editingId : null)
     editingBaselineFormRef.current = canResumeEdit ? JSON.stringify(scenarioFormStateFromStoredScenario(existing, '', false)) : ''
-    setScenarioSourceMode(draft.source); setScenarioStartChoice(draft.startChoice)
+    setScenarioSourceMode(draft.source); setScenarioStartChoice(draft.startChoice); setModelFamilyChoice('')
+    setScenarioStartPath(draft.source === 'existing' && draft.cloneId && !draft.editingId ? 'copy' : 'new')
     setSelectedShapeId(draft.shapeId); setSelectedLoadModelTemplateId(draft.templateId); setSelectedCloneScenarioId(draft.cloneId)
     setWizardStep(draft.step); setMaxVisitedWizardIndex(draft.visited)
     setShowForm(true); onScenarioViewChange?.('builder')
@@ -3431,14 +3160,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }, [currentWizardIndex])
 
   useEffect(() => {
-    const node = goalSizingResultRef.current
-    if (!goalSizingOpen || !goalSizingResult || !node || typeof node.scrollIntoView !== 'function') return
-    window.requestAnimationFrame(() => {
-      node.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    })
-  }, [goalSizingOpen, goalSizingResult])
-
-  useEffect(() => {
     if (!showForm) return
     let cancelled = false
     api.getSystemInventory()
@@ -3464,7 +3185,6 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       ? Boolean(selectedCloneScenarioId)
       : Boolean(selectedShapeId || selectedLoadModelTemplateId))
   const wizardStepCompletion: Record<ScenarioWizardStep, boolean> = {
-    start: Boolean(scenarioStartChoice),
     source: sourceStepComplete,
     scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
     run: Boolean(sourceStepComplete && (!isGoalDriven || formGroups.every((_, index) => goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.art)) && isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage && !closedVUserBlockingMessage && !goalDrivenBlockingMessage),
@@ -3534,318 +3254,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const renderSourceScenarioRunsPanel = () => {
-    if (wizardStep !== 'source' || scenarioSourceMode !== 'existing' || !selectedCloneScenario) return null
+    if (scenarioSourceMode !== 'existing' || !selectedCloneScenario) return null
+    // Copies show their source's runs beside the copy table; edits show their own runs on Model & Shape.
+    const copying = wizardStep === 'scripts' && scenarioStartPath === 'copy'
+    const editing = wizardStep === 'source' && Boolean(editingId)
+    if (!copying && !editing) return null
     return (
       <section className="scenario-source-runs-panel" aria-live="polite">
         {renderScenarioRunsContent(selectedCloneScenario)}
-      </section>
-    )
-  }
-
-  const renderGoalSizingPanel = () => {
-    const previewTotal = goalBaselineGroups.reduce((sum, option) => {
-      const tps = Number(goalTargetTps[option.group])
-      return sum + (Number.isFinite(tps) && tps > 0 ? littlesLawVUsers(tps, option.baseline_art_ms) : 0)
-    }, 0)
-    const baselineSummary = goalBaselineQuery.trim()
-      ? `${visibleGoalBaselineTests.length} matching completed run${visibleGoalBaselineTests.length === 1 ? '' : 's'}`
-      : `${goalBaselineTests.length} completed run${goalBaselineTests.length === 1 ? '' : 's'} available`
-    const selectedBaseline = goalBaselineTests.find(test => test.id === goalBaselineId)
-    return (
-      <section className="scenario-wizard-panel" data-testid="goal-sizing-panel">
-        <div className="scenario-wizard-panel-header">
-          <div>
-            <h4>Build From Goal</h4>
-            <p>Pick a completed baseline run and a target throughput per group. APEX Load sizes VUsers with Little&apos;s Law (VUsers = target TPS × response time), then the goal controller converges at run time.</p>
-          </div>
-          <button type="button" className="mode-chip" onClick={closeGoalSizing}>Back</button>
-        </div>
-
-        <div className="scenario-subpanel goal-sizing-setup" data-testid="goal-sizing-modeling-options">
-          <div className="scenario-assignment-header">
-            <div>
-              <h4>Modeling Options</h4>
-              <p>Set the target throughput envelope for the selected baseline run before sizing the scenario draft.</p>
-            </div>
-            <span className="scenario-table-assignment-detail">
-              {selectedBaseline ? `Baseline ${selectedBaseline.id}` : 'Select a baseline run below'}
-            </span>
-          </div>
-
-          {goalBaselineGroups.length > 0 ? (
-            <div className="goal-sizing-groups">
-              <table className="settings-table goal-sizing-table">
-                <colgroup>
-                  <col className="goal-sizing-col-group" />
-                  <col className="goal-sizing-col-art" />
-                  <col className="goal-sizing-col-target" />
-                  <col className="goal-sizing-col-estimate" />
-                </colgroup>
-                <thead>
-                  <tr><th>Group</th><th>Baseline ART</th><th>Target TPS</th><th>Est. VUsers</th></tr>
-                </thead>
-                <tbody>
-                  {goalBaselineGroups.map(option => {
-                    const tps = Number(goalTargetTps[option.group])
-                    const estimate = Number.isFinite(tps) && tps > 0 ? littlesLawVUsers(tps, option.baseline_art_ms) : 0
-                    return (
-                      <tr key={option.group}>
-                        <td>{option.group}</td>
-                        <td>{Math.round(option.baseline_art_ms)} ms</td>
-                        <td>
-                          <input
-                            className="settings-input"
-                            type="number"
-                            min="0"
-                            step="1"
-                            aria-label={`Target TPS for ${option.group}`}
-                            value={goalTargetTps[option.group] ?? ''}
-                            onChange={event => setGoalTargetTps(prev => ({ ...prev, [option.group]: event.target.value }))}
-                          />
-                        </td>
-                        <td>{estimate > 0 ? estimate : '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {previewTotal > 0 && <p className="goal-sizing-preview">Estimated total: <strong>{previewTotal} VUsers</strong></p>}
-              <button type="button" className="btn btn-primary" onClick={() => void runGoalSizing()} disabled={goalSizingLoading}>
-                {goalSizingLoading ? 'Sizing…' : 'Size scenario'}
-              </button>
-            </div>
-          ) : (
-            <p className="cell-muted goal-sizing-empty">Select a completed run from the table below to populate baseline ART and target TPS inputs.</p>
-          )}
-
-          {goalSizingError && <p className="form-error" role="alert">{goalSizingError}</p>}
-
-          {goalSizingResult && (
-            <div className="goal-sizing-result" data-testid="goal-sizing-result" ref={goalSizingResultRef}>
-              <div className="goal-sizing-result-header">
-                <div>
-                  <h4>Recommended Size</h4>
-                  <p>{formatGoalSizingSummary(goalSizingResult)}</p>
-                </div>
-                <div className="goal-sizing-result-header-meta">
-                  <span className="scenario-table-assignment-detail">Baseline {goalSizingResult.baseline_test_id}</span>
-                  <button type="button" className="btn btn-primary" onClick={applyGoalSizing}>Apply to scenario</button>
-                </div>
-              </div>
-              <div className="goal-sizing-result-summary" aria-label="Sizing result summary">
-                <div>
-                  <span>Total VUsers</span>
-                  <strong>{formatOptionalNumber(goalSizingResult.total_vusers, 0)}</strong>
-                </div>
-                <div>
-                  <span>Target TPS</span>
-                  <strong>{formatOptionalTps(goalSizingResult.total_target_tps)}</strong>
-                </div>
-                <div>
-                  <span>Draft Duration</span>
-                  <strong>{goalSizingResult.scenario_draft.duration || '—'}</strong>
-                </div>
-                <div>
-                  <span>Groups</span>
-                  <strong>{goalSizingResult.groups.length}</strong>
-                </div>
-              </div>
-              {goalSizingResult.load_model_validation?.capacity_advisory && (
-                <div className="goal-sizing-capacity">
-                  <strong>Capacity</strong>
-                  <span>{goalSizingResult.load_model_validation.capacity_advisory.recommended_generators} generator(s) recommended.</span>
-                </div>
-              )}
-              <div className="goal-sizing-result-table-wrap">
-                <table className="goal-sizing-result-table">
-                  <thead>
-                    <tr>
-                      <th>Group</th>
-                      <th>Target TPS</th>
-                      <th>Baseline ART</th>
-                      <th>Computed VUsers</th>
-                      <th>Basis</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {goalSizingResult.groups.map(group => (
-                      <tr key={group.group}>
-                        <td>
-                          <strong>{group.group}</strong>
-                          {group.script_id && <span>{group.script_id}</span>}
-                        </td>
-                        <td>{formatOptionalTps(group.target_tps)}</td>
-                        <td>{formatOptionalMs(group.baseline_art_ms)}</td>
-                        <td>{formatOptionalNumber(group.computed_vusers, 0)}</td>
-                        <td>{formatGoalSizingBasis(group.basis)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="goal-baseline-picker" aria-label="Completed baseline runs">
-          <div className="goal-baseline-toolbar">
-            <label className="library-search goal-baseline-search">
-              <span>Filter completed runs</span>
-              <input
-                type="search"
-                value={goalBaselineQuery}
-                onChange={event => {
-                  resetGoalBaselineTableScroll()
-                  setGoalBaselineQuery(event.target.value)
-                }}
-                placeholder="Run name, run ID, release, script..."
-              />
-            </label>
-            <span className="scenario-table-assignment-detail">{baselineSummary}</span>
-          </div>
-          <div className="data-table goal-baseline-table" ref={goalBaselineTableRef}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Scripts</th>
-                  <SortHeader label="Run" field="name" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
-                  <SortHeader label="Run ID" field="id" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
-                  <SortHeader label="Run Date/Time" field="started_at" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
-                  <SortHeader label="Overall Duration" field="duration" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} />
-                  <SortHeader label="VUsers" field="vusers" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
-                  <SortHeader label="Peak TPS" field="peak_tps" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
-                  <SortHeader label="ART" field="art" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
-                  <SortHeader label="Error Rate" field="error_rate" sort={{ field: goalBaselineSortField, direction: goalBaselineSortDirection }} onSort={handleGoalBaselineSort} numeric />
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleGoalBaselineTests.map(test => {
-                  const report = goalBaselineReports[test.id]
-                  const selected = goalBaselineId === test.id
-                  const expanded = expandedGoalBaselineId === test.id
-                  const loadingReport = goalBaselineLoadingId === test.id
-                  const reportError = goalBaselineReportErrors[test.id]
-                  const scriptRows = goalBaselineScriptRows(test, report)
-                  return (
-                    <Fragment key={test.id}>
-                      <tr
-                        className={`clickable-row ${selected ? 'selected' : ''}`}
-                        aria-selected={selected}
-                        onClick={() => void selectGoalBaseline(test.id)}
-                      >
-                        <td>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-ghost"
-                            aria-expanded={expanded}
-                            aria-label={`${expanded ? 'Collapse' : 'Expand'} ${test.name} scripts`}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void toggleGoalBaselineExpanded(test.id)
-                            }}
-                          >
-                            {expanded ? 'Hide' : 'Scripts'}
-                          </button>
-                        </td>
-                        <td className="cell-name">
-                          <div>{test.name}</div>
-                          <div className="script-table-meta">
-                            <ReferenceKeyBadge value={test.ref_key} />
-                            <span>{test.status}</span>
-                            {test.release_id && <span>Release {test.release_id}</span>}
-                          </div>
-                        </td>
-                        <td className="cell-mono">{test.id}</td>
-                        <td className="cell-muted scenario-run-time-cell">{formatDateTime(latestRunTimestamp(test))}</td>
-                        <td className="cell-muted">{test.duration || '—'}</td>
-                        <td>{formatOptionalNumber(goalBaselineVusers(test, report), 0)}</td>
-                        <td>{formatOptionalTps(goalBaselinePeakTps(test, report))}</td>
-                        <td>{formatOptionalMs(goalBaselineArt(test, report))}</td>
-                        <td>{formatOptionalPercent(goalBaselineErrorRate(test, report))}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className={`btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'}`}
-                            aria-label={`${selected ? 'Selected' : 'Select'} ${test.name} as goal baseline`}
-                            disabled={loadingReport && selected}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              void selectGoalBaseline(test.id)
-                            }}
-                          >
-                            {loadingReport && selected ? 'Loading...' : selected ? 'Selected' : 'Select'}
-                          </button>
-                        </td>
-                      </tr>
-                      {expanded && (
-                        <tr className="no-hover goal-baseline-expanded-row">
-                          <td colSpan={10}>
-                            {loadingReport && !report ? (
-                              <div className="cell-muted">Loading script details...</div>
-                            ) : reportError ? (
-                              <div className="form-error" role="alert">{reportError}</div>
-                            ) : scriptRows.length === 0 ? (
-                              <div className="cell-muted">No script groups were recorded for this run.</div>
-                            ) : (
-                              <div className="goal-baseline-script-panel">
-                                <div className="scenario-linked-runs-header">
-                                  <div>
-                                    <strong>Scripts in {test.name}</strong>
-                                    <span>{scriptRows.length} script group{scriptRows.length === 1 ? '' : 's'} · Run ID {test.id}</span>
-                                  </div>
-                                  <span className="scenario-table-assignment-detail">Overall {test.duration || '—'} · Started {formatDateTime(latestRunTimestamp(test))}</span>
-                                </div>
-                                <table className="goal-baseline-script-table">
-                                  <thead>
-                                    <tr>
-                                      <th>Script</th>
-                                      <th>VUsers</th>
-                                      <th>Peak TPS</th>
-                                      <th>ART</th>
-                                      <th>Error Rate</th>
-                                      <th>Duration</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {scriptRows.map(row => (
-                                      <tr key={row.key}>
-                                        <td className="cell-name">
-                                          <div>{row.scriptName}</div>
-                                          <div className="script-table-meta">
-                                            <span>{row.group}</span>
-                                            {row.scriptId && <span className="cell-mono">{row.scriptId}</span>}
-                                            {row.protocol && <span>{row.protocol}</span>}
-                                          </div>
-                                        </td>
-                                        <td>{formatOptionalNumber(row.vusers, 0)}</td>
-                                        <td>{formatOptionalTps(row.metrics?.peak_tps)}</td>
-                                        <td>{formatOptionalMs(row.metrics?.avg_response_ms)}</td>
-                                        <td>{formatOptionalPercent(row.metrics?.error_pct)}</td>
-                                        <td>{test.duration || '—'}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  )
-                })}
-                {visibleGoalBaselineTests.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="cell-muted">
-                      {goalBaselineTests.length === 0 ? 'No completed runs are available for goal sizing.' : 'No completed runs match these filters.'}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </section>
     )
   }
@@ -4037,7 +3453,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     )
   }
 
-  const renderShapeCard = (option: (typeof shapeCatalog)[number]) => (
+  const renderShapeCard = (option: (typeof shapeCatalog)[number], onUse?: () => void) => (
     <div key={option.id} className={`scenario-shape-catalog-card ${selectedShapeId === option.id ? 'selected' : ''}`}>
                   <div className="scenario-support-card-header">
                     <div>
@@ -4053,7 +3469,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   </div></details>
                   <WorkloadShapeVisual entry={option.support} />
                   <div className="scenario-shape-actions">
-                    <button type="button" className="btn btn-sm btn-secondary" aria-label={`Use ${option.support.name}`} onClick={() => selectShapeOption(option.id)}>{`Use ${option.support.name}`}</button>
+                    <button type="button" className="btn btn-sm btn-secondary" aria-label={`Use ${option.support.name}`} onClick={() => onUse ? onUse() : selectShapeOption(option.id)}>{`Use ${option.support.name}`}</button>
                     {option.templates.length > 0 && <details open={option.templates.some(template => template.id === selectedLoadModelTemplateId)}><summary>Starter templates</summary>{option.templates.map(template => (
                       <button key={template.id} type="button" className={`btn btn-sm ${selectedLoadModelTemplateId === template.id ? 'btn-primary' : 'btn-ghost'}`} onClick={() => applyLoadModelTemplate(template.id)}>
                         {template.name}
@@ -4063,59 +3479,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 </div>
   )
 
-  const renderWizardStep = () => {
-    if (goalSizingOpen) {
-      return renderGoalSizingPanel()
-    }
-    if (wizardStep === 'start') {
-      return (
-        <section className="scenario-wizard-panel">
-          <div className="scenario-wizard-panel-header">
-            <h4>Start With A Model</h4>
-            <p>Choose whether this scenario should inherit a known workload or start from a supported load shape.</p>
-          </div>
-          <div className="scenario-source-grid">
-            <button type="button" aria-pressed={scenarioStartChoice === 'shape'} className={`scenario-source-card ${scenarioStartChoice === 'shape' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('shape')}>
-              <span>Build from Workload Shape</span>
-              <strong>Fixed users and advanced shapes</strong>
-              <small>Select a supported workload model and optionally apply one of its starter templates.</small>
-            </button>
-            <button type="button" disabled={scenarios.length === 0} aria-pressed={scenarioStartChoice === 'existing'} className={`scenario-source-card ${scenarioStartChoice === 'existing' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('existing')}>
-              <span>Model from Existing Scenario</span>
-              <strong>Copy an existing scenario</strong>{scenarios.length === 0 && <small>No saved scenarios in this workspace yet.</small>}
-              <small>Search the scenario library, copy its scripts, run settings, data pool, and generator defaults, then save as a new scenario.</small>
-            </button>
-            {trafficProfileShapeEnabled && <button type="button" aria-pressed={scenarioStartChoice === 'traffic_profile'} className={`scenario-source-card ${scenarioStartChoice === 'traffic_profile' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('traffic_profile')}>
-              <span>Production Traffic Profile</span>
-              <strong>Replay production demand</strong>
-              <small>Preserve the production series at full resolution and replay it as adaptive TPS or direct VUser targets.</small>
-            </button>}
-            {csvDrivenShapeEnabled && <button type="button" aria-pressed={scenarioStartChoice === 'csv_driven'} className={`scenario-source-card ${scenarioStartChoice === 'csv_driven' ? 'selected' : ''}`} onClick={() => selectScenarioSourceMode('csv_driven')}>
-              <span>CSV Driven</span>
-              <strong>Follow an authored schedule</strong>
-              <small>Upload a wide or long CSV and replay each authored row as a precise target boundary.</small>
-            </button>}
-            <button type="button" className="scenario-source-card" aria-pressed={scenarioStartChoice === 'goal'} onClick={() => void openGoalSizing()}>
-              <span>Build from Goal</span>
-              <strong>Target throughput</strong>
-              <small>Enter target TPS and average response time for each group. Optionally reuse a completed baseline; VUsers are sized automatically.</small>
-            </button>
-          </div>
-        </section>
-      )
-    }
-
-    if (wizardStep === 'source') {
-      return (
-        <section className="scenario-wizard-panel">
-          <div className="scenario-wizard-panel-header">
-            <div>
-              <h4>{scenarioSourceMode === 'existing' ? 'Choose Scenario To Model' : scenarioSourceMode === 'traffic_profile' ? 'Build From Production Traffic' : scenarioSourceMode === 'csv_driven' ? 'Build From An Authored CSV' : 'Choose Workload Shape'}</h4>
-              <p>{scenarioSourceMode === 'existing' ? 'The selected scenario becomes an editable copy; the original remains unchanged.' : scenarioSourceMode === 'traffic_profile' ? 'Analyze a file or production query, map series to groups, and preview the exact runtime targets before applying.' : scenarioSourceMode === 'csv_driven' ? 'Map an exact VUser or TPS schedule from a CSV without production-source transformations.' : 'Choose fixed users for a first test, or select an advanced workload. Starter templates are optional.'}</p>
-            </div>
-            <label className="scenario-field"><span>Workload source</span><select aria-label="Workload source" className="settings-input" value={scenarioSourceMode} onChange={event => selectScenarioSourceMode(event.target.value as ScenarioSourceMode)}><option value="shape">Workload shapes</option><option value="existing">Copy existing scenario</option>{trafficProfileShapeEnabled && <option value="traffic_profile">Production profile</option>}{csvDrivenShapeEnabled && <option value="csv_driven">CSV schedule</option>}</select></label>
-          </div>
-          {scenarioSourceMode === 'csv_driven' ? (
+  const renderTrafficProfileSource = () => (
+    <>
+      {trafficProfileShapeEnabled && csvDrivenShapeEnabled && (
+        <div className="scenario-source-toggle" role="group" aria-label="Traffic profile source">
+          <button type="button" className={`mode-chip ${scenarioSourceMode !== 'csv_driven' ? 'active' : ''}`} aria-pressed={scenarioSourceMode !== 'csv_driven'} onClick={() => selectScenarioSourceMode('traffic_profile')}>Production data</button>
+          <button type="button" className={`mode-chip ${scenarioSourceMode === 'csv_driven' ? 'active' : ''}`} aria-pressed={scenarioSourceMode === 'csv_driven'} onClick={() => selectScenarioSourceMode('csv_driven')}>Exact CSV schedule</button>
+        </div>
+      )}
+      <p className="scenario-assignment-copy secondary">{scenarioSourceMode === 'csv_driven' ? 'Map an exact VUser or TPS schedule from a CSV without production-source transformations.' : 'Analyze a file or production query, map series to groups, and preview the exact runtime targets before applying.'}</p>
+      {scenarioSourceMode === 'csv_driven' ? (
             <CSVDrivenSourcePanel
               projectId={activeProjectId}
               groupNames={form.groups.map((group, index) => group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`)}
@@ -4145,7 +3518,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 setLoadModelValidation(result.load_model_validation || null)
               }}
             />
-          ) : scenarioSourceMode === 'traffic_profile' ? (
+      ) : (
             <TrafficProfileSourcePanel
               projectId={activeProjectId}
               groupNames={form.groups.map((group, index) => group.name.trim() || findScriptById(scripts, group.script_id)?.name || `Group ${index + 1}`)}
@@ -4175,8 +3548,46 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 setLoadModelValidation(result.load_model_validation || null)
               }}
             />
-          ) : scenarioSourceMode === 'existing' ? (
-            <>
+      )}
+    </>
+  )
+
+  const renderScenarioNameField = () => (
+    <div className="settings-grid scenario-core-grid">
+      <label className="scenario-field">
+        <span>Scenario Name</span>
+        <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
+      </label>
+    </div>
+  )
+
+  const renderCloneScenarioPanel = () => (
+    <div className="scenario-clone-path">
+      <div className="scenario-assignment-header">
+        <div>
+          <h4>Choose A Scenario To Copy</h4>
+          <p>Its scripts, load model, run settings, data pools, and generator defaults are copied into this draft. The original scenario is not changed.</p>
+        </div>
+      </div>
+      {scenarioSourceMode === 'existing' && selectedCloneScenario && !editingId && (
+        <>
+          <div className="scenario-shape-guidance" role="note">
+            <div className="scenario-shape-guidance-header">
+              <span className="scenario-shape-guidance-name">{`Copied ${selectedCloneScenario.name}`}</span>
+              <span className="scenario-shape-guidance-category">{`${formGroups.length} script group${formGroups.length === 1 ? '' : 's'}`}</span>
+            </div>
+            <p className="scenario-shape-guidance-copy">This draft now uses its scripts and settings. Name the new scenario below, review the copied scripts, or continue to Model & Shape.</p>
+            <div className="scenario-shape-actions">
+              <button type="button" className="btn btn-sm btn-secondary" onClick={() => setScenarioStartPath('new')}>Review copied scripts</button>
+            </div>
+          </div>
+          {renderScenarioNameField()}
+        </>
+      )}
+      {scenarios.length === 0 ? (
+        <p className="scenario-assignment-copy secondary">No saved scenarios in this workspace yet.</p>
+      ) : (
+        <>
               <label className="library-search scenario-clone-search">
                 <span>Search existing scenarios</span>
                 <input type="search" value={scenarioCloneQuery} onChange={event => setScenarioCloneQuery(event.target.value)} placeholder="Scenario, script, data pool, release..." />
@@ -4205,11 +3616,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                           className={`clickable-row ${selected ? 'selected' : ''}`}
                           aria-selected={selected}
                           tabIndex={0}
-                          onClick={() => cloneScenarioDraft(scenario)}
+                          onClick={() => requestCloneScenario(scenario)}
                           onKeyDown={(event) => {
                             if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
                               event.preventDefault()
-                              cloneScenarioDraft(scenario)
+                              requestCloneScenario(scenario)
                             }
                           }}
                         >
@@ -4223,8 +3634,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                                   <>
                                     <span className="scenario-table-assignment-badge manual">{assignment.badge}</span>
                                     <span className="scenario-table-assignment-detail">{assignment.detail}</span>
-							</>
-							)}
+                                  </>
+                                )}
                               </div>
                             )}
                             {browserRuntimeSummary && (
@@ -4247,10 +3658,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation()
-                                cloneScenarioDraft(scenario)
+                                requestCloneScenario(scenario)
                               }}
                             >
-                              {selected ? 'Selected' : 'Model'}
+                              {selected ? 'Copied' : 'Copy scenario'}
                             </button>
                           </td>
                         </tr>
@@ -4258,44 +3669,106 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                     })}
                     {filteredCloneScenarios.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="cell-muted">No scenarios match this source search.</td>
+                        <td colSpan={6} className="cell-muted">No scenarios match this search.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
               </div>
-            </>
-          ) : (
-            <div className="scenario-shape-catalog-grid">
-              {shapeCatalog.filter(option => option.id === 'closed-vuser').map(renderShapeCard)}
-              {shapeCatalog.some(option => option.id !== 'closed-vuser') && <details className="scenario-advanced-shapes" open={Boolean(selectedShapeId && selectedShapeId !== 'closed-vuser')}>
-                <summary>Advanced workload shapes</summary>
-                <p>Choose a different demand pattern when fixed users do not match your test. Each shape includes optional starter templates.</p>
-                <div className="scenario-shape-catalog-grid">{shapeCatalog.filter(option => option.id !== 'closed-vuser').map(renderShapeCard)}</div>
-              </details>}
-              {shapeCatalog.length === 0 && <p className="scenario-assignment-copy secondary">No workload shape catalog is available from this controller.</p>}
+        </>
+      )}
+    </div>
+  )
+
+  const renderWizardStep = () => {
+    if (wizardStep === 'source') {
+      const familyShapeOptions = activeModelFamily && activeModelFamily.id !== 'traffic-profile'
+        ? activeModelFamily.shapeIds
+          .map(id => shapeCatalog.find(option => option.id === id))
+          .filter((option): option is (typeof shapeCatalog)[number] => Boolean(option))
+        : []
+      const copiedModelScenario = scenarioSourceMode === 'existing' ? selectedCloneScenario : null
+      return (
+        <section className="scenario-wizard-panel">
+          <div className="scenario-wizard-panel-header">
+            <div>
+              <h4>Choose A Load Model</h4>
+              <p>Pick how load is generated for the selected scripts. Each model offers variants and optional starter templates.</p>
             </div>
+          </div>
+          {copiedModelScenario && (
+            <div className="scenario-shape-guidance" role="note">
+              <div className="scenario-shape-guidance-header">
+                <span className="scenario-shape-guidance-name">{editingId ? 'Saved model' : 'Copied model'}</span>
+                <span className="scenario-shape-guidance-category">{shapeLabel}</span>
+              </div>
+              <p className="scenario-shape-guidance-copy">{editingId ? `Using the load model saved with ${copiedModelScenario.name}.` : `Using the load model copied from ${copiedModelScenario.name}.`} Choose a model below only to replace it.</p>
+            </div>
+          )}
+          <div className="scenario-source-grid">
+            {modelFamilies.map(family => (
+              <button
+                key={family.id}
+                type="button"
+                aria-pressed={activeModelFamily?.id === family.id}
+                className={`scenario-source-card ${activeModelFamily?.id === family.id ? 'selected' : ''}`}
+                onClick={() => selectModelFamily(family.id)}
+              >
+                <span>{family.label}</span>
+                <strong>{family.eyebrow}</strong>
+                <small>{family.description}</small>
+              </button>
+            ))}
+          </div>
+          {activeModelFamily?.id === 'traffic-profile' ? renderTrafficProfileSource() : activeModelFamily && (
+            <>
+              {shapeFamilyFor(selectedShapeId) === activeModelFamily.id && renderShapeGuidance()}
+              <div className="scenario-shape-catalog-grid">
+                {familyShapeOptions.map(option => renderShapeCard(option, activeModelFamily.id === 'goal' ? () => void openGoalSizing() : undefined))}
+                {familyShapeOptions.length === 0 && (activeModelFamily.id === 'goal'
+                  // Goal setup does not depend on the catalog, so it stays reachable while it loads or is unavailable.
+                  ? <div className="scenario-shape-actions"><button type="button" className="btn btn-sm btn-secondary" onClick={() => void openGoalSizing()}>Use Goal-Driven Scenario</button></div>
+                  : <p className="scenario-assignment-copy secondary">No workload shape catalog is available from this controller.</p>)}
+              </div>
+            </>
           )}
         </section>
       )
     }
 
     if (wizardStep === 'scripts') {
+      const selectedScriptProtocols = [...new Set(formGroups.flatMap(group => {
+        const script = findScriptById(scripts, group.script_id)
+        return script ? scriptProtocols(script) : []
+      }))]
       return (
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
+            <div>
+              <h4>Start Your Scenario</h4>
+              <p>Build a new scenario from scripts, or copy a saved scenario and adjust it. Either way, choose the load model on the next step.</p>
+            </div>
+          </div>
+          <div className="scenario-source-grid" role="group" aria-label="How to start this scenario">
+            <button type="button" aria-pressed={scenarioStartPath === 'new'} className={`scenario-source-card ${scenarioStartPath === 'new' ? 'selected' : ''}`} onClick={() => setScenarioStartPath('new')}>
+              <span>New Scenario</span>
+              <strong>Add scripts</strong>
+              <small>Choose the scripts that participate in this scenario and set up their groups.</small>
+            </button>
+            <button type="button" disabled={scenarios.length === 0} aria-pressed={scenarioStartPath === 'copy'} className={`scenario-source-card ${scenarioStartPath === 'copy' ? 'selected' : ''}`} onClick={() => setScenarioStartPath('copy')}>
+              <span>Copy Existing Scenario</span>
+              <strong>Start from a saved scenario</strong>
+              <small>{scenarios.length === 0 ? 'No saved scenarios in this workspace yet.' : 'Reuse its scripts, load model, run settings, and data pools. The original is not changed.'}</small>
+            </button>
+          </div>
+          {scenarioStartPath === 'copy' ? renderCloneScenarioPanel() : (<>
+          <div className="scenario-assignment-header">
             <div>
               <h4>Scripts And Groups</h4>
               <p>Add each script participating in the scenario and set its initialization scope. Tune VUsers and ramp on the Run Settings step.</p>
             </div>
           </div>
-          {renderShapeGuidance()}
-          <div className="settings-grid scenario-core-grid">
-            <label className="scenario-field">
-              <span>Scenario Name</span>
-              <input className="settings-input" value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} placeholder="Scenario name" />
-            </label>
-          </div>
+          {renderScenarioNameField()}
           <div className="scenario-script-group-list scenario-script-group-list-spacious">
             {formGroups.map((group, index) => {
               const selectedScript = findScriptById(scripts, group.script_id)
@@ -4392,7 +3865,17 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               {!canAddScenarioGroup && <small>{scenarioGroupNameError || 'Add a script to every existing group first'}</small>}
             </button>
           </div>
+          {selectedScriptProtocols.length > 1 && <p className="scenario-assignment-copy secondary" role="note">This scenario mixes {selectedScriptProtocols.join(', ')} scripts. Capacity advice accounts for each protocol's density.</p>}
           {renderScriptPicker()}
+          </>)}
+          {pendingCloneScenario && (
+            <ReplaceScenarioScriptsModal
+              sourceLabel={pendingCloneScenario.name}
+              onReplace={() => cloneScenarioDraft(pendingCloneScenario, 'replace')}
+              onKeep={() => cloneScenarioDraft(pendingCloneScenario, 'keep')}
+              onCancel={() => setPendingCloneScenario(null)}
+            />
+          )}
         </section>
       )
     }
@@ -4471,6 +3954,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 										<div className="goal-driven-baseline-picker">
 											<label className="scenario-field"><span>Completed baseline run</span><select aria-label="Completed baseline run" className="settings-input" value={goalBaselineId} onChange={event => void selectGoalBaseline(event.target.value)}><option value="">Choose a completed run</option>{goalBaselineTests.map(test => <option key={test.id} value={test.id}>{test.name} · {test.id}</option>)}</select><small>{goalBaselineTests.length} completed run{goalBaselineTests.length === 1 ? '' : 's'} available</small></label>
 											{goalBaselineLoadingId && <small>Loading baseline response times…</small>}
+											{goalSizingError && <div className="settings-error-inline" role="alert">{goalSizingError}</div>}
 											{goalBaselineId && activeGoalDrivenDefinition.art?.basis !== 'baseline' && <div className="settings-error-inline">No baseline group matched this script ID or normalized group name. Enter ART manually for {activeGroupLabel}.</div>}
 										</div>
 									)}
@@ -5029,7 +4513,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           </li>)}</ul>
           <button type="button" className="btn btn-secondary" onClick={() => setWizardStep('run')}>Edit runtime and placement</button>
           <button type="button" className="btn btn-secondary" onClick={() => setWizardStep('data')}>Edit data bindings</button>
-          <button type="button" className="btn btn-secondary" onClick={() => setWizardStep('scripts')}>Edit scripts and acceptance</button>
+          <button type="button" className="btn btn-secondary" onClick={openScriptComposition}>Edit scripts and acceptance</button>
         </section>
         <NewTestReadiness projectId={activeProjectId || ''} scenario={{ id: editingId || 'authoring-draft', updated_at: '',
           scripts: formGroups.map((group, order) => ({ order, name: group.name, script_id: group.script_id, vusers: group.vusers, transaction_response_time_sla_ms: group.transactionResponseTimeSlaMs })),
@@ -5146,7 +4630,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <div>
               {form.name.trim()
                 ? <p className="scenario-builder-name" aria-label="Scenario name">{form.name.trim()}</p>
-                : <p className="page-subtitle">Compose scripts, choose a workload source, tune run settings, attach data, and validate the planned model.</p>}
+                : <p className="page-subtitle">Choose scripts, pick a load model, tune run settings, attach data, and validate the planned model.</p>}
             </div>
             <div className="scenario-builder-progress">
               <span>{editingId ? (scenarioBuilderDirty ? 'Editing · Unsaved changes' : 'Editing · Saved') : (checkpointBaselineRef.current === checkpointFingerprint ? 'Browser draft · Saved locally' : 'New scenario · Unsaved')}</span>
@@ -5163,7 +4647,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   key={step.id}
                   type="button"
                   className={`scenario-wizard-step ${wizardStep === step.id ? 'active' : ''} ${stepComplete ? 'complete' : ''}`}
-                  onClick={() => setWizardStep(step.id)}
+                  onClick={() => needsAttention ? openScriptComposition() : setWizardStep(step.id)}
                   aria-current={wizardStep === step.id ? 'step' : undefined}
                   aria-label={`${step.label}${needsAttention ? ' needs attention' : stepComplete ? ' valid' : ''}`}
                 >
@@ -5233,7 +4717,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           <FormErrorSummary issues={[
             ...[blockingStageTimelineMessage, steppedRampBlockingMessage, closedVUserBlockingMessage, goalDrivenBlockingMessage].map(message => ({ message: message || '', onResolve: () => setWizardStep('source') })),
             ...[observerEnvelopeError, aggregateEnvelopeError].map(message => ({ message: message || '', onResolve: () => setWizardStep('run') })),
-            ...[assignmentValidationError, scenarioGroupNameError].map(message => ({ message: message || '', onResolve: () => setWizardStep('scripts') })),
+            ...[assignmentValidationError, scenarioGroupNameError].map(message => ({ message: message || '', onResolve: openScriptComposition })),
           ]} />
 
           <div className="scenario-builder-actions" aria-busy={savePending}><span className="ux-draft-help">Incomplete or blocked drafts are saved in this browser. Configured scenarios are saved to the project; neither launches a run.</span>
@@ -5266,7 +4750,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 const nextIndex = Math.min(scenarioWizardSteps.length - 1, currentWizardIndex + 1)
                 setWizardStep(scenarioWizardSteps[nextIndex].id)
               }}
-              disabled={savePending || currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'start' && !scenarioStartChoice) || (wizardStep === 'source' && !sourceStepComplete) || (wizardStep === 'run' && !wizardStepCompletion.run) || (wizardStep === 'scripts' && !wizardStepCompletion.scripts)}
+              disabled={savePending || currentWizardIndex === scenarioWizardSteps.length - 1 || (wizardStep === 'source' && !sourceStepComplete) || (wizardStep === 'run' && !wizardStepCompletion.run) || (wizardStep === 'scripts' && !wizardStepCompletion.scripts)}
             >
               Next
             </button>}

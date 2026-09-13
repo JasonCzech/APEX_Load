@@ -135,6 +135,7 @@ vi.mock('@uiw/react-codemirror', async () => {
       // production right-click handler (which reads view.state) can be exercised under test.
       onCreateEditor({
         dispatch: codeMirrorDispatchMock,
+        requestMeasure: (spec: { read: () => unknown; write: (value: unknown) => void }) => spec.write(spec.read()),
         scrollDOM: el,
         get state() {
           const el = ref.current
@@ -1831,7 +1832,8 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameter')
     const paramDetails = container.querySelector('.selected-parameter-details')
     expect(paramDetails).not.toBeNull()
-    expect((paramDetails?.querySelector('.selected-parameter-name') as HTMLInputElement | null)?.value).toBe('session_id')
+    expect(paramDetails?.querySelector('h3')?.textContent).toContain('session_id')
+    expect(paramDetails?.querySelector('input')).toBeNull()
     const refButtons = container.querySelectorAll('.selected-parameter-ref')
     expect(refButtons.length).toBeGreaterThan(0)
 
@@ -3647,9 +3649,10 @@ describe('ScriptEditor', () => {
     }
 
     await clickRuntimeCategory('Think Time')
-    const thinkTimeCheckboxList = findRuntimeCheckboxList(container, 'Ignore all think times')
-    expect(thinkTimeCheckboxList).toBeTruthy()
-    expect(thinkTimeCheckboxList?.querySelectorAll('label.checkbox-label')).toHaveLength(1)
+    const thinkTimeEnable = container.querySelector('input[aria-label="Enable think time"]') as HTMLInputElement
+    expect(thinkTimeEnable).not.toBeNull()
+    expect(thinkTimeEnable.checked).toBe(true)
+    expect(container.querySelector('fieldset')?.disabled).toBe(false)
 
     await clickRuntimeCategory('Error Handling')
     const errorCheckboxList = findRuntimeCheckboxList(container, 'Continue on error')
@@ -3729,7 +3732,8 @@ describe('ScriptEditor', () => {
     expect(tlsCheckboxList?.querySelectorAll('label.checkbox-label')).toHaveLength(1)
 
     expect(container.querySelectorAll('.runtime-settings-detail .settings-section.open')).toHaveLength(1)
-    expect(container.querySelector('.runtime-settings-header-actions button')?.textContent).toContain('Save Script')
+    expect(container.querySelector('.runtime-settings-header-actions')).toBeNull()
+    expect(findButtonByText(container, 'Save Script')).toBeDefined()
   })
 
   it('rehydrates editor state when a different initial script is provided', async () => {
@@ -4048,8 +4052,8 @@ describe('ScriptEditor', () => {
     expect(findCenterTab(container, 'Source')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-code-pane')?.textContent).toContain('actions[1]')
     expect(container.querySelector('#imported-metadata-section')).not.toBeNull()
-    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Insights')
-    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
+    expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Action Details')
+    expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).not.toBeNull()
     expect(container.querySelector('.script-code-inline-inspector .action-editor-panel')).toBeNull()
     expect(container.querySelector('.json-source-map')).toBeNull()
     const activeSidebarAction = container.querySelector('.action-item.active') as HTMLDivElement | null
@@ -4067,7 +4071,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-utility-sidebar .action-editor-panel')).toBeNull()
     const workspaceGrid = container.querySelector('.actions-content-grid')
     const maximizeSourceMappingButton = Array.from(metadataSection?.querySelectorAll('.source-map-header button') || []).find(
-      button => button.textContent?.trim() === 'Maximize',
+      button => button.textContent?.trim() === 'Expand workspace',
     )
     expect(maximizeSourceMappingButton).toBeDefined()
     await act(async () => {
@@ -4076,7 +4080,7 @@ describe('ScriptEditor', () => {
     expect(workspaceGrid?.classList.contains('author-outline-collapsed')).toBe(true)
     expect(workspaceGrid?.classList.contains('author-right-sidebar-collapsed')).toBe(true)
     const restoreSourceMappingButton = Array.from(metadataSection?.querySelectorAll('.source-map-header button') || []).find(
-      button => button.textContent?.trim() === 'Restore',
+      button => button.textContent?.trim() === 'Restore workspace',
     )
     expect(restoreSourceMappingButton?.getAttribute('aria-pressed')).toBe('true')
     await act(async () => {
@@ -4142,7 +4146,7 @@ describe('ScriptEditor', () => {
       openRunLogicSettingsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('Block Scheduling')
+    expect(container.textContent).toContain('Preserved run order')
 
     const openLoggingSettingsButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === 'Open Logging Settings',
@@ -4325,7 +4329,7 @@ describe('ScriptEditor', () => {
     await activateParameterDataTab(container)
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toContain('https://bbc.example/a')
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
-    expect(selectedDataView?.textContent).not.toContain('bbclinks')
+    expect(selectedDataView?.textContent).toContain('Shared dataset: bbclinks. Edits affect 2 parameters.')
     expect(selectedDataView?.textContent).toContain('Label')
     expect(Array.from(selectedDataView?.querySelectorAll('.parameter-grid tbody input') || []).map(input => (input as HTMLInputElement).value)).toEqual([
       'https://bbc.example/a',
@@ -4412,7 +4416,7 @@ describe('ScriptEditor', () => {
     const statValue = (label: string) => statRows.find(row => row.querySelector('th')?.textContent === label)?.querySelector('td')?.textContent
     // three records (Paris, Lyon, Paris); two distinct values in the mapped column
     expect(statValue('Record Count')).toBe('3')
-    expect(statValue('Unique Records')).toBe('2')
+    expect(statValue('Distinct mapped values')).toBe('2')
 
     const selectValueSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
     const cadence = container.querySelector('select[aria-label="Update Cadence for city"]') as HTMLSelectElement | null
@@ -4509,7 +4513,7 @@ describe('ScriptEditor', () => {
     const statRows = Array.from(container.querySelectorAll('.parameter-info-stats-table tbody tr'))
     const statValue = (label: string) => statRows.find(row => row.querySelector('th')?.textContent === label)?.querySelector('td')?.textContent
     expect(statValue('Record Count')).toBe('—')
-    expect(statValue('Unique Records')).toBe('—')
+    expect(statValue('Distinct mapped values')).toBe('—')
     expect(statValue('Columns')).toBe('—')
     expect(container.querySelector('.parameter-info-panel')?.textContent).toContain('fixtures/users.csv')
 
@@ -4541,7 +4545,7 @@ describe('ScriptEditor', () => {
     const dataSection = () => container.querySelector('.parameter-detail-data')
 
     // Data-backed parameter exposes both tabs; Settings is selected by default.
-    expect(tabLabels()).toEqual(['Settings', 'Data'])
+    expect(tabLabels()).toEqual(['Settings', 'Data', 'Usage'])
     expect(tab('Settings')?.getAttribute('aria-selected')).toBe('true')
     expect(infoSection()?.hasAttribute('hidden')).toBe(false)
     expect(dataSection()?.hasAttribute('hidden')).toBe(true)
@@ -4560,14 +4564,14 @@ describe('ScriptEditor', () => {
     expect(infoSection()?.hasAttribute('hidden')).toBe(false)
     expect(dataSection()?.hasAttribute('hidden')).toBe(true)
 
-    // A non-data-backed parameter (counter) has no tab switcher because Settings is the only view.
+    // Generated parameters retain Settings and Usage without a dataset tab.
     const counterItem = Array.from(container.querySelectorAll('.parameter-sidebar-item')).find(item => item.textContent?.includes('visit_no'))
     expect(counterItem).toBeDefined()
     await act(async () => {
       counterItem?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(tabLabels()).toEqual([])
-    expect(container.querySelector('.parameter-detail-tabs')).toBeNull()
+    expect(tabLabels()).toEqual(['Settings', 'Usage'])
+    expect(container.querySelector('.parameter-detail-tabs')).not.toBeNull()
     expect(infoSection()?.hasAttribute('hidden')).toBe(false)
     expect(container.querySelector('.parameter-detail-data')).toBeNull()
   })
@@ -4649,7 +4653,7 @@ describe('ScriptEditor', () => {
     expect(parameterDialog?.querySelector('.parameter-type-readonly[aria-label="Parameter Type for username: File"]')?.textContent).toContain('file')
     await activateParameterDataTab(container)
     const selectedDataView = container.querySelector('.parameter-data-selected-view') as HTMLDivElement | null
-    expect(selectedDataView?.textContent).not.toContain('merged_parameters')
+    expect(selectedDataView?.textContent).toContain('Shared dataset: merged_parameters. Edits affect 2 parameters.')
     expect(selectedDataView?.textContent).toContain('username')
     expect(selectedDataView?.textContent).toContain('password')
     expect(Array.from(selectedDataView?.querySelectorAll('.parameter-grid tbody input') || []).map(input => (input as HTMLInputElement).value)).toEqual([
@@ -4739,7 +4743,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Users.dat')
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('username')
     expect(container.textContent).toContain('2 rows · 1 column · Auto: Comma')
-    const columnNameInput = container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null
+    const columnNameInput = container.querySelector('.parameter-grid-head input[aria-label^="Column 1 name"]') as HTMLInputElement | null
     expect(columnNameInput?.value).toBe('username')
     expect(columnNameInput?.getAttribute('aria-label')).toBe('Column 1 name for users')
     const firstRowCells = Array.from(container.querySelectorAll('.parameter-grid tbody tr:first-child td'))
@@ -4850,7 +4854,7 @@ describe('ScriptEditor', () => {
 
     expect(container.querySelector('.parameter-data-dialog')).not.toBeNull()
     expect(container.textContent).toContain('2 rows · 2 columns · Auto: Tab')
-    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
+    expect((container.querySelector('.parameter-grid-head input[aria-label^="Column 1 name"]') as HTMLInputElement | null)?.value).toBe('username')
     expect(Array.from(container.querySelectorAll('.parameter-grid tbody input')).map(input => (input as HTMLInputElement).value)).toEqual(['alice', 'secret', 'bob', 'hunter2'])
     expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('auto')
     expect(container.querySelector('.parameter-delimiter-toggle')).toBeNull()
@@ -4861,6 +4865,8 @@ describe('ScriptEditor', () => {
       rawModeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    const reveal = container.querySelector('input[aria-label="Reveal sensitive columns"]') as HTMLInputElement
+    await act(async () => { reveal.click() })
     const rawData = container.querySelector('textarea[aria-label="Raw data for users"]') as HTMLTextAreaElement | null
     expect(rawData?.value).toBe('username\tpassword\nalice\tsecret\nbob\thunter2')
     const textAreaValueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
@@ -4870,6 +4876,8 @@ describe('ScriptEditor', () => {
       rawData?.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
+    await act(async () => { findButtonByText(container, 'Review raw changes')?.click() })
+    await act(async () => { findButtonByText(document.body, 'Apply dataset change')?.click() })
     const gridModeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Grid Mode') as HTMLButtonElement | undefined
     expect(gridModeButton).toBeDefined()
     await act(async () => {
@@ -4891,18 +4899,10 @@ describe('ScriptEditor', () => {
       delimiterSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    expect(container.textContent).toContain('2 rows · 1 column · Comma')
-    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username\tpassword')
-    expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('comma')
-
-    await act(async () => {
-      selectValueSetter?.call(delimiterSelect, 'auto')
-      delimiterSelect.dispatchEvent(new Event('input', { bubbles: true }))
-      delimiterSelect.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
+    expect(document.body.textContent).toContain('Remap these references')
+    expect(findButtonByText(document.body, 'Apply dataset change')?.disabled).toBe(true)
+    await act(async () => { findButtonByText(document.body, 'Cancel')?.click() })
     expect(container.textContent).toContain('2 rows · 2 columns · Auto: Tab')
-    expect((container.querySelector('.parameter-grid-head input[placeholder="col_1"]') as HTMLInputElement | null)?.value).toBe('username')
     expect((container.querySelector('select[aria-label="Delimiter for username"]') as HTMLSelectElement | null)?.value).toBe('auto')
   })
 
@@ -6695,7 +6695,7 @@ describe('ScriptEditor', () => {
     })
 
     const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!
-    act(() => {
+    await act(async () => {
       saveButton.click()
       saveButton.click()
     })
@@ -7107,7 +7107,8 @@ describe('ScriptEditor', () => {
 
     await clickRuntimeCategory('Run Logic')
 
-    expect(activeRuntimeBodyText()).toContain('Block Scheduling')
+    expect(activeRuntimeBodyText()).not.toContain('Block Scheduling')
+    expect(activeRuntimeBodyText()).toContain('Preserved run order')
     expect(activeRuntimeBodyText()).toContain('Global Iterations')
     expect(activeRuntimeBodyText()).toContain('Max Transactions')
     expect(activeRuntimeBodyText()).toContain('Workload Model')
@@ -8316,7 +8317,7 @@ describe('ScriptEditor', () => {
     expect(contentGrid?.classList.contains('author-outline-collapsed')).toBe(false)
     expect(container.querySelector('.actions-sidebar')?.classList.contains('collapsed')).toBe(false)
     expect(container.querySelector('.actions-sidebar .editor-outline-nav')?.textContent).not.toContain('Outline')
-    expect(container.querySelector('.actions-sidebar .action-list')).not.toBeNull()
+    expect(container.querySelector('.actions-sidebar .script-action-navigator')).not.toBeNull()
   })
 
   it('parameterizes selected body text from the action editor context menu', async () => {
@@ -8346,6 +8347,7 @@ describe('ScriptEditor', () => {
       actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
     const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
     expect(textarea).not.toBeNull()
     if (!textarea) {
@@ -8442,6 +8444,7 @@ describe('ScriptEditor', () => {
       actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
     const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
     expect(textarea).not.toBeNull()
     if (!textarea) {
@@ -8887,6 +8890,7 @@ describe('ScriptEditor', () => {
       actionItem.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit request body in center')?.click() })
     const textarea = container.querySelector('textarea.body-textarea') as HTMLTextAreaElement | null
     expect(textarea).not.toBeNull()
     if (!textarea) {

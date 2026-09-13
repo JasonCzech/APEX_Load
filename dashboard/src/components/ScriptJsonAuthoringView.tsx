@@ -314,11 +314,13 @@ export function ScriptCodePane({
 }
 
 export function ScriptJsonScopeBar({
+  fullScriptOnly = false,
   scope,
   showFullScriptJson,
   unavailable,
   onShowFullScriptJson,
 }: {
+  fullScriptOnly?: boolean
   scope: AuthorJsonScope | null
   showFullScriptJson: boolean
   unavailable: boolean
@@ -329,11 +331,11 @@ export function ScriptJsonScopeBar({
   return (
     <div className="script-json-scope-bar" aria-label="Script JSON display scope">
       <div className="script-json-scope-summary">
-        <strong>{selectedLabel}</strong>
+        <strong>{showFullScriptJson || unavailable ? 'Full Script JSON' : selectedLabel}</strong>
         <span title={scope.path}>{scope.label}</span>
       </div>
       <div className="script-json-scope-toggle" role="group" aria-label="JSON display scope">
-        <button
+        {!fullScriptOnly && <button
           type="button"
           className={!showFullScriptJson && !unavailable ? 'active' : ''}
           aria-pressed={!showFullScriptJson && !unavailable}
@@ -342,7 +344,7 @@ export function ScriptJsonScopeBar({
           onClick={() => onShowFullScriptJson(false)}
         >
           {selectedLabel}
-        </button>
+        </button>}
         <button
           type="button"
           className={showFullScriptJson || unavailable ? 'active' : ''}
@@ -357,6 +359,7 @@ export function ScriptJsonScopeBar({
 }
 
 export function ScriptJsonDocument({
+  fullScriptOnly = false,
   scope,
   selectedJsonText,
   showSelectedActionJson,
@@ -371,6 +374,7 @@ export function ScriptJsonDocument({
   onOpenExistingParameter,
   onOpenOccurrenceReview,
 }: {
+  fullScriptOnly?: boolean
   scope: AuthorJsonScope | null
   selectedJsonText: string
   showSelectedActionJson: boolean
@@ -387,6 +391,7 @@ export function ScriptJsonDocument({
 }) {
   const scopeBar = (
     <ScriptJsonScopeBar
+      fullScriptOnly={fullScriptOnly}
       scope={scope}
       showFullScriptJson={showFullScriptJson}
       unavailable={selectedJsonUnavailable}

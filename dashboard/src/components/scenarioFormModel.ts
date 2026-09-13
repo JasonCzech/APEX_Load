@@ -35,6 +35,17 @@ function emptyScenarioGroup(): ScenarioFormGroup {
   }
 }
 
+/**
+ * True when applying `incomingGroups` would replace or drop a script the operator
+ * already chose. Groups without a script are free to be filled.
+ */
+export function scenarioScriptConflict(
+  currentGroups: Array<Pick<ScenarioFormGroup, 'script_id'>>,
+  incomingGroups: Array<Pick<ScenarioFormGroup, 'script_id'>>,
+): boolean {
+  return currentGroups.some((group, index) => Boolean(group.script_id) && incomingGroups[index]?.script_id !== group.script_id)
+}
+
 export function ensureScenarioGroups(groups: ScenarioFormGroup[]): ScenarioFormGroup[] {
   const nextGroups = groups.length > 0 ? groups : [emptyScenarioGroup()]
   return nextGroups.map((group, index) => ({

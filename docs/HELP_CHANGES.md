@@ -9,6 +9,7 @@ This documentation ships with the dashboard build shown below each article. It d
 - Updated Settings, Access and shared-data links to their current task destinations.
 - Corrected HTTP error handling, OpenTelemetry signal coverage, sequential execution, runner availability, pacing arithmetic and MCP confirmation wording.
 - Preserved the existing General, Quick Start, Authentication, MCP, Swagger and Repository Guide URLs as navigation aliases.
+- Added the import fixture matrix evidence to [Capabilities & limitations](HELP_CAPABILITIES.md): canonical Bruno, real Kafka/Solace round trips, enterprise execution constraints, the Solace authentication correction, and the four remaining provider/customer validation gaps.
 
 This is a documentation change log, not an exhaustive product release history. Your deployment's release notes remain the source for upgrade-specific changes.
 

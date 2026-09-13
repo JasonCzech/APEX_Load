@@ -3,7 +3,7 @@ import type { ScenarioSourceMode, ScenarioWizardStep } from './scenarioWizardUti
 
 /** Authoring checkpoints are browser-local and can never be used as run payloads. */
 export interface ScenarioAuthoringDraft {
-  version: 1
+  version: 2
   projectId: string
   savedAt: string
   editingId: string | null
@@ -19,6 +19,32 @@ export interface ScenarioAuthoringDraft {
 }
 const key = (project: string) => `apexload.scenario.authoring.v1.${encodeURIComponent(project)}`
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
+
+const WIZARD_STEPS: ScenarioWizardStep[] = ['scripts', 'source', 'run', 'data', 'review']
+// Version 1 checkpoints were written while the builder opened on a separate Start step.
+const V1_WIZARD_STEPS = ['start', 'scripts', 'source', 'run', 'data', 'review']
+
+/**
+ * Upgrade a stored checkpoint to the current step order. Version 1 used six steps
+ * (Start, Scripts, Shape / Source, …); the model choice now lives on the Model &
+ * Shape step, so Start maps to Scripts and the visited index is re-expressed in the
+ * five-step order. Returns null for anything that is not a recognizable checkpoint.
+ */
+export function migrateScenarioAuthoringDraft(value: Record<string, unknown>): Record<string, unknown> | null {
+  if (value.version === 2) {
+    if (!WIZARD_STEPS.includes(value.step as ScenarioWizardStep) || !Number.isInteger(value.visited) || Number(value.visited) < 0 || Number(value.visited) >= WIZARD_STEPS.length) return null
+    return value
+  }
+  if (value.version !== 1) return null
+  if (!V1_WIZARD_STEPS.includes(String(value.step)) || !Number.isInteger(value.visited) || Number(value.visited) < 0 || Number(value.visited) >= V1_WIZARD_STEPS.length) return null
+  const toCurrent = (step: string) => (step === 'start' ? 'scripts' : step) as ScenarioWizardStep
+  return {
+    ...value,
+    version: 2,
+    step: toCurrent(String(value.step)),
+    visited: WIZARD_STEPS.indexOf(toCurrent(V1_WIZARD_STEPS[Number(value.visited)])),
+  }
+}
 
 // Refuse to persist inline credentials rather than silently dropping authored
 // settings. Project-secret references are safe to retain and resolve at launch.
@@ -62,13 +88,13 @@ export function readScenarioAuthoringDraft(project: string): ScenarioAuthoringDr
   try {
     const raw = window.localStorage.getItem(key(project))
     if (!raw || raw.length > 2_000_000) return null
-    const d: unknown = JSON.parse(raw)
-    if (!record(d) || d.version !== 1 || d.projectId !== project || !record(d.form)) return null
+    const parsed: unknown = JSON.parse(raw)
+    const d = record(parsed) ? migrateScenarioAuthoringDraft(parsed) : null
+    if (!d || d.projectId !== project || !record(d.form)) return null
     if (!['savedAt', 'editingUpdatedAt', 'shapeId', 'templateId', 'cloneId'].every(k => typeof d[k] === 'string')) return null
     if (!Number.isFinite(Date.parse(d.savedAt as string)) || (d.editingId !== null && typeof d.editingId !== 'string')) return null
     if (!['shape', 'existing', 'traffic_profile', 'csv_driven'].includes(String(d.source))) return null
     if (!['', 'goal', 'shape', 'existing', 'traffic_profile', 'csv_driven'].includes(String(d.startChoice))) return null
-    if (!['start', 'scripts', 'source', 'run', 'data', 'review'].includes(String(d.step)) || !Number.isInteger(d.visited) || Number(d.visited) < 0 || Number(d.visited) > 5) return null
     const f = d.form
     if (typeof f.name !== 'string' || typeof f.duration !== 'string' || !Array.isArray(f.groups) || f.groups.length > 1000) return null
     if (!['start_delay', 'runtime_pacing_type', 'runtime_log_level', 'runtime_auto_transactions', 'assignment_mode'].every(name => typeof f[name] === 'string')) return null
