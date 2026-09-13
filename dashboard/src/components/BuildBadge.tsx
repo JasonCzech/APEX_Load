@@ -42,6 +42,7 @@ export default function BuildBadge({ placement = 'down' }: { placement?: 'up' | 
   const { getVersion } = useSystemApi()
   const [info, setInfo] = useState<VersionResponse | null>(null)
   const [open, setOpen] = useState(false)
+  const [copyStatus, setCopyStatus] = useState('')
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -82,21 +83,41 @@ export default function BuildBadge({ placement = 'down' }: { placement?: 'up' | 
   const buildTime = formatBuildTime(info.build_time)
   const versionLabel = formatVersionLabel(info.display_version || info.version)
   const summary = `${info.environment} · ${versionLabel}`
+  const versionText = info.display_version || info.version
+  const copyPayload = [
+    `Environment: ${info.environment}`,
+    `Version: ${versionLabel}`,
+    versionText ? `Raw version: ${versionText}` : '',
+    info.commit ? `Commit: ${info.commit}` : '',
+    info.revision && info.revision !== info.version ? `Revision: ${info.revision}` : '',
+    buildTime ? `Built: ${buildTime}` : '',
+    info.go_version ? `Runtime: ${info.go_version}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const handleCopy = async () => {
+    try {
+      await window.navigator.clipboard.writeText(copyPayload)
+      setCopyStatus('Copied')
+    } catch {
+      setCopyStatus('Copy failed')
+    }
+  }
 
   return (
     <div className="build-badge" ref={ref}>
-      <button
-        type="button"
-        className={`build-badge-pill ${tone}`}
-        title={`APEX Load ${versionLabel} · ${info.environment}${buildTime ? ` · built ${buildTime}` : ''}`}
-        aria-label={`Build info: ${summary}`}
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <span className="build-badge-dot" />
-        <span className="build-badge-env">{info.environment}</span>
-        <span className="build-badge-version">{versionLabel}</span>
-      </button>
+        <button
+          type="button"
+          className={`build-badge-pill ${tone}`}
+          title={`APEX Load ${versionLabel} · ${info.environment}${buildTime ? ` · built ${buildTime}` : ''}`}
+          aria-label={`Build info: ${summary}`}
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span className="build-badge-dot" />
+          <span className="build-badge-version">Version Info</span>
+        </button>
       {open && (
         <div className={`build-badge-popover ${placement}`} role="dialog" aria-label="Build details">
           <BuildDetail label="Version" value={versionLabel} />
@@ -105,6 +126,14 @@ export default function BuildBadge({ placement = 'down' }: { placement?: 'up' | 
           {info.revision && info.revision !== info.commit && <BuildDetail label="Revision" value={info.revision} mono />}
           {buildTime && <BuildDetail label="Built" value={buildTime} />}
           {info.go_version && <BuildDetail label="Runtime" value={info.go_version} />}
+          <button
+            type="button"
+            className="build-badge-copy"
+            onClick={handleCopy}
+          >
+            Copy version info
+          </button>
+          {copyStatus && <span className="build-badge-copy-status">{copyStatus}</span>}
         </div>
       )}
     </div>

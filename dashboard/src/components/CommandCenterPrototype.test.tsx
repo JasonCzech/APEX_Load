@@ -1002,7 +1002,13 @@ describe('CommandCenterPrototype', () => {
     const graphSidebar = container.querySelector('.command-grafana-side')
     const graphSwitchPanel = graphSidebar?.querySelector('.command-view-switch-panel')
     const graphSelectionPanel = graphSidebar?.querySelector('[aria-label="Group selection"]')
-    expect(graphSidebar?.querySelector('[aria-label="Graph display options"]')).toBeNull()
+    const graphErrorPanel = graphSidebar?.querySelector('[aria-label="Error drill-down"]')
+    const graphDisplayOptions = graphSidebar?.querySelector('[aria-label="Graph display options"]')
+    const graphDisplayOptionsSlot = graphSidebar?.querySelector('.command-graph-options-slot')
+    expect(graphDisplayOptions).not.toBeNull()
+    expect(graphDisplayOptions?.textContent).toContain('Display Window')
+    expect(graphDisplayOptions?.textContent).toContain('Reset Graphs')
+    expect(Array.from(graphSidebar?.children ?? []).indexOf(graphErrorPanel!)).toBeLessThan(Array.from(graphSidebar?.children ?? []).indexOf(graphDisplayOptionsSlot!))
     await click(buttonNamed('Configure Graphs'))
     let graphOptionsPanel = container.querySelector('.charts-config-drawer')
 
@@ -1018,17 +1024,17 @@ describe('CommandCenterPrototype', () => {
     expect(Array.from(graphSidebar!.children).indexOf(graphSwitchPanel!)).toBeLessThan(Array.from(graphSidebar!.children).indexOf(graphSelectionPanel!))
     expect(graphOptionsPanel).not.toBeNull()
     expect(graphOptionsPanel?.textContent).toContain('Graph Configuration')
-    expect(graphOptionsPanel?.textContent).toContain('Display Window')
-    expect(graphOptionsPanel?.textContent).toContain('Layout')
-    expect(graphOptionsPanel?.textContent).toContain('2x2')
-    expect(graphOptionsPanel?.textContent).toContain('3x3')
+    expect(graphOptionsPanel?.textContent).not.toContain('Display Window')
+    expect(graphDisplayOptions?.textContent).toContain('Layout')
+    expect(graphDisplayOptions?.textContent).toContain('2x2')
+    expect(graphDisplayOptions?.textContent).toContain('3x3')
     expect(graphOptionsPanel?.textContent).not.toContain('Role View')
-    expect(graphOptionsPanel?.textContent).toContain('Display Time')
-    expect(graphOptionsPanel?.textContent).toContain('Time Units')
-    expect(buttonWithin(graphOptionsPanel!, 'Milliseconds').getAttribute('aria-pressed')).toBe('true')
-    expect(buttonWithin(graphOptionsPanel!, 'Seconds').getAttribute('aria-pressed')).toBe('false')
-    await click(buttonWithin(graphOptionsPanel!, 'Seconds'))
-    expect(buttonWithin(graphOptionsPanel!, 'Seconds').getAttribute('aria-pressed')).toBe('true')
+    expect(graphDisplayOptions?.textContent).toContain('Display Time')
+    expect(graphDisplayOptions?.textContent).toContain('Time Units')
+    expect(buttonWithin(graphDisplayOptions!, 'Milliseconds').getAttribute('aria-pressed')).toBe('true')
+    expect(buttonWithin(graphDisplayOptions!, 'Seconds').getAttribute('aria-pressed')).toBe('false')
+    await click(buttonWithin(graphDisplayOptions!, 'Seconds'))
+    expect(buttonWithin(graphDisplayOptions!, 'Seconds').getAttribute('aria-pressed')).toBe('true')
     expect(window.localStorage.getItem('apexload.commandCenter.grafana.chartTimeUnit')).toBe('seconds')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph data range')
     expect(graphOptionsPanel?.textContent).not.toContain('Graph density')
@@ -1105,11 +1111,11 @@ describe('CommandCenterPrototype', () => {
 
     await click(buttonNamed('Configure Graphs'))
     graphOptionsPanel = container.querySelector('.charts-config-drawer')
-    await click(buttonWithin(graphOptionsPanel!, 'Relative Time'))
+    await click(buttonWithin(graphDisplayOptions!, 'Relative Time'))
 
-    expect(buttonWithin(graphOptionsPanel!, 'Relative Time').getAttribute('aria-pressed')).toBe('true')
+    expect(buttonWithin(graphDisplayOptions!, 'Relative Time').getAttribute('aria-pressed')).toBe('true')
 
-    expect(buttonWithin(graphOptionsPanel!, '3x3').getAttribute('aria-pressed')).toBe('true')
+    expect(buttonWithin(graphDisplayOptions!, '3x3').getAttribute('aria-pressed')).toBe('true')
     expect(runtimeGraphs?.querySelector('.chart-metrics-table')).toBeNull()
 
     const tableRowsToggle = inputByLabel('Show table rows beneath graphs')
@@ -1121,9 +1127,9 @@ describe('CommandCenterPrototype', () => {
     expect(runtimeGraphs?.querySelector('.chart-metrics-table')).not.toBeNull()
 
     await click(tableRowsToggle)
-    await click(buttonWithin(graphOptionsPanel!, '2x2'))
+    await click(buttonWithin(graphDisplayOptions!, '2x2'))
 
-    expect(buttonWithin(graphOptionsPanel!, '2x2').getAttribute('aria-pressed')).toBe('true')
+    expect(buttonWithin(graphDisplayOptions!, '2x2').getAttribute('aria-pressed')).toBe('true')
     expect(container.querySelector('.charts-grid.command-center-graphs.command-center-compact')).toBeNull()
     expect(runtimeGraphs?.querySelector('.chart-metrics-table')).toBeNull()
 
@@ -1134,7 +1140,7 @@ describe('CommandCenterPrototype', () => {
 
     expect(runtimeGraphs?.querySelector('.chart-card.expanded .chart-metrics-table')).not.toBeNull()
 
-    await click(buttonWithin(graphOptionsPanel!, '3x3'))
+    await click(buttonWithin(graphDisplayOptions!, '3x3'))
 
     expect(container.querySelector('.charts-grid.command-center-graphs.command-center-compact')).not.toBeNull()
   })
@@ -1558,7 +1564,7 @@ describe('CommandCenterPrototype', () => {
     const vuserToggle = inputByLabel('Show Virtual Users')
     expect(vuserToggle.checked).toBe(true)
     expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Graph Cards')
-    expect(container.querySelector('.charts-config-drawer')?.textContent).toContain('Display Window')
+    expect(container.querySelector('[aria-label="Graph display options"]')?.textContent).toContain('Display Window')
 
     await click(vuserToggle)
 

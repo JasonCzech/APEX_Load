@@ -122,6 +122,7 @@ import {
 } from "./desktop/desktopRecents";
 import DeploymentBanner from "./components/DeploymentBanner";
 import ClientDownloadsMenu from "./components/ClientDownloadsMenu";
+import ThemeToggle from "./components/ThemeToggle";
 import {
   pageTitleForScriptSubView,
   pageTitleForView,
@@ -3296,6 +3297,7 @@ function AppShell({
               )}
               {showTopbarClientDownloads && <ClientDownloadsMenu />}
               <DeploymentBanner />
+              <ThemeToggle theme={theme} onThemeChange={setTheme} />
 
             </div>
           </PageHeader>

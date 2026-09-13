@@ -80,13 +80,13 @@ describe('testExecutionChartZoomModel', () => {
   })
 
   it('maps slider minute values to supported chart ranges', () => {
-    expect(executionChartMaxMinuteRange).toBe(30)
+    expect(executionChartMaxMinuteRange).toBe(60)
     expect(executionChartMinuteRangeValue('1m')).toBe(1)
     expect(executionChartMinuteRangeValue('30m')).toBe(30)
     expect(executionChartMinuteRangeValue('all')).toBeNull()
     expect(executionChartMinuteRangeValue('custom')).toBeNull()
     expect(executionChartTimeRangeForMinutes(0)).toBe('1m')
     expect(executionChartTimeRangeForMinutes(16)).toBe('16m')
-    expect(executionChartTimeRangeForMinutes(99)).toBe('30m')
+    expect(executionChartTimeRangeForMinutes(99)).toBe('60m')
   })
 })

@@ -2425,6 +2425,24 @@
   accent-color: var(--accent);
 }
 
+.chart-window-presets {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.chart-window-presets .btn-chip {
+  min-width: 42px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.chart-window-presets .btn-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
 .command-sidebar-graph-controls .chart-window-slider-control {
   width: 100%;
   min-width: min(320px, 100%);

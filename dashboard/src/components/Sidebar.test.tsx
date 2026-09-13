@@ -597,7 +597,7 @@ describe('Sidebar', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('v1.4.2-dev.20260613+abcdef0')
+    expect(container.textContent).toContain('Version Info')
     expect(container.textContent).not.toContain(rawRevision)
   })
 
@@ -626,6 +626,38 @@ describe('Sidebar', () => {
     })
 
     expect(onNavigate).toHaveBeenCalledWith('access')
+  })
+
+  it('opens build details and copies version info', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    systemApiMock.getVersion.mockResolvedValueOnce({
+      build_time: '2026-06-13T14:00:00Z',
+      commit: 'abc1234',
+      environment: 'kubernetes',
+      revision: 'def5678',
+      go_version: 'go1.26',
+      version: 'dev',
+      display_version: 'v1.4.2-dev.20260613+abc1234',
+    })
+
+    await act(async () => {
+      root.render(<Sidebar active="dashboard" onNavigate={vi.fn()} connectionState="connected" />)
+      await Promise.resolve()
+    })
+    const badge = container.querySelector<HTMLButtonElement>('.build-badge-pill')
+    expect(badge).not.toBeNull()
+    if (!badge) return
+    await act(async () => { badge.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const copyButton = container.querySelector<HTMLButtonElement>('.build-badge-copy')
+    expect(copyButton).not.toBeNull()
+    if (!copyButton) return
+    await act(async () => { copyButton.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Version: v1.4.2-dev.20260613+abc1234'))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Environment: kubernetes'))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Commit: abc1234'))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Revision: def5678'))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('Runtime: go1.26'))
   })
 
   it('hides Access navigation when service-account management is denied', async () => {

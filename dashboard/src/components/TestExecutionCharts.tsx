@@ -223,6 +223,12 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
 const displayWindowAllSliderValue = executionChartMaxMinuteRange + 1
+const displayWindowPresets = [
+  { label: '1m', minutes: 1 },
+  { label: '3m', minutes: 3 },
+  { label: '5m', minutes: 5 },
+  { label: '1h', minutes: 60 },
+] as const
 
 function displayWindowSliderPercent(value: number) {
   const clamped = Math.min(displayWindowAllSliderValue, Math.max(executionChartMinMinuteRange, value))
@@ -1746,6 +1752,19 @@ export default function TestExecutionCharts({
           <div className="chart-window-slider-value" aria-live="polite">
             <span>{displayWindowLabel}</span>
           </div>
+          <div className="chart-window-presets" role="group" aria-label="Graph display window presets">
+            {displayWindowPresets.map(preset => (
+              <button
+                key={preset.label}
+                className={`btn-chip ${displayWindowMinuteValue === preset.minutes ? 'active' : ''}`}
+                type="button"
+                onClick={() => onTimeRangeChange(executionChartTimeRangeForMinutes(preset.minutes))}
+                aria-pressed={displayWindowMinuteValue === preset.minutes}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="charts-config-panel-section">
@@ -1904,6 +1923,15 @@ export default function TestExecutionCharts({
           </label>
         </div>
       </div>
+      <div className="charts-config-panel-section">
+        <div>
+          <h4>Reset</h4>
+          <span>Default graph layout</span>
+        </div>
+        <button className="btn-chip chart-reset-pill" type="button" onClick={resetCharts}>
+          Reset Graphs
+        </button>
+      </div>
     </>
   )
 
@@ -1938,15 +1966,6 @@ export default function TestExecutionCharts({
         </div>
       </div>
       {!externalControlsTarget && renderChartDisplayControlSections()}
-      <div className="charts-config-panel-section">
-        <div>
-          <h4>Reset</h4>
-          <span>Default graph layout</span>
-        </div>
-        <button className="btn-chip chart-reset-pill" type="button" onClick={resetCharts}>
-          Reset Graphs
-        </button>
-      </div>
     </div>
   )
 

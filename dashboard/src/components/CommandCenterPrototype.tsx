@@ -2203,6 +2203,7 @@ function GrafanaWallView({
 }: GrafanaWallViewProps) {
   const [activeGraphGroupTab, setActiveGraphGroupTab] = useCommandViewState<GraphGroupTabId>('graphTab', 'test_results')
   const [underLoadDisplayMode, setUnderLoadDisplayMode] = useCommandViewState<UnderLoadDisplayMode>('underLoadMode', 'graphs')
+  const [graphOptionsTarget, setGraphOptionsTarget] = useState<HTMLElement | null>(null)
   const showUnderLoadDisplaySwitch = activeGraphGroupTab === 'under_load'
 
   return (
@@ -2237,6 +2238,7 @@ function GrafanaWallView({
           activeGraphGroupTab={activeGraphGroupTab}
           onActiveGraphGroupTabChange={setActiveGraphGroupTab}
           underLoadDisplayMode={underLoadDisplayMode}
+          externalControlsTarget={graphOptionsTarget}
         />
         <div className="command-grafana-side">
           <CommandViewSwitchPanel variant={variant} onVariantChange={onVariantChange} />
@@ -2248,6 +2250,7 @@ function GrafanaWallView({
           )}
           <GroupSelectionPanel groups={groups} groupVisibility={groupVisibility} onToggle={onGroupVisibilityToggle} />
           <ErrorDrilldown patterns={errorPatterns} selectedError={selectedError} onErrorSelect={onErrorSelect} compact />
+          <div ref={setGraphOptionsTarget} className="command-graph-options-slot" />
         </div>
       </div>
     </section>

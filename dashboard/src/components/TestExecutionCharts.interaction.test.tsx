@@ -1776,7 +1776,17 @@ describe('TestExecutionCharts context menu', () => {
     await act(async () => {
       setSliderValue('31')
     })
-    expect(onTimeRangeChange).toHaveBeenLastCalledWith('all')
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('31m')
+
+    const presetGroup = container.querySelector('[aria-label="Graph display window presets"]')
+    expect(presetGroup?.textContent).toContain('1m')
+    expect(presetGroup?.textContent).toContain('3m')
+    expect(presetGroup?.textContent).toContain('5m')
+    expect(presetGroup?.textContent).toContain('1h')
+    await act(async () => {
+      presetGroup?.querySelector<HTMLButtonElement>('button:last-child')?.click()
+    })
+    expect(onTimeRangeChange).toHaveBeenLastCalledWith('60m')
   })
 
   it('applies seconds to the live response-time graph title and axis', async () => {
