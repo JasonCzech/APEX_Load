@@ -11,6 +11,8 @@ import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadBlob } from '../utils/fileUtils'
 
 interface Props {
+  /** Keeps high-value diffs visible; raw source remains available on demand. */
+  compact?: boolean
   manifest: TestRunManifest | null
   error: string
   loading: boolean
@@ -119,12 +121,17 @@ function shardSummary(shards?: GeneratorShardSummary[]): string {
   return `${shards.length} shard${shards.length === 1 ? '' : 's'} / ${vusers} VUsers`
 }
 
-export default function TestExecutionManifestCard({ manifest, error, loading, onReload }: Props) {
+export default function TestExecutionManifestCard({ manifest, error, loading, onReload, compact = false }: Props) {
   const [copyStatus, setCopyStatus] = useState('')
   const [downloadError, setDownloadError] = useState('')
 
   const jsonText = useMemo(() => (manifest ? stringifyJSON(manifest) : ''), [manifest])
   const fileBaseName = manifest ? safeFilename(manifest.ref_key || manifest.test_id || manifest.test_name) : 'test-run'
+  const configurationChanges = manifest
+    ? configurationEntries(manifest.initial_configuration)
+      .map(([label, initial], index) => [label, initial, configurationEntries(manifest.current_configuration)[index]?.[1]] as const)
+      .filter(([, initial, current]) => formatValue(initial) !== formatValue(current))
+    : []
 
   const copyManifest = async () => {
     setCopyStatus('Copying...')
@@ -218,6 +225,32 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
         </div>
       </div>
 
+      {compact ? <>
+        <div className="manifest-section">
+          <h4>Initial versus current configuration</h4>
+          {configurationChanges.length > 0 ? renderDefinitions(configurationChanges.map(([label, initial, current]) => [label, `${formatValue(initial)} → ${formatValue(current)}`])) : <p className="empty-hint">No runtime configuration changes have been recorded.</p>}
+        </div>
+        <div className="manifest-section">
+          <h4>Runtime changes</h4>
+          <div className="manifest-timeline">
+            {(manifest.runtime_changes || []).map(change => (
+              <div className="manifest-timeline-entry" key={change.id || `${change.action}-${change.created_at}`}>
+                <div><strong>{change.label}</strong><span>{formatDate(change.created_at)} · {change.status || 'recorded'} · {change.actor_display_name || change.actor_subject || change.actor_type || 'system'}</span></div>
+                <p>{formatRuntimeDetails(change)}</p>
+              </div>
+            ))}
+            {(!manifest.runtime_changes || manifest.runtime_changes.length === 0) && <p className="empty-hint">No runtime changes recorded.</p>}
+          </div>
+        </div>
+        <details className="manifest-json-details">
+          <summary>View technical record</summary>
+          <div className="manifest-two-column">
+            <div className="manifest-section"><h4>Run identity</h4>{renderDefinitions([['Application', manifest.identity.application_id], ['Release', manifest.identity.release_id], ['Scenario', manifest.identity.scenario_id], ['Created', formatDate(manifest.identity.created_at)]])}</div>
+            <div className="manifest-section"><h4>Scripts & groups</h4>{renderDefinitions((manifest.scripts || []).map(script => [script.group_name, `${script.script_name || script.script_id || 'Unnamed script'} · ${script.protocol || 'Not recorded'} · ${script.vusers ?? 0} VUsers`]))}</div>
+          </div>
+          <pre className="manifest-raw">{jsonText}</pre>
+        </details>
+      </> : <>
       <div className="manifest-section">
         <h4>Run Identity</h4>
         {renderDefinitions([
@@ -396,6 +429,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
         <h4>Raw Manifest</h4>
         <pre className="manifest-raw">{jsonText}</pre>
       </div>
+      </>}
     </section>
   )
 }

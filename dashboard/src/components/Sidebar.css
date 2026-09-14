@@ -72,10 +72,84 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   user-select: none;
 }
 
+.sidebar-workspace {
+  position: relative;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.workspace-summary:hover,
+.workspace-summary:focus-visible {
+  background: var(--bg-hover);
+}
+
+.workspace-summary-icon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.workspace-summary-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.workspace-summary-kicker,
+.workspace-context-heading,
+.sidebar-nav-group-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-summary-label {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-context {
+  display: none;
+  gap: 7px;
+  padding: 4px 8px 10px;
+  background: var(--bg-secondary);
+}
+
+.sidebar-workspace.open .workspace-context {
+  display: grid;
+}
+
+.workspace-context-heading {
+  padding: 5px 4px 1px;
+}
+
 .sidebar-project {
   position: relative;
-  padding: 10px 8px;
-  border-bottom: 1px solid var(--border);
 }
 
 .project-selector {
@@ -83,7 +157,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 36px;
+  min-height: 44px;
   border: 1px solid var(--border);
   background: var(--bg-card);
   color: var(--text-primary);
@@ -92,9 +166,10 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   cursor: pointer;
 }
 
-.sidebar.collapsed .project-selector {
+.sidebar.collapsed .workspace-summary {
   justify-content: center;
-  padding: 7px;
+  min-height: 48px;
+  padding: 8px;
 }
 
 .project-icon {
@@ -122,7 +197,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   position: absolute;
   left: 8px;
   right: 8px;
-  top: 52px;
+  top: calc(100% + 4px);
   background: var(--dropdown-menu-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -186,15 +261,25 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 10px;
   padding: 12px 8px;
   overflow-y: auto;
+}
+
+.sidebar-nav-group {
+  display: grid;
+  gap: 2px;
+}
+
+.sidebar-nav-group-label {
+  padding: 3px 10px 4px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 44px;
   padding: 10px 12px;
   border: none;
   background: transparent;
@@ -210,9 +295,72 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   -webkit-user-select: none;
 }
 
+.nav-item-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 700;
+}
+
+.nav-item-primary:hover,
+.nav-item-primary.active {
+  background: var(--accent-hover);
+  color: var(--accent-contrast);
+}
+
 .sidebar.collapsed .nav-item {
   justify-content: center;
   padding: 10px;
+}
+
+.sidebar.collapsed .sidebar-nav {
+  gap: 8px;
+}
+
+.sidebar.collapsed .sidebar-nav-group {
+  gap: 4px;
+}
+
+.sidebar.collapsed .nav-item {
+  position: relative;
+  min-height: 44px;
+}
+
+.sidebar.collapsed .nav-item::after,
+.sidebar.collapsed .workspace-summary::after {
+  position: absolute;
+  left: calc(100% + 8px);
+  z-index: 30;
+  width: max-content;
+  max-width: 260px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--dropdown-menu-bg);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.sidebar.collapsed .nav-item::after {
+  content: attr(data-nav-label);
+}
+
+.sidebar.collapsed .workspace-summary::after {
+  content: attr(data-workspace-label);
+  top: 8px;
+}
+
+.sidebar.collapsed .nav-item:hover::after,
+.sidebar.collapsed .nav-item:focus-visible::after,
+.sidebar.collapsed .workspace-summary:hover::after,
+.sidebar.collapsed .workspace-summary:focus-visible::after {
+  opacity: 1;
+  transform: translateX(0);
 }
 
 .nav-item:hover {
@@ -362,13 +510,48 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 }
 
 .dev-view-control {
+  position: relative;
+}
+
+.dev-view-toggle {
   display: flex;
-  flex-direction: column;
-  gap: 7px;
-  padding: 9px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dev-view-toggle:hover,
+.dev-view-toggle:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.dev-view-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--dropdown-menu-bg);
+  box-shadow: var(--shadow-sm);
 }
 
 .dev-view-label-row {
@@ -507,8 +690,8 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
 }
 
 .collapse-btn {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-muted);
@@ -535,12 +718,9 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   .sidebar .brand-name,
   .sidebar .nav-label,
   .sidebar .project-name,
-  .sidebar .project-chevron {
+  .sidebar .project-chevron,
+  .sidebar .workspace-summary-copy {
     display: none;
-  }
-  .sidebar .project-selector {
-    justify-content: center;
-    padding: 7px;
   }
   .sidebar .project-menu {
     left: calc(100% + 8px);
@@ -554,7 +734,12 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
     align-items: center;
   }
   .sidebar .dev-view-control {
-    display: none;
+    width: 36px;
+  }
+  .sidebar .dev-view-toggle {
+    min-height: 36px;
+    padding: 6px;
+    font-size: 9px;
   }
   .sidebar .sidebar-footer-row {
     flex-direction: column;
@@ -597,6 +782,7 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   }
   .sidebar .nav-item {
     justify-content: center;
+    min-height: 44px;
     padding: 10px;
   }
   .sidebar .sidebar-footer {
@@ -609,7 +795,33 @@ body.is-desktop.is-mac .sidebar.collapsed .sidebar-brand {
   }
 }
 
+/* Keep every destination reachable without scrolling in shorter desktop
+   windows. Group dividers preserve the information architecture when the
+   labels would otherwise crowd the operator's working area. */
+@media (max-height: 920px) and (min-width: 769px) {
+  .sidebar-nav {
+    gap: 5px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .sidebar-nav-group {
+    gap: 0;
+  }
+
+  .sidebar-nav-group + .sidebar-nav-group {
+    border-top: 1px solid var(--border);
+    padding-top: 4px;
+  }
+
+  .sidebar-nav-group-label {
+    display: none;
+  }
+}
+
 .nav-item:focus-visible,
+.workspace-summary:focus-visible,
+.dev-view-toggle:focus-visible,
 .project-selector:focus-visible,
 .collapse-btn:focus-visible,
 .project-menu-item:focus-visible,

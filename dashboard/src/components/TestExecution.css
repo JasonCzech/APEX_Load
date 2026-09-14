@@ -4200,3 +4200,77 @@
 .chart-inline-options > summary { cursor: pointer; padding: 5px 8px; color: var(--text-secondary); font-size: 12px; }
 .chart-inline-options[open] { display: flex; flex-direction: column; padding: 6px; border: 1px solid var(--border); border-radius: 6px; }
 .chart-inline-options .chart-card-checkbox { margin: 6px; }
+
+/* Advanced run details is an investigation surface, not a second control room. */
+.advanced-run-state,
+.advanced-infrastructure {
+  display: grid;
+  gap: 18px;
+}
+
+.advanced-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.advanced-section-header h3 {
+  margin: 0;
+}
+
+.advanced-section-header p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+}
+
+.advanced-state-badge {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 9px;
+}
+
+.advanced-state-badge.running { border-color: var(--success); color: var(--success); }
+.advanced-state-badge.paused { border-color: var(--warning); color: var(--warning); }
+.advanced-state-badge.stopping { border-color: var(--danger); color: var(--danger); }
+
+.advanced-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.advanced-fact-grid > div {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.advanced-fact-grid dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.advanced-fact-grid dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.advanced-group-table-wrap { overflow-x: auto; }
+.advanced-group-table { border-collapse: collapse; width: 100%; }
+.advanced-group-table th,
+.advanced-group-table td { border-bottom: 1px solid var(--border); padding: 10px; text-align: left; white-space: nowrap; }
+.advanced-group-table thead th { color: var(--text-muted); font-size: 11px; text-transform: uppercase; }
+.advanced-inline-warning { color: var(--warning); margin: 0; }
+
+@media (max-width: 900px) {
+  .advanced-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

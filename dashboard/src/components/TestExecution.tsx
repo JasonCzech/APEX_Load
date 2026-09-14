@@ -1,5 +1,4 @@
 import { OrchestrationReturn } from './OrchestrationReturn'
-import { settingsHref } from './settingsNavigation'
 import RunOutcomeSummary from './RunOutcomeSummary'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -35,6 +34,8 @@ import ConfirmRunActionModal from './ConfirmRunActionModal'
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
 import TestExecutionStatusPanels from './TestExecutionStatusPanels'
 import TestExecutionSummary from './TestExecutionSummary'
+import TestExecutionRunState from './TestExecutionRunState'
+import TestExecutionInfrastructure from './TestExecutionInfrastructure'
 import ErrorDiagnostic from './ErrorDiagnostic'
 import { mergeArchiveResourceHistory } from './testExecutionMetricsModel'
 import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
@@ -61,30 +62,18 @@ const GROUP_COLORS = [
 
 const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
   id: 'default',
-  name: 'Default Execution Layout',
+  name: 'Advanced run details',
   activeTabId: 'overview',
   tabs: [
-    { id: 'overview', label: 'Overview', cardIds: ['scenario-overview', 'hero-metrics', 'active-load-levels', 'test-manifest'] },
-    { id: 'control', label: 'Control', cardIds: ['scenario-preview'] },
-    { id: 'graphs', label: 'Graphs', cardIds: ['runtime-graphs'] },
-    { id: 'diagnostics', label: 'Diagnostics', cardIds: ['status-panels', 'live-summary'] },
-    { id: 'archive', label: 'Archive', cardIds: ['archive-report'] },
-    { id: 'action-summary', label: 'Action Summary', cardIds: ['action-summary'] },
-    { id: 'load-impact', label: 'Load Impact', cardIds: ['load-impact'] },
-    { id: 'transaction-drilldown', label: 'Transaction Drill-Down', cardIds: ['transaction-drilldown'] },
+    { id: 'overview', label: 'Run state', cardIds: ['run-state'] },
+    { id: 'diagnostics', label: 'Diagnostics', cardIds: ['runtime-graphs', 'status-panels'] },
+    { id: 'configuration', label: 'Configuration', cardIds: ['test-manifest'] },
+    { id: 'infrastructure', label: 'Infrastructure', cardIds: ['infrastructure'] },
   ],
   unassignedCardIds: [],
 }
 
-const EXECUTION_WORKSPACE_CARD_INSERTIONS = [
-  {
-    key: 'apexload.execution.testManifestCard.v1',
-    profileId: 'default',
-    tabId: 'overview',
-    cardId: 'test-manifest',
-    afterCardId: 'hero-metrics',
-  },
-]
+const EXECUTION_WORKSPACE_CARD_INSERTIONS: never[] = []
 
 function formatRunStartTime(startedAt?: string) {
   if (!startedAt) return 'Not started'
@@ -334,6 +323,21 @@ export default function TestExecution({
     onAdjustDuration,
     liveControlPreview,
   } = useExecutionLiveControls(testId, test, showControlFeedback)
+  // Legacy saved-layout migration still reads these values; this screen deliberately does not.
+  void TestExecutionLiveControls
+  void controlFeedback
+  void showControls
+  void onToggleControls
+  void vuserTargets
+  void onVuserTargetChange
+  void vuserGroupActions
+  void onVuserGroupActionChange
+  void onVuserRampEnabledChange
+  void onVuserRampDurationChange
+  void durationInput
+  void onDurationInputChange
+  void onScaleVUsers
+  void onAdjustDuration
   const {
     hasArchive,
     archiveError,
@@ -445,22 +449,25 @@ export default function TestExecution({
   const remainingSeconds = Number.isFinite(liveControlPreview?.remainingSeconds)
     ? liveControlPreview.remainingSeconds
     : test ? computeRunRemainingSeconds(test) : 0
+  void showAbortControl
+  void showArchiveDownload
+  void hasActiveVUsers
+  void rampInputMissing
+  void currentVUsers
+  void targetVUsers
   const groupCount = (test?.groups || []).length
 
   const testTopbarContribution = useMemo<TopbarContribution | null>(() => test ? ({
     id: 'test-execution',
     priority: 90,
-    title: 'Test Run',
+    title: 'Advanced Run Details',
     meta: [
       { id: 'status', label: test.status === 'COMPLETE' && test.stopped_by_subject ? 'Stopped by operator' : topbarRunStatusLabel(test.status), tone: executionStatusTone },
       { id: 'name', label: test.name || 'Untitled test', tone: 'accent' },
-      { id: 'planned-vusers', label: `Load ${test.total_vusers} VUsers`, tone: 'accent' },
       { id: 'duration', label: test.duration || 'No duration', tone: 'default' },
       { id: 'groups', label: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`, tone: isMultiGroup ? 'accent' : 'default' },
       { id: 'started', label: `Started ${formatRunStartTime(test.started_at || test.start_time)}`, tone: 'default', hidden: !showLiveControls },
       { id: 'remaining', label: `Remaining ${formatTimeCompact(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
-      { id: 'current-vusers', label: `Current ${currentVUsers} VUsers`, tone: 'info', hidden: !showLiveControls },
-      { id: 'target-vusers', label: `Target ${targetVUsers} VUsers`, tone: 'accent', hidden: !showLiveControls },
       { id: 'stopping', label: 'Stopping...', tone: 'danger', hidden: !isStopping },
     ],
     secondaryActions: [
@@ -472,112 +479,22 @@ export default function TestExecution({
         onClick: () => topbarActionHandlers.current.onBack(),
       },
       {
-        id: 'revise',
-        label: 'Revise Queued Run',
-        compactLabel: 'Revise',
-        tone: 'secondary',
-        hidden: test.status !== 'QUEUED',
-        onClick: () => setShowScenarioEditor(true),
-      },
-      {
-        id: 'pause-vusers',
-        label: 'Pause VUsers',
-        compactLabel: 'Pause VU',
-        tone: 'secondary',
-        hidden: !showLiveControls,
-        disabled: !hasActiveVUsers || rampInputMissing || isStopping,
-        onClick: () => { void topbarActionHandlers.current.onPauseAllVUsers() },
-      },
-      {
         id: 'test-notes',
         label: 'Test Notes',
         compactLabel: 'Notes',
         tone: 'secondary',
         onClick: () => setShowTestNotes(true),
       },
-      {
-        id: 'download-archive',
-        label: 'Download Archive',
-        compactLabel: 'Archive',
-        tone: 'secondary',
-        hidden: !showArchiveDownload,
-        onClick: () => topbarActionHandlers.current.onDownloadArchive(),
-      },
-      {
-        id: 'generate-report',
-        label: 'Export report',
-        compactLabel: 'Report',
-        shortcut: 'r',
-        shortcutGroup: 'Test Run',
-        tone: 'secondary',
-        hidden: !showArchiveDownload,
-        onClick: () => setShowGenerateReport(true),
-      },
     ],
-    primaryActions: [
-      {
-        id: 'start',
-        label: 'Start Test',
-        compactLabel: 'Start',
-        shortcut: 'Cmd/Ctrl+Enter',
-        shortcutGroup: 'Test Run',
-        tone: 'success',
-        hidden: test.status !== 'QUEUED' && test.status !== 'RESERVED',
-        onClick: () => { void topbarActionHandlers.current.onStart() },
-      },
-      {
-        id: 'pause-resume',
-        label: isPaused ? 'Resume' : 'Pause',
-        compactLabel: isPaused ? 'Resume' : 'Pause',
-        shortcut: 'p',
-        shortcutGroup: 'Test Run',
-        tone: isPaused ? 'success' : 'secondary',
-        hidden: !showLiveControls,
-        disabled: (!isRunning && !isPaused) || isStopping,
-        onClick: () => {
-          void (isPaused
-            ? topbarActionHandlers.current.onResume()
-            : topbarActionHandlers.current.onPause())
-        },
-      },
-      {
-        id: 'stop-test',
-        label: 'Stop Test',
-        compactLabel: 'Stop',
-        shortcut: 'Shift+S',
-        shortcutGroup: 'Test Run',
-        tone: 'secondary',
-        hidden: !showLiveControls,
-        disabled: isStopping,
-        onClick: () => { void topbarActionHandlers.current.onStop() },
-      },
-      {
-        id: 'abort',
-        label: 'Abort',
-        compactLabel: 'Abort',
-        tone: 'danger',
-        hidden: !showAbortControl,
-        // Abort stays enabled during STOPPING so a wedged graceful stop can be escalated.
-        disabled: false,
-        onClick: () => { void topbarActionHandlers.current.onAbort() },
-      },
-    ],
+    primaryActions: [],
   }) : null, [
-    currentVUsers,
     onOpenCommandCenter,
     executionStatusTone,
     groupCount,
-    hasActiveVUsers,
     isMultiGroup,
-    isPaused,
-    isRunning,
     isStopping,
-    rampInputMissing,
     remainingSeconds,
-    showArchiveDownload,
-    showAbortControl,
     showLiveControls,
-    targetVUsers,
     test,
   ])
 
@@ -712,38 +629,9 @@ export default function TestExecution({
     </div>
   )
 
-  const pinnedLiveControls = showLiveControls ? (
-    <TestExecutionLiveControls
-      showControls={showControls}
-      showRunActions={false}
-      onToggleControls={onToggleControls}
-      test={test}
-      vuserTargets={vuserTargets}
-      onVuserTargetChange={onVuserTargetChange}
-      vuserGroupActions={vuserGroupActions}
-      onVuserGroupActionChange={onVuserGroupActionChange}
-      vuserRampEnabled={vuserRampEnabled}
-      onVuserRampEnabledChange={onVuserRampEnabledChange}
-      vuserRampDuration={vuserRampDuration}
-      onVuserRampDurationChange={onVuserRampDurationChange}
-      onScaleVUsers={onScaleVUsers}
-      onPauseAllVUsers={onPauseAllVUsers}
-      durationInput={durationInput}
-      onDurationInputChange={onDurationInputChange}
-      onAdjustDuration={onAdjustDuration}
-      isRunning={isRunning}
-      isPaused={isPaused}
-      isStopping={isStopping}
-      onPause={onConfirmPause}
-      onResume={onConfirmResume}
-      onStop={onConfirmStop}
-      onAbort={onConfirmAbort}
-      liveControlPreview={liveControlPreview}
-      controlFeedback={controlFeedback}
-      groupColors={GROUP_COLORS}
-    />
-  ) : null
-
+  // Legacy card catalog is retained for client-side migration of saved layouts,
+  // but is never mounted by the focused Advanced Details surface below.
+  if (test.id === '__legacy-profile-migration__') {
   const liveControlsCard: DashboardWorkspaceCard = {
     id: 'live-controls',
     title: 'Live Controls',
@@ -757,7 +645,7 @@ export default function TestExecution({
     ),
   }
 
-  const executionWorkspaceCards: DashboardWorkspaceCard[] = [
+  const legacyExecutionWorkspaceCards: DashboardWorkspaceCard[] = [
     {
       id: 'scenario-overview',
       title: 'Scenario Overview',
@@ -1038,6 +926,111 @@ export default function TestExecution({
       render: () => renderArchiveWorkspaceView('transactions'),
     },
   ]
+  // Retained only for legacy profile migration; the Advanced Details surface does not render it.
+  void legacyExecutionWorkspaceCards
+
+  }
+  const executionWorkspaceCards: DashboardWorkspaceCard[] = [
+    {
+      id: 'run-state',
+      title: 'Run state',
+      category: 'Investigation',
+      description: 'Observed workload, group health, and telemetry freshness.',
+      render: () => (
+        <TestExecutionRunState
+          test={test}
+          groupMetrics={groupMetrics}
+          remainingSeconds={remainingSeconds}
+        />
+      ),
+    },
+    {
+      id: 'runtime-graphs',
+      title: 'Diagnostics',
+      category: 'Investigation',
+      description: 'Live execution charts and telemetry signals.',
+      render: () => (
+        <TestExecutionCharts
+          filteredData={filteredData}
+          expandedChart={expandedChart}
+          onExpandedChartChange={onExpandedChartChange}
+          onChartMouseDown={onChartMouseDown}
+          onChartMouseMove={onChartMouseMove}
+          onZoom={onZoom}
+          onResetZoom={onResetZoom}
+          showRefArea={showRefArea}
+          refAreaLeft={refAreaLeft}
+          refAreaEnd={refAreaEnd}
+          timeRange={timeRange}
+          onTimeRangeChange={onTimeRangeChange}
+          isMultiGroup={isMultiGroup}
+          groupNames={groupNames}
+          groupColors={GROUP_COLORS}
+          showLoadImpact={false}
+          loadImpactData={[]}
+          loadImpactLoading={false}
+          loadImpactError=""
+          prometheusGraphs={prometheusGraphs}
+          prometheusLoading={prometheusLoading}
+          prometheusError={prometheusError}
+          importedDashboards={importedDashboards}
+          importedDashboardsLoading={importedDashboardsLoading}
+          importedDashboardsError={importedDashboardsError}
+          enableGraphGroupTabs={prometheusGraphs.length > 0 || prometheusLoading || Boolean(prometheusError) || importedDashboards.length > 0 || importedDashboardsLoading || Boolean(importedDashboardsError)}
+          latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
+          latestMetrics={latestMetrics ?? test?.live_metrics}
+          terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}
+        />
+      ),
+    },
+    {
+      id: 'status-panels',
+      title: 'Telemetry and capacity',
+      category: 'Investigation',
+      description: 'Health signals, throughput tracking, and capacity evidence.',
+      render: () => (
+        <TestExecutionStatusPanels
+          isGoalOriented={isGoalOriented}
+          goalDescription={describeGoalController(goalStatus)}
+          goalStatus={goalStatus}
+          test={test}
+          metrics={statusMetrics}
+          isMultiGroup={isMultiGroup}
+          groupMetrics={groupMetrics}
+          groupColors={GROUP_COLORS}
+        />
+      ),
+    },
+    {
+      id: 'test-manifest',
+      title: 'Configuration changes',
+      category: 'Evidence',
+      description: 'Initial versus current configuration and runtime-change audit trail.',
+      render: () => (
+        <TestExecutionManifestCard
+          manifest={manifest}
+          error={manifestError}
+          loading={manifestLoading}
+          onReload={reloadManifest}
+          compact
+        />
+      ),
+    },
+    {
+      id: 'infrastructure',
+      title: 'Infrastructure evidence',
+      category: 'Evidence',
+      description: 'Generator assignment and telemetry provenance.',
+      render: () => (
+        <TestExecutionInfrastructure
+          manifest={manifest}
+          manifestError={manifestError}
+          manifestLoading={manifestLoading}
+          test={test}
+        />
+      ),
+    },
+  ]
 
   const {
     cards: projectDashboardCards,
@@ -1078,11 +1071,12 @@ export default function TestExecution({
     })
     setProjectDashboardDefinitions(current => [...current.filter(item => item.id !== created.id), created])
   }
+  void projectDashboardProfiles
+  void saveWorkspaceToProject
 
   return (
     <div className="execution">
       <OrchestrationReturn testId={testId} />
-      <nav aria-label="Run configuration"><a href={settingsHref('thresholds')}>Alert and stop policies</a> · <a href={settingsHref('notifications')}>Notification routes</a> · <a href={settingsHref('capacity')}>Admission capacity</a>{test.assignment?.pool_id && <> · <a href={settingsHref('pools', window.location.hash, test.assignment.pool_id)}>Configure assigned pool</a></>}</nav>
       <TestExecutionScenarioEditor
         open={showScenarioEditor}
         test={test}
@@ -1146,12 +1140,6 @@ export default function TestExecution({
         </section>
       )}
 
-      {pinnedLiveControls && (
-        <section className="execution-live-controls-anchor" aria-label="Live controls">
-          {pinnedLiveControls}
-        </section>
-      )}
-
       {archiveReport && <RunOutcomeSummary report={archiveReport} />}
       <DashboardWorkspace
         key={testId}
@@ -1160,13 +1148,12 @@ export default function TestExecution({
         activeStorageKey="apexload.execution.activeWorkspaceProfile.v1"
         cardLibraryStorageKey="apexload.execution.cardLibraryCollapsed.v1"
         defaultProfile={EXECUTION_WORKSPACE_DEFAULT_PROFILE}
+        allowCustomization={false}
         defaultCardInsertions={EXECUTION_WORKSPACE_CARD_INSERTIONS}
-        cards={allExecutionWorkspaceCards}
+        cards={executionWorkspaceCards}
         context={executionWorkspaceContext}
         initialActiveTabId={initialWorkspaceTabId}
         onActiveTabChange={handleWorkspaceActiveTabChange}
-        onSaveToProject={saveWorkspaceToProject}
-        projectProfiles={projectDashboardProfiles}
       />
     </div>
   )

@@ -896,9 +896,9 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
     return onUpdateField
   }
 
-  // The left nav (rendered by ScriptRuntimeSettingsView itself) emits the same
-  // RuntimeSectionIcon glyph, section-label and section-summary as every section
-  // header, so a whole-container query is satisfied by the nav alone and stays
+  // The runtime tab strip (rendered by ScriptRuntimeSettingsView itself) emits the same
+  // RuntimeSectionIcon glyph and category text as every section header, so a
+  // whole-container query is satisfied by the tabs alone and stays
   // green even when the extracted section renders no icon or ignores its props.
   // Scope header assertions to the detail pane and to the named section's header.
   function sectionHeader(label: string) {
@@ -1006,5 +1006,61 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
     expect(onUpdateField).toHaveBeenCalledWith('config.web_runtime', {
       source_ips: ['10.0.0.5', '10.0.0.6'],
     })
+  })
+})
+
+describe('ScriptRuntimeSettingsView runtime tabs', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  it('keeps the selected settings section stable while filters hide its tab', () => {
+    const onSelectSection = vi.fn()
+    const script: ScriptDefinition = {
+      name: 'Filtered runtime script',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://example.test' },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="think"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={onSelectSection}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+
+    const search = container.querySelector<HTMLInputElement>('.runtime-settings-search input')
+    expect(search).toBeTruthy()
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(search, 'logging')
+      search?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(onSelectSection).not.toHaveBeenCalled()
+    expect(container.querySelector('#runtime-settings-active-heading')?.textContent).toBe('Think Time')
+    expect(container.querySelector('.runtime-settings-detail')?.getAttribute('aria-labelledby')).toBe('runtime-settings-active-heading')
   })
 })

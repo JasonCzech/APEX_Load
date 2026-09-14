@@ -4,7 +4,7 @@ import { RuntimeFieldEvidence } from './RuntimeFieldEvidence'
 import { RUNTIME_WORKSPACE_CATEGORIES, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 
 import type { ScriptActionDefinition, ScriptDefinition, ScriptConfig } from '../types/scripts'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
@@ -190,6 +190,11 @@ export function ScriptRuntimeSettingsView({
   script,
 }: ScriptRuntimeSettingsViewProps) {
   const [search, setSearch] = useState('')
+  const runtimeNavRef = useRef<HTMLElement>(null)
+  const scrollRuntimeTabs = (direction: number) => {
+    const tabs = runtimeNavRef.current?.querySelector('[role="tablist"]')
+    tabs?.scrollBy({ left: direction * tabs.clientWidth * 0.75, behavior: 'auto' })
+  }
   const [modifiedOnly, setModifiedOnly] = useState(false)
   const timingIssues = runtimeTimingIssues(script.config)
   const capabilities = getRuntimeProtocolCapabilities(script.protocol)
@@ -303,40 +308,43 @@ export function ScriptRuntimeSettingsView({
     const terms = `${category.label} ${category.group} ${category.fields.join(' ')} ${RUNTIME_SEARCH_TERMS[category.id] || ''}`.toLowerCase()
     return runtimeSettingsSectionIsAvailable(category.id, script.protocol) && (category.id !== 'imported_source' || hasImportedRuntimeFiles) && search.toLowerCase().trim().split(/\s+/).every(term => terms.includes(term)) && (!modifiedOnly || categoryModified(category))
   })
+  const activeSectionIsVisible = visibleCategories.some(category => category.id === activeSection)
 
   return (
 <section className="center-document runtime-settings config-panel center-document-runtime" style={{ padding: 0 }} aria-label="Runtime Settings">
-  <div className="center-document-header">
-    <div>
-      <h3 className="panel-title">Runtime Settings</h3>
-      <p>Execution, pacing, browser, protocol, and source runtime compatibility controls.</p>
-    </div>
-    {!hideSave && <div className="runtime-settings-header-actions">
+  {!hideSave && <div className="center-document-header runtime-settings-save-header">
+    <div className="runtime-settings-header-actions">
       <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
         {saving ? 'Saving...' : 'Save Script'}
       </button>
-    </div>}
-  </div>
-  <RuntimeContextSummary script={script} debug={debugContext} />
+    </div>
+  </div>}
+  <RuntimeContextSummary script={script} debug={debugContext}>
+    <label className="runtime-settings-search">Find setting<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Timing, proxy, logging…" /></label>
+    <label className="checkbox-label runtime-settings-modified-toggle"><input type="checkbox" checked={modifiedOnly} onChange={event => setModifiedOnly(event.target.checked)} />Modified only</label>
+  </RuntimeContextSummary>
   {timingIssues.length > 0 && <ul className="runtime-timing-issues" role="alert">{timingIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
   <div className="runtime-settings-grid">
-  <nav className="runtime-settings-nav" aria-label="Runtime setting categories">
-    <label>Find setting<input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Timing, proxy, logging…" /></label>
-    <label className="checkbox-label"><input type="checkbox" checked={modifiedOnly} onChange={event => setModifiedOnly(event.target.checked)} />Modified only</label>
-    {visibleCategories.length === 0 && <p role="status">No categories match. Clear the search or turn off Modified only.</p>}
-    {Array.from(new Set(RUNTIME_WORKSPACE_CATEGORIES.map(category => category.group))).map(group => {
-      const categories = visibleCategories.filter(category => category.group === group)
-      return categories.length > 0 && <section key={group}><h4>{group}</h4>{categories.map(category => {
+  <nav ref={runtimeNavRef} className="runtime-settings-tabs" aria-label="Runtime setting categories">
+    {visibleCategories.length > 0 && <button type="button" className="runtime-tabs-scroll" aria-label="Scroll runtime tabs left" onClick={() => scrollRuntimeTabs(-1)}>‹</button>}
+    {visibleCategories.length === 0 && <p className="runtime-settings-empty" role="status">No categories match. Clear the search or turn off Modified only.</p>}
+    {visibleCategories.length > 0 && <TabList className="scenario-run-settings-tabs runtime-settings-tab-list" aria-label="Runtime settings sections" onKeyDown={handleTabKey}>
+      {visibleCategories.map(category => {
         const changed = categoryModified(category)
-        return <button type="button" key={category.id} className={`runtime-settings-nav-button ${runtimeSectionIsActive(category.id) ? 'active' : ''}`} aria-current={runtimeSectionIsActive(category.id) ? 'true' : undefined} onClick={() => selectRuntimeSettingsSection(category.id)}>
-          <RuntimeSectionIcon section={category.id} /><span className="section-label">{category.label}</span><span className="section-summary">{category.id === 'imported_source' ? `${importedDispositionSummary.total} settings dispositioned` : changed ? (baselineConfig ? 'Modified' : 'Configured') : 'Saved / default'}{['think', 'pacing', 'runlogic'].includes(category.id) && timingIssues.length ? ` · ${timingIssues.length} timing issues` : ''}</span>
+        const summary = category.id === 'imported_source'
+          ? `${importedDispositionSummary.total} settings dispositioned`
+          : changed ? (baselineConfig ? 'Modified' : 'Configured') : 'Saved / default'
+        return <button type="button" role="tab" key={category.id} id={`runtime-settings-tab-${category.id}`} aria-controls="runtime-settings-tab-panel" aria-selected={runtimeSectionIsActive(category.id)} tabIndex={runtimeSectionIsActive(category.id) ? 0 : -1} className={`scenario-run-settings-tab runtime-settings-tab ${runtimeSectionIsActive(category.id) ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection(category.id)}>
+          <RuntimeSectionIcon section={category.id} />
+          <span className="runtime-settings-tab-label">{category.label}</span>
+          <span className="runtime-settings-tab-summary">{summary}{['think', 'pacing', 'runlogic'].includes(category.id) && timingIssues.length ? ` · ${timingIssues.length} timing issues` : ''}</span>
         </button>
-      })}</section>
-    })}
+      })}
+    </TabList>}
+    {visibleCategories.length > 0 && <button type="button" className="runtime-tabs-scroll" aria-label="Scroll runtime tabs right" onClick={() => scrollRuntimeTabs(1)}>›</button>}
   </nav>
-  <div className="runtime-settings-detail">
-  <h3 className="runtime-active-heading">{RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.label}</h3>
-  <RuntimeFieldEvidence script={script} baseline={baselineConfig} fields={RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.fields || []} />
+  <div className="runtime-settings-detail" role="tabpanel" id="runtime-settings-tab-panel" aria-labelledby={activeSectionIsVisible ? `runtime-settings-tab-${activeSection}` : 'runtime-settings-active-heading'}>
+  <h3 id="runtime-settings-active-heading" className="runtime-active-heading">{RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.label}</h3>
   {activeSection === 'compatibility' && <section className="section-body" aria-label="Preserved run order">
     <h3>Preserved run order</h3><p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
     <dl><dt>Block Scheduling</dt><dd>{script.config.run_logic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{script.config.run_logic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
@@ -1775,6 +1783,7 @@ export function ScriptRuntimeSettingsView({
       importedDispositionSummary={importedDispositionSummary}
     />
   )}
+  <RuntimeFieldEvidence script={script} baseline={baselineConfig} fields={RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.fields || []} />
   </div>
 </div>
 </section>

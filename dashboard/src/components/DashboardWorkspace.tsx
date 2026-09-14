@@ -29,6 +29,8 @@ export type {
 export type DashboardWorkspaceTabChangeSource = 'sync' | 'user'
 
 interface DashboardWorkspaceProps {
+  /** Read-only views should not expose dashboard-builder controls. */
+  allowCustomization?: boolean
   activeStorageKey: string
   ariaLabel: string
   cardLibraryStorageKey: string
@@ -216,6 +218,7 @@ function parseDragPayload(value: string): DragPayload | null {
 }
 
 export default function DashboardWorkspace({
+  allowCustomization = true,
   activeStorageKey,
   ariaLabel,
   cardLibraryStorageKey,
@@ -257,13 +260,15 @@ export default function DashboardWorkspace({
     [defaultCardInsertions],
   )
   const cardMap = useMemo(() => new Map(cards.map(card => [card.id, card])), [cards])
-  const [profiles, setProfiles] = useState<DashboardWorkspaceProfile[]>(() =>
-    applyDefaultCardInsertions(
+  const [profiles, setProfiles] = useState<DashboardWorkspaceProfile[]>(() => allowCustomization
+    ? applyDefaultCardInsertions(
       normalizeWorkspaceProfiles(readStoredJSON<DashboardWorkspaceProfile[]>(storageKey, [defaultProfile]), defaultProfile, cardIds),
       defaultCardInsertions,
-    ),
+    )
+    : [defaultProfile],
   )
   const [activeState, setActiveState] = useState<WorkspaceActiveState>(() => {
+    if (!allowCustomization) return { autoApply: false, profileId: defaultProfile.id }
     const stored = readStoredJSON<WorkspaceActiveState>(activeStorageKey, DEFAULT_ACTIVE_STATE)
     return {
       autoApply: stored.autoApply ?? true,
@@ -290,20 +295,22 @@ export default function DashboardWorkspace({
   }, [initialActiveTabId])
 
   useEffect(() => {
-    setProfiles(previous => applyDefaultCardInsertions(normalizeWorkspaceProfiles(previous, defaultProfile, cardIds), defaultCardInsertions))
-  }, [cardIdSignature, cardIds, defaultCardInsertionSignature, defaultCardInsertions, defaultProfile])
+    setProfiles(previous => allowCustomization
+      ? applyDefaultCardInsertions(normalizeWorkspaceProfiles(previous, defaultProfile, cardIds), defaultCardInsertions)
+      : [defaultProfile])
+  }, [allowCustomization, cardIdSignature, cardIds, defaultCardInsertionSignature, defaultCardInsertions, defaultProfile])
 
   useEffect(() => {
-    writeStoredJSON(storageKey, profiles)
-  }, [profiles, storageKey])
+    if (allowCustomization) writeStoredJSON(storageKey, profiles)
+  }, [allowCustomization, profiles, storageKey])
 
   useEffect(() => {
-    writeStoredJSON(activeStorageKey, activeState)
-  }, [activeState, activeStorageKey])
+    if (allowCustomization) writeStoredJSON(activeStorageKey, activeState)
+  }, [activeState, activeStorageKey, allowCustomization])
 
   useEffect(() => {
-    writeStoredJSON(cardLibraryStorageKey, cardLibraryCollapsed)
-  }, [cardLibraryCollapsed, cardLibraryStorageKey])
+    if (allowCustomization) writeStoredJSON(cardLibraryStorageKey, cardLibraryCollapsed)
+  }, [allowCustomization, cardLibraryCollapsed, cardLibraryStorageKey])
 
   useEffect(() => {
     if (!tabContextMenu) return undefined
@@ -649,9 +656,9 @@ export default function DashboardWorkspace({
 
   return (
     <section className={`dashboard-workspace ${customizing ? 'is-customizing' : 'is-reading'}`} aria-label={ariaLabel}>
-      <button type="button" className="btn btn-secondary btn-sm" aria-pressed={customizing} onClick={() => setCustomizing(value => !value)}>{customizing ? 'Done customizing' : 'Customize view'}</button>
-      <nav aria-label="Dashboard connections"><a href={settingsHref('prometheus')}>Prometheus connection</a> · <a href={settingsHref('dashboards')}>Imported dashboards</a></nav>
-      <div className="dashboard-workspace-toolbar">
+      {allowCustomization && <button type="button" className="btn btn-secondary btn-sm" aria-pressed={customizing} onClick={() => setCustomizing(value => !value)}>{customizing ? 'Done customizing' : 'Customize view'}</button>}
+      {allowCustomization && <nav aria-label="Dashboard connections"><a href={settingsHref('prometheus')}>Prometheus connection</a> · <a href={settingsHref('dashboards')}>Imported dashboards</a></nav>}
+      {allowCustomization && <div className="dashboard-workspace-toolbar">
         <label>
           <span>Layout</span>
           <select aria-label={`${ariaLabel} layout profile`} value={selectedProfile.id} onChange={event => selectProfile(event.target.value)}>
@@ -730,7 +737,7 @@ export default function DashboardWorkspace({
           {projectSaveState === 'saved' && <span role="status">Project dashboard saved</span>}
           {projectSaveState === 'error' && <span role="alert">Project dashboard could not be saved</span>}
         </div>
-      </div>
+      </div>}
 
       <div className="dashboard-workspace-tab-tools">
         <TabList className="dashboard-workspace-tabs" role="tablist" aria-label={`${ariaLabel} tabs`} onKeyDown={handleTabKey}>
@@ -763,7 +770,7 @@ export default function DashboardWorkspace({
             </div>
           ))}
         </TabList>
-        <div className="dashboard-workspace-add-tab">
+        {allowCustomization && <div className="dashboard-workspace-add-tab">
           <input
             aria-label={`${ariaLabel} new tab name`}
             value={newTabName}
@@ -771,10 +778,10 @@ export default function DashboardWorkspace({
             placeholder="New tab name"
           />
           <button type="button" className="btn btn-sm btn-secondary" onClick={addTab}>Add Tab</button>
-        </div>
+        </div>}
       </div>
 
-      {contextMenuTab && tabContextMenu && (
+      {allowCustomization && contextMenuTab && tabContextMenu && (
         <div
           className="dashboard-workspace-tab-menu"
           id={`dashboard-workspace-tab-menu-${contextMenuTab.id}`}
@@ -824,16 +831,16 @@ export default function DashboardWorkspace({
               onDragEnd={() => setDraggedCardId(null)}
             >
               <div className="dashboard-workspace-card-header">
-                <button
+                {allowCustomization && <button
                   type="button"
                   className="dashboard-workspace-grabber"
                   aria-label={`Reorder card ${card.title}`}
                   onKeyDown={event => handleCardKeyDown(event, card.id, activeTab.id)}
                 >
                   ⋮⋮
-                </button>
+                </button>}
                 <strong>{card.title}</strong>
-                <button
+                {allowCustomization && <button
                   type="button"
                   className="dashboard-workspace-width-toggle"
                   aria-label={`Set card ${card.title} to ${nextWidthLabel} width`}
@@ -841,15 +848,15 @@ export default function DashboardWorkspace({
                   onClick={() => toggleCardWidth(card.id, activeTab.id)}
                 >
                   {cardWidthLabel(cardWidth)}
-                </button>
-                <button
+                </button>}
+                {allowCustomization && <button
                   type="button"
                   className="dashboard-workspace-remove"
                   aria-label={`Remove card ${card.title}`}
                   onClick={() => removeCard(card.id, activeTab.id)}
                 >
                   ×
-                </button>
+                </button>}
               </div>
               <div className="dashboard-workspace-card-body">
                 {card.render()}
@@ -859,7 +866,7 @@ export default function DashboardWorkspace({
           })}
         </div>
 
-        <aside className={`dashboard-workspace-card-library ${cardLibraryCollapsed ? 'collapsed' : ''}`} aria-label={`${ariaLabel} card library`}>
+        {allowCustomization && <aside className={`dashboard-workspace-card-library ${cardLibraryCollapsed ? 'collapsed' : ''}`} aria-label={`${ariaLabel} card library`}>
           {cardLibraryCollapsed ? (
             <button
               type="button"
@@ -935,7 +942,7 @@ export default function DashboardWorkspace({
               </div>
             </>
           )}
-        </aside>
+        </aside>}
       </div>
     </section>
   )

@@ -87,8 +87,15 @@ describe('settings workspace review regressions', () => {
   })
   it('separates Debug scope from the editable script and applies the selected ignore flag', () => {
     act(() => root.render(<RuntimeContextSummary script={script} debug={{ ignoreThinkTime: true, logLevel: 'debug', breakOnFailure: false }} />))
+    const details = container.querySelector<HTMLDetailsElement>('.runtime-context-details')!
+    expect(details.open).toBe(false)
+    expect(container.querySelector('.runtime-context-toolbar')?.textContent).toContain('Editing: Script defaults')
+    act(() => details.querySelector('summary')!.click())
+    expect(details.open).toBe(true)
     expect(container.textContent).toContain('fixed 2 seconds')
     change(container.querySelector('select')!, 'debug')
+    expect(container.querySelector('.runtime-context-toolbar')?.textContent).toContain('Editing: Script defaults')
+    expect(details.querySelector('summary')?.textContent).toContain('Debug skips think time')
     expect(container.textContent).toContain('No think-time delay — overridden for Debug')
     expect(container.textContent).toContain('Replay executes one virtual user')
     expect(script.config.think_time?.ignore).toBeUndefined()

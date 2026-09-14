@@ -39,7 +39,9 @@ interface Props {
   onDevPreviewLogout?: () => void
 }
 
-const NAV_ITEMS: { id: NavPage; label: string; icon: ReactNode; requiresAccess?: boolean }[] = [
+type NavItem = { id: NavPage; label: string; icon: ReactNode; requiresAccess?: boolean }
+
+const NAV_ITEMS: NavItem[] = [
   {
     id: 'dashboard',
     label: 'Dashboard',
@@ -164,6 +166,13 @@ const NAV_ITEMS: { id: NavPage; label: string; icon: ReactNode; requiresAccess?:
   },
 ]
 
+const NAV_GROUPS: { label: string; itemIds: NavPage[] }[] = [
+  { label: 'Operate', itemIds: ['dashboard', 'command-center', 'results', 'monitoring'] },
+  { label: 'Build', itemIds: ['scripts', 'tests'] },
+  { label: 'Administer', itemIds: ['repository', 'access', 'settings'] },
+  { label: 'Support', itemIds: ['docs'] },
+]
+
 
 export default function Sidebar({
   active,
@@ -192,10 +201,12 @@ export default function Sidebar({
   onDevPreviewLogout,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false)
+  const [workspaceOpen, setWorkspaceOpen] = useState(false)
   const [domainOpen, setDomainOpen] = useState(false)
   const [projectOpen, setProjectOpen] = useState(false)
   const [applicationOpen, setApplicationOpen] = useState(false)
   const [releaseOpen, setReleaseOpen] = useState(false)
+  const workspaceRef = useRef<HTMLDivElement | null>(null)
   const domainSelectorRef = useRef<HTMLDivElement | null>(null)
   const projectSelectorRef = useRef<HTMLDivElement | null>(null)
   const applicationSelectorRef = useRef<HTMLDivElement | null>(null)
@@ -203,6 +214,7 @@ export default function Sidebar({
   const [showProjectModal, setShowProjectModal] = useState(false)
   const [showApplicationModal, setShowApplicationModal] = useState(false)
   const [showReleaseModal, setShowReleaseModal] = useState(false)
+  const [devViewOpen, setDevViewOpen] = useState(false)
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const { logout } = useAuthApi()
@@ -216,6 +228,16 @@ export default function Sidebar({
     }
     return true
   })
+  const visibleNavItemsById = useMemo(
+    () => new Map(visibleNavItems.map(item => [item.id, item])),
+    [visibleNavItems],
+  )
+  const workspaceLabel = [
+    activeDomain?.name || 'Domain',
+    activeProject?.name || 'Project',
+    activeApplication?.name || 'Application',
+    activeRelease?.name || 'Release',
+  ].join(' / ')
   const connectionClass = connectionState === 'connected' ? 'connected' : connectionState === 'connecting' ? 'connecting' : 'disconnected'
   const connectionLabel = connectionState === 'connected' ? 'Live' : connectionState === 'connecting' ? 'Connecting' : 'Disconnected'
   const identityName = formatIdentityName(authStatus)
@@ -258,6 +280,7 @@ export default function Sidebar({
   }, [sessionDeadline])
   const sessionExpiryNotice = formatSessionExpiryNotice(authStatus, sessionDeadline, sessionClock)
   const closeWorkspaceMenus = useCallback(() => {
+    setWorkspaceOpen(false)
     setDomainOpen(false)
     setProjectOpen(false)
     setApplicationOpen(false)
@@ -265,7 +288,7 @@ export default function Sidebar({
   }, [])
 
   useEffect(() => {
-    if (!domainOpen && !projectOpen && !applicationOpen && !releaseOpen) {
+    if (!workspaceOpen && !domainOpen && !projectOpen && !applicationOpen && !releaseOpen) {
       return undefined
     }
 
@@ -273,7 +296,8 @@ export default function Sidebar({
       (domainOpen && Boolean(domainSelectorRef.current?.contains(target))) ||
       (projectOpen && Boolean(projectSelectorRef.current?.contains(target))) ||
       (applicationOpen && Boolean(applicationSelectorRef.current?.contains(target))) ||
-      (releaseOpen && Boolean(releaseSelectorRef.current?.contains(target)))
+      (releaseOpen && Boolean(releaseSelectorRef.current?.contains(target))) ||
+      (workspaceOpen && Boolean(workspaceRef.current?.contains(target)))
     )
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -296,11 +320,21 @@ export default function Sidebar({
       document.removeEventListener('pointerdown', handlePointerDown, true)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen, releaseOpen])
+  }, [applicationOpen, closeWorkspaceMenus, domainOpen, projectOpen, releaseOpen, workspaceOpen])
+
+  const toggleWorkspace = () => {
+    setWorkspaceOpen(open => (collapsed ? true : !open))
+    setDomainOpen(false)
+    setProjectOpen(false)
+    setApplicationOpen(false)
+    setReleaseOpen(false)
+    setCollapsed(false)
+  }
 
   // The menus only render expanded, so a click while collapsed has to open the
   // rail as well or it silently does nothing.
   const toggleDomainMenu = () => {
+    setWorkspaceOpen(true)
     setDomainOpen(open => (collapsed ? true : !open))
     setProjectOpen(false)
     setApplicationOpen(false)
@@ -309,6 +343,7 @@ export default function Sidebar({
   }
 
   const toggleProjectMenu = () => {
+    setWorkspaceOpen(true)
     setDomainOpen(false)
     setProjectOpen(open => (collapsed ? true : !open))
     setApplicationOpen(false)
@@ -317,6 +352,7 @@ export default function Sidebar({
   }
 
   const toggleApplicationMenu = () => {
+    setWorkspaceOpen(true)
     setDomainOpen(false)
     setProjectOpen(false)
     setApplicationOpen(open => (collapsed ? true : !open))
@@ -325,6 +361,7 @@ export default function Sidebar({
   }
 
   const toggleReleaseMenu = () => {
+    setWorkspaceOpen(true)
     setDomainOpen(false)
     setProjectOpen(false)
     setApplicationOpen(false)
@@ -386,6 +423,32 @@ export default function Sidebar({
         {!collapsed && <span className="brand-name">APEX Load</span>}
       </button>
 
+      <div className={`sidebar-workspace ${workspaceOpen ? 'open' : ''}`} ref={workspaceRef}>
+        <button
+          type="button"
+          className="workspace-summary"
+          onClick={toggleWorkspace}
+          aria-label={`Workspace context. ${workspaceLabel}`}
+          aria-expanded={workspaceOpen && !collapsed}
+          aria-controls="sidebar-workspace-context"
+          data-workspace-label={workspaceLabel}
+        >
+          <span className="workspace-summary-icon" aria-hidden="true">◈</span>
+          {!collapsed && (
+            <span className="workspace-summary-copy">
+              <span className="workspace-summary-kicker">Workspace</span>
+              <span className="workspace-summary-label">{workspaceLabel}</span>
+            </span>
+          )}
+          {!collapsed && <span className="project-chevron" aria-hidden="true">⌄</span>}
+        </button>
+        <div
+          className="workspace-context"
+          id="sidebar-workspace-context"
+          aria-label="Workspace context selectors"
+          aria-hidden={!workspaceOpen || collapsed}
+        >
+            <p className="workspace-context-heading">Change workspace</p>
       <div className="sidebar-project" ref={domainSelectorRef}>
         <button
           className="project-selector"
@@ -410,6 +473,7 @@ export default function Sidebar({
                 <button
                   key={domain.id}
                   className={`project-menu-item ${activeDomain?.id === domain.id ? 'active' : ''}`}
+                  aria-current={activeDomain?.id === domain.id ? 'true' : undefined}
                   onClick={() => {
                     onDomainChange?.(domain)
                     setDomainOpen(false)
@@ -419,17 +483,6 @@ export default function Sidebar({
                 </button>
               ))}
             </div>
-            {!isDevUserPreview && (
-              <button
-                className="project-menu-action muted"
-                onClick={() => {
-                  setDomainOpen(false)
-                  onNavigate('repository')
-                }}
-              >
-                Open Repository
-              </button>
-            )}
           </div>
         )}
       </div>
@@ -462,6 +515,7 @@ export default function Sidebar({
                 <button
                   key={project.id}
                   className={`project-menu-item ${activeProject?.id === project.id ? 'active' : ''}`}
+                  aria-current={activeProject?.id === project.id ? 'true' : undefined}
                   onClick={() => {
                     onProjectChange?.(project)
                     setProjectOpen(false)
@@ -482,17 +536,6 @@ export default function Sidebar({
                 }}
               >
                 New Project
-              </button>
-            )}
-            {!isDevUserPreview && (
-              <button
-                className="project-menu-action muted"
-                onClick={() => {
-                  setProjectOpen(false)
-                  onNavigate('repository')
-                }}
-              >
-                Open Repository
               </button>
             )}
           </div>
@@ -529,6 +572,7 @@ export default function Sidebar({
                 <button
                   key={application.id}
                   className={`project-menu-item ${activeApplication?.id === application.id ? 'active' : ''}`}
+                  aria-current={activeApplication?.id === application.id ? 'true' : undefined}
                   onClick={() => {
                     onApplicationChange?.(application)
                     setApplicationOpen(false)
@@ -551,17 +595,6 @@ export default function Sidebar({
                 }}
               >
                 New Application
-              </button>
-            )}
-            {!isDevUserPreview && (
-              <button
-                className="project-menu-action muted"
-                onClick={() => {
-                  setApplicationOpen(false)
-                  onNavigate('repository')
-                }}
-              >
-                Open Repository
               </button>
             )}
           </div>
@@ -596,6 +629,7 @@ export default function Sidebar({
                 <button
                   key={release.id}
                   className={`project-menu-item ${activeRelease?.id === release.id ? 'active' : ''}`}
+                  aria-current={activeRelease?.id === release.id ? 'true' : undefined}
                   onClick={() => {
                     onReleaseChange?.(release)
                     setReleaseOpen(false)
@@ -616,35 +650,51 @@ export default function Sidebar({
                 New Release
               </button>
             )}
-            {!isDevUserPreview && (
-              <button
-                className="project-menu-action muted"
-                onClick={() => {
-                  setReleaseOpen(false)
-                  onNavigate('repository')
-                }}
-              >
-                Open Repository
-              </button>
-            )}
           </div>
         )}
       </div>
+          </div>
+      </div>
 
-      <nav className="sidebar-nav">
-        {visibleNavItems.map((item) => (
+      <nav className="sidebar-nav" aria-label="Primary navigation">
+        {visibleNavItemsById.get('new-test') && (
           <button
-            key={item.id}
-            className={`nav-item ${active === item.id ? 'active' : ''}`}
-            onClick={() => onNavigate(item.id)}
-            title={item.label}
-            aria-label={item.label}
-            aria-current={active === item.id ? 'page' : undefined}
+            className={`nav-item nav-item-primary ${active === 'new-test' ? 'active' : ''}`}
+            onClick={() => onNavigate('new-test')}
+            title="New Test"
+            aria-label="New Test"
+            aria-current={active === 'new-test' ? 'page' : undefined}
+            data-nav-label="New Test"
           >
-            <span className="nav-icon">{item.icon}</span>
-            {!collapsed && <span className="nav-label">{item.label}</span>}
+            <span className="nav-icon">{visibleNavItemsById.get('new-test')?.icon}</span>
+            {!collapsed && <span className="nav-label">New Test</span>}
           </button>
-        ))}
+        )}
+        {NAV_GROUPS.map(group => {
+          const items = group.itemIds
+            .map(itemId => visibleNavItemsById.get(itemId))
+            .filter((item): item is NavItem => Boolean(item))
+          if (items.length === 0) return null
+          return (
+            <div className="sidebar-nav-group" key={group.label}>
+              {!collapsed && <p className="sidebar-nav-group-label">{group.label}</p>}
+              {items.map(item => (
+                <button
+                  key={item.id}
+                  className={`nav-item ${active === item.id ? 'active' : ''}`}
+                  onClick={() => onNavigate(item.id)}
+                  title={item.label}
+                  aria-label={item.label}
+                  aria-current={active === item.id ? 'page' : undefined}
+                  data-nav-label={item.label}
+                >
+                  <span className="nav-icon">{item.icon}</span>
+                  {!collapsed && <span className="nav-label">{item.label}</span>}
+                </button>
+              ))}
+            </div>
+          )
+        })}
       </nav>
 
       <div className="sidebar-footer">
@@ -672,8 +722,24 @@ export default function Sidebar({
               </div>
             </div>
           )}
-          {!collapsed && isDevDashboard && (
-            <div className="dev-view-control" aria-label="Development preview mode">
+          {isDevDashboard && (
+            <div className="dev-view-control">
+              <button
+                type="button"
+                className="dev-view-toggle"
+                aria-label={`Preview permissions. Current mode: ${devViewMode}`}
+                aria-expanded={devViewOpen && !collapsed}
+                aria-controls="sidebar-dev-view-panel"
+                onClick={() => {
+                  setDevViewOpen(open => (collapsed ? true : !open))
+                  setCollapsed(false)
+                }}
+              >
+                <span aria-hidden="true">DEV</span>
+                {!collapsed && <span>Preview permissions</span>}
+              </button>
+              {devViewOpen && !collapsed && (
+                <div className="dev-view-panel" id="sidebar-dev-view-panel" aria-label="Development preview mode">
               <div className="dev-view-label-row">
                 <span>Dev View</span>
                 {isDevUserPreview && <span className="dev-view-badge">Editor preview</span>}
@@ -703,6 +769,8 @@ export default function Sidebar({
               >
                 Sign out
               </button>
+                </div>
+              )}
             </div>
           )}
           <div className="sidebar-footer-row">

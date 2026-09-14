@@ -42,7 +42,7 @@ const NAV_PAGES: NavPage[] = [
 
 const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
-const TEST_WORKSPACE_TABS = ['overview', 'control', 'graphs', 'diagnostics', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
+const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
 export const REPORT_SECTIONS = ['summary', 'performance', 'diagnostics', 'evidence', 'execution'] as const
 export type ReportSection = typeof REPORT_SECTIONS[number]
@@ -586,7 +586,7 @@ export function terminalRunReportView(view: AppView, status: string, enabled: bo
   if (view.page !== 'test' && view.page !== 'command-center') return view
   if (!view.testId) return view
   const sections: Partial<Record<TestWorkspaceTabID, ReportSection>> = {
-    overview: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
+    overview: 'execution', configuration: 'execution', infrastructure: 'execution', control: 'execution', graphs: 'performance', diagnostics: 'diagnostics',
     archive: 'evidence', 'action-summary': 'performance', 'load-impact': 'performance', 'transaction-drilldown': 'diagnostics',
   }
   return { page: 'report', testId: view.testId, ...workspaceScopeForAppView(view),

@@ -3608,7 +3608,7 @@ describe('ScriptEditor', () => {
   expect(container.querySelector('input[aria-label="Profile weight"]')).toBeTruthy()
   })
 
-  it('shows runtime settings as a split panel with one selected category', async () => {
+  it('shows runtime settings as a tabbed workspace with one selected category', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
@@ -3621,22 +3621,22 @@ describe('ScriptEditor', () => {
       runtimeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelector('.runtime-settings-nav')).toBeTruthy()
+    expect(container.querySelector('.runtime-settings-tabs')).toBeTruthy()
     expect(container.querySelector('.runtime-settings-detail')).toBeTruthy()
 
-    function runtimeNavButton(label: string) {
-      return Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(candidate =>
+    function runtimeTab(label: string) {
+      return Array.from(container.querySelectorAll('.runtime-settings-tab')).find(candidate =>
         candidate.textContent?.includes(label),
       ) as HTMLButtonElement | undefined
     }
 
-    expect(runtimeNavButton('Think Time')?.querySelector('svg[data-runtime-section-icon="think"]')).toBeTruthy()
-    expect(runtimeNavButton('Think Time')?.textContent).not.toContain('TT')
-    expect(runtimeNavButton('Run Logic')?.querySelector('svg[data-runtime-section-icon="runlogic"]')).toBeTruthy()
-    expect(runtimeNavButton('Web HTTP/HTML Compatibility')?.querySelector('svg[data-runtime-section-icon="web_runtime"]')).toBeTruthy()
+    expect(runtimeTab('Think Time')?.querySelector('svg[data-runtime-section-icon="think"]')).toBeTruthy()
+    expect(runtimeTab('Think Time')?.textContent).not.toContain('TT')
+    expect(runtimeTab('Run Logic')?.querySelector('svg[data-runtime-section-icon="runlogic"]')).toBeTruthy()
+    expect(runtimeTab('Web HTTP/HTML Compatibility')?.querySelector('svg[data-runtime-section-icon="web_runtime"]')).toBeTruthy()
 
     async function clickRuntimeCategory(label: string) {
-      const button = runtimeNavButton(label)
+      const button = runtimeTab(label)
       expect(button).toBeDefined()
       if (!button) return
       await act(async () => {
@@ -7112,7 +7112,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Web HTTP/HTML Compatibility')
 
     async function clickRuntimeCategory(label: string) {
-      const button = Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(candidate =>
+      const button = Array.from(container.querySelectorAll('.runtime-settings-tab')).find(candidate =>
         candidate.textContent?.includes(label),
       ) as HTMLButtonElement | undefined
       expect(button).toBeDefined()
@@ -7213,7 +7213,7 @@ describe('ScriptEditor', () => {
       runtimeToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const httpTransportButton = Array.from(container.querySelectorAll('.runtime-settings-nav-button')).find(button =>
+    const httpTransportButton = Array.from(container.querySelectorAll('.runtime-settings-tab')).find(button =>
       button.textContent?.includes('HTTP Transport'),
     ) as HTMLButtonElement | undefined
     expect(httpTransportButton).toBeDefined()

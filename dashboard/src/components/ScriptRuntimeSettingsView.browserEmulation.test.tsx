@@ -69,7 +69,7 @@ describe('ScriptRuntimeSettingsView Browser Emulation', () => {
     return onUpdateField
   }
 
-  it('offers the Browser Emulation nav section for http scripts but not browser or grpc scripts', () => {
+  it('offers the Browser Emulation runtime tab for http scripts but not browser or grpc scripts', () => {
     render(httpScript())
     expect(container.textContent).toContain('Browser Emulation')
 
@@ -78,8 +78,8 @@ describe('ScriptRuntimeSettingsView Browser Emulation', () => {
     render(browserScript())
     // The top-level section is absent; the label only appears as the
     // browser-protocol HTTP Transport sub-tab when that section is open.
-    const navLabels = Array.from(container.querySelectorAll('.runtime-settings-nav-button .section-label')).map(el => el.textContent)
-    expect(navLabels).not.toContain('Browser Emulation')
+    const tabLabels = Array.from(container.querySelectorAll('.runtime-settings-tab-label')).map(el => el.textContent)
+    expect(tabLabels).not.toContain('Browser Emulation')
 
     act(() => root.unmount())
     root = createRoot(container)

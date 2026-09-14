@@ -51,6 +51,24 @@ describe('Sidebar', () => {
     })
   })
 
+  const openWorkspaceContext = async () => {
+    if (container.querySelector('#sidebar-workspace-context')?.getAttribute('aria-hidden') === 'false') return
+    const workspaceButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-workspace-context"]')
+    expect(workspaceButton).not.toBeNull()
+    await act(async () => {
+      workspaceButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
+  const openDevView = async () => {
+    if (container.querySelector('#sidebar-dev-view-panel')) return
+    const devToggle = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-dev-view-panel"]')
+    expect(devToggle).not.toBeNull()
+    await act(async () => {
+      devToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+  }
+
   afterEach(async () => {
     await act(async () => {
       root.unmount()
@@ -350,7 +368,9 @@ describe('Sidebar', () => {
 
     expect(container.textContent).toContain('Checkout')
 
-    const projectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Checkout'))
+    await openWorkspaceContext()
+
+    const projectButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-project-options"]')
     expect(projectButton).toBeDefined()
     if (!projectButton) {
       return
@@ -389,7 +409,8 @@ describe('Sidebar', () => {
       )
     })
 
-    const projectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Checkout'))
+    await openWorkspaceContext()
+    const projectButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-project-options"]')
     expect(projectButton).toBeDefined()
     if (!projectButton) {
       return
@@ -407,8 +428,10 @@ describe('Sidebar', () => {
 
     expect(Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)).not.toContain('Search')
 
+    await openWorkspaceContext()
+    const reopenedProjectButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-project-options"]')
     await act(async () => {
-      projectButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      reopenedProjectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(Array.from(container.querySelectorAll('.project-menu-item')).map(item => item.textContent)).toContain('Search')
@@ -441,8 +464,9 @@ describe('Sidebar', () => {
       )
     })
 
-    const domainButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Retail'))
-    const projectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Checkout'))
+    await openWorkspaceContext()
+    const domainButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-domain-options"]')
+    const projectButton = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-project-options"]')
     expect(domainButton).toBeDefined()
     expect(projectButton).toBeDefined()
     if (!domainButton || !projectButton) {
@@ -519,7 +543,7 @@ describe('Sidebar', () => {
 
     const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
 
-    expect(labels.slice(0, 7)).toEqual(['Dashboard', 'New Test', 'Command Center', 'Results', 'Scripts', 'Scenarios', 'Repository'])
+    expect(labels).toEqual(['New Test', 'Dashboard', 'Command Center', 'Results', 'Monitoring', 'Scripts', 'Scenarios', 'Repository', 'Settings', 'Help & documentation'])
   })
 
   it('uses distinct Dashboard and Command Center sidebar icons', async () => {
@@ -695,6 +719,8 @@ describe('Sidebar', () => {
       )
     })
 
+    expect(container.textContent).toContain('Preview permissions')
+    await openDevView()
     expect(container.textContent).toContain('Dev View')
     expect(container.textContent).toContain('Admin')
     expect(container.textContent).toContain('User')
@@ -751,6 +777,7 @@ describe('Sidebar', () => {
       )
     })
 
+    await openDevView()
     expect(container.textContent).toContain('Dev User Preview')
     const signOutButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.trim() === 'Sign out')
@@ -812,6 +839,7 @@ describe('Sidebar', () => {
   const mobilityRelease = { id: 'release-1', application_id: 'application-1', name: '2608', created_at: '', updated_at: '' }
 
   const openMenu = async (selector: string) => {
+    await openWorkspaceContext()
     const selectorButton = container.querySelector<HTMLButtonElement>(selector)
     expect(selectorButton).not.toBeNull()
     await act(async () => {
@@ -866,6 +894,7 @@ describe('Sidebar', () => {
       )
     })
 
+    await openWorkspaceContext()
     const applicationSelector = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-application-options"]')
     const releaseSelector = container.querySelector<HTMLButtonElement>('[aria-controls="sidebar-release-options"]')
     expect(applicationSelector?.textContent).toContain('Driver Portal')
@@ -1032,7 +1061,7 @@ describe('Sidebar', () => {
 
     await openMenu('[aria-controls="sidebar-project-options"]')
     expect(menuButton('sidebar-project-options', 'New Project')).toBeUndefined()
-    expect(menuButton('sidebar-project-options', 'Open Repository')).toBeDefined()
+    expect(container.querySelector<HTMLButtonElement>('.sidebar-nav [aria-label="Repository"]')).not.toBeNull()
   })
 
   it('offers application creation once a project is active, without the project-management permission', async () => {
@@ -1059,7 +1088,7 @@ describe('Sidebar', () => {
     expect(menuButton('sidebar-application-options', 'New Application')).toBeDefined()
   })
 
-  it('expands the rail when a scope selector is clicked while collapsed', async () => {
+  it('expands the rail and reveals context controls when the workspace switcher is clicked while collapsed', async () => {
     await act(async () => {
       root.render(
         <Sidebar
@@ -1079,8 +1108,10 @@ describe('Sidebar', () => {
     })
     expect(container.querySelector('.sidebar.collapsed')).not.toBeNull()
 
-    await openMenu('[aria-controls="sidebar-project-options"]')
+    await openWorkspaceContext()
     expect(container.querySelector('.sidebar.collapsed')).toBeNull()
+    expect(container.querySelector('#sidebar-workspace-context')).not.toBeNull()
+    await openMenu('[aria-controls="sidebar-project-options"]')
     expect(container.querySelector('#sidebar-project-options')).not.toBeNull()
   })
 
@@ -1108,6 +1139,7 @@ describe('Sidebar', () => {
       )
     })
 
+    await openDevView()
     await act(async () => {
       Array.from(container.querySelectorAll('button'))
         .find(button => button.textContent === 'User')
