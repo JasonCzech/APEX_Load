@@ -1051,6 +1051,7 @@ describe('ScriptRuntimeSettingsView runtime tabs', () => {
       )
     })
 
+    expect(container.querySelector('[role="tablist"]')?.getAttribute('aria-orientation')).toBe('vertical')
     const search = container.querySelector<HTMLInputElement>('.runtime-settings-search input')
     expect(search).toBeTruthy()
     act(() => {

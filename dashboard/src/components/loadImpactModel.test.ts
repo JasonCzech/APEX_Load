@@ -174,7 +174,7 @@ describe('loadImpactModel', () => {
     const cell = model.rows[0].cells[0]
 
     expect(loadImpactCellKey(cell)).toBe('avgMs:vusers-5')
-    expect(formatLoadImpactCellTitle(cell)).toBe('5 VUsers | ART avg 120ms | min 100ms | max 140ms | 2 samples')
+    expect(formatLoadImpactCellTitle(cell)).toBe('5 VUsers | ART avg 120ms | min 100ms | max 140ms | 2 telemetry intervals')
   })
 })
 

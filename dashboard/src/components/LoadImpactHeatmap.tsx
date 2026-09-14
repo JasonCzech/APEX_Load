@@ -51,12 +51,26 @@ function metricSampleCount(row: LoadImpactRow) {
   return row.cells.reduce((sum, cell) => sum + cell.sampleCount, 0)
 }
 
-function loadPointDescriptor(bucket: LoadImpactBucket) {
-  return `${bucket.exact ? 'Exact load point' : 'Load range'} · ${bucket.sampleCount} total sample${bucket.sampleCount === 1 ? '' : 's'}`
+function telemetryIntervalCount(count: number) {
+  return `${count} telemetry interval${count === 1 ? '' : 's'}`
 }
 
-function bucketSortKey(bucketId: string) {
-  return `bucket:${bucketId}`
+function loadPointDescriptor(bucket: LoadImpactBucket) {
+  return `${bucket.exact ? 'Exact load point' : 'Load range'} · ${telemetryIntervalCount(bucket.sampleCount)}`
+}
+
+const OPERATOR_METRIC_IDS = ['avgMs', 'p95', 'tps', 'errorPct', 'cpuProcess', 'memProcess']
+const DETAIL_COLUMNS: Array<{ key: keyof MetricsHistoryPoint; label: string; unit?: string }> = [
+  { key: 'avgMs', label: 'ART', unit: 'ms' },
+  { key: 'tps', label: 'TPS' },
+  { key: 'p95', label: 'P95', unit: 'ms' },
+  { key: 'errorPct', label: 'Error %', unit: '%' },
+  { key: 'cpuProcess', label: 'CPU', unit: '%' },
+  { key: 'memProcess', label: 'Memory', unit: 'MB' },
+]
+
+function detailColumns(cell: LoadImpactCell) {
+  return DETAIL_COLUMNS.filter(column => column.key !== cell.metric.key)
 }
 
 const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeatmap({
@@ -130,6 +144,11 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
     setSelectedCellKey(null)
   }
 
+  const useOperatorMetrics = () => {
+    setSelectedMetricIds(availableMetricIds.filter(id => OPERATOR_METRIC_IDS.includes(id)))
+    setSelectedCellKey(null)
+  }
+
   const toggleSort = (key: string) => {
     setSortState(prev => prev?.key === key
       ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
@@ -186,7 +205,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
         />
         <span>
           <strong>{row.metric.label}</strong>
-          <small>{row.metric.category} · {metricSampleCount(row)} samples{row.metric.unit ? ` · ${row.metric.unit}` : ''}</small>
+          <small>{row.metric.category} · {telemetryIntervalCount(metricSampleCount(row))}{row.metric.unit ? ` · ${row.metric.unit}` : ''}</small>
         </span>
       </label>
     )
@@ -265,7 +284,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
           )}
           <div className="load-impact-badges">
             {loading && <span className="archive-chip">Loading</span>}
-            {!loading && model.pointCount > 0 && <span className="archive-chip">{model.pointCount} samples</span>}
+            {!loading && model.pointCount > 0 && <span className="archive-chip">{telemetryIntervalCount(model.pointCount)}</span>}
             {!loading && model.rows.length > 0 && <span className="archive-chip">{displayModel.rows.length}/{model.rows.length} metrics</span>}
             {!loading && model.buckets.length > 0 && <span className="archive-chip">{displayModel.buckets.length}/{model.buckets.length} loads</span>}
           </div>
@@ -288,6 +307,17 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
         </div>
       ) : (
         <>
+          <div className="load-impact-context">
+            <div className="load-impact-scale-legend">
+              <span className="load-impact-scale-swatch low" aria-hidden="true" />
+              <span>Lower relative value</span>
+              <span className="load-impact-scale-swatch high" aria-hidden="true" />
+              <span>Higher relative value</span>
+            </div>
+            <p>Each metric uses its own observed range. Color and 3D height compare load points within that metric; they do not indicate an SLA breach or compare units.</p>
+            <p>Cells show averages of telemetry intervals. Resource metrics describe the load generators.</p>
+            {displayModel.buckets.length === 1 && <p className="load-impact-context-callout">One observed load level: load sensitivity cannot be assessed from this run.</p>}
+          </div>
           {viewMode === '3d' ? (
             <LazyLoadBoundary title="The 3D heatmap could not be loaded." className="load-impact-state lazy-load-error">
               <Suspense fallback={<div className="load-impact-state" role="status">Loading 3D view…</div>}>
@@ -300,7 +330,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
             </LazyLoadBoundary>
           ) : (
             <div className="load-impact-table-wrap">
-              <table className="load-impact-table">
+              <table className="load-impact-table" data-table-pagination="off">
                 <thead>
                   <tr>
             <th scope="col" aria-label="Sort by metric" aria-sort={ariaSort(METRIC_SORT_KEY)}>
@@ -317,24 +347,17 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                       const columnHighlighted = highlightedAxis?.bucketId === bucket.id
                       return (
               <th
-                aria-label={`Sort by ${bucket.label}`}
+                aria-label={bucket.label}
                           key={bucket.id}
                           scope="col"
-                          aria-sort={ariaSort(bucketSortKey(bucket.id))}
+                          aria-sort="none"
                           className={columnHighlighted ? 'load-impact-axis-highlighted' : undefined}
                           data-axis-active={columnHighlighted ? 'true' : undefined}
                         >
-                          <button
-                            type="button"
-                            className="load-impact-sort-header"
-                            onClick={() => toggleSort(bucketSortKey(bucket.id))}
-                          >
-                            <span>
-                              <span>{bucket.label}</span>
-                              <small>{bucket.sampleCount} total</small>
-                            </span>
-                            <span className="load-impact-sort-icon" aria-hidden="true">{sortIndicator(bucketSortKey(bucket.id))}</span>
-                          </button>
+                          <span>
+                            <span>{bucket.label}</span>
+                            <small>{telemetryIntervalCount(bucket.sampleCount)}</small>
+                          </span>
                         </th>
                       )
                     })}
@@ -343,6 +366,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                 <tbody>
                   {sortedRows.map(row => {
                     const rowHighlighted = highlightedAxis?.metricId === row.metric.id
+                    const hasVariation = row.minAverage !== undefined && row.maxAverage !== undefined && row.minAverage !== row.maxAverage
                     return (
                       <tr key={row.metric.id} className={rowHighlighted ? 'load-impact-row-highlighted' : undefined}>
                         <th
@@ -355,7 +379,8 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                         </th>
                         {row.cells.map(cell => {
                           const selected = selectedCellKey === loadImpactCellKey(cell)
-                          const alpha = cell.sampleCount > 0 ? 0.12 + cell.intensity * 0.68 : 0
+                          const isConstant = cell.sampleCount > 0 && !hasVariation
+                          const alpha = cell.sampleCount > 0 ? hasVariation ? 0.12 + cell.intensity * 0.68 : 0.1 : 0
                           const title = formatLoadImpactCellTitle(cell)
                           return (
                             <td
@@ -369,7 +394,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                             >
                               <button
                                 type="button"
-                                className={`load-impact-cell${selected ? ' selected' : ''}`}
+                                className={`load-impact-cell${selected ? ' selected' : ''}${isConstant ? ' load-impact-cell-constant' : ''}`}
                                 disabled={cell.sampleCount === 0}
                                 title={title}
                                 aria-label={`${cell.metric.label} at ${cell.bucket.label}: ${title}`}
@@ -381,7 +406,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                                 } as CSSProperties}
                               >
                                 <strong>{formatLoadImpactValue(cell.average, cell.metric.unit)}</strong>
-                                <span>{cell.sampleCount}</span>
+                                <span>{cell.sampleCount === 0 ? 'No telemetry intervals' : isConstant ? `No variation · ${telemetryIntervalCount(cell.sampleCount)}` : telemetryIntervalCount(cell.sampleCount)}</span>
                               </button>
                             </td>
                           )
@@ -400,24 +425,19 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                 <div>
                   <h4>{selectedCell.metric.label} at {selectedCell.bucket.label}</h4>
                   <p>
-                    Avg {formatLoadImpactValue(selectedCell.average, selectedCell.metric.unit)} · Min {formatLoadImpactValue(selectedCell.min, selectedCell.metric.unit)} · Max {formatLoadImpactValue(selectedCell.max, selectedCell.metric.unit)}
+                    Mean interval {selectedCell.metric.label} {formatLoadImpactValue(selectedCell.average, selectedCell.metric.unit)} · Min {formatLoadImpactValue(selectedCell.min, selectedCell.metric.unit)} · Max {formatLoadImpactValue(selectedCell.max, selectedCell.metric.unit)}
                   </p>
                 </div>
-                <span className="archive-chip">{selectedCell.sampleCount} data points</span>
+                <span className="archive-chip">{telemetryIntervalCount(selectedCell.sampleCount)}</span>
               </div>
               <div className="load-impact-detail-table-wrap">
-                <table className="load-impact-detail-table">
+                <table className="load-impact-detail-table" data-table-pagination="off">
                   <thead>
                     <tr>
                       <th>Timestamp</th>
                       <th>VUsers</th>
                       <th>{selectedCell.metric.label}</th>
-                      <th>ART</th>
-                      <th>TPS</th>
-                      <th>P95</th>
-                      <th>Error %</th>
-                      <th>CPU</th>
-                      <th>Memory</th>
+                      {detailColumns(selectedCell).map(column => <th key={column.key}>{column.label}</th>)}
                       <th>Network</th>
                       <th>Disk</th>
                     </tr>
@@ -428,12 +448,9 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                         <td className="tx-name">{formatPointTimestamp(point.source)}</td>
                         <td>{point.vusers}</td>
                         <td>{formatLoadImpactValue(point.value, selectedCell.metric.unit)}</td>
-                        <td>{relatedValue(point.source, 'avgMs', 'ms')}</td>
-                        <td>{relatedValue(point.source, 'tps')}</td>
-                        <td>{relatedValue(point.source, 'p95', 'ms')}</td>
-                        <td>{relatedValue(point.source, 'errorPct', '%')}</td>
-                        <td>{relatedValue(point.source, 'cpuProcess', '%')}</td>
-                        <td>{relatedValue(point.source, 'memProcess', 'MB')}</td>
+                        {detailColumns(selectedCell).map(column => (
+                          <td key={column.key}>{relatedValue(point.source, column.key, column.unit)}</td>
+                        ))}
                         <td>{relatedValue(point.source, 'netSent', 'KB/s')} / {relatedValue(point.source, 'netRecv', 'KB/s')}</td>
                         <td>{relatedValue(point.source, 'diskRead', 'KB/s')} / {relatedValue(point.source, 'diskWrite', 'KB/s')}</td>
                       </tr>
@@ -464,13 +481,16 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
             </div>
             <div className="load-impact-graph-drawer-actions">
               <button type="button" className="btn btn-secondary btn-sm" onClick={resetConfiguration}>
-                Reset
+                Restore defaults
+              </button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={useOperatorMetrics}>
+                Key operator metrics
               </button>
               <button type="button" className="btn btn-secondary btn-sm" onClick={selectAllConfiguration}>
-                Add All
+                Select all
               </button>
               <button type="button" className="btn btn-ghost btn-sm" onClick={clearConfiguration}>
-                Remove All
+                Clear selection
               </button>
             </div>
             <div className="load-impact-graph-option-list">

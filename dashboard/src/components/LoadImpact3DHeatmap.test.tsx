@@ -230,6 +230,29 @@ describe('LoadImpact3DHeatmap', () => {
     expect(threeMockState.materials).toHaveLength(1)
     expect(material.color.copy).toHaveBeenCalledTimes(initialCopyCount + 1)
   })
+
+  it('starts stationary and exposes rotation, camera, and an accessible cell selector', async () => {
+    const onSelectedCellKeyChange = vi.fn()
+    await act(async () => {
+      root.render(<LoadImpact3DHeatmap model={createModel(120)} selectedCellKey={null} onSelectedCellKeyChange={onSelectedCellKeyChange} />)
+    })
+
+    const rotate = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Rotate view')
+    expect(rotate?.getAttribute('aria-pressed')).toBe('false')
+    expect(container.textContent).toContain('Height shows relative value within each metric')
+    expect(Array.from(container.querySelectorAll('button')).map(button => button.textContent)).toContain('Reset view')
+    expect(Array.from(container.querySelectorAll('button')).map(button => button.textContent)).toContain('Top view')
+
+    const cellPicker = container.querySelector<HTMLSelectElement>('.load-impact-3d-cell-picker select')
+    expect(cellPicker?.getAttribute('aria-label')).toBeNull()
+    expect(cellPicker?.labels?.[0]?.textContent).toContain('Inspect a 3D cell')
+    await act(async () => {
+      if (!cellPicker) throw new Error('Expected a 3D cell selector')
+      cellPicker.value = 'avgMs:vusers-5'
+      cellPicker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onSelectedCellKeyChange).toHaveBeenCalledWith('avgMs:vusers-5')
+  })
 })
 
 const metric: LoadImpactMetric = {

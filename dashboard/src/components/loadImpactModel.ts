@@ -91,7 +91,7 @@ export function formatLoadImpactCellTitle(cell: LoadImpactCell) {
     `${cell.metric.label} avg ${formatLoadImpactValue(cell.average, cell.metric.unit)}`,
     `min ${formatLoadImpactValue(cell.min, cell.metric.unit)}`,
     `max ${formatLoadImpactValue(cell.max, cell.metric.unit)}`,
-    `${cell.sampleCount} sample${cell.sampleCount === 1 ? '' : 's'}`,
+    `${cell.sampleCount} telemetry interval${cell.sampleCount === 1 ? '' : 's'}`,
   ].join(' | ')
 }
 

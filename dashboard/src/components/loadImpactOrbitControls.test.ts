@@ -75,4 +75,21 @@ describe('LoadImpactOrbitControls', () => {
     expect(Math.hypot(camera.position.x, camera.position.y, camera.position.z)).toBeLessThan(initialDistance)
     controls.dispose()
   })
+
+  it('clears pending drag and zoom motion before restoring a camera view', () => {
+    const { camera, controls, element } = createHarness()
+    controls.enableDamping = true
+    const initialPosition = { ...camera.position }
+
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 10, pointerId: 4 }))
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 110, clientY: 80, pointerId: 4 }))
+    element.dispatchEvent(new WheelEvent('wheel', { cancelable: true, deltaY: -500 }))
+    controls.resetMotion()
+    controls.update()
+
+    expect(camera.position.x).toBeCloseTo(initialPosition.x)
+    expect(camera.position.y).toBeCloseTo(initialPosition.y)
+    expect(camera.position.z).toBeCloseTo(initialPosition.z)
+    controls.dispose()
+  })
 })

@@ -150,7 +150,7 @@ describe('LoadImpactHeatmap', () => {
     expect(document.activeElement).toBe(configureButton)
   })
 
-  it('sorts heatmap rows from metric and VUser load column headers', async () => {
+  it('sorts heatmap rows alphabetically without ranking mixed-unit values', async () => {
     await act(async () => {
       root.render(
         <LoadImpactHeatmap
@@ -164,19 +164,7 @@ describe('LoadImpactHeatmap', () => {
 
     expect(rowLabels()[0]).toBe('ARTms')
 
-    await act(async () => {
-      sortButtonByLabel('5 VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(rowLabels().slice(0, 4)).toEqual(['P95ms', 'ARTms', 'CPU VUsers%', 'TPS'])
-    expect(container.querySelector('thead th[aria-sort="descending"]')?.textContent).toContain('5 VUsers')
-
-    await act(async () => {
-      sortButtonByLabel('5 VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(rowLabels().slice(0, 4)).toEqual(['TPS', 'CPU VUsers%', 'ARTms', 'P95ms'])
-    expect(container.querySelector('thead th[aria-sort="ascending"]')?.textContent).toContain('5 VUsers')
+    expect(sortButtonByLabel('5 VUsers')).toBeNull()
 
     await act(async () => {
       sortButtonByLabel('Metric')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -251,7 +239,8 @@ describe('LoadImpactHeatmap', () => {
     })
 
     expect(container.querySelector('.load-impact-detail')?.textContent).toContain('ART at 5 VUsers')
-    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('2 data points')
+    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('2 telemetry intervals')
+    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('Mean interval ART')
     expect(container.querySelector('.load-impact-detail')?.textContent).toContain('120ms')
     expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('100ms')
     expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('140ms')
@@ -300,7 +289,34 @@ describe('LoadImpactHeatmap', () => {
     })
 
     expect(container.querySelector('.load-impact-detail')?.textContent).toContain('ART at 5 VUsers')
-    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('1 data points')
+    expect(container.querySelector('.load-impact-detail')?.textContent).toContain('1 telemetry interval')
+  })
+
+  it('explains relative scale and treats a constant metric as no variation', async () => {
+    await act(async () => {
+      root.render(<LoadImpactHeatmap points={[point('10:00:00', 5, { avgMs: 100, errorPct: 0 })]} />)
+    })
+
+    expect(container.textContent).toContain('Each metric uses its own observed range')
+    expect(container.textContent).toContain('One observed load level')
+    expect(container.textContent).toContain('No variation · 1 telemetry interval')
+  })
+
+  it('offers a key operator metrics preset in configuration', async () => {
+    await act(async () => {
+      root.render(
+        <LoadImpactHeatmap points={[
+          point('10:00:00', 5, { avgMs: 100, p50: 90, p90: 110, p95: 120, p99: 130, tps: 3, errorPct: 1, cpuProcess: 18, memProcess: 256 }),
+        ]} />,
+      )
+    })
+
+    await act(async () => buttonByText('Configure Map')?.click())
+    await act(async () => buttonByText('Key operator metrics')?.click())
+
+    expect(container.querySelector<HTMLInputElement>('input[value="p50"]')?.checked).toBe(false)
+    expect(container.querySelector<HTMLInputElement>('input[value="p95"]')?.checked).toBe(true)
+    expect(container.querySelector<HTMLInputElement>('input[value="memProcess"]')?.checked).toBe(true)
   })
 
   function rowLabels() {

@@ -207,6 +207,48 @@
   background: var(--bg-surface);
 }
 
+.load-impact-context {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--bg-surface);
+}
+
+.load-impact-context p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.load-impact-context-callout {
+  color: var(--text-primary) !important;
+  font-weight: 700;
+}
+
+.load-impact-scale-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.load-impact-scale-swatch {
+  width: 18px;
+  height: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 3px;
+}
+
+.load-impact-scale-swatch.low { background: rgba(49, 102, 220, 0.14); }
+.load-impact-scale-swatch.high { background: rgba(49, 102, 220, 0.78); }
+
 .load-impact-table-wrap {
   margin-top: 16px;
   overflow-x: auto;
@@ -352,8 +394,8 @@
   font-weight: 700;
 }
 
-.load-impact-cell span::after {
-  content: " samples";
+.load-impact-cell-constant {
+  background: color-mix(in srgb, var(--subtle-fill) 82%, var(--accent-soft));
 }
 
 .load-impact-cell:disabled {
@@ -361,10 +403,6 @@
   color: var(--text-muted);
   background: transparent;
   opacity: 0.62;
-}
-
-.load-impact-cell:disabled span::after {
-  content: " samples";
 }
 
 .load-impact-cell:not(:disabled):hover,
@@ -377,6 +415,18 @@
   margin-top: 16px;
   display: grid;
   gap: 10px;
+}
+
+.load-impact-3d-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.load-impact-3d-instructions {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.78rem;
 }
 
 .load-impact-3d-scene {
@@ -444,6 +494,35 @@
 
 .load-impact-3d-axis-group.metric span {
   color: var(--text-secondary);
+}
+
+.load-impact-3d-cell-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.load-impact-3d-cell-picker select {
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  max-width: min(100%, 360px);
+  padding: 6px 8px;
+  color: var(--text-secondary);
+  background: var(--subtle-fill);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.load-impact-3d-cell-picker select:hover,
+.load-impact-3d-cell-picker select:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .load-impact-detail {
@@ -543,7 +622,10 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-card);
+  /* --bg-card is intentionally translucent in several themes. Layer it over
+     the opaque application background so configuration choices never compete
+     with the report content behind the dialog. */
+  background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary);
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
   pointer-events: auto;
 }

@@ -1370,7 +1370,7 @@ describe('TestExecutionCharts context menu', () => {
     })
 
     expect(heatmapCard?.querySelector('.load-impact-detail')).not.toBeNull()
-    expect(heatmapCard?.textContent).toContain('data points')
+    expect(heatmapCard?.textContent).toContain('telemetry intervals')
   })
 
   it('draws one Under Load line per selected group instead of a single aggregate line', async () => {

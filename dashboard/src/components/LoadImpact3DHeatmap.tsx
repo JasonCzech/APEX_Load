@@ -177,6 +177,7 @@ export default function LoadImpact3DHeatmap({
   const selectedCellChangeRef = useRef(onSelectedCellKeyChange)
   const hoveredKeyRef = useRef<string | null>(null)
   const [hoveredCell, setHoveredCell] = useState<LoadImpactCell | null>(null)
+  const [isRotating, setIsRotating] = useState(false)
   const sceneCells = useMemo(() => buildSceneCells(model), [model])
   const selectedCell = useMemo(
     () => sceneCells.find(item => item.cellKey === selectedCellKey)?.cell ?? null,
@@ -214,7 +215,7 @@ export default function LoadImpact3DHeatmap({
     const controls = new LoadImpactOrbitControls(camera, renderer.domElement)
     controlsRef.current = controls
     controls.enableDamping = true
-    controls.autoRotate = true
+    controls.autoRotate = false
     controls.autoRotateSpeed = 0.24
     controls.enablePan = false
     controls.minDistance = 8.5
@@ -323,6 +324,10 @@ export default function LoadImpact3DHeatmap({
       controlsRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    if (controlsRef.current) controlsRef.current.autoRotate = isRotating
+  }, [isRotating])
 
   useEffect(() => {
     const scene = sceneRef.current
@@ -443,15 +448,47 @@ export default function LoadImpact3DHeatmap({
     })
   }, [sceneCells, selectedCellKey])
 
+  const setCameraView = (view: 'default' | 'top') => {
+    const camera = cameraRef.current
+    const controls = controlsRef.current
+    if (!camera || !controls) return
+    const rowCount = model.rows.length
+    const bucketCount = model.buckets.length
+    const xSpacing = 1.02
+    const zSpacing = 0.82
+    const maxDimension = Math.max(bucketCount * xSpacing, rowCount * zSpacing)
+
+    controls.resetMotion()
+    controls.target.set(0, 0.5, 0)
+    if (view === 'top') {
+      camera.position.set(0, Math.max(12, maxDimension * 1.8), 0.01)
+    } else {
+      camera.position.set(
+        maxDimension * 0.9,
+        Math.max(7.4, rowCount * 0.5),
+        Math.max(12.5, bucketCount * 1.16),
+      )
+    }
+    controls.update()
+  }
+
   const activeCell = hoveredCell ?? selectedCell
 
   return (
     <div className="load-impact-3d">
+      <div className="load-impact-3d-controls" aria-label="3D view controls">
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setIsRotating(rotating => !rotating)} aria-pressed={isRotating}>
+          {isRotating ? 'Pause rotation' : 'Rotate view'}
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCameraView('default')}>Reset view</button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setCameraView('top')}>Top view</button>
+      </div>
+      <p className="load-impact-3d-instructions">Drag to rotate and use the mouse wheel or pinch to zoom. Height shows relative value within each metric.</p>
       <div
         ref={containerRef}
         className="load-impact-3d-scene"
         role="img"
-        aria-label="3D load impact heatmap"
+        aria-label="3D load impact heatmap. Height shows each metric's relative value across the displayed load points."
         data-testid="load-impact-3d-scene"
       />
       <div className="load-impact-3d-readout" aria-live="polite">
@@ -459,7 +496,7 @@ export default function LoadImpact3DHeatmap({
           <>
             <strong>{activeCell.metric.label} / {activeCell.bucket.label}</strong>
             <span>
-              {formatLoadImpactValue(activeCell.average, activeCell.metric.unit)} · {activeCell.sampleCount} samples
+              {formatLoadImpactValue(activeCell.average, activeCell.metric.unit)} · {activeCell.sampleCount} telemetry interval{activeCell.sampleCount === 1 ? '' : 's'}
             </span>
           </>
         ) : (
@@ -482,6 +519,19 @@ export default function LoadImpact3DHeatmap({
           {model.rows.length > 8 && <span>+{model.rows.length - 8}</span>}
         </div>
       </div>
+      {sceneCells.length > 0 && (
+        <label className="load-impact-3d-cell-picker">
+          <span>Inspect a 3D cell</span>
+          <select value={selectedCellKey ?? ''} onChange={event => onSelectedCellKeyChange(event.target.value)}>
+            <option value="" disabled>Select a metric and load point</option>
+            {sceneCells.map(item => (
+              <option key={item.cellKey} value={item.cellKey}>
+                {item.cell.metric.label} · {item.cell.bucket.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   )
 }

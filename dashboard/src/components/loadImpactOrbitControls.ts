@@ -62,6 +62,12 @@ export class LoadImpactOrbitControls {
     this.element.style.removeProperty('touch-action')
   }
 
+  resetMotion() {
+    this.azimuthDelta = 0
+    this.polarDelta = 0
+    this.radiusScale = 1
+  }
+
   update() {
     const position = this.camera.position
     const offsetX = position.x - this.target.x

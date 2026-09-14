@@ -5556,8 +5556,8 @@
   height: 100%;
 }
 .runtime-settings-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
   gap: 0;
   padding: 0;
   flex: 1 1 auto;
@@ -5598,31 +5598,35 @@
 }
 .runtime-settings-tabs {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  padding: 6px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-card);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-secondary);
 }
 .runtime-settings-tabs .runtime-settings-tab-list {
   min-width: 0;
   flex: 1;
   display: flex;
-  flex-wrap: nowrap;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 2px;
   scrollbar-width: thin;
 }
 .runtime-settings-tabs .runtime-settings-tab {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  width: 100%;
   flex: 0 0 auto;
   gap: 6px;
   margin: 0;
-  min-height: 36px;
-  padding: 6px 10px;
+  min-height: 38px;
+  padding: 7px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-secondary);
@@ -5649,8 +5653,8 @@
   color: var(--text-primary);
 }
 .runtime-settings-tab .runtime-section-icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   color: var(--text-muted);
 }
 .runtime-settings-tab.active .runtime-section-icon {
@@ -5662,20 +5666,7 @@
   font-weight: 700;
   line-height: 1.2;
 }
-.runtime-settings-tab-summary {
-  display: none;
-}
-.runtime-tabs-scroll {
-  flex: 0 0 28px;
-  height: 32px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 20px;
-}
-.runtime-tabs-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.runtime-settings-tab-summary { display: none; }
 .runtime-settings-empty {
   margin: 0;
   color: var(--text-secondary);
@@ -6533,6 +6524,7 @@
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
   }
+  .runtime-settings-tabs,
   .runtime-settings-nav {
     max-height: 220px;
     border-right: 0;
@@ -6608,7 +6600,7 @@
   .runtime-settings-grid { grid-template-columns: 1fr; }
   .runtime-settings-toolbar { align-items: stretch; flex-direction: column; padding: 12px; }
   .runtime-settings-search { max-width: none; }
-  .runtime-settings-tabs { padding: 12px; }
+  .runtime-settings-tabs { padding: 10px; }
   .runtime-settings .form-grid { grid-template-columns: 1fr; }
   .browser-emulation-checkbox-list { grid-template-columns: 1fr; }
   .utility-json-grid { grid-template-columns: 1fr; }
@@ -7995,9 +7987,9 @@ button.debugger-problem-row:hover {
 .parameter-raw-editor textarea { min-height: 320px; width: 100%; }
 .runtime-timing-issues { color: var(--warning); padding: 10px 30px; }
 .runtime-effective-summary select { margin-left: 12px; }
-.center-document-runtime.runtime-settings { overflow-y: auto; display: block; }
-.center-document-runtime .runtime-settings-grid { display: block; overflow: visible; }
-.center-document-runtime .runtime-settings-detail { overflow: visible; }
+.center-document-runtime.runtime-settings { overflow: hidden; display: flex; }
+.center-document-runtime .runtime-settings-grid { display: grid; overflow: hidden; }
+.center-document-runtime .runtime-settings-detail { overflow: auto; }
 .runtime-context-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .runtime-context-toolbar > strong { font-size: 12px; white-space: nowrap; }
 .runtime-context-toolbar > label { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 0; white-space: nowrap; }

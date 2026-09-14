@@ -4,7 +4,7 @@ import { RuntimeFieldEvidence } from './RuntimeFieldEvidence'
 import { RUNTIME_WORKSPACE_CATEGORIES, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import type { ScriptActionDefinition, ScriptDefinition, ScriptConfig } from '../types/scripts'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
@@ -190,11 +190,6 @@ export function ScriptRuntimeSettingsView({
   script,
 }: ScriptRuntimeSettingsViewProps) {
   const [search, setSearch] = useState('')
-  const runtimeNavRef = useRef<HTMLElement>(null)
-  const scrollRuntimeTabs = (direction: number) => {
-    const tabs = runtimeNavRef.current?.querySelector('[role="tablist"]')
-    tabs?.scrollBy({ left: direction * tabs.clientWidth * 0.75, behavior: 'auto' })
-  }
   const [modifiedOnly, setModifiedOnly] = useState(false)
   const timingIssues = runtimeTimingIssues(script.config)
   const capabilities = getRuntimeProtocolCapabilities(script.protocol)
@@ -325,10 +320,9 @@ export function ScriptRuntimeSettingsView({
   </RuntimeContextSummary>
   {timingIssues.length > 0 && <ul className="runtime-timing-issues" role="alert">{timingIssues.map(issue => <li key={issue}>{issue}</li>)}</ul>}
   <div className="runtime-settings-grid">
-  <nav ref={runtimeNavRef} className="runtime-settings-tabs" aria-label="Runtime setting categories">
-    {visibleCategories.length > 0 && <button type="button" className="runtime-tabs-scroll" aria-label="Scroll runtime tabs left" onClick={() => scrollRuntimeTabs(-1)}>‹</button>}
+  <nav className="runtime-settings-tabs" aria-label="Runtime setting categories">
     {visibleCategories.length === 0 && <p className="runtime-settings-empty" role="status">No categories match. Clear the search or turn off Modified only.</p>}
-    {visibleCategories.length > 0 && <TabList className="scenario-run-settings-tabs runtime-settings-tab-list" aria-label="Runtime settings sections" onKeyDown={handleTabKey}>
+    {visibleCategories.length > 0 && <TabList className="scenario-run-settings-tabs runtime-settings-tab-list" aria-label="Runtime settings sections" aria-orientation="vertical" onKeyDown={handleTabKey}>
       {visibleCategories.map(category => {
         const changed = categoryModified(category)
         const summary = category.id === 'imported_source'
@@ -341,7 +335,6 @@ export function ScriptRuntimeSettingsView({
         </button>
       })}
     </TabList>}
-    {visibleCategories.length > 0 && <button type="button" className="runtime-tabs-scroll" aria-label="Scroll runtime tabs right" onClick={() => scrollRuntimeTabs(1)}>›</button>}
   </nav>
   <div className="runtime-settings-detail" role="tabpanel" id="runtime-settings-tab-panel" aria-labelledby={activeSectionIsVisible ? `runtime-settings-tab-${activeSection}` : 'runtime-settings-active-heading'}>
   <h3 id="runtime-settings-active-heading" className="runtime-active-heading">{RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.label}</h3>
