@@ -59,14 +59,15 @@ import (
 )
 
 const (
-	footprintEnableEnv    = "APEXLOAD_VUSER_FOOTPRINT"
-	footprintCountsEnv    = "APEXLOAD_VUSER_FOOTPRINT_COUNTS"
-	footprintProtocolsEnv = "APEXLOAD_VUSER_FOOTPRINT_PROTOCOLS"
-	footprintOutEnv       = "APEXLOAD_VUSER_FOOTPRINT_OUT"
-	footprintRoleEnv      = "APEXLOAD_VUSER_FOOTPRINT_ROLE"
-	footprintProtocolEnv  = "APEXLOAD_VUSER_FOOTPRINT_SAMPLE_PROTOCOL"
-	footprintVUsersEnv    = "APEXLOAD_VUSER_FOOTPRINT_SAMPLE_VUSERS"
-	footprintTargetsEnv   = "APEXLOAD_VUSER_FOOTPRINT_TARGETS"
+	footprintEnableEnv      = "APEXLOAD_VUSER_FOOTPRINT"
+	footprintCountsEnv      = "APEXLOAD_VUSER_FOOTPRINT_COUNTS"
+	footprintProtocolsEnv   = "APEXLOAD_VUSER_FOOTPRINT_PROTOCOLS"
+	footprintOutEnv         = "APEXLOAD_VUSER_FOOTPRINT_OUT"
+	footprintRoleEnv        = "APEXLOAD_VUSER_FOOTPRINT_ROLE"
+	footprintProtocolEnv    = "APEXLOAD_VUSER_FOOTPRINT_SAMPLE_PROTOCOL"
+	footprintVUsersEnv      = "APEXLOAD_VUSER_FOOTPRINT_SAMPLE_VUSERS"
+	footprintTargetsEnv     = "APEXLOAD_VUSER_FOOTPRINT_TARGETS"
+	footprintPostgresDSNEnv = "APEXLOAD_VUSER_FOOTPRINT_PG_DSN"
 
 	footprintTargetsPrefix = "FOOTPRINT_TARGETS "
 	footprintSamplePrefix  = "FOOTPRINT_SAMPLE "
@@ -447,6 +448,14 @@ func footprintScript(t *testing.T, name string, targets footprintTargets) *dsl.S
 		script.Protocol = "database"
 		script.Config.Database = dsl.DatabaseConfig{Driver: "sqlite", DSN: ":memory:"}
 		action.Type, action.Target = "db_query", "SELECT 1"
+	case "database_postgres":
+		dsn := strings.TrimSpace(os.Getenv(footprintPostgresDSNEnv))
+		if dsn == "" {
+			t.Skipf("set %s to a Postgres DSN to run this protocol", footprintPostgresDSNEnv)
+		}
+		script.Protocol = "database"
+		script.Config.Database = dsl.DatabaseConfig{Driver: "postgres", DSN: dsn, MaxOpenConns: 1, MaxIdleConns: 1}
+		action.Type, action.Target = "db_query", "SELECT 1"
 	default:
 		t.Fatalf("unknown footprint protocol %q", name)
 	}
@@ -506,11 +515,28 @@ func measureFootprintSample(t *testing.T) {
 		runDone <- runErr
 	}()
 
+	// LatestSnapshot reports one aggregation window (mc.snapshots' newest
+	// entry, reset every second by MetricsCollector.aggregate), not a
+	// cumulative run total. A fast protocol's whole burst of one-shot actions
+	// usually lands inside a single window, so polling the latest window alone
+	// happens to work; a protocol whose VUsers take longer to connect (e.g. a
+	// real database over the network) spreads its actions across several
+	// windows and the window-local count never reaches the VUser total. Sum
+	// each window's count exactly once, keyed by its Timestamp, to get a
+	// cumulative total from windowed snapshots without double-counting a
+	// window read on more than one poll.
 	deadline := time.Now().Add(3 * time.Minute)
+	var cumulativeCount, cumulativeErrors int64
+	var lastWindow time.Time
 	for {
-		if snapshot, ok := eng.LatestSnapshot(); ok {
-			if action := snapshot.ByAction[footprintActionName]; action != nil && action.Count >= int64(vusers) {
-				sample.ActionSamples, sample.ActionErrors = action.Count, action.Errors
+		if snapshot, ok := eng.LatestSnapshot(); ok && !snapshot.Timestamp.Equal(lastWindow) {
+			lastWindow = snapshot.Timestamp
+			if action := snapshot.ByAction[footprintActionName]; action != nil {
+				cumulativeCount += action.Count
+				cumulativeErrors += action.Errors
+			}
+			if cumulativeCount >= int64(vusers) {
+				sample.ActionSamples, sample.ActionErrors = cumulativeCount, cumulativeErrors
 				break
 			}
 		}
@@ -520,7 +546,7 @@ func measureFootprintSample(t *testing.T) {
 		default:
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d parked VUsers", vusers)
+			t.Fatalf("timed out waiting for %d parked VUsers (observed %d so far)", vusers, cumulativeCount)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
