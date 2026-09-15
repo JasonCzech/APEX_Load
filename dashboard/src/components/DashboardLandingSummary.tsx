@@ -11,11 +11,12 @@ interface Props {
   stale: boolean
   attention: DashboardAttentionItem[]
   onAttention: (item: DashboardAttentionItem) => void
+  onDismissAttention: (item: DashboardAttentionItem) => void
   onQueue: () => void
   onResults: () => void
 }
 
-export default function DashboardLandingSummary({ releaseName, completed, reports, activeCount, queuedCount, updatedAt, stale, attention, onAttention, onQueue, onResults }: Props) {
+export default function DashboardLandingSummary({ releaseName, completed, reports, activeCount, queuedCount, updatedAt, stale, attention, onAttention, onDismissAttention, onQueue, onResults }: Props) {
   const counts = summarizeAcceptance(completed, reports)
   const archived = completed.filter(test => test.archive).length
   const latest = completed[0]
@@ -29,10 +30,15 @@ export default function DashboardLandingSummary({ releaseName, completed, report
     : baseline?.has_baseline && baseline.baseline
       ? `Recorded baseline: ${baseline.baseline.run_name || baseline.baseline.run_id}. ${baseline.regressed ? `Regressions: ${baseline.regressions?.join(', ') || 'review release analysis'}.` : 'No regression flagged by the recorded comparison.'}`
       : 'No recorded comparison baseline for the latest run.'
-  const attentionButton = (item: DashboardAttentionItem, index: number) => (
-    <button type="button" key={`${item.testId || item.destination}-${index}`} className={`dashboard-attention-item tone-${item.tone}`} onClick={() => onAttention(item)}>
-      <strong>{item.title}</strong><span>{item.detail}</span>
-    </button>
+  const attentionRow = (item: DashboardAttentionItem) => (
+    <div key={item.id} className={`dashboard-attention-item tone-${item.tone}`}>
+      <button type="button" className="dashboard-attention-link" onClick={() => onAttention(item)}>
+        <strong>{item.title}</strong><span>{item.detail}</span>
+      </button>
+      <button type="button" className="dashboard-attention-dismiss" onClick={() => onDismissAttention(item)} aria-label={`Dismiss ${item.title}`} title="Dismiss">
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
   )
   return (
     <section className="dashboard-landing-summary" aria-label="Release readiness and attention">
@@ -51,8 +57,8 @@ export default function DashboardLandingSummary({ releaseName, completed, report
       <div className="dashboard-priority" aria-label="Needs attention">
         <h2>Needs attention <span>({attention.length})</span></h2>
         {attention.length === 0 ? <p>No current attention items. Acceptance and evidence coverage are shown separately.</p> : <>
-          {attention.slice(0, 2).map(attentionButton)}
-          {attention.length > 2 && <details><summary>View all attention items ({attention.length})</summary>{attention.slice(2).map(attentionButton)}</details>}
+          {attention.slice(0, 2).map(attentionRow)}
+          {attention.length > 2 && <details><summary>View all attention items ({attention.length})</summary>{attention.slice(2).map(attentionRow)}</details>}
         </>}
       </div>
     </section>

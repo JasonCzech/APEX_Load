@@ -13,6 +13,7 @@ import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveMetrics } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
 import { getErrorMessage } from '../utils/errorUtils'
+import { readStoredStringArrayRecord, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { SortIndicator as SortIcon } from './SortIndicator'
@@ -141,6 +142,9 @@ interface DashboardTestListState {
 
 const ARCHIVE_REPORT_BATCH_LIMIT = 50
 const EMPTY_DASHBOARD_TESTS: TestSummary[] = []
+const DASHBOARD_ATTENTION_DISMISSALS_KEY = 'apexload.dashboard.dismissedAttention'
+const MAX_DASHBOARD_ATTENTION_SCOPES = 20
+const MAX_DASHBOARD_DISMISSALS_PER_SCOPE = 100
 
 const tableBottomGutterPx = 24
 const tableMinimumViewportHeightPx = 80
@@ -589,6 +593,15 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const { activeProject } = useProject()
   const activeApplicationId = activeApplication?.id
   const activeProjectId = activeProject?.id
+  const attentionDismissalScope = `${activeProjectId || 'no-project'}:${activeApplicationId || 'no-application'}:${activeRelease?.id || 'all-releases'}`
+  const [dismissedAttentionByScope, setDismissedAttentionByScope] = useState<Record<string, string[]>>(() => readStoredStringArrayRecord(DASHBOARD_ATTENTION_DISMISSALS_KEY))
+  useEffect(() => {
+    if (Object.keys(dismissedAttentionByScope).length === 0) {
+      removeStoredItem(DASHBOARD_ATTENTION_DISMISSALS_KEY)
+      return
+    }
+    writeStoredJSON(DASHBOARD_ATTENTION_DISMISSALS_KEY, dismissedAttentionByScope)
+  }, [dismissedAttentionByScope])
   const dashboardScopeReady = Boolean(activeProjectId && activeApplicationId && !releasesLoading && !releasesError)
   const testListParams = useMemo(() => dashboardScopeReady ? {
     project_id: activeProjectId,
@@ -1194,6 +1207,22 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }, [releaseTests, releaseCompleted])
 
   const attentionItems = useMemo(() => buildDashboardAttention(activeTests, pendingTests, releaseCompleted, archiveReports, healthError ? [] : health?.capacity_availability?.warnings, healthError), [activeTests, pendingTests, releaseCompleted, archiveReports, health, healthError])
+  const dismissedAttentionIds = useMemo(() => new Set(dismissedAttentionByScope[attentionDismissalScope] || []), [attentionDismissalScope, dismissedAttentionByScope])
+  const visibleAttentionItems = useMemo(() => attentionItems.filter(item => !dismissedAttentionIds.has(item.id)), [attentionItems, dismissedAttentionIds])
+  const dismissAttentionItem = useCallback((itemId: string) => {
+    setDismissedAttentionByScope(current => {
+      const dismissed = current[attentionDismissalScope] || []
+      if (dismissed.includes(itemId)) return current
+      // Do not prune temporarily absent ids: archive and health attention items
+      // can appear only after their independent requests settle.
+      const retainedScopes = Object.entries(current).filter(([scope]) => scope !== attentionDismissalScope)
+      const next = Object.fromEntries([
+        ...retainedScopes,
+        [attentionDismissalScope, [...dismissed, itemId].slice(-MAX_DASHBOARD_DISMISSALS_PER_SCOPE)] as const,
+      ].slice(-MAX_DASHBOARD_ATTENTION_SCOPES))
+      return next
+    })
+  }, [attentionDismissalScope])
 
   const statusColor = healthError ? 'stale' : !health ? 'checking' : health.status === 'healthy' ? 'healthy' : 'degraded'
   const statusLabel = statusColor === 'stale' ? 'Stale' : statusColor === 'healthy'
@@ -1310,7 +1339,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     </th>
   )
   const performanceTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedPerformanceTrend.length}`)
-  const activityTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedRecentTests.length}:${attentionItems.length}`)
+  const activityTableBounds = useBottomBoundedTable(`${activeDashboardTab}:${releasePanelOpen}:${sortedRecentTests.length}:${visibleAttentionItems.length}`)
   const activeTestIds = useMemo(() => activeTests.map(test => test.id), [activeTests])
   const aggregateHistory = useMemo(() => {
     return aggregateDashboardTpsHistory(activeTestIds, metricsHistory)
@@ -1363,8 +1392,9 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       {testListState.ready && <DashboardLandingSummary
         releaseName={activeRelease?.name || 'All releases'} completed={releaseCompleted} reports={archiveReports}
         activeCount={activeTests.length} queuedCount={pendingTests.length} updatedAt={testListUpdatedAt}
-        stale={Boolean(testListState.error)} attention={attentionItems}
+        stale={Boolean(testListState.error)} attention={visibleAttentionItems}
         onQueue={() => { setActiveDashboardTab('active') }} onResults={navigateToResults}
+        onDismissAttention={item => dismissAttentionItem(item.id)}
         onAttention={item => {
           if (item.destination === 'evidence') { setRunFilters({ ...emptyRunFilters, evidence: 'unavailable' }); setActiveDashboardTab('activity') }
           else if (item.testId) { if (pendingTests.some(test => test.id === item.testId)) navigateToPendingRun(item.testId); else onSelectTest(item.testId) }

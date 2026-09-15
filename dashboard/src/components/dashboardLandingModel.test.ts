@@ -45,8 +45,8 @@ describe('dashboard attention priorities', () => {
     const pending = run('pending', { status: 'PENDING', queue_position: 2, pending_reason: 'Project limit reached' })
     const items = buildDashboardAttention([], [pending], missing, {})
     expect(items).toHaveLength(2)
-    expect(items[0]).toMatchObject({ testId: 'pending', detail: 'Queue #2 · Project limit reached' })
-    expect(items[1]).toMatchObject({ title: '8 runs missing archives', destination: 'evidence' })
+    expect(items[0]).toMatchObject({ id: 'run-pending:pending', testId: 'pending', detail: 'Queue #2 · Project limit reached' })
+    expect(items[1]).toMatchObject({ id: 'missing-archives:missing-0,missing-1,missing-2,missing-3,missing-4,missing-5,missing-6,missing-7', title: '8 runs missing archives', destination: 'evidence' })
     expect(items[1].detail).toContain('publication progress is unknown')
   })
   it('does not describe scheduled or reserved work as capacity starvation', () => {
@@ -57,6 +57,7 @@ describe('dashboard attention priorities', () => {
     const failedAssessment = { ...archived, status: 'COMPLETE' as const }
     const items = buildDashboardAttention([], [], [failedAssessment], { archive: report('Fail', false, true) }, ['No project capacity'], true)
     expect(items.map(item => item.title)).toEqual(['System health is stale', 'Capacity warning', 'Same name acceptance failed'])
+    expect(items.map(item => item.id)).toEqual(['system-health-stale', 'capacity-warning:0:No project capacity', 'acceptance-failed:archive'])
     expect(buildDashboardAttention([], [], [], {})).toEqual([])
     expect(buildDashboardAttention([], [], [], {}, null)).toEqual([])
   })

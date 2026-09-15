@@ -65,6 +65,7 @@ describe('DashboardPage', () => {
   const onNavigate = vi.fn()
 
   beforeEach(() => {
+    window.localStorage.clear()
     resetSharedTestListStoreForTests()
     projectState.activeProject = { id: 'project-1', name: 'Checkout', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
     applicationState.activeApplication = { id: 'app-1', name: 'Storefront', created_at: '2026-05-01T00:00:00Z', updated_at: '2026-05-01T00:00:00Z' }
@@ -289,6 +290,7 @@ describe('DashboardPage', () => {
       root.unmount()
     })
     container.remove()
+    window.localStorage.clear()
     resetSharedTestListStoreForTests()
     vi.clearAllMocks()
   })
@@ -592,6 +594,120 @@ describe('DashboardPage', () => {
     expect(container.textContent).toContain('0 live · 2 queued')
     expect(container.textContent).toContain('Queued Checkout waiting')
     expect(container.textContent).toContain('Reserved Checkout waiting')
+  })
+
+  it('dismisses an attention item without opening it and remembers the choice for this release', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        { id: 'queued-run', name: 'Queued Checkout', status: 'QUEUED', application_id: 'app-1', release_id: 'rel-1', project_id: 'project-1', created_at: '2026-05-10T10:00:00Z' },
+      ],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    const attentionPanel = container.querySelector('[aria-label="Needs attention"]')
+    expect(attentionPanel?.querySelector('h2')?.textContent).toContain('(1)')
+    const dismiss = attentionPanel?.querySelector<HTMLButtonElement>('[aria-label="Dismiss Queued Checkout waiting"]')
+    expect(dismiss).toBeTruthy()
+    act(() => dismiss?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(attentionPanel?.querySelector('h2')?.textContent).toContain('(0)')
+    expect(attentionPanel?.textContent).not.toContain('Queued Checkout waiting')
+    expect(onSelectTest).not.toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+    expect(JSON.parse(window.localStorage.getItem('apexload.dashboard.dismissedAttention') || '{}')).toEqual({
+      'project-1:app-1:rel-1': ['run-pending:queued-run'],
+    })
+  })
+
+  it('restores attention dismissals saved for the current release', async () => {
+    window.localStorage.setItem('apexload.dashboard.dismissedAttention', JSON.stringify({
+      'project-1:app-1:rel-1': ['run-pending:queued-run'],
+    }))
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        { id: 'queued-run', name: 'Queued Checkout', status: 'QUEUED', application_id: 'app-1', release_id: 'rel-1', project_id: 'project-1', created_at: '2026-05-10T10:00:00Z' },
+      ],
+      count: 1,
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    const attentionPanel = container.querySelector('[aria-label="Needs attention"]')
+    expect(attentionPanel?.querySelector('h2')?.textContent).toContain('(0)')
+    expect(attentionPanel?.textContent).not.toContain('Queued Checkout waiting')
+  })
+
+  it('keeps a saved dismissal while its archive-backed attention item is still loading', async () => {
+    window.localStorage.setItem('apexload.dashboard.dismissedAttention', JSON.stringify({
+      'project-1:app-1:rel-1': ['acceptance-failed:archived-run'],
+    }))
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        {
+          id: 'archived-run', name: 'Archived Checkout', status: 'COMPLETE', application_id: 'app-1', release_id: 'rel-1', project_id: 'project-1',
+          groups: [], total_vusers: 1, duration: '1m', created_at: '2026-05-10T10:00:00Z', ended_at: '2026-05-10T10:01:00Z', archive: { transaction_count: 1 },
+        },
+      ],
+      count: 1,
+    })
+    let resolveReports: ((value: { reports: Record<string, unknown> }) => void) | undefined
+    apiMock.getTestArchiveReports.mockImplementationOnce(() => new Promise(resolve => { resolveReports = resolve }))
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    expect(JSON.parse(window.localStorage.getItem('apexload.dashboard.dismissedAttention') || '{}')).toEqual({
+      'project-1:app-1:rel-1': ['acceptance-failed:archived-run'],
+    })
+
+    await act(async () => {
+      resolveReports?.({ reports: { 'archived-run': {
+        verdict: { status: 'Fail', failed: true, explanation: 'Regression detected.' },
+        overview: { peak_active_vusers: 1, transactions: 1 },
+      } } })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const attentionPanel = container.querySelector('[aria-label="Needs attention"]')
+    expect(attentionPanel?.textContent).not.toContain('Archived Checkout acceptance failed')
+    expect(JSON.parse(window.localStorage.getItem('apexload.dashboard.dismissedAttention') || '{}')).toEqual({
+      'project-1:app-1:rel-1': ['acceptance-failed:archived-run'],
+    })
   })
 
   it('groups same-named missing archives without losing run identities', async () => {

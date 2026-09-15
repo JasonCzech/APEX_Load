@@ -46,6 +46,7 @@ export function filterDashboardRuns(tests: TestSummary[], filters: RunFilters, r
 }
 
 export interface DashboardAttentionItem {
+  id: string
   tone: 'danger' | 'warning' | 'info'
   title: string
   detail: string
@@ -72,33 +73,33 @@ export function buildDashboardAttention(
 ): DashboardAttentionItem[] {
   const items: DashboardAttentionItem[] = []
   if (healthStale) {
-    items.push({ tone: 'warning', title: 'System health is stale', detail: 'The latest health check failed. Generator readiness and capacity may have changed.', destination: 'monitoring' })
+    items.push({ id: 'system-health-stale', tone: 'warning', title: 'System health is stale', detail: 'The latest health check failed. Generator readiness and capacity may have changed.', destination: 'monitoring' })
   }
   for (const test of active) {
     const metrics = test.live_metrics
     if (metrics && metrics.error_pct >= 1) {
-      items.push({ tone: 'danger', title: `${test.name} errors`, detail: `${metrics.error_pct.toFixed(2)}% current error rate`, testId: test.id })
+      items.push({ id: `run-errors:${test.id}`, tone: 'danger', title: `${test.name} errors`, detail: `${metrics.error_pct.toFixed(2)}% current error rate`, testId: test.id })
     }
     if (metrics && metrics.avg_response_ms >= 1000) {
-      items.push({ tone: 'warning', title: `${test.name} latency`, detail: `${metrics.avg_response_ms.toFixed(0)} ms average response`, testId: test.id })
+      items.push({ id: `run-latency:${test.id}`, tone: 'warning', title: `${test.name} latency`, detail: `${metrics.avg_response_ms.toFixed(0)} ms average response`, testId: test.id })
     }
   }
   for (const test of pending) {
-    items.push({ tone: 'warning', title: `${test.name} waiting`, detail: pendingRunDetail(test), testId: test.id })
+    items.push({ id: `run-pending:${test.id}`, tone: 'warning', title: `${test.name} waiting`, detail: pendingRunDetail(test), testId: test.id })
   }
-  for (const warning of capacityWarnings ?? []) {
-    items.push({ tone: 'warning', title: 'Capacity warning', detail: warning, destination: 'monitoring' })
+  for (const [index, warning] of (capacityWarnings ?? []).entries()) {
+    items.push({ id: `capacity-warning:${index}:${warning}`, tone: 'warning', title: 'Capacity warning', detail: warning, destination: 'monitoring' })
   }
   for (const test of completed) {
     if (dashboardAcceptance(test, reports) === 'Fail') {
-      items.push({ tone: 'danger', title: `${test.name} acceptance failed`, detail: reports[test.id]?.verdict?.explanation || 'Review the recorded acceptance assessment.', testId: test.id })
+      items.push({ id: `acceptance-failed:${test.id}`, tone: 'danger', title: `${test.name} acceptance failed`, detail: reports[test.id]?.verdict?.explanation || 'Review the recorded acceptance assessment.', testId: test.id })
     } else if (test.status === 'FAILED' || test.status === 'ABORTED') {
-      items.push({ tone: test.status === 'FAILED' ? 'danger' : 'warning', title: `${test.name} ${test.status.toLowerCase()}`, detail: `Execution ended ${new Date(test.ended_at || test.created_at).toLocaleString()}`, testId: test.id })
+      items.push({ id: `execution-${test.status.toLowerCase()}:${test.id}`, tone: test.status === 'FAILED' ? 'danger' : 'warning', title: `${test.name} ${test.status.toLowerCase()}`, detail: `Execution ended ${new Date(test.ended_at || test.created_at).toLocaleString()}`, testId: test.id })
     }
   }
-  const missing = completed.filter(test => !test.archive).length
-  if (missing) {
-    items.push({ tone: 'info', title: `${missing} run${missing === 1 ? '' : 's'} missing archives`, detail: 'Saved archives unavailable; publication progress is unknown. Review retained evidence.', destination: 'evidence' })
+  const missingArchiveIds = completed.filter(test => !test.archive).map(test => test.id).sort()
+  if (missingArchiveIds.length) {
+    items.push({ id: `missing-archives:${missingArchiveIds.join(',')}`, tone: 'info', title: `${missingArchiveIds.length} run${missingArchiveIds.length === 1 ? '' : 's'} missing archives`, detail: 'Saved archives unavailable; publication progress is unknown. Review retained evidence.', destination: 'evidence' })
   }
   return items
 }
