@@ -17,7 +17,7 @@ func TestValidateScriptIssues_JavaHTTP(t *testing.T) {
 				ExtractorType:  "java",
 			},
 		},
-		Actions: []Action{{Name: "invoke", Type: "request", Target: "/call"}},
+		Actions: []Action{{Name: "invoke", Type: "request", Method: "GET", Target: "/call"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -41,7 +41,7 @@ func TestValidateScriptIssues_JavaHTTPRejectsSidecarHelperMode(t *testing.T) {
 				BodyEncoding: "base64",
 			},
 		},
-		Actions: []Action{{Name: "invoke", Type: "request", Target: "/call"}},
+		Actions: []Action{{Name: "invoke", Type: "request", Method: "GET", Target: "/call"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -60,7 +60,7 @@ func TestValidateScriptIssues_JavaHTTPAllowsCurrentMVP(t *testing.T) {
 				BodyEncoding: "base64",
 			},
 		},
-		Actions: []Action{{Name: "invoke", Type: "request", Target: "/call"}},
+		Actions: []Action{{Name: "invoke", Type: "request", Method: "GET", Target: "/call"}},
 	}
 
 	issues := ValidateScriptIssues(script)

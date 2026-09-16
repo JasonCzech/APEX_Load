@@ -1612,10 +1612,10 @@ func isPortableScriptTemplateReference(value string) bool {
 	if scriptPortableReferencePattern.MatchString(expr) || scriptPortableRandomPattern.MatchString(expr) || scriptPortableRandomStringPattern.MatchString(expr) {
 		return true
 	}
-	switch expr {
-	case "fn.uuid()", "fn.uuid", "fn.uuid.v4",
+	switch strings.TrimSuffix(expr, "()") {
+	case "fn.uuid", "fn.uuid.v4",
 		"fn.timestamp.unix", "fn.timestamp.unix_ms", "fn.timestamp.iso8601", "fn.timestamp.rfc3339",
-		"fake.uuid", "fake.uuid()", "fake.email", "fake.email()":
+		"fake.uuid", "fake.email":
 		return true
 	default:
 		return false

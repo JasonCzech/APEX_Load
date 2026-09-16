@@ -10,7 +10,7 @@ func TestScenarioCreateAndUpdateReturnDeepSnapshots(t *testing.T) {
 	runner := NewTestRunner(2, NewHub(), nil)
 	runner.StoreScript(&dsl.Script{
 		ID: "snapshot-script", ProjectID: "snapshot-project", Name: "Snapshot", Protocol: "http", Version: "1",
-		Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "request", Type: "request", Method: "GET", Target: "/"}},
 	})
 	request := CreateScenarioRequest{
 		Name: "Before", Duration: "1m",
@@ -51,7 +51,7 @@ func TestCreateTestReturnsDeepSnapshot(t *testing.T) {
 	runner := NewTestRunner(2, NewHub(), nil)
 	runner.StoreScript(&dsl.Script{
 		ID: "test-snapshot-script", ProjectID: "snapshot-project", Name: "Snapshot", Protocol: "http", Version: "1",
-		Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "request", Type: "request", Method: "GET", Target: "/"}},
 	})
 	created, err := runner.CreateTest(CreateTestRequest{
 		Name: "Snapshot run", ProjectID: "snapshot-project", Duration: "1m",

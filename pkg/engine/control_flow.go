@@ -208,6 +208,9 @@ func controlLoopMaxPasses(control *dsl.ControlFlow) int {
 	if control != nil && control.MaxIterations > 0 {
 		return min(control.MaxIterations, dsl.MaxControlLoopIterations)
 	}
+	if control != nil && (control.Count > 0 || control.ForEach != nil) {
+		return dsl.MaxControlLoopIterations
+	}
 	return defaultControlLoopMaxIterations
 }
 

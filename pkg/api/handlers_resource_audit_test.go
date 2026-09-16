@@ -314,7 +314,7 @@ func TestHandleScriptCRUDWritesAuditEvents(t *testing.T) {
 		t.Fatalf("SaveFolder returned error: %v", err)
 	}
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewBufferString(`{"project_id":"project-script-audit","script":{"name":"Checkout Script","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"request","target":"/"}]}}`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewBufferString(`{"project_id":"project-script-audit","script":{"name":"Checkout Script","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"request","method":"GET","target":"/"}]}}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(createResp, createReq)
@@ -327,7 +327,7 @@ func TestHandleScriptCRUDWritesAuditEvents(t *testing.T) {
 		t.Fatalf("json.Unmarshal script returned error: %v", err)
 	}
 
-	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+script.ID, bytes.NewBufferString(`{"script":{"id":"`+script.ID+`","name":"Checkout Script Updated","project_id":"project-script-audit","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"request","target":"/checkout"}]}}`))
+	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+script.ID, bytes.NewBufferString(`{"script":{"id":"`+script.ID+`","name":"Checkout Script Updated","project_id":"project-script-audit","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"request","method":"GET","target":"/checkout"}]}}`))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateResp, updateReq)

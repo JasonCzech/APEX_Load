@@ -22,7 +22,7 @@ func TestWarnLoopTruncation_DedupesPerKey(t *testing.T) {
 	}
 }
 
-func TestControlLoop_FixedCountTruncationWarns(t *testing.T) {
+func TestControlLoop_FixedCountRunsFully(t *testing.T) {
 	// Route the VUser's default-backed logger into a buffer so we can assert the
 	// warning fires from the real Run path.
 	var buf bytes.Buffer
@@ -43,11 +43,11 @@ func TestControlLoop_FixedCountTruncationWarns(t *testing.T) {
 	vu := newControlFlowVUser(proto, nil, []dsl.Action{loop})
 	vu.Run(context.Background())
 
-	if len(proto.names) != defaultControlLoopMaxIterations {
-		t.Fatalf("loop executed %d steps, want %d (truncated to cap)", len(proto.names), defaultControlLoopMaxIterations)
+	if len(proto.names) != 2000 {
+		t.Fatalf("loop executed %d steps, want 2000", len(proto.names))
 	}
-	if !strings.Contains(buf.String(), "truncated") {
-		t.Fatalf("expected a truncation warning, log was: %q", buf.String())
+	if strings.Contains(buf.String(), "truncated") {
+		t.Fatalf("unexpected truncation warning, log was: %q", buf.String())
 	}
 }
 

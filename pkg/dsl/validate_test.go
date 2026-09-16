@@ -24,8 +24,8 @@ func TestValidateScriptIssues_RendezvousValidation(t *testing.T) {
 			Type:   "rendezvous",
 			Params: map[string]any{"count": 10, "timeout_ms": 5000},
 		}, {
-			Name:   "checkout",
-			Type:   "request",
+			Name: "checkout",
+			Type: "request", Method: "GET",
 			Target: "/checkout",
 		}},
 	}
@@ -224,8 +224,8 @@ func TestValidateScriptIssues_ErrorMessageValidation(t *testing.T) {
 			Type:  "error_message",
 			Value: "Login failed for {{var.userid}}",
 		}, {
-			Name:   "checkout",
-			Type:   "request",
+			Name: "checkout",
+			Type: "request", Method: "GET",
 			Target: "/checkout",
 		}},
 	}
@@ -525,7 +525,7 @@ func TestValidateScriptIssues_RunLogicGlobalGoals(t *testing.T) {
 			BaseURL:  "https://example.test",
 			RunLogic: RunLogicConfig{GlobalIterations: -1, MaxTransactions: -1},
 		},
-		Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+		Actions: []Action{{Name: "home", Type: "request", Method: "GET", Target: "/"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -569,8 +569,8 @@ func TestValidateScriptIssues_SOAPValidation(t *testing.T) {
 			},
 		},
 		Actions: []Action{{
-			Name:   "login",
-			Type:   "request",
+			Name: "login",
+			Type: "request", Method: "GET",
 			Target: "/AuthService",
 			SOAP:   &SOAPActionConfig{BodyMode: "templated"},
 		}},
@@ -605,8 +605,8 @@ func TestValidateScriptIssues_SOAPValidationAllowsSupportedFields(t *testing.T) 
 			},
 		},
 		Actions: []Action{{
-			Name:   "login",
-			Type:   "request",
+			Name: "login",
+			Type: "request", Method: "GET",
 			Target: "/AuthService",
 			SOAP:   &SOAPActionConfig{BodyMode: "generated"},
 		}},
@@ -681,8 +681,8 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 			},
 		},
 		Actions: []Action{{
-			Name:   "home",
-			Type:   "request",
+			Name: "home",
+			Type: "request", Method: "GET",
 			Target: "/",
 		}},
 	}
@@ -734,7 +734,7 @@ func TestValidateScriptIssues_HTTPRejectsUnsupportedTLSAndProxy(t *testing.T) {
 				Proxy:     ProxyConfig{URL: "file:///tmp/proxy.sock"},
 			},
 		},
-		Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+		Actions: []Action{{Name: "home", Type: "request", Method: "GET", Target: "/"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -751,7 +751,7 @@ func TestValidateScriptIssues_HTTPUsesRuntimeDefaultTLSMinimum(t *testing.T) {
 			BaseURL: "https://example.test",
 			HTTP:    HTTPConfig{TLS: TLSConfig{MaxVersion: "1.1"}},
 		},
-		Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+		Actions: []Action{{Name: "home", Type: "request", Method: "GET", Target: "/"}},
 	}
 
 	assertIssue(t, ValidateScriptIssues(script), "config.http.tls.max_version must not be lower than min_version")
@@ -833,8 +833,8 @@ func TestValidateScriptIssues_WebRuntimeValidationAllowsSupportedFields(t *testi
 			},
 		},
 		Actions: []Action{{
-			Name:   "home",
-			Type:   "request",
+			Name: "home",
+			Type: "request", Method: "GET",
 			Target: "/",
 		}},
 	}
@@ -854,7 +854,7 @@ func TestValidateScriptIssues_WebRuntimeSourceIPs(t *testing.T) {
 				BaseURL:    "https://example.test",
 				WebRuntime: WebRuntimeConfig{SourceIPs: ips},
 			},
-			Actions: []Action{{Name: "home", Type: "request", Target: "/"}},
+			Actions: []Action{{Name: "home", Type: "request", Method: "GET", Target: "/"}},
 		}
 	}
 	hasIssue := func(issues []string, substr string) bool {
@@ -905,8 +905,8 @@ func TestValidateScriptIssues_WebRuntimeCustomNetworkSimulationAllowsLossOnly(t 
 			},
 		},
 		Actions: []Action{{
-			Name:   "home",
-			Type:   "request",
+			Name: "home",
+			Type: "request", Method: "GET",
 			Target: "/",
 		}},
 	}

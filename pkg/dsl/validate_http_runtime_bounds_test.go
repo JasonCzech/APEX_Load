@@ -63,7 +63,7 @@ func TestValidateHTTPRuntimeControlBounds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			script := &Script{Name: "http bounds", Protocol: "http", Config: ScriptConfig{BaseURL: "https://example.test"}, Actions: []Action{{Name: "request", Type: "request", Target: "/"}}}
+			script := &Script{Name: "http bounds", Protocol: "http", Config: ScriptConfig{BaseURL: "https://example.test"}, Actions: []Action{{Name: "request", Type: "request", Method: "GET", Target: "/"}}}
 			tc.mutate(script)
 			issues := ValidateScriptIssues(script)
 			if !strings.Contains(strings.Join(issues, "\n"), tc.want) {
@@ -162,7 +162,7 @@ func TestValidateHTTPAllowsUnsupportedAuthOnlyOnExecutionBlockedDraft(t *testing
 		Protocol: "http",
 		Config:   ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []Action{{
-			Name: "blocked", Type: "request", Target: "/",
+			Name: "blocked", Type: "request", Method: "GET", Target: "/",
 			Auth:     &AuthConfig{Type: "ntlm"},
 			Metadata: map[string]any{"execution_blocker": "import_review_required"},
 		}},
@@ -216,5 +216,30 @@ func TestValidateHTTPSequenceSyntheticMethodIsNotTreatedAsHTTPVerb(t *testing.T)
 	}
 	if issues := ValidateScriptIssues(ordinary); !strings.Contains(strings.Join(issues, "\n"), `unsupported HTTP method "SEQUENCE"`) {
 		t.Fatalf("synthetic method should remain invalid for ordinary requests, got %v", issues)
+	}
+}
+
+func TestHTTPFamilyUnknownActionTypesFailClosed(t *testing.T) {
+	for _, protocol := range []string{"http", "soap", "java_http"} {
+		for _, actionType := range []string{"post_order", "pots", "POTS", "db_query", "request"} {
+			t.Run(protocol+"/"+actionType, func(t *testing.T) {
+				script := &Script{Name: "method", Protocol: protocol, Config: ScriptConfig{BaseURL: "https://example.test", JavaHTTP: JavaHTTPConfig{Codec: "java_serialized_object_base64"}}, Actions: []Action{{Name: "request", Type: actionType, Target: "https://example.test/"}}}
+				issues := strings.Join(ValidateScriptIssues(script), "\n")
+				if !strings.Contains(issues, "unsupported HTTP method") {
+					t.Fatalf("unknown action accepted: %s", issues)
+				}
+			})
+		}
+	}
+}
+
+func TestHTTPFamilyMethodOverridesUnknownType(t *testing.T) {
+	for _, protocol := range []string{"http", "soap", "java_http"} {
+		for _, actionType := range []string{"post_order", "request", "post"} {
+			script := &Script{Name: "method", Protocol: protocol, Config: ScriptConfig{BaseURL: "https://example.test", JavaHTTP: JavaHTTPConfig{Codec: "java_serialized_object_base64"}}, Actions: []Action{{Name: "request", Type: actionType, Method: "POST", Target: "https://example.test/"}}}
+			if issues := ValidateScriptIssues(script); len(issues) != 0 {
+				t.Errorf("%s/%s: %v", protocol, actionType, issues)
+			}
+		}
 	}
 }

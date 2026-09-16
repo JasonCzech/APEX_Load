@@ -186,7 +186,7 @@ For row data, choose the required allocation:
 | `sequential` | Next row on each row request | Wraps to reuse rows. |
 | `random` | Random row on each row request | Rows can repeat. |
 | `unique` | Row selected by VUser within the assigned data partition | Wraps when users outnumber available rows; uniqueness requires enough rows. |
-| `pop` | Consume the next available row | Stops returning rows when exhausted. |
+| `pop` | Consume the next available row | Exhaustion records a failed data-source result and stops the VUser before another submission. |
 
 Repeated selection is acceptable for product browsing but can invalidate tests that require exclusive accounts. Size the data for the workload, review named parameters' refresh and exhaustion settings, and verify allocation across your generator fleet. Shared pools are snapshotted for a run; consuming run data does not delete rows from the repository.
 
@@ -280,3 +280,22 @@ This guide uses HTTP because the request/correlation/check cycle is familiar. A 
 Use [DSL action reference](DSL_ACTION_REFERENCE.md) for all action fields and its downloadable schema, [Browser & mobile support](BROWSER_AND_MOBILE_SUPPORT.md) for browser execution, [Messaging support](MESSAGING_SUPPORT.md) for broker adapters, and [Capabilities & limitations](HELP_CAPABILITIES.md) for runtime boundaries. Authorable or importable does not always mean executable: SAP GUI has no bundled runtime, and Java VUser and Bruno require configured runners. Some messaging integrations require a real adapter instead of the default mock.
 
 Start with one verified journey, keep its inputs and measurements explicit, and use the action catalog as your lookup reference as you extend it.
+
+### HTTP methods, loop bounds, and builtin compatibility
+
+HTTP, SOAP, and Java-over-HTTP actions use a case-insensitive HTTP method as their
+`type` (`get` and `GET` both work), or an explicit `method`. Unknown types such as
+`post_order` or `request` without a method now fail validation and execution;
+older scripts that relied on an implicit GET must specify `method: "GET"`.
+An omitted type and method retain the runtime GET default.
+
+Count and `for_each` loops execute their declared passes, up to the hard ceiling
+of 1,000,000. An explicit `max_iterations` still caps any loop. Only
+condition-driven loops use the default safety cap of 1,000.
+
+Zero-argument builtins accept both spellings, including
+`{{fn.timestamp.unix}}` and `{{fn.timestamp.unix()}}` (also `unix_ms`, `iso8601`,
+and `rfc3339`). Existing Agentforce templates using parentheses resolve normally.
+`pop` data sources no longer reuse the last row after exhaustion; replays and
+shakeouts report an exhaustion error, and load runs record a failed result and
+stop the affected VUser.

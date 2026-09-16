@@ -320,7 +320,7 @@ func TestHandleCreateScriptRejectsMissingBaseURL(t *testing.T) {
 			"actions": []map[string]any{{
 				"name":   "Ping",
 				"type":   "request",
-				"target": "/ping",
+				"method": "GET", "target": "/ping",
 			}},
 		},
 	}
@@ -388,8 +388,8 @@ func TestHandleUpdateScriptRejectsInvalidScript(t *testing.T) {
 			BaseURL: "https://api.example.com",
 		},
 		Actions: []dsl.Action{{
-			Name:   "Ping",
-			Type:   "request",
+			Name: "Ping",
+			Type: "request", Method: "GET",
 			Target: "/ping",
 		}},
 	})
@@ -4409,7 +4409,7 @@ func TestDraftValidationReturnsReplayPreflightWithSeededVariables(t *testing.T) 
 			"version":"1.0.0",
 			"protocol":"http",
 			"config":{"base_url":"https://example.test"},
-			"actions":[{"name":"Account","type":"request","target":"/accounts/{{var.account_id}}"}]
+			"actions":[{"name":"Account","type":"request","method":"GET","target":"/accounts/{{var.account_id}}"}]
 		}
 	}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
@@ -4445,7 +4445,7 @@ func TestDraftValidationReturnsDataSourceFitHealth(t *testing.T) {
 		"config":{"base_url":"https://example.test","run_logic":{"iterations":3}},
 		"data_sources":[{"name":"users","type":"csv","strategy":"unique","inline_data":"username\nalice\nbob\n","first_row_header":true}],
 		"parameters":[{"name":"user","type":"file","data_source":"users","column":"username","selection":"unique","on_exhaustion":"error"},{"name":"missing","type":"file","data_source":"users","column":"password"}],
-		"actions":[{"name":"Home","type":"request","target":"/"}]
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
 	}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
 	resp := httptest.NewRecorder()
@@ -4482,7 +4482,7 @@ func TestDraftValidationDataSourceFitUsesAutoDelimiter(t *testing.T) {
 		"config":{"base_url":"https://example.test"},
 		"data_sources":[{"name":"users","type":"csv","strategy":"sequential","delimiter":"auto","inline_data":"username\tpassword\nalice\tpass1\nbob\tpass2\n","first_row_header":true}],
 		"parameters":[{"name":"password","type":"file","data_source":"users","column":"password","selection":"sequential"}],
-		"actions":[{"name":"Home","type":"request","target":"/"}]
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
 	}}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(body))
 	resp := httptest.NewRecorder()
@@ -4513,7 +4513,7 @@ func TestDraftValidationReturnsAIGuardrails(t *testing.T) {
 		"generated_by":"openai",
 		"generated_from":"ai_generated",
 		"config":{"base_url":"https://example.test"},
-		"actions":[{"name":"Home","type":"request","target":"/"}]
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
 	}}`)
 	blockedReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(blockedBody))
 	blockedResp := httptest.NewRecorder()
@@ -4540,7 +4540,7 @@ func TestDraftValidationReturnsAIGuardrails(t *testing.T) {
 		"generated_from":"ai_generated",
 		"metadata":{"import":{"source":"ai_generated","preserved":{"diff_reviewed":true,"replay_status":"passed"}}},
 		"config":{"base_url":"https://example.test"},
-		"actions":[{"name":"Home","type":"request","target":"/"}]
+		"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]
 	}}`)
 	readyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/validate", bytes.NewReader(readyBody))
 	readyResp := httptest.NewRecorder()
@@ -4573,7 +4573,7 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 		"source":"enterprise_script_archive",
 		"name":"Checkout repair",
 		"status":"reviewing",
-		"draft":{"name":"Checkout","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]},
+		"draft":{"name":"Checkout","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]},
 		"review_state":{"active_tab":"runtime","pending_repairs":["correlation"]}
 	}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
@@ -4621,7 +4621,7 @@ func TestAuthoringSessionLifecyclePersistsDraftReviewState(t *testing.T) {
 		"source":"enterprise_script_archive",
 		"name":"Checkout repair updated",
 		"status":"editing",
-		"draft":{"name":"Checkout Updated","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Cart","type":"request","target":"/cart"}]},
+		"draft":{"name":"Checkout Updated","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Cart","type":"request","method":"GET","target":"/cart"}]},
 		"review_state":{"active_tab":"parameters"}
 	}`)
 	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/authoring/sessions/"+created.ID, bytes.NewReader(updateBody))
@@ -4659,7 +4659,7 @@ func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
 		"source":"enterprise_script_archive",
 		"name":"Checkout approval",
 		"status":"ready",
-		"draft":{"name":"Checkout Approved","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]},
+		"draft":{"name":"Checkout Approved","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]},
 		"review_state":{"reviewer":"qa-lead"}
 	}`)
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions", bytes.NewReader(body))
@@ -4826,7 +4826,7 @@ func TestApproveAuthoringSessionFailsClosedWhenSessionPersistenceFails(t *testin
 				Protocol:  "http",
 				ProjectID: "project-authoring",
 				Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
-				Actions:   []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+				Actions:   []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
 			},
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -4886,7 +4886,7 @@ func TestApproveAuthoringSessionFailsClosedWhenSessionPersistenceFails(t *testin
 				Protocol:  "http",
 				ProjectID: "project-authoring",
 				Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
-				Actions:   []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+				Actions:   []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
 			},
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
@@ -4952,7 +4952,7 @@ func TestConcurrentAuthoringApprovalsConvergeOnOneScript(t *testing.T) {
 			Protocol:  "http",
 			ProjectID: "project-authoring",
 			Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
-			Actions:   []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+			Actions:   []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
 		},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
@@ -5012,7 +5012,7 @@ func TestAuthoringApprovalCannotOverwriteClientSelectedScriptID(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	victim := &dsl.Script{
 		ID: "existing-library-script", Name: "Existing", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
-		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Target: "/existing"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Method: "GET", Target: "/existing"}},
 	}
 	if _, err := server.runner.StoreScriptDurable(victim); err != nil {
 		t.Fatalf("StoreScriptDurable(victim): %v", err)
@@ -5021,7 +5021,7 @@ func TestAuthoringApprovalCannotOverwriteClientSelectedScriptID(t *testing.T) {
 		ID: "client-selected-script-id", ProjectID: victim.ProjectID, Source: "test", Name: "Draft", Status: "ready",
 		Draft: &dsl.Script{
 			ID: victim.ID, Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: victim.ProjectID,
-			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/draft"}},
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/draft"}},
 		},
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -5057,7 +5057,7 @@ func TestAuthoringApprovalCreateOnlyFenceProtectsDurableScriptFromStaleReplica(t
 	reservedID := authoringApprovalScriptID(sessionID)
 	victim := &dsl.Script{
 		ID: reservedID, Name: "Durable Existing", Version: "1.0.0", Protocol: "http", ProjectID: "another-project",
-		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Target: "/existing"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://existing.test"}, Actions: []dsl.Action{{Name: "Existing", Type: "request", Method: "GET", Target: "/existing"}},
 	}
 	// Write after server construction so its in-memory script cache is stale,
 	// matching a second HA replica that created the ID concurrently.
@@ -5068,7 +5068,7 @@ func TestAuthoringApprovalCreateOnlyFenceProtectsDurableScriptFromStaleReplica(t
 		ID: sessionID, ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "ready",
 		Draft: &dsl.Script{
 			Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
-			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/draft"}},
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/draft"}},
 		},
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -5101,7 +5101,7 @@ func TestCreateScriptDurableAlwaysConsultsSharedStore(t *testing.T) {
 	runner.scriptStore = store
 	original := &dsl.Script{
 		ID: "approval-owned-script", Name: "Approved Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
-		Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/draft"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/draft"}},
 	}
 	if _, err := runner.CreateScriptDurable(original); err != nil {
 		t.Fatalf("CreateScriptDurable(original): %v", err)
@@ -5135,7 +5135,7 @@ func TestAuthoringSessionRejectsClientManagedApprovalStatuses(t *testing.T) {
 	defer store.Close()
 	seedAuthoringScriptProjects(t, store, "project-authoring")
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
-	validDraft := `"draft":{"name":"Draft","version":"1.0.0","protocol":"http","project_id":"project-authoring","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","target":"/"}]}`
+	validDraft := `"draft":{"name":"Draft","version":"1.0.0","protocol":"http","project_id":"project-authoring","config":{"base_url":"https://example.test"},"actions":[{"name":"Home","type":"request","method":"GET","target":"/"}]}`
 	for _, status := range []string{"approving", "approved"} {
 		t.Run("create_"+status, func(t *testing.T) {
 			body := `{"project_id":"project-authoring","source":"test","name":"Draft","status":"` + status + `",` + validDraft + `}`
@@ -5149,7 +5149,7 @@ func TestAuthoringSessionRejectsClientManagedApprovalStatuses(t *testing.T) {
 
 	session := &storage.AuthoringSession{
 		ID: "status-spoof-update", ProjectID: "project-authoring", Source: "test", Name: "Original", Status: "ready",
-		Draft:     &dsl.Script{Name: "Original", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}}},
+		Draft:     &dsl.Script{Name: "Original", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}}},
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := store.SaveAuthoringSession(session); err != nil {
@@ -5184,7 +5184,7 @@ func TestApprovedAuthoringRetryReturnsCurrentDurableScriptWithoutRevertingEdits(
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 	session := &storage.AuthoringSession{
 		ID: "approved-retry-current-script", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "ready",
-		Draft:     &dsl.Script{Name: "Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}}},
+		Draft:     &dsl.Script{Name: "Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring", Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}}},
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
 	if err := store.SaveAuthoringSession(session); err != nil {
@@ -5262,8 +5262,8 @@ func TestAuthoringCorrelationRequiresCurrentSessionRevision(t *testing.T) {
 			ID: authoringApprovalScriptID("correlation-revision-fence"), Name: "Revision fence", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
 			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"},
 			Actions: []dsl.Action{
-				{Name: "New first action", Type: "request", Target: "/new-first"},
-				{Name: "Original producer moved", Type: "request", Target: "/producer"},
+				{Name: "New first action", Type: "request", Method: "GET", Target: "/new-first"},
+				{Name: "Original producer moved", Type: "request", Method: "GET", Target: "/producer"},
 			},
 		},
 		CreatedAt: createdAt, UpdatedAt: createdAt, LastAccessedAt: createdAt,
@@ -5328,7 +5328,7 @@ func TestAuthoringMutationsAreFencedWhileApprovalIsInProgress(t *testing.T) {
 		ID: "approval-in-progress", ProjectID: "project-authoring", Source: "test", Name: "Draft", Status: "approving",
 		Draft: &dsl.Script{
 			ID: authoringApprovalScriptID("approval-in-progress"), Name: "Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
-			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Target: "/"}},
+			Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Draft", Type: "request", Method: "GET", Target: "/"}},
 		},
 		ReviewState: map[string]any{"pending_script_id": authoringApprovalScriptID("approval-in-progress")},
 		CreatedAt:   time.Now(), UpdatedAt: time.Now(),
@@ -5380,7 +5380,7 @@ func TestAuthoringCorrelationApplyCannotMutateApprovalStates(t *testing.T) {
 					ID: id, ProjectID: "project-authoring", Source: "test", Name: "Immutable Draft", Status: status,
 					Draft: &dsl.Script{
 						ID: authoringApprovalScriptID(id), Name: "Immutable Draft", Version: "1.0.0", Protocol: "http", ProjectID: "project-authoring",
-						Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+						Config: dsl.ScriptConfig{BaseURL: "https://draft.test"}, Actions: []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
 					},
 					CreatedAt: now, UpdatedAt: now,
 				}

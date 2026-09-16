@@ -1347,14 +1347,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		_ = client.Close()
 		delete(clientsByTarget, target)
 	}
-	if b.requireRunSupervision {
-		if err := b.claimRunSupervisionClients(executionCtx, test.ID, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken[:]); err != nil {
-			failStartup(fmt.Sprintf("establish generator run supervision: %v", err))
-			return
-		}
-		stopRunSupervisionKeeper = b.startRunSupervisionKeeper(executionCtx, tr, test, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
-	}
-
+	// The test-execution lease must be established before run supervision is
+	// claimed: a generator with RequireTestExecutionLease set rejects a run
+	// supervision claim unless it already holds a current lease for this
+	// generation (see distributed_resilience.go's requireTestExecutionLease
+	// and the generator-side check in run_supervision.go). Claiming run
+	// supervision first would ask for something this block hasn't created yet.
 	if requireTestExecutionLease {
 		currentGeneration, currentOwnerID, leaseDeadline, claimErr := tr.generatorExecutionClaim()
 		if claimErr != nil || currentGeneration != executionGeneration || currentOwnerID != executionLeaseOwnerID {
@@ -1368,6 +1366,14 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		initialLeaseCtx, cancelInitialLeaseKeeper := context.WithCancel(executionCtx)
 		stopInitialLeaseKeeper = cancelInitialLeaseKeeper
 		go b.maintainStagedGeneratorTestExecutionLeases(initialLeaseCtx, tr, test, executionGeneration, assignedClients)
+	}
+
+	if b.requireRunSupervision {
+		if err := b.claimRunSupervisionClients(executionCtx, test.ID, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken[:]); err != nil {
+			failStartup(fmt.Sprintf("establish generator run supervision: %v", err))
+			return
+		}
+		stopRunSupervisionKeeper = b.startRunSupervisionKeeper(executionCtx, tr, test, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
 	}
 
 	for _, target := range orderedGeneratorTargets(assignedClients, allowedTargets) {

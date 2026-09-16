@@ -2,12 +2,9 @@ package engine
 
 // loop_diagnostics.go — surfaces silent control_loop truncation.
 //
-// A control_loop is bounded by controlLoopMaxPasses: an explicit max_iterations,
-// else defaultControlLoopMaxIterations (1000). A fixed Count — or a foreach over
-// a data source — larger than that default is silently truncated, so an
-// intended `count: 5000` (or a 50k-row foreach) quietly runs only 1000 passes.
-// This warns when that happens so the truncation is visible and the operator can
-// raise max_iterations to run all passes.
+// Condition-driven loops default to 1000 passes. Count and foreach loops use
+// their declared bounds, subject to the hard DSL ceiling or max_iterations.
+// Warn when a requested bound exceeds the hard ceiling.
 
 import (
 	"fmt"
@@ -32,7 +29,7 @@ func warnLoopTruncation(logger *slog.Logger, actionName string, requested, capLi
 	if logger == nil {
 		logger = slog.Default()
 	}
-	logger.Warn("control_loop count exceeds the runtime safety cap and was truncated; set max_iterations to run all passes",
+	logger.Warn("control_loop count exceeds the runtime safety cap and was truncated; reduce the requested bound",
 		"action", actionName,
 		"requested", requested,
 		"cap", capLimit)

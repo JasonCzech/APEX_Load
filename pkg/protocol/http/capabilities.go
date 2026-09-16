@@ -665,33 +665,16 @@ func ValidateMethod(raw string) error {
 	return nil
 }
 
-// ResolveMethod applies the runtime's legacy action fallback rules before
-// validating or dispatching an action. An omitted explicit method uses a
-// supported method-shaped action type, otherwise GET.
+// ResolveMethod uses an explicit method or the case-insensitive action type.
+// Unknown types are returned for admission and runtime validation to reject.
 func ResolveMethod(explicitMethod, actionType string) string {
 	if method := NormalizeMethod(explicitMethod); method != "" {
 		return method
 	}
-	method := NormalizeMethod(actionType)
-	if MethodExecutable(method) {
-		return method
+	if strings.TrimSpace(actionType) == "" {
+		return nethttp.MethodGet
 	}
-	switch method {
-	case nethttp.MethodConnect, nethttp.MethodTrace:
-		// These methods were accepted case-insensitively by the legacy runtime.
-		// They are no longer executable, but returning them here is important:
-		// shared admission must reject an existing "connect"/"trace" action
-		// instead of silently changing its wire method to GET.
-		return method
-	}
-	trimmedType := strings.TrimSpace(actionType)
-	if trimmedType != "" && trimmedType == strings.ToUpper(trimmedType) {
-		// HTTP method-shaped action types are conventionally uppercase. Return
-		// unsupported ones so shared validation rejects them instead of silently
-		// changing CONNECT/TRACE/extension methods into GET.
-		return NormalizeMethod(trimmedType)
-	}
-	return nethttp.MethodGet
+	return NormalizeMethod(actionType)
 }
 
 // NormalizeAuthType canonicalizes source aliases while preserving an empty

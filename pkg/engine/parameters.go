@@ -586,12 +586,12 @@ func safePositiveMulMod(a, b, modulus int) int {
 }
 
 func resolveBuiltinFunction(expr string, now func() time.Time, rng *rand.Rand) (string, bool) {
-	switch expr {
-	case "fn.uuid()", "fn.uuid", "fn.uuid.v4":
+	switch strings.TrimSuffix(expr, "()") {
+	case "fn.uuid", "fn.uuid.v4":
 		return uuid.NewString(), true
-	case "fake.uuid", "fake.uuid()":
+	case "fake.uuid":
 		return uuid.NewString(), true
-	case "fake.email", "fake.email()":
+	case "fake.email":
 		localPart := ""
 		if rng != nil {
 			localPart = generateRandomString(rng, 12, "abcdefghijklmnopqrstuvwxyz0123456789")

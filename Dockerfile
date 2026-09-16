@@ -21,6 +21,8 @@ RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/pack
 COPY docs/API_USER_GUIDE.md ./docs/API_USER_GUIDE.md
 COPY docs/APPLICATION_USER_GUIDE.md ./docs/APPLICATION_USER_GUIDE.md
 COPY docs/ADMIN_USER_GUIDE.md ./docs/ADMIN_USER_GUIDE.md
+COPY docs/help-content-catalog.json ./docs/help-content-catalog.json
+COPY docs/dsl.schema.json ./docs/dsl.schema.json
 COPY dashboard/ ./dashboard/
 # The dashboard build deliberately writes to /src/pkg/api/static, matching the
 # go:embed path used by the controller. Building it here makes image contents
