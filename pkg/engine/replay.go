@@ -407,7 +407,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	dataProvider.SeedRandom(replaySeed)
 	vu.rng = rand.New(rand.NewSource(replaySeed))
 
-	vu.prepareRuntimeState()
+	if err := vu.prepareRuntimeState(); err != nil {
+		return nil, fmt.Errorf("prepare replay data: %w", err)
+	}
 	for key, value := range opts.Variables {
 		vu.Variables[key] = value
 	}

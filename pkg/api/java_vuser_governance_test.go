@@ -348,7 +348,7 @@ func TestApprovedCombinedJavaVuserRetryRejectsReusedLibraryScriptID(t *testing.T
 		Protocol:  "http",
 		ProjectID: projectID,
 		Config:    dsl.ScriptConfig{BaseURL: "https://replacement.example.test"},
-		Actions:   []dsl.Action{{Name: "Replacement", Type: "request", Target: "/"}},
+		Actions:   []dsl.Action{{Name: "Replacement", Type: "request", Method: "GET", Target: "/"}},
 	}
 	createBody, err := json.Marshal(map[string]any{"project_id": projectID, "script": replacement})
 	if err != nil {
@@ -680,7 +680,7 @@ func TestJavaVuserPUTCannotSupplyOrInvalidateApprovalEvidence(t *testing.T) {
 			Protocol:  "http",
 			ProjectID: projectID,
 			Config:    dsl.ScriptConfig{BaseURL: "https://replacement.example.test"},
-			Actions:   []dsl.Action{{Name: "Replacement", Type: "request", Target: "/"}},
+			Actions:   []dsl.Action{{Name: "Replacement", Type: "request", Method: "GET", Target: "/"}},
 		}
 		body, err := json.Marshal(map[string]any{"script": replacement})
 		if err != nil {
@@ -702,7 +702,7 @@ func TestJavaVuserPUTCannotConvertOrdinaryScriptWithCopiedApproval(t *testing.T)
 	ordinary, err := server.runner.StoreScriptDurable(&dsl.Script{
 		Name: "Ordinary", Version: "1.0.0", Protocol: "http", ProjectID: projectID,
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
-		Actions: []dsl.Action{{Name: "Home", Type: "request", Target: "/"}},
+		Actions: []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
 	})
 	if err != nil {
 		t.Fatalf("StoreScriptDurable: %v", err)
@@ -833,7 +833,7 @@ func TestUntrustedDurableWritersCannotForgeJavaVuserApprovalOrGrandfathering(t *
 		Protocol:  "http",
 		ProjectID: persisted.ProjectID,
 		Config:    dsl.ScriptConfig{BaseURL: "https://replacement.example.test"},
-		Actions:   []dsl.Action{{Name: "Replacement", Type: "request", Target: "/"}},
+		Actions:   []dsl.Action{{Name: "Replacement", Type: "request", Method: "GET", Target: "/"}},
 	}
 	if _, _, err := server.runner.UpdateScriptDurableIfUnchanged(nonJavaReplacement, persisted.Script); err == nil ||
 		!strings.Contains(err.Error(), "local authoring-session review") {

@@ -202,7 +202,10 @@ func (vu *VUser) Run(ctx context.Context) {
 	logger := vu.makeLogger(logCfg)
 	vu.resultPhase = "action"
 
-	vu.prepareRuntimeState()
+	if err := vu.prepareRuntimeState(); err != nil {
+		vu.recordDataRowError(err)
+		return
+	}
 	// The soft Run context controls whether another iteration may start. The
 	// hard context owns an action already in flight, while the boundary context
 	// stops pause gates, waits, and subsequent actions on graceful stop.
@@ -452,7 +455,11 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		// Reload data row at the start of each iteration
 		if iteration > 0 {
-			vu.loadDataRow()
+			if err := vu.loadDataRow(); err != nil {
+				vu.recordDataRowError(err)
+				releasePreIterationReservations()
+				goto teardown
+			}
 			if vu.Parameters != nil {
 				vu.Parameters.RefreshIteration()
 			}
@@ -1057,12 +1064,15 @@ func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Co
 	}
 	cfg := vu.Script.Config
 	logCfg := cfg.Log
-	vu.prepareRuntimeState()
 	ignoreErrors := strings.EqualFold(strings.TrimSpace(phase), "teardown")
+	if err := vu.prepareRuntimeState(); err != nil && !ignoreErrors {
+		vu.recordDataRowError(err)
+		return false
+	}
 	return vu.runLifecycleActionsWithContexts(actionCtx, boundaryCtx, actions, phase, ignoreErrors, vu.makeLogger(logCfg), logCfg, cfg.ErrorHandling)
 }
 
-func (vu *VUser) prepareRuntimeState() {
+func (vu *VUser) prepareRuntimeState() error {
 	vu.ensureImportedCredentialInspection()
 	vu.bindRuntimeTextRedactor()
 	if vu.Variables == nil {
@@ -1072,8 +1082,11 @@ func (vu *VUser) prepareRuntimeState() {
 	if vu.Parameters != nil {
 		vu.Parameters.Prime()
 	}
-	vu.loadDataRow()
+	if err := vu.loadDataRow(); err != nil {
+		return err
+	}
 	_ = vu.refreshImportedCredentialRuntimeValues()
+	return nil
 }
 
 func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {

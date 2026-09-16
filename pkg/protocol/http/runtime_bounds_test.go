@@ -41,12 +41,12 @@ func TestHTTPExecuteRejectsUnboundedActionControlsBeforeRequest(t *testing.T) {
 		want   string
 	}{
 		{name: "nil", action: nil, want: "required"},
-		{name: "timeout", action: &protocol.Action{Name: "bad", Type: "request", Target: "/", TimeoutMs: int(MaxConfiguredTimeout/time.Millisecond) + 1}, want: "timeout_ms"},
-		{name: "redirects", action: &protocol.Action{Name: "bad", Type: "request", Target: "/", MaxRedirects: &tooManyRedirects}, want: "max_redirects"},
-		{name: "sse timeout", action: &protocol.Action{Name: "bad", Type: "request", Target: "/", Params: map[string]any{"stream_timeout_ms": float64(MaxConfiguredTimeout/time.Millisecond) + 1}}, want: "stream_timeout_ms"},
-		{name: "fractional sse timeout", action: &protocol.Action{Name: "bad", Type: "request", Target: "/", Params: map[string]any{"stream_timeout_ms": 1.5}}, want: "stream_timeout_ms"},
-		{name: "extractor expression", action: &protocol.Action{Name: "bad", Type: "request", Target: "/", Extractors: []protocol.Extractor{{Name: "oversized", Expression: strings.Repeat("x", MaxExtractorExpressionBytes+1)}}}, want: "expression"},
-		{name: "extractor count", action: &protocol.Action{Name: "bad", Type: "request", Target: "/", Extractors: tooManyExtractors}, want: "extractors"},
+		{name: "timeout", action: &protocol.Action{Name: "bad", Type: "request", Method: "GET", Target: "/", TimeoutMs: int(MaxConfiguredTimeout/time.Millisecond) + 1}, want: "timeout_ms"},
+		{name: "redirects", action: &protocol.Action{Name: "bad", Type: "request", Method: "GET", Target: "/", MaxRedirects: &tooManyRedirects}, want: "max_redirects"},
+		{name: "sse timeout", action: &protocol.Action{Name: "bad", Type: "request", Method: "GET", Target: "/", Params: map[string]any{"stream_timeout_ms": float64(MaxConfiguredTimeout/time.Millisecond) + 1}}, want: "stream_timeout_ms"},
+		{name: "fractional sse timeout", action: &protocol.Action{Name: "bad", Type: "request", Method: "GET", Target: "/", Params: map[string]any{"stream_timeout_ms": 1.5}}, want: "stream_timeout_ms"},
+		{name: "extractor expression", action: &protocol.Action{Name: "bad", Type: "request", Method: "GET", Target: "/", Extractors: []protocol.Extractor{{Name: "oversized", Expression: strings.Repeat("x", MaxExtractorExpressionBytes+1)}}}, want: "expression"},
+		{name: "extractor count", action: &protocol.Action{Name: "bad", Type: "request", Method: "GET", Target: "/", Extractors: tooManyExtractors}, want: "extractors"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -283,5 +283,25 @@ func TestHTTPExecuteAllowsMaximumExtractorsOverModestBody(t *testing.T) {
 	}
 	if !result.Success {
 		t.Fatalf("result = success:%t error:%q, want bounded multi-extractor action to succeed", result.Success, result.ErrorMessage)
+	}
+}
+
+func TestHTTPExecuteUnknownTypeMakesNoRequest(t *testing.T) {
+	var calls atomic.Int64
+	server := httptest.NewServer(stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) { calls.Add(1); w.WriteHeader(200) }))
+	defer server.Close()
+	client := initHTTP(t, map[string]any{"base_url": server.URL})
+	for _, actionType := range []string{"pots", "post_order", "db_query", "request"} {
+		result, _ := client.Execute(context.Background(), &protocol.Action{Name: "bad", Type: actionType, Target: "/"})
+		if result.Success || !strings.Contains(result.ErrorMessage, "unsupported HTTP method") {
+			t.Fatalf("unexpected result: %#v", result)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("unknown action sent a request")
+	}
+	result, err := client.Execute(context.Background(), &protocol.Action{Name: "explicit", Type: "request", Method: "GET", Target: "/"})
+	if err != nil || !result.Success || calls.Load() != 1 {
+		t.Fatalf("explicit method failed: %v, %#v", err, result)
 	}
 }

@@ -11,7 +11,7 @@ func httpContractScript(version string, action Action) *Script {
 		action.Name = "request"
 	}
 	if action.Type == "" {
-		action.Type = "request"
+		action.Type = "GET"
 	}
 	if action.Target == "" {
 		action.Target = "/"
@@ -154,7 +154,7 @@ func TestValidateScriptIssues_HTTPHeaderOccurrenceContract(t *testing.T) {
 			Control: &ControlFlow{
 				Condition: &Condition{Left: "{{var.enabled}}", Op: "exists"},
 				Steps: []Action{{
-					Name: "nested", Type: "request", Target: "/nested",
+					Name: "nested", Type: "request", Method: "GET", Target: "/nested",
 					HeaderList: HeaderList{{Name: "Transfer-Encoding", Value: "chunked"}},
 				}},
 			},

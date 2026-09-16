@@ -30,7 +30,7 @@ func storedSecretReferenceScript(t *testing.T, server *Server, projectID, id, na
 	script := &dsl.Script{
 		ID: id, Name: name, Version: "1", Protocol: "http", ProjectID: projectID,
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
-		Actions: []dsl.Action{{Name: "Call", Type: "request", Target: "/?token={{secret." + secretName + "}}"}},
+		Actions: []dsl.Action{{Name: "Call", Type: "request", Method: "GET", Target: "/?token={{secret." + secretName + "}}"}},
 	}
 	stored, err := server.runner.StoreScriptDurable(script)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestRebindScriptSecretReferenceTransformsExactExecutableOccurrences(t *test
 	script := &dsl.Script{
 		ID: "rebind-script", Name: "Rebind", Version: "1", Protocol: "http", ProjectID: projectID,
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test", HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "bearer", Token: "{{secret.OLD_TOKEN}}"}}},
-		Actions: []dsl.Action{{Name: "Call", Type: "request", Target: "/{{secret.OLD_TOKEN}}", Body: encoded, BodyEncoding: "base64"}},
+		Actions: []dsl.Action{{Name: "Call", Type: "request", Method: "GET", Target: "/{{secret.OLD_TOKEN}}", Body: encoded, BodyEncoding: "base64"}},
 	}
 	stored, err := server.runner.StoreScriptDurable(script)
 	if err != nil {
@@ -139,8 +139,8 @@ func TestRebindScriptSecretReferenceTransformsExactExecutableOccurrences(t *test
 }
 
 func TestRebindScriptSecretReferenceRejectsInvalidReservedAndAbsentNames(t *testing.T) {
-	ordinary := &dsl.Script{Actions: []dsl.Action{{Name: "Call", Type: "request", Target: "/{{secret.OLD_TOKEN}}"}}}
-	reserved := &dsl.Script{Actions: []dsl.Action{{Name: "Call", Type: "request", Target: "/{{secret.APEX_RUNTIME_OVERRIDE_G1_ABC}}"}}}
+	ordinary := &dsl.Script{Actions: []dsl.Action{{Name: "Call", Type: "request", Method: "GET", Target: "/{{secret.OLD_TOKEN}}"}}}
+	reserved := &dsl.Script{Actions: []dsl.Action{{Name: "Call", Type: "request", Method: "GET", Target: "/{{secret.APEX_RUNTIME_OVERRIDE_G1_ABC}}"}}}
 	tests := []struct {
 		name    string
 		script  *dsl.Script
@@ -174,7 +174,7 @@ func TestDurableScriptMutationsShareSecretReferenceFence(t *testing.T) {
 		close(started)
 		_, err := server.runner.StoreScriptDurable(&dsl.Script{
 			ID: "fenced-script", Name: "Fenced", Version: "1", Protocol: "http", ProjectID: projectID,
-			Actions: []dsl.Action{{Name: "Call", Type: "request", Target: "/{{secret.FENCED_TOKEN}}"}},
+			Actions: []dsl.Action{{Name: "Call", Type: "request", Method: "GET", Target: "/{{secret.FENCED_TOKEN}}"}},
 		})
 		done <- err
 	}()

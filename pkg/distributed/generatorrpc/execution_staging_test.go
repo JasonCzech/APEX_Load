@@ -146,7 +146,7 @@ func TestAssignmentStageCommitUsesControlGuardAndExplicitRollback(t *testing.T) 
 func TestAssignmentEnginePreparationDoesNotHoldCoordinatorLock(t *testing.T) {
 	service := newIsolatedService(t, 10, WithExecution())
 	request := stageRequest("run", "script", 1)
-	request.ScriptContent = []byte(`{"name":"stage","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"request","type":"request","target":"/"}]}`)
+	request.ScriptContent = []byte(`{"name":"stage","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"request","type":"request","method":"GET","target":"/"}]}`)
 	validated := validatedStageRequest(t, request)
 	service.mu.Lock()
 	decision := service.lifecycleCoordinator.reserveStageLocked(service, validated)

@@ -89,7 +89,9 @@ func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, 
 		return fmt.Errorf("data source init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 	vu.DataProvider = dataProvider
-	vu.loadDataRow()
+	if err := vu.loadDataRow(); err != nil {
+		return err
+	}
 
 	for _, action := range script.Init {
 		if err := runShakeoutAction(ctx, vu, action, "init"); err != nil {

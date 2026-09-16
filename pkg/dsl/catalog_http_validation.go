@@ -210,7 +210,7 @@ func validateHTTPActionBoundsIssues(path string, action Action) []string {
 	// http_sequence is catalogued for the HTTP protocol but dispatched by the
 	// engine; its import representation uses the synthetic method SEQUENCE.
 	// Each child request is validated separately above.
-	if !isEngineActionType(action.Type) && !strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+	if !isEngineActionType(action.Type) && !strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") && CanonicalActionType(action.Type) != "http_oauth2_token" {
 		if err := httpprotocol.ValidateMethod(httpprotocol.ResolveMethod(action.Method, action.Type)); err != nil {
 			issues = append(issues, fmt.Sprintf("%s: %v", label, err))
 		}

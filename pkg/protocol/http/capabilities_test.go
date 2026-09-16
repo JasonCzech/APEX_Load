@@ -129,7 +129,7 @@ func TestSupportedMethodsAreCanonicalAndAuthoritative(t *testing.T) {
 	if got := ResolveMethod("", "post"); got != "POST" {
 		t.Fatalf("ResolveMethod() = %q", got)
 	}
-	if got := ResolveMethod("", "request"); got != "GET" {
+	if got := ResolveMethod("", "request"); got != "REQUEST" {
 		t.Fatalf("ResolveMethod() fallback = %q", got)
 	}
 	if got := ResolveMethod("", "CONNECT"); got != "CONNECT" {
@@ -171,5 +171,21 @@ func TestValidateAuthWireValuesRejectsAmbiguousBasicUsername(t *testing.T) {
 	var wireErr *AuthWireValueError
 	if !errors.As(err, &wireErr) || wireErr.Field != "username" {
 		t.Fatalf("ValidateAuthWireValues() error = %v, want username wire error", err)
+	}
+}
+
+func TestResolveMethodRejectsUnknownTypesUnlessExplicit(t *testing.T) {
+	for _, actionType := range []string{"pots", "POTS", "post_order", "db_query", "request"} {
+		if err := ValidateMethod(ResolveMethod("", actionType)); err == nil {
+			t.Errorf("accepted unknown type %q", actionType)
+		}
+		if got := ResolveMethod("post", actionType); got != "POST" {
+			t.Errorf("explicit method lost: %q", got)
+		}
+	}
+	for _, actionType := range []string{"get", "POST", " put ", "patch", "delete", "head", "options", ""} {
+		if err := ValidateMethod(ResolveMethod("", actionType)); err != nil {
+			t.Errorf("rejected %q: %v", actionType, err)
+		}
 	}
 }

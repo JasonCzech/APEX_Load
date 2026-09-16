@@ -97,20 +97,29 @@ func actionParamBool(params map[string]any, key string) (bool, bool) {
 }
 
 // loadDataRow populates VUser variables from configured data sources.
-func (vu *VUser) loadDataRow() {
+func (vu *VUser) loadDataRow() error {
 	if vu.DataProvider == nil || !vu.DataProvider.HasSources() {
-		return
+		return nil
 	}
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)
 	}
 	for _, name := range vu.DataProvider.SourceNames() {
 		row := vu.DataProvider.GetRow(name, vu.ID)
+		// A missing row must never retain a previous iteration's bindings.
+		source := vu.DataProvider.sources[name]
+		for _, column := range source.columns {
+			delete(vu.Variables, name+"."+column)
+		}
+		if row == nil && source.strategy == "pop" {
+			return fmt.Errorf("data source %q exhausted", name)
+		}
 		for k, v := range row {
 			vu.Variables[k] = v
 		}
 	}
 	_ = vu.refreshImportedCredentialRuntimeValues()
+	return nil
 }
 
 // makeLogger creates a logger for this VUser based on the log config.
@@ -1012,5 +1021,14 @@ func toProtocolCaptureOptions(capture *dsl.BrowserCaptureOptions) *protocol.Brow
 		Screenshot: capture.Screenshot,
 		FullPage:   capture.FullPage,
 		HTML:       capture.HTML,
+	}
+}
+
+// recordDataRowError makes exhaustion visible in run results before stopping.
+func (vu *VUser) recordDataRowError(err error) {
+	message := scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+	vu.makeLogger(vu.Script.Config.Log).Error("data row load failed", "error", message)
+	if vu.Metrics != nil {
+		vu.recordResult(&protocol.Result{ActionName: "data source", StartTime: time.Now(), ErrorMessage: message, Success: false}, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
 	}
 }

@@ -19,7 +19,7 @@ func TestValidateScriptIssues_Parameters(t *testing.T) {
 			{Name: "token", Type: "random_string", Length: 0},
 			{Name: "password", Type: "file", DataSource: "users", Column: "password", SameLineAs: "missing"},
 		},
-		Actions: []Action{{Name: "call", Type: "request", Target: "/ping"}},
+		Actions: []Action{{Name: "call", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -43,7 +43,7 @@ func TestValidateScriptIssues_RejectsCaseInsensitiveParameterDuplicates(t *testi
 			{Name: "Token", Type: "list", Values: []string{"first"}},
 			{Name: " token ", Type: "list", Values: []string{"second"}},
 		},
-		Actions: []Action{{Name: "call", Type: "request", Target: "/{{var.TOKEN}}"}},
+		Actions: []Action{{Name: "call", Type: "request", Method: "GET", Target: "/{{var.TOKEN}}"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -104,7 +104,7 @@ func TestValidateScriptIssues_ParametersAllowsSupportedValues(t *testing.T) {
 			{Name: "timestamp", Type: "timestamp", Format: "iso8601", Timezone: "UTC"},
 		},
 		DataSources: []DataSource{{Name: "users", Type: "csv", InlineData: "username,password\nalice,secret\n", FirstRowHeader: true}},
-		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+		Actions:     []Action{{Name: "call", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -132,7 +132,7 @@ func TestValidateScriptIssues_UnresolvableParameterColumnIsFitNotStructural(t *t
 		Config:      ScriptConfig{BaseURL: "https://example.com"},
 		Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "users", Column: "UserName"}},
 		DataSources: []DataSource{{Name: "users", Type: "dat", InlineData: "alice\n", Strategy: "sequential"}},
-		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+		Actions:     []Action{{Name: "call", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 
 	if issues := ValidateScriptIssues(script); len(issues) != 0 {
@@ -149,7 +149,7 @@ func TestValidateScriptIssues_RejectsUnknownDataSourceReference(t *testing.T) {
 		Config:      ScriptConfig{BaseURL: "https://example.com"},
 		Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "nope", Column: "UserName"}},
 		DataSources: []DataSource{{Name: "users", Type: "dat", InlineData: "alice\n", Strategy: "sequential"}},
-		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+		Actions:     []Action{{Name: "call", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 	issues := ValidateScriptIssues(script)
 	assertIssue(t, issues, `parameters[0] "username": data_source "nope" does not exist`)
@@ -162,7 +162,7 @@ func TestValidateScriptIssues_RejectsParameterHeaderConsumedAsData(t *testing.T)
 		Config:      ScriptConfig{BaseURL: "https://example.com"},
 		Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "users", Column: "UserName"}},
 		DataSources: []DataSource{{Name: "users", Type: "dat", InlineData: "UserName\nalice\n", Columns: []string{"UserName"}, Strategy: "sequential"}},
-		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+		Actions:     []Action{{Name: "call", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 
 	issues := ValidateScriptIssues(script)
@@ -184,7 +184,7 @@ func TestValidateScriptIssues_ParameterColumnsRespectInspectableSchema(t *testin
 				Config:      ScriptConfig{BaseURL: "https://example.com"},
 				Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "users", Column: "UserName"}},
 				DataSources: []DataSource{test.source},
-				Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+				Actions:     []Action{{Name: "call", Type: "request", Method: "GET", Target: "/ping"}},
 			}
 			if issues := ValidateScriptIssues(script); len(issues) != 0 {
 				t.Fatalf("issues = %v, want none", issues)

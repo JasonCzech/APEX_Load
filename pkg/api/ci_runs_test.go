@@ -103,7 +103,7 @@ func createTerminalCIContractTest(t *testing.T, server *Server, store storage.St
 	t.Helper()
 	script, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID: "ci-terminal-evidence-script", ProjectID: "project-ci", Name: "Terminal evidence", Version: "1.0.0", Protocol: "http",
-		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	})
 	if err != nil {
 		t.Fatalf("StoreScriptDurable: %v", err)
@@ -1443,7 +1443,7 @@ func TestQueuedCIRunRecoversAtControllerStartup(t *testing.T) {
 	server, store := newCIContractTestServer(t, policy)
 	script, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID: "ci-startup-recovery-script", ProjectID: "project-ci", Name: "Recovery", Version: "1.0.0", Protocol: "http",
-		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1491,7 +1491,7 @@ func TestQueuedCIRunRecoveryRejectsRevokedPolicy(t *testing.T) {
 	server, store := newCIContractTestServer(t, policy)
 	script, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID: "ci-revoked-startup-script", ProjectID: "project-ci", Name: "Revoked recovery", Version: "1.0.0", Protocol: "http",
-		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1538,7 +1538,7 @@ func TestPendingCIRunPromotionRejectsDisabledPolicy(t *testing.T) {
 	server, store := newCIContractTestServer(t, policy)
 	script, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID: "ci-disabled-pending-script", ProjectID: "project-ci", Name: "Disabled pending", Version: "1.0.0", Protocol: "http",
-		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1676,7 +1676,7 @@ func TestFailedCIRunStartIsExecutionFailureNotCancellation(t *testing.T) {
 	server, _ := newCIContractTestServer(t, policy)
 	script, err := server.runner.StoreScriptDurable(&dsl.Script{
 		ID: "ci-start-failure-script", ProjectID: "project-ci", Name: "Start failure", Version: "1.0.0", Protocol: "http",
-		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Config: dsl.ScriptConfig{BaseURL: "https://api.example.test"}, Actions: []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1729,7 +1729,7 @@ func TestPrivateCIScriptSnapshotCompilesWithoutLibraryPersistence(t *testing.T) 
 		ID: "github-actions-ci-private-snapshot", ProjectID: "project-ci", Name: "Private CI snapshot", Version: "1.0.0", Protocol: "http",
 		GeneratedBy: ciInlineScriptGenerator,
 		Config:      dsl.ScriptConfig{BaseURL: "https://api.example.test"},
-		Actions:     []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Actions:     []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	}
 	stored, err := server.runner.acquirePrivateCIScriptSnapshot(snapshot)
 	if err != nil {
@@ -1787,7 +1787,7 @@ func TestLeakedCIScriptSnapshotCleanupPreservesQueuedRunRecovery(t *testing.T) {
 		ID: "github-actions-ci-user-owned-script", ProjectID: "project-ci", Name: "User-owned lookalike", Version: "1.0.0", Protocol: "http",
 		GeneratedBy: "user-import",
 		Config:      dsl.ScriptConfig{BaseURL: "https://api.example.test"},
-		Actions:     []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Actions:     []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1796,7 +1796,7 @@ func TestLeakedCIScriptSnapshotCleanupPreservesQueuedRunRecovery(t *testing.T) {
 		ID: "github-actions-ci-leaked-snapshot", ProjectID: "project-ci", Name: "Leaked CI snapshot", Version: "1.0.0", Protocol: "http",
 		GeneratedBy: ciLibraryScriptGenerator,
 		Config:      dsl.ScriptConfig{BaseURL: "https://api.example.test"},
-		Actions:     []dsl.Action{{Name: "health", Type: "request", Target: "/health"}},
+		Actions:     []dsl.Action{{Name: "health", Type: "request", Method: "GET", Target: "/health"}},
 	}
 	if err := store.SaveScript(leaked); err != nil {
 		t.Fatal(err)

@@ -215,8 +215,8 @@ func TestImportBatchSecretSuggestionsDoNotImplicitlyReuseCredentials(t *testing.
 				HTTP:    dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "bearer", Token: existingReference}},
 			},
 			Actions: []dsl.Action{{
-				Name:    "Login",
-				Type:    "request",
+				Name: "Login",
+				Type: "request", Method: "GET",
 				Target:  "/login",
 				Headers: map[string]string{"Authorization": "Bearer " + maskedScriptSecret},
 			}},
@@ -254,7 +254,7 @@ func TestDiscoverSecretBindingRequirementsSkipsIdentityAndReviewOnlyActions(t *t
 		Actions: []dsl.Action{
 			{Name: "Source review", Type: "source_review", Target: maskedScriptSecret, Body: maskedScriptSecret, Params: map[string]any{"args": []any{maskedScriptSecret}}},
 			{Name: "Required review", Type: "review_required", Target: maskedScriptSecret, Value: maskedScriptSecret, Metadata: map[string]any{"source": maskedScriptSecret}},
-			{Name: maskedScriptSecret, Type: "request", Target: "/execute?token=" + maskedScriptSecret},
+			{Name: maskedScriptSecret, Type: "request", Method: "GET", Target: "/execute?token=" + maskedScriptSecret},
 		},
 	}
 	requirements := discoverSecretBindingRequirements(script, 0)
@@ -268,8 +268,8 @@ func TestSecretBindingRequirementIDsBindProjectedContentAndActionContext(t *test
 		ID: "scope-a", Name: "Scoped import", Protocol: "http",
 		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{
-			{Name: "First", Type: "request", Target: "/first", Headers: map[string]string{"Authorization": "Bearer " + maskedScriptSecret}},
-			{Name: "Second", Type: "request", Target: "/second", Headers: map[string]string{"Authorization": "Bearer " + maskedScriptSecret}},
+			{Name: "First", Type: "request", Method: "GET", Target: "/first", Headers: map[string]string{"Authorization": "Bearer " + maskedScriptSecret}},
+			{Name: "Second", Type: "request", Method: "GET", Target: "/second", Headers: map[string]string{"Authorization": "Bearer " + maskedScriptSecret}},
 		},
 	}
 	baseID := findSecretBindingRequirement(t, discoverSecretBindingRequirements(base, 2), "/actions/0/headers/Authorization", 0).ID
@@ -364,7 +364,7 @@ func TestApplySecretBindingsDiscoversSentinelsFromReturnedProjection(t *testing.
 			HTTP:    dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "basic", Password: "inline-password"}},
 		},
 		Actions: []dsl.Action{{
-			Name: "Login", Type: "request", Target: "/login",
+			Name: "Login", Type: "request", Method: "GET", Target: "/login",
 			Headers: map[string]string{"Authorization": "Bearer " + maskedScriptSecret},
 		}},
 	}
@@ -390,8 +390,8 @@ func TestApplySecretBindingsClearsOnlyResolvedCredentialManagementBlockers(t *te
 		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{
 			{
-				Name:   "Singular credential blocker",
-				Type:   "request",
+				Name: "Singular credential blocker",
+				Type: "request", Method: "GET",
 				Target: "/one",
 				Headers: map[string]string{
 					"Authorization": "Bearer " + maskedScriptSecret,
@@ -402,8 +402,8 @@ func TestApplySecretBindingsClearsOnlyResolvedCredentialManagementBlockers(t *te
 				},
 			},
 			{
-				Name:   "Mixed blockers",
-				Type:   "request",
+				Name: "Mixed blockers",
+				Type: "request", Method: "GET",
 				Target: "/two?token=" + maskedScriptSecret,
 				Metadata: map[string]any{
 					"execution_blocker":  "import_missing_variables",
@@ -458,8 +458,8 @@ func TestApplySecretBindingsKeepsCredentialBlockerUntilEveryOccurrenceIsGoverned
 		Protocol: "http",
 		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{{
-			Name:   "Request",
-			Type:   "request",
+			Name: "Request",
+			Type: "request", Method: "GET",
 			Target: "/resource?token=" + maskedScriptSecret,
 			Headers: map[string]string{
 				"Authorization": "Bearer " + maskedScriptSecret,
@@ -499,8 +499,8 @@ func TestApplySecretBindingsClearsOnlyTheFullyResolvedActionScope(t *testing.T) 
 		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{
 			{
-				Name:   "Resolved request",
-				Type:   "request",
+				Name: "Resolved request",
+				Type: "request", Method: "GET",
 				Target: "/resolved",
 				Headers: map[string]string{
 					"Authorization": "Bearer " + maskedScriptSecret,
@@ -510,8 +510,8 @@ func TestApplySecretBindingsClearsOnlyTheFullyResolvedActionScope(t *testing.T) 
 				},
 			},
 			{
-				Name:   "Unrelated unmanaged request",
-				Type:   "request",
+				Name: "Unrelated unmanaged request",
+				Type: "request", Method: "GET",
 				Target: "/unrelated",
 				Metadata: map[string]any{
 					"execution_blocker":  "import_credentials_unmanaged",
@@ -667,7 +667,7 @@ func TestCreateScriptReturnsStructuredSecretBindingRequirements(t *testing.T) {
 			},
 		},
 		Actions: []dsl.Action{
-			{Name: "Ping", Type: "request", Target: "/ping"},
+			{Name: "Ping", Type: "request", Method: "GET", Target: "/ping"},
 			{Name: "Source review", Type: "source_review", Target: "review", Metadata: map[string]any{
 				"original_request": "Authorization: [REDACTED]",
 			}},
@@ -733,7 +733,7 @@ func TestCreateScriptReturnsBindingRequirementForInlineCredentialWithoutSentinel
 				Auth: dsl.AuthConfig{Type: "basic", Password: "raw-password-without-sentinel"},
 			},
 		},
-		Actions: []dsl.Action{{Name: "Ping", Type: "request", Target: "/ping"}},
+		Actions: []dsl.Action{{Name: "Ping", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 
 	response := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": script})
@@ -766,7 +766,7 @@ func TestUpdateScriptReturnsBindingRequirementForNewInlineCredential(t *testing.
 			BaseURL: "https://example.test",
 			HTTP:    dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "basic", Password: "{{secret.EXISTING_PASSWORD}}"}},
 		},
-		Actions: []dsl.Action{{Name: "Ping", Type: "request", Target: "/ping"}},
+		Actions: []dsl.Action{{Name: "Ping", Type: "request", Method: "GET", Target: "/ping"}},
 	})
 	incoming := cloneScriptDefinition(stored.Script)
 	incoming.Config.HTTP.Proxy.Password = "new-inline-proxy-password"
@@ -808,7 +808,7 @@ func TestCreateAndUpdatePersistProjectedReviewMetadata(t *testing.T) {
 		Name: "Projected review evidence", Protocol: "http",
 		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{
-			{Name: "Ping", Type: "request", Target: "/ping"},
+			{Name: "Ping", Type: "request", Method: "GET", Target: "/ping"},
 			{Name: "Source review", Type: "source_review", Target: "review", Metadata: map[string]any{
 				"authorization": "Bearer " + createSecret,
 			}},
@@ -866,7 +866,7 @@ func TestCreateScriptAllowsRedactedImportReviewEvidence(t *testing.T) {
 			"source_review": map[string]any{"request_header": "Authorization: [REDACTED]"},
 		}}},
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
-		Actions: []dsl.Action{{Name: "Ping", Type: "request", Target: "/ping"}},
+		Actions: []dsl.Action{{Name: "Ping", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 	response := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": script})
 	if response.Code != http.StatusCreated {
@@ -922,7 +922,7 @@ func TestReconcileMaskedScriptSecretsRejectsPromotedOrLegacyExecutableEvidence(t
 		Name: "Legacy executable sentinel", Protocol: "http",
 		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{{
-			Name: "Request", Type: "request", Target: "/request",
+			Name: "Request", Type: "request", Method: "GET", Target: "/request",
 			Metadata: map[string]any{"authorization": maskedScriptSecret},
 		}},
 	}
@@ -935,7 +935,7 @@ func TestImportResponseIncludesProjectedMultiScriptSecretRequirements(t *testing
 	first := &dsl.Script{
 		ID: "script-a", Name: "First", Protocol: "http",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test", HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "basic", Password: "inline-password-a"}}},
-		Actions: []dsl.Action{{Name: "Ping", Type: "request", Target: "/ping", Headers: map[string]string{"Authorization": "Bearer inline-token-a"}}},
+		Actions: []dsl.Action{{Name: "Ping", Type: "request", Method: "GET", Target: "/ping", Headers: map[string]string{"Authorization": "Bearer inline-token-a"}}},
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
 			"source_review": map[string]any{"password": "evidence-only-password"},
 		}}},
@@ -943,7 +943,7 @@ func TestImportResponseIncludesProjectedMultiScriptSecretRequirements(t *testing
 	second := &dsl.Script{
 		ID: "script-b", Name: "Second", Protocol: "http",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test", HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "basic", Password: "inline-password-b"}}},
-		Actions: []dsl.Action{{Name: "Ping", Type: "request", Target: "/ping"}},
+		Actions: []dsl.Action{{Name: "Ping", Type: "request", Method: "GET", Target: "/ping"}},
 	}
 
 	response := newScriptImportResponse(scriptImportResponseOptions{Scripts: []*dsl.Script{first, second}, Script: first})

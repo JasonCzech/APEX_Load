@@ -2645,6 +2645,7 @@ func TestHTTPCanDiscardOnlySuccessfulResponseBodies(t *testing.T) {
 			result, err := client.Execute(context.Background(), &protocol.Action{
 				Name:                         test.name,
 				Type:                         "request",
+				Method:                       "GET",
 				Target:                       test.target,
 				DiscardResponseBodyOnSuccess: true,
 			})

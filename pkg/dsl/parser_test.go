@@ -62,7 +62,7 @@ func TestParse_ValidPlainScript(t *testing.T) {
 }
 
 func TestParse_MissingName(t *testing.T) {
-	input := `{"script": {"protocol": "http", "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
+	input := `{"script": {"protocol": "http", "actions": [{"name": "a", "type": "request", "method": "GET", "target": "/"}]}}`
 	_, err := Parse([]byte(input))
 	if err == nil {
 		t.Fatal("expected error for missing name")
@@ -70,7 +70,7 @@ func TestParse_MissingName(t *testing.T) {
 }
 
 func TestParse_MissingProtocol(t *testing.T) {
-	input := `{"script": {"name": "test", "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
+	input := `{"script": {"name": "test", "actions": [{"name": "a", "type": "request", "method": "GET", "target": "/"}]}}`
 	_, err := Parse([]byte(input))
 	if err == nil {
 		t.Fatal("expected error for missing protocol")
@@ -92,7 +92,7 @@ func TestParse_ActionMissingFields(t *testing.T) {
 	}{
 		{
 			"missing action name",
-			`{"script": {"name": "test", "protocol": "http", "actions": [{"type": "request", "target": "/"}]}}`,
+			`{"script": {"name": "test", "protocol": "http", "actions": [{"type": "request", "method": "GET", "target": "/"}]}}`,
 		},
 		{
 			"missing action type",
@@ -484,7 +484,7 @@ func TestParse_HTTPRequiresBaseURL(t *testing.T) {
 }
 
 func TestParseFile(t *testing.T) {
-	content := `{"script": {"name": "file-test", "protocol": "http", "config": {"base_url": "https://example.com"}, "actions": [{"name": "a", "type": "request", "target": "/"}]}}`
+	content := `{"script": {"name": "file-test", "protocol": "http", "config": {"base_url": "https://example.com"}, "actions": [{"name": "a", "type": "request", "method": "GET", "target": "/"}]}}`
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.json")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
@@ -650,13 +650,13 @@ func TestParse_InitAndTeardown(t *testing.T) {
 				"base_url": "https://example.com"
 			},
 			"init": [
-				{"name": "setup", "type": "request", "target": "/setup"}
+				{"name": "setup", "type": "request", "method": "GET", "target": "/setup"}
 			],
 			"actions": [
-				{"name": "main", "type": "request", "target": "/main"}
+				{"name": "main", "type": "request", "method": "GET", "target": "/main"}
 			],
 			"teardown": [
-				{"name": "cleanup", "type": "request", "target": "/cleanup"}
+				{"name": "cleanup", "type": "request", "method": "GET", "target": "/cleanup"}
 			]
 		}
 	}`
