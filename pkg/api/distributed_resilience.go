@@ -397,20 +397,11 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			replacementClients[replacementTarget] = client
 		}
 	}
-	var stopReplacementSupervision func()
-	if b.requireRunSupervision && len(replacementClients) > 0 {
-		if err := b.claimRunSupervisionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken); err != nil {
-			rollbackErr := rollback()
-			closeDialedClients()
-			return impacts, errors.Join(fmt.Errorf("claim replacement run supervision: %w", err), rollbackErr)
-		}
-		stopReplacementSupervision = b.startRunSupervisionTargetKeeper(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
-		defer func() {
-			if stopReplacementSupervision != nil {
-				stopReplacementSupervision()
-			}
-		}()
-	}
+	// As with the initial test-start path (distributed_execution_backend.go),
+	// the test-execution lease must be established on a replacement target
+	// before run supervision is claimed there: a generator with
+	// RequireTestExecutionLease set rejects a run supervision claim unless it
+	// already holds a current lease for this generation.
 	var stopStagedLeaseKeeper context.CancelFunc
 	if requireTestExecutionLease {
 		currentGeneration, currentOwnerID, currentDeadline, leaseErr := tr.generatorExecutionClaim()
@@ -436,6 +427,20 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 	if stopStagedLeaseKeeper != nil {
 		defer stopStagedLeaseKeeper()
+	}
+	var stopReplacementSupervision func()
+	if b.requireRunSupervision && len(replacementClients) > 0 {
+		if err := b.claimRunSupervisionClients(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken); err != nil {
+			rollbackErr := rollback()
+			closeDialedClients()
+			return impacts, errors.Join(fmt.Errorf("claim replacement run supervision: %w", err), rollbackErr)
+		}
+		stopReplacementSupervision = b.startRunSupervisionTargetKeeper(executionCtx, testID, replacementClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
+		defer func() {
+			if stopReplacementSupervision != nil {
+				stopReplacementSupervision()
+			}
+		}()
 	}
 
 	// Mark the source before issuing StopTest. Generator StopTest broadcasts a
