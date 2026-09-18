@@ -5338,6 +5338,7 @@
 .kv-key, .kv-val, .extractor-row input, .extractor-row select, .assertion-row input, .assertion-row select {
   background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 5px;
   padding: 6px 10px; color: var(--text-primary); font-size: 12px; outline: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ext-expr { flex: 2 !important; }
 .extractor-row input:focus, .extractor-row select:focus, .assertion-row input:focus, .assertion-row select:focus,
@@ -7872,8 +7873,8 @@ button.debugger-problem-row:hover {
 .action-editor-panel { min-width: 0; overflow-wrap: anywhere; }
 .action-editor-panel .form-grid, .action-editor-panel .browser-action-grid { grid-template-columns: minmax(0, 1fr); }
 .action-editor-panel input, .action-editor-panel select, .action-editor-panel textarea { min-width: 0; max-width: 100%; }
-.action-editor-panel .assertion-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.action-editor-panel .assertion-row > input, .action-editor-panel .assertion-row > select { flex: 1 1 180px; }
+.action-editor-panel .assertion-row { display: flex; flex-wrap: nowrap; gap: 8px; }
+.action-editor-panel .assertion-row > input, .action-editor-panel .assertion-row > select { flex: 1 1 0; min-width: 0; }
 .action-editor-panel summary, .action-library summary, .author-data-tools summary { cursor: pointer; padding: 12px; font-weight: 600; }
 .action-library { border-bottom: 1px solid var(--border); }
 .action-library-body { padding: 12px; max-height: 340px; overflow: auto; }
