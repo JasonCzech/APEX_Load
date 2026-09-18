@@ -705,6 +705,11 @@ export function ImportedSourceRuntimeSection({
                       <h5 className="panel-title cell-mono imported-runtime-section-title">[{sectionName}]</h5>
                       <div className="script-parameter-table-wrap imported-runtime-table-wrap">
                         <table className="script-parameter-table imported-runtime-table">
+                          <colgroup>
+                            <col className="imported-runtime-col-key" />
+                            <col className="imported-runtime-col-value" />
+                            <col className="imported-runtime-col-disposition" />
+                          </colgroup>
                           <thead>
                             <tr>
                               <th scope="col">Setting</th>

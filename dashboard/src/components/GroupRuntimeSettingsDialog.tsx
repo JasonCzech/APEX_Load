@@ -118,6 +118,11 @@ function ImportedRuntimeSourcePanel({ source }: { source: ImportedRuntimeSource 
             <h5 className="panel-title cell-mono imported-runtime-section-title">{fileName} · [{sectionName}]</h5>
             <div className="script-parameter-table-wrap imported-runtime-table-wrap">
               <table className="script-parameter-table imported-runtime-table group-run-settings-imported-table">
+                <colgroup>
+                  <col className="imported-runtime-col-key" />
+                  <col className="imported-runtime-col-value" />
+                  <col className="imported-runtime-col-disposition" />
+                </colgroup>
                 <tbody>
                   {visibleKeys.map(([key, value]) => {
                     const disposition = source.dispositions[fileName]?.[sectionName]?.[key]

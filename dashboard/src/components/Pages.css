@@ -7956,6 +7956,22 @@ col.results-actions-col {
   border-bottom: none;
 }
 
+/* Imported Source Runtime Settings renders one table per section; a shared
+   colgroup keeps every table's columns aligned instead of each auto-sizing
+   to its own content. */
+.imported-runtime-table {
+  table-layout: fixed;
+}
+
+.imported-runtime-col-key { width: 30%; }
+.imported-runtime-col-value { width: 45%; }
+.imported-runtime-col-disposition { width: 25%; }
+
+.imported-runtime-table .imported-runtime-key,
+.imported-runtime-table .imported-runtime-value {
+  overflow-wrap: anywhere;
+}
+
 .settings-status-block {
   display: flex;
   flex-direction: column;
