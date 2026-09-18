@@ -18,11 +18,20 @@ RUN npm --prefix dashboard ci --ignore-scripts
 RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/package.json').version")" \
 	&& test "${actual}" = "${PLAYWRIGHT_DRIVER_VERSION}" \
 	|| { echo "locked playwright-core driver ${actual} does not match ${PLAYWRIGHT_DRIVER_VERSION}" >&2; exit 1; }
-COPY docs/API_USER_GUIDE.md ./docs/API_USER_GUIDE.md
-COPY docs/APPLICATION_USER_GUIDE.md ./docs/APPLICATION_USER_GUIDE.md
-COPY docs/ADMIN_USER_GUIDE.md ./docs/ADMIN_USER_GUIDE.md
-COPY docs/help-content-catalog.json ./docs/help-content-catalog.json
-COPY docs/dsl.schema.json ./docs/dsl.schema.json
+# Help & documentation articles are bundled into the dashboard by
+# dashboard/src/helpContent.ts's import.meta.glob() at build time, resolved
+# against whatever exists on disk in THIS stage — not the full repo checkout.
+# Copy every doc path the help catalog can reference (docs/help-content-catalog.json),
+# not just a hand-picked few, or articles silently go missing from the built bundle
+# while still working in `npm run dev` (which sees the whole repo).
+COPY docs/*.md ./docs/
+COPY docs/help-content-catalog.json docs/dsl.schema.json ./docs/
+COPY mcp/README.md ./mcp/README.md
+COPY deployments/README.md ./deployments/README.md
+COPY deployments/docker/ ./deployments/docker/
+COPY deployments/helm/ ./deployments/helm/
+COPY deployments/k8s/ ./deployments/k8s/
+COPY deployments/azure/terraform/README.md ./deployments/azure/terraform/README.md
 COPY dashboard/ ./dashboard/
 # The dashboard build deliberately writes to /src/pkg/api/static, matching the
 # go:embed path used by the controller. Building it here makes image contents
