@@ -38,7 +38,7 @@
 
 .composition-track-lane {
   position: relative;
-  min-height: 3rem;
+  min-height: 3.4rem;
   overflow: hidden;
   border-radius: 8px;
   background: repeating-linear-gradient(90deg, var(--bg-secondary) 0, var(--bg-secondary) calc(25% - 1px), var(--border-subtle) 25%);
@@ -46,12 +46,14 @@
 
 .composition-clip {
   position: absolute;
-  inset-block: .35rem;
+  inset-block: .3rem;
   display: grid;
   align-content: center;
+  gap: .1rem;
   min-width: 2rem;
-  padding: .25rem .55rem;
+  padding: .2rem .55rem;
   overflow: hidden;
+  line-height: 1.2;
   border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
   border-radius: 7px;
   background: color-mix(in srgb, var(--accent) 18%, var(--bg-card));
