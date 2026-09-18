@@ -1615,6 +1615,11 @@ describe('ProtocolAssetImport', () => {
 
     const coverage = container.querySelector('[aria-label="Import DevWeb Script coverage"]') as HTMLElement | null
     expect(coverage).not.toBeNull()
+    const coverageButton = coverage?.querySelector('button') as HTMLButtonElement | null
+    expect(coverageButton).not.toBeNull()
+    await act(async () => {
+      coverageButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(coverage?.textContent).toContain('Supported protocols')
     expect(coverage?.textContent).toContain('HTTP')
     expect(coverage?.textContent).toContain('WebSocket')
@@ -1642,6 +1647,11 @@ describe('ProtocolAssetImport', () => {
 
     const coverage = container.querySelector('[aria-label="Import Postman Collection coverage"]') as HTMLElement | null
     expect(coverage).not.toBeNull()
+    const coverageButton = coverage?.querySelector('button') as HTMLButtonElement | null
+    expect(coverageButton).not.toBeNull()
+    await act(async () => {
+      coverageButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(coverage?.textContent).toContain('Supported protocols')
     expect(coverage?.textContent).toContain('HTTP')
     expect(coverage?.textContent).toContain('oauth2')
@@ -1733,10 +1743,12 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Import Coverage')
+    await openImportCoverage(container)
     expect(container.textContent).toContain('Supported protocols')
     expect(container.textContent).toContain('HTTP / REST')
     expect(container.textContent).toContain('Review required')
     expect(container.textContent).toContain('cross-operation chaining')
+    await closeImportCoverage(container)
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -1990,8 +2002,10 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Import RAML')
     // RAML support-matrix panel (G2)
     expect(container.textContent).toContain('Import Coverage')
+    await openImportCoverage(container)
     expect(container.textContent).toContain('HTTP / REST')
     expect(container.textContent).toContain('RAML data types / schemas')
+    await closeImportCoverage(container)
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -2041,10 +2055,12 @@ describe('ProtocolAssetImport', () => {
 
     expect(container.textContent).toContain('Import AsyncAPI')
     expect(container.textContent).toContain('Import Coverage')
+    await openImportCoverage(container)
     expect(container.textContent).toContain('Kafka')
     expect(container.textContent).toContain('JMS Solace')
     expect(container.textContent).toContain('avro schemaFormat')
     expect(container.textContent).toContain('MQTT operations are review-only.')
+    await closeImportCoverage(container)
     expect(container.textContent).not.toContain('Validate Only')
     expect(container.textContent).toContain('Broker Override')
     expect(container.textContent).not.toContain('Base URL Override')
@@ -4290,6 +4306,23 @@ describe('ProtocolAssetImport', () => {
 async function flushPromises() {
   await act(async () => {
     await Promise.resolve()
+  })
+}
+
+async function openImportCoverage(container: HTMLElement) {
+  const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
+  expect(coverageButton).toBeDefined()
+  if (!coverageButton) return
+  await act(async () => {
+    coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function closeImportCoverage(container: HTMLElement) {
+  const closeButton = container.querySelector('.import-coverage-modal-header button') as HTMLButtonElement | null
+  if (!closeButton) return
+  await act(async () => {
+    closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   })
 }
 

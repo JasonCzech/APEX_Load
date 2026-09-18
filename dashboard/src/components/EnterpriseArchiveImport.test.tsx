@@ -633,7 +633,12 @@ describe('EnterpriseArchiveImport', () => {
 
     const coverage = container.querySelector('[aria-label="enterprise protocol import coverage"]') as HTMLElement | null
     expect(coverage).not.toBeNull()
-    expect(coverage?.querySelector('.lr-preserved-header h4')?.textContent).toBe('Import Coverage')
+    const coverageButton = coverage?.querySelector('button') as HTMLButtonElement | null
+    expect(coverageButton).not.toBeNull()
+    await act(async () => {
+      coverageButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(coverage?.querySelector('.import-coverage-modal-header h3')?.textContent).toBe('Import Coverage')
     expect(coverage?.querySelector('.lr-preserved-grid')).not.toBeNull()
 
     const executableCard = coverage?.querySelector('.lr-preserved-card.coverage-executable') as HTMLElement | null
@@ -698,16 +703,30 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.querySelector('.lr-conversion-row')).not.toBeNull()
     expect(container.querySelector('.lr-import-actions-card')).not.toBeNull()
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).not.toBeNull()
-    expect(container.textContent).toContain('Executable')
-    expect(container.textContent).toContain('External Runner')
     expect(container.textContent).toContain('Selected migration block policy: Blocked')
     expect(Array.from(container.querySelectorAll<HTMLInputElement>('.lr-advanced-policy input')).every(input => !input.checked)).toBe(true)
-    expect(container.querySelector('.lr-preserved-card.coverage-executable')).not.toBeNull()
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(container.textContent).not.toContain('HTTP: Timeouts, redirects, and connection reuse')
     expect(container.textContent).not.toContain('Tested Examples')
     expect(container.textContent).not.toContain('Known Caveats')
     expect(container.textContent).not.toContain('Streaming settings execute in the HTTP runtime for media-like responses')
+
+    const importCoverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
+    expect(importCoverageButton).toBeDefined()
+    if (!importCoverageButton) return
+    await act(async () => {
+      importCoverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Executable')
+    expect(container.textContent).toContain('External Runner')
+    expect(container.querySelector('.lr-preserved-card.coverage-executable')).not.toBeNull()
+    const closeImportCoverageButton = container.querySelector('.import-coverage-modal-header button') as HTMLButtonElement | null
+    expect(closeImportCoverageButton).not.toBeNull()
+    if (closeImportCoverageButton) {
+      await act(async () => {
+        closeImportCoverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
 
     const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings Coverage'))
     expect(coverageButton).toBeDefined()

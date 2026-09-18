@@ -11,6 +11,7 @@ import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayR
 import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
+import ImportCoverageButton from './ImportCoverageButton'
 import ImportDropzone from './ImportDropzone'
 import ImportRuntimeOptions from './ImportRuntimeOptions'
 import BrowserReplayProgress from './BrowserReplayProgress'
@@ -459,11 +460,11 @@ function SourceImportCoveragePanel({ kind, support }: { kind: ImportKind; suppor
   const protocolTargets = sourceImportProtocolTargets[kind] || []
   if (sections.length === 0) return null
   return (
-    <div className="source-import-coverage" aria-label={`${copy[kind].title} coverage`}>
-      <div className="source-import-coverage-header">
-        <h4>Import Coverage</h4>
-        <span>Supported protocols and limitations</span>
-      </div>
+    <ImportCoverageButton
+      title="Import Coverage"
+      subtitle="Supported protocols and limitations"
+      triggerAriaLabel={`${copy[kind].title} coverage`}
+    >
       {protocolTargets.length > 0 && (
         <div className="source-import-protocol-card">
           <span className="source-import-coverage-label">Supported protocols</span>
@@ -502,7 +503,7 @@ function SourceImportCoveragePanel({ kind, support }: { kind: ImportKind; suppor
           </details>
         )}
       </div>
-    </div>
+    </ImportCoverageButton>
   )
 }
 

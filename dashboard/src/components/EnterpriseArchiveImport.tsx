@@ -15,6 +15,7 @@ import { type JavaClasspathAsset, type ReplayPreflight, type SourceArchiveReview
 import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
 import DropIngestOverlay from './DropIngestOverlay'
 import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
+import ImportCoverageButton from './ImportCoverageButton'
 import { JavaClasspathResolver } from './JavaClasspathResolver'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -4168,11 +4169,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       </div>
 
       {protocolCoverageSections.length > 0 && workingMode === null && reviewMode === null && (
-        <div className="lr-preserved" aria-label="enterprise protocol import coverage">
-          <div className="lr-preserved-header">
-            <h4>Import Coverage</h4>
-            <span>Executable, review-only, external-runner, and unsupported protocols</span>
-          </div>
+        <ImportCoverageButton
+          title="Import Coverage"
+          subtitle="Executable, review-only, external-runner, and unsupported protocols"
+          triggerAriaLabel="enterprise protocol import coverage"
+        >
           <div className="lr-preserved-grid">
             {protocolCoverageSections.map(section => (
               <div className={`lr-preserved-card coverage-${section.key}`} key={section.key}>
@@ -4230,7 +4231,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               ))}
             </div>
           )}
-        </div>
+        </ImportCoverageButton>
       )}
 
       {failedImportMessage && <div className="lr-error" role="alert">{failedImportMessage}</div>}

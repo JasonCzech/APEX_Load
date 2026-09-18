@@ -12,6 +12,7 @@ import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage,
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import DropIngestOverlay from './DropIngestOverlay'
 import { useDropIngestFeedback } from './dropIngestFeedback'
+import ImportCoverageButton from './ImportCoverageButton'
 import ParameterizationReview from './ParameterizationReview'
 import ScriptImportReview from './ScriptImportReview'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
@@ -616,11 +617,10 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       {notice && <div className="settings-notice">{notice}</div>}
 
       {coverageSections.length > 0 ? (
-        <div className="lr-preserved">
-          <div className="lr-preserved-header">
-            <h4>Import Coverage</h4>
-            <span>Mapped, review-required, adapter-required, and unsupported constructs</span>
-          </div>
+        <ImportCoverageButton
+          title="Import Coverage"
+          subtitle="Mapped, review-required, adapter-required, and unsupported constructs"
+        >
           <div className="lr-preserved-grid">
             {coverageSections.map(section => (
               <div className={`lr-preserved-card coverage-${section.key}`} key={section.key}>
@@ -653,13 +653,12 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
               <ul>{supportNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
             </div>
           )}
-        </div>
+        </ImportCoverageButton>
       ) : supportMatrix && (
-        <div className="lr-preserved">
-          <div className="lr-preserved-header">
-            <h4>Import Coverage</h4>
-            <span>HTTP-first migration with partial SOAP promotion</span>
-          </div>
+        <ImportCoverageButton
+          title="Import Coverage"
+          subtitle="HTTP-first migration with partial SOAP promotion"
+        >
           <div className="lr-preserved-grid">
             {supportMatrixSections.map(section => (
               <div className="lr-preserved-card" key={section.key}>
@@ -684,7 +683,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
               <ul>{supportNotes.map((note, index) => <li key={index}>{note}</li>)}</ul>
             </div>
           )}
-        </div>
+        </ImportCoverageButton>
       )}
 
 

@@ -354,10 +354,18 @@ describe('JMeterImport', () => {
 
     await flushPromises()
 
-    expect(container.textContent).toContain('Coverage Details')
     expect(container.textContent).toContain('HTTP plans convert most completely')
     expect(container.textContent).toContain('native database/network scripts')
     expect(container.textContent).toContain('JMS')
+
+    const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
+    expect(coverageButton).toBeDefined()
+    if (!coverageButton) return
+    await act(async () => {
+      coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.textContent).toContain('Coverage Details')
 
     const coverageDetails = container.querySelector('details') as HTMLDetailsElement | null
     expect(coverageDetails).not.toBeNull()
@@ -370,6 +378,13 @@ describe('JMeterImport', () => {
 
     expect(container.textContent).toContain('Regex Extractor')
     expect(container.textContent).toContain('JSON Extractor')
+
+    const closeCoverageButton = container.querySelector('.import-coverage-modal-header button') as HTMLButtonElement | null
+    if (closeCoverageButton) {
+      await act(async () => {
+        closeCoverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+    }
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
     expect(fileInput).not.toBeNull()
@@ -438,6 +453,12 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Import Coverage')
+    const coverageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Import Coverage')
+    expect(coverageButton).toBeDefined()
+    if (!coverageButton) return
+    await act(async () => {
+      coverageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
     expect(container.textContent).toContain('Mapped')
     expect(container.textContent).toContain('Review required')
     expect(container.textContent).toContain('Adapter required')

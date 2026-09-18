@@ -34,8 +34,11 @@ test('source catalog search and importer guidance stay consistent across formats
     await expect(guide.locator('[aria-current="step"]')).toContainText('Provide source')
     if (query === 'JMeter') {
       const action = page.getByRole('button', { name: 'Convert JMeter Plan' })
-      const coverage = page.getByRole('heading', { name: 'Import Coverage', exact: true })
-      expect(await action.evaluate((button, heading) => Boolean(heading && (button.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING)), await coverage.elementHandle())).toBe(true)
+      const coverageButton = page.getByRole('button', { name: 'Import Coverage', exact: true })
+      expect(await action.evaluate((button, trigger) => Boolean(trigger && (button.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING)), await coverageButton.elementHandle())).toBe(true)
+      await coverageButton.click()
+      await expect(page.getByRole('heading', { name: 'Import Coverage', exact: true })).toBeVisible()
+      await page.getByRole('button', { name: 'Close', exact: true }).click()
     }
     if (query === 'Request / Response') await expect(page.getByRole('textbox', { name: 'Primary Sample', exact: true })).toBeVisible()
     if (query === 'HAR Traffic') await expect(page.getByRole('button', { name: 'Drop an optional comparison HAR file here' })).toBeVisible()

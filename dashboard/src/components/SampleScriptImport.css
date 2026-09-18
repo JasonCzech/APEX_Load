@@ -522,34 +522,12 @@
   color: var(--warning);
 }
 
-.source-import-coverage {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--subtle-fill);
-}
-
-.source-import-coverage-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.source-import-coverage-header h4,
 .source-import-coverage-details h4 {
   margin: 0;
   color: var(--success);
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.source-import-coverage-header span {
-  color: var(--text-muted);
-  font-size: 12px;
 }
 
 .source-import-protocol-card,
@@ -704,8 +682,7 @@
   }
 
   .sample-import-assets-header,
-  .sample-import-asset-row,
-  .source-import-coverage-header {
+  .sample-import-asset-row {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -736,8 +713,7 @@
   }
 
   .sample-import-assets-header,
-  .sample-import-asset-row,
-  .source-import-coverage-header {
+  .sample-import-asset-row {
     flex-direction: column;
     align-items: flex-start;
   }
