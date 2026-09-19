@@ -32,8 +32,9 @@ const (
 var (
 	// The portable template parser permits at most 256 characters inside {{ }}.
 	// "secret." consumes seven, leaving 249 for the caller-selected name.
-	logicalSecretNamePattern = regexp.MustCompile(`^[A-Z0-9_]{1,249}$`)
-	redactedValueKeyPattern  = regexp.MustCompile(`(?i)(?:["'<]|^)([A-Za-z][A-Za-z0-9_.-]{0,63})(?:["'>])?\s*[:=]\s*["']?$`)
+	logicalSecretNamePattern        = regexp.MustCompile(`^[A-Z0-9_]{1,249}$`)
+	httpProvenanceActionPathPattern = regexp.MustCompile(`^/(?:init|actions|teardown)/[0-9]+(?:/control/(?:steps|else|default|(?:cases|branches)/[0-9]+/steps)/[0-9]+)*$`)
+	redactedValueKeyPattern         = regexp.MustCompile(`(?i)(?:["'<]|^)([A-Za-z][A-Za-z0-9_.-]{0,63})(?:["'>])?\s*[:=]\s*["']?$`)
 )
 
 // SecretBindingRequirement identifies one exact [REDACTED] occurrence in an
@@ -75,9 +76,11 @@ type applySecretBindingsRequest struct {
 }
 
 type redactionTraversalContext struct {
-	actionName string
-	actionType string
-	headerName string
+	httpProtocol        bool
+	nonWireMetadataPath string
+	actionName          string
+	actionType          string
+	headerName          string
 }
 
 type internalSecretBindingRequirement struct {
@@ -281,7 +284,7 @@ func discoverRedactedValues(value any, path string, ctx redactionTraversalContex
 			// not demand a credential binding. This skip is deliberately scoped to
 			// requirement DISCOVERY: redaction reconciliation still walks metadata,
 			// so a masked read-modify-write cannot overwrite the stored value.
-			if isImportProvenanceMetadataPath(childPath) {
+			if isImportProvenanceMetadataPathForContext(childPath, ctx) {
 				continue
 			}
 			if isImportCredentialLocatorMetadataPath(childPath) {
@@ -350,6 +353,24 @@ func isJavaVMParameterJSONPath(path string) bool {
 }
 
 func redactionContextForMap(value map[string]any, path string, prior redactionTraversalContext) redactionTraversalContext {
+	if path == "" {
+		protocol, _ := value["protocol"].(string)
+		switch strings.ToLower(strings.TrimSpace(protocol)) {
+		case "http", "http2", "soap", "java_http":
+			prior.httpProtocol = true
+		}
+	}
+	// Sequence requests have no action type of their own. Recognize only an
+	// immediate request of a previously established HTTP sequence action.
+	if prior.httpProtocol && strings.EqualFold(prior.actionType, "http_sequence") && prior.nonWireMetadataPath != "" {
+		prefix := strings.TrimSuffix(prior.nonWireMetadataPath, "/metadata") + "/params/requests/"
+		if strings.HasPrefix(path, prefix) && isDecimalToken(strings.TrimPrefix(path, prefix)) {
+			prior.nonWireMetadataPath = path + "/metadata"
+			prior.actionType = "request"
+			return prior
+		}
+	}
+
 	if isHeaderListEntryJSONPath(path) {
 		headerName, _ := value["name"].(string)
 		if headerName = strings.TrimSpace(headerName); headerName != "" &&
@@ -358,7 +379,7 @@ func redactionContextForMap(value map[string]any, path string, prior redactionTr
 		}
 		return prior
 	}
-	if !isActionObjectJSONPath(path) {
+	if !isActionObjectJSONPath(path) && !httpProvenanceActionPathPattern.MatchString(path) {
 		return prior
 	}
 	actionType, hasType := value["type"].(string)
@@ -372,7 +393,17 @@ func redactionContextForMap(value map[string]any, path string, prior redactionTr
 	if strings.TrimSpace(actionType) == "" {
 		actionType = prior.actionType
 	}
-	return redactionTraversalContext{actionName: actionName, actionType: actionType}
+	prior.actionName = actionName
+	prior.actionType = actionType
+	prior.headerName = ""
+	prior.nonWireMetadataPath = ""
+	if prior.httpProtocol && httpProvenanceActionPathPattern.MatchString(path) {
+		switch strings.ToLower(strings.TrimSpace(dsl.CanonicalActionType(actionType))) {
+		case "request", "get", "post", "put", "patch", "delete", "head", "options", "trace", "connect", "http_sequence", "http_oauth2_token", "source_transaction":
+			prior.nonWireMetadataPath = path + "/metadata"
+		}
+	}
+	return prior
 }
 
 func isHeaderListEntryJSONPath(path string) bool {
@@ -458,6 +489,21 @@ func isImportProvenanceMetadataPath(path string) bool {
 		return false
 	}
 	return isImportProvenanceMetadataKey(segments[len(segments)-1])
+}
+
+// Context-specific evidence exemptions must not hide outbound message metadata
+// or arbitrary maps nested inside action parameters. The orphan-sentinel guard
+// uses this same predicate as requirement discovery.
+func isImportProvenanceMetadataPathForContext(path string, ctx redactionTraversalContext) bool {
+	if isImportProvenanceMetadataPath(path) {
+		return true
+	}
+	separator := strings.LastIndexByte(path, '/')
+	if separator < 0 || ctx.nonWireMetadataPath == "" || path[:separator] != ctx.nonWireMetadataPath {
+		return false
+	}
+	_, ok := httpImportProvenanceEvidenceKeys[normalizeImportProvenanceKey(path[separator+1:])]
+	return ok
 }
 
 // isImportProvenanceMetadataKey reports whether an action-metadata key records

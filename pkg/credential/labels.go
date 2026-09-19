@@ -5,7 +5,7 @@ package credential
 // credentials and literals collected from actual credential-bearing fields.
 func LabelField(key string) bool {
 	switch NormalizeName(key) {
-	case "name", "label", "title", "stepname", "transactionname", "sourcetransaction", "loadrunnertransaction":
+	case "name", "label", "title", "stepname", "transactionname", "sourcetransaction", "sourcesubtransaction", "sourceactionname", "loadrunnertransaction":
 		return true
 	default:
 		return false

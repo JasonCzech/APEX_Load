@@ -1130,11 +1130,8 @@ func TestProjectMasksKnownCredentialsInMalformedMIMEHeaders(t *testing.T) {
 }
 
 func TestKnownCredentialComparisonBudgetFailsClosedDeterministically(t *testing.T) {
-	p := &projector{knownSecrets: make([]string, 10_000)}
-	for index := range p.knownSecrets {
-		p.knownSecrets[index] = "credential-" + strings.Repeat("x", index%8)
-	}
-	p.configureKnownMatching(100_000)
+	p := &projector{knownSecrets: []string{strings.Repeat("x", maxCredentialMatcherNodes+1)}}
+	p.configureKnownMatching(int(maxKnownCredentialComparisonWork))
 	if !p.maskAllKnownValues {
 		t.Fatal("expected comparison work estimate to enable fail-closed masking")
 	}

@@ -32,9 +32,8 @@ const (
 	maxProjectionDepth = 64
 	maxProjectionNodes = 250_000
 	// Cross-field credential equivalence is deliberately bounded before any
-	// scalar comparisons begin. Above this conservative work estimate the
-	// disclosure projector masks every non-schema scalar instead of performing
-	// attacker-amplifiable secrets × nodes scans.
+	// scalar comparisons begin. Above this conservative work estimate a
+	// bounded multi-pattern matcher replaces secrets × nodes scans.
 	maxKnownCredentialComparisonWork int64 = 128 << 20
 )
 
@@ -68,6 +67,7 @@ type projectionContext struct {
 type projector struct {
 	nodes                    int
 	knownSecrets             []string
+	knownMatcher             *credentialMatcher
 	forcedSecrets            map[string]struct{}
 	maskAllKnownValues       bool
 	knownComparisonRemaining int64
@@ -145,6 +145,11 @@ func ProjectWithCredentialSource(script, credentialSource *dsl.Script) (*dsl.Scr
 	projected, err := p.project(raw, projectionContext{}, 0)
 	if err != nil {
 		return nil, err
+	}
+	// A resource-limit fallback is not a set of detected credentials. Do not
+	// publish blanket masks that import review would turn into secret bindings.
+	if p.maskAllKnownValues {
+		return nil, fmt.Errorf("script disclosure credential comparison exceeds limits")
 	}
 	projectedPayload, err := json.Marshal(projected)
 	if err != nil {
@@ -401,6 +406,15 @@ func (p *projector) projectHeaderValue(name string, value any) any {
 			},
 		)
 	}
+	if strings.EqualFold(strings.TrimSpace(name), "User-Agent") ||
+		strings.EqualFold(strings.TrimSpace(name), "x-dtpc") {
+		if isPortableBinding(text) {
+			return text
+		}
+		return p.replaceKnown(scrubWithTemplateProjector(text, false, func(value string) string {
+			return scrub.ValueDescriptiveHeader(name, value, scrub.Policy{})
+		}))
+	}
 	if isNonSecretIdentifierHeader(name) {
 		return p.replaceKnown(projectURL(text))
 	}
@@ -507,12 +521,18 @@ func (p *projector) replaceKnown(value string) string {
 	if !p.reserveKnownComparison(len(value)) {
 		return credential.Redacted
 	}
+	if p.knownMatcher != nil {
+		return p.knownMatcher.replace(value)
+	}
 	return p.replaceKnownValues(value)
 }
 
 func (p *projector) replaceKnownLabel(value string) string {
 	if value == "" || len(p.knownSecrets) == 0 {
 		return value
+	}
+	if p.knownMatcher != nil {
+		return p.knownMatcher.replace(value)
 	}
 	secretCount := int64(len(p.knownSecrets))
 	if secretCount <= 0 ||
@@ -555,7 +575,10 @@ func (p *projector) configureKnownMatching(inputBytes int) {
 	secretPasses := int64(len(p.knownSecrets)) * 2
 	if secretPasses <= 0 ||
 		int64(inputBytes) > p.knownComparisonRemaining/secretPasses {
-		p.maskAllKnownValues = true
+		// Use a single bounded scan for large scripts instead of treating
+		// the cost estimate as evidence that every scalar is a credential.
+		p.knownMatcher = newCredentialMatcher(p.knownSecrets, p.forcedSecrets)
+		p.maskAllKnownValues = p.knownMatcher == nil
 	}
 }
 
@@ -568,6 +591,9 @@ func (p *projector) reserveKnownComparison(valueBytes int) bool {
 		return false
 	}
 	secretCount := int64(len(p.knownSecrets))
+	if p.knownMatcher != nil {
+		secretCount = 1
+	}
 	if int64(valueBytes) > p.knownComparisonRemaining/secretCount {
 		p.knownComparisonRemaining = 0
 		p.maskAllKnownValues = true
@@ -799,6 +825,10 @@ func scrubText(value string) string {
 }
 
 func scrubWithTemplates(value string, urlValue bool) string {
+	return scrubWithTemplateProjector(value, urlValue, nil)
+}
+
+func scrubWithTemplateProjector(value string, urlValue bool, projectText func(string) string) string {
 	if value == "" {
 		return value
 	}
@@ -817,6 +847,8 @@ func scrubWithTemplates(value string, urlValue bool) string {
 	}
 	if urlValue {
 		protected = scrub.ValueURL(protected, scrub.Policy{})
+	} else if projectText != nil {
+		protected = projectText(protected)
 	} else {
 		protected = scrub.Value(protected, scrub.Policy{})
 	}

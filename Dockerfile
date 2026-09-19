@@ -26,6 +26,7 @@ RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/pack
 # while still working in `npm run dev` (which sees the whole repo).
 COPY docs/*.md ./docs/
 COPY docs/help-content-catalog.json docs/dsl.schema.json ./docs/
+COPY docs/APEX_Load_DSL_Reference_Guide_v2.1.docx ./docs/APEX_Load_DSL_Reference_Guide_v2.1.docx
 COPY mcp/README.md ./mcp/README.md
 COPY deployments/README.md ./deployments/README.md
 COPY deployments/docker/ ./deployments/docker/

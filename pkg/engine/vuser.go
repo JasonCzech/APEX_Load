@@ -455,7 +455,11 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		// Reload data row at the start of each iteration
 		if iteration > 0 {
+			cleanupBindings := vu.currentDataBindings()
 			if err := vu.loadDataRow(); err != nil {
+				// Main execution stops; teardown still needs the last completed
+				// iteration's row to clean up resources it created.
+				vu.restoreDataBindings(cleanupBindings)
 				vu.recordDataRowError(err)
 				releasePreIterationReservations()
 				goto teardown
@@ -1065,9 +1069,16 @@ func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Co
 	cfg := vu.Script.Config
 	logCfg := cfg.Log
 	ignoreErrors := strings.EqualFold(strings.TrimSpace(phase), "teardown")
-	if err := vu.prepareRuntimeState(); err != nil && !ignoreErrors {
-		vu.recordDataRowError(err)
-		return false
+	var cleanupBindings map[string]string
+	if ignoreErrors {
+		cleanupBindings = vu.currentDataBindings()
+	}
+	if err := vu.prepareRuntimeState(); err != nil {
+		if !ignoreErrors {
+			vu.recordDataRowError(err)
+			return false
+		}
+		vu.restoreDataBindings(cleanupBindings)
 	}
 	return vu.runLifecycleActionsWithContexts(actionCtx, boundaryCtx, actions, phase, ignoreErrors, vu.makeLogger(logCfg), logCfg, cfg.ErrorHandling)
 }

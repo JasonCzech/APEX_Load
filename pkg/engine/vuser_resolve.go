@@ -1032,3 +1032,44 @@ func (vu *VUser) recordDataRowError(err error) {
 		vu.recordResult(&protocol.Result{ActionName: "data source", StartTime: time.Now(), ErrorMessage: message, Success: false}, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
 	}
 }
+
+// currentDataBindings captures only data-source bindings for lifecycle cleanup.
+func (vu *VUser) currentDataBindings() map[string]string {
+	if vu.DataProvider == nil {
+		return nil
+	}
+	hasPop := false
+	for _, source := range vu.DataProvider.sources {
+		if source.strategy == "pop" {
+			hasPop = true
+			break
+		}
+	}
+	if !hasPop {
+		return nil
+	}
+	bindings := make(map[string]string)
+	for name, source := range vu.DataProvider.sources {
+		for _, column := range source.columns {
+			key := name + "." + column
+			if value, ok := vu.Variables[key]; ok {
+				bindings[key] = value
+			}
+		}
+	}
+	return bindings
+}
+
+func (vu *VUser) restoreDataBindings(bindings map[string]string) {
+	if vu.DataProvider == nil {
+		return
+	}
+	for name, source := range vu.DataProvider.sources {
+		for _, column := range source.columns {
+			delete(vu.Variables, name+"."+column)
+		}
+	}
+	for key, value := range bindings {
+		vu.Variables[key] = value
+	}
+}

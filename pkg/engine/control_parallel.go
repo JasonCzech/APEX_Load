@@ -150,7 +150,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		ResultSink:                   sink,
 		Variables:                    cloneStringMap(vu.Variables),
 		DataProvider:                 vu.DataProvider,
-		Parameters:                   vu.Parameters,
+		Parameters:                   NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID),
 		SecretResolver:               vu.SecretResolver,
 		RedactionConfig:              vu.RedactionConfig,
 		importedCredentialInspection: vu.importedCredentialInspection,
@@ -164,8 +164,9 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		extractedVariables:           make(map[string]int),
 		sourceTransactions:           make(map[string]*sourceTransactionRuntimeState),
 	}
+	branchVU.ensureImportedCredentialInspection()
 	branchVU.bindRuntimeTextRedactor()
-	config := vuserProtoConfig(buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver()), vu.ID)
+	config := vuserProtoConfig(buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", branchVU.secretResolver()), vu.ID)
 	if err := callProtocolInit(ctx, instance, config, vu.RedactionConfig); err != nil {
 		result.err, result.failed = err, true
 		return
@@ -177,7 +178,15 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 			result.err, result.failed = teardownErr, true
 		}
 	}()
-	if !branchVU.RunLifecycleBlockWithContexts(ctx, ctx, branch.Steps, phase) {
+	// Branches inherit the parent iteration's data bindings. Preparing a new
+	// lifecycle would advance shared data cursors once per branch.
+	if branchVU.Parameters != nil {
+		branchVU.Parameters.Prime()
+	}
+	_ = branchVU.refreshImportedCredentialRuntimeValues()
+	cfg := vu.Script.Config
+	ignoreErrors := strings.EqualFold(strings.TrimSpace(phase), "teardown")
+	if !branchVU.runLifecycleActionsWithContexts(ctx, ctx, branch.Steps, phase, ignoreErrors, branchVU.makeLogger(cfg.Log), cfg.Log, cfg.ErrorHandling) {
 		result.failed = true
 	}
 	result.failed = result.failed || sink.failed.Load()

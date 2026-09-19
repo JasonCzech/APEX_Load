@@ -17,8 +17,10 @@ import "strings"
 //     embed authored credentials — original_url routinely carries query
 //     credentials and userinfo. They must never be treated as portable.
 //
-// isImportProvenanceMetadataKey is therefore the union, while
+// isImportProvenanceMetadataKey is the protocol-independent union, while
 // isPortableImportProvenanceIdentifierKey is the identifier set alone.
+// Additional HTTP evidence keys require action context because other protocols
+// may send identically named metadata on the wire.
 var (
 	importProvenanceIdentifierKeys = map[string]struct{}{
 		"source_path":    {},
@@ -29,6 +31,20 @@ var (
 	importProvenanceEvidenceKeys = map[string]struct{}{
 		"original_url":       {},
 		"source_transaction": {},
+	}
+	// These names are non-wire evidence only on recognized HTTP actions.
+	// Messaging protocols may send identically named metadata as properties.
+	httpImportProvenanceEvidenceKeys = map[string]struct{}{
+		"source_subtransaction":  {},
+		"source_action_name":     {},
+		"source_file":            {},
+		"source_function":        {},
+		"phase":                  {},
+		"source_secret_function": {},
+		"source_secret_ref":      {},
+		"body_gated_by_secret":   {},
+		"masked_body_raw":        {},
+		"masked_body_function":   {},
 	}
 )
 

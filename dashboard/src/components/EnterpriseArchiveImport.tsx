@@ -3968,6 +3968,26 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               <input type="checkbox" checked={options.block_non_applicable} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, block_non_applicable: e.target.checked })} />
               <span>Treat non-applicable runtime settings as blockers</span>
             </label></details>
+            <details className="lr-har-panel" open={Boolean(options.salesforce_native || selectedHARFile || salesforceReview)}><summary>Salesforce-specific options</summary>
+              <label className="lr-checkbox">
+                <input type="checkbox" checked={options.salesforce_native} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
+                <span>Build Salesforce native preview</span>
+              </label>
+              <div>
+                <h4>Salesforce HAR (optional)</h4>
+                <p>{selectedHARFile ? selectedHARFile.name : 'No HAR attached to the selected script'}</p>
+              </div>
+              <div className="lr-har-actions">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => harFileRef.current?.click()} disabled={!selectedItem || sourceMutationLocked}>
+                  {selectedHARFile ? 'Replace HAR' : 'Attach HAR'}
+                </button>
+                {selectedHARFile && (
+                  <button type="button" className="btn btn-ghost btn-sm" disabled={sourceMutationLocked} onClick={clearSelectedHARFile}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </details>
           </div>
           {queuedFileCount > 1 && (
             <p className="lr-subtitle">Each archive keeps its detected script name in a batch. Rename individual scripts after import.</p>
@@ -3998,26 +4018,6 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           </div>
           <input ref={harFileRef} type="file" accept=".har,.json,application/json" disabled={sourceMutationLocked} onChange={handleHARFileSelect} hidden />
           <input ref={supplementalFileRef} type="file" accept=".java,.zip,.jar,.json,.txt" multiple disabled={sourceMutationLocked} onChange={handleSupplementalFileSelect} hidden />
-          <details className="lr-har-panel" open={Boolean(options.salesforce_native || selectedHARFile || salesforceReview)}><summary>Salesforce-specific options</summary>
-            <label className="lr-checkbox">
-              <input type="checkbox" checked={options.salesforce_native} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
-              <span>Build Salesforce native preview</span>
-            </label>
-            <div>
-              <h4>Salesforce HAR (optional)</h4>
-              <p>{selectedHARFile ? selectedHARFile.name : 'No HAR attached to the selected script'}</p>
-            </div>
-            <div className="lr-har-actions">
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => harFileRef.current?.click()} disabled={!selectedItem || sourceMutationLocked}>
-                {selectedHARFile ? 'Replace HAR' : 'Attach HAR'}
-              </button>
-              {selectedHARFile && (
-                <button type="button" className="btn btn-ghost btn-sm" disabled={sourceMutationLocked} onClick={clearSelectedHARFile}>
-                  Remove
-                </button>
-              )}
-            </div>
-          </details>
           <div className="lr-required-files-panel">
             <div>
               <h4>Required Files</h4>

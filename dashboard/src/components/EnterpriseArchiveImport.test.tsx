@@ -462,6 +462,23 @@ describe('EnterpriseArchiveImport', () => {
     expect(onImported).toHaveBeenLastCalledWith({ scripts: [expect.objectContaining({ id: 'one.zip' })] })
   })
 
+  it('places Salesforce options below advanced migration policy inside Conversion Options', async () => {
+    await act(async () => root.render(<EnterpriseArchiveImport />))
+    const conversionOptions = container.querySelector('#migration-block-policy-options')!
+    const policy = conversionOptions.querySelector('.lr-advanced-policy')!
+    const salesforce = conversionOptions.querySelector<HTMLDetailsElement>('.lr-har-panel')!
+    expect(salesforce).not.toBeNull()
+    expect(policy.nextElementSibling).toBe(salesforce)
+    expect(salesforce.querySelector('summary')?.textContent).toBe('Salesforce-specific options')
+    expect(container.querySelector('.lr-import-actions-card .lr-har-panel')).toBeNull()
+    expect(salesforce.open).toBe(false)
+    const nativePreview = salesforce.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    await act(async () => nativePreview.click())
+    expect(nativePreview.checked).toBe(true)
+    expect(salesforce.open).toBe(true)
+    expect(salesforce.textContent).toContain('Attach HAR')
+  })
+
   it('renders the import close action as a Back button', async () => {
     const onClose = vi.fn()
 

@@ -6,7 +6,7 @@ func TestLabelField(t *testing.T) {
 	for _, tc := range []struct {
 		key  string
 		want bool
-	}{{"name", true}, {"transaction_name", true}, {"source_transaction", true}, {"stepName", true}, {"", false}, {"password", false}, {"api_key", false}, {"body", false}, {"value", false}, {"transaction_token", false}} {
+	}{{"name", true}, {"transaction_name", true}, {"source_transaction", true}, {"source_subtransaction", true}, {"source_action_name", true}, {"stepName", true}, {"", false}, {"password", false}, {"api_key", false}, {"body", false}, {"value", false}, {"transaction_token", false}} {
 		if got := LabelField(tc.key); got != tc.want {
 			t.Errorf("LabelField(%q)=%v", tc.key, got)
 		}

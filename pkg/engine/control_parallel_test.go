@@ -93,3 +93,14 @@ func TestParallelBranchTeardownFailureFailsContainer(t *testing.T) {
 		t.Fatal("parallel container succeeded after branch protocol teardown failed")
 	}
 }
+
+func TestParallelBranchDoesNotInitializeParentSecretResolver(t *testing.T) {
+	vu := &VUser{ID: 1, Script: &dsl.Script{Protocol: parallelTestProtocolName}, Variables: map[string]string{}, Metrics: NewMetricsCollector(8)}
+	result := vu.runParallelBranch(context.Background(), 0, dsl.ParallelBranch{Name: "one", Steps: []dsl.Action{{Name: "one", Type: "GET", Target: "/one"}}}, "action")
+	if result.failed || result.err != nil {
+		t.Fatalf("branch failed: %v", result.err)
+	}
+	if vu.SecretResolver != nil {
+		t.Fatal("branch mutated the parent secret resolver")
+	}
+}

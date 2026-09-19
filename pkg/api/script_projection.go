@@ -1391,6 +1391,15 @@ func projectHeaderValue(name string, value any) any {
 		}
 		return projectSensitiveScriptValue(text)
 	}
+	if strings.EqualFold(strings.TrimSpace(name), "User-Agent") ||
+		strings.EqualFold(strings.TrimSpace(name), "x-dtpc") {
+		if isPortableTemplateBinding(text) {
+			return text
+		}
+		return scrubScriptTextWithProjector(text, false, func(value string) string {
+			return scrub.ValueDescriptiveHeader(name, value, scrub.Policy{})
+		})
+	}
 	if isNonSecretIdentifierHeader(name) {
 		return scrub.ValueURL(text, scrub.Policy{})
 	}
@@ -1623,6 +1632,10 @@ func isPortableScriptTemplateReference(value string) bool {
 }
 
 func scrubScriptText(value string, urlValue bool) string {
+	return scrubScriptTextWithProjector(value, urlValue, nil)
+}
+
+func scrubScriptTextWithProjector(value string, urlValue bool, projectText func(string) string) string {
 	if value == "" {
 		return value
 	}
@@ -1669,6 +1682,8 @@ func scrubScriptText(value string, urlValue bool) string {
 	}
 	if urlValue {
 		protected = scrub.ValueURL(protected, scrub.Policy{})
+	} else if projectText != nil {
+		protected = projectText(protected)
 	} else {
 		protected = scrub.Value(protected, scrub.Policy{})
 	}
@@ -2508,10 +2523,15 @@ func jsonValueContainsExecutableMaskedSecretWithOptions(
 	path string,
 	allowRedactedRuntimeData bool,
 ) bool {
+	return jsonValueContainsExecutableMaskedSecretWithContext(value, path, allowRedactedRuntimeData, redactionTraversalContext{})
+}
+
+func jsonValueContainsExecutableMaskedSecretWithContext(value any, path string, allowRedactedRuntimeData bool, ctx redactionTraversalContext) bool {
 	switch typed := value.(type) {
 	case string:
 		return strings.Contains(typed, maskedScriptSecret)
 	case map[string]any:
+		ctx = redactionContextForMap(typed, path, ctx)
 		if isNonExecutableReviewAction(typed) || isDurablyImportReviewGatedAction(typed) {
 			return false
 		}
@@ -2529,10 +2549,10 @@ func jsonValueContainsExecutableMaskedSecretWithOptions(
 			// Must mirror discoverRedactedValues: a provenance entry raises no
 			// binding requirement, so treating it as an orphan sentinel here would
 			// reject a save the user has no way to satisfy.
-			if isImportProvenanceMetadataPath(childPath) {
+			if isImportProvenanceMetadataPathForContext(childPath, ctx) {
 				continue
 			}
-			if jsonValueContainsExecutableMaskedSecretWithOptions(child, childPath, allowRedactedRuntimeData) {
+			if jsonValueContainsExecutableMaskedSecretWithContext(child, childPath, allowRedactedRuntimeData, ctx) {
 				return true
 			}
 		}
@@ -2543,10 +2563,11 @@ func jsonValueContainsExecutableMaskedSecretWithOptions(
 				isLegacyRedactedRuntimeSourceTraversalPath(childPath) {
 				continue
 			}
-			if jsonValueContainsExecutableMaskedSecretWithOptions(
+			if jsonValueContainsExecutableMaskedSecretWithContext(
 				child,
 				childPath,
 				allowRedactedRuntimeData,
+				ctx,
 			) {
 				return true
 			}

@@ -1073,6 +1073,15 @@ func URLTokenSensitive(token string) bool {
 	return urlTokenLooksSensitive(token)
 }
 
+func redactJWTs(value string) string {
+	return jwtPattern.ReplaceAllStringFunc(value, func(candidate string) string {
+		if looksLikeJWT(candidate) {
+			return Redacted
+		}
+		return candidate
+	})
+}
+
 // redactBareTokens redacts JWTs and high-entropy secret-shaped runs that appear
 // as bare values (not inside a recognized named field). Both are gated on a
 // credential-shape heuristic so structural look-alikes — plain lowercase
@@ -1080,12 +1089,7 @@ func URLTokenSensitive(token string) bool {
 // are preserved, keeping scrubbed artifacts usable as evidence and re-import
 // inputs while still removing real tokens.
 func redactBareTokens(value string) string {
-	value = jwtPattern.ReplaceAllStringFunc(value, func(candidate string) string {
-		if looksLikeJWT(candidate) {
-			return Redacted
-		}
-		return candidate
-	})
+	value = redactJWTs(value)
 	return highEntropyToken.ReplaceAllStringFunc(value, func(candidate string) string {
 		if canonicalUUID.MatchString(candidate) {
 			// A canonical UUID is an identifier, not a credential, and this

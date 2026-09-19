@@ -144,3 +144,73 @@ func TestPopExhaustionDoesNotSkipLifecycleTeardown(t *testing.T) {
 		t.Fatalf("cleanup not executed: %v", proto.names)
 	}
 }
+
+func TestParallelPopUsesParentRow(t *testing.T) {
+	dp := popTestProvider(t)
+	vu := &VUser{ID: 1, Proto: &parallelTestProtocol{}, DataProvider: dp, Metrics: NewMetricsCollector(16), Script: &dsl.Script{Protocol: parallelTestProtocolName}}
+	if err := vu.prepareRuntimeState(); err != nil {
+		t.Fatal(err)
+	}
+	control := &dsl.ControlFlow{Concurrency: 2, Branches: []dsl.ParallelBranch{
+		{Name: "one", Steps: []dsl.Action{{Name: "one", Type: "GET", Target: "/{{data.accounts.id}}"}}},
+		{Name: "two", Steps: []dsl.Action{{Name: "two", Type: "GET", Target: "/{{data.accounts.id}}"}}},
+	}}
+	if !vu.runParallelBranches(context.Background(), control, "action") {
+		t.Fatal("branches failed")
+	}
+	for _, name := range []string{"one", "two"} {
+		if got := vu.Variables["parallel."+name+".observed"]; got != "/one" {
+			t.Fatalf("branch %s target = %q", name, got)
+		}
+	}
+	if row := dp.GetRow("accounts", 1); row["accounts.id"] != "two" {
+		t.Fatalf("branches consumed next row: %v", row)
+	}
+}
+
+func TestPopExhaustionTeardownRetainsLastSuccessfulRow(t *testing.T) {
+	vu := newControlFlowVUser(&parallelTestProtocol{}, nil, []dsl.Action{{Name: "main", Type: "GET", Target: "/{{data.accounts.id}}"}})
+	vu.DataProvider = popTestProvider(t)
+	vu.Script.Config.RunLogic.Iterations = 5
+	vu.Script.Teardown = []dsl.Action{{Name: "cleanup", Type: "GET", Target: "/cleanup/{{data.accounts.id}}"}}
+	vu.Run(context.Background())
+	if got := vu.Variables["observed"]; got != "/cleanup/two" {
+		t.Fatalf("cleanup target = %q", got)
+	}
+}
+
+func TestLifecyclePopTeardownRetainsExistingRow(t *testing.T) {
+	vu := newControlFlowVUser(&parallelTestProtocol{}, nil, nil)
+	vu.DataProvider = popTestProvider(t)
+	if err := vu.prepareRuntimeState(); err != nil {
+		t.Fatal(err)
+	}
+	if err := vu.loadDataRow(); err != nil {
+		t.Fatal(err)
+	}
+	if !vu.RunLifecycleBlock(context.Background(), []dsl.Action{{Name: "cleanup", Type: "GET", Target: "/cleanup/{{data.accounts.id}}"}}, "teardown") {
+		t.Fatal("cleanup failed")
+	}
+	if got := vu.Variables["observed"]; got != "/cleanup/two" {
+		t.Fatalf("cleanup target = %q", got)
+	}
+}
+
+func TestCleanupDataBindingsRestoreAllSourcesWithoutChangingExtractions(t *testing.T) {
+	dp, err := NewDataProvider([]dsl.DataSource{
+		{Name: "accounts", Type: "csv", Strategy: "pop", FirstRowHeader: true, InlineData: "id\none\n"},
+		{Name: "orders", Type: "csv", FirstRowHeader: true, InlineData: "id\norder\n"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vu := &VUser{DataProvider: dp, Variables: map[string]string{"accounts.id": "one", "orders.id": "order", "extracted": "before"}}
+	snapshot := vu.currentDataBindings()
+	delete(vu.Variables, "accounts.id")
+	vu.Variables["orders.id"] = "next"
+	vu.Variables["extracted"] = "after"
+	vu.restoreDataBindings(snapshot)
+	if vu.Variables["accounts.id"] != "one" || vu.Variables["orders.id"] != "order" || vu.Variables["extracted"] != "after" {
+		t.Fatalf("restored bindings: %v", vu.Variables)
+	}
+}
