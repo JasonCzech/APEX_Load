@@ -124,6 +124,46 @@ return 0;
 	}
 }
 
+func TestQuotedTransactionKeysMatchOrderAndSourceCalls(t *testing.T) {
+	const projectSource = `[General]
+Type=Web
+[Actions]
+Action=Action.c
+[TransactionsOrder]
+Order="Launch API__*delimiter*__Login API__*delimiter*__Logout API"
+[Transactions]
+"Launch API"=
+"Login API"=
+"Logout API"=
+`
+	project, err := ParseUSRFile(projectSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(project.Transactions, "|"); got != "Launch API|Login API|Logout API" {
+		t.Fatalf("transaction names = %q; quoted keys must deduplicate with Order", got)
+	}
+	result, err := ConvertZip(buildSourceZip(t, map[string]string{
+		"sample.usr": projectSource,
+		"Action.c": `Action() {
+lr_start_transaction("Launch API");
+lr_end_transaction("Launch API",LR_AUTO);
+lr_start_transaction("Login API");
+lr_end_transaction("Login API",LR_AUTO);
+lr_set_transaction("Logout API",1.0,LR_PASS);
+return 0;
+}`,
+	}), ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "no converted action starts or publishes") {
+			t.Fatalf("false transaction conservation finding: %s", warning)
+		}
+	}
+}
+
 func TestDeclaredTransactionConservationCountsReachableJavaTransactions(t *testing.T) {
 	archive := buildSourceZip(t, map[string]string{
 		"JavaTransactions.usr": `[General]

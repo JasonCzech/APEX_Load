@@ -399,9 +399,13 @@ func applyEnterpriseRuntimeBindings(
 		)
 
 		additionalURLs := make([]requestimport.ScriptCredentialURL, len(result.RecordedResourceURLs))
+		parameterNames := make(map[string]struct{}, len(script.Parameters))
+		for _, parameter := range script.Parameters {
+			parameterNames[canonicalSourceParameterName(parameter.Name)] = struct{}{}
+		}
 		for index, value := range result.RecordedResourceURLs {
 			additionalURLs[index] = requestimport.ScriptCredentialURL{
-				Value:       value,
+				Value:       rewriteKnownParameterReferences(convertParamReferences(value), parameterNames),
 				TargetField: fmt.Sprintf("metadata.import.preserved.recorded_resource_urls[%d]", index),
 				Element:     "recorded resource URL",
 				Source: requestimport.SourceRef{

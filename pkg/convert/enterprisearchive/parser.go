@@ -1266,8 +1266,9 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 			}
 		case "transactions":
 			// [Transactions] lists one transaction name per key; values are
-			// normally empty annotations.
-			appendProjectTransaction(cfg, transactionNames, key)
+			// normally empty annotations. VuGen quotes keys containing spaces;
+			// those delimiters are not part of the runtime transaction name.
+			appendProjectTransaction(cfg, transactionNames, cleanConfigValue(key))
 		}
 	}
 	if err := scanner.Err(); err != nil {

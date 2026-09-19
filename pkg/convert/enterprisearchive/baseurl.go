@@ -220,7 +220,8 @@ func makeRelative(rawURL, baseURL string) string {
 	rawURL = strings.TrimSpace(rawURL)
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL != "" {
-		if strings.HasPrefix(rawURL, baseURL) {
+		if strings.HasPrefix(rawURL, baseURL) && (len(rawURL) == len(baseURL) ||
+			strings.HasSuffix(baseURL, "/") || strings.ContainsRune("/?#", rune(rawURL[len(baseURL)]))) {
 			rel := strings.TrimPrefix(rawURL, baseURL)
 			if rel == "" {
 				rel = "/"

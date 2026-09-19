@@ -406,6 +406,7 @@ interface Props {
   reviewGeneration?: string | number
   subtitle?: ReactNode
   readinessMessage?: string
+  compactReview?: boolean
   showCredentials?: boolean
   showDataReview?: boolean
   credentialIntroduction?: ReactNode
@@ -475,6 +476,7 @@ export default function ScriptImportReview({
   readinessMessage,
   showCredentials = true,
   showDataReview = true,
+  compactReview = false,
   credentialIntroduction,
   script,
   previewData,
@@ -869,8 +871,8 @@ export default function ScriptImportReview({
     <div className="script-import-review">
       <div className="script-import-review-header" tabIndex={-1} ref={reviewSummaryRef}>
         <p role="status">{readinessMessage || 'Import review ready. Review blockers and warnings before saving.'} {' '}
-          {(script.init?.length || 0) + (script.actions?.length || 0) + (script.teardown?.length || 0)} total actions
-          {' '}({script.init?.length || 0} initialization, {script.actions?.length || 0} main, {script.teardown?.length || 0} teardown).
+          {!compactReview && <>{(script.init?.length || 0) + (script.actions?.length || 0) + (script.teardown?.length || 0)} total actions
+          {' '}({script.init?.length || 0} initialization, {script.actions?.length || 0} main, {script.teardown?.length || 0} teardown).</>}
         </p>
         <div>
           <h3>{title}</h3>
@@ -888,12 +890,12 @@ export default function ScriptImportReview({
                   ? 'Enter valid secret reference names before editing this draft.'
                   : undefined}
             >
-              {credentialAction === 'edit' ? 'Preparing editor...' : resolvedEditLabel}
+              {credentialAction === 'edit' ? 'Preparing editor...' : compactReview ? editLabel : resolvedEditLabel}
             </button>
           )}
           {onSave && (
             <button
-              className="btn btn-primary"
+              className={compactReview ? "btn btn-secondary" : "btn btn-primary"}
               onClick={() => { void runAction('save') }}
               disabled={importDraftExpired || saving || saveDisabled || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               aria-describedby={visibleSaveDisabledReason ? saveDisabledReasonId : undefined}
@@ -901,7 +903,7 @@ export default function ScriptImportReview({
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
                 : visibleSaveDisabledReason || undefined}
             >
-              {saving ? 'Saving...' : credentialAction === 'save' ? 'Preparing credentials...' : resolvedSaveLabel}
+              {saving ? 'Saving...' : credentialAction === 'save' ? 'Preparing credentials...' : compactReview ? saveLabel : resolvedSaveLabel}
             </button>
           )}
         </div>
@@ -921,7 +923,7 @@ export default function ScriptImportReview({
 
       {importDraftExpiry && (
         <div className="script-import-review-session" role={importDraftExpiry.expired ? 'alert' : 'status'}>
-          {importDraftExpiry.label}
+          {compactReview && !importDraftExpiry.expired ? `Draft repair session expires ${new Date(importDraftExpiresAt!).toLocaleString()}.` : importDraftExpiry.label}
         </div>
       )}
 
@@ -963,6 +965,7 @@ export default function ScriptImportReview({
 
       </div>
 
+      {(conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics"><summary hidden={!compactReview}>Original import diagnostics</summary>
       {conversionNotes.length > 0 && <button type="button" className="script-health-token issue-pill-button" onClick={() => setIssueDialog({ title: 'Conversion notes', issues: conversionNotes })}>{conversionNotes.length} conversion note{conversionNotes.length === 1 ? '' : 's'}</button>}
       {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
         <div className="script-import-review-issue-summary" aria-label="Import issue summary">
@@ -1008,6 +1011,8 @@ export default function ScriptImportReview({
           )}
         </div>
       )}
+
+      </details>}
 
       <div hidden={!showDataReview}>
       {sharedValues && onSharedValuesApplied && (sharedValues.candidates?.length ?? 0) > 0 && (

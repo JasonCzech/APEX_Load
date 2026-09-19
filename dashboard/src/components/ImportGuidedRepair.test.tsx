@@ -10,16 +10,15 @@ vi.mock('../hooks/apiClient', () => mock)
 
 it('requires a redacted preview before applying and retains the reviewed operation', async () => {
   const script = { name: 'Protected draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: 'protected:one' } } } } as ScriptDefinition
-  const result = { candidate_id: 'protected:one', revision: 'protected:one', script, before: script, findings: [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:3', detail: 'Restore this body' }], readiness: { replay_ready: false, blocking_codes: ['restored_body_required'] }, expires_at: '2026-09-19', fidelity_report: {} }
+  const result = { candidate_id: 'protected:one', revision: 'protected:one', script, before: script, findings: [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:3', detail: 'Restore this body' }], readiness: { replay_ready: false, blocking_codes: ['restored_body_required'] }, expires_at: '2099-09-19', fidelity_report: {} }
   mock.request.mockResolvedValue(result)
   const container = document.createElement('div'); document.body.append(container)
   const root = createRoot(container); const onApplied = vi.fn()
   try {
     await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} />))
-    expect(container.textContent).toContain('Action.c:3')
     expect(container.textContent).not.toContain('Apply reviewed repair')
-    const select = container.querySelector('[aria-label="Repair finding"]') as HTMLSelectElement
-    await act(async () => { select.value = 'actions[0]:restored_body_required'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => { Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Restore protected request body'))!.click() })
+    expect(container.textContent).toContain('Action.c:3')
     const preview = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview repair')!
     await act(async () => preview.click())
     expect(container.textContent).toContain('Redacted before / after')
@@ -32,4 +31,77 @@ it('requires a redacted preview before applying and retains the reviewed operati
     expect(JSON.parse(options.body).revision).toBe('protected:one')
     expect(JSON.parse(options.body).operation).toEqual({ type: 'restore_body', body: '' })
   } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
+})
+
+it('groups consumers, offers contextual repairs, and retains unresolved occurrences after partial apply', async () => {
+  const makeScript = (token: string) => ({ name: 'Grouped draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [0, 1].map(i => ({ name: `Request ${i}`, type: 'request', target: '/', body: '{{var.tstamp}}' })), metadata: { import: { preserved: { server_import_attestation_v1: token } } } }) as ScriptDefinition
+  const script = makeScript('protected:one')
+  const findings = [0, 1].map(i => ({ code: 'missing_producer:tstamp', action_path: `actions[${i}]`, source_ref: `Action.c:${i + 3}`, detail: '', gate: 'execution' }))
+  const initial = { candidate_id: 'protected:one', revision: 'protected:one', script, before: script, findings, readiness: { replay_ready: false, blocking_codes: ['missing_producer:tstamp'] }, expires_at: '2099-09-19', fidelity_report: {} }
+  const partial = { ...initial, findings: [findings[1]] }
+  mock.request.mockResolvedValueOnce(initial).mockResolvedValueOnce(partial).mockResolvedValueOnce({ ...partial, candidate_id: 'protected:two', revision: 'protected:two', script: makeScript('protected:two') })
+  const container = document.createElement('div'); document.body.append(container)
+  const root = createRoot(container); const onApplied = vi.fn()
+  const button = (text: string) => Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes(text))!
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} />))
+    expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(1)
+    expect(container.textContent).toContain('2 affected locations')
+    await act(async () => button('Missing value: tstamp').click())
+    const operations = container.querySelector<HTMLSelectElement>('[aria-label="Repair operation"]')!
+    expect(operations.value).toBe('bind_variable')
+    expect(Array.from(operations.options).map(o => o.value)).not.toContain('restore_body')
+    const input = container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'existingTimestamp')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => button('Preview repair').click())
+    await act(async () => button('Apply reviewed repair').click())
+    expect(onApplied).toHaveBeenCalledOnce()
+    expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(1)
+    expect(container.textContent).toContain('1 affected location')
+    expect(container.textContent).toContain('0 resolved in this session')
+    const payload = JSON.parse(mock.request.mock.calls[mock.request.mock.calls.length - 1][1].body)
+    expect(payload.action_path).toBe('actions[0]')
+    expect(payload.operation).toEqual({ type: 'bind_variable', producer: 'existingTimestamp' })
+  } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
+})
+
+it('keeps expired draft evidence inspectable but disables repair and ignores late scope responses', async () => {
+  const script = { name: 'Expired', protocol: 'http', actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:expired' } } } } as unknown as ScriptDefinition
+  const result = { candidate_id: 'protected:expired', revision: 'protected:expired', script, findings: [{ code: 'legacy_tls_replacement', action_path: 'actions[0]', detail: '', gate: 'execution' }], readiness: { replay_ready: false }, expires_at: '2000-01-01', fidelity_report: {} }
+  mock.request.mockResolvedValueOnce(result)
+  const container = document.createElement('div'); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} />))
+    await act(async () => container.querySelector<HTMLButtonElement>('.lr-issue-row')!.click())
+    expect(container.textContent).toContain('has expired')
+    expect(Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview repair')?.disabled).toBe(true)
+    let finish: (value: unknown) => void = () => {}
+    mock.request.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const onReview = vi.fn()
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="other" onApplied={vi.fn()} onReview={onReview} />))
+    await act(async () => root.unmount())
+    await act(async () => finish(result))
+    expect(onReview).not.toHaveBeenCalled()
+  } finally { container.remove(); vi.clearAllMocks() }
+})
+
+it('previews duration and iteration allocation from the data tab without applying a repair', async () => {
+  const script = { name: 'Allocation', protocol: 'http', actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:allocation' } } } } as unknown as ScriptDefinition
+  const result = { candidate_id: 'protected:allocation', revision: 'protected:allocation', script, findings: [], readiness: { replay_ready: true }, expires_at: '2099-01-01', fidelity_report: {} }
+  mock.request.mockResolvedValue(result)
+  const container = document.createElement('div'); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" view="data" onApplied={vi.fn()} />))
+    const preview = () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview allocation')!
+    await act(async () => preview().click())
+    expect(JSON.parse(mock.request.mock.calls[1][1].body).operation).toEqual({ type: 'preview_allocation', vusers: 2, iterations: 0 })
+    const mode = container.querySelector<HTMLSelectElement>('select')!
+    await act(async () => { mode.value = 'iterations'; mode.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => preview().click())
+    expect(JSON.parse(mock.request.mock.calls[2][1].body).operation).toEqual({ type: 'preview_allocation', vusers: 2, iterations: 1 })
+    expect(container.textContent).not.toContain('Apply reviewed repair')
+  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
 })

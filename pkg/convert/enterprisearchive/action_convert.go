@@ -72,7 +72,11 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 
 	target := makeRelative(rawURL, baseURL)
 	action.Target = target
-	action.Metadata["original_url"] = rawURL
+	// Credential projection validates this provenance URL alongside the wire
+	// target. Use the same template dialect as the target so a valid LR host
+	// parameter is not mistaken for a literal, malformed authority. The source
+	// review retains the original C spelling and its line mapping.
+	action.Metadata["original_url"] = convertParamReferences(rawURL)
 
 	// Apply headers
 	for _, header := range fn.HeaderList {
