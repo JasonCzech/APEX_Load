@@ -569,6 +569,7 @@ func finalizeEnterpriseArchiveImportResult(
 					continue
 				}
 				if len(parsed.Parameters) > 0 || len(parsed.DataSources) > 0 {
+					parameterStart, dataSourceStart := len(script.Parameters), len(script.DataSources)
 					collisions := mergeParsedParameterFile(
 						script,
 						parsed,
@@ -576,6 +577,7 @@ func finalizeEnterpriseArchiveImportResult(
 						parameterMergeStates[script],
 					)
 					parameterCollisions[script] = append(parameterCollisions[script], collisions...)
+					appendParameterSourceMappings(result, script, parameterFileName, content, ctx.Files, parameterStart, dataSourceStart)
 				}
 			}
 			if len(parsed.Warnings) > 0 {

@@ -45,11 +45,8 @@ type AuthFinding struct {
 	Detail string `json:"detail"`
 }
 
-// clientCredentialKeys are header/query/param names that indicate Anypoint
-// Client ID Enforcement. Only the Anypoint-specific client_id/client_secret
-// names are included — generic api-key headers (x-api-key/apikey) are NOT
-// Anypoint-specific and would otherwise false-positive MuleSoft detection on
-// ordinary api-key-protected services.
+// Client credential names are shared by OAuth providers. They imply a possible
+// Anypoint policy only on a separately verified MuleSoft destination.
 var clientCredentialKeys = map[string]bool{
 	"client_id":     true,
 	"clientid":      true,
@@ -107,29 +104,27 @@ func Analyze(script *dsl.Script) *Review {
 		// Header-based signals.
 		for name, value := range action.Headers {
 			lower := strings.ToLower(strings.TrimSpace(name))
-			if clientCredentialKeys[lower] {
+			if actionMuleSoftHost && clientCredentialKeys[lower] {
 				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement requires client_id/client_secret per request; supply via env/secret placeholders.", "header "+name)
 			}
-			if lower == "authorization" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "bearer ") {
+			if actionMuleSoftHost && lower == "authorization" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "bearer ") {
 				addAuth("bearer", "Bearer token required on requests.")
 			}
-			if lower == "authorization" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "basic ") {
+			if actionMuleSoftHost && lower == "authorization" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "basic ") {
 				addAuth("basic", "HTTP Basic authentication required on requests.")
-				if actionMuleSoftHost {
-					addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement may be using Basic Authorization as its credential origin; confirm the applied policy before replay.", "basic authorization")
-				}
+				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement may be using Basic Authorization as its credential origin; confirm the applied policy before replay.", "basic authorization")
 			}
 		}
 		// Query-string signals on the target.
 		for key := range queryKeys(action.Target) {
-			if clientCredentialKeys[strings.ToLower(key)] {
+			if actionMuleSoftHost && clientCredentialKeys[strings.ToLower(key)] {
 				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials are passed as query parameters; move to env/secret placeholders.", "query "+key)
 			}
 		}
 		// Request-body signals: client credentials carried in a JSON or
 		// form-encoded body (common for token exchanges) would otherwise be
 		// missed by the header/query checks above.
-		if key, ok := bodyCredentialKey(action.Body); ok {
+		if key, ok := bodyCredentialKey(action.Body); ok && actionMuleSoftHost {
 			addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials are sent in the request body; move to env/secret placeholders.", "body "+key)
 		}
 		// http_oauth2_token init actions reveal the OAuth grant.
@@ -168,7 +163,7 @@ func Analyze(script *dsl.Script) *Review {
 	if policySeen["client_id_enforcement"] {
 		review.Blockers = append(review.Blockers, "Provide Anypoint client_id/client_secret via env/secret placeholders before promotion; never embed live credentials in the script.")
 	}
-	if authSeen["bearer"] && !sawOAuthInit {
+	if review.Detected && authSeen["bearer"] && !sawOAuthInit {
 		review.Blockers = append(review.Blockers, "Bearer tokens are required but no http_oauth2_token init action was found; add one to acquire tokens at runtime.")
 	}
 	if review.Detected {
@@ -191,13 +186,13 @@ func allActions(script *dsl.Script) []dsl.Action {
 func mulesoftHost(host string) string {
 	host = strings.ToLower(strings.TrimSpace(host))
 	switch {
-	case strings.Contains(host, "anypoint.mulesoft.com"):
+	case host == "anypoint.mulesoft.com" || strings.HasSuffix(host, ".anypoint.mulesoft.com"):
 		return "anypoint"
-	case strings.Contains(host, ".cloudhub.io"):
+	case strings.HasSuffix(host, ".cloudhub.io"):
 		return "cloudhub"
-	case strings.Contains(host, ".cloudhub.eu"):
+	case strings.HasSuffix(host, ".cloudhub.eu"):
 		return "cloudhub_eu"
-	case strings.Contains(host, ".msap.io"):
+	case strings.HasSuffix(host, ".msap.io"):
 		return "anypoint_msap"
 	case strings.HasSuffix(host, ".mulesoft.com") || host == "mulesoft.com":
 		return "mulesoft"
@@ -211,7 +206,7 @@ func hostOf(rawURL, baseURL string) string {
 	if rawURL == "" {
 		return ""
 	}
-	if !strings.Contains(rawURL, "://") {
+	if !strings.Contains(rawURL, "://") && !strings.HasPrefix(rawURL, "//") {
 		// Relative target: fall back to the configured base URL host.
 		rawURL = strings.TrimSpace(baseURL)
 		if rawURL == "" || !strings.Contains(rawURL, "://") {

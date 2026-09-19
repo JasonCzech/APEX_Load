@@ -90,10 +90,26 @@ describe('SecretBindingReview', () => {
     return onApply
   }
 
+  it('groups only server-proven equal preserved values and keeps their controls collapsed', () => {
+    const preserved = requirements.map((requirement, index) => ({ ...requirement, id:`equal-${index}`, affected_paths:[requirement.path], destination_value_preserved:true, value_group_id:'equal' }))
+    const unknown = { ...preserved[0], id:'unverified', value_group_id:undefined }
+    act(() => root.render(<SecretBindingReview requirements={[...preserved, unknown]} onApply={vi.fn()} />))
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(2)
+    expect(container.textContent).toContain('3 protected occurrences')
+    expect(container.textContent).toContain('View 2 affected locations')
+    expect(container.textContent).not.toContain('affected request files')
+    expect(Array.from(container.querySelectorAll<HTMLDetailsElement>('.secret-binding-review-control')).every(item => !item.open)).toBe(true)
+    expect(container.querySelector('.secret-binding-review-reuse-all')).toBeNull()
+    const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
+    act(() => setInput(search, 'does-not-exist'))
+    expect(container.textContent).toContain('No credential groups match')
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(0)
+  })
+
   it('prefills safe references and offers optional write-only values', () => {
     render()
 
-    expect(container.textContent).toContain('Credentials (2)')
+    expect(container.textContent).toContain('Credential groups (2)')
     expect(container.textContent).toContain('configure it later in Project Secrets')
     expect(container.textContent).toContain('/actions/0/headers/Authorization')
     expect(container.textContent).toContain('{{secret.ORDER_API_TOKEN}}')
@@ -103,6 +119,21 @@ describe('SecretBindingReview', () => {
     const values = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="password"]'))
     expect(values).toHaveLength(2)
     expect(values.every(input => input.disabled)).toBe(true)
+  })
+
+  it('searches every grouped source location and its script name', () => {
+    act(() => root.render(<SecretBindingReview requirements={[
+      { ...requirements[0], affected_paths: ['requests/checkout.http', '/actions/42/headers/Authorization'], script_name: 'Customer checkout' },
+      requirements[1],
+    ]} onApply={vi.fn()} />))
+    const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
+    for (const query of ['CHECKOUT.HTTP', '/actions/42', 'Customer checkout']) {
+      act(() => setInput(search, query))
+      expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(1)
+      expect(container.querySelector('.secret-binding-review-item')?.textContent).toContain('Create Order')
+    }
+    act(() => setInput(search, 'missing-location'))
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(0)
   })
 
   it('keeps an unchanged suggested binding review-only when the importer preserves authored values', async () => {
@@ -196,7 +227,7 @@ describe('SecretBindingReview', () => {
       await Promise.resolve()
     })
 
-    const items = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item'))
+    const items = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item')).sort((a, b) => Number(b.textContent?.includes('Preserved in script')) - Number(a.textContent?.includes('Preserved in script')))
     expect(items).toHaveLength(2)
     expect(items[0].querySelector<HTMLInputElement>('input[id$="-preserve"]')?.checked).toBe(true)
     expect(items[0].querySelector<HTMLInputElement>('input[id$="-preserve"]')?.disabled).toBe(false)
@@ -440,7 +471,7 @@ describe('SecretBindingReview', () => {
     expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('SHARED_TOKEN')
     const pagination = container.querySelector<HTMLElement>('.secret-binding-review-pagination')!
     expect(pagination.getAttribute('aria-label')).toBe('Credential review pages')
-    expect(pagination.textContent).toContain('Showing credentials 1–100 of 10000. Page 1 of 100.')
+    expect(pagination.textContent).toContain('Showing credential groups 1–100 of 10000. Page 1 of 100.')
     expect(pagination.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Credential page controls')
 
     const nextButton = Array.from(pagination.querySelectorAll<HTMLButtonElement>('button'))
@@ -448,7 +479,7 @@ describe('SecretBindingReview', () => {
     act(() => nextButton.click())
     expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(100)
     expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('SHARED_TOKEN_101')
-    expect(pagination.textContent).toContain('Showing credentials 101–200 of 10000. Page 2 of 100.')
+    expect(pagination.textContent).toContain('Showing credential groups 101–200 of 10000. Page 2 of 100.')
   })
 
   it('rechecks more than 256 credential names in bounded batches before commit', async () => {
@@ -1490,7 +1521,7 @@ describe('SecretBindingReview', () => {
     })
     await act(async () => Promise.resolve())
 
-    expect(container.textContent).toContain('Credentials (1)')
+    expect(container.textContent).toContain('Credential groups (1)')
     expect(container.textContent).toContain('2 locations')
     expect(container.querySelector('.credentials-location-details summary')?.textContent)
       .toBe('View 2 affected locations')
@@ -1521,7 +1552,7 @@ describe('SecretBindingReview', () => {
       )
     })
 
-    expect(container.textContent).toContain('Credentials (2)')
+    expect(container.textContent).toContain('Credential groups (2)')
     expect(Array.from(container.querySelectorAll('.secret-binding-review-script strong')).map(node => node.textContent))
       .toEqual(['Script A', 'Script B'])
     expect(Array.from(container.querySelectorAll<HTMLInputElement>('input[type="text"]')).map(input => input.value)).toEqual([
@@ -2298,7 +2329,7 @@ describe('SecretBindingReview reuse across scripts', () => {
       container.querySelectorAll<HTMLButtonElement>('.secret-binding-review-reuse-all'),
     )
     expect(reuseButtons).toHaveLength(3)
-    expect(reuseButtons[0].textContent).toContain('all 3 password locations')
+    expect(reuseButtons[0].textContent).toContain('Review reuse across 3 password groups')
     // The operator must be able to see what would be merged before merging it.
     expect(reuseButtons[0].title).toContain('USERS — Password')
     expect(reuseButtons[0].title).toContain('INVOICES — Password')
@@ -2307,6 +2338,9 @@ describe('SecretBindingReview reuse across scripts', () => {
       reuseButtons[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    expect(nameInputs().map(input => input.value)).toEqual(['USERS_PASSWORD', 'ORDERS_PASSWORD', 'INVOICES_PASSWORD'])
+    expect(container.textContent).toContain('Only continue if these locations intentionally share one credential.')
+    act(() => reuseButtons[0].click())
     expect(nameInputs().map(input => input.value))
       .toEqual(['USERS_PASSWORD', 'USERS_PASSWORD', 'USERS_PASSWORD'])
   })

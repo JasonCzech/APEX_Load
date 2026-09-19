@@ -59,6 +59,56 @@ describe('ScriptImportReview', () => {
     container.remove()
   })
 
+  it('exports every generated action with credentials protected before saving', async () => {
+    const actions = Array.from({ length: 1500 }, (_, index) => ({ name: `Request ${index}`, type: 'request', target: '/orders', headers: { Authorization: 'Bearer private-token' }, params: { args: ['opaque-private'], call_args: [{ value: 'opaque-private' }] }, metadata: { raw_source: 'web_add_header("Cookie","opaque-private")' } }))
+    actions[0].target = 'https://user:embedded-private@example.test/orders'
+    actions[1].target = 'https://other:unclassified-private@example.test/orders'
+    let exported: Blob | undefined
+    const originalCreate = URL.createObjectURL
+    const originalRevoke = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn((blob: Blob) => { exported = blob; return 'blob:protected-review' })
+    URL.revokeObjectURL = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      act(() => root.render(<ScriptImportReview title="Review" script={{ ...script, init: [actions[1]], actions }} secretBindingRequirements={[{ id: 'target-secret', path: '/actions/0/target', label: 'Request target', context: 'Request', suggested_name: 'AUTH', destination_value_preserved: true }]} />))
+      expect(container.textContent).toContain('1501 total actions (1 initialization, 1500 main, 0 teardown)')
+      expect(container.textContent).toContain('Preview truncated')
+      expect(container.textContent).not.toContain('embedded-private')
+      expect(container.textContent).not.toContain('unclassified-private')
+      act(() => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Download complete protected JSON')!.click())
+      const text = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(exported!) })
+      const decoded = JSON.parse(text)
+      expect(decoded.script.actions).toHaveLength(1500)
+      expect(decoded.script.actions[1499].name).toBe('Request 1499')
+      expect(text).not.toContain('private-token')
+      expect(text).not.toContain('opaque-private')
+      expect(text).not.toContain('embedded-private')
+      expect(text).not.toContain('unclassified-private')
+      expect(decoded.script.actions[1].target).toBe('https://[protected imported value]@example.test/orders')
+      expect(text).toContain('[protected imported value]')
+    } finally { click.mockRestore(); URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke }
+  })
+
+  it('keeps credential preparation mounted while other review tabs are visible', () => {
+    act(() => root.render(<ScriptImportReview title="Review" script={script} showCredentials={false} showDataReview={false} readinessMessage="Repair required before execution" secretBindingRequirements={[{ id:'cookie', path:'/actions/0/headers/Cookie', label:'Cookie', context:'request', suggested_name:'COOKIE', destination_value_preserved:true, value_group_id:'group' }]} onSecretBindingsApply={vi.fn()}><section>Source settings</section></ScriptImportReview>))
+    const credentials = container.querySelector('.credentials-card')!
+    expect(credentials.closest('[hidden]')).not.toBeNull()
+    expect(container.textContent).toContain('Repair required before execution')
+    expect(container.querySelector('section')?.textContent).toBe('Source settings')
+  })
+
+  it.each([
+    ['https://user:private@example.test/path', 'https://[protected imported value]@example.test/path'],
+    ['//user:private@example.test/path', '//[protected imported value]@example.test/path'],
+    ['ftp://user:p%40ss@example.test/path', 'ftp://[protected imported value]@example.test/path'],
+    ['https://user:private@part@example.test/path', 'https://[protected imported value]@example.test/path'],
+    ['https://example.test/users/contact@example.test', 'https://example.test/users/contact@example.test'],
+  ])('protects URL userinfo without binding metadata: %s', (target, expected) => {
+    act(() => root.render(<ScriptImportReview title="Review" script={{ ...script, actions: [{ name: 'Call', type: 'request', target }] }} />))
+    const preview = JSON.parse(container.querySelector('pre')!.textContent!)
+    expect(preview.script.actions[0].target).toBe(expected)
+  })
+
   it('keeps conversion notes informational and blockers distinct from unsupported features', () => {
     act(() => root.render(<ScriptImportReview title="Review" script={script} diagnostics={[
       {element:'headers',detail:'source_order_unavailable',severity:'info'},
@@ -556,7 +606,7 @@ describe('ScriptImportReview', () => {
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent === 'Open In Visual Editor with 1 secret to configure')
     expect(editButton?.disabled).toBe(false)
-    expect(container.textContent).toContain('Credentials (1)')
+    expect(container.textContent).toContain('Credential groups (1)')
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()

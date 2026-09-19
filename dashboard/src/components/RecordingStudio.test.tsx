@@ -1331,7 +1331,7 @@ describe("RecordingStudio", () => {
     });
     await flushPromises();
 
-    expect(container.textContent).toContain("Credentials (1)");
+    expect(container.textContent).toContain("Credential groups (1)");
     expect(container.textContent).toContain("Configure later");
     expect(container.textContent).toContain("Save with 1 secret to configure");
     const saveButton = Array.from(

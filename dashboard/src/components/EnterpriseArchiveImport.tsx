@@ -26,6 +26,7 @@ import ScriptImportReview from './ScriptImportReview'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
 import ReplayPreflightCard from './ReplayPreflightCard'
+import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
@@ -893,6 +894,8 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
 
 const validationReviewTabs = [
   { id: 'overview', label: 'Review' },
+  { id: 'credentials', label: 'Credentials' },
+  { id: 'data', label: 'Data & parameters' },
   { id: 'preserved', label: 'Preserved Source Settings' },
   { id: 'dsl', label: 'DSL Preview' },
   { id: 'source', label: 'Source Mapping' },
@@ -1203,7 +1206,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const validatedItemIds = validatedItems.map(item => item.id)
   const convertedFileCount = importItems.filter(item => item.status === 'converted').length
   const savedArchiveScripts = collectSavedEnterpriseArchiveScripts(importItems)
-  const pendingReviewScriptCount = importItems.reduce((count, item) => count + (item.status === 'converted'
+  const pendingReviewScriptCount = importItems.reduce((count, item) => count + ((item.status === 'converted' || item.status === 'validated')
     ? getEnterpriseArchiveResultScripts(item.result).filter((_script, index) => !enterpriseArchiveResultScriptIsSaved(item, index)).length
     : 0), 0)
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
@@ -1219,7 +1222,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     ? `${failedFileCount} enterprise script archive${failedFileCount === 1 ? '' : 's'} failed during import review. Failed queue rows show the error details.`
     : ''
   const validateButtonLabel = queuedFileCount > 1 ? `Validate ${queuedFileCount} Scripts` : 'Validate Script(s)'
-  const convertButtonLabel = queuedFileCount > 1 ? 'Save Ready Scripts and Continue Importing' : 'Save and Continue Importing'
+  const convertButtonLabel = queuedFileCount > 1 ? 'Continue with Reviewed Archives' : 'Continue with Reviewed Draft'
   const conversionGateMessage = workingMode === 'convert'
     ? 'Saving eligible scripts. Archives that need repair, replay, or approval remain in this queue.'
     : queuedFileCount === 0
@@ -1395,6 +1398,26 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     : importSummary.unsupportedFunctions
   const reviewSections = result?.review_sections || []
   const repairSuggestions = result?.repair_suggestions || []
+  const needsExecutionRepair = Boolean((detectedProtocol && detectedProtocol.import_mode !== 'executable') || fidelityReport?.promotion_status === 'blocked'
+    || result?.summary?.migration_readiness?.blocked
+    || replayPreflight?.valid === false
+    || replayPreflight?.checks?.some(check => check.status === 'fail')
+    || replayPreflight?.missing_secrets?.length || replayPreflight?.missing_variables?.length
+    || reviewSections.some(section => section.severity === 'blocker'))
+  const readinessMessage = needsExecutionRepair
+    ? 'Validation finished — repair required before execution.'
+    : 'Validation finished — review the draft. Runtime execution has not been verified.'
+  const repairItems = Array.from(new Set([
+    ...(fidelityReport?.blockers || []),
+    ...(replayPreflight?.issues || []),
+    ...(result?.summary?.migration_readiness?.blocking_settings || []).map(setting => `${setting.area}: ${setting.concept} (${setting.status})`),
+    ...reviewSections.filter(section => section.severity === 'blocker' && !['import_fidelity', 'runtime_settings_parity', 'runtime_settings_migration_readiness'].includes(section.key)).flatMap(section => section.items.length ? section.items : [section.summary]),
+  ].filter(Boolean)))
+  const selectReviewSection = (tab: ValidationReviewTab) => {
+    setValidationReviewTab(tab)
+    document.getElementById(`lr-validation-review-tab-${tab}`)?.focus()
+    document.getElementById(`lr-validation-review-tab-${tab}`)?.scrollIntoView({ block: 'center' })
+  }
   const supportMatrixSections = summarizeEnterpriseArchiveSupportMatrix(supportMatrix)
   const hasRuntimeCoverage = supportMatrix.length > 0
   useModalDialog({
@@ -1520,7 +1543,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
       : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
     : (reviewMode === 'validation'
-      ? (queuedFileCount > 1 ? 'Save Ready Scripts and Continue Importing' : browserImport ? 'Continue to browser replay' : 'Save and Continue Importing')
+      ? (queuedFileCount > 1 ? 'Continue with Reviewed Archives' : browserImport ? 'Continue to browser replay' : 'Continue with Reviewed Draft')
       : (selectedResultScriptSaved
       ? 'Saved to Script Library'
       : enterprisePrepareSelectedForBatch
@@ -1533,7 +1556,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       ? 'Draft Browser Replay In Progress'
       : (saveRequiresBrowserReplay
           ? (browserReplayWasStarted ? 'Rerun Draft Browser Replay Before Saving' : 'Start Draft Browser Replay Before Saving')
-          : 'Save and Continue Importing'))))
+          : needsExecutionRepair ? 'Save Draft — Execution Blocked' : 'Save and Continue Importing'))))
   const replayActionLabel = replayValidationLoading
     ? 'Starting Draft Browser Replay...'
     : (browserReplayInProgress
@@ -2478,7 +2501,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           sourceSecretProjectId: sourceProjectId || '',
           error: '',
           notice: completionNotice || (mode === 'validate'
-            ? 'Validation complete. Review the generated script, warnings, and preserved settings before conversion.'
+            ? 'Validation finished. Review execution readiness and required repairs below.'
             : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.'),
         })
       } catch (error: unknown) {
@@ -4383,6 +4406,18 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
             reviewGeneration={reviewScope}
             subtitle={reviewSubtitle}
+            readinessMessage={readinessMessage}
+            showCredentials={validationReviewTab === 'credentials'}
+            showDataReview={validationReviewTab === 'data'}
+            credentialIntroduction={<div className="lr-repair-summary">
+              <h4>Runtime secret references</h4>
+              <p>{replayPreflight?.missing_secrets?.length || 0} unresolved runtime secrets at validation. These are separate from preserved imported values below.</p>
+              {(replayPreflight?.missing_secrets?.length || 0) > 0 && <>
+                <ul>{replayPreflight?.missing_secrets?.map(name => <li key={name}><code>{name}</code></li>)}</ul>
+                <p>Configure these exact names in the project secret provider, then validate again to refresh readiness.</p>
+                <a className="btn btn-secondary btn-sm" href="#/settings" target="_blank" rel="noopener noreferrer" onClick={() => prepareProjectSecretsSettingsNavigation(projectId)}>Open Project Secrets in a new tab</a>
+              </>}
+            </div>}
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
@@ -4418,7 +4453,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     ? handleSaveCredentialBatch
                     : handleSaveConverted}
             onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1)) ? () => { openImportedScriptInEditor() } : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save Draft and Open in Visual Editor' : 'Open Draft in Visual Editor'}
             previewTitle="DSL Preview"
             previewAside={sourceReview
               ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} />
@@ -4431,7 +4466,18 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               hidden={validationReviewTab !== 'overview'}
             >
             {saveBlockedByProtocolGate && <div className="lr-warnings" role="status"><strong>Execution blocked</strong><p>{combinedJavaVuserGate ? 'Save the combined draft for approval. A compatible governed Java runner is also required before execution.' : 'Save a reference artifact. This protocol is not available for executable promotion in this import.'}</p></div>}
-            {replayPreflight && <ReplayPreflightCard preflight={replayPreflight} />}
+            <section className="lr-repair-summary" aria-label="Required repairs">
+              <h4>{needsExecutionRepair ? 'Required before execution' : 'Review before execution'}</h4>
+              <p>Validation and draft saving do not authorize execution. Resolve the findings below, validate again, then verify one iteration in your intended environment.</p>
+              <div className="lr-repair-actions">
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => selectReviewSection('credentials')}>Review credentials ({replayPreflight?.missing_secrets?.length || 0} unresolved runtime secrets)</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => selectReviewSection('data')}>Review data ({replayPreflight?.missing_variables?.length || 0} missing variables)</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => selectReviewSection('source')}>Inspect source mappings and request blockers</button>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => selectReviewSection('preserved')}>Review runtime settings</button>
+              </div>
+              {repairItems.length > 0 && <ul>{repairItems.map(item => <li key={item}>{item}</li>)}</ul>}
+            </section>
+            {replayPreflight && <ReplayPreflightCard preflight={replayPreflight} onConfigureSecrets={() => selectReviewSection('credentials')} /> }
             <p className="lr-subtitle">Import and static checks do not prove successful replay. After saving an executable script, debug one iteration against your intended environment.</p>
             {saveBlockedByProtocolGate && detectedProtocol && (
               <div className="lr-warnings lr-protocol-gate">
@@ -4939,9 +4985,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     <small>{projectSections.join(', ') || 'None captured'}</small>
                   </div>
                   <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Unsupported Functions</span>
+                    <span className="lr-preserved-label">Unrecognized Function Names</span>
                     <strong>{reviewSummary?.unsupported_function_count ?? unsupportedFunctions.length}</strong>
-                    <small>{unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
+                    <small>{unsupportedFunctions.slice(0, 4).join(', ') || 'No unrecognized names. Recognized constructs may still require review.'}</small>
                     {importedEditorAvailable && firstUnsupportedTargetAction && renderEditorActionButtons([
                       {
                         key: 'summary-unsupported-action',
@@ -4949,6 +4995,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                         onClick: () => openImportedScriptInEditor({ targetAction: firstUnsupportedTargetAction }),
                       },
                     ])}
+                  </div>
+                  <div className="lr-preserved-card">
+                    <span className="lr-preserved-label">Constructs Requiring Review</span>
+                    <strong>{sourceReview?.mappings?.filter(mapping => ['review', 'review_only', 'unsupported', 'external_required', 'blocked'].includes(mapping.status)).length || 0}</strong>
+                    <small>Recognized constructs can still need repair; inspect source mappings for details.</small>
                   </div>
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Source</span>
@@ -4964,9 +5015,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   </div>
                   {migrationReadiness && (
                     <div className="lr-preserved-card">
-                      <span className="lr-preserved-label">Migration Readiness</span>
+                      <span className="lr-preserved-label">Runtime Settings Coverage</span>
                       <strong>{migrationReadiness.score_pct}%</strong>
-                      <small>{migrationReadiness.blocked ? 'Blocked by the Migration Block Policy in Conversion Options' : migrationReadiness.summary || 'Ready for review'}</small>
+                      <small>{migrationReadiness.blocked ? 'Blocked by the Migration Block Policy in Conversion Options' : 'Coverage of runtime settings only; not overall execution readiness.'}</small>
                       {renderEditorActionButtons([
                         importedEditorAvailable ? {
                           key: 'summary-migration-runtime-review',
@@ -5093,7 +5144,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                 {runtimeBlockingSettings.length > 0 && (
                   <div className="lr-review-section">
                     <div className="lr-review-section-header">
-                      <strong>Migration Readiness Blocking Settings</strong>
+                      <strong>Runtime Settings Requiring Repair</strong>
                       <span>{runtimeBlockingSettings.length}</span>
                     </div>
                     {importedEditorAvailable && renderEditorActionButtons([

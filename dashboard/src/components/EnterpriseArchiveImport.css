@@ -888,3 +888,14 @@
 .lr-advanced-policy .lr-checkbox { margin-top: 10px; }
 .lr-har-panel { display: block; }
 .lr-result-header, .script-import-review-header { scroll-margin-top: 100px; }
+
+/* Review output must fit long source names and remain readable at zoom. */
+.lr-preserved-card { min-width: 0; overflow-wrap: anywhere; }
+.lr-preserved-label, .lr-preserved-header span { color: var(--text-secondary); font-size: 12px; }
+.lr-repair-summary { padding: 16px 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); }
+.lr-repair-summary h4 { margin: 0 0 8px; }
+.lr-repair-summary p, .lr-repair-summary li { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.lr-repair-summary li + li { margin-top: 8px; }
+.lr-repair-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lr-import .script-import-review-header { scroll-margin-top: 90px; }
+.main-content:has(.lr-import) > .main-topbar { background: var(--bg-primary); backdrop-filter: none; }

@@ -28,6 +28,12 @@ describe('archive queue review outcome', () => {
     expect(outcome(item)).toBe('Review required')
   })
 
+  it('requires repair for unresolved runtime references even if other checks passed', () => {
+    const item = state()
+    item.result!.preflight = { valid:true, action_count:1, expected_action_count:1, data_source_count:0, parameter_count:0, missing_secrets:['MASKED_PAYLOAD'] }
+    expect(outcome(item)).toBe('Needs repair')
+  })
+
   it.each([
     ['queued', 'Replay in progress'], ['running', 'Replay in progress'], ['paused', 'Replay in progress'],
     ['failed', 'Needs replay retry'], ['stopped', 'Needs replay retry'], ['completed', 'Review replay results'],

@@ -31,6 +31,11 @@ func LooksDynamicValue(key string, value string) bool {
 // values (user ids, emails, SKUs, account numbers, ...).
 func LooksParameterName(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
+	// OAuth client identifiers configure an application, not a virtual user.
+	switch strings.NewReplacer("_", "", "-", "").Replace(lower) {
+	case "clientid", "oauthclientid", "oauth2clientid":
+		return false
+	}
 	for _, marker := range []string{"id", "user", "customer", "account", "order", "sku", "email", "zip"} {
 		if lower == marker || strings.HasSuffix(lower, "_"+marker) || strings.Contains(lower, marker+"_") {
 			return true

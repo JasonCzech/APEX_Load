@@ -4,6 +4,7 @@ import { createWorkspace, scopeQuery } from './support/workspace'
 
 for (const scenario of [
   { file: 'transaction-labels.zip', text: 'Ready to save' },
+  { file: 'credential-groups.zip', text: 'Ready to save' },
   { file: 'java-lifecycle.zip', text: 'Needs runner / approval' },
   { file: 'sap-review.zip', text: 'Review only' },
   { file: 'truclient-review.zip', text: 'TruClient 2 Compatibility' },
@@ -36,6 +37,32 @@ for (const scenario of [
     const checks = page.locator('.lr-result .replay-preflight-checks')
     await expect(checks).toHaveCSS('display', 'grid')
     await expect(page.locator('.lr-result .replay-preflight-check').filter({ hasText: 'Runtime prerequisites' })).toContainText('Not verified')
+    if (scenario.file === 'credential-groups.zip') {
+      const requirements = result.secret_binding_requirements as { value_group_id?: string }[]
+      expect(requirements.length).toBeGreaterThan(1)
+      expect(new Set(requirements.map(requirement => requirement.value_group_id)).size).toBe(1)
+      expect(requirements.every(requirement => requirement.value_group_id)).toBe(true)
+      await page.getByRole('tab', { name: 'Credentials', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Credential groups (1)', exact: true })).toBeVisible()
+      const control = page.locator('.secret-binding-review-control')
+      await expect(control).not.toHaveAttribute('open')
+      await page.getByRole('heading', { name: 'Credential groups (1)', exact: true }).scrollIntoViewIfNeeded()
+      await page.screenshot({ path: testInfo.outputPath('credential-groups.png'), fullPage: true })
+      await page.getByRole('searchbox', { name: 'Search credential locations' }).fill('no-match')
+      await expect(page.getByText('No credential groups match this filter.')).toBeVisible()
+      await page.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Credential groups (1)', exact: true })).not.toBeVisible()
+      await page.locator('.script-import-review-preview > summary').click()
+      const download = page.waitForEvent('download')
+      await page.getByRole('button', { name: 'Download complete protected JSON' }).click()
+      const savedDownload = await download
+      const { readFile } = await import('node:fs/promises')
+      const reviewText = await readFile((await savedDownload.path())!, 'utf8')
+      const review = JSON.parse(reviewText)
+      expect(review.script.actions.length).toBeGreaterThanOrEqual(2)
+      expect(reviewText).not.toContain('test-only-cookie')
+      expect(JSON.stringify(result.summary)).not.toContain('Anypoint Client ID Enforcement')
+    }
     if (scenario.file === 'truclient-review.zip') {
       await expect(page.getByRole('button', { name: 'Continue to browser replay', exact: true })).toBeVisible()
       expect(typeof (result.trueclient2_compat_report as Record<string, unknown>).fixture_contract_status).toBe('object')
@@ -87,7 +114,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   await page.getByRole('button', { name: 'Validate 3 Scripts', exact: true }).click()
   await expect(page.locator('.lr-file-row.failed')).toHaveCount(1)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  await page.getByRole('button', { name: 'Save Ready Scripts and Continue Importing', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Continue with Reviewed Archives', exact: true }).first().click()
   const receipt = await json(await saved)
   const scripts = receipt.scripts as { id: string; name: string }[]
   expect(scripts).toHaveLength(2)
@@ -105,7 +132,7 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   await page.getByRole('button', { name: 'Validate 4 Scripts', exact: true }).click()
   await expect(page.locator('.lr-file-row.validated')).toHaveCount(1)
   const nextSave = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  await page.getByRole('button', { name: 'Save Ready Scripts and Continue Importing', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Continue with Reviewed Archives', exact: true }).first().click()
   expect((await json(await nextSave)).scripts).toHaveLength(1)
   await expect(page.getByRole('button', { name: 'Import More Files', exact: true })).toBeVisible()
   expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(3)

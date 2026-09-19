@@ -5,6 +5,7 @@
 
 .script-import-review-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
@@ -14,7 +15,7 @@
 
 .script-import-review-header h3 {
   margin: 0;
-  color: var(--success);
+  color: var(--text-primary);
   font-size: 15px;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -686,4 +687,28 @@
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-size: 0.875rem;
+}
+
+.credentials-review-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 16px 0; }
+.credentials-review-filters label { display: flex; gap: 8px; align-items: center; color: var(--text-primary); }
+.credentials-review-filters input[type="search"] {
+  width: min(320px, 100%);
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+.credentials-review-filters label:first-child { flex-wrap: wrap; }
+.secret-binding-review-control summary { cursor: pointer; color: var(--text-primary); font-size: 14px; padding: 8px 0; }
+.secret-binding-review-control[open] > :not(summary) { margin-top: 8px; }
+.secret-binding-review-list { overflow-wrap: anywhere; }
+.script-import-review [hidden] { display: none !important; }
+
+.script-import-review-header > p[role="status"] {
+  flex: 0 0 100%;
+  color: var(--text-primary);
+  font-weight: 600;
 }

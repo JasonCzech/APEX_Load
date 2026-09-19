@@ -227,3 +227,36 @@ func TestBodyCredentialKeyIgnoresPlainText(t *testing.T) {
 		t.Fatalf("unrelated JSON should not match, got key %q", key)
 	}
 }
+
+func TestGenericOAuthDoesNotImplyAnypoint(t *testing.T) {
+	for _, host := range []string{"login.salesforce.com", "oauth.example.com", "api.cloudhub.io.evil.test", "anypoint.mulesoft.com.evil.test"} {
+		t.Run(host, func(t *testing.T) {
+			script := &dsl.Script{Config: dsl.ScriptConfig{BaseURL: "https://" + host}, Actions: []dsl.Action{{Target: "/authorize?client_id=app", Headers: map[string]string{"client_secret": "secret", "Authorization": "Bearer token"}, Body: `{"client_id":"app"}`}}}
+			review := Analyze(script)
+			if review.Detected || len(review.PolicyFindings) != 0 || len(review.Blockers) != 0 || len(review.NextActions) != 0 {
+				t.Fatalf("generic OAuth received vendor guidance: %#v", review)
+			}
+		})
+	}
+	// A genuine MuleSoft call must not attribute unrelated OAuth traffic to it.
+	script := &dsl.Script{Config: dsl.ScriptConfig{BaseURL: "https://api.cloudhub.io"}, Actions: []dsl.Action{{Target: "https://login.salesforce.com/authorize?client_id=app"}}}
+	if review := Analyze(script); !review.Detected || len(review.PolicyFindings) != 0 {
+		t.Fatalf("cross-host policy attribution: %#v", review)
+	}
+}
+
+func TestMixedServiceAuthIsScopedToMuleSoftDestination(t *testing.T) {
+	for _, target := range []string{"https://login.salesforce.com/resource", "//login.salesforce.com/resource"} {
+		t.Run(target, func(t *testing.T) {
+			script := &dsl.Script{Config: dsl.ScriptConfig{BaseURL: "https://api.cloudhub.io"}, Actions: []dsl.Action{
+				{Target: "/health"},
+				{Target: target, Headers: map[string]string{"Authorization": "Bearer token", "client_id": "app"}},
+				{Target: target, Headers: map[string]string{"Authorization": "Basic credential"}},
+			}}
+			review := Analyze(script)
+			if !review.Detected || len(review.AuthFindings) != 0 || len(review.PolicyFindings) != 0 || len(review.Blockers) != 0 {
+				t.Fatalf("unrelated service authentication attributed to MuleSoft: %#v", review)
+			}
+		})
+	}
+}

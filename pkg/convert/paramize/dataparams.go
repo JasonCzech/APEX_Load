@@ -336,7 +336,7 @@ func (c *dataParamCollector) add(key, value, kind, section string, index int, ac
 		Confidence: dataParamConfidence,
 		RuleID:     "data_param.name_heuristic",
 		Rationale: fmt.Sprintf(
-			"The %s %q looks like per-VUser test data. Bind it to a data source column so each virtual user sends distinct values instead of the recorded literal %q.",
+			"Could the %s %q vary between virtual users? Confirm it is test data rather than application configuration or a session value before binding the recorded literal %q to a data source.",
 			kind, key, truncateValue(value)),
 		Parameter: &dsl.Parameter{
 			Name:       varName,

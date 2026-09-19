@@ -267,6 +267,12 @@ function redactPreviewText(value: string): string {
   // Inspect XML semantics before generic assignment masking can obscure a
   // credential-name attribute such as key="client_secret".
   let safe = redactPreviewHeaderLines(redactPreviewXMLText(value))
+  // URL userinfo has no credential field name. Imports without binding
+  // descriptors still need protection in both the preview and download.
+  safe = safe.replace(
+    /((?:\b[a-z][a-z0-9+.-]*:)?\/\/)[^/\s?#]+@/gi,
+    (_match, scheme: string) => `${scheme}${PROTECTED_PREVIEW_VALUE}@`,
+  )
   safe = safe.replace(
     /(["']?)([A-Za-z][A-Za-z0-9_.%[\]-]*)\1\s*([:=])\s*(\{\{secret\.[A-Za-z0-9_.-]{1,249}\}\}|"[^"]*"|'[^']*'|(?:bearer|basic)\s+[^\s,}&]+|[^\s,}&]+)/gi,
     (match: string, quote: string, name: string, delimiter: string, rawValue: string) => {
@@ -297,26 +303,35 @@ interface CredentialActionRequest {
   phase: 'committing' | 'applying' | 'awaiting-resolution'
 }
 
-function previewJSON(value: unknown): { text: string; truncated: boolean } {
+function previewJSON(value: unknown, complete = false, protectedPaths: Set<string> = new Set()): { text: string; truncated: boolean } {
+  // The explicit export has a separate, bounded budget. Never export a partial
+  // document as a complete review, and use the same credential projection.
+  const maxNodes = complete ? 2_000_000 : PREVIEW_MAX_NODES
+  const maxDepth = complete ? 256 : PREVIEW_MAX_DEPTH
+  const maxItems = complete ? 2_000_000 : PREVIEW_MAX_ARRAY_ITEMS
+  const maxKeys = complete ? 2_000_000 : PREVIEW_MAX_OBJECT_KEYS
+  const maxString = complete ? 64_000_000 : PREVIEW_MAX_STRING_CHARS
+  const maxChars = complete ? 128_000_000 : PREVIEW_MAX_CHARS
   const state = {
     nodes: 0,
     truncated: false,
     seen: new WeakSet<object>(),
   }
-  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false): unknown => {
-    if (state.nodes >= PREVIEW_MAX_NODES || depth > PREVIEW_MAX_DEPTH) {
+  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false, path = ''): unknown => {
+    if (state.nodes >= maxNodes || depth > maxDepth) {
       state.truncated = true
       return '… preview limit reached …'
     }
     state.nodes += 1
+    sensitiveAncestor ||= protectedPaths.has(path)
     if (typeof candidate === 'string') {
       if (sensitiveAncestor && !safeCredentialReference(candidate)) return PROTECTED_PREVIEW_VALUE
-      const truncated = candidate.length > PREVIEW_MAX_STRING_CHARS
-      const boundedCandidate = truncated ? candidate.slice(0, PREVIEW_MAX_STRING_CHARS) : candidate
+      const truncated = candidate.length > maxString
+      const boundedCandidate = truncated ? candidate.slice(0, maxString) : candidate
       const safeCandidate = redactPreviewText(boundedCandidate)
-      if (!truncated && safeCandidate.length <= PREVIEW_MAX_STRING_CHARS) return safeCandidate
+      if (!truncated && safeCandidate.length <= maxString) return safeCandidate
       state.truncated = true
-      return `${safeCandidate.slice(0, PREVIEW_MAX_STRING_CHARS)}…`
+      return `${safeCandidate.slice(0, maxString)}…`
     }
     if (candidate === null) return candidate
     if (typeof candidate !== 'object') return sensitiveAncestor ? PROTECTED_PREVIEW_VALUE : candidate
@@ -329,53 +344,58 @@ function previewJSON(value: unknown): { text: string; truncated: boolean } {
       const toJSON = (candidate as { toJSON?: unknown }).toJSON
       if (typeof toJSON === 'function') {
         const projected = toJSON.call(candidate)
-        if (projected !== candidate) return visit(projected, depth + 1, sensitiveAncestor)
+        if (projected !== candidate) return visit(projected, depth + 1, sensitiveAncestor, path)
       }
       if (Array.isArray(candidate)) {
-        const itemCount = Math.min(candidate.length, PREVIEW_MAX_ARRAY_ITEMS)
+        const itemCount = Math.min(candidate.length, maxItems)
         if (itemCount < candidate.length) state.truncated = true
         const result: unknown[] = []
-        for (let index = 0; index < itemCount && state.nodes < PREVIEW_MAX_NODES; index += 1) {
-          result.push(visit(candidate[index], depth + 1, sensitiveAncestor))
+        for (let index = 0; index < itemCount && state.nodes < maxNodes; index += 1) {
+          result.push(visit(candidate[index], depth + 1, sensitiveAncestor, `${path}/${index}`))
         }
-        if (result.length < candidate.length) result.push(`… ${candidate.length - result.length} more item(s) omitted …`)
+        if (result.length < candidate.length) { state.truncated = true; result.push(`… ${candidate.length - result.length} more item(s) omitted …`) }
         return result
       }
       const keys = Object.keys(candidate)
-      const keyCount = Math.min(keys.length, PREVIEW_MAX_OBJECT_KEYS)
+      const keyCount = Math.min(keys.length, maxKeys)
       if (keyCount < keys.length) state.truncated = true
       const result: Record<string, unknown> = {}
       const sensitiveSemanticName = previewObjectHasSensitiveSemanticName(candidate as Record<string, unknown>, keys)
-      for (let index = 0; index < keyCount && state.nodes < PREVIEW_MAX_NODES; index += 1) {
+      for (let index = 0; index < keyCount && state.nodes < maxNodes; index += 1) {
         const key = keys[index]
+        if (['import_draft_token', 'source_secret_session_id', 'protected_import_session_id'].includes(key)) { result[key] = PROTECTED_PREVIEW_VALUE; continue }
         try {
           const child = (candidate as Record<string, unknown>)[key]
           const semanticNameKey = sensitiveSemanticName && isPreviewSemanticNameKey(key)
           const childSensitive = (
             sensitiveAncestor
+            // Opaque source snippets and positional arguments cannot be safely
+            // classified by a browser name-based redactor. Preserve their shape
+            // while hiding values in the downloadable review.
+            || (complete && ['metadata', 'args', 'call_args'].includes(key))
             || (!semanticNameKey && isSensitiveCredentialPreviewKey(key))
             // A semantic credential record can use arbitrary adapter-specific
             // payload keys such as defaultValue, values, or schema.default. Protect
             // every non-name descendant instead of relying on a small allowlist.
             || (sensitiveSemanticName && !semanticNameKey)
           )
-          result[key] = visit(child, depth + 1, childSensitive)
+          result[key] = visit(child, depth + 1, childSensitive, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`)
         } catch {
           result[key] = '[Unable to preview value]'
         }
       }
-      if (Object.keys(result).length < keys.length) result['…'] = `${keys.length - Object.keys(result).length} more field(s) omitted`
+      if (Object.keys(result).length < keys.length) { state.truncated = true; result['…'] = `${keys.length - Object.keys(result).length} more field(s) omitted` }
       return result
     } finally {
       state.seen.delete(candidate)
     }
   }
   const text = JSON.stringify(visit(value, 0), null, 2) ?? String(value)
-  if (text.length <= PREVIEW_MAX_CHARS) {
+  if (text.length <= maxChars) {
     return { text, truncated: state.truncated }
   }
   return {
-    text: `${text.slice(0, PREVIEW_MAX_CHARS)}\n…`,
+    text: `${text.slice(0, maxChars)}\n…`,
     truncated: true,
   }
 }
@@ -384,6 +404,10 @@ interface Props {
   title: string
   reviewGeneration?: string | number
   subtitle?: ReactNode
+  readinessMessage?: string
+  showCredentials?: boolean
+  showDataReview?: boolean
+  credentialIntroduction?: ReactNode
   script: ScriptDefinition
   previewData?: unknown
   warnings?: string[]
@@ -446,6 +470,10 @@ export default function ScriptImportReview({
   title,
   reviewGeneration = 0,
   subtitle,
+  readinessMessage,
+  showCredentials = true,
+  showDataReview = true,
+  credentialIntroduction,
   script,
   previewData,
   warnings = [],
@@ -501,6 +529,7 @@ export default function ScriptImportReview({
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
   const [sharedValuesApplying, setSharedValuesApplying] = useState(false)
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
+  const [previewExportError, setPreviewExportError] = useState('')
   const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   const [configuredCredentialReviewIdentity, setConfiguredCredentialReviewIdentity] = useState('')
   const saveDisabledReasonId = useId()
@@ -721,9 +750,27 @@ export default function ScriptImportReview({
       </summary>
       {preview.truncated && (
         <div className="script-import-review-preview-note" role="status">
-          Preview truncated for browser performance. Save or open the script to review the full generated payload.
+          Preview truncated for browser performance. Download the complete protected JSON to inspect every generated action before saving.
         </div>
       )}
+      <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+        setPreviewExportError('')
+        try {
+          const full = previewJSON({ script }, true, new Set(secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])].map(path => `/script${path}`))))
+          if (full.truncated) throw new Error('The full review exceeds the export safety limit. No partial file was downloaded.')
+          const url = URL.createObjectURL(new Blob([full.text], { type: 'application/json' }))
+          const link = document.createElement('a')
+          link.href = url
+          link.download = `${(script.name || 'script').replace(/[^a-zA-Z0-9_.-]/g, '_')}.protected-review.json`
+          link.click()
+          const revokeURL = URL.revokeObjectURL.bind(URL)
+          setTimeout(() => revokeURL(url), 1000)
+        } catch (error) {
+          setPreviewExportError(error instanceof Error ? error.message : 'Unable to export the protected review.')
+        }
+      }}>Download complete protected JSON</button>
+      <p>Credential values, source metadata, and opaque positional arguments are protected. Every generated action is included; this review copy is not an executable export.</p>
+      {previewExportError && <p role="alert">{previewExportError}</p>}
       <pre>{preview.text}</pre>
     </details>
   ) : null
@@ -812,7 +859,10 @@ export default function ScriptImportReview({
   return (
     <div className="script-import-review">
       <div className="script-import-review-header" tabIndex={-1} ref={reviewSummaryRef}>
-        <p role="status">Import review ready. {script.actions?.length || 0} actions. Review blockers and warnings before saving.</p>
+        <p role="status">{readinessMessage || 'Import review ready. Review blockers and warnings before saving.'} {' '}
+          {(script.init?.length || 0) + (script.actions?.length || 0) + (script.teardown?.length || 0)} total actions
+          {' '}({script.init?.length || 0} initialization, {script.actions?.length || 0} main, {script.teardown?.length || 0} teardown).
+        </p>
         <div>
           <h3>{title}</h3>
           {subtitle && <p>{subtitle}</p>}
@@ -873,6 +923,10 @@ export default function ScriptImportReview({
         </div>
       )}
 
+      {children}
+
+      <div hidden={!showCredentials}>
+      {credentialIntroduction}
       {hasUnresolvedSecretBindings && onSecretBindingsApply && (
         <SecretBindingReview
           ref={bindingReviewRef}
@@ -898,7 +952,7 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      {children}
+      </div>
 
       {conversionNotes.length > 0 && <button type="button" className="script-health-token issue-pill-button" onClick={() => setIssueDialog({ title: 'Conversion notes', issues: conversionNotes })}>{conversionNotes.length} conversion note{conversionNotes.length === 1 ? '' : 's'}</button>}
       {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
@@ -946,6 +1000,7 @@ export default function ScriptImportReview({
         </div>
       )}
 
+      <div hidden={!showDataReview}>
       {sharedValues && onSharedValuesApplied && (sharedValues.candidates?.length ?? 0) > 0 && (
         <SharedImportValues
           sharedValues={sharedValues}
@@ -970,6 +1025,8 @@ export default function ScriptImportReview({
           }}
         />
       )}
+
+      </div>
 
       {showPreview && previewPane}
       {showPreviewAside && previewAside && (

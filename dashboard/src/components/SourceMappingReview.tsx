@@ -589,8 +589,8 @@ export default function SourceMappingReview({
   }
 
   const coverageChips: Array<{ key: string; label: string; value: number; tooltip: string }> = [
-    { key: 'converted', label: 'Converted', value: coverage.converted, tooltip: COVERAGE_TOOLTIPS.converted },
-    { key: 'preserved', label: 'Preserved', value: coverage.preserved, tooltip: COVERAGE_TOOLTIPS.preserved },
+    { key: 'converted', label: 'Converted mappings', value: coverage.converted, tooltip: COVERAGE_TOOLTIPS.converted },
+    { key: 'preserved', label: 'Preserved mappings', value: coverage.preserved, tooltip: COVERAGE_TOOLTIPS.preserved },
     { key: 'review', label: 'Needs review', value: coverage.review, tooltip: COVERAGE_TOOLTIPS.review },
     { key: 'unsupported', label: 'Unsupported', value: coverage.unsupported, tooltip: COVERAGE_TOOLTIPS.unsupported },
   ]

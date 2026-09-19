@@ -32,7 +32,7 @@ export default function ReplayPreflightCard({
           </strong>
         </div>
         <div className="replay-preflight-meta">
-          <span>{preflight.action_count} action{preflight.action_count === 1 ? '' : 's'}</span>
+          <span>{preflight.action_count} action{preflight.action_count === 1 ? '' : 's'} across all phases</span>
           {expectedActionCount !== preflight.action_count && (
             <span>{expectedActionCount} expected</span>
           )}
@@ -43,7 +43,7 @@ export default function ReplayPreflightCard({
       <div className="replay-preflight-checks">
         {(preflight.checks || []).filter(check => !compact || check.status !== 'pass').sort((a, b) => ((a.status === 'fail' ? 0 : a.status === 'warn' ? 1 : 2) - (b.status === 'fail' ? 0 : b.status === 'warn' ? 1 : 2))).map(check => (
           <div key={check.id} className={`replay-preflight-check ${check.status}`}>
-            <span>{check.label}</span><strong>{check.id === 'runtime' && check.status === 'warn' ? 'Not verified' : check.status === 'pass' ? 'Passed' : check.status === 'warn' ? 'Note' : 'Needs work'}</strong>
+            <span>{check.label}</span><strong>{check.id === 'runtime' && check.status === 'warn' ? 'Not verified' : check.status === 'pass' ? 'Passed' : check.status === 'warn' ? (check.id === 'secrets' && preflight.missing_secrets?.length ? 'Needs work' : 'Review') : 'Needs work'}</strong>
             {check.detail && <small>{check.detail}</small>}
           </div>
         ))}

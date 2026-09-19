@@ -427,3 +427,52 @@ func TestMultiScriptImportKeepsDistinctSourceCredentialsIndependentlyMigratable(
 		}
 	}
 }
+
+func TestCredentialValueGroupsRequireEqualRecoverableServerValues(t *testing.T) {
+	raw := map[string]any{"name": "grouping", "protocol": "http", "config": map[string]any{}, "actions": []any{
+		map[string]any{"headers": map[string]any{"Cookie": "same", "Authorization": "different"}},
+		map[string]any{"headers": map[string]any{"Cookie": "same", "Authorization": "[REDACTED]"}},
+	}}
+	projected := map[string]any{"name": "grouping", "protocol": "http", "config": map[string]any{}, "actions": []any{
+		map[string]any{"headers": map[string]any{"Cookie": maskedScriptSecret, "Authorization": maskedScriptSecret}},
+		map[string]any{"headers": map[string]any{"Cookie": maskedScriptSecret, "Authorization": maskedScriptSecret}},
+	}}
+	reqs := []SecretBindingRequirement{
+		{ID: "a", Path: "/actions/0/headers/Cookie"}, {ID: "b", Path: "/actions/1/headers/Cookie"},
+		{ID: "c", Path: "/actions/0/headers/Authorization"}, {ID: "d", Path: "/actions/1/headers/Authorization", ValueGroupID: "untrusted"},
+	}
+	got := annotateSecretBindingDestinationValues(reqs, raw, projected)
+	if got[0].ValueGroupID != "a" || got[1].ValueGroupID != "a" || got[2].ValueGroupID != "c" || got[3].ValueGroupID != "" {
+		t.Fatalf("incorrect value grouping: %#v", got)
+	}
+	if got[3].DestinationValuePreserved {
+		t.Fatal("unavailable value grouped as preserved")
+	}
+	reqs[1].ScriptIndex = 1
+	got = annotateSecretBindingDestinationValues(reqs, []any{raw, raw}, []any{projected, projected})
+	if got[0].ValueGroupID == got[1].ValueGroupID {
+		t.Fatal("group crossed script boundary")
+	}
+}
+
+func TestPreservedCredentialGroupsRetainBatchIndex(t *testing.T) {
+	script := &dsl.Script{Name: "batch second", Protocol: "http", Actions: []dsl.Action{
+		{Name: "first", Type: "request", Headers: map[string]string{"Authorization": "Bearer literal-token"}},
+		{Name: "second", Type: "request", Headers: map[string]string{"Authorization": "Bearer literal-token"}},
+	}}
+	_, reqs, err := applyPreservedRedactedSecretBindings(script, 2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reqs) != 2 {
+		t.Fatalf("requirements = %d", len(reqs))
+	}
+	for _, req := range reqs {
+		if req.ScriptIndex != 2 || !req.DestinationValuePreserved || req.ValueGroupID == "" {
+			t.Fatalf("lost batch preservation: %#v", req)
+		}
+	}
+	if reqs[0].ValueGroupID != reqs[1].ValueGroupID {
+		t.Fatal("equal values not grouped")
+	}
+}

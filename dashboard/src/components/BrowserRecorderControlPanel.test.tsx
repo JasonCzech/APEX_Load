@@ -905,7 +905,7 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Save unverified draft')
     await flushPromises()
 
-    expect(container.textContent).toContain('Credentials (1)')
+    expect(container.textContent).toContain('Credential groups (1)')
     expect(container.textContent).toContain('Configure later')
     expect(container.textContent).toContain('Save with 1 secret to configure')
     expect(apiMock.createScript).not.toHaveBeenCalled()
@@ -1239,7 +1239,7 @@ describe('BrowserRecorderControlPanel', () => {
     await renderPanel()
     await clickButton('Preview Conversion')
     await flushPromises()
-    expect(container.textContent).toContain('Credentials (2)')
+    expect(container.textContent).toContain('Credential groups (2)')
     expect(container.textContent).toContain('Save with 2 secrets to configure')
 
     await clickButton('Save with 2 secrets to configure')

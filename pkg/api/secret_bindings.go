@@ -62,6 +62,9 @@ type SecretBindingRequirement struct {
 	// value at this exact requirement path; it is independent of whether an
 	// optional source-secret migration session is available.
 	DestinationValuePreserved bool `json:"destination_value_preserved,omitempty"`
+	// ValueGroupID identifies equal recoverable values within this response only.
+	// It is an occurrence ID, never a digest of credential material.
+	ValueGroupID string `json:"value_group_id,omitempty"`
 }
 
 type secretBindingSelection struct {
@@ -1186,23 +1189,14 @@ func applyPreservedRedactedSecretBindings(
 	if err != nil {
 		return nil, nil, err
 	}
+	// Alignment receives one script, while public descriptors retain the
+	// original batch index. Do not interpret that batch index as a local node.
 	for index := range remaining {
-		requirement := &remaining[index]
-		rawValue, rawOK := jsonPointerString(rawResult, requirement.Path)
-		projectedValue, projectedOK := jsonPointerString(
-			projectedResultRoot,
-			requirement.Path,
-		)
-		if !rawOK || !projectedOK {
-			continue
-		}
-		values, aligned := extractProjectedRedactions(rawValue, projectedValue)
-		if !aligned || requirement.Occurrence < 0 ||
-			requirement.Occurrence >= len(values) {
-			continue
-		}
-		requirement.DestinationValuePreserved =
-			values[requirement.Occurrence] != ""
+		remaining[index].ScriptIndex = 0
+	}
+	remaining = annotateSecretBindingDestinationValuesWithPolicy(remaining, rawResult, projectedResultRoot, true)
+	for index := range remaining {
+		remaining[index].ScriptIndex = scriptIndex
 	}
 	return &result, remaining, nil
 }
@@ -1299,6 +1293,10 @@ func annotateSecretBindingDestinationValues(
 	rawScripts any,
 	projectedScripts any,
 ) []SecretBindingRequirement {
+	return annotateSecretBindingDestinationValuesWithPolicy(requirements, rawScripts, projectedScripts, false)
+}
+
+func annotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindingRequirement, rawScripts, projectedScripts any, preserveExact bool) []SecretBindingRequirement {
 	if len(requirements) == 0 {
 		return requirements
 	}
@@ -1306,30 +1304,49 @@ func annotateSecretBindingDestinationValues(
 	projectedNodes := make([]map[string]any, 0)
 	collectScriptJSONNodes(rawScripts, &rawNodes)
 	collectScriptJSONNodes(projectedScripts, &projectedNodes)
+	valueGroups := make(map[int]map[string]string)
+	type location struct {
+		script int
+		path   string
+	}
+	alignedValues := make(map[location][]string)
 	for index := range requirements {
 		requirement := &requirements[index]
+		requirement.ValueGroupID = ""
+		requirement.DestinationValuePreserved = false
 		scriptIndex := requirement.ScriptIndex
 		if scriptIndex < 0 || scriptIndex >= len(rawNodes) ||
 			scriptIndex >= len(projectedNodes) {
 			continue
 		}
-		rawValue, rawOK := jsonPointerString(rawNodes[scriptIndex], requirement.Path)
-		projectedValue, projectedOK := jsonPointerString(
-			projectedNodes[scriptIndex],
-			requirement.Path,
-		)
-		if !rawOK || !projectedOK {
-			continue
+		key := location{scriptIndex, requirement.Path}
+		values, cached := alignedValues[key]
+		if !cached {
+			rawValue, rawOK := jsonPointerString(rawNodes[scriptIndex], requirement.Path)
+			projectedValue, projectedOK := jsonPointerString(projectedNodes[scriptIndex], requirement.Path)
+			if rawOK && projectedOK {
+				values, _ = extractProjectedRedactions(rawValue, projectedValue)
+			}
+			alignedValues[key] = values
 		}
-		values, aligned := extractProjectedRedactions(rawValue, projectedValue)
-		if !aligned || requirement.Occurrence < 0 ||
-			requirement.Occurrence >= len(values) {
+		if requirement.Occurrence < 0 || requirement.Occurrence >= len(values) {
 			continue
 		}
 		sourceValue := values[requirement.Occurrence]
 		status := credentialpolicy.ClassifySourceCredentialValue(sourceValue)
-		requirement.DestinationValuePreserved = status.Available()
-		if !status.Available() {
+		requirement.DestinationValuePreserved = status.Available() || (preserveExact && sourceValue != "")
+		if status.Available() {
+			if valueGroups[scriptIndex] == nil {
+				valueGroups[scriptIndex] = make(map[string]string)
+			}
+			group := valueGroups[scriptIndex][sourceValue]
+			if group == "" {
+				group = requirement.ID
+				valueGroups[scriptIndex][sourceValue] = group
+			}
+			requirement.ValueGroupID = group
+		}
+		if !requirement.DestinationValuePreserved {
 			setSecretBindingPreservationUnavailable(requirement, status)
 		}
 	}

@@ -869,7 +869,7 @@ func buildEnterpriseArchiveImportReviewSections(warnings []string, result *enter
 	if summary.MigrationReadiness != nil {
 		sections = append(sections, scriptImportReviewSection{
 			Key:      "runtime_settings_migration_readiness",
-			Title:    "Migration Readiness",
+			Title:    "Runtime Settings Coverage",
 			Severity: migrationReadinessSeverity(summary.MigrationReadiness),
 			Summary:  summary.MigrationReadiness.Summary,
 			Items:    migrationReadinessItems(summary.MigrationReadiness),
@@ -938,7 +938,7 @@ func enterpriseArchiveFidelitySummary(report *enterprisearchive.ImportFidelityRe
 		return ""
 	}
 	status := firstNonEmpty(report.PromotionStatus, "unknown")
-	return fmt.Sprintf("Promotion status: %s; converted %d of %d detected source function(s), with %d dropped body/bodies and %d secret-gated payload(s).", status, report.ConvertedFunctions, report.ExpectedFunctions, report.DroppedBodies, report.SecretGated)
+	return fmt.Sprintf("Promotion status: %s; accounted for %d of %d detected source function(s) through converted actions or preserved contributors, with %d dropped body/bodies and %d secret-gated payload(s).", status, report.ConvertedFunctions, report.ExpectedFunctions, report.DroppedBodies, report.SecretGated)
 }
 
 func enterpriseArchiveFidelityItems(report *enterprisearchive.ImportFidelityReport) []string {

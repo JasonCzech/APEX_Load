@@ -122,7 +122,11 @@ function groupRequirements(requirements: SecretBindingRequirement[]): Requiremen
     const destinationClass = requirement.destination_value_preserved === true
       ? 'preserved'
       : 'binding-required'
-    const key = suggestedName
+    const key = requirement.value_group_id && requirement.destination_value_preserved
+      ? `${scope}:value:${requirement.value_group_id}`
+      : requirement.destination_value_preserved
+        ? `${scope}:requirement:${requirement.id}`
+        : suggestedName
       ? `${scope}:name:${suggestedName}:destination:${destinationClass}`
       : `${scope}:requirement:${requirement.id}`
     const existing = groups.get(key)
@@ -185,6 +189,7 @@ function semanticRequirementsIdentity(requirements: readonly SecretBindingRequir
       script_name: requirement.script_name ?? '',
       source_value_available: requirement.source_value_available === true,
       destination_value_preserved: requirement.destination_value_preserved === true,
+      value_group_id: requirement.value_group_id ?? '',
       preservation_unavailable_reason: requirement.preservation_unavailable_reason ?? '',
       preservation_unavailable_description: requirement.preservation_unavailable_description ?? '',
     }))
@@ -247,7 +252,8 @@ function groupSourceVariables(group: RequirementGroup): string[] {
 }
 
 function groupHasAffectedSourcePaths(group: RequirementGroup): boolean {
-  return group.requirements.some(requirement => (requirement.affected_paths?.length || 0) > 0)
+  return group.requirements.some(requirement => requirement.affected_paths?.some(path =>
+    !/^\/(?:actions|init|teardown|config|parameters|data_sources)(?:\/|$)/.test(path)))
 }
 
 function initialDestinationChoices(groups: RequirementGroup[]): Record<string, DestinationChoice> {
@@ -558,6 +564,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const [applying, setApplying] = useState(false)
   const [error, setError] = useState('')
   const [credentialPage, setCredentialPage] = useState(0)
+  const [credentialSearch, setCredentialSearch] = useState('')
+  const [attentionOnly, setAttentionOnly] = useState(false)
+  const [pendingReuse, setPendingReuse] = useState<string | null>(null)
   const resetReviewIdentityRef = useRef(reviewIdentity)
   const credentialScopeIdentityRef = useRef(credentialScopeIdentity)
   const settledSourceSessionRef = useRef('')
@@ -615,6 +624,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         setSourceSessionUnavailable(false)
         setSourceSessionNotice('')
         setCredentialPage(0)
+        setPendingReuse(null)
+        setCredentialSearch('')
+        setAttentionOnly(false)
       }
       setApplying(false)
       setError('')
@@ -1293,7 +1305,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const reuseSets = new Map<string, RequirementGroup[]>()
   for (const group of groups) {
     const noun = credentialNoun(group.baseName)
-    if (!noun) continue
+    if (!noun || group.destinationClass === 'preserved') continue
     const key = `${noun}:${group.destinationClass}`
     const existing = reuseSets.get(key)
     if (existing) existing.push(group)
@@ -1310,6 +1322,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const applyNameToReuseSet = (group: RequirementGroup) => {
     const members = reuseSetFor(group)
     if (members.length === 0 || applying || disabled) return
+    if (pendingReuse !== group.key) { setPendingReuse(group.key); return }
+    setPendingReuse(null)
     const name = (names[group.key] ?? group.suggestedName).trim()
     if (!name) return
     const value = values[group.key] || ''
@@ -1375,10 +1389,16 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     effectiveDestinationChoice(group, destinationChoices) === 'preserve'
   )).length
   const providerLabel = scopedStoreProvider || 'project secret store'
-  const credentialPageCount = Math.max(1, Math.ceil(groups.length / CREDENTIAL_GROUP_PAGE_SIZE))
+  const filteredGroups = groups.filter(group => {
+    if (attentionOnly && effectiveDestinationChoice(group, destinationChoices) === 'preserve') return false
+    const search = credentialSearch.trim().toLowerCase()
+    return !search || group.requirements.some(requirement =>
+      [requirement.label, requirement.context, requirement.path, requirement.script_name, names[group.key], ...(requirement.affected_paths || [])].some(value => value?.toLowerCase().includes(search)))
+  }).sort((left, right) => Number(effectiveDestinationChoice(left, destinationChoices) === 'preserve') - Number(effectiveDestinationChoice(right, destinationChoices) === 'preserve'))
+  const credentialPageCount = Math.max(1, Math.ceil(filteredGroups.length / CREDENTIAL_GROUP_PAGE_SIZE))
   const safeCredentialPage = Math.min(credentialPage, credentialPageCount - 1)
   const credentialPageStart = safeCredentialPage * CREDENTIAL_GROUP_PAGE_SIZE
-  const visibleGroups = groups.slice(
+  const visibleGroups = filteredGroups.slice(
     credentialPageStart,
     credentialPageStart + CREDENTIAL_GROUP_PAGE_SIZE,
   )
@@ -1387,7 +1407,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     <section className="secret-binding-review credentials-card" aria-labelledby={titleId}>
       <div className="secret-binding-review-header">
         <div>
-          <h4 id={titleId}>Credentials ({groups.length})</h4>
+          <h4 id={titleId}>Credential groups ({groups.length})</h4>
+          <p>{requirements.length} protected occurrences. Preserved imported values are grouped only when verified equal by the server. Unresolved bindings are grouped by their proposed reference name.</p>
           <p>
             Choose how each imported credential is stored in the destination. A server-confirmed imported value can remain
             runnable as-is, or you can replace it with a <code>{'{{secret.NAME}}'}</code> project-secret reference and
@@ -1403,7 +1424,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
 
       <div className="credentials-card-summary" role="status">
         <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
-        <span>{prepared.configureLaterCount} to configure later</span>
+        <span>{prepared.configureLaterCount} to configure later (selected bindings only)</span>
         <span>{prepared.secrets.length} value{prepared.secrets.length === 1 ? '' : 's'} ready to create</span>
         <span>
           {scopedProbeState === 'loading'
@@ -1454,9 +1475,14 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       {sourceSessionNotice && <div className="secret-binding-review-error" role="alert">{sourceSessionNotice}</div>}
       {error && <div className="secret-binding-review-error" role="alert">{error}</div>}
 
+      <div className="credentials-review-filters">
+        <label>Search credential locations<input type="search" disabled={applying || disabled} value={credentialSearch} onChange={event => { setCredentialSearch(event.target.value); setCredentialPage(0) }} /></label>
+        <label><input type="checkbox" disabled={applying || disabled} checked={attentionOnly} onChange={event => { setAttentionOnly(event.target.checked); setCredentialPage(0) }} /> Show bindings needing review</label>
+      </div>
+      {filteredGroups.length === 0 && <p role="status">No credential groups match this filter.</p>}
       <ol className="secret-binding-review-list" start={credentialPageStart + 1}>
-        {visibleGroups.map((group, pageIndex) => {
-          const index = credentialPageStart + pageIndex
+        {visibleGroups.map((group) => {
+          const index = groups.indexOf(group)
           const inputId = `${idPrefix}-secret-binding-${index}`
           const nameErrorId = `${inputId}-name-error`
           const valueConflictErrorId = `${inputId}-value-conflict-error`
@@ -1518,8 +1544,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           const reuseSetSize = reuseSet.length
           const reuseNoun = credentialNoun(group.baseName)
           const reuseSetLabels = reuseSet
-            .map(member => member.requirements[0]?.label || member.suggestedName)
             .slice(0, 8)
+            .map(member => `${member.requirements[0]?.label || member.suggestedName} (${member.requirements.map(requirement => requirement.path).join(', ')})`)
 
           return (
             <li key={group.key} className="secret-binding-review-item">
@@ -1556,7 +1582,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                   hasAffectedSourcePaths={hasAffectedSourcePaths}
                 />
               </div>
-              <div className="secret-binding-review-control">
+              <details className="secret-binding-review-control" open={bindingSelected ? true : undefined}>
+                <summary>{bindingSelected ? 'Configure binding' : 'Preserved — review or change binding'}</summary>
                 <fieldset className="secret-binding-review-choice">
                   <legend>Destination handling</legend>
                   <label htmlFor={preserveId}>
@@ -1615,6 +1642,11 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                             ? 'Enter now or leave blank'
                             : 'Provider is read-only'}
                 />
+                {pendingReuse === group.key && <div role="alert">
+                  <p>This will replace the selected reference name and optional value in {reuseSetSize} groups. Inspect the affected locations below. Only continue if these locations intentionally share one credential.</p>
+                  <AffectedPathsDisclosure id={`${inputId}-reuse-scope`} paths={reuseSet.map(member => `${member.requirements[0]?.label || member.suggestedName}: ${member.requirements.map(requirement => requirement.path).join(', ')}`)} hasAffectedSourcePaths={false} />
+                  <button type="button" onClick={() => setPendingReuse(null)}>Cancel reuse</button>
+                </div>}
                 {reuseSetSize > 1 && (
                   <button
                     type="button"
@@ -1623,12 +1655,12 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                     onClick={() => applyNameToReuseSet(group)}
                     title={`Point these at one project secret: ${reuseSetLabels.join(', ')}. Do this only when they really are the same credential.`}
                   >
-                    Use this binding for all {reuseSetSize} {reuseNoun.toLowerCase()} locations
+                    {pendingReuse === group.key ? 'Confirm reuse across' : 'Review reuse across'} {reuseSetSize} {reuseNoun.toLowerCase()} groups
                   </button>
                 )}
                 {nameError && <span id={nameErrorId} className="secret-binding-review-field-error">{nameError}</span>}
                 {valueConflict && <span id={valueConflictErrorId} className="secret-binding-review-field-error">Reused names must use the same optional value.</span>}
-              </div>
+              </details>
             </li>
           )
         })}
@@ -1636,7 +1668,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       {credentialPageCount > 1 && (
         <nav className="secret-binding-review-pagination" aria-label="Credential review pages">
           <span aria-live="polite">
-            Showing credentials {credentialPageStart + 1}–{credentialPageStart + visibleGroups.length} of {groups.length}. Page {safeCredentialPage + 1} of {credentialPageCount}.
+            Showing credential groups {credentialPageStart + 1}–{credentialPageStart + visibleGroups.length} of {filteredGroups.length}. Page {safeCredentialPage + 1} of {credentialPageCount}.
           </span>
           <div role="group" aria-label="Credential page controls">
             <button

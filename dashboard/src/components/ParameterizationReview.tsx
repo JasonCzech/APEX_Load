@@ -214,7 +214,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
         <div>
           <h4>Parameterization Review{scriptName ? ` — ${scriptName}` : ''} ({suggestions.length})</h4>
           <p>
-            Detected values that should be parameterized before this script runs at load.
+            Suggestions to review before running at load. Confirm whether each value is test data, application configuration, or session data.
             High-confidence suggestions are pre-selected; review each row, then apply the selection.
           </p>
         </div>

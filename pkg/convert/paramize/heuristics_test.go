@@ -201,3 +201,14 @@ func TestSanitizeBodySecrets(t *testing.T) {
 		})
 	}
 }
+
+func TestOAuthApplicationIdentifiersAreNotPerUserData(t *testing.T) {
+	for _, key := range []string{"client_id", "client-id", "clientId", "CLIENT_ID", "oauth_client_id", "oauth2_client_id"} {
+		if LooksParameterName(key) {
+			t.Errorf("%q must not be varied per VUser", key)
+		}
+	}
+	if !LooksParameterName("customer_id") {
+		t.Fatal("business identifiers should remain candidates")
+	}
+}

@@ -24,7 +24,7 @@ test('transaction names survive archive import without requiring secret bindings
   await page.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
   await expect(page.getByRole('tabpanel', { name: 'DSL Preview' })).toContainText(label)
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/save')
-  await page.getByRole('button', { name: 'Save and Continue Importing', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Continue with Reviewed Draft', exact: true }).first().click()
   const savedResult = await json(await saved)
   const scriptId = (savedResult.scripts as { id: string }[])[0].id
   await expect(page.getByRole('button', { name: 'Import More Files', exact: true })).toBeVisible()

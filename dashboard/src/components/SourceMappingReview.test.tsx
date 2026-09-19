@@ -556,8 +556,8 @@ describe('SourceMappingReview', () => {
 
     const coverage = container.querySelector('.source-map-coverage')
     expect(coverage).not.toBeNull()
-    const converted = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Converted:')) as HTMLElement | undefined
-    const preserved = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Preserved:')) as HTMLElement | undefined
+    const converted = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Converted mappings:')) as HTMLElement | undefined
+    const preserved = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Preserved mappings:')) as HTMLElement | undefined
     const review = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Needs review:')) as HTMLElement | undefined
     const unsupported = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('Unsupported:')) as HTMLElement | undefined
     const withoutOrigin = Array.from(coverage?.querySelectorAll('.source-map-status') || []).find(pill => pill.textContent?.includes('DSL without source origin:')) as HTMLElement | undefined
@@ -699,7 +699,7 @@ describe('SourceMappingReview', () => {
       pill => pill.textContent?.includes('Unsupported:'),
     ) as HTMLButtonElement | undefined
     const convertedPill = Array.from(container.querySelectorAll('.source-map-status-filter')).find(
-      pill => pill.textContent?.includes('Converted:'),
+      pill => pill.textContent?.includes('Converted mappings:'),
     ) as HTMLButtonElement | undefined
 
     // Fixture has no unsupported mappings, so that pill is disabled.
@@ -830,7 +830,7 @@ describe('SourceMappingReview', () => {
     expect(container.querySelector('.source-map-header h4')).toBeNull()
     expect(container.querySelector('.source-map-header p')).toBeNull()
     expect(container.querySelector('.source-map-header')?.classList.contains('title-hidden')).toBe(true)
-    expect(container.querySelector('.source-map-header .source-map-coverage')?.textContent).toContain('Converted:')
+    expect(container.querySelector('.source-map-header .source-map-coverage')?.textContent).toContain('Converted mappings:')
     expect(Array.from(container.querySelectorAll('.source-map-header button')).some(
       button => button.textContent?.trim() === 'Expand workspace',
     )).toBe(true)
@@ -849,11 +849,11 @@ describe('SourceMappingReview', () => {
 
     expect(nonShrinkingSections).toContain('flex: 0 0 auto;')
     expect(headerControls).toContain('display: flex;')
-    expect(headerControls).toContain('flex-wrap: nowrap;')
+    expect(headerControls).toContain('flex-wrap: wrap;')
     expect(headerControls).toContain('align-items: center;')
     expect(hiddenTitleControls).toContain('justify-content: space-between;')
-    expect(coverageRule).toContain('flex-wrap: nowrap;')
-    expect(coverageRule).toContain('overflow-x: auto;')
+    expect(coverageRule).toContain('flex-wrap: wrap;')
+    expect(coverageRule).toContain('overflow: visible;')
     expect(coverageStatusRule).toContain('white-space: nowrap;')
     expect(stylesheet).toContain('.source-map-table-wrap {\n  display: block;\n  min-height: 120px;')
     expect(stylesheet).toContain('max-height: 220px;')

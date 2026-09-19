@@ -47,7 +47,7 @@
   background: var(--bg-secondary);
   color: var(--text-secondary);
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .replay-preflight-alerts {
@@ -65,7 +65,8 @@
 
 .replay-preflight-checks {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: start;
   gap: 8px;
 }
 
@@ -101,7 +102,7 @@
 .replay-preflight-check strong,
 .replay-preflight-check small {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.35;
   word-break: break-word;
 }
@@ -112,8 +113,11 @@
 
 .replay-preflight-card .replay-detail-label {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 @media (max-width: 600px) { .replay-preflight-header { flex-direction: column; } }
+
+.replay-preflight-check.fail { grid-column: 1 / -1; }
+.replay-preflight-alerts span { overflow-wrap: anywhere; max-width: 100%; }

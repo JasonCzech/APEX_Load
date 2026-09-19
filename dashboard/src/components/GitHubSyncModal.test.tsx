@@ -303,7 +303,7 @@ describe('GitHubSyncModal (import)', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(container.textContent).toContain('Credentials (1)')
+    expect(container.textContent).toContain('Credential groups (1)')
     expect(container.textContent).toContain('configure it later in Project Secrets')
     const bindingName = container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')
     expect(bindingName?.value).toBe('LOGIN_TOKEN')
@@ -580,7 +580,7 @@ describe('GitHubSyncModal (import)', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).not.toContain('Credentials (1)')
+    expect(container.textContent).not.toContain('Credential groups (1)')
     expect(container.textContent).not.toContain('LATE_TOKEN')
     expect(createBody).toBeNull()
   })
