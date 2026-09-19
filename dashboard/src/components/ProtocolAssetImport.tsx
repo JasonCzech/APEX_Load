@@ -2145,6 +2145,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
       <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
 
+      <details className="import-source-setup" open={!result}>
+        <summary>Source & conversion options — changing these requires a new review</summary>
       <div className="sample-import-card">
         <div className="sample-import-grid">
           <div className="sample-import-field sample-import-span-2">
@@ -2296,15 +2298,16 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
       <div className="sample-import-actions">
         {kind !== 'asyncapi' && (
-          <button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || sourceMutationLocked || !file}>
+          <details><summary>Advanced validation only</summary><p>Run the validator to inspect a draft without saving. Review its findings before choosing whether to save.</p><button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || sourceMutationLocked || !file}>
             {convertTask.pending && reviewMode === 'validation' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
-          </button>
+          </button></details>
         )}
         <button className="btn btn-primary btn-lg" onClick={() => handleConvert('conversion')} disabled={convertTask.pending || sourceMutationLocked || !file}>
-          {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Converting...</> : labels.button}
+          {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Inspecting...</> : 'Inspect & review'}
         </button>
       </div>
 
+      </details>
       {(messageError || convertTask.error) && <div className="sample-import-error" role="alert">{messageError || convertTask.error}</div>}
 
       {sourceImportSupportHasLimitations(sourceImportSupport) && (
@@ -2315,54 +2318,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       {result && reviewedScript && (
         <div className="sample-import-result">
           <ScriptImportReview
-            title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
-            reviewGeneration={reviewScope}
-            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the Script Library. Open a saved script above or import more files.' : `${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
-            saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to Script Library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace Script and Continue Importing' : 'Save and Continue Importing')}
-            script={reviewedScript}
-            warnings={result.warnings}
-            unsupportedElements={result.unsupported_elements}
-            diagnostics={result.diagnostics}
-            reviewSections={result.review_sections}
-            parameterization={asyncAPISelectedScriptSaved ? undefined : result.parameterization}
-            onParameterizationApplied={handleParameterizationApplied}
-            sharedValues={asyncAPISelectedScriptSaved ? undefined : result.shared_values}
-            sharedValueScripts={generatedScripts}
-            onSharedValuesApplied={handleSharedValuesApplied}
-            secretBindingRequirements={secretBindingRequirements}
-            sourceMigrationRequirements={asyncAPIArchiveSecretBindingRequirements}
-            preserveSourceSessionAfterApply={asyncAPIMultiScript && asyncAPIArchiveSecretBindingRequirements.length > secretBindingRequirements.length}
-            onSecretBindingsApply={handleSecretBindingsApply}
-            projectId={projectId}
-            sourceSecretSessionId={result.source_secret_session_id}
-            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
-            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
-            onSourceSecretSessionSettled={asyncAPIMultiScript ? handleSourceSecretSessionSettled : undefined}
-            protectedImportSessionExpiresAt={result.import_session_id ? result.expires_at : undefined}
-            importDraftExpiresAt={result.import_draft_expires_at}
-            credentialReviewRef={credentialReviewRef}
-            onCredentialsPreparedChange={handleCredentialsPreparedChange}
-            onReviewBusyChange={handleInternalReviewBusyChange}
-            onCredentialActionStart={captureProtectedSaveTarget}
-            saving={saveTask.pending || persistenceInProgress}
-            reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress}
-            saveDisabled={(Boolean(savedResult) && !asyncAPIMultiScript) || asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId)}
-            saveDisabledReason={savedResult && !asyncAPIMultiScript ? 'This import is already saved. Open it above or import more files.' : scriptImportSaveDisabledReason}
-            onSave={asyncAPIPrepareSelectedForBatch
-              ? handlePrepareAsyncAPICredentialsForBatch
-              : asyncAPIFinalCredentialBatchSave
-                ? handleSaveAllAsyncAPIScripts
-                : handleSave}
-            onEdit={onEdit && !savedResult && !asyncAPISelectedScriptSaved && generatedScripts.length === 1 ? handleEditReviewedScript : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
-            previewAside={kind === 'recorder-export'
-              ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
-              : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
-          >
-            {kind === 'recorder-export' && (
-              <RecorderStepMappingReview summary={result.summary as Record<string, unknown> | undefined} />
-            )}
-            {kind === 'asyncapi' && generatedScripts.length > 1 && (
+            tabbed
+            batchControls={<> {kind === 'asyncapi' && generatedScripts.length > 1 && (
               <div className="sample-import-review-block">
                 <h4>Generated Scripts</h4>
                 {generatedScripts.length > ASYNCAPI_SCRIPT_PAGE_SIZE && (
@@ -2430,6 +2387,59 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   </p>
                 )}
               </div>
+            )} </>}
+            runtimeContent={<ImportRuntimeOptions
+              draftScope={`${projectId || ''}:${kind}:${conversionScope}:${selectedScriptIndex}`}
+              script={reviewedScript}
+              onChange={handleRuntimeOptionsChanged}
+              disabled={importDraftExpired || asyncAPISelectedScriptSaved || saveTask.pending || persistenceInProgress}
+            />}
+            title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
+            reviewGeneration={reviewScope}
+            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the Script Library. Open a saved script above or import more files.' : `${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
+            saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to Script Library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace script' : 'Save draft')}
+            script={reviewedScript}
+            warnings={result.warnings}
+            unsupportedElements={result.unsupported_elements}
+            diagnostics={result.diagnostics}
+            reviewSections={result.review_sections}
+            parameterization={asyncAPISelectedScriptSaved ? undefined : result.parameterization}
+            onParameterizationApplied={handleParameterizationApplied}
+            sharedValues={asyncAPISelectedScriptSaved ? undefined : result.shared_values}
+            sharedValueScripts={generatedScripts}
+            onSharedValuesApplied={handleSharedValuesApplied}
+            secretBindingRequirements={secretBindingRequirements}
+            sourceMigrationRequirements={asyncAPIArchiveSecretBindingRequirements}
+            preserveSourceSessionAfterApply={asyncAPIMultiScript && asyncAPIArchiveSecretBindingRequirements.length > secretBindingRequirements.length}
+            onSecretBindingsApply={handleSecretBindingsApply}
+            projectId={projectId}
+            sourceSecretSessionId={result.source_secret_session_id}
+            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
+            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            onSourceSecretSessionSettled={asyncAPIMultiScript ? handleSourceSecretSessionSettled : undefined}
+            protectedImportSessionExpiresAt={result.import_session_id ? result.expires_at : undefined}
+            importDraftExpiresAt={result.import_draft_expires_at}
+            credentialReviewRef={credentialReviewRef}
+            onCredentialsPreparedChange={handleCredentialsPreparedChange}
+            onReviewBusyChange={handleInternalReviewBusyChange}
+            onCredentialActionStart={captureProtectedSaveTarget}
+            saving={saveTask.pending || persistenceInProgress}
+            reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress}
+            saveDisabled={(Boolean(savedResult) && !asyncAPIMultiScript) || asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId)}
+            saveDisabledReason={savedResult && !asyncAPIMultiScript ? 'This import is already saved. Open it above or import more files.' : scriptImportSaveDisabledReason}
+            onSave={asyncAPIPrepareSelectedForBatch
+              ? handlePrepareAsyncAPICredentialsForBatch
+              : asyncAPIFinalCredentialBatchSave
+                ? handleSaveAllAsyncAPIScripts
+                : handleSave}
+            onEdit={onEdit && !savedResult && !asyncAPISelectedScriptSaved && generatedScripts.length === 1 ? handleEditReviewedScript : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            previewAside={kind === 'recorder-export'
+              ? <SelectorCandidatesReview script={reviewedScript} onPromoteCandidate={handlePromoteRecorderCandidate} />
+              : sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
+          >
+            {kind === 'recorder-export' && (
+              <RecorderStepMappingReview summary={result.summary as Record<string, unknown> | undefined} />
             )}
             <div className="sample-import-stats-grid">
               {stats && Object.entries(stats).filter(([, value]) => typeof value === 'number').map(([key, value]) => (
@@ -2674,12 +2684,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 </div>
               </div>
             )}
-            <ImportRuntimeOptions
-              draftScope={`${projectId || ''}:${kind}:${conversionScope}:${selectedScriptIndex}`}
-              script={reviewedScript}
-              onChange={handleRuntimeOptionsChanged}
-              disabled={importDraftExpired || asyncAPISelectedScriptSaved || saveTask.pending || persistenceInProgress}
-            />
+
             {kind === 'har' && harSummary && (
               <div className="sample-import-review-block">
                 <h4>HAR Artifact Review</h4>

@@ -431,6 +431,17 @@ describe('BrunoImport', () => {
     vi.clearAllMocks()
   })
 
+  it('returns a newly inspected canonical candidate to Review', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    await act(async () => root.render(<BrunoImport initialFiles={[file]} projectId="project-1" />))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Inspect & review')!.click())
+    await act(async () => container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')!.click())
+    expect(container.querySelector('[role=tab][aria-label="DSL Preview"]')?.getAttribute('aria-selected')).toBe('true')
+    apiMock.inspectBrunoImport.mockResolvedValueOnce({ ...inspectionFixture(), import_session_id: 'session-2' })
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Re-inspect source')!.click())
+    expect(container.querySelector('[role=tab][aria-label="Review"]')?.getAttribute('aria-selected')).toBe('true')
+  })
+
   it('shows the actionable Windows protected-store requirement on inspect failure', async () => {
     const message = 'Protected imports on Windows require an artifact directory on a local fixed NTFS or ReFS volume. Network, removable, and unsupported filesystems are not accepted.'
     apiMock.inspectBrunoImport.mockRejectedValueOnce(new ApiError(message, 503, {
@@ -445,7 +456,7 @@ describe('BrunoImport', () => {
     })
 
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -494,7 +505,7 @@ describe('BrunoImport', () => {
         await Promise.resolve()
       })
       const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Inspect source'))
+        .find(button => button.textContent?.includes('Inspect & review'))
       await act(async () => {
         inspectButton?.click()
         await Promise.resolve()
@@ -502,7 +513,7 @@ describe('BrunoImport', () => {
       })
 
       const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+        .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
       expect(container.textContent).toContain('Bruno import session available until')
       expect(commitButton?.disabled).toBe(false)
 
@@ -532,7 +543,7 @@ describe('BrunoImport', () => {
         await Promise.resolve()
       })
       const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Inspect source'))
+        .find(button => button.textContent?.includes('Inspect & review'))
       await act(async () => {
         inspectButton?.click()
         await Promise.resolve()
@@ -541,7 +552,7 @@ describe('BrunoImport', () => {
 
       expect(container.querySelector('.secret-binding-review')).toBeNull()
       const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+        .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
       expect(commitButton?.disabled).toBe(false)
       await act(async () => {
         vi.advanceTimersByTime(1_001)
@@ -568,7 +579,7 @@ describe('BrunoImport', () => {
     })
 
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -578,7 +589,7 @@ describe('BrunoImport', () => {
     expect(container.querySelector('.secret-binding-review-item .script-health-token')?.textContent)
       .toBe('Preserved in script')
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(commitButton?.textContent).not.toContain('to configure')
     await act(async () => {
       commitButton?.click()
@@ -623,7 +634,7 @@ describe('BrunoImport', () => {
 
     expect(container.textContent).toContain('operator-managed key custody')
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     expect(inspectButton?.disabled).toBe(false)
   })
 
@@ -651,7 +662,7 @@ describe('BrunoImport', () => {
 
     expect(container.textContent).toContain('Set APEXLOAD_WRAPPING_MASTER_KEY')
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     expect(inspectButton?.disabled).toBe(true)
     await act(async () => {
       inspectButton?.click()
@@ -704,7 +715,7 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -718,7 +729,7 @@ describe('BrunoImport', () => {
     expect(credentialGuidance?.classList.contains('ready')).toBe(true)
     expect(credentialGuidance?.textContent).toContain('Credential handling is complete for 1 detected requirement.')
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -764,7 +775,7 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -777,7 +788,7 @@ describe('BrunoImport', () => {
     expect(credentialGuidance?.classList.contains('warning')).toBe(true)
     expect(credentialGuidance?.textContent).toContain('Destination choices are valid; 1 project secret must still be configured before execution.')
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(saveButton?.disabled).toBe(false)
     expect(saveButton?.textContent).toBe('Save 1 draft')
     expect(container.textContent).toContain('Credentials: 1 missing')
@@ -810,7 +821,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -913,7 +924,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1011,7 +1022,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1091,7 +1102,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1100,7 +1111,7 @@ describe('BrunoImport', () => {
     const valueInput = container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="password"]')!
     act(() => setInput(valueInput, 'write-only-value'))
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     await act(async () => {
       saveButton?.click()
       await new Promise(resolve => window.setTimeout(resolve, 0))
@@ -1162,7 +1173,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1222,7 +1233,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1298,7 +1309,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1360,7 +1371,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1380,7 +1391,7 @@ describe('BrunoImport', () => {
       .toBe('Configured')
 
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     await act(async () => {
       commitButton?.click()
       await Promise.resolve()
@@ -1405,7 +1416,7 @@ describe('BrunoImport', () => {
     })
     await act(async () => { await Promise.resolve() })
 
-    const inspectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect source'))
+    const inspectButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
@@ -1420,12 +1431,12 @@ describe('BrunoImport', () => {
     expect(container.textContent).toContain('source_credentials_sanitized')
     expect(container.textContent).toContain('Preflight requirements')
     expect(container.textContent).toContain('lossless')
-    const importHeader = container.querySelector('.bruno-import-header')
-    expect(importHeader?.nextElementSibling?.classList.contains('credentials-card')).toBe(true)
+    expect(container.querySelector('.credentials-card')).not.toBeNull()
+    expect(container.querySelector('[role=tablist]')?.textContent).toContain('Credentials')
     expect(container.textContent).not.toContain('Secret migration and bindings')
 
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(commitButton?.textContent).not.toContain('to configure')
     expect(commitButton?.disabled).toBe(false)
 
@@ -1527,7 +1538,7 @@ describe('BrunoImport', () => {
     })
 
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1540,27 +1551,27 @@ describe('BrunoImport', () => {
       run_options: undefined,
     }))
     const summaryTab = container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-summary')
-    const sourceApisTab = container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-source_apis')
+    const sourceApisTab = container.querySelector<HTMLButtonElement>('#bruno-api-selection-toggle')
     const credentialsTab = container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-credentials')
     const summaryPanel = container.querySelector<HTMLElement>('#bruno-inspection-panel-summary')
-    const sourceApisPanel = container.querySelector<HTMLElement>('#bruno-inspection-panel-source_apis')
+    const sourceApisPanel = container.querySelector<HTMLElement>('#bruno-api-selection')
     expect(summaryTab?.getAttribute('aria-selected')).toBe('true')
     expect(summaryTab?.tabIndex).toBe(0)
-    expect(sourceApisTab?.tabIndex).toBe(-1)
+    expect(sourceApisTab?.getAttribute('aria-expanded')).toBe('false')
     expect(summaryPanel?.hidden).toBe(false)
     expect(sourceApisPanel?.hidden).toBe(true)
 
     await act(async () => sourceApisTab?.click())
-    expect(summaryTab?.getAttribute('aria-selected')).toBe('false')
-    expect(summaryTab?.tabIndex).toBe(-1)
-    expect(sourceApisTab?.getAttribute('aria-selected')).toBe('true')
+    expect(summaryTab?.getAttribute('aria-selected')).toBe('true')
+    expect(summaryTab?.tabIndex).toBe(0)
+    expect(sourceApisTab?.getAttribute('aria-expanded')).toBe('true')
     expect(sourceApisTab?.tabIndex).toBe(0)
-    expect(summaryPanel?.hidden).toBe(true)
+    expect(summaryPanel?.hidden).toBe(false)
     expect(sourceApisPanel?.hidden).toBe(false)
 
-    sourceApisTab?.focus()
+    summaryTab?.focus()
     await act(async () => {
-      sourceApisTab?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+      summaryTab?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
     expect(credentialsTab?.getAttribute('aria-selected')).toBe('true')
     expect(credentialsTab?.tabIndex).toBe(0)
@@ -1582,7 +1593,7 @@ describe('BrunoImport', () => {
     act(() => setInput(nameInput!, ''))
 
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(saveButton?.disabled).toBe(true)
     const acknowledgement = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(input => input.getAttribute('aria-label') === 'Acknowledge Unsupported Bruno JavaScript for CTA/second.yml')
@@ -1639,7 +1650,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1694,7 +1705,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1702,7 +1713,7 @@ describe('BrunoImport', () => {
     })
 
     expect(container.querySelector('.bruno-native-table details')).not.toBeNull()
-    await act(async () => { container.querySelector<HTMLButtonElement>('#bruno-inspection-tab-source_apis')?.click() })
+    await act(async () => { container.querySelector<HTMLButtonElement>('#bruno-api-selection-toggle')?.click() })
     const reviewButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.bruno-native-review-button'))
     expect(reviewButtons).toHaveLength(2)
     expect(container.querySelectorAll('.bruno-native-inspect-button')).toHaveLength(0)
@@ -1829,7 +1840,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1976,7 +1987,7 @@ describe('BrunoImport', () => {
     })
 
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -1984,7 +1995,7 @@ describe('BrunoImport', () => {
     })
 
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(apiMock.createFolder).toHaveBeenCalledWith('project-1', { name: 'Editor Imports', category: 'scripts' })
     expect(saveButton?.disabled).toBe(false)
     expect(container.querySelector('#bruno-save-blockers')).toBeNull()
@@ -2020,7 +2031,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))!
+      .find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => {
       inspectButton.click()
       await Promise.resolve()
@@ -2029,7 +2040,7 @@ describe('BrunoImport', () => {
     const destination = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
       .find(select => select.parentElement?.textContent?.includes('Destination folder'))!
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))!
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))!
     expect(saveButton.disabled).toBe(false)
 
     const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -2157,7 +2168,7 @@ describe('BrunoImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Inspect source'))?.click()
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -2204,7 +2215,7 @@ describe('BrunoImport', () => {
       .some(button => button.textContent?.includes('Create and select folder'))).toBe(false)
 
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -2212,7 +2223,7 @@ describe('BrunoImport', () => {
     })
 
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     const blockers = container.querySelector<HTMLElement>('#bruno-save-blockers')
     expect(saveButton?.disabled).toBe(true)
     expect(saveButton?.getAttribute('aria-describedby')).toBe('bruno-save-blockers')
@@ -2271,7 +2282,7 @@ describe('BrunoImport', () => {
     const nativeMode = Array.from(container.querySelectorAll<HTMLInputElement>('input[name="bruno-output-mode"]'))
       .find(input => input.parentElement?.textContent?.includes('Native scripts per API'))
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Inspect source')
+      .find(button => button.textContent === 'Inspect & review')
     expect(nativeMode?.checked).toBe(true)
     expect(inspectButton?.disabled).toBe(false)
   })
@@ -2323,7 +2334,7 @@ describe('BrunoImport', () => {
     })
     expect(canonicalMode?.checked).toBe(true)
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Inspect source')
+      .find(button => button.textContent === 'Inspect & review')
     expect(inspectButton?.disabled).toBe(false)
   })
 
@@ -2349,7 +2360,7 @@ describe('BrunoImport', () => {
     expect(container.textContent).not.toContain('request.yml')
     expect(container.textContent).not.toContain('Detecting source type')
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Inspect source')
+      .find(button => button.textContent === 'Inspect & review')
     expect(inspectButton?.disabled).toBe(true)
   })
 
@@ -2464,14 +2475,14 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -2548,7 +2559,7 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -2561,7 +2572,7 @@ describe('BrunoImport', () => {
     await act(async () => migrationToggle?.click())
 
     const firstSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(firstSave?.disabled).toBe(false)
     await act(async () => {
       firstSave?.click()
@@ -2574,7 +2585,7 @@ describe('BrunoImport', () => {
     expect(container.textContent).toContain('Retained credentials: PASSWORD')
     expect(container.textContent).toContain('CTA/first.yml')
     const retrySave = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(retrySave?.disabled).toBe(false)
 
     await act(async () => {
@@ -2625,14 +2636,14 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -2704,14 +2715,14 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     await act(async () => {
       saveButton?.click()
       await Promise.resolve()
@@ -2757,7 +2768,7 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -2766,7 +2777,7 @@ describe('BrunoImport', () => {
 
     expect(container.textContent).toContain(message)
     const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(saveButton?.disabled).toBe(true)
     await act(async () => saveButton?.click())
     expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
@@ -2783,7 +2794,7 @@ describe('BrunoImport', () => {
 
     expect(container.textContent).toContain('folder service unavailable')
     const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspect?.click()
       await Promise.resolve()
@@ -2835,7 +2846,7 @@ describe('BrunoImport', () => {
       )
     })
     const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))!
+      .find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => {
       inspect.click()
       await Promise.resolve()
@@ -2844,7 +2855,7 @@ describe('BrunoImport', () => {
 
     expect(container.querySelector('#bruno-save-blockers')?.textContent).toMatch(/Select an existing destination folder|Create and select a destination folder|No destination folder is available/)
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(save?.disabled).toBe(true)
     expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
   })
@@ -2870,7 +2881,7 @@ describe('BrunoImport', () => {
     })
 
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -2896,8 +2907,8 @@ describe('BrunoImport', () => {
       setInput(bindingName!, 'EXPLICIT_PASSWORD')
     })
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
-    expect(commitButton?.textContent).toContain('with 1 secret to configure')
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+    expect(commitButton?.textContent).toBe('Save draft')
     await act(async () => {
       commitButton?.click()
       await Promise.resolve()
@@ -2934,7 +2945,7 @@ describe('BrunoImport', () => {
     })
     await act(async () => { await Promise.resolve() })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => { inspectButton?.click() })
     expect(apiMock.inspectBrunoImport).toHaveBeenCalledWith([firstFile], expect.any(Object))
 
@@ -2951,7 +2962,7 @@ describe('BrunoImport', () => {
     expect(container.textContent).toContain('second.yml')
     expect(container.textContent).not.toContain('Execute policy check')
     const currentInspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     expect(currentInspectButton?.disabled).toBe(false)
   })
 
@@ -2963,7 +2974,7 @@ describe('BrunoImport', () => {
     })
     await act(async () => { await Promise.resolve() })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => { inspectButton?.click() })
     await act(async () => {
       await Promise.resolve()
@@ -2971,7 +2982,7 @@ describe('BrunoImport', () => {
     })
 
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     expect(commitButton?.disabled).toBe(false)
 
     const statusResponse = {
@@ -3014,7 +3025,7 @@ describe('BrunoImport', () => {
     expect(apiMock.commitBrunoImport).not.toHaveBeenCalled()
     expect(container.textContent).toContain('second.yml')
     const currentInspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     expect(currentInspectButton?.disabled).toBe(false)
   })
 
@@ -3032,7 +3043,7 @@ describe('BrunoImport', () => {
     })
     await act(async () => { await Promise.resolve() })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -3047,7 +3058,7 @@ describe('BrunoImport', () => {
     })
     await act(async () => migrationToggle?.click())
     const commitButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => (button.textContent?.includes('Save and Continue Importing') || /^Save \d+ drafts?$/.test(button.textContent || '')))
+      .find(button => (button.textContent?.includes('Save draft') || /^Save \d+ drafts?$/.test(button.textContent || '')))
     await act(async () => {
       commitButton?.click()
       await Promise.resolve()
@@ -3060,7 +3071,7 @@ describe('BrunoImport', () => {
     expect(container.textContent).not.toContain('PASSWORD was created')
     expect(container.querySelector('.credentials-card')).toBeNull()
     const freshInspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     expect(freshInspectButton?.disabled).toBe(false)
   })
 
@@ -3104,7 +3115,7 @@ describe('BrunoImport', () => {
     })
 
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     expect(inspectButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Bruno import is disabled by an operator.')
     await act(async () => inspectButton?.click())
@@ -3199,7 +3210,7 @@ describe('BrunoImport', () => {
       }
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()
@@ -3234,7 +3245,7 @@ describe('BrunoImport', () => {
       await Promise.resolve()
     })
     const inspectButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect source'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       inspectButton?.click()
       await Promise.resolve()

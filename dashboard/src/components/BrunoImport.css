@@ -709,42 +709,6 @@
   font-family: var(--font-mono);
 }
 
-.bruno-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.bruno-tab {
-  appearance: none;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 8px 12px;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.bruno-tab[aria-selected="true"] {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
-  color: var(--text-primary);
-}
-
-.bruno-tab:focus-visible,
-.bruno-tab:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.bruno-tab[aria-selected="false"] {
-  box-shadow: none;
-}
-
 .bruno-tab-panel {
   display: block;
 }
@@ -1147,9 +1111,9 @@
 .bruno-data-review details button { margin: 6px; }
 .bruno-optional-values label { margin: 16px 0; }
 .bruno-import [role=tabpanel] { scroll-margin-top: 90px; }
-.bruno-import .bruno-tabs { position: sticky; top: 72px; z-index: 2; background: var(--bg-card); flex-wrap: wrap; }
+.bruno-import .import-review-tabs { position: sticky; top: 72px; z-index: 2; background: var(--bg-card); flex-wrap: wrap; }
 @container bruno-import (max-width: 700px) {
-  .bruno-import .bruno-tabs { position: static; }
+  .bruno-import .import-review-tabs { position: static; }
   .bruno-commit-bar { flex-direction: column; }
   .bruno-readiness { grid-template-columns: 1fr; }
 }

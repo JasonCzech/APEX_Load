@@ -143,7 +143,7 @@ describe('SampleScriptImport', () => {
     })
 
     const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Convert Sample'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       convert?.click()
       await Promise.resolve()
@@ -181,12 +181,12 @@ describe('SampleScriptImport', () => {
 
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert Sample'))?.click()
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
+        .find(button => button.textContent?.includes('Save draft'))?.click()
     })
     const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Order Flow Sample"]')
     await act(async () => {
@@ -220,12 +220,12 @@ describe('SampleScriptImport', () => {
 
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert Sample'))?.click()
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
+        .find(button => button.textContent?.includes('Save draft'))?.click()
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -259,12 +259,12 @@ describe('SampleScriptImport', () => {
     await act(async () => root.render(<SampleScriptImport projectId="project-1" />))
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert Sample'))?.click()
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
     const save = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save and Continue Importing'))
+      .find(button => button.textContent?.includes('Save draft'))
     await act(async () => save()?.click())
     await flushPromises()
     expect(container.textContent).toContain('sample batch response lost')
@@ -323,7 +323,7 @@ describe('SampleScriptImport', () => {
     })
     expect(pacingDelay.value).toBe('2.5')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -345,7 +345,9 @@ describe('SampleScriptImport', () => {
       }),
     }))
     expect(container.textContent).toContain('Review Generated Script')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('POST_v1_session')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     expect(container.textContent).toContain('Source Comparison')
     expect(container.textContent).toContain('rest_json_request')
     expect(container.textContent).toContain('actions[0]')
@@ -364,7 +366,7 @@ describe('SampleScriptImport', () => {
         ?.click()
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return
@@ -474,7 +476,7 @@ describe('SampleScriptImport', () => {
       <SampleScriptImport onImported={onImported} onEdit={onEdit} />,
     ))
     const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Convert Sample'))!
+      .find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convertButton.click())
     await flushPromises()
 
@@ -540,12 +542,12 @@ describe('SampleScriptImport', () => {
     await act(async () => {
       root.render(<SampleScriptImport />)
     })
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))
     expect(save?.disabled).toBe(false)
     await act(async () => save?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
@@ -553,6 +555,7 @@ describe('SampleScriptImport', () => {
     expect(apiMock.applySecretBindings).toHaveBeenCalledWith(expect.objectContaining({
       bindings: [{ requirement_id: 'login-auth', secret_name: 'LOGIN_TOKEN' }],
     }))
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('{{secret.LOGIN_TOKEN}}')
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({
@@ -576,10 +579,10 @@ describe('SampleScriptImport', () => {
     apiMock.applySecretBindings.mockReturnValueOnce(new Promise(resolve => { resolveApply = resolve }))
 
     await act(async () => root.render(<SampleScriptImport />))
-    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Sample'))!
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convertButton.click())
     await flushPromises()
-    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))!
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))!
     act(() => saveButton.click())
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
@@ -592,6 +595,7 @@ describe('SampleScriptImport', () => {
       await Promise.resolve()
     })
 
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('Generation B')
     expect(container.textContent).not.toContain('Resolved A')
     expect(apiMock.createScript).not.toHaveBeenCalled()
@@ -611,10 +615,10 @@ describe('SampleScriptImport', () => {
     expect(bindingInput).not.toBeNull()
     await act(async () => setControlValue(bindingInput!, 'SAMPLE_LOGIN_PASSWORD'))
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     await act(async () => saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
@@ -636,11 +640,12 @@ describe('SampleScriptImport', () => {
     expect(headersInput).not.toBeNull()
     await act(async () => setControlValue(headersInput!, '{"Authorization":"Bearer pasted-token"}'))
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
     expect(apiMock.importSample).not.toHaveBeenCalled()
     expect(container.textContent).toContain('Default header Authorization is sensitive')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('{{secret.NAME}}')
   })
 
@@ -690,7 +695,7 @@ describe('SampleScriptImport', () => {
       includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -758,7 +763,7 @@ describe('SampleScriptImport', () => {
       root.render(<SampleScriptImport projectId="project-1" />)
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -771,7 +776,7 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('Missing asset')
     expect(container.textContent).toContain('0/1 ready')
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing')) as HTMLButtonElement | undefined
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft')) as HTMLButtonElement | undefined
     expect(saveButton?.disabled).toBe(true)
 
     const uploadInput = container.querySelector('input[aria-label="Upload asset for upload_bin"]') as HTMLInputElement | null
@@ -811,7 +816,7 @@ describe('SampleScriptImport', () => {
     // HAR is now an accepted Java-over-HTTP source format.
     expect(container.textContent).toContain('HAR / HAR Entry')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -840,7 +845,7 @@ describe('SampleScriptImport', () => {
         ?.click()
     })
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return
@@ -896,7 +901,7 @@ describe('SampleScriptImport', () => {
     expect(formatSelect.value).toBe('raw_http')
     expect(container.textContent).toContain('promoted to the `java_http` protocol')
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -906,7 +911,7 @@ describe('SampleScriptImport', () => {
 
     expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({ format: 'raw_http' }))
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -946,7 +951,7 @@ describe('SampleScriptImport', () => {
       root.render(<SampleScriptImport preset="java-http" />)
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -969,7 +974,7 @@ describe('SampleScriptImport', () => {
       root.render(<SampleScriptImport projectId="project-1" />)
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return

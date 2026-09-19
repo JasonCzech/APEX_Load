@@ -101,6 +101,7 @@ test('[U06] malformed OpenAPI can be replaced and validated without creating a l
   await file.setInputFiles({ name: 'broken.yaml', mimeType: 'text/yaml', buffer: Buffer.from('openapi: [broken') })
   await controls.getByRole('textbox', { name: 'Script Name' }).fill('Recovery_Import')
   const failed = mutation(page, 'POST', '/api/v1/scripts/import/openapi')
+  await controls.getByText('Advanced validation only', { exact: true }).click()
   await controls.getByRole('button', { name: 'Validate Only' }).click()
   expect((await failed).ok()).toBe(false)
   await expect(page.locator('.sample-import-error')).toBeVisible()

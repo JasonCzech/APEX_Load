@@ -778,7 +778,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Convert k6 Script'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       convert?.click()
       await Promise.resolve()
@@ -829,7 +829,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert OpenAPI'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) {
       return
@@ -860,6 +860,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Needs attention')
     expect(container.textContent).toContain('Data source readiness')
     expect(container.textContent).toContain('missing file bytes')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     expect(container.textContent).toContain('Source Comparison')
     expect(container.textContent).toContain('POST /orders')
     expect(container.textContent).toContain('actions[0]')
@@ -969,7 +970,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert OpenAPI'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
@@ -980,7 +981,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))
+      .find(button => button.textContent?.includes('Save draft'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1060,14 +1061,14 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert OpenAPI'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
     expect(container.textContent).toContain('Preserved in script')
     expect(container.textContent).toContain('0 bindings need setup')
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === 'Save and Continue Importing')
+      .find(button => button.textContent?.trim() === 'Save draft')
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1160,7 +1161,7 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert OpenAPI'))
+        .find(button => button.textContent?.includes('Inspect & review'))
         ?.click()
     })
     await flushPromises()
@@ -1245,12 +1246,12 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Postman Collection'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))
+      .find(button => button.textContent?.includes('Save draft'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1263,8 +1264,8 @@ describe('ProtocolAssetImport', () => {
   })
 
   it.each([
-    { kind: 'openapi' as const, convertLabel: 'Convert OpenAPI', fileName: 'target.yaml' },
-    { kind: 'postman' as const, convertLabel: 'Convert Postman Collection', fileName: 'target.json' },
+    { kind: 'openapi' as const, convertLabel: 'Inspect & review', fileName: 'target.yaml' },
+    { kind: 'postman' as const, convertLabel: 'Inspect & review', fileName: 'target.json' },
   ])('freezes the $kind replace target before deferred credential preparation', async ({ kind, convertLabel, fileName }) => {
     const reviewedScript = {
       name: `Protected ${kind} target`,
@@ -1347,7 +1348,7 @@ describe('ProtocolAssetImport', () => {
       targetSelect.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Replace Script and Continue Importing with 1 secret to configure'))!
+      .find(button => button.textContent?.includes('Replace script'))!
     act(() => save.click())
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
@@ -1375,8 +1376,8 @@ describe('ProtocolAssetImport', () => {
   })
 
   it.each([
-    { kind: 'openapi' as const, convertLabel: 'Convert OpenAPI', fileName: 'large.yaml' },
-    { kind: 'postman' as const, convertLabel: 'Convert Postman Collection', fileName: 'large.json' },
+    { kind: 'openapi' as const, convertLabel: 'Inspect & review', fileName: 'large.yaml' },
+    { kind: 'postman' as const, convertLabel: 'Inspect & review', fileName: 'large.json' },
   ])('pages and searches the $kind replacement library on the server', async ({ kind, convertLabel, fileName }) => {
     const reviewedScript = {
       name: `Imported ${kind}`,
@@ -1473,13 +1474,13 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert OpenAPI'))
+        .find(button => button.textContent?.includes('Inspect & review'))
         ?.click()
     })
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save and Continue Importing'))
+      .find(button => button.textContent?.includes('Save draft'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1506,13 +1507,13 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert OpenAPI'))
+        .find(button => button.textContent?.includes('Inspect & review'))
         ?.click()
     })
     await flushPromises()
 
     const findSave = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save and Continue Importing'))
+      .find(button => button.textContent?.includes('Save draft'))
     await act(async () => findSave()?.click())
     await flushPromises()
     await flushPromises()
@@ -1550,13 +1551,13 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert Postman Collection'))
+        .find(button => button.textContent?.includes('Inspect & review'))
         ?.click()
     })
     await flushPromises()
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save and Continue Importing'))
+      .find(button => button.textContent?.includes('Save draft'))
     expect(save).toBeDefined()
     await act(async () => save?.click())
     await flushPromises()
@@ -1577,7 +1578,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert OpenAPI'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
@@ -1589,7 +1590,7 @@ describe('ProtocolAssetImport', () => {
       if (thinkTimeInput) setInputValue(thinkTimeInput, '1750')
     })
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Save and Continue Importing'))
+      .find(button => button.textContent?.includes('Save draft'))
     await act(async () => save?.click())
     await flushPromises()
 
@@ -1760,7 +1761,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert OpenAPI'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -1782,7 +1783,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const disabledReplace = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Replace Script'))!
+      .find(button => button.textContent?.includes('Replace script'))!
     expect(disabledReplace.disabled).toBe(true)
     const disabledReasonId = disabledReplace.getAttribute('aria-describedby')
     expect(disabledReasonId).toBeTruthy()
@@ -1802,7 +1803,7 @@ describe('ProtocolAssetImport', () => {
     })
     expect(container.querySelector('.script-import-review-save-disabled-reason')).toBeNull()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace Script'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace script'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -1862,7 +1863,7 @@ describe('ProtocolAssetImport', () => {
       includeStatic.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -1904,7 +1905,7 @@ describe('ProtocolAssetImport', () => {
 
     expect(container.textContent).toContain('comparison.har is 51.0 MB; imports are limited')
     await act(async () => {
-      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
@@ -1931,7 +1932,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     expect(container.textContent).toContain('notes.txt is not a supported har file')
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     expect((convertButton as HTMLButtonElement | undefined)?.disabled).toBe(true)
     expect(apiMock.importHAR).not.toHaveBeenCalledWith(file, expect.anything())
@@ -1959,7 +1960,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-	    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+	    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -2020,7 +2021,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert RAML'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -2099,7 +2100,7 @@ describe('ProtocolAssetImport', () => {
       setInputValue(subjectInput, 'orders-value')
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -2209,7 +2210,7 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput!, 'files', { configurable: true, value: [file] })
       fileInput!.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
@@ -2217,7 +2218,7 @@ describe('ProtocolAssetImport', () => {
     await act(async () => jmsTab?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
     expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain('Orders JMS')
-    const primarySave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts Atomically with 1 secret to configure'))
+    const primarySave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts Atomically'))
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts with 1 secret to configure'))
     expect(primarySave?.disabled).toBe(false)
     expect(saveAll?.disabled).toBe(false)
@@ -2235,6 +2236,7 @@ describe('ProtocolAssetImport', () => {
       script_index: 1,
       bindings: [{ requirement_id: 'jms-password', secret_name: 'JMS_PASSWORD' }],
     })
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('{{secret.JMS_PASSWORD}}')
     expect(apiMock.createProjectSecrets).toHaveBeenCalledTimes(1)
     expect(container.textContent).not.toContain('write-only-jms-password')
@@ -2332,7 +2334,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
@@ -2381,7 +2383,7 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['asyncapi: 3.0.0'], 'two.yaml')] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))!
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convert.click())
     await flushPromises()
 
@@ -2438,7 +2440,7 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['asyncapi: 3.0.0'], 'source-secrets.yaml')] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))!
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convert.click())
     await flushPromises()
 
@@ -2491,7 +2493,7 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['asyncapi: 3.0.0'], 'many.yaml')] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))!
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convert.click())
     await flushPromises()
 
@@ -2550,7 +2552,7 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert AsyncAPI'))?.click()
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
@@ -2668,12 +2670,13 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert AsyncAPI'))?.click()
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
     expect(container.textContent).toContain('credential-preserving import draft has expired')
     expect(container.textContent).not.toContain('operator-known-password')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('[protected imported value]')
     const saveSelected = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Save Selected Script'))!
@@ -2739,7 +2742,7 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -2799,7 +2802,7 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -2869,7 +2872,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
@@ -2926,7 +2929,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert AsyncAPI'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts'))!
@@ -2987,7 +2990,7 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert AsyncAPI'))?.click()
+        .find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
     await act(async () => {
@@ -3122,7 +3125,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Convert Postman Collection'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => convertButton?.click())
     await flushPromises()
 
@@ -3204,7 +3207,7 @@ describe('ProtocolAssetImport', () => {
       collectionInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Postman Collection'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -3221,7 +3224,7 @@ describe('ProtocolAssetImport', () => {
     })
 
     const disabledReplace = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Replace Script'))!
+      .find(button => button.textContent?.includes('Replace script'))!
     expect(disabledReplace.disabled).toBe(true)
     const disabledReasonId = disabledReplace.getAttribute('aria-describedby')
     expect(disabledReasonId).toBeTruthy()
@@ -3237,7 +3240,7 @@ describe('ProtocolAssetImport', () => {
     })
     expect(container.querySelector('.script-import-review-save-disabled-reason')).toBeNull()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace Script'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Replace script'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -3289,7 +3292,7 @@ describe('ProtocolAssetImport', () => {
       collectionInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Convert Postman Collection'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => convertButton?.click())
     await flushPromises()
 
@@ -3344,7 +3347,7 @@ describe('ProtocolAssetImport', () => {
       collectionInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Postman Collection'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -3352,7 +3355,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -3414,7 +3417,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Recording'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -3425,6 +3428,7 @@ describe('ProtocolAssetImport', () => {
 
     expect(apiMock.importBrowserRecording).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
     expect(container.textContent).toContain('Review Generated Script')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     expect(container.textContent).toContain('Selector Candidates')
     expect(container.textContent).toContain("[data-testid='login-btn']")
     expect(container.textContent).toContain('role=button[name="Sign in"]')
@@ -3455,7 +3459,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Recording'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -3463,6 +3467,7 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     const useFallback = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Use')
     expect(useFallback).toBeDefined()
     if (!useFallback) return
@@ -3471,7 +3476,7 @@ describe('ProtocolAssetImport', () => {
     })
     expect(container.textContent).toContain('Selector updated in the draft')
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
     if (!saveButton) return
     await act(async () => {
@@ -3568,7 +3573,7 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert Recording'))
+        .find(button => button.textContent?.includes('Inspect & review'))
         ?.click()
     })
     await flushPromises()
@@ -3603,7 +3608,7 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert Recording'))
+        .find(button => button.textContent?.includes('Inspect & review'))
         ?.click()
     })
     await flushPromises()
@@ -3643,7 +3648,7 @@ describe('ProtocolAssetImport', () => {
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Convert Recording'))
+        .find(button => button.textContent?.includes('Inspect & review'))
         ?.click()
     })
     await flushPromises()
@@ -3705,7 +3710,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Recording'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
@@ -3765,7 +3770,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Recording'))?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))?.click()
     })
     await flushPromises()
 
@@ -3776,7 +3781,7 @@ describe('ProtocolAssetImport', () => {
     await act(async () => complete.click())
     expect(container.textContent).toContain('Replay validation passed')
 
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))!
     await act(async () => save.click())
     await flushPromises()
     await flushPromises()
@@ -3819,16 +3824,17 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'recorder.json')] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Recording'))!
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convert.click())
     await flushPromises()
 
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     const useFallback = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Use')!
     await act(async () => useFallback.click())
     const draftToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(input => input.parentElement?.textContent?.includes('Save as draft needing replay review'))!
     await act(async () => draftToggle.click())
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))!
     await act(async () => save.click())
     await flushPromises()
     await flushPromises()
@@ -3843,7 +3849,7 @@ describe('ProtocolAssetImport', () => {
     const resolvedDraftToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(input => input.parentElement?.textContent?.includes('Save as draft needing replay review'))!
     await act(async () => resolvedDraftToggle.click())
-    const resolvedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
+    const resolvedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))!
     await act(async () => resolvedSave.click())
     await flushPromises()
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledWith(expect.objectContaining({
@@ -3878,10 +3884,10 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['export default function() {}'], 'retry.js')] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert k6 Script'))!
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convert.click())
     await flushPromises()
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))!
     act(() => save.click())
     await flushPromises()
     expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(1)
@@ -3892,7 +3898,7 @@ describe('ProtocolAssetImport', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
-    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
+    const retry = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))!
     await act(async () => retry.click())
     await flushPromises()
 
@@ -3909,9 +3915,10 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'recorder.json')] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Recording'))!
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convert.click())
     await flushPromises()
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     const useFallback = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Use')!
     await act(async () => useFallback.click())
     const edit = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Open Draft in Visual Editor'))!
@@ -3981,7 +3988,7 @@ describe('ProtocolAssetImport', () => {
       transformToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert OpenAPI'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -4025,7 +4032,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert WSDL'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
 
@@ -4046,6 +4053,7 @@ describe('ProtocolAssetImport', () => {
     await act(async () => reviewDetails.click())
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('WSDL Operations')
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('GetAccount')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     expect(container.textContent).toContain('Source Comparison')
   })
   it('imports k6 scripts through the shared protocol asset flow', async () => {
@@ -4063,7 +4071,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert k6 Script'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -4117,7 +4125,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Inspect CloudTest Export'))!
+      .find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => inspect.click())
     await flushPromises()
 
@@ -4179,16 +4187,17 @@ describe('ProtocolAssetImport', () => {
       Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert k6 Script'))!
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Inspect & review'))!
     await act(async () => convertButton.click())
     await flushPromises()
-    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))!
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save draft'))!
     act(() => saveButton.click())
     await flushPromises()
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
 
     await act(async () => convertButton.click())
     await flushPromises()
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('Generation B')
     await act(async () => {
       resolveApply?.({
@@ -4199,6 +4208,7 @@ describe('ProtocolAssetImport', () => {
       await Promise.resolve()
     })
 
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('Generation B')
     expect(container.textContent).not.toContain('Resolved A')
     expect(apiMock.createScript).not.toHaveBeenCalled()
@@ -4223,7 +4233,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Capture'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -4251,7 +4261,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Broker Config'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {
@@ -4279,7 +4289,7 @@ describe('ProtocolAssetImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
 
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert HAR'))
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     expect(convertButton).toBeDefined()
     if (!convertButton) return
     await act(async () => {

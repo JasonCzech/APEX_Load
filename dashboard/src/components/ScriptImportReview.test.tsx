@@ -70,7 +70,30 @@ describe('ScriptImportReview', () => {
     container.remove()
   })
 
-  it('exports every generated action with credentials protected before saving', async () => {
+  it('retains LoadRunner section navigation when a compact review supplies preview data', () => {
+    act(() => root.render(<ScriptImportReview compactReview title="LoadRunner review" script={script} previewData={script} />))
+    const section = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Section'))!
+    expect(section).toBeDefined()
+    act(() => { section.value = 'config'; section.dispatchEvent(new Event('change', { bubbles: true })) })
+    const preview = container.querySelector('.script-import-review-preview')!.textContent
+    expect(preview).toContain('"config"')
+    expect(preview).toContain('https://api.example.test')
+    expect(container.querySelector('pre')!.textContent).not.toContain('Create Order')
+  })
+
+  it('redacts arbitrary credential paths in the correct multi-script preview', () => {
+    act(() => root.render(<ScriptImportReview tabbed title="Batch review" script={script}
+      previewData={{ scripts: [script, { ...script, config: { base_url: '', custom: 'batch-secret-canary' } }] }}
+      secretBindingRequirements={[{ id: 'custom', path: '/config/custom', context: 'Batch credential', label: 'Custom credential', suggested_name: 'CUSTOM', script_index: 1 }]} />))
+    expect(container.querySelector('.script-import-review-preview')).toBeNull()
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="DSL Preview"]')!.click())
+    const preview = container.querySelector('.script-import-review-preview')!.textContent
+    expect(preview).not.toContain('batch-secret-canary')
+    expect(preview).toContain('[protected imported value]')
+    expect(preview).toContain('Imported API Script')
+  })
+
+  it.each([false, true])('exports every generated action with credentials protected before saving (compact %s)', async (compact) => {
     const actions = Array.from({ length: 1500 }, (_, index) => ({ name: `Request ${index}`, type: 'request', target: '/orders', headers: { Authorization: 'Bearer private-token' }, params: { args: ['opaque-private'], call_args: [{ value: 'opaque-private' }] }, metadata: { raw_source: 'web_add_header("Cookie","opaque-private")' } }))
     actions[0].target = 'https://user:embedded-private@example.test/orders'
     actions[1].target = 'https://other:unclassified-private@example.test/orders'
@@ -81,8 +104,8 @@ describe('ScriptImportReview', () => {
     URL.revokeObjectURL = vi.fn()
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     try {
-      act(() => root.render(<ScriptImportReview title="Review" script={{ ...script, init: [actions[1]], actions }} secretBindingRequirements={[{ id: 'target-secret', path: '/actions/0/target', label: 'Request target', context: 'Request', suggested_name: 'AUTH', destination_value_preserved: true }]} />))
-      expect(container.textContent).toContain('1501 total actions (1 initialization, 1500 main, 0 teardown)')
+      act(() => root.render(<ScriptImportReview compactReview={compact} previewData={compact ? script : undefined} title="Review" script={{ ...script, init: [actions[1]], actions }} secretBindingRequirements={[{ id: 'target-secret', path: '/actions/0/target', label: 'Request target', context: 'Request', suggested_name: 'AUTH', destination_value_preserved: true }]} />))
+      if (!compact) expect(container.textContent).toContain('1501 total actions (1 initialization, 1500 main, 0 teardown)')
       expect(container.textContent).toContain('Preview truncated')
       expect(container.textContent).not.toContain('embedded-private')
       expect(container.textContent).not.toContain('unclassified-private')

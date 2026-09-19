@@ -33,7 +33,7 @@ test('source catalog search and importer guidance stay consistent across formats
     await expect(guide).toBeVisible()
     await expect(guide.locator('[aria-current="step"]')).toContainText('Provide source')
     if (query === 'JMeter') {
-      const action = page.getByRole('button', { name: 'Convert JMeter Plan' })
+      const action = page.getByRole('button', { name: 'Inspect & review' })
       const coverageButton = page.getByRole('button', { name: 'Import Coverage', exact: true })
       expect(await action.evaluate((button, trigger) => Boolean(trigger && (button.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING)), await coverageButton.elementHandle())).toBe(true)
       await coverageButton.click()
@@ -91,7 +91,43 @@ test('HAR comparison can be removed and upload errors recover accessibly', async
   await expect(page.getByRole('button', { name: 'Drop an optional comparison HAR file here' })).toBeVisible()
   // Real validation must leave the library untouched, even when no entries can convert.
   const validation = mutation(page, 'POST', '/api/v1/scripts/import/har')
+  await page.getByText('Advanced validation only', { exact: true }).click()
   await page.getByRole('button', { name: 'Validate Only' }).click()
   await validation
   expect((await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`))).scripts).toHaveLength(0)
+})
+
+test('JMeter review uses the shared six tabs and retains project scope during upload', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find a source format' }).fill('JMeter')
+  await page.locator('.script-create-option').click()
+  const controls = page.getByRole('group', { name: 'Script import controls' })
+  await controls.locator('input[type=file]').setInputFiles({
+    name: 'review.jmx', mimeType: 'application/xml', buffer: Buffer.from(`<?xml version="1.0"?><jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3"><hashTree><TestPlan testname="Review" enabled="true"/><hashTree><ThreadGroup testname="Orders" enabled="true"><stringProp name="ThreadGroup.num_threads">2</stringProp></ThreadGroup><hashTree><HTTPSamplerProxy testname="Get orders" enabled="true"><stringProp name="HTTPSampler.domain">example.invalid</stringProp><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.path">/orders</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`),
+  })
+  const response = mutation(page, 'POST', '/api/v1/scripts/import/jmeter')
+  await controls.getByRole('button', { name: 'Inspect & review', exact: true }).click()
+  const imported = await response
+  expect(imported.ok(), await imported.text()).toBeTruthy()
+  const tabs = controls.getByRole('tablist', { name: 'Import review sections' })
+  const labels = ['Review', 'Credentials', 'Data & parameters', 'Runtime & source settings', 'DSL Preview', 'Source Mapping']
+  await expect(tabs.getByRole('tab')).toHaveCount(6)
+  for (const label of labels) {
+    const tab = tabs.getByRole('tab', { name: label, exact: true })
+    await tab.click()
+    await expect(tab).toHaveAttribute('aria-selected', 'true')
+    await expect(controls.getByRole('tabpanel', { name: label, exact: true })).toBeVisible()
+  }
+  await tabs.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
+  await expect(controls.getByRole('tabpanel')).toContainText('Get orders')
+  await tabs.getByRole('tab', { name: 'Review', exact: true }).click()
+  await expect(controls.locator('.import-source-setup')).not.toHaveAttribute('open')
+  await page.screenshot({ path: testInfo.outputPath('jmeter-six-tab-review.png'), fullPage: true })
+  await page.setViewportSize({ width: 760, height: 900 })
+  await expect(tabs.getByRole('tab', { name: 'Source Mapping', exact: true })).toBeVisible()
+  await page.screenshot({ path: testInfo.outputPath('jmeter-narrow-review.png'), fullPage: true })
 })

@@ -179,12 +179,14 @@ export async function importOpenAPI(page: Page, name: string, target: string) {
   const spec = { openapi: '3.0.3', info: { title: name, version: '1.0' }, servers: [{ url: target }], paths: { '/orders': { get: { operationId: 'listOrders', responses: { '200': { description: 'Orders' } } } } } }
   await controls.locator('input[type=file]').setInputFiles({ name: 'orders.openapi.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(spec)) })
   await controls.getByRole('textbox', { name: 'Script Name' }).fill(name)
+  await controls.getByText('Advanced validation only', { exact: true }).click()
   await controls.getByRole('button', { name: 'Validate Only' }).click()
   await expect(controls.getByText(/dry-run validation; nothing has been saved/i)).toBeVisible()
-  await controls.getByRole('button', { name: 'Convert OpenAPI' }).click()
+  await controls.locator('.import-source-setup > summary').click()
+  await controls.getByRole('button', { name: 'Inspect & review' }).click()
   await expect(controls.getByRole('heading', { name: 'Review Generated Script' })).toBeVisible()
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/openapi/commit')
-  await controls.getByRole('button', { name: 'Save and Continue Importing' }).click()
+  await controls.getByRole('button', { name: 'Save draft' }).click()
   const scriptId = idOf(await json(await saved), 'stored_script')
   await controls.getByRole('button', { name: `Open ${name} in Visual Editor`, exact: true }).click()
   return scriptId

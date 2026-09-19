@@ -1,3 +1,4 @@
+import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import TabList from './ux/TabList'
@@ -87,7 +88,7 @@ type RunOptions = {
 }
 
 type OutputMode = 'canonical' | 'native_requests'
-type BrunoInspectionTab = 'summary' | 'source_apis' | 'credentials' | 'data' | 'import'
+type BrunoInspectionTab = 'summary' | 'source_apis' | 'credentials' | 'data' | 'import' | 'runtime' | 'dsl' | 'source'
 type NativeCandidateSortKey = 'sequence' | 'source' | 'script' | 'request' | 'status' | 'details'
 type FolderCreationAccess = 'checking' | 'allowed' | 'denied' | 'unavailable'
 
@@ -114,11 +115,12 @@ const NATIVE_FINDING_PAGE_SIZE = 100
 const COLLECTION_TREE_PAGE_SIZE = 100
 const MAX_DETAILED_REVIEW_FINDING_BLOCKERS = 10
 const BRUNO_INSPECTION_TABS: ReadonlyArray<{ id: BrunoInspectionTab; label: string }> = [
-  { id: 'summary', label: 'Summary' },
-  { id: 'source_apis', label: 'APIs' },
+  { id: 'summary', label: 'Review' },
   { id: 'credentials', label: 'Credentials' },
-  { id: 'data', label: 'Data' },
-  { id: 'import', label: 'Review & save' },
+  { id: 'data', label: 'Data & parameters' },
+  { id: 'runtime', label: 'Runtime & source settings' },
+  { id: 'dsl', label: 'DSL Preview' },
+  { id: 'source', label: 'Source Mapping' },
 ]
 
 function splitList(value: string) {
@@ -629,6 +631,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
   const [nativeReviewCandidateId, setNativeReviewCandidateId] = useState<string | null>(null)
   const [nativeSourceCandidateId, setNativeSourceCandidateId] = useState<string | null>(null)
+  const [canonicalTab, setCanonicalTab] = useState<ImportReviewTab>('review')
   const [activeInspectionTab, setActiveInspectionTab] = useState<BrunoInspectionTab>('summary')
   const [migrateSecrets, setMigrateSecrets] = useState(false)
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
@@ -649,7 +652,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [setupOpen, setSetupOpen] = useState(false)
   const [apiSearch, setApiSearch] = useState('')
   const [apiFilter, setApiFilter] = useState('all')
-  const goToReviewTab = (tab: BrunoInspectionTab) => {
+  const [apiSelectionOpen, setAPISelectionOpen] = useState(false)
+  const [evidenceCandidateId, setEvidenceCandidateId] = useState('')
+  const goToReviewTab = (requested: BrunoInspectionTab) => {
+    if (requested === 'source_apis') { setAPISelectionOpen(true); requestAnimationFrame(() => document.getElementById('bruno-api-selection')?.focus()); return }
+    const tab = requested === 'import' ? 'summary' : requested
     setActiveInspectionTab(tab)
     requestAnimationFrame(() => document.getElementById(`bruno-inspection-tab-${tab}`)?.focus())
   }
@@ -710,8 +717,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   }, [])
 
   useEffect(() => {
-    if (!inspection?.import_session_id || outputMode !== 'native_requests') return
+    if (!inspection?.import_session_id) return
     setActiveInspectionTab('summary')
+    setCanonicalTab('review')
   }, [inspection?.import_session_id, outputMode])
 
   useEffect(() => {
@@ -1055,12 +1063,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const canCommit = Boolean(inspection) && saveBlockers.length === 0
   const commitActionLabel = outputMode === 'native_requests'
     ? `Save ${selectedNativeCandidates.length} draft${selectedNativeCandidates.length === 1 ? '' : 's'}`
-    : syncScriptId ? 'Synchronize Bruno source and Continue Importing' : 'Save and Continue Importing'
-  const commitButtonLabel = loading
-    ? 'Committing…'
-    : outputMode === 'canonical' && deferredSecretCount > 0
-      ? `${commitActionLabel} with ${deferredSecretCount} ${deferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
-      : commitActionLabel
+    : syncScriptId ? 'Synchronize Bruno source' : 'Save draft'
+  const commitButtonLabel = loading ? 'Saving…' : commitActionLabel
   const developerBlocked = outputMode === 'canonical' && sandbox === 'developer' && support && !support.developer_execution_enabled
 
   useEffect(() => {
@@ -1487,24 +1491,6 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         {onClose && <button className="btn btn-secondary" onClick={close}>Back</button>}
       </header>
 
-      {!isNativeInspectionMode && requirements.length > 0 && !committed && (
-        <SecretBindingReview
-          ref={credentialReviewRef}
-          requirements={credentialRequirements}
-          reviewGeneration={credentialReviewIdentity}
-          disabled={loading || creatingFolder || parameterizationApplying || protectedSessionExpired}
-          projectId={projectId}
-          sourceSecretSessionExpiresAt={inspection?.expires_at}
-          sourceMigrationAllowed={sourceMigrationAvailable}
-          externalSourceMigrationSelected={migrateSecrets}
-          onExternalSourceMigrationChange={setMigrateSecrets}
-          onApply={applyCredentialBindings}
-          onPreparedChange={setPreparedSecrets}
-          onRequirementDestinationStateChange={setCredentialDestinationState}
-          onProjectSecretsConfigured={handleProjectSecretsConfigured}
-        />
-      )}
-
       {!isNativeInspectionMode && projectSecretsConfiguredForReview && !committed && (
         <div className="bruno-preflight" role="status">
           Project-secret values configured during this review remain in Project Secrets independently of script saving.
@@ -1521,17 +1507,6 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         >
           {protectedSessionLabel}
         </div>
-      )}
-
-      {outputMode === 'canonical' && inspection?.result.output_mode === 'canonical' && inspection.parameterization && inspection.parameterization.suggestions.length > 0 && !committed && (
-        <ParameterizationReview
-          parameterization={inspection.parameterization}
-          script={inspection.result.script}
-          reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
-          disabled={loading}
-          onApplyingChange={setParameterizationApplying}
-          onApplied={applyParameterization}
-        />
       )}
 
       {error && (!inspection || committed) && <div className="settings-error" role="alert">{error}</div>}
@@ -1808,7 +1783,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 		  </div>
         )}
         <button className="btn btn-primary" disabled={!canInspect} onClick={() => void inspect()}>
-          {modeDetectionPending ? 'Detecting source type…' : loading ? 'Inspecting…' : inspection ? 'Re-inspect source' : 'Inspect source'}
+          {modeDetectionPending ? 'Detecting source type…' : loading ? 'Inspecting…' : inspection ? 'Re-inspect source' : 'Inspect & review'}
         </button>
       </section>
 
@@ -1822,136 +1797,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                 <div><strong>Needed to save</strong><div className="bruno-review-toolbar"><button type="button" className="btn btn-secondary" onClick={() => { setSetupOpen(true); requestAnimationFrame(() => document.getElementById('bruno-destination-folder')?.focus()) }}>Choose destination</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('source_apis')}>Select APIs</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Review {unacknowledgedFindingIds.length} acknowledgements</button></div></div>
                 <div><strong>Needed before replay</strong><div className="bruno-review-toolbar"><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('credentials')}>Credentials: {deferredSecretCount} missing{!credentialsValid ? ' · review pending' : ''}</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('data')}>Inputs: {selectedNativeMissingVariables.length} unresolved</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Conversions: {nativeReviewFindingIds.length} to repair</button></div></div>
               </section>
-              <TabList className="bruno-tabs" role="tablist" aria-label="Bruno native inspection panels" onKeyDown={handleTabKey}>
-                {BRUNO_INSPECTION_TABS.map((tab, index) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    id={`bruno-inspection-tab-${tab.id}`}
-                    role="tab"
-                    aria-label={tab.label}
-                    className="bruno-tab"
-                    aria-selected={activeInspectionTab === tab.id}
-                    aria-controls={`bruno-inspection-panel-${tab.id}`}
-                    tabIndex={activeInspectionTab === tab.id ? 0 : -1}
-                    onClick={() => setActiveInspectionTab(tab.id)}
-                    onKeyDown={event => {
-                      let nextIndex: number
-                      switch (event.key) {
-                        case 'ArrowRight':
-                          nextIndex = (index + 1) % BRUNO_INSPECTION_TABS.length
-                          break
-                        case 'ArrowLeft':
-                          nextIndex = (index - 1 + BRUNO_INSPECTION_TABS.length) % BRUNO_INSPECTION_TABS.length
-                          break
-                        case 'Home':
-                          nextIndex = 0
-                          break
-                        case 'End':
-                          nextIndex = BRUNO_INSPECTION_TABS.length - 1
-                          break
-                        default:
-                          return
-                      }
-                      event.preventDefault()
-                      const nextTab = BRUNO_INSPECTION_TABS[nextIndex]
-                      setActiveInspectionTab(nextTab.id)
-                      document.getElementById(`bruno-inspection-tab-${nextTab.id}`)?.focus()
-                    }}
-                  >
-                    {tab.label}{tab.id !== 'summary' && <span aria-hidden="true" className="bruno-tab-count"> {tab.id === 'source_apis' ? selectedNativeCandidates.length : tab.id === 'credentials' ? deferredSecretCount : tab.id === 'data' ? selectedNativeMissingVariables.length : unacknowledgedFindingIds.length}</span>}
-                  </button>
-                ))}
-              </TabList>
-
+              <button type="button" className="btn btn-secondary" id="bruno-api-selection-toggle" aria-expanded={apiSelectionOpen} aria-controls="bruno-api-selection" onClick={() => setAPISelectionOpen(value => !value)}>APIs ({selectedNativeCandidates.length} selected) — {apiSelectionOpen ? 'hide selection' : 'change selection'}</button>
               <section
                   className="bruno-tab-panel"
-                  role="tabpanel"
-                  id="bruno-inspection-panel-summary"
-                  aria-labelledby="bruno-inspection-tab-summary"
-                  hidden={activeInspectionTab !== 'summary'}
-                >
-                  <section className="bruno-summary-grid">
-                    <article className="bruno-card">
-                      <h3>Collection</h3>
-                      <strong>{inspection.result.collection.name}</strong>
-                      <p>{inspection.result.fidelity.executable_items} requests detected · {inspection.result.fidelity.preserved_apps} Bruno Apps preserved</p>
-                      <CollectionTree items={inspection.result.collection.items} />
-                    </article>
-                    <article className="bruno-card">
-                      <h3>Fidelity and capabilities</h3>
-                      <dl className="bruno-details">
-                        <div><dt>Selected native conversion</dt><dd>{nativeReviewFindingIds.length ? "Review required" : "No conversion review gates"}</dd></div><div><dt>Source bundle preservation</dt><dd>{inspection.result.fidelity.status}</dd></div>
-                        <div><dt>Compatibility</dt><dd>{inspection.result.fidelity.compatibility}</dd></div>
-                        <div><dt>Bundle</dt><dd>{formatBytes(inspection.result.manifest.total_bytes)}</dd></div>
-                        <div><dt>Requests</dt><dd>{inspection.result.capabilities.request_types.join(', ') || 'None'}</dd></div>
-                        <div><dt>Required sandbox</dt><dd>{inspection.result.capabilities.required_sandbox}</dd></div>
-                      </dl>
-                      <div className="bruno-capability-list">
-                        {inspection.result.capabilities.has_javascript && <span>JavaScript</span>}
-                        {inspection.result.capabilities.has_npm_dependencies && <span>npm dependencies</span>}
-                        {inspection.result.capabilities.has_local_modules && <span>local modules</span>}
-                        {inspection.result.capabilities.has_file_bodies && <span>file bodies</span>}
-                        {inspection.result.capabilities.has_certificates && <span>certificates</span>}
-                        {inspection.result.capabilities.has_bruno_apps && <span>Bruno Apps</span>}
-                      </div>
-                    </article>
-                  </section>
-                  <section className="bruno-card bruno-validation-guidance" aria-labelledby="bruno-validation-guidance-title">
-                    <div className="bruno-card-heading">
-                      <div>
-                        <h3 id="bruno-validation-guidance-title">Recommended configuration</h3>
-                        <p>Based on the validated source, complete these choices in order.</p>
-                      </div>
-                    </div>
-                    <ol>
-                      <li className={selectedNativeCandidates.length > 0 ? 'ready' : 'warning'}>
-                        <strong>Script selection</strong>
-                        <span>Keep all {nativeCandidates.length} APIs selected unless you intentionally want a partial import.</span>
-                      </li>
-                      <li className={destinationFolderId ? 'ready' : 'warning'}>
-                        <strong>Destination</strong>
-                        <span>{destinationFolderId
-                          ? `Save the batch in ${selectedDestinationFolderLabel || 'the selected script folder'}.`
-                          : 'Create or select a script folder; native batches cannot be saved to the project root.'}</span>
-                      </li>
-                      <li className={credentialsReadyForExecution ? 'ready' : 'warning'}>
-                        <strong>Credentials</strong>
-                        <span>{requirements.length === 0
-                          ? 'No credential bindings are required.'
-                          : !credentialsValid
-                            ? `Review ${requirements.length} detected credential requirement${requirements.length === 1 ? '' : 's'}. Keep preserved source values for exact replay, or explicitly bind them to project secrets.`
-                            : deferredSecretCount > 0
-                              ? `Destination choices are valid; ${deferredSecretCount} project secret${deferredSecretCount === 1 ? '' : 's'} must still be configured before execution. Saving now is allowed.`
-                              : `Credential handling is complete for ${requirements.length} detected requirement${requirements.length === 1 ? '' : 's'}.`}</span>
-                      </li>
-                      <li className={selectedNativeMissingVariables.length === 0 ? 'ready' : 'warning'}>
-                        <strong>Runtime variables</strong>
-                        <span>{selectedNativeMissingVariables.length === 0
-                          ? 'All referenced variables resolve from the imported source.'
-                          : `Configure ${selectedNativeMissingVariables.length} unresolved variable${selectedNativeMissingVariables.length === 1 ? '' : 's'} before execution. Saving is allowed, but replay remains blocked.`}</span>
-                      </li>
-                      <li className={unacknowledgedFindingIds.length === 0 ? 'ready' : 'warning'}>
-                        <strong>Review findings</strong>
-                        <span>{unacknowledgedFindingIds.length === 0
-                          ? 'No outstanding acknowledgement is required.'
-                          : `Read and acknowledge ${unacknowledgedFindingIds.length} finding${unacknowledgedFindingIds.length === 1 ? '' : 's'} before saving.`}</span>
-                      </li>
-                    </ol>
-                  </section>
-
-                  <details className="bruno-card"><summary>Automatically handled source protection</summary>
-                    <p>These events describe source sanitization. Credential values still needed before replay are listed in Credentials.</p>
-                    <div className="bruno-findings">{(inspection.result.security_findings || []).filter(finding => !finding.code.includes('review_required')).map(finding => <div className="bruno-finding" key={`${finding.code}-${finding.path || ''}`}><span>{finding.summary}</span><details><summary>Technical detail</summary><code>{finding.code}</code>{finding.path && <p>{finding.path}</p>}</details></div>)}</div>
-                  </details>
-              </section>
-
-              <section
-                  className="bruno-tab-panel"
-                  role="tabpanel"
-                  id="bruno-inspection-panel-source_apis"
-                  aria-labelledby="bruno-inspection-tab-source_apis"
-                  hidden={activeInspectionTab !== 'source_apis'}
+                  role="region"
+                  id="bruno-api-selection" tabIndex={-1}
+                  aria-label="API selection"
+                  hidden={!apiSelectionOpen}
                 >
                   <article className="bruno-card bruno-native-review">
                     <div className="bruno-card-heading">
@@ -2105,60 +1957,128 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   </article>
               </section>
 
-              <section
-                  className="bruno-tab-panel"
-                  role="tabpanel"
-                  id="bruno-inspection-panel-credentials"
-                  aria-labelledby="bruno-inspection-tab-credentials"
-                  hidden={activeInspectionTab !== 'credentials'}
-                >
-                  {!committed && (
-                    <>
-                      <h3>Credentials</h3>
-                      <p>Configure missing values now, or configure later — replay stays blocked until the selected bindings have usable values.</p>
-                      {onConfigureSecrets && projectId && <button className="btn btn-secondary" type="button" onClick={() => onConfigureSecrets(projectId)}>Open Project Secrets</button>}
-                      <SecretBindingReview
-                        ref={credentialReviewRef}
-                        requirements={credentialRequirements}
-                        reviewGeneration={credentialReviewIdentity}
-                        disabled={loading || creatingFolder || parameterizationApplying || protectedSessionExpired}
-                        projectId={projectId}
-                        sourceSecretSessionExpiresAt={inspection?.expires_at}
-                        sourceMigrationAllowed={sourceMigrationAvailable}
-                        externalSourceMigrationSelected={migrateSecrets}
-                        onExternalSourceMigrationChange={setMigrateSecrets}
-                        onApply={applyCredentialBindings}
-                        onPreparedChange={setPreparedSecrets}
-                        onRequirementDestinationStateChange={setCredentialDestinationState}
-                        onProjectSecretsConfigured={handleProjectSecretsConfigured}
-                      />
-                      {projectSecretsConfiguredForReview && (
-                        <div className="bruno-preflight" role="status">
-                          Project-secret values configured during this review remain in Project Secrets independently of script saving.
-                          {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
-                        </div>
-                      )}
-                    </>
-                  )}
-              </section>
+              <TabList className="import-review-tabs" role="tablist" aria-label="Bruno native inspection panels" onKeyDown={handleTabKey}>
+                {BRUNO_INSPECTION_TABS.map((tab, index) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    id={`bruno-inspection-tab-${tab.id}`}
+                    role="tab"
+                    aria-label={tab.label}
+                    aria-selected={activeInspectionTab === tab.id}
+                    aria-controls={`bruno-inspection-panel-${tab.id}`}
+                    tabIndex={activeInspectionTab === tab.id ? 0 : -1}
+                    onClick={() => setActiveInspectionTab(tab.id)}
+                    onKeyDown={event => {
+                      let nextIndex: number
+                      switch (event.key) {
+                        case 'ArrowRight':
+                          nextIndex = (index + 1) % BRUNO_INSPECTION_TABS.length
+                          break
+                        case 'ArrowLeft':
+                          nextIndex = (index - 1 + BRUNO_INSPECTION_TABS.length) % BRUNO_INSPECTION_TABS.length
+                          break
+                        case 'Home':
+                          nextIndex = 0
+                          break
+                        case 'End':
+                          nextIndex = BRUNO_INSPECTION_TABS.length - 1
+                          break
+                        default:
+                          return
+                      }
+                      event.preventDefault()
+                      const nextTab = BRUNO_INSPECTION_TABS[nextIndex]
+                      setActiveInspectionTab(nextTab.id)
+                      document.getElementById(`bruno-inspection-tab-${nextTab.id}`)?.focus()
+                    }}
+                  >
+                    {tab.label}{['summary', 'credentials', 'data'].includes(tab.id) && <span aria-hidden="true" className="bruno-tab-count"> {tab.id === 'credentials' ? deferredSecretCount : tab.id === 'data' ? selectedNativeMissingVariables.length : unacknowledgedFindingIds.length}</span>}
+                  </button>
+                ))}
+              </TabList>
 
               <section
                   className="bruno-tab-panel"
                   role="tabpanel"
-                  id="bruno-inspection-panel-data"
-                  aria-labelledby="bruno-inspection-tab-data"
-                  hidden={activeInspectionTab !== 'data'}
+                  id="bruno-inspection-panel-summary"
+                  aria-labelledby="bruno-inspection-tab-summary"
+                  hidden={activeInspectionTab !== 'summary'}
                 >
-                  {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired} />}
-              </section>
+                  <section className="bruno-summary-grid">
+                    <article className="bruno-card">
+                      <h3>Collection</h3>
+                      <strong>{inspection.result.collection.name}</strong>
+                      <p>{inspection.result.fidelity.executable_items} requests detected · {inspection.result.fidelity.preserved_apps} Bruno Apps preserved</p>
+                      <CollectionTree items={inspection.result.collection.items} />
+                    </article>
+                    <article className="bruno-card">
+                      <h3>Fidelity and capabilities</h3>
+                      <dl className="bruno-details">
+                        <div><dt>Selected native conversion</dt><dd>{nativeReviewFindingIds.length ? "Review required" : "No conversion review gates"}</dd></div><div><dt>Source bundle preservation</dt><dd>{inspection.result.fidelity.status}</dd></div>
+                        <div><dt>Compatibility</dt><dd>{inspection.result.fidelity.compatibility}</dd></div>
+                        <div><dt>Bundle</dt><dd>{formatBytes(inspection.result.manifest.total_bytes)}</dd></div>
+                        <div><dt>Requests</dt><dd>{inspection.result.capabilities.request_types.join(', ') || 'None'}</dd></div>
+                        <div><dt>Required sandbox</dt><dd>{inspection.result.capabilities.required_sandbox}</dd></div>
+                      </dl>
+                      <div className="bruno-capability-list">
+                        {inspection.result.capabilities.has_javascript && <span>JavaScript</span>}
+                        {inspection.result.capabilities.has_npm_dependencies && <span>npm dependencies</span>}
+                        {inspection.result.capabilities.has_local_modules && <span>local modules</span>}
+                        {inspection.result.capabilities.has_file_bodies && <span>file bodies</span>}
+                        {inspection.result.capabilities.has_certificates && <span>certificates</span>}
+                        {inspection.result.capabilities.has_bruno_apps && <span>Bruno Apps</span>}
+                      </div>
+                    </article>
+                  </section>
+                  <section className="bruno-card bruno-validation-guidance" aria-labelledby="bruno-validation-guidance-title">
+                    <div className="bruno-card-heading">
+                      <div>
+                        <h3 id="bruno-validation-guidance-title">Recommended configuration</h3>
+                        <p>Based on the validated source, complete these choices in order.</p>
+                      </div>
+                    </div>
+                    <ol>
+                      <li className={selectedNativeCandidates.length > 0 ? 'ready' : 'warning'}>
+                        <strong>Script selection</strong>
+                        <span>Keep all {nativeCandidates.length} APIs selected unless you intentionally want a partial import.</span>
+                      </li>
+                      <li className={destinationFolderId ? 'ready' : 'warning'}>
+                        <strong>Destination</strong>
+                        <span>{destinationFolderId
+                          ? `Save the batch in ${selectedDestinationFolderLabel || 'the selected script folder'}.`
+                          : 'Create or select a script folder; native batches cannot be saved to the project root.'}</span>
+                      </li>
+                      <li className={credentialsReadyForExecution ? 'ready' : 'warning'}>
+                        <strong>Credentials</strong>
+                        <span>{requirements.length === 0
+                          ? 'No credential bindings are required.'
+                          : !credentialsValid
+                            ? `Review ${requirements.length} detected credential requirement${requirements.length === 1 ? '' : 's'}. Keep preserved source values for exact replay, or explicitly bind them to project secrets.`
+                            : deferredSecretCount > 0
+                              ? `Destination choices are valid; ${deferredSecretCount} project secret${deferredSecretCount === 1 ? '' : 's'} must still be configured before execution. Saving now is allowed.`
+                              : `Credential handling is complete for ${requirements.length} detected requirement${requirements.length === 1 ? '' : 's'}.`}</span>
+                      </li>
+                      <li className={selectedNativeMissingVariables.length === 0 ? 'ready' : 'warning'}>
+                        <strong>Runtime variables</strong>
+                        <span>{selectedNativeMissingVariables.length === 0
+                          ? 'All referenced variables resolve from the imported source.'
+                          : `Configure ${selectedNativeMissingVariables.length} unresolved variable${selectedNativeMissingVariables.length === 1 ? '' : 's'} before execution. Saving is allowed, but replay remains blocked.`}</span>
+                      </li>
+                      <li className={unacknowledgedFindingIds.length === 0 ? 'ready' : 'warning'}>
+                        <strong>Review findings</strong>
+                        <span>{unacknowledgedFindingIds.length === 0
+                          ? 'No outstanding acknowledgement is required.'
+                          : `Read and acknowledge ${unacknowledgedFindingIds.length} finding${unacknowledgedFindingIds.length === 1 ? '' : 's'} before saving.`}</span>
+                      </li>
+                    </ol>
+                  </section>
 
-              <section
-                  className="bruno-tab-panel"
-                  role="tabpanel"
-                  id="bruno-inspection-panel-import"
-                  aria-labelledby="bruno-inspection-tab-import"
-                  hidden={activeInspectionTab !== 'import'}
-                >
+                  <details className="bruno-card"><summary>Automatically handled source protection</summary>
+                    <p>These events describe source sanitization. Credential values still needed before replay are listed in Credentials.</p>
+                    <div className="bruno-findings">{(inspection.result.security_findings || []).filter(finding => !finding.code.includes('review_required')).map(finding => <div className="bruno-finding" key={`${finding.code}-${finding.path || ''}`}><span>{finding.summary}</span><details><summary>Technical detail</summary><code>{finding.code}</code>{finding.path && <p>{finding.path}</p>}</details></div>)}</div>
+                  </details>
+
                   {nativeReviewFindingIds.length > 0 && (
                     <section className="bruno-card bruno-native-acknowledgements">
                       <h4>Review-gated conversions</h4>
@@ -2233,6 +2153,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                         </nav>
                       )}
                     </section>
+
+
+
+
                   )}
 
                   {!committed && (
@@ -2267,9 +2191,63 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     </section>
                   )}
               </section>
+              <section
+                  className="bruno-tab-panel"
+                  role="tabpanel"
+                  id="bruno-inspection-panel-credentials"
+                  aria-labelledby="bruno-inspection-tab-credentials"
+                  hidden={activeInspectionTab !== 'credentials'}
+                >
+                  {!committed && (
+                    <>
+                      <h3>Credentials</h3>
+                      <p>Configure missing values now, or configure later — replay stays blocked until the selected bindings have usable values.</p>
+                      {onConfigureSecrets && projectId && <button className="btn btn-secondary" type="button" onClick={() => onConfigureSecrets(projectId)}>Open Project Secrets</button>}
+                      <SecretBindingReview
+                        ref={credentialReviewRef}
+                        requirements={credentialRequirements}
+                        reviewGeneration={credentialReviewIdentity}
+                        disabled={loading || creatingFolder || parameterizationApplying || protectedSessionExpired}
+                        projectId={projectId}
+                        sourceSecretSessionExpiresAt={inspection?.expires_at}
+                        sourceMigrationAllowed={sourceMigrationAvailable}
+                        externalSourceMigrationSelected={migrateSecrets}
+                        onExternalSourceMigrationChange={setMigrateSecrets}
+                        onApply={applyCredentialBindings}
+                        onPreparedChange={setPreparedSecrets}
+                        onRequirementDestinationStateChange={setCredentialDestinationState}
+                        onProjectSecretsConfigured={handleProjectSecretsConfigured}
+                      />
+                      {projectSecretsConfiguredForReview && (
+                        <div className="bruno-preflight" role="status">
+                          Project-secret values configured during this review remain in Project Secrets independently of script saving.
+                          {' '}If script saving fails, retrying this save reuses those configured values. Any atomic-save promise on this page applies to scripts, not external secret-store writes.
+                        </div>
+                      )}
+                    </>
+                  )}
+              </section>
+
+              <section
+                  className="bruno-tab-panel"
+                  role="tabpanel"
+                  id="bruno-inspection-panel-data"
+                  aria-labelledby="bruno-inspection-tab-data"
+                  hidden={activeInspectionTab !== 'data'}
+                >
+                  {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired} />}
+              </section>
+              {(['runtime', 'dsl', 'source'] as const).map(section => <section key={section} className="bruno-tab-panel" role="tabpanel" id={`bruno-inspection-panel-${section}`} aria-labelledby={`bruno-inspection-tab-${section}`} hidden={activeInspectionTab !== section}>
+                {activeInspectionTab === section && (section === 'runtime' ? <><h3>Runtime & source settings</h3><p>Native scripts use converted HTTP settings. Source preservation does not establish runtime parity. Review conversion requirements before replay.</p><p>Detected request types: {inspection.result.capabilities.request_types.join(', ') || 'None'}. Required sandbox for canonical replay: {inspection.result.capabilities.required_sandbox}.</p><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('summary')}>Review migration requirements</button><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button></> : <>
+                  <label>API evidence<select value={nativeCandidates.some(candidate => candidate.candidate_id === evidenceCandidateId) ? evidenceCandidateId : nativeCandidates[0]?.candidate_id || ''} onChange={event => setEvidenceCandidateId(event.target.value)}>{nativeCandidates.map(candidate => <option key={candidate.candidate_id} value={candidate.candidate_id}>{candidate.source_path}</option>)}</select></label>
+                  {(() => { const candidate = nativeCandidates.find(item => item.candidate_id === evidenceCandidateId) || nativeCandidates[0]; if (!candidate) return <p>No API evidence was generated.</p>; return section === 'dsl' ? <><p>Redacted inspection draft. Pending input and credential choices apply when saving.</p><SourceCodeViewer ariaLabel="Bruno DSL preview" sourcePath="draft.json" value={JSON.stringify(candidate.script, null, 2)} /></> : <><p>Source provenance for {candidate.source_path}. This inventory is not a line-by-line parity guarantee.</p><button type="button" className="btn btn-secondary" onClick={() => setNativeSourceCandidateId(candidate.candidate_id)}>Inspect sanitized source</button><SourceCodeViewer ariaLabel="Bruno source mappings" sourcePath="source-mappings.json" value={JSON.stringify(candidate.source_mappings || [], null, 2)} /></> })()}
+                </>)}
+              </section>)}
             </>
           ) : (
-            <>
+            <ImportReviewTabs active={canonicalTab} onChange={setCanonicalTab} counts={{ credentials: deferredSecretCount, data: inspection.result.missing_variables?.length || 0 }}>
+            <p role="status">Saving preserves a draft; controlled replay remains required. {deferredSecretCount} secrets still need configuration before replay.</p>
+            <div hidden={canonicalTab !== 'review'}>
               <section className="bruno-summary-grid">
                 <article className="bruno-card">
                   <h3>Collection</h3>
@@ -2315,7 +2293,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
               {(inspection.result.missing_variables || []).length > 0 && (
                 <section className="bruno-card">
                   <h3>Preflight requirements</h3>
-                  <p>These values were referenced but not defined in the uploaded source. Supply them above under Collection Values, through Bruno environments, or through APEX runtime bindings before execution.</p>
+                  <p>These values were referenced but not defined in the uploaded source. Supply them in Data & parameters, through Bruno environments, or through APEX runtime bindings before execution.</p>
                   <div className="bruno-capability-list">
                     {(inspection.result.missing_variables || []).map(variable => <span key={variable}>{variable}</span>)}
                   </div>
@@ -2376,7 +2354,46 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   </button>
                 </section>
               )}
-            </>
+            </div>
+            <div hidden={canonicalTab !== 'credentials'}>
+      {!isNativeInspectionMode && requirements.length > 0 && !committed && (
+        <SecretBindingReview
+          ref={credentialReviewRef}
+          requirements={credentialRequirements}
+          reviewGeneration={credentialReviewIdentity}
+          disabled={loading || creatingFolder || parameterizationApplying || protectedSessionExpired}
+          projectId={projectId}
+          sourceSecretSessionExpiresAt={inspection?.expires_at}
+          sourceMigrationAllowed={sourceMigrationAvailable}
+          externalSourceMigrationSelected={migrateSecrets}
+          onExternalSourceMigrationChange={setMigrateSecrets}
+          onApply={applyCredentialBindings}
+          onPreparedChange={setPreparedSecrets}
+          onRequirementDestinationStateChange={setCredentialDestinationState}
+          onProjectSecretsConfigured={handleProjectSecretsConfigured}
+        />
+      )}
+
+              {requirements.length === 0 && <p>No unresolved credential bindings were reported.</p>}
+            </div>
+            <div hidden={canonicalTab !== 'data'}>
+      {outputMode === 'canonical' && inspection?.result.output_mode === 'canonical' && inspection.parameterization && inspection.parameterization.suggestions.length > 0 && !committed && (
+        <ParameterizationReview
+          parameterization={inspection.parameterization}
+          script={inspection.result.script}
+          reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
+          disabled={loading}
+          onApplyingChange={setParameterizationApplying}
+          onApplied={applyParameterization}
+        />
+      )}
+
+              <h3>Required runtime inputs</h3><p>{inspection.result.missing_variables?.length ? inspection.result.missing_variables.join(', ') : 'No missing variables were reported.'}</p><p>Configure unresolved inputs through Bruno environments or supported APEX bindings before replay. Dynamic expressions require verified runtime behavior, not static guesses.</p>
+            </div>
+            <div hidden={canonicalTab !== 'runtime'}><h3>Runtime & source settings</h3><p>Sandbox: {sandbox}. Selection: {runOptions.selection}. These source execution choices are captured in the inspected draft.</p><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button><p>{inspection.execution_preflight?.ready ? 'Runner preflight reported ready; controlled replay remains required.' : 'Runner prerequisites have not passed. Review the execution profile and operator prerequisites before replay.'}</p></div>
+            {canonicalTab === 'dsl' && inspection.result.output_mode === 'canonical' && <><p>Redacted canonical inspection draft.</p><SourceCodeViewer ariaLabel="Canonical Bruno DSL preview" sourcePath="draft.json" value={JSON.stringify(inspection.result.script, null, 2)} /></>}
+            {canonicalTab === 'source' && <><h3>Source bundle provenance</h3><p>Canonical replay preserves the source bundle. This manifest identifies retained files; it is not a native line-by-line conversion map.</p><SourceCodeViewer ariaLabel="Canonical source manifest" sourcePath="manifest.json" value={JSON.stringify(inspection.result.manifest, null, 2)} /></>}
+            </ImportReviewTabs>
           )}
 
           {nativeReviewCandidate && (

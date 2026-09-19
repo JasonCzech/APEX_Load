@@ -35,6 +35,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   const validationResponsePromise = page.waitForResponse(response => (
     isImportResponse(response, '/api/v1/scripts/import/openapi')
   ))
+  await importControls.getByText('Advanced validation only', { exact: true }).click()
   await importControls.getByRole('button', { name: 'Validate Only' }).click()
   const validationResponse = await validationResponsePromise
   const validationText = await validationResponse.text()
@@ -49,13 +50,15 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   await expect(validationReview).toBeVisible({ timeout: 15_000 })
   await expect(importControls.getByText(/dry-run validation; nothing has been saved/i)).toBeVisible()
   await expect(importControls.getByText('Preflight').locator('..').getByText('Ready with notes', { exact: true })).toBeVisible()
+  await importControls.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
   await importControls.getByRole('button', { name: /^Show mappings/ }).click()
   await expect(importControls.getByRole('cell', { name: 'GET /orders' })).toBeVisible()
 
   const conversionResponsePromise = page.waitForResponse(response => (
     isImportResponse(response, '/api/v1/scripts/import/openapi')
   ))
-  await importControls.getByRole('button', { name: 'Convert OpenAPI' }).click()
+  await importControls.locator('.import-source-setup > summary').click()
+  await importControls.getByRole('button', { name: 'Inspect & review' }).click()
   const conversionResponse = await conversionResponsePromise
   expect(conversionResponse.ok(), await conversionResponse.text()).toBeTruthy()
   await expect(importControls.getByRole('heading', { level: 3, name: 'Review Generated Script' })).toBeVisible({ timeout: 15_000 })
@@ -72,7 +75,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   const commitResponsePromise = page.waitForResponse(response => (
     isImportResponse(response, '/api/v1/scripts/import/openapi/commit')
   ))
-  await importControls.getByRole('button', { name: 'Save and Continue Importing' }).click()
+  await importControls.getByRole('button', { name: 'Save draft' }).click()
   const commitResponse = await commitResponsePromise
   const commitText = await commitResponse.text()
   expect(commitResponse.ok(), commitText).toBeTruthy()

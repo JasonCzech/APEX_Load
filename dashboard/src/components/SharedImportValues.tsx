@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import {
@@ -13,6 +13,7 @@ import './SharedImportValues.css'
 
 interface Props {
   guided?: boolean
+  groupRequirements?: boolean
   sharedValues: SharedValues
   // The whole import, not just the script currently on screen. A collection-wide
   // value spans every generated script, so the panel must hand all of them to
@@ -63,6 +64,7 @@ function initialSelection(): Record<string, boolean> {
 export default function SharedImportValues({
   sharedValues,
   guided = false,
+  groupRequirements = false,
   scripts = [],
   scriptCount,
   collectOnly = false,
@@ -72,6 +74,7 @@ export default function SharedImportValues({
   onApplyingChange,
   onApplied,
 }: Props) {
+  const headingId = useId()
   const api = useApi()
   const candidates = useMemo(() => (sharedValues.candidates ?? []).filter(candidate => !guided || candidate.kind !== 'source_variable'), [sharedValues.candidates, guided])
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(candidates))
@@ -176,12 +179,12 @@ export default function SharedImportValues({
   }
 
   return (
-    <section className="shared-values" aria-labelledby="shared-values-heading">
+    <section className="shared-values" aria-labelledby={headingId}>
       <div className="shared-values-header">
         <div>
-          <h4 id="shared-values-heading">{guided ? 'Optional substitutions' : 'Collection Values'}</h4>
+          <h4 id={headingId}>{guided ? 'Optional substitutions' : groupRequirements ? 'Required inputs & optional substitutions' : 'Collection Values'}</h4>
           <p>
-            Choose values to replace at their detected locations across {affectedScriptCount} generated {affectedScriptCount === 1 ? 'script' : 'scripts'}. Usage counts describe each value’s scope. Resolve missing source variables and correlations in the Review queue; optional substitutions are shown here.
+            Choose values to replace at their detected locations across {affectedScriptCount} generated {affectedScriptCount === 1 ? 'script' : 'scripts'}. Usage counts describe each value’s scope. Source variables need a value or a supported producer before replay. Optional substitutions change only detected occurrences; review unresolved correlations in the Review tab.
           </p>
         </div>
         {appliedCount > 0 && (
@@ -196,9 +199,9 @@ export default function SharedImportValues({
         <p className="shared-values-warning" key={warning} role="status">{warning}</p>
       ))}
 
-      {guided && <label>Find optional value<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>}
-      {(guided ? ['Environment overrides', 'Advanced repeated values'] : ['Values']).map(group => <details key={group} open={!guided || group === 'Environment overrides' || !!search}><summary>{group}</summary><ul className="shared-values-list">
-        {candidates.filter(candidate => (!guided || (group === 'Environment overrides') === (candidate.targets_base_url || candidate.name === 'base_url' || candidate.name.toLowerCase() === 'origin')) && (!search || candidate.name.toLowerCase().includes(search.toLowerCase()))).map(candidate => {
+      {(guided || groupRequirements) && <label>{guided ? 'Find optional value' : 'Find value'}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>}
+      {(groupRequirements ? ['Required runtime inputs', 'Optional substitutions'] : guided ? ['Environment overrides', 'Advanced repeated values'] : ['Values']).map(group => <details key={group} open={groupRequirements ? group === 'Required runtime inputs' || !!search : !guided || group === 'Environment overrides' || !!search}><summary>{group}</summary><ul className="shared-values-list">
+        {candidates.filter(candidate => (!groupRequirements || (group === 'Required runtime inputs') === (candidate.kind === 'source_variable')) && (!guided || (group === 'Environment overrides') === (candidate.targets_base_url || candidate.name === 'base_url' || candidate.name.toLowerCase() === 'origin')) && (!search || candidate.name.toLowerCase().includes(search.toLowerCase()))).map(candidate => {
           const inputId = `shared-value-${candidate.id}`
           const nameError = nameErrors.get(candidate.id)
           return (
@@ -213,7 +216,7 @@ export default function SharedImportValues({
               {candidate.rationale && <p className="shared-values-rationale">{guided ? `${reachLabel(candidate)}. Only detected occurrences are eligible for this substitution.` : candidate.rationale}</p>}{guided && <details><summary>Affected scripts</summary><ul>{(candidate.script_names || []).map(name => <li key={name}>{name}</li>)}</ul><p>Exact request changes are returned after applying. The import does not expose individual request paths for these suggestions.</p></details>}
               {candidate.credential_shaped ? (
                 <p className="shared-values-credential">
-                  This looks like a credential. Set it once in Secret Bindings below — a script
+                  This looks like a credential. Set it in the Credentials tab — a script
                   parameter of this name is hidden from every later read, so the value would be
                   lost the next time the script is saved.
                 </p>

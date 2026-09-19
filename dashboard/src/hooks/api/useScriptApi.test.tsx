@@ -57,6 +57,14 @@ describe('useScriptApi import wrappers', () => {
     },
   )
 
+  it.each(['importJMeter', 'validateJMeterImport'] as const)('%s authorizes the project before streaming file bytes', async method => {
+    const file = new File(['<jmeterTestPlan/>'], 'plan.jmx')
+    await api[method](file, { project_id: 'project-1', name: 'Orders' })
+    const [, options] = (apiFetch as Mock).mock.calls[0]
+    expect(Array.from((options.body as FormData).keys()).slice(0, 2)).toEqual(['project_id', 'file'])
+    expect((options.body as FormData).get('file')).toBe(file)
+  })
+
   it('sends OpenAPI project scope before file bytes for streaming authorization', async () => {
     const file = new File(['openapi: 3.0.3'], 'api.yaml', { type: 'text/yaml' })
     await api.importOpenAPI(file, { project_id: 'project-1', name: 'Orders', agentforce_transform: true })

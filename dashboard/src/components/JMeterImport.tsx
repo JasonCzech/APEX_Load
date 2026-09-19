@@ -264,6 +264,10 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
   const handleImport = async () => {
     if (!file) return
+    if (!projectId) {
+      setError('Select a project in the workspace selector, then inspect this file again. Your source and options have been retained.')
+      return
+    }
     const sourceGeneration = advanceReviewGeneration()
     const sourceProjectId = reviewProjectIdRef.current
     const sourceFile = file
@@ -305,6 +309,10 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
   const handleValidate = async () => {
     if (!file) return
+    if (!projectId) {
+      setError('Select a project in the workspace selector, then inspect this file again. Your source and options have been retained.')
+      return
+    }
     const sourceGeneration = advanceReviewGeneration()
     const sourceProjectId = reviewProjectIdRef.current
     const sourceFile = file
@@ -540,6 +548,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
 
       <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
+      <details className="import-source-setup" open={!result}><summary>Source & conversion options — changing these requires a new review</summary>
       <div
         ref={dropzoneRef}
         className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
@@ -605,14 +614,15 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       </div>
 
       <div className="import-workflow-actions">
-        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null || saving}>
+        <details><summary>Advanced validation only</summary>        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null || saving}>
           {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
-        </button>
+        </button></details>
         <button className="btn btn-primary btn-lg" onClick={handleImport} disabled={!file || workingMode !== null || saving}>
-          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Convert JMeter Plan'}
+          {workingMode === 'convert' ? <><span className="spinner" /> Converting...</> : 'Inspect & review'}
         </button>
       </div>
 
+      </details>
       {error && <div className="lr-error" role="alert">{error}</div>}
       {notice && <div className="settings-notice">{notice}</div>}
 
@@ -692,59 +702,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       {result && (
         <div className="lr-result">
           <ScriptImportReview
-            title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
-            reviewGeneration={reviewScope}
-            subtitle={savedResult ? 'Saved to the Script Library. Open a saved script above or import more files.' : reviewMode === 'validation'
-              ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
-              : 'This preview came from the converter and is ready for final review before saving.'}
-            script={primaryScript || buildFallbackPrimaryScript(result.summary?.file_name || file?.name || 'Imported JMeter Plan')}
-            previewData={{ scripts: result.scripts, scenario_draft: result.scenario_draft, summary: result.summary }}
-            warnings={result.warnings}
-            warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            unsupportedElements={result.unsupported_elements}
-            reviewSections={result.review_sections}
-            secretBindingRequirements={result.secret_binding_requirements}
-            onSecretBindingsApply={handleSecretBindingsApply}
-            sharedValues={result.shared_values}
-            sharedValueScripts={result.scripts}
-            onSharedValuesApplied={handleSharedValuesApplied}
-            projectId={projectId}
-            sourceSecretSessionId={result.source_secret_session_id}
-            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
-            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
-            importDraftExpiresAt={result.import_draft_expires_at}
-            credentialReviewRef={credentialReviewRef}
-            saving={saving}
-            reviewBusy={parameterizationApplying}
-            onReviewBusyChange={setCredentialActionInProgress}
-            saveDisabled={Boolean(savedResult)}
-            saveDisabledReason={savedResult ? 'These scripts are already saved. Open them above or import more files.' : undefined}
-            saveLabel={savedResult ? 'Saved to Script Library' : 'Save and Continue Importing'}
-            onSave={handleSaveConverted}
-            onEdit={onEdit && primaryScript && result.scripts.length === 1 && !savedResult ? handleEditConverted : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
-            previewTitle="Import Preview"
-            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
-          >
-            <div className="lr-stats-grid">
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.samplers}</span><span className="lr-stat-label">HTTP Samplers</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_samplers ?? result.stats.samplers}</span><span className="lr-stat-label">Total Samplers</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped_samplers ?? 0}</span><span className="lr-stat-label">Skipped Samplers</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.thread_groups}</span><span className="lr-stat-label">Thread Groups</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.csv_sources}</span><span className="lr-stat-label">CSV Sources</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.variables}</span><span className="lr-stat-label">Variables</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.assertions}</span><span className="lr-stat-label">Assertions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.unsupported}</span><span className="lr-stat-label">Unsupported</span></div>
-            </div>
-
-            {result.assumptions.length > 0 && (
-              <div className="lr-warnings">
-                <h4>Assumptions</h4>
-                <ul>{result.assumptions.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul>
-              </div>
-            )}
-
+            tabbed
+            dataContent={(parameterization?.suggestions.length || extractorSummary.length) ? <>
             {parameterization && parameterization.suggestions.length > 0 && parameterizationScript && (
               <>
                 {resultScripts.length > 1 && (
@@ -802,6 +761,61 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            </> : undefined}
+            runtimeContent={<><h4>Imported scenario settings</h4>{result.scenario_draft ? <><p>Duration: {result.scenario_draft.duration} · Mode: {result.scenario_draft.scenario_mode.replace(/_/g, ' ')}</p><ul>{result.scenario_draft.groups.map((group, index) => <li key={index}>{group.name}: {group.vusers} VUsers · ramp-up {group.ramp_up || 'not specified'}</li>)}</ul></> : <p>No scenario draft was generated.</p>}<p>Review timers and data allocation in the generated DSL and saved scenario before execution. Scenario settings can be edited after saving.</p></>}
+            title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
+            reviewGeneration={reviewScope}
+            subtitle={savedResult ? 'Saved to the Script Library. Open a saved script above or import more files.' : reviewMode === 'validation'
+              ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
+              : 'This preview came from the converter and is ready for final review before saving.'}
+            script={primaryScript || buildFallbackPrimaryScript(result.summary?.file_name || file?.name || 'Imported JMeter Plan')}
+            previewData={{ scripts: result.scripts, scenario_draft: result.scenario_draft, summary: result.summary }}
+            warnings={result.warnings}
+            warningsTitle={`Conversion Warnings (${result.warnings.length})`}
+            unsupportedElements={result.unsupported_elements}
+            reviewSections={result.review_sections}
+            secretBindingRequirements={result.secret_binding_requirements}
+            onSecretBindingsApply={handleSecretBindingsApply}
+            sharedValues={result.shared_values}
+            sharedValueScripts={result.scripts}
+            onSharedValuesApplied={handleSharedValuesApplied}
+            projectId={projectId}
+            sourceSecretSessionId={result.source_secret_session_id}
+            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
+            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            importDraftExpiresAt={result.import_draft_expires_at}
+            credentialReviewRef={credentialReviewRef}
+            saving={saving}
+            reviewBusy={parameterizationApplying}
+            onReviewBusyChange={setCredentialActionInProgress}
+            saveDisabled={Boolean(savedResult)}
+            saveDisabledReason={savedResult ? 'These scripts are already saved. Open them above or import more files.' : undefined}
+            saveLabel={savedResult ? 'Saved to Script Library' : `Save ${result.scripts.length} draft${result.scripts.length === 1 ? '' : 's'}`}
+            onSave={handleSaveConverted}
+            onEdit={onEdit && primaryScript && result.scripts.length === 1 && !savedResult ? handleEditConverted : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            previewTitle="Import Preview"
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
+          >
+            <div className="lr-stats-grid">
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.samplers}</span><span className="lr-stat-label">HTTP Samplers</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_samplers ?? result.stats.samplers}</span><span className="lr-stat-label">Total Samplers</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped_samplers ?? 0}</span><span className="lr-stat-label">Skipped Samplers</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.thread_groups}</span><span className="lr-stat-label">Thread Groups</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.csv_sources}</span><span className="lr-stat-label">CSV Sources</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.variables}</span><span className="lr-stat-label">Variables</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.assertions}</span><span className="lr-stat-label">Assertions</span></div>
+              <div className="lr-stat"><span className="lr-stat-val">{result.stats.unsupported}</span><span className="lr-stat-label">Unsupported</span></div>
+            </div>
+
+            {result.assumptions.length > 0 && (
+              <div className="lr-warnings">
+                <h4>Assumptions</h4>
+                <ul>{result.assumptions.map((item: string, index: number) => <li key={index}>{item}</li>)}</ul>
               </div>
             )}
 

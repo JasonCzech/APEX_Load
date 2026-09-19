@@ -23,6 +23,7 @@ import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
 import LinkedCodePane from './LinkedCodePane'
 import './ScriptImportReview.css'
+import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 
 const severityRank: Record<string, number> = {
   blocker: 0,
@@ -408,6 +409,10 @@ interface Props {
   reviewGeneration?: string | number
   subtitle?: ReactNode
   readinessMessage?: string
+  tabbed?: boolean
+  runtimeContent?: ReactNode
+  dataContent?: ReactNode
+  batchControls?: ReactNode
   compactReview?: boolean
   showCredentials?: boolean
   showDataReview?: boolean
@@ -476,9 +481,13 @@ export default function ScriptImportReview({
   reviewGeneration = 0,
   subtitle,
   readinessMessage,
-  showCredentials = true,
-  showDataReview = true,
+  showCredentials: requestedCredentials = true,
+  showDataReview: requestedData = true,
   compactReview = false,
+  tabbed = false,
+  runtimeContent,
+  dataContent,
+  batchControls,
   credentialIntroduction,
   script,
   previewData,
@@ -515,13 +524,18 @@ export default function ScriptImportReview({
   editLabel = 'Open In Visual Editor',
   previewTitle = 'Generated Script Preview',
   previewAside,
-  showPreview = true,
+  showPreview: requestedPreview = true,
   previewInitiallyOpen = false,
-  showPreviewAside = true,
+  showPreviewAside: requestedSource = true,
   onSave,
   onEdit,
   children,
 }: Props) {
+  const [activeReviewTab, setActiveReviewTab] = useState<ImportReviewTab>('review')
+  const showCredentials = requestedCredentials && (!tabbed || activeReviewTab === 'credentials')
+  const showDataReview = requestedData && (!tabbed || activeReviewTab === 'data')
+  const showPreview = requestedPreview && (!tabbed || activeReviewTab === 'dsl')
+  const showPreviewAside = requestedSource && (!tabbed || activeReviewTab === 'source')
   const reviewSummaryRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     reviewSummaryRef.current?.focus()
@@ -756,21 +770,22 @@ export default function ScriptImportReview({
   const previewEntries = useMemo(() => importActionEntries(script), [script])
   const selectedPreviewAction = previewEntries.find(entry => entry.path === previewAction)
   const filteredPreviewEntries = previewEntries.filter(entry => `${entry.path} ${entry.action.name} ${entry.action.type}`.toLowerCase().includes(previewSearch.toLowerCase()))
+  const credentialPreviewPaths = secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])].flatMap(path => [path, `/script${path}`, `/scripts/${requirement.script_index ?? 0}${path}`]))
   const preview = useMemo(() => {
     if (!showPreview) return null
     const paths = secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])])
-    if (compactReview && selectedPreviewAction) {
+    if ((compactReview || (tabbed && !previewData)) && selectedPreviewAction) {
       const prefix = '/' + selectedPreviewAction.path.replace(/\[(\d+)\]/g, '/$1').replace(/\./g, '/')
       return previewJSON(selectedPreviewAction.action, false, new Set(paths.filter(path => path === prefix || path.startsWith(`${prefix}/`)).map(path => path.slice(prefix.length))))
     }
-    return previewJSON(compactReview ? previewSection === 'all' ? { ...script, metadata: undefined } : { [previewSection]: script[previewSection as keyof ScriptDefinition] } : previewData ?? { script }, false, new Set(paths.flatMap(path => [path, `/script${path}`])))
-  }, [compactReview, previewData, previewSection, script, secretBindingRequirements, selectedPreviewAction, showPreview])
+    return previewJSON((compactReview || (tabbed && !previewData)) ? previewSection === 'all' ? { ...script, metadata: undefined } : { [previewSection]: script[previewSection as keyof ScriptDefinition] } : previewData ?? { script }, false, new Set(secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])].flatMap(path => [path, `/script${path}`, `/scripts/${requirement.script_index ?? 0}${path}`]))))
+  }, [compactReview, tabbed, previewData, previewSection, script, secretBindingRequirements, selectedPreviewAction, showPreview])
   const previewPane = preview ? (
-    <details className="script-import-review-preview" open={previewInitiallyOpen}>
+    <details className="script-import-review-preview" open={tabbed || previewInitiallyOpen}>
       <summary>
-        <h4>{previewTitle}{compactReview ? ' — redacted, read-only' : ''}</h4>
+        <h4>{previewTitle}{compactReview || tabbed ? ' — redacted, read-only' : ''}</h4>
       </summary>
-      {compactReview && <div className="lr-preview-toolbar"><label>Section<select value={previewSection} onChange={e => { setPreviewSection(e.target.value); setPreviewAction('') }}>{['all', 'config', 'parameters', 'data_sources', 'init', 'actions', 'teardown'].map(section => <option key={section} value={section}>{section}</option>)}</select></label><label>Find action<input type="search" value={previewSearch} onChange={e => { setPreviewSearch(e.target.value); setPreviewAction('') }} /></label><label>Jump to action<select value={previewAction} onChange={e => { setPreviewAction(e.target.value); if (e.target.value) setPreviewSection(e.target.value.split('[')[0]) }}><option value="">Section overview</option>{filteredPreviewEntries.slice(0, 200).map(entry => <option key={entry.path} value={entry.path}>{entry.path} · {entry.action.name || entry.action.type}</option>)}</select></label><span>{filteredPreviewEntries.length} matching actions{filteredPreviewEntries.length > 200 ? ' · refine search to see more' : ''}</span><button type="button" className="btn btn-secondary btn-sm" aria-pressed={previewWrap} onClick={() => setPreviewWrap(v => !v)}>Word wrap: {previewWrap ? 'On' : 'Off'}</button><button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreviewFocus(v => !v)}>{previewFocus ? 'Exit focus mode' : 'Focus preview'}</button></div>}
+      {(compactReview || (tabbed && !previewData)) && <div className="lr-preview-toolbar"><label>Section<select value={previewSection} onChange={e => { setPreviewSection(e.target.value); setPreviewAction('') }}>{['all', 'config', 'parameters', 'data_sources', 'init', 'actions', 'teardown'].map(section => <option key={section} value={section}>{section}</option>)}</select></label><label>Find action<input type="search" value={previewSearch} onChange={e => { setPreviewSearch(e.target.value); setPreviewAction('') }} /></label><label>Jump to action<select value={previewAction} onChange={e => { setPreviewAction(e.target.value); if (e.target.value) setPreviewSection(e.target.value.split('[')[0]) }}><option value="">Section overview</option>{filteredPreviewEntries.slice(0, 200).map(entry => <option key={entry.path} value={entry.path}>{entry.path} · {entry.action.name || entry.action.type}</option>)}</select></label><span>{filteredPreviewEntries.length} matching actions{filteredPreviewEntries.length > 200 ? ' · refine search to see more' : ''}</span><button type="button" className="btn btn-secondary btn-sm" aria-pressed={previewWrap} onClick={() => setPreviewWrap(v => !v)}>Word wrap: {previewWrap ? 'On' : 'Off'}</button><button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreviewFocus(v => !v)}>{previewFocus ? 'Exit focus mode' : 'Focus preview'}</button></div>}
       {preview.truncated && (
         <div className="script-import-review-preview-note" role="status">
           Preview truncated for browser performance. The on-screen view is partial. Select an individual action or download the complete protected review JSON. You can save a blocked draft without reviewing every action.
@@ -779,7 +794,7 @@ export default function ScriptImportReview({
       <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
         setPreviewExportError('')
         try {
-          const full = previewJSON({ script }, true, new Set(secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])].map(path => `/script${path}`))))
+          const full = previewJSON(compactReview ? { script } : previewData ?? { script }, true, new Set(credentialPreviewPaths))
           if (full.truncated) throw new Error('The full review exceeds the export safety limit. No partial file was downloaded.')
           const url = URL.createObjectURL(new Blob([full.text], { type: 'application/json' }))
           const link = document.createElement('a')
@@ -887,7 +902,7 @@ export default function ScriptImportReview({
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
   const importDraftExpired = importDraftExpiry?.expired === true
 
-  return (
+  const content = (
     <div className={`script-import-review ${compactReview ? 'script-import-review-compact' : ''}`}>
       <div className="script-import-review-header" tabIndex={-1} ref={reviewSummaryRef}>
         <p role="status">{readinessMessage || 'Import review ready. Review blockers and warnings before saving.'} {' '}
@@ -922,7 +937,7 @@ export default function ScriptImportReview({
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
                 : visibleSaveDisabledReason || undefined}
             >
-              {saving ? 'Saving...' : credentialAction === 'save' ? 'Preparing credentials...' : compactReview ? saveLabel : resolvedSaveLabel}
+              {saving ? 'Saving...' : credentialAction === 'save' ? 'Preparing credentials...' : (compactReview || tabbed) ? saveLabel : resolvedSaveLabel}
             </button>
           )}
         </div>
@@ -936,7 +951,7 @@ export default function ScriptImportReview({
 
       {protectedSessionLabel && (
         <div className="script-import-review-session" role="status">
-          {protectedSessionLabel} Credential bindings and parameterization selections remain protected; other draft edits switch to the compatibility commit path.
+          {protectedSessionLabel} Review this draft before the session expires. If it expires, inspect the source again before saving.
         </div>
       )}
 
@@ -953,9 +968,18 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      {children}
+      {tabbed && <p role="status">Saving preserves a draft; it does not verify replay. {configureLaterCount > 0 ? `${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} still need configuration before replay.` : 'Check the Review tab for remaining execution requirements.'}</p>}
+      {tabbed && <nav className="import-review-links" aria-label="Resolve import requirements">
+        <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('review')}>Review requirements</button>
+        <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('credentials')}>Configure credentials</button>
+        <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('data')}>Configure data & parameters</button>
+      </nav>}
+      <div hidden={tabbed && activeReviewTab !== 'review'}>{children}</div>
+      {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{runtimeContent || <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>}</div>}
+      {!tabbed && runtimeContent}
 
       <div hidden={!showCredentials}>
+      {tabbed && !hasUnresolvedSecretBindings && <p className="import-review-empty">No unresolved credential bindings were reported for this draft. Runtime credentials are verified when debugging starts.</p>}
       {credentialIntroduction}
       {hasUnresolvedSecretBindings && onSecretBindingsApply && (
         <SecretBindingReview
@@ -984,7 +1008,7 @@ export default function ScriptImportReview({
 
       </div>
 
-      {(conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics" hidden={compactReview && (showDataReview || showCredentials || showPreview || showPreviewAside)}><summary hidden={!compactReview}>Original import diagnostics</summary>
+      {(conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics" hidden={tabbed ? activeReviewTab !== 'review' : compactReview && (showDataReview || showCredentials || showPreview || showPreviewAside)}><summary hidden={!compactReview}>Original import diagnostics</summary>
       {conversionNotes.length > 0 && <button type="button" className="script-health-token issue-pill-button" onClick={() => setIssueDialog({ title: 'Conversion notes', issues: conversionNotes })}>{conversionNotes.length} conversion note{conversionNotes.length === 1 ? '' : 's'}</button>}
       {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
         <div className="script-import-review-issue-summary" aria-label="Import issue summary">
@@ -1034,9 +1058,12 @@ export default function ScriptImportReview({
       </details>}
 
       <div hidden={!showDataReview}>
+      {dataContent}
+      {tabbed && !dataContent && !sharedValues?.candidates?.length && !parameterization?.suggestions?.length && <p className="import-review-empty">No editable data substitutions were reported. Review unresolved variables in Review and configure their producers in the Visual Editor.</p>}
       {sharedValues && onSharedValuesApplied && (sharedValues.candidates?.length ?? 0) > 0 && (
         <SharedImportValues
           guided={compactReview}
+          groupRequirements={tabbed}
           sharedValues={sharedValues}
           scripts={sharedValueScripts && sharedValueScripts.length > 0 ? sharedValueScripts : [script]}
           reviewGeneration={reviewGeneration}
@@ -1063,6 +1090,7 @@ export default function ScriptImportReview({
       </div>
 
       {showPreview && previewPane}
+      {tabbed && activeReviewTab === 'source' && !previewAside && <p className="import-review-empty">This importer did not provide source mappings. Conversion does not establish source parity; retain the original source for manual comparison.</p>}
       {sourceVisited.current && previewAside && (
         <div className="script-import-review-preview-aside" hidden={!showPreviewAside}>
           {previewAside}
@@ -1077,4 +1105,5 @@ export default function ScriptImportReview({
       )}
     </div>
   )
+  return tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: blockerDetails.length + warningDetails.length + unsupportedDetails.length, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
 }

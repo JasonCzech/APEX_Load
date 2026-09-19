@@ -119,6 +119,15 @@ describe('JMeterImport', () => {
     vi.clearAllMocks()
   })
 
+  it('retains the source and prevents upload when no project is selected', async () => {
+    await act(async () => root.render(<JMeterImport initialFile={new File(['<jmeterTestPlan/>'], 'retained.jmx')} />))
+    const inspect = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Inspect & review')!
+    await act(async () => inspect.click())
+    expect(apiMock.importJMeter).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Select a project in the workspace selector')
+    expect(container.textContent).toContain('retained.jmx')
+  })
+
   it('ignores a conversion response after an import option changes', async () => {
     let resolveImport: ((value: unknown) => void) | undefined
     apiMock.importJMeter.mockImplementationOnce(() => new Promise(resolve => { resolveImport = resolve }))
@@ -131,7 +140,7 @@ describe('JMeterImport', () => {
       fileInput.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.includes('Convert JMeter Plan'))
+      .find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => {
       convert?.click()
       await Promise.resolve()
@@ -184,7 +193,7 @@ describe('JMeterImport', () => {
     await flushPromises()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
+        .find(button => /^Save \d+ drafts?/.test(button.textContent || ''))?.click()
     })
     const includeAssertions = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))[0]
     expect(includeAssertions.disabled).toBe(true)
@@ -238,7 +247,7 @@ describe('JMeterImport', () => {
 
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
+        .find(button => /^Save \d+ drafts?/.test(button.textContent || ''))?.click()
       await Promise.resolve()
     })
     expect(onOperationBusyChange).toHaveBeenLastCalledWith(true)
@@ -284,7 +293,7 @@ describe('JMeterImport', () => {
     await flushPromises()
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-        .find(button => button.textContent?.includes('Save and Continue Importing'))?.click()
+        .find(button => /^Save \d+ drafts?/.test(button.textContent || ''))?.click()
     })
     await act(async () => {
       Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -315,7 +324,7 @@ describe('JMeterImport', () => {
     const onClose = vi.fn()
 
     await act(async () => {
-      root.render(<JMeterImport onClose={onClose} />)
+      root.render(<JMeterImport projectId="project-1" onClose={onClose} />)
     })
 
     const closeButtons = Array.from(container.querySelectorAll('button'))
@@ -331,7 +340,7 @@ describe('JMeterImport', () => {
 
   it('opens the file picker from the keyboard-accessible dropzone', async () => {
     await act(async () => {
-      root.render(<JMeterImport />)
+      root.render(<JMeterImport projectId="project-1" />)
     })
 
     const dropzone = container.querySelector<HTMLElement>('.lr-dropzone')
@@ -349,7 +358,7 @@ describe('JMeterImport', () => {
 
   it('renders inline coverage details and captured variables after validation', async () => {
     await act(async () => {
-      root.render(<JMeterImport />)
+      root.render(<JMeterImport projectId="project-1" />)
     })
 
     await flushPromises()
@@ -414,16 +423,17 @@ describe('JMeterImport', () => {
     await flushPromises()
 
     expect(apiMock.validateJMeterImport).toHaveBeenCalledTimes(1)
-    expect(apiMock.validateJMeterImport).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: undefined }))
+    expect(apiMock.validateJMeterImport).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
     expect(container.textContent).toContain('Captured Variables (2)')
     expect(container.textContent).toContain('session_token')
     expect(container.textContent).toContain('access_token')
     expect(container.textContent).toContain('1 actions / 0 data sources / 2 extractors')
     expect(container.textContent).toContain('Validation Review')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     expect(container.textContent).toContain('Source Comparison')
     expect(container.textContent).toContain('HTTPSamplerProxy')
     expect(container.textContent).toContain('actions[0]')
-    expect(container.textContent).toContain('Save and Continue Importing')
+    expect(container.textContent).toContain('Save 1 draft')
     const stats = Array.from(container.querySelectorAll('.lr-stat')).map(item => item.textContent)
     expect(stats).toContain('1HTTP Samplers')
     expect(stats).toContain('2Total Samplers')
@@ -447,7 +457,7 @@ describe('JMeterImport', () => {
     })
 
     await act(async () => {
-      root.render(<JMeterImport />)
+      root.render(<JMeterImport projectId="project-1" />)
     })
 
     await flushPromises()
@@ -476,7 +486,7 @@ describe('JMeterImport', () => {
     const onEdit = vi.fn()
 
     await act(async () => {
-      root.render(<JMeterImport onEdit={onEdit} />)
+      root.render(<JMeterImport projectId="project-1" onEdit={onEdit} />)
     })
 
     await flushPromises()
@@ -595,7 +605,7 @@ describe('JMeterImport', () => {
     })
 
     await act(async () => root.render(
-      <JMeterImport onImported={onImported} onEdit={onEdit} />,
+      <JMeterImport projectId="project-1" onImported={onImported} onEdit={onEdit} />,
     ))
     await flushPromises()
     const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
@@ -707,7 +717,7 @@ describe('JMeterImport', () => {
     await act(async () => validateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing with 1 secret to configure'))
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))
     expect(saveButton?.disabled).toBe(false)
     await act(async () => saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
@@ -718,6 +728,7 @@ describe('JMeterImport', () => {
       script_index: 1,
       bindings: [{ requirement_id: 'database-dsn', secret_name: 'ORDERS_DSN' }],
     })
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
     expect(container.textContent).toContain('{{secret.ORDERS_DSN}}')
     expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [
@@ -877,7 +888,7 @@ describe('JMeterImport', () => {
     const secondApply = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Selected'))!
     await act(async () => secondApply.click())
     await flushPromises()
-    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save and Continue Importing'))!
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))!
     await act(async () => save.click())
     await flushPromises()
 
@@ -916,7 +927,7 @@ describe('JMeterImport', () => {
     const validateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Validate Only'))!
     await act(async () => validateButton.click())
     await flushPromises()
-    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('with 1 secret to configure'))!
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save 1 draft'))!
     act(() => saveButton.click())
     await flushPromises()
     await act(async () => validateButton.click())
@@ -979,7 +990,7 @@ describe('JMeterImport', () => {
 
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return
@@ -1036,7 +1047,7 @@ describe('JMeterImport', () => {
     })
 
     await act(async () => {
-      root.render(<JMeterImport onImported={onImported} />)
+      root.render(<JMeterImport projectId="project-1" onImported={onImported} />)
     })
 
     await flushPromises()
@@ -1068,7 +1079,7 @@ describe('JMeterImport', () => {
 
     await flushPromises()
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save and Continue Importing'))
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => /^Save \d+ drafts?/.test(button.textContent || ''))
     expect(saveButton).toBeDefined()
     if (!saveButton) {
       return

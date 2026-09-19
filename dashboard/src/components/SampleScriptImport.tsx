@@ -1033,6 +1033,8 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
 
       <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
 
+      <details className="import-source-setup" open={!result}>
+        <summary>Source & conversion options — changing these requires a new review</summary>
       <div className="sample-import-card">
         <div className="sample-import-section-header">
           <div>
@@ -1244,54 +1246,18 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
 
       <div className="sample-import-actions">
         <button className="btn btn-primary btn-lg" onClick={handleConvert} disabled={converting || !primaryContent.trim()}>
-          {converting ? <><span className="spinner" /> Converting…</> : 'Convert Sample'}
+          {converting ? <><span className="spinner" /> Converting…</> : 'Inspect & review'}
         </button>
         <button className="btn btn-secondary" onClick={() => handleFormatChange(format)}>Reset Template</button>
       </div>
 
+      </details>
       {error && <div className="sample-import-error" role="alert">{error}</div>}
-
       {result && reviewedScript && (
         <div className="sample-import-result">
           <ScriptImportReview
-            title="3. Review Generated Script"
-            reviewGeneration={reviewScope}
-            subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
-            script={reviewedScript}
-            warnings={result.warnings}
-            unsupportedElements={result.unsupported_elements}
-            reviewSections={result.review_sections}
-            parameterization={result.parameterization}
-            onParameterizationApplied={handleParameterizationApplied}
-            secretBindingRequirements={result.secret_binding_requirements}
-            onSecretBindingsApply={handleSecretBindingsApply}
-            sharedValues={result.shared_values}
-            sharedValueScripts={result.scripts}
-            onSharedValuesApplied={handleSharedValuesApplied}
-            projectId={projectId}
-            sourceSecretSessionId={result.source_secret_session_id}
-            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
-            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
-            importDraftExpiresAt={result.import_draft_expires_at}
-            credentialReviewRef={credentialReviewRef}
-            saving={saving}
-            onReviewBusyChange={setInternalReviewBusy}
-            saveDisabled={Boolean(savedResult) || hasMissingFileAssets}
-            saveLabel={savedResult ? 'Saved to Script Library' : 'Save and Continue Importing'}
-            saveDisabledReason={savedResult ? 'This script is already saved. Open it above or import more files.' : hasMissingFileAssets
-              ? 'Upload every missing imported file asset before saving this script.'
-              : undefined}
-            onSave={handleSave}
-            onEdit={onEdit && !savedResult ? handleEdit : undefined}
-            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
-            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
-          >
-            {replayPreflight && (
-              <div className="sample-import-preflight">
-                <ReplayPreflightCard preflight={replayPreflight} />
-              </div>
-            )}
-
+            tabbed
+            dataContent={importFileAssets.length > 0 ? <>
             {importFileAssets.length > 0 && (
               <div className="sample-import-assets">
                 <div className="sample-import-assets-header">
@@ -1339,6 +1305,46 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
                     )
                   })}
                 </div>
+              </div>
+            )}
+
+            </> : undefined}
+            runtimeContent={<p>Timeout, pacing, authentication, and default headers were captured from Script Details. To change conversion options, expand source setup and inspect again. Effective runtime settings can also be edited in the Visual Editor.</p>}
+            title="3. Review Generated Script"
+            reviewGeneration={reviewScope}
+            subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
+            script={reviewedScript}
+            warnings={result.warnings}
+            unsupportedElements={result.unsupported_elements}
+            reviewSections={result.review_sections}
+            parameterization={result.parameterization}
+            onParameterizationApplied={handleParameterizationApplied}
+            secretBindingRequirements={result.secret_binding_requirements}
+            onSecretBindingsApply={handleSecretBindingsApply}
+            sharedValues={result.shared_values}
+            sharedValueScripts={result.scripts}
+            onSharedValuesApplied={handleSharedValuesApplied}
+            projectId={projectId}
+            sourceSecretSessionId={result.source_secret_session_id}
+            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
+            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            importDraftExpiresAt={result.import_draft_expires_at}
+            credentialReviewRef={credentialReviewRef}
+            saving={saving}
+            onReviewBusyChange={setInternalReviewBusy}
+            saveDisabled={Boolean(savedResult) || hasMissingFileAssets}
+            saveLabel={savedResult ? 'Saved to Script Library' : 'Save draft'}
+            saveDisabledReason={savedResult ? 'This script is already saved. Open it above or import more files.' : hasMissingFileAssets
+              ? 'Upload every missing imported file asset before saving this script.'
+              : undefined}
+            onSave={handleSave}
+            onEdit={onEdit && !savedResult ? handleEdit : undefined}
+            editLabel={editRequiresCredentialPreservingSave ? 'Save and Open in Visual Editor' : 'Open Draft in Visual Editor'}
+            previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
+          >
+            {replayPreflight && (
+              <div className="sample-import-preflight">
+                <ReplayPreflightCard preflight={replayPreflight} />
               </div>
             )}
 

@@ -95,6 +95,25 @@ describe('SharedImportValues', () => {
     })
   }
 
+  it('separates required inputs from optional substitutions and retains entered values while searching', () => {
+    render(buildSharedValues([
+      candidate({ id: 'required', kind: 'source_variable', name: 'customer_id', current_value: '' }),
+      candidate({ id: 'optional', name: 'base_url' }),
+    ]), { groupRequirements: true })
+    const groups = Array.from(container.querySelectorAll('details'))
+    expect(groups[0].open).toBe(true)
+    expect(groups[0].textContent).toContain('customer_id')
+    expect(groups[0].textContent).not.toContain('base_url')
+    expect(groups[1].open).toBe(false)
+    expect(groups[1].textContent).toContain('base_url')
+    type(inputFor('required'), 'customer-42')
+    const search = container.querySelector<HTMLInputElement>('input[type=search]')!
+    type(search, 'base_url')
+    expect(container.querySelector('#shared-value-required')).toBeNull()
+    type(search, '')
+    expect(inputFor('required').value).toBe('customer-42')
+  })
+
   it('pre-fills the value the importer already produced', () => {
     render(buildSharedValues([candidate({})]))
     expect(inputFor('sv_base').value).toBe('https://stage.example.com')
@@ -160,7 +179,7 @@ describe('SharedImportValues', () => {
       credential_shaped: true, current_value: undefined,
     })]))
     expect(container.querySelector('#shared-value-sv_pw')).toBeNull()
-    expect(container.textContent).toContain('Secret Bindings')
+    expect(container.textContent).toContain('Credentials tab')
   })
 
   it('collect mode reports values instead of calling the endpoint', () => {

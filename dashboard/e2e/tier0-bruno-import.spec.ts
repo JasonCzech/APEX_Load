@@ -118,23 +118,23 @@ http:
   await expect(controls.getByText(/Created and selected script folder/)).toBeVisible()
 
   const inspectionPromise = page.waitForResponse(response => isImportResponse(response, '/api/v1/scripts/import/bruno/inspect'))
-  await controls.getByRole('button', { name: 'Inspect source' }).click()
+  await controls.getByRole('button', { name: 'Inspect & review' }).click()
   const inspection = await inspectionPromise
   expect(inspection.ok(), await inspection.text()).toBeTruthy()
   await expect(controls.getByText(/2 API requests found.*2 native scripts/).first()).toBeVisible()
 
   await expect(controls.getByRole('button', { name: 'Inputs: 1 unresolved', exact: true })).toBeVisible()
-  await controls.getByRole('tab', { name: 'Data', exact: true }).click()
+  await controls.getByRole('tab', { name: 'Data & parameters', exact: true }).click()
   await controls.getByRole('textbox', { name: 'Literal value for env', exact: true }).fill('qa')
   await expect(controls.getByRole('button', { name: 'Inputs: 0 unresolved', exact: true })).toBeVisible()
-  await controls.getByRole('tab', { name: 'APIs', exact: true }).click()
+  await controls.getByRole('button', { name: /^APIs .*change selection/ }).click()
   await controls.getByRole('searchbox', { name: 'Find API', exact: true }).fill('UnsupportedHook')
   await expect(controls.locator('.bruno-native-table tbody tr')).toHaveCount(1)
   await expect(controls.getByText('1 matching · 2 selected across all pages', { exact: true })).toBeVisible()
   await controls.getByRole('searchbox', { name: 'Find API', exact: true }).fill('')
   await expect(controls.locator('.bruno-native-table tbody tr')).toHaveCount(2)
 
-  await controls.getByRole('tab', { name: 'Review & save', exact: true }).click()
+  await controls.getByRole('tab', { name: 'Review', exact: true }).click()
   const acknowledgements = controls.getByRole('checkbox', { name: /^Acknowledge / })
   await expect(acknowledgements).toHaveCount(2)
   for (let index = 0; index < 2; index += 1) await acknowledgements.nth(index).check()
