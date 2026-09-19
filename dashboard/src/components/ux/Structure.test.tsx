@@ -13,11 +13,12 @@ const container = document.createElement('div')
 document.body.appendChild(container)
 const root = createRoot(container)
 afterEach(async () => { await act(async () => root.render(null)); vi.restoreAllMocks() })
-it('keeps search before actions and retains filter edits when collapsed', async () => {
+it('keeps search before actions and exposes persistent filter controls', async () => {
   await act(async () => root.render(<LibraryToolbar search={<input aria-label="Search" />} filters={<input defaultValue="production" aria-label="Release" />} actions={<button>Create</button>} />))
-  const details = container.querySelector('details')!
+  expect(container.querySelector('details')).toBeNull()
   const filter = container.querySelector<HTMLInputElement>('[aria-label="Release"]')!
-  details.open = true; filter.value = 'next release'; details.open = false
+  filter.value = 'next release'
+  expect(container.querySelector('.ux-library-filter-fields')?.contains(filter)).toBe(true)
   expect(filter.value).toBe('next release')
   expect(container.querySelector('input')!.getAttribute('aria-label')).toBe('Search')
   expect(container.querySelector('button')!.textContent).toBe('Create')

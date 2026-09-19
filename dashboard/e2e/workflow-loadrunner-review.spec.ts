@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { test, expect, mutation, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
@@ -154,4 +155,54 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
   if (await authorPanes.isVisible()) await authorPanes.getByRole('button', { name: 'Outline', exact: true }).click()
   await expect(page.getByRole('textbox', { name: 'Script Name', exact: true })).toHaveValue(scripts[0].name)
   await expect(page.getByRole('button', { name: 'Save script', exact: true })).toBeDisabled()
+})
+
+// The encrypted-session lifecycle is covered by API tests. This browser test
+// isolates the review interaction with typed redacted repair responses.
+test('LoadRunner guided repair previews redacted changes before applying', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  let draft: Record<string, any> = {}
+  const findings = [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:2', detail: 'Supply a restored request body.', gate: 'execution' }]
+  const expiry = new Date(Date.now() + 20 * 60_000).toISOString()
+  await page.route('**/api/v1/scripts/import/enterprise-script-archive/validate', async route => {
+    const response = await page.context().request.post(`/api/v1/scripts/import/enterprise-script-archive/validate?project_id=${workspace.projectId}`, { multipart: { file: { name: 'guided-repair.zip', mimeType: 'application/zip', buffer: await readFile(path.join(process.cwd(), 'e2e/fixtures/guided-repair.zip')) } } })
+    expect(response.ok(), await response.text()).toBeTruthy()
+    const result = await response.json()
+    draft = result.script
+    draft.metadata.import.preserved.server_import_attestation_v1 = 'protected:browser-repair-one'
+    if (result.scripts?.length) result.scripts[0] = draft
+    result.import_draft_expires_at = expiry
+    await route.fulfill({ response, json: result })
+  })
+  let applies = 0
+  await page.route('**/api/v1/scripts/import/repairs/*', async route => {
+    const req = route.request().postDataJSON()
+    const inspect = req.operation.type === 'inspect'
+    const apply = route.request().url().endsWith('/apply')
+    if (apply) { applies++; expect(req.operation.body).toBe('restored test body') }
+    const revised = JSON.parse(JSON.stringify(draft))
+    if (!inspect) revised.actions[0].body = '[REDACTED]'
+    if (apply) revised.metadata.import.preserved.server_import_attestation_v1 = 'protected:browser-repair-two'
+    await route.fulfill({ json: { candidate_id: apply ? 'protected:browser-repair-two' : req.candidate_id, revision: apply ? 'protected:browser-repair-two' : req.revision, before: draft, script: revised, findings: inspect ? findings : [], readiness: { replay_ready: !inspect, promotion_ready: !inspect, blocking_codes: inspect ? ['restored_body_required'] : [] }, secret_binding_requirements: [], fidelity_report: { promotion_status: inspect ? 'blocked' : 'promotable', blockers: inspect ? ['restored_body_required'] : [] }, expires_at: expiry } })
+  })
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('button', { name: /Import Loadrunner Script Archive/ }).click()
+  await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures/guided-repair.zip'))
+  await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
+  const repair = page.getByRole('region', { name: 'Guided import repair' })
+  await expect(repair).toBeVisible()
+  await repair.getByLabel('Repair finding').selectOption('actions[0]:restored_body_required')
+  await repair.getByLabel('Repair value').fill('restored test body')
+  await expect(repair.getByRole('button', { name: 'Apply reviewed repair' })).toHaveCount(0)
+  await repair.getByRole('button', { name: 'Preview repair' }).click()
+  await repair.getByText('Redacted before / after', { exact: true }).click()
+  await expect(repair.locator('pre')).toContainText('[REDACTED]')
+  await expect(repair.locator('pre')).not.toContainText('restored test body')
+  expect(applies).toBe(0)
+  await repair.getByRole('button', { name: 'Apply reviewed repair' }).click()
+  await expect(page.getByText('Repair applied. Review remaining requirements and validate again.', { exact: true })).toBeVisible()
+  expect(applies).toBe(1)
 })

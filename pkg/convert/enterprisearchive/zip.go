@@ -568,6 +568,11 @@ func finalizeEnterpriseArchiveImportResult(
 				if script == nil {
 					continue
 				}
+				for _, name := range parsed.AllocationBlockers {
+					gate := dsl.Action{Type: "source_review", Name: "Review parameter allocation", Metadata: map[string]any{"source_file": parameterFileName}}
+					importreview.ApplyToAction(&gate, []importreview.Finding{{Code: "invalid_parameter_allocation:" + name, ReasonCode: "invalid_parameter_allocation", Gate: importreview.GateExecution, Detail: "Invalid automatic allocation flag; provide a valid parameter allocation contract."}})
+					script.Init = append(script.Init, gate)
+				}
 				if len(parsed.Parameters) > 0 || len(parsed.DataSources) > 0 {
 					parameterStart, dataSourceStart := len(script.Parameters), len(script.DataSources)
 					collisions := mergeParsedParameterFile(
@@ -624,6 +629,14 @@ func finalizeEnterpriseArchiveImportResult(
 	reviewDeclaredTransactionConservation(result, ctx.ProjectFileName, ctx.ProjectConfig, ctx.RuntimeConfig)
 	for _, script := range scripts {
 		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, ctx.RuntimeConfig, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
+		if findings, err := importreview.AnalyzeDependencies(script); err == nil {
+			_ = importreview.ApplyToScript(script, findings)
+		}
+		if ctx.RuntimeConfig != nil && ctx.RuntimeConfig.ProxyPasswordEncrypted && (script.Config.HTTP.Proxy.Password != "" || script.Config.HTTP.ProxyMode == "custom") {
+			gate := dsl.Action{Name: "Restore proxy credential", Type: "source_review", Target: "", Metadata: map[string]any{"source_file": ctx.RuntimeFileName}}
+			importreview.ApplyToAction(&gate, []importreview.Finding{{Code: "encrypted_proxy_password", ReasonCode: "encrypted_proxy_password", Severity: diag.Blocker, Gate: importreview.GateExecution, Detail: "The encrypted proxy password requires a project-secret replacement.", Source: "enterprise_script_archive", SourceRef: ctx.RuntimeFileName + "#ProxyPasswordIsEncrypted", Resolution: "replace_proxy_secret"}})
+			script.Init = append(script.Init, gate)
+		}
 	}
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
 	return nil

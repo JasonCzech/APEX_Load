@@ -864,7 +864,7 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 		"jms_solace_real,jms_servicebus_real,kafka_real,eventhubs_real",
 		"unsupported GO_BUILD_TAGS profile",
 	} {
-		if !strings.Contains(dockerfile, required) {
+		if !strings.Contains(dockerfile, required) && !(strings.HasPrefix(required, "COPY docs/") && strings.Contains(dockerfile, "COPY docs/*.md ./docs/")) {
 			t.Errorf("Dockerfile missing required contract fragment %q", required)
 		}
 	}

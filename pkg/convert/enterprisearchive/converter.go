@@ -10,6 +10,8 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -346,14 +348,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				result.Warnings = append(result.Warnings, warning)
 			}
 
-		case "web_global_verification":
-			if check, warning := convertGlobalVerification(fn); check != nil {
-				result.Script.Config.WebRuntime.ContentChecks = append(result.Script.Config.WebRuntime.ContentChecks, *check)
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.content_checks", check.Text, "config", "converted", "Mapped to a global HTTP content check.", SourceFunctionSupportExecutable))
-				result.Stats.ContributorFunctions++
-				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
-			} else if warning != "" {
-				result.Warnings = append(result.Warnings, warning)
+		case "web_global_verification", "web_global_verification_pause", "web_global_verification_resume":
+			for _, a := range convertSourceVerifications(fn) {
+				appendTrackedSourceAction(fn, a, SourceFunctionSupportExecutable, "Positional per-VUser HTTP verification.")
 			}
 
 		case "web_add_header":
@@ -567,6 +564,13 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				mappingStatus = "review_only"
 				mappingNotes = stringMapValue(details, "review_reason", "Unsupported source socket option; APEX defaults remain unchanged and review is required.")
 				result.Warnings = append(result.Warnings, mappingNotes)
+				if strings.EqualFold(stringMapValue(details, "option", ""), "SSL_VERSION") || strings.EqualFold(stringMapValue(details, "option", ""), "TLS_VERSION") {
+					gate := dsl.Action{Name: "Select_supported_TLS", Type: "source_review", Metadata: sourceFunctionMetadata(fn)}
+					importreview.ApplyToAction(&gate, []importreview.Finding{{Code: "legacy_tls_replacement", ReasonCode: "legacy_tls_replacement", Severity: diag.Blocker, Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber), Resolution: "select_tls", Detail: "Choose a supported TLS replacement for legacy SSL; this is an intentional migration."}})
+					appendTrackedSourceAction(fn, gate, SourceFunctionSupportReviewOnly, "Legacy TLS requires intentional replacement.")
+					result.Stats.ReviewOnlyFunctions--
+				}
+
 			}
 			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_sockets_option"), convertutil.FirstNonEmpty(stringMapValue(details, "option", ""), "Socket Option"), "config", mappingStatus, mappingNotes, supportMode))
 			result.Stats.ContributorFunctions++
@@ -713,7 +717,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				mappingMode := SourceFunctionSupportExecutable
 				if metadataBool(action.Metadata, "masked_body") {
 					mappingStatus = "review_only"
-					mappingNotes = fmt.Sprintf("Request argument is produced by %s(...); the masked payload is bound to the recording machine's key and cannot be recovered at import time — the action requires manual review.", metadataString(action.Metadata, "masked_body_function"))
+					mappingNotes = fmt.Sprintf("Request argument is produced by %s(...); APEX has no verified decoder for this payload; supply a restored body through protected import repair — the action requires manual review.", metadataString(action.Metadata, "masked_body_function"))
 					mappingMode = SourceFunctionSupportReviewOnly
 				} else if fn.itemDataReviewReason != "" {
 					mappingStatus = "review_only"

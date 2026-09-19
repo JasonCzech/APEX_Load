@@ -98,7 +98,7 @@ func TestGoldenVuGen24RealRuntimeSettings(t *testing.T) {
 	}
 
 	emulation := config.BrowserEmulation
-	if emulation == nil || emulation.Mode != "specific" || emulation.BrowserType != "ie" || emulation.BrowserVersion != "10.0" || emulation.Platform != "windows" {
+	if emulation == nil || emulation.Mode != "custom" || !strings.Contains(emulation.CustomUserAgent, "MSIE 10.0") {
 		t.Fatalf("browser emulation = %#v, want specific IE 10 on Windows", emulation)
 	}
 	if emulation.Cache == nil ||

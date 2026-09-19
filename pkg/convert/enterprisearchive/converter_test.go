@@ -1219,7 +1219,7 @@ func TestConvertOpaqueMaskedBodyArgumentsRequireReview(t *testing.T) {
 		}
 
 		warning := result.Warnings[tc.actionIndex]
-		for _, fragment := range []string{"Action.c line ", tc.sourceFunc, tc.stepName, tc.maskFunc, "cannot be recovered"} {
+		for _, fragment := range []string{"Action.c line ", tc.sourceFunc, tc.stepName, tc.maskFunc, "no verified decoder"} {
 			if !strings.Contains(warning, fragment) {
 				t.Errorf("%s: warning = %q, want it to contain %q", tc.stepName, warning, fragment)
 			}
@@ -1949,7 +1949,7 @@ EnableModemSpeed=0
 	if len(result.Script.Init) != 1 {
 		t.Fatalf("init actions = %d, want 1: %#v", len(result.Script.Init), result.Script.Init)
 	}
-	if len(result.Script.Actions) != 3 {
+	if len(result.Script.Actions) != 4 {
 		t.Fatalf("main actions = %d, want 3: %#v", len(result.Script.Actions), result.Script.Actions)
 	}
 	init := result.Script.Init[0]
@@ -1966,7 +1966,7 @@ EnableModemSpeed=0
 		t.Fatalf("init extractors = %#v, want JSONPath access token extractor", init.Extractors)
 	}
 
-	lightning := result.Script.Actions[0]
+	lightning := result.Script.Actions[1]
 	if lightning.Target != "https://attone--perfhyper2.sandbox.lightning.force.com/aura" {
 		t.Fatalf("lightning target = %q, want absolute foreign host", lightning.Target)
 	}
@@ -1976,10 +1976,10 @@ EnableModemSpeed=0
 	if got := lightning.Headers["Cookie"]; got != "sid={{var.c_lightning_sid}}" {
 		t.Fatalf("cookie header = %q, want response-derived session variable preserved", got)
 	}
-	if _, ok := result.Script.Actions[1].Headers["X-B3-TraceId"]; ok {
-		t.Fatalf("auto header should be removed after web_revert_auto_header: %#v", result.Script.Actions[1].Headers)
+	if _, ok := result.Script.Actions[2].Headers["X-B3-TraceId"]; ok {
+		t.Fatalf("auto header should be removed after web_revert_auto_header: %#v", result.Script.Actions[2].Headers)
 	}
-	auraPost := result.Script.Actions[2]
+	auraPost := result.Script.Actions[3]
 	if got := auraPost.Headers["Content-Type"]; got != "application/json" {
 		t.Fatalf("content-type = %q, want request EncType application/json", got)
 	}
@@ -1989,11 +1989,8 @@ EnableModemSpeed=0
 	if !strings.Contains(auraPost.Body, "{{var.c_access_token}}") {
 		t.Fatalf("body = %q, want parameterized access token", auraPost.Body)
 	}
-	if len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
-		t.Fatalf("content checks = %#v, want one global verification", result.Script.Config.WebRuntime.ContentChecks)
-	}
-	if result.Script.Config.WebRuntime.ContentChecks[0].Scope != "any_response" {
-		t.Fatalf("content check scope = %q, want any_response", result.Script.Config.WebRuntime.ContentChecks[0].Scope)
+	if len(result.Script.Config.WebRuntime.ContentChecks) != 0 || result.Script.Actions[0].Type != "source_verification" {
+		t.Fatal("expected positional verification")
 	}
 	if !result.Script.Config.ThinkTime.Ignore {
 		t.Fatalf("think time ignore = false, want NOTHINK mapped")
@@ -2328,23 +2325,23 @@ vuser_end()
 	if launch.Target != "https://acme.my.salesforce.com/one/one.app" {
 		t.Fatalf("launch target = %q, want absolute Salesforce URL because base host is mobileauth", launch.Target)
 	}
-	if len(result.Script.Actions) != 6 ||
-		importedSourceFunction(result.Script.Actions[0]) != "lr_start_transaction" ||
-		importedSourceFunction(result.Script.Actions[1]) != "lr_start_sub_transaction" ||
-		result.Script.Actions[2].Name != "Address_Search_Aura" ||
-		importedSourceFunction(result.Script.Actions[3]) != "lr_end_sub_transaction" ||
-		result.Script.Actions[4].Type != "http_sequence" ||
-		importedSourceFunction(result.Script.Actions[5]) != "lr_end_transaction" {
+	if len(result.Script.Actions) != 7 ||
+		importedSourceFunction(result.Script.Actions[1]) != "lr_start_transaction" ||
+		importedSourceFunction(result.Script.Actions[2]) != "lr_start_sub_transaction" ||
+		result.Script.Actions[3].Name != "Address_Search_Aura" ||
+		importedSourceFunction(result.Script.Actions[4]) != "lr_end_sub_transaction" ||
+		result.Script.Actions[5].Type != "http_sequence" ||
+		importedSourceFunction(result.Script.Actions[6]) != "lr_end_transaction" {
 		t.Fatalf("main actions = %#v, want executable parent/subtransaction boundaries around their original request scopes", result.Script.Actions)
 	}
-	sequence := result.Script.Actions[4]
+	sequence := result.Script.Actions[5]
 	if sequence.Name != "S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue" {
 		t.Fatalf("sequence name = %q, want source transaction name", sequence.Name)
 	}
 	if sequence.Metadata["source_request_count"] != 2 {
 		t.Fatalf("sequence request count metadata = %#v, want 2 requests after the independently bounded subtransaction", sequence.Metadata["source_request_count"])
 	}
-	address := result.Script.Actions[2]
+	address := result.Script.Actions[3]
 	if address.Target != "https://acme.lightning.force.com/aura" {
 		t.Fatalf("address target = %q, want absolute lightning URL", address.Target)
 	}
@@ -2396,8 +2393,8 @@ vuser_end()
 	if params["p_username"].OnExhaustion != "last" {
 		t.Fatalf("p_username parameter = %#v, want ContinueWithLast -> last", params["p_username"])
 	}
-	if len(result.Script.Config.WebRuntime.ContentChecks) != 1 {
-		t.Fatalf("content checks = %#v, want global verification", result.Script.Config.WebRuntime.ContentChecks)
+	if len(result.Script.Config.WebRuntime.ContentChecks) != 0 || result.Script.Actions[0].Type != "source_verification" {
+		t.Fatal("expected positional verification")
 	}
 	if result.SourceReview == nil {
 		t.Fatal("source review missing")
@@ -2410,7 +2407,7 @@ vuser_end()
 		t.Fatalf("web_convert_param params = %#v, want source string and URL target encoding", convertParam.Params)
 	}
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[2]", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[2]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[3]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "teardown[0]", "converted")
 }
 
@@ -2636,10 +2633,14 @@ Action=Action.c
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	checks := result.Script.Config.WebRuntime.ContentChecks
-	if len(checks) != 1 || checks[0].Text != `"state":"E` || !checks[0].CaseInsensitive {
-		t.Fatalf("content checks = %#v, want case-insensitive Text/IC check", checks)
+	check := result.Script.Actions[0]
+	if check.Type != "source_verification" || check.Params["text"] != `"state":"E` || check.Params["case_insensitive"] != true {
+		t.Fatalf("unexpected positional check: %#v", check)
 	}
+	if len(result.Script.Config.WebRuntime.ContentChecks) != 0 {
+		t.Fatal("positional check leaked into init config")
+	}
+
 }
 
 func TestBuildSourceReviewPreservesSecrets(t *testing.T) {

@@ -2797,6 +2797,9 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 			scriptCopy = *resolved
 		}
 	}
+	if stageDriven && engine.HasAllocatedParameters(&scriptCopy) {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: stage-driven rescaling cannot preserve unique parameter cursors; use a fixed population with a planned ramp", index)
+	}
 	if stageDriven && dsl.CanonicalWorkloadModel(scriptCopy.Config.RunLogic.WorkloadModel) == "open" {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf(
 			"group[%d]: vuser-driven stages are not supported for open workload scripts; configure TPS pacing without VUser scale stages",

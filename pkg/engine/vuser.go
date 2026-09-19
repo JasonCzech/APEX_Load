@@ -17,19 +17,20 @@ import (
 )
 
 type VUser struct {
-	ID              int
-	TotalVUsers     int
-	Group           string
-	Region          string
-	Proto           protocol.Protocol
-	Script          *dsl.Script
-	Metrics         *MetricsCollector
-	ResultSink      ResultSink
-	Variables       map[string]string
-	DataProvider    *DataProvider
-	Parameters      *ParameterRuntime
-	SecretResolver  SecretResolver
-	RedactionConfig *RedactionConfig
+	ID                  int
+	TotalVUsers         int
+	ParameterAllocation *ParameterAllocation
+	Group               string
+	Region              string
+	Proto               protocol.Protocol
+	Script              *dsl.Script
+	Metrics             *MetricsCollector
+	ResultSink          ResultSink
+	Variables           map[string]string
+	DataProvider        *DataProvider
+	Parameters          *ParameterRuntime
+	SecretResolver      SecretResolver
+	RedactionConfig     *RedactionConfig
 	// runtimeRedaction publishes immutable redaction snapshots to protocol
 	// callbacks, which may run on a driver/event goroutine while the VUser adds
 	// newly extracted credentials on its execution goroutine.
@@ -1089,7 +1090,15 @@ func (vu *VUser) prepareRuntimeState() error {
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)
 	}
-	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
+	if vu.ParameterAllocation != nil {
+		var err error
+		vu.Parameters, err = newAllocatedParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID, *vu.ParameterAllocation)
+		if err != nil {
+			return err
+		}
+	} else {
+		vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
+	}
 	if vu.Parameters != nil {
 		vu.Parameters.Prime()
 	}

@@ -85,7 +85,7 @@ func TestEngineActionTypeMembership(t *testing.T) {
 	expected := []string{
 		"control_if", "control_switch", "control_loop", "control_parallel", "control_break", "control_continue",
 		"rendezvous", "cookie_clear", "cache_clear", "http_connections_close", "error_message",
-		"source_message", "source_runtime", "source_transaction", "source_timer",
+		"source_verification", "source_message", "source_runtime", "source_transaction", "source_timer",
 		"source_metric", "source_parameter", "source_json", "source_xml",
 		"source_database", "source_secret", "source_external", "source_review",
 		"custom_call", "review_required",

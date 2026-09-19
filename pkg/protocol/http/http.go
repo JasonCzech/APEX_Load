@@ -44,6 +44,8 @@ type HTTP struct {
 	baseURL                    string
 	bufPool                    *httpBufferPool
 	contentChecks              []contentCheck
+	verificationMu             sync.RWMutex
+	verifications              map[string]registeredVerification
 	dataFormattingAutoDetect   bool
 	dataFormattingChain        []dataFormattingTransform
 	streaming                  *streamingProfile
@@ -211,6 +213,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 }
 
 func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	ctx, verification := h.verificationContext(ctx)
 	result := &protocol.Result{
 		ActionName:     protocol.ActionName(action),
 		StartTime:      time.Now(),
@@ -423,6 +426,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	}
 	baseCheckRedirect := client.CheckRedirect
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		observeVerificationRedirect(ctx, req.Response, false)
 		traceMu.Lock()
 		redirectCount = len(via)
 		if !redirectLegStart.IsZero() {
@@ -759,15 +763,33 @@ extractors:
 	// page's embedded resources after the main sample. Gated on the transport
 	// outcome (not result.Success, which extractors/assertions may have
 	// flipped) — a real browser fetches resources for any rendered page.
-	if h.resources != nil && method == http.MethodGet && bodyReadErr == nil &&
-		resp.StatusCode >= 200 && resp.StatusCode < 400 && isContentBearingResponse(resp.Header) {
+	observeVerification(ctx, resp.Header, respBody, false, bodyReadErr == nil)
+	explicit, _ := ParseExplicitResources(action.Params)
+	fetcher := h.resources
+	if fetcher == nil && len(explicit) > 0 {
+		fetcher = &resourceFetcher{h: h}
+	}
+	if fetcher != nil && bodyReadErr == nil && resp.StatusCode >= 200 && resp.StatusCode < 400 {
 		finalURL := req.URL
 		if resp.Request != nil && resp.Request.URL != nil {
 			finalURL = resp.Request.URL
 		}
-		h.resources.fetchPageResources(ctx, finalURL, respBody, result, req.Header)
-		// Page time includes the resource phase (LR parity).
-		result.Duration = time.Since(result.StartTime)
+		var pageBody []byte
+		if isContentBearingResponse(resp.Header) {
+			pageBody = respBody
+		}
+		if len(explicit) > 0 || len(pageBody) > 0 {
+			fetcher.fetchPageResources(ctx, finalURL, pageBody, result, req.Header, explicit...)
+			result.Duration = time.Since(result.StartTime)
+		}
+	}
+
+	if err := verification.err(); err != nil {
+		result.Success = false
+		result.ErrorMessage = err.Error()
+		if result.Snapshot == nil {
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+		}
 	}
 
 	return result, nil
@@ -795,6 +817,9 @@ func validateHTTPActionBounds(action *protocol.Action) error {
 		}
 	}
 	if err := ValidateAssertions(action.Assertions); err != nil {
+		return err
+	}
+	if _, err := ParseExplicitResources(action.Params); err != nil {
 		return err
 	}
 	if action.Params != nil {

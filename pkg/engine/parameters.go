@@ -21,6 +21,7 @@ type ParameterRuntime struct {
 	states         map[string]*parameterState
 	provider       *DataProvider
 	vuserID        int
+	allocation     *ParameterAllocation
 	now            func() time.Time
 }
 
@@ -488,6 +489,9 @@ func (pr *ParameterRuntime) valuesForParameter(param dsl.Parameter, state *param
 		return nil, false
 	}
 	values, ok := pr.provider.GetColumnValues(param.DataSource, param.Column)
+	if pr.allocation != nil && param.Selection == "unique" && (param.AutoAllocate || param.BlockSize > 0) {
+		values, ok = allocationValues(param, pr.provider)
+	}
 	if !ok {
 		return nil, false
 	}
@@ -500,12 +504,15 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 	if len(values) == 0 {
 		return values
 	}
+	if param.AutoAllocate && pr.allocation == nil {
+		return nil
+	}
 	start := 0
 	if param.StartRow > 1 {
 		start = param.StartRow - 1
 	}
 	if start >= len(values) {
-		if effectiveOnExhaustion(param) == "wrap" {
+		if param.Selection != "unique" && effectiveOnExhaustion(param) == "wrap" {
 			start = start % len(values)
 		} else {
 			return nil
@@ -517,6 +524,9 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 	}
 	if param.BlockSize > 0 {
 		vuserID := pr.vuserID
+		if pr.allocation != nil && param.Selection == "unique" {
+			vuserID = pr.allocation.Offset
+		}
 		if vuserID < 0 {
 			vuserID = 0
 		}
@@ -526,9 +536,15 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 		} else {
 			switch effectiveOnExhaustion(param) {
 			case "wrap":
+				if param.Selection == "unique" {
+					return nil
+				}
 				blockStart = safePositiveMulMod(vuserID, param.BlockSize, len(values))
 			case "last":
-				blockStart = len(values) - 1
+				if param.Selection != "unique" {
+					return values[len(values)-1:]
+				}
+				return nil
 			default:
 				return nil
 			}

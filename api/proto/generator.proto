@@ -165,6 +165,9 @@ message WorkAssignment {
   int64 message_detail_max_item_bytes = 32;
   int64 message_detail_max_total_bytes = 33;
   double transaction_response_time_sla_ms = 34;
+  // Frozen dense logical data-allocation coordinates; independent of sparse VUser IDs.
+  uint32 parameter_population = 35;
+  uint32 parameter_offset = 36;
 }
 
 message WorkCommitRequest {

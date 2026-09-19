@@ -51,6 +51,8 @@ type Assignment struct {
 	ShardOrdinal                 uint32
 	ShardCount                   uint32
 	VUserIDOffset                uint64
+	ParameterPopulation          uint32
+	ParameterOffset              uint32
 	StartPaused                  bool
 	Environment                  map[string]string
 	DataFiles                    []DataFile
@@ -1390,6 +1392,8 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		ShardOrdinal:              assignment.ShardOrdinal,
 		ShardCount:                assignment.ShardCount,
 		VuserIdOffset:             assignment.VUserIDOffset,
+		ParameterPopulation:       assignment.ParameterPopulation,
+		ParameterOffset:           assignment.ParameterOffset,
 		StartPaused:               assignment.StartPaused,
 		Environment:               environment,
 		DataFiles:                 dataFiles,

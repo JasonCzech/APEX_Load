@@ -846,6 +846,7 @@ type Parameter struct {
 	Column            string   `json:"column,omitempty"`
 	StartRow          int      `json:"start_row,omitempty"`
 	BlockSize         int      `json:"block_size,omitempty"`
+	AutoAllocate      bool     `json:"auto_allocate,omitempty"`
 	ValueForEachVUser bool     `json:"value_for_each_vuser,omitempty"`
 	Format            string   `json:"format,omitempty"`
 	Timezone          string   `json:"timezone,omitempty"`

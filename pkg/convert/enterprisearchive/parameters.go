@@ -16,10 +16,11 @@ import (
 )
 
 type ParsedParameterFile struct {
-	Parameters  []dsl.Parameter
-	DataSources []dsl.DataSource
-	Sections    map[string]map[string]string
-	Warnings    []string
+	AllocationBlockers []string
+	Parameters         []dsl.Parameter
+	DataSources        []dsl.DataSource
+	Sections           map[string]map[string]string
+	Warnings           []string
 }
 
 type parameterDefinitionCollision struct {
@@ -357,19 +358,15 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		selectNextRow := lower["selectnextrow"]
 		selection := mapParameterSelection(selectNextRow)
 		autoAllocateRaw := convertutil.FirstNonEmpty(lower["auto_allocate_block_size"], lower["autoallocateblocksize"])
-		if selection == "unique" && autoAllocateRaw != "" {
-			if automatic, valid := parseBoolExplicit(autoAllocateRaw); valid && automatic {
-				result.Warnings = append(result.Warnings,
-					"parameter file "+filepath.Base(filename)+": parameter "+name+
-						" requests automatic Vuser block allocation; APEX cannot calculate that script-level block without the scenario Vuser count, so block_size was left unset and requires review")
-			} else if !valid {
-				result.Warnings = append(result.Warnings,
-					"parameter file "+filepath.Base(filename)+": parameter "+name+
-						" has invalid auto_allocate_block_size="+strconv.Quote(autoAllocateRaw)+"; the value was treated as an allocation flag, not a literal block size, and requires review")
-			}
+		automatic, validAuto := parseBoolExplicit(autoAllocateRaw)
+		if selection == "unique" && autoAllocateRaw != "" && !validAuto {
+			result.Warnings = append(result.Warnings, "parameter "+name+" has invalid auto_allocate_block_size="+strconv.Quote(autoAllocateRaw)+"; allocation requires review")
+			result.AllocationBlockers = append(result.AllocationBlockers, name)
 		}
+
 		param := dsl.Parameter{
 			Name:              name,
+			AutoAllocate:      selection == "unique" && automatic && validAuto,
 			Update:            mapParameterUpdate(convertutil.FirstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
 			Selection:         selection,
 			OnExhaustion:      mapParameterExhaustion(convertutil.FirstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),

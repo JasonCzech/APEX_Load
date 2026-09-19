@@ -152,6 +152,9 @@ func buildSourceHTTPSequence(transaction string, requests []dsl.Action) dsl.Acti
 	if metadata == nil {
 		metadata = make(map[string]any)
 	}
+	for _, key := range []string{"execution_blocker", "execution_blockers", "import_review", "review_required", "promotion_blocker", "review_gate", "review_reasons", "masked_body", "body_gated_by_secret", "source_secret_ref", "source_secret_function", "restored_body_protected"} {
+		delete(metadata, key)
+	}
 	metadata["source_transaction"] = transaction
 	metadata["source_request_count"] = len(requests)
 	if subtransactions := sourceSubtransactions(requests); len(subtransactions) > 0 {

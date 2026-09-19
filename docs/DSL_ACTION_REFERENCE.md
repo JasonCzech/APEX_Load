@@ -228,6 +228,19 @@ Starts, ends, or annotates a named transaction imported from a source script.
 | `params.function` | string |  | Imported transaction function, e.g. lr_start_transaction, lr_end_transaction, lr_fail_trans_with_error. |
 | `params.args` | array |  | Positional arguments of the imported source function call. |
 
+### `source_verification`
+
+Registers, pauses, or resumes a positional per-VUser HTTP response check.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `params.operation` | string | yes | register, pause, or resume |
+| `params.id` | string | yes | Stable check ID |
+| `params.text` | string |  |  |
+| `params.scope` | string |  | all, body, headers, noresource, or resource |
+| `params.fail_if_found` | bool |  |  |
+| `params.case_insensitive` | bool |  |  |
+
 ### `source_xml`
 
 Replays an imported XML document operation, saving the result into a variable.
@@ -848,6 +861,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -866,6 +880,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -884,6 +899,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -902,6 +918,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -920,6 +937,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -938,6 +956,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -956,6 +975,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1004,6 +1024,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1022,6 +1043,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1040,6 +1062,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1058,6 +1081,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1076,6 +1100,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1094,6 +1119,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1112,6 +1138,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1685,6 +1712,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1703,6 +1731,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1721,6 +1750,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1739,6 +1769,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1757,6 +1788,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1775,6 +1807,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 
@@ -1793,6 +1826,7 @@ Protocols: http, soap, java_http
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
 

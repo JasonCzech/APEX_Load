@@ -289,6 +289,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := ValidateParameterAllocationTopology(script); err != nil {
+		return nil, err
+	}
 	if err := importExecutionGateError(script, "replay"); err != nil {
 		return nil, err
 	}
@@ -384,6 +387,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	})
 
 	vu := &VUser{
+		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: 1},
 		ID:                           0,
 		Group:                        groupName,
 		Proto:                        proto,

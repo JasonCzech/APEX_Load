@@ -178,10 +178,21 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 			result.err, result.failed = teardownErr, true
 		}
 	}()
+	if source, ok := vu.Proto.(protocol.VerificationSnapshotter); ok {
+		if destination, ok := instance.(protocol.VerificationController); ok {
+			for _, check := range source.VerificationSnapshot() {
+				if err := destination.ConfigureVerification(check); err != nil {
+					result.err, result.failed = err, true
+					return
+				}
+			}
+		}
+	}
 	// Branches inherit the parent iteration's data bindings. Preparing a new
 	// lifecycle would advance shared data cursors once per branch.
 	if branchVU.Parameters != nil {
 		branchVU.Parameters.Prime()
+		branchVU.Parameters.inheritAllocatedParameterState(vu.Parameters)
 	}
 	_ = branchVU.refreshImportedCredentialRuntimeValues()
 	cfg := vu.Script.Config

@@ -14,6 +14,7 @@ func engineActionSpecs() []ActionSpec {
 		}
 	}
 	return []ActionSpec{
+		{Type: "source_verification", Protocols: []string{"*"}, Summary: "Registers, pauses, or resumes a positional per-VUser HTTP response check.", Fields: []FieldSpec{{Name: "params.operation", Kind: FieldKindString, Required: true, Doc: "register, pause, or resume"}, {Name: "params.id", Kind: FieldKindString, Required: true, Doc: "Stable check ID"}, {Name: "params.text", Kind: FieldKindString}, {Name: "params.scope", Kind: FieldKindString, Doc: "all, body, headers, noresource, or resource"}, {Name: "params.fail_if_found", Kind: FieldKindBool}, {Name: "params.case_insensitive", Kind: FieldKindBool}}, Validate: validateVerificationAction},
 		{
 			Type:      "control_parallel",
 			Protocols: []string{"*"},

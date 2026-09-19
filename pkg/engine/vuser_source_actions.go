@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"log/slog"
@@ -40,6 +41,20 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 		return true, vu.closeProtocolIdleConnections(ctx)
 	case "http_oauth2_token":
 		return true, vu.handleHTTPOAuth2TokenAction(ctx, action)
+	case "source_verification":
+		controller, ok := vu.Proto.(protocol.VerificationController)
+		if !ok {
+			return true, fmt.Errorf("protocol does not support positional verification")
+		}
+		var v protocol.Verification
+		b, err := json.Marshal(vu.interpolateAnyMap(action.Params))
+		if err != nil {
+			return true, err
+		}
+		if err = json.Unmarshal(b, &v); err != nil {
+			return true, err
+		}
+		return true, controller.ConfigureVerification(v)
 	case "source_transaction":
 		return true, vu.handleSourceTransactionActionContext(ctx, action)
 	case "source_timer":

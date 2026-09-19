@@ -1167,6 +1167,27 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(snapshot.RuntimeCapacities)
 		initialLoadByTarget[target] = snapshot
 	}
+	allocationScripts := make([]*dsl.Script, len(test.Groups))
+	allocationUsers := make([]int, len(test.Groups))
+	for i, group := range test.Groups {
+		allocationScripts[i] = group.script
+		for _, shard := range peakGroupShards[group.Name] {
+			allocationUsers[i] += shard.VUsers
+		}
+		if group.stageDriven && engine.HasAllocatedParameters(group.script) {
+			failStartup("stage-driven rescaling cannot preserve unique parameter cursors; use a fixed population with a planned ramp")
+			return
+		}
+	}
+	allocations, allocationErr := engine.PlanScenarioParameterAllocations(allocationScripts, allocationUsers)
+	if allocationErr != nil {
+		failStartup(allocationErr.Error())
+		return
+	}
+	allocationByGroup := map[string]engine.ParameterAllocation{}
+	for i, group := range test.Groups {
+		allocationByGroup[group.Name] = allocations[i]
+	}
 	projectSecretResolvers := make(map[string]engine.SecretResolver)
 	var shardNamespaceBase uint64
 	for _, group := range test.Groups {
@@ -1281,6 +1302,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				ScenarioID:                 test.ScenarioID,
 				RequireTestExecutionLease:  requireTestExecutionLease,
 				GroupName:                  group.Name,
+				ParameterPopulation:        uint32(allocationByGroup[group.Name].Population),
+				ParameterOffset:            uint32(allocationByGroup[group.Name].Offset),
 				TargetDuration:             test.Duration,
 				StartOffset:                groupStartOffsetDuration(group),
 				ScriptID:                   group.ScriptID,
@@ -1502,6 +1525,18 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 	if len(plans) == 0 {
 		return outcomes
 	}
+	allocationOffsets := map[uint32]uint32{}
+	allocationPopulation := template.ParameterOffset
+	var allocationShards []GeneratorShardSummary
+	for _, plan := range plans {
+		allocationShards = append(allocationShards, plan.shards...)
+	}
+	sort.Slice(allocationShards, func(i, j int) bool { return allocationShards[i].ShardOrdinal < allocationShards[j].ShardOrdinal })
+	for _, shard := range allocationShards {
+		allocationOffsets[shard.ShardOrdinal] = allocationPopulation
+		allocationPopulation += uint32(shard.VUsers)
+	}
+
 	runPlan := func(index int) {
 		plan := plans[index]
 		outcome := distributedTargetAssignmentOutcome{target: plan.target, results: make([]generatorrpc.AssignmentResult, len(plan.shards))}
@@ -1538,6 +1573,11 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			assignment.ShardOrdinal = shard.ShardOrdinal
 			assignment.ShardCount = shard.ShardCount
 			assignment.VUserIDOffset = shard.VUserIDOffset
+			assignment.ParameterPopulation = allocationPopulation
+			if template.ParameterPopulation > 0 {
+				assignment.ParameterPopulation = template.ParameterPopulation
+			}
+			assignment.ParameterOffset = allocationOffsets[shard.ShardOrdinal]
 			assignment.RedactionRules = cloneRedactionRules(template.RedactionRules)
 			rpcCtx, rpcCancel := context.WithTimeout(ctx, b.timeout)
 			result, assignErr := plan.client.AssignWork(rpcCtx, assignment)

@@ -54,6 +54,9 @@ func assignmentToleratesGeneratorLoss(assignment *GeneratorAssignmentSettings) b
 }
 
 func groupAllowsGeneratorLossReshard(group TestGroup) (bool, string) {
+	if engine.HasAllocatedParameters(group.script) {
+		return false, "unique parameter block progress cannot be recovered on a replacement generator"
+	}
 	protocol := strings.ToLower(strings.TrimSpace(group.Protocol))
 	switch protocol {
 	case "browser", "java_vuser", "sap_gui":

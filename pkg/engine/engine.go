@@ -132,6 +132,16 @@ func New(cfg Config) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize data sources: %s", scrubSensitiveText(err.Error()))
 	}
+	if HasAllocatedParameters(cfg.Script) && isOpenWorkload(cfg.Script) {
+		return nil, fmt.Errorf("unique parameter allocation requires a closed workload")
+	}
+	if err := ValidateParameterAllocationTopology(cfg.Script); err != nil {
+		return nil, err
+	}
+	allocation := ParameterAllocation{Population: cfg.VUsers, Iterations: cfg.Script.Config.RunLogic.Iterations}
+	if _, _, err := CompileParameterAllocation(cfg.Script.Parameters, dataProvider, allocation); err != nil {
+		return nil, err
+	}
 	secretResolver := cfg.SecretResolver
 	if secretResolver == nil {
 		secretResolver = newDefaultSecretResolverForProject(cfg.Script.ProjectID)
@@ -369,6 +379,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			vu = &VUser{
 				ID:                           vuserID,
 				TotalVUsers:                  e.vusers,
+				ParameterAllocation:          &ParameterAllocation{Population: e.vusers, Offset: vuserID, Iterations: e.script.Config.RunLogic.Iterations},
 				Proto:                        vuProto,
 				Script:                       e.script,
 				Metrics:                      e.metrics,

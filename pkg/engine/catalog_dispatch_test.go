@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // TestEngineDispatchCoversCatalogEngineActions cross-checks the dsl action
@@ -43,6 +44,10 @@ func TestEngineDispatchCoversCatalogEngineActions(t *testing.T) {
 			Variables: map[string]string{},
 		}
 		action := dsl.Action{Name: "step", Type: spec.Type}
+		if spec.Type == "source_verification" {
+			vu.Proto = &httpprotocol.HTTP{}
+			action.Params = map[string]any{"operation": "register", "id": "check", "text": "error", "scope": "all", "fail_if_found": true}
+		}
 		handled, err := vu.handleEngineAction(context.Background(), action)
 		if !handled {
 			t.Errorf("%s: catalog engine action not handled by handleEngineAction", spec.Type)

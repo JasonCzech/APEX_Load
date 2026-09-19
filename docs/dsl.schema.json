@@ -44,7 +44,12 @@
                 "type": "string"
               },
               "params": {
-                "description": "Protocol-specific request options.",
+                "properties": {
+                  "resources": {
+                    "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "soap": {
@@ -102,7 +107,12 @@
                 "type": "string"
               },
               "params": {
-                "description": "Protocol-specific request options.",
+                "properties": {
+                  "resources": {
+                    "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "soap": {
@@ -160,7 +170,12 @@
                 "type": "string"
               },
               "params": {
-                "description": "Protocol-specific request options.",
+                "properties": {
+                  "resources": {
+                    "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "soap": {
@@ -218,7 +233,12 @@
                 "type": "string"
               },
               "params": {
-                "description": "Protocol-specific request options.",
+                "properties": {
+                  "resources": {
+                    "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "soap": {
@@ -276,7 +296,12 @@
                 "type": "string"
               },
               "params": {
-                "description": "Protocol-specific request options.",
+                "properties": {
+                  "resources": {
+                    "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "soap": {
@@ -334,7 +359,12 @@
                 "type": "string"
               },
               "params": {
-                "description": "Protocol-specific request options.",
+                "properties": {
+                  "resources": {
+                    "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "soap": {
@@ -392,7 +422,12 @@
                 "type": "string"
               },
               "params": {
-                "description": "Protocol-specific request options.",
+                "properties": {
+                  "resources": {
+                    "description": "Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification.",
+                    "type": "array"
+                  }
+                },
                 "type": "object"
               },
               "soap": {
@@ -5942,6 +5977,59 @@
             "properties": {
               "type": {
                 "enum": [
+                  "source_verification",
+                  "loadrunner_verification"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Registers, pauses, or resumes a positional per-VUser HTTP response check.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "case_insensitive": {
+                    "type": "boolean"
+                  },
+                  "fail_if_found": {
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "description": "Stable check ID",
+                    "type": "string"
+                  },
+                  "operation": {
+                    "description": "register, pause, or resume",
+                    "type": "string"
+                  },
+                  "scope": {
+                    "description": "all, body, headers, noresource, or resource",
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operation",
+                  "id"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "params"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "source_xml",
                   "loadrunner_xml"
                 ]
@@ -6417,6 +6505,7 @@
             "loadrunner_secret",
             "loadrunner_timer",
             "loadrunner_transaction",
+            "loadrunner_verification",
             "loadrunner_xml",
             "network_health",
             "ping",
@@ -6450,6 +6539,7 @@
             "source_secret",
             "source_timer",
             "source_transaction",
+            "source_verification",
             "source_xml",
             "stored_procedure",
             "tcp_request",
@@ -8063,6 +8153,9 @@
     "Parameter": {
       "additionalProperties": false,
       "properties": {
+        "auto_allocate": {
+          "type": "boolean"
+        },
         "block_size": {
           "type": "integer"
         },

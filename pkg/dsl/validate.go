@@ -870,6 +870,11 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 
 func validateEngineActionIssues(protocol string, path string, index int, action Action) []string {
 	switch action.Type {
+	case "source_verification":
+		if protocol != "http" {
+			return []string{fmt.Sprintf("%s: positional source verification requires the HTTP protocol", path)}
+		}
+		return rebaseActionIssues(fmt.Sprintf("action[%d]", index), path, validateVerificationAction(index, action))
 	case "rendezvous":
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateRendezvousActionIssues(index, action))
 	case "control_if", "control_switch", "control_loop", "control_parallel":
@@ -1318,6 +1323,9 @@ func validateParameterIssues(script *Script) []string {
 		}
 		if param.StartRow < 0 || param.StartRow > MaxParameterRowIndex {
 			issues = append(issues, fmt.Sprintf("%s %q: start_row must be between 0 and %d", label, name, MaxParameterRowIndex))
+		}
+		if param.AutoAllocate && (param.Selection != "unique" || (param.Type != "file" && param.Type != "list")) {
+			issues = append(issues, fmt.Sprintf("%s %q: auto_allocate requires a unique file/list parameter", label, name))
 		}
 		if param.BlockSize < 0 || param.BlockSize > MaxParameterRowIndex {
 			issues = append(issues, fmt.Sprintf("%s %q: block_size must be between 0 and %d", label, name, MaxParameterRowIndex))

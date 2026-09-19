@@ -21,6 +21,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -1403,7 +1404,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	names := protocol.List()
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
-	features := []string{FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
+	features := []string{dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
 	runtimeCapacities := make([]*pb.ProtocolRuntimeCapacity, 0)
 	for _, name := range names {
 		normalized := strings.ToLower(strings.TrimSpace(name))

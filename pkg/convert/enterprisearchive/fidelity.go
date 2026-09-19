@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -72,6 +73,13 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.Blockers = append(report.Blockers, javaVuserLifecycleFidelityBlockers(result)...)
 		if result.Script != nil {
 			report.SecretGated = countSecretGatedActions(result.Script)
+			if findings, err := importreview.FindingsFromScript(result.Script); err == nil {
+				for _, f := range findings {
+					if f.Gate == importreview.GateExecution {
+						report.Blockers = append(report.Blockers, f.Code+" at "+f.ActionPath)
+					}
+				}
+			}
 			if hasTrailingRequestContributors(result.Script) {
 				report.Blockers = append(report.Blockers, "One or more response contributors or one-shot headers occur after the final request and cannot be bound faithfully.")
 			}

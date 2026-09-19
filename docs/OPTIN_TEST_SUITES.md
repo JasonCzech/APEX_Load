@@ -98,3 +98,7 @@ them.
 2. Add it to `scripts/run-optin-suites.sh` so it is actually runnable in one command.
 3. Make the skip message name the gate and the command that satisfies it — a bare
    `t.Skip("skipping")` is how a suite becomes invisible.
+
+### VUser footprint evidence
+
+`APEXLOAD_VUSER_FOOTPRINT=1 go test ./pkg/perfevidence -run TestVUserFootprint` runs the opt-in local memory probe. `APEXLOAD_VUSER_FOOTPRINT_PG_DSN` supplies the optional PostgreSQL DSN for that suite; use a disposable local database.

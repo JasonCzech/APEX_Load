@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 575,
+    "routes": 577,
     "public": 22,
-    "protected": 553,
-    "rbac": 551,
+    "protected": 555,
+    "rbac": 553,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 575,
+    "green": 577,
     "partial": 0,
     "missing": 0
   },
@@ -9819,6 +9819,56 @@
       "method": "POST",
       "path": "/api/v1/scripts/import/recorder/validate",
       "operation_id": "handleValidateRecorderImport",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/repairs/apply",
+      "operation_id": "handleApplyImportRepair",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/repairs/preview",
+      "operation_id": "handlePreviewImportRepair",
       "public": false,
       "authenticated": true,
       "state": "GREEN",

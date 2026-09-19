@@ -80,6 +80,7 @@ func processResourceSlots() chan struct{} {
 
 type resourceRef struct {
 	url          string
+	referer      *string
 	resourceType string // image|script|stylesheet|icon|media|document|other|prefetch|prerender|preload
 }
 
@@ -91,12 +92,11 @@ type resourceFetcher struct {
 	filterHosts []string
 }
 
-// newResourceFetcher returns nil unless download-non-HTML or prefetch
-// simulation is enabled, so the Execute hot path stays a nil check.
+// Keep configured download filters even when only explicit resources are used.
 func newResourceFetcher(h *HTTP, config map[string]any) *resourceFetcher {
 	download, _ := config["http_download_non_html_resources"].(bool)
 	prefetch, _ := config["http_simulate_prefetch"].(bool)
-	if !download && !prefetch {
+	if !download && !prefetch && len(protocol.ConfigStringSlice(config, "web_download_filters_hosts")) == 0 {
 		return nil
 	}
 	fetcher := &resourceFetcher{h: h, download: download, prefetch: prefetch}
@@ -170,8 +170,9 @@ func (f *resourceFetcher) fetchPageResources(
 	body []byte,
 	result *protocol.Result,
 	pageHeaders http.Header,
+	explicit ...ExplicitResource,
 ) {
-	if f == nil || pageURL == nil || len(body) == 0 || result == nil {
+	if f == nil || pageURL == nil || result == nil {
 		return
 	}
 	resources, prefetch := extractResourceRefs(body, pageURL)
@@ -181,6 +182,18 @@ func (f *resourceFetcher) fetchPageResources(
 	if !f.prefetch {
 		prefetch = nil
 	}
+	// Explicit source declarations take precedence over discovered duplicates,
+	// including their authored referer and the bounded resource budget.
+	discovered := resources
+	resources = make([]resourceRef, 0, len(explicit)+len(discovered))
+	for _, r := range explicit {
+		u, err := neturl.Parse(r.URL)
+		if err != nil {
+			continue
+		}
+		resources = append(resources, resourceRef{url: pageURL.ResolveReference(u).String(), resourceType: "other", referer: r.Referer})
+	}
+	resources = append(resources, discovered...)
 	resources = f.filterResourceRefs(resources, pageURL, maxPageResources, nil)
 	if len(resources) == 0 && len(prefetch) == 0 {
 		return
@@ -458,7 +471,11 @@ func (h *HTTP) fetchResource(
 	if lang := pageHeaders.Get("Accept-Language"); lang != "" {
 		setRequestHeader(req, "Accept-Language", lang)
 	}
-	if referer := refererForResource(pageURL, ref.url); referer != "" {
+	if ref.referer != nil {
+		if *ref.referer != "" {
+			req.Header.Set("Referer", *ref.referer)
+		}
+	} else if referer := refererForResource(pageURL, ref.url); referer != "" {
 		req.Header.Set("Referer", referer)
 	}
 
@@ -469,6 +486,7 @@ func (h *HTTP) fetchResource(
 				entry.StatusCode = cached.statusCode
 				entry.ResourceType = ref.resourceType + "(cache)"
 				cacheHit = true
+				observeVerification(ctx, cached.header, cached.body, true, true)
 				return
 			}
 			cached.addConditionalHeaders(req)
@@ -480,9 +498,18 @@ func (h *HTTP) fetchResource(
 	// only sees the linked URL, so an allowed host redirecting to a block-listed
 	// one would otherwise defeat the filter. (SSRF confinement is already
 	// enforced per-hop by the target-policy round-tripper on the transport.)
-	client := h.client
+	clientCopy := *h.client
+	baseVerificationRedirect := clientCopy.CheckRedirect
+	clientCopy.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		observeVerificationRedirect(ctx, r.Response, true)
+		if baseVerificationRedirect != nil {
+			return baseVerificationRedirect(r, via)
+		}
+		return nil
+	}
+	client := &clientCopy
 	if h.resources != nil && h.resources.hasDownloadFilters() {
-		clone := *h.client
+		clone := *client
 		base := clone.CheckRedirect
 		clone.CheckRedirect = func(rr *http.Request, via []*http.Request) error {
 			if h.resources.blockedByDownloadFilters(rr.URL.String()) {
@@ -509,6 +536,7 @@ func (h *HTTP) fetchResource(
 		entry.StatusCode = http.StatusNotModified
 		entry.ResourceType = ref.resourceType + "(revalidated)"
 		cacheHit = true
+		observeVerification(ctx, staleEntry.header, staleEntry.body, true, true)
 		return
 	}
 
@@ -564,6 +592,7 @@ func (h *HTTP) fetchResource(
 			}
 		}
 	}
+	observeVerification(ctx, resp.Header, buffered, true, !failed && bytes <= int64(httpCacheMaxBodyBytes))
 	if resp.StatusCode >= 400 {
 		failed = true
 	}

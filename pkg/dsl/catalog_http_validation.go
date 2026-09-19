@@ -207,6 +207,9 @@ func validateHTTPActionBoundsIssues(path string, action Action) []string {
 	capabilities := httpprotocol.Capabilities()
 	maxTimeoutMS := capabilities.MaxTimeoutMS
 	var issues []string
+	if err := httpprotocol.ValidateExplicitResourceTemplates(action.Params); err != nil {
+		issues = append(issues, fmt.Sprintf("%s: %v", label, err))
+	}
 	// http_sequence is catalogued for the HTTP protocol but dispatched by the
 	// engine; its import representation uses the synthetic method SEQUENCE.
 	// Each child request is validated separately above.

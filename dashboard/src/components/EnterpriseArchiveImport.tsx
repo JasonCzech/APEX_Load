@@ -1,3 +1,4 @@
+import { ImportGuidedRepair } from './ImportGuidedRepair'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
@@ -952,6 +953,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const resultScriptButtonRefs = useRef(new Map<number, HTMLButtonElement>())
   const pendingResultScriptFocusRef = useRef<number | null>(null)
   const [validationReviewTab, setValidationReviewTab] = useState<ValidationReviewTab>('overview')
+  const [repairSourceFocus, setRepairSourceFocus] = useState({ id: '', revision: 0 })
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
@@ -4458,7 +4460,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             previewData={importedScript}
             previewInitiallyOpen
             previewAside={sourceReview
-              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} />
+              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} focusedMappingId={repairSourceFocus.id} focusRequestId={repairSourceFocus.revision} />
               : <div className="lr-review-tab-empty">No source mapping was generated for this archive.</div>}
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}
@@ -4468,6 +4470,16 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               hidden={validationReviewTab !== 'overview'}
             >
             {saveBlockedByProtocolGate && <div className="lr-warnings" role="status"><strong>Execution blocked</strong><p>{combinedJavaVuserGate ? 'Save the combined draft for approval. A compatible governed Java runner is also required before execution.' : 'Save a reference artifact. This protocol is not available for executable promotion in this import.'}</p></div>}
+            {importedScript && <ImportGuidedRepair key={`${selectedItem?.id}:${selectedResultScriptIndex}`} script={importedScript} projectId={projectId || ''} disabled={scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} onViewSource={path => {
+              const mapping = sourceReview?.mappings?.find(entry => entry.target_path === path)
+              setRepairSourceFocus(previous => ({ id: mapping?.id || '', revision: previous.revision + 1 }))
+              setValidationReviewTab('source')
+            }} onApplied={repaired => {
+              if (!selectedItem || !result) return
+              const nextScripts = resultScripts.map((entry, index) => index === selectedResultScriptIndex ? repaired.script : entry)
+              nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
+              updateImportItem(selectedItem.id, { result: { ...result, script: nextScripts[0], scripts: nextScripts, import_draft_expires_at: repaired.expires_at, fidelity_report: repaired.fidelity_report, secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, selectedResultScriptIndex, importedScript, repaired.secret_binding_requirements) }, replayValidationLoading: false, replayValidationError: '', replayValidationWarnings: [], replayValidationSession: null, replayReviewGeneration: -1, replayScriptIndex: -1, replayProjectId: '', notice: 'Repair applied. Review remaining requirements and validate again.' })
+            }} />}
             <section className="lr-repair-summary" aria-label="Required repairs">
               <h4>{needsExecutionRepair ? 'Required before execution' : 'Review before execution'}</h4>
               <p>Validation and draft saving do not authorize execution. Resolve the findings below, validate again, then verify one iteration in your intended environment.</p>

@@ -23,54 +23,56 @@ import (
 
 // RuntimeConfig holds parsed source runtime settings from a .cfg file.
 type RuntimeConfig struct {
-	ConnectTimeoutSec int
-	ReceiveTimeoutSec int
-	StepTimeoutSec    int
-	HTTPVersion       string // source spelling; native projection supports exact "1.1" and "2"
-	KeepAlive         bool
-	MaxConnsPerHost   int
-	ProxyMode         string
-	ProxyURL          string
-	ProxyUser         string
-	ProxyPass         string
+	ConnectTimeoutSec      int
+	ReceiveTimeoutSec      int
+	StepTimeoutSec         int
+	HTTPVersion            string // source spelling; native projection supports exact "1.1" and "2"
+	KeepAlive              bool
+	MaxConnsPerHost        int
+	ProxyMode              string
+	ProxyURL               string
+	ProxyUser              string
+	ProxyPass              string
+	ProxyPasswordEncrypted bool
 	// proxyReviewUser/proxyReviewPass retain source credentials only when an
 	// enabled proxy selection cannot be represented safely. They are projected
 	// into config.http.proxy beside proxy_mode=none, so the destination keeps
 	// the operator-owned values without allowing the HTTP transport to use
 	// them. They are cleared after final credential projection.
-	proxyReviewUser     string
-	proxyReviewPass     string
-	ProxyNoProxy        []string
-	UserAgent           string
-	AcceptLanguage      string
-	AcceptEncoding      string
-	UseGzip             bool
-	EnableHTTP2         *bool
-	EnableHTTP2Raw      string
-	SSLVersion          string
-	AuthUser            string
-	AuthPass            string
-	MaxRedirects        int
-	Iterations          int
-	AutoTransactions    string
-	BlockScheduling     string
-	ActionSequence      []string
-	PacingType          string
-	DelayMs             int
-	MinDelayMs          int
-	MaxDelayMs          int
-	IntervalMs          int
-	MinIntervalMs       int
-	MaxIntervalMs       int
-	ThinkTimeIgnore     bool
-	ThinkTimeType       string
-	ThinkTimeMultiplier float64
-	ThinkTimeLimitMs    float64
-	RuntimeFiles        []string
-	RuntimeIssues       []RuntimeMigrationIssue
-	LogLevel            string
-	OnErrorOnly         bool
-	LogExtendedOptions  []string
+	proxyReviewUser         string
+	proxyReviewPass         string
+	ProxyNoProxy            []string
+	UserAgent               string
+	ActiveRecordedUserAgent bool
+	AcceptLanguage          string
+	AcceptEncoding          string
+	UseGzip                 bool
+	EnableHTTP2             *bool
+	EnableHTTP2Raw          string
+	SSLVersion              string
+	AuthUser                string
+	AuthPass                string
+	MaxRedirects            int
+	Iterations              int
+	AutoTransactions        string
+	BlockScheduling         string
+	ActionSequence          []string
+	PacingType              string
+	DelayMs                 int
+	MinDelayMs              int
+	MaxDelayMs              int
+	IntervalMs              int
+	MinIntervalMs           int
+	MaxIntervalMs           int
+	ThinkTimeIgnore         bool
+	ThinkTimeType           string
+	ThinkTimeMultiplier     float64
+	ThinkTimeLimitMs        float64
+	RuntimeFiles            []string
+	RuntimeIssues           []RuntimeMigrationIssue
+	LogLevel                string
+	OnErrorOnly             bool
+	LogExtendedOptions      []string
 	// ContinueOnError is tri-state: nil means the source runtime settings never
 	// stated a preference, so the scenario's continue-on-error policy decides.
 	// An explicit "0" in the source stays an explicit false.
@@ -283,7 +285,7 @@ func parseRuntimeBrowserSettings(rc *RuntimeConfig, sections map[string]map[stri
 	// toggles; sourcing it here from browserSection alone would silently lose a
 	// custom UA that lives in [WEB] when an APEX-native [Browser Emulation]
 	// section is also present.
-	acceptLanguageAliases := []string{"AcceptLanguage", "BrowserAcceptLanguage", "NavigatorBrowserLanguage", "NavigatorUserLanguage"}
+	acceptLanguageAliases := []string{"AcceptLanguage", "BrowserAcceptLanguage"}
 	acceptLanguageRaw := firstNonBlank(
 		runtimeSectionFirstNonBlank(browserSection, acceptLanguageAliases...),
 		runtimeSectionFirstNonBlank(browserWebSection, acceptLanguageAliases...),
@@ -1183,6 +1185,10 @@ func parseBrowserEmulationRuntimeSettings(rc *RuntimeConfig, browserSection, web
 	// genuine custom-UA toggle keys participate.
 	parseTristate(&rc.BEUseCustomUA, &rc.BEUseCustomUARaw, &rc.BEUseCustomUAParseError,
 		"invalid browser-emulation custom user-agent toggle", "UseCustomAgent", "UseCustomUserAgent")
+	if rc.BEUseCustomUA != nil && !*rc.BEUseCustomUA {
+		rc.UserAgent = strings.TrimSpace(firstNonBlankLookup(lookup, "UserAgent", "BrowserUserAgent"))
+		rc.ActiveRecordedUserAgent = rc.UserAgent != ""
+	}
 	// SimulateCache (real LR) wins over the invented CacheEnabled alias across
 	// sections; CacheEnabled still independently feeds config.browser.cache_enabled.
 	if value, ok := lookupPreferred("SimulateCache", "CacheEnabled"); ok && strings.TrimSpace(value) != "" {
@@ -1294,7 +1300,7 @@ func (rc *RuntimeConfig) ToBrowserEmulationConfig() *dsl.BrowserEmulationConfig 
 	}
 	emu := &dsl.BrowserEmulationConfig{}
 
-	customAllowed := rc.BEUseCustomUA == nil || *rc.BEUseCustomUA
+	customAllowed := rc.ActiveRecordedUserAgent || rc.BEUseCustomUA == nil || *rc.BEUseCustomUA
 	switch {
 	case rc.UserAgent != "" && customAllowed:
 		emu.Mode = "custom"
@@ -1687,7 +1693,7 @@ func runtimeConfigCanonicalKey(section, key string) string {
 			return "proxypassword"
 		case "customuseragent", "useragent", "browseruseragent":
 			return "useragent"
-		case "acceptlanguage", "browseracceptlanguage", "browserlanguagecode", "browserlanguage", "languagecode", "navigatorbrowserlanguage", "navigatoruserlanguage":
+		case "acceptlanguage", "browseracceptlanguage":
 			return "acceptlanguage"
 		case "acceptencoding", "browseracceptencoding":
 			return "acceptencoding"
@@ -1782,7 +1788,7 @@ func runtimeConfigCanonicalKey(section, key string) string {
 			return "useragent"
 		case "usecustomagent", "usecustomuseragent":
 			return "usecustomagent"
-		case "acceptlanguage", "browseracceptlanguage", "browserlanguagecode", "browserlanguage", "languagecode", "navigatorbrowserlanguage", "navigatoruserlanguage":
+		case "acceptlanguage", "browseracceptlanguage":
 			return "acceptlanguage"
 		case "acceptencoding", "browseracceptencoding":
 			return "acceptencoding"
@@ -2241,6 +2247,10 @@ func applyRuntimeCfgCaseFoldConflicts(rc *RuntimeConfig, content string) {
 		javaJDK:                 rc.JavaVMJDKSelection,
 	}
 	for _, conflict := range runtimeConfigCaseFoldConflicts(content) {
+		conflict = activeUserAgentConflict(conflict, rc.BEUseCustomUA == nil || *rc.BEUseCustomUA)
+		if len(conflict.occurrences) < 2 {
+			continue
+		}
 		switch {
 		case runtimeConfigConflictMatches(
 			conflict,
@@ -3819,6 +3829,11 @@ func parseRuntimeProxySettings(rc *RuntimeConfig, sections map[string]map[string
 	rc.ProxyUser = strings.TrimSpace(rc.ProxyUser)
 	rc.ProxyPass, _ = firstRuntimeSectionValue(sourceSections, "ProxyPassword", "Password")
 	rc.ProxyPass = strings.TrimSpace(rc.ProxyPass)
+	encrypted, _ := firstRuntimeSectionValue(sourceSections, "ProxyPasswordIsEncrypted")
+	rc.ProxyPasswordEncrypted = strings.EqualFold(encrypted, "true") || encrypted == "1"
+	if rc.ProxyPasswordEncrypted && rc.ProxyPass != "" {
+		rc.ProxyPass = "{{secret." + enterpriseProxyPasswordSecretName + "}}"
+	}
 	bypassIssue := ""
 	rc.ProxyNoProxy, bypassIssue = parseRuntimeProxyBypass(sourceSections)
 
@@ -4428,4 +4443,40 @@ func executableStreamingMode(mode string, fixedBitrateKbps int) string {
 		return ""
 	}
 	return mode
+}
+
+// The recorded browser UA is dormant when the custom-UA toggle is enabled.
+// Still compare every occurrence of the active custom setting.
+func activeUserAgentConflict(c runtimeConfigCaseFoldConflict, custom bool) runtimeConfigCaseFoldConflict {
+	if runtimeConfigCanonicalKey(runtimeConfigCanonicalSection(c.section), c.key) != "useragent" {
+		return c
+	}
+	hasCustom := false
+	for _, o := range c.occurrences {
+		if strings.EqualFold(o.key, "CustomUserAgent") {
+			hasCustom = true
+		}
+	}
+	if custom && !hasCustom {
+		return c
+	}
+	kept := make([]runtimeConfigOccurrence, 0, len(c.occurrences))
+	for _, o := range c.occurrences {
+		if (custom && !strings.EqualFold(o.key, "BrowserUserAgent")) || (!custom && !strings.EqualFold(o.key, "CustomUserAgent")) {
+			kept = append(kept, o)
+		}
+	}
+	c.occurrences = kept
+	if len(kept) > 1 {
+		same := true
+		for _, o := range kept[1:] {
+			if o.value != kept[0].value {
+				same = false
+			}
+		}
+		if same {
+			c.occurrences = nil
+		}
+	}
+	return c
 }

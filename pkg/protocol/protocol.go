@@ -197,6 +197,14 @@ const FeatureJavaVuserPhaseLifecycleV1 = "java_vuser_phase_lifecycle_v1"
 // persistent lifecycle support requires authenticated result framing, and is a
 // strict superset of legacy phase invocation only when both features exist.
 func RuntimeFeaturesSatisfy(features []string, required string) bool {
+	if strings.Contains(required, "+") {
+		for _, part := range strings.Split(required, "+") {
+			if !RuntimeFeaturesSatisfy(features, part) {
+				return false
+			}
+		}
+		return true
+	}
 	required = strings.TrimSpace(required)
 	if required == "" {
 		return true

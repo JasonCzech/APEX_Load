@@ -180,7 +180,7 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 	if recordingSessionID != "" && recordingSnapshotDigest == "" {
 		return time.Time{}, errors.New("recording preview snapshot digest is required")
 	}
-	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(script)
+	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(script) || requiresExactRepairDraft(script)
 	if hasUnavailableCredentials && fingerprint.FullDigest == "" {
 		fingerprint.FullDigest, err = fullImportDraftExecutionDigest(script)
 		if err != nil {
@@ -439,7 +439,7 @@ func (s *Server) claimProtectedImportDraftAttestation(
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
 	}
-	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(candidate.Script)
+	hasUnavailableCredentials := scriptHasUnavailableImportCredentialValues(candidate.Script) || requiresExactRepairDraft(candidate.Script)
 	if hasUnavailableCredentials && attestedFingerprint.FullDigest == "" {
 		attestedFingerprint.FullDigest, err = fullImportDraftExecutionDigest(candidate.Script)
 		if err != nil {
@@ -447,6 +447,17 @@ func (s *Server) claimProtectedImportDraftAttestation(
 		}
 	}
 	restored := cloneScriptDefinition(script)
+	if requiresExactRepairDraft(candidate.Script) {
+		submittedDigest, digestErr := fullImportDraftExecutionDigest(script)
+		projectedDigest, projectionErr := fullImportDraftExecutionDigest(repairDisclosure(candidate.Script))
+		if digestErr == nil && projectionErr == nil && submittedDigest == projectedDigest {
+			restored = cloneScriptDefinition(candidate.Script)
+			restored.ID = script.ID
+			restored.RefKey = script.RefKey
+			restored.Name = script.Name
+			restored.FolderID = script.FolderID
+		}
+	}
 	if restored == nil || reconcileMaskedScriptSecrets(restored, candidate.Script) != nil {
 		return nil, errImportDraftAttestationInvalid
 	}

@@ -535,7 +535,7 @@ func parseCFunctionArguments(inner string) []ParsedArgument {
 				arg.Name = key
 				arg.Value = value
 			}
-		case strings.EqualFold(cleaned, "LAST") || strings.EqualFold(cleaned, "ITEMDATA") || strings.EqualFold(cleaned, "ENDITEM"):
+		case strings.EqualFold(cleaned, "LAST") || strings.EqualFold(cleaned, "ITEMDATA") || strings.EqualFold(cleaned, "ENDITEM") || strings.EqualFold(cleaned, "EXTRARES"):
 			arg.Kind = "macro"
 		case looksLikeNestedCCall(cleaned):
 			arg.Kind = "nested_call"
@@ -917,16 +917,11 @@ func parseSourceCookie(raw string) ParsedCookie {
 // extractNamedArgs pulls out "Key=Value" patterns from the inner string.
 func extractNamedArgs(fn *ParsedFunction, inner string) {
 	for _, arg := range fn.CallArgs {
+		if arg.Kind == "macro" && (strings.EqualFold(arg.Value, "ITEMDATA") || strings.EqualFold(arg.Value, "EXTRARES")) {
+			break
+		}
 		if arg.Kind == "key_value" && arg.Name != "" {
 			fn.Args[arg.Name] = arg.Value
-		}
-	}
-	matches := reNamedArg.FindAllStringSubmatch(inner, -1)
-	for _, m := range matches {
-		key := m[1]
-		value := m[2]
-		if _, exists := fn.Args[key]; !exists {
-			fn.Args[key] = value
 		}
 	}
 }
@@ -983,7 +978,7 @@ func extractItemData(fn *ParsedFunction, inner string) {
 			switch {
 			case strings.EqualFold(arg.Value, "ENDITEM"):
 				finishItem()
-			case strings.EqualFold(arg.Value, "LAST"):
+			case strings.EqualFold(arg.Value, "LAST"), strings.EqualFold(arg.Value, "EXTRARES"):
 				if hasName || hasValue {
 					hasMalformedItem = true
 					resetItem()
@@ -1392,6 +1387,10 @@ func splitConfigList(value string) []string {
 // list VuGen writes in [TransactionsOrder]. Unlike the generic config-list
 // helper, separators inside a transaction name remain part of that name.
 func splitProjectTransactionOrder(value string) ([]string, error) {
+	if strings.Contains(value, "__*delimiter*__") {
+		value = strings.Trim(strings.TrimSpace(value), "\"")
+		return strings.Split(value, "__*delimiter*__"), nil
+	}
 	var names []string
 	var current strings.Builder
 	var quote rune

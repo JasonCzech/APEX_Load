@@ -502,8 +502,11 @@ type WorkAssignment struct {
 	MessageDetailMaxItemBytes    int64   `protobuf:"varint,32,opt,name=message_detail_max_item_bytes,json=messageDetailMaxItemBytes,proto3" json:"message_detail_max_item_bytes,omitempty"`
 	MessageDetailMaxTotalBytes   int64   `protobuf:"varint,33,opt,name=message_detail_max_total_bytes,json=messageDetailMaxTotalBytes,proto3" json:"message_detail_max_total_bytes,omitempty"`
 	TransactionResponseTimeSlaMs float64 `protobuf:"fixed64,34,opt,name=transaction_response_time_sla_ms,json=transactionResponseTimeSlaMs,proto3" json:"transaction_response_time_sla_ms,omitempty"`
-	unknownFields                protoimpl.UnknownFields
-	sizeCache                    protoimpl.SizeCache
+	// Frozen dense logical data-allocation coordinates; independent of sparse VUser IDs.
+	ParameterPopulation uint32 `protobuf:"varint,35,opt,name=parameter_population,json=parameterPopulation,proto3" json:"parameter_population,omitempty"`
+	ParameterOffset     uint32 `protobuf:"varint,36,opt,name=parameter_offset,json=parameterOffset,proto3" json:"parameter_offset,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -770,6 +773,20 @@ func (x *WorkAssignment) GetMessageDetailMaxTotalBytes() int64 {
 func (x *WorkAssignment) GetTransactionResponseTimeSlaMs() float64 {
 	if x != nil {
 		return x.TransactionResponseTimeSlaMs
+	}
+	return 0
+}
+
+func (x *WorkAssignment) GetParameterPopulation() uint32 {
+	if x != nil {
+		return x.ParameterPopulation
+	}
+	return 0
+}
+
+func (x *WorkAssignment) GetParameterOffset() uint32 {
+	if x != nil {
+		return x.ParameterOffset
 	}
 	return 0
 }
@@ -4665,7 +4682,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0ePodCapacityAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12<\n" +
-	"\bsnapshot\x18\x03 \x01(\v2 .apexload.v1.PodCapacitySnapshotR\bsnapshot\"\xd7\x0e\n" +
+	"\bsnapshot\x18\x03 \x01(\v2 .apexload.v1.PodCapacitySnapshotR\bsnapshot\"\xb5\x0f\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -4706,7 +4723,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x18message_detail_max_items\x18\x1f \x01(\x05R\x15messageDetailMaxItems\x12@\n" +
 	"\x1dmessage_detail_max_item_bytes\x18  \x01(\x03R\x19messageDetailMaxItemBytes\x12B\n" +
 	"\x1emessage_detail_max_total_bytes\x18! \x01(\x03R\x1amessageDetailMaxTotalBytes\x12F\n" +
-	" transaction_response_time_sla_ms\x18\" \x01(\x01R\x1ctransactionResponseTimeSlaMs\x1a>\n" +
+	" transaction_response_time_sla_ms\x18\" \x01(\x01R\x1ctransactionResponseTimeSlaMs\x121\n" +
+	"\x14parameter_population\x18# \x01(\rR\x13parameterPopulation\x12)\n" +
+	"\x10parameter_offset\x18$ \x01(\rR\x0fparameterOffset\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +

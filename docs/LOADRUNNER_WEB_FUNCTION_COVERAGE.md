@@ -8,9 +8,9 @@ Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 42 | Translated to an executable DSL action or config mapping. |
+| `executable` | 44 | Translated to an executable DSL action or config mapping. |
 | `native_noop` | 8 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch / no concurrent-request primitive). |
-| `review_only` | 31 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
+| `review_only` | 29 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
 
@@ -37,9 +37,9 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_enable_keep_alive` | web | `executable` | config.http.keep_alive=true | Enables persistent connections. |
 | `web_find` | web | `executable` | Assertion (body_contains) | Deprecated inline check; What= aliased to Text=. |
 | `web_get_int_property` | parameter | `review_only` | Import review | HTTP property capture is preserved for review; no APEX runtime equivalent yet. |
-| `web_global_verification` | web | `executable` | config.web_runtime.content_checks | Global content check. |
-| `web_global_verification_pause` | web | `review_only` | Import review | Per-region verification toggle has no global-check equivalent. |
-| `web_global_verification_resume` | web | `review_only` | Import review | Per-region verification toggle has no global-check equivalent. |
+| `web_global_verification` | web | `executable` | source_verification action | Positional per-VUser registration with LR scope, case, failure mode and ID. |
+| `web_global_verification_pause` | web | `executable` | source_verification action | Positional pause/resume of named per-VUser verification checks. |
+| `web_global_verification_resume` | web | `executable` | source_verification action | Positional pause/resume of named per-VUser verification checks. |
 | `web_image` | web | `executable` | HTTP GET request action | From Src=/URL=; review_only fallback when no Src. |
 | `web_image_check` | web | `executable` | HTTP GET request action | Image presence check mapped to a GET of Src=. |
 | `web_js_reset` | web | `review_only` | Import review | TruClient JavaScript step is not executed. |

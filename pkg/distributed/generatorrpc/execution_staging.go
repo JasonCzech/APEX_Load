@@ -865,7 +865,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 				return nil, status.Error(codes.FailedPrecondition, admissionErr.Error())
 			}
 			prepared.javaCapacity = observation
-			if requiredRuntimeFeature(&script) == "" {
+			if requiredProtocolRuntimeFeature(&script) == "" {
 				legacyAvailable, supported := legacyRuntimeAvailable(instance)
 				if !supported || !legacyAvailable {
 					return nil, status.Errorf(codes.FailedPrecondition, "%s legacy one-shot runtime is unavailable on this generator", script.Protocol)
@@ -886,10 +886,10 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 				if !capabilities.Available {
 					return nil, status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)
 				}
-				if required := requiredRuntimeFeature(&script); required != "" && !protocol.RuntimeFeaturesSatisfy(capabilities.Features, required) {
+				if required := requiredProtocolRuntimeFeature(&script); required != "" && !protocol.RuntimeFeaturesSatisfy(capabilities.Features, required) {
 					return nil, status.Errorf(codes.FailedPrecondition, "%s runtime does not advertise required capability %s", script.Protocol, required)
 				}
-			} else if required := requiredRuntimeFeature(&script); required != "" {
+			} else if required := requiredProtocolRuntimeFeature(&script); required != "" {
 				return nil, status.Errorf(codes.FailedPrecondition, "%s runtime does not advertise required capability %s", script.Protocol, required)
 			}
 		}
@@ -1000,6 +1000,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	}
 	prepared.writer = writer
 	prepared.createdWriter = created
+	if engine.HasAllocatedParameters(&script) && (request.GetParameterPopulation() == 0 || uint64(request.GetParameterOffset())+uint64(request.GetVuserCount()) > uint64(request.GetParameterPopulation())) {
+		return nil, fmt.Errorf("invalid distributed parameter allocation")
+	}
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{
 			Name:                         request.GetGroupName(),
@@ -1017,12 +1020,13 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 				Ordinal: request.GetShardOrdinal(),
 				Count:   plan.validated.shardCount,
 			},
-			StagedDataFiles: stagedDataFiles,
-			VUserIDOffset:   int(request.GetVuserIdOffset()),
-			VUserIDSpan:     int(maxGeneratorVUsers),
-			ResultSink:      combineSinks(writer, results),
-			RedactionConfig: redactionConfig,
-			SecretResolver:  runtimeSecrets,
+			StagedDataFiles:     stagedDataFiles,
+			VUserIDOffset:       int(request.GetVuserIdOffset()),
+			ParameterAllocation: engine.ParameterAllocation{Population: int(request.GetParameterPopulation()), Offset: int(request.GetParameterOffset()), Iterations: script.Config.RunLogic.Iterations},
+			VUserIDSpan:         int(maxGeneratorVUsers),
+			ResultSink:          combineSinks(writer, results),
+			RedactionConfig:     redactionConfig,
+			SecretResolver:      runtimeSecrets,
 		}},
 		Duration:     duration,
 		PreBaseline:  plan.validated.preBaseline,
@@ -1090,6 +1094,16 @@ func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilit
 }
 
 func requiredRuntimeFeature(script *dsl.Script) string {
+	base := requiredBaseRuntimeFeature(script)
+	if dsl.RequiresLRFidelity(script) {
+		if base != "" {
+			return base + "+" + dsl.FeatureLRFidelityV1
+		}
+		return dsl.FeatureLRFidelityV1
+	}
+	return base
+}
+func requiredBaseRuntimeFeature(script *dsl.Script) string {
 	if script == nil {
 		return ""
 	}
@@ -1200,4 +1214,19 @@ func (service *Service) cleanupPreparedAssignmentStage(plan *assignmentStagePlan
 			slog.Warn("discard failed execution archive", "test_id", testID, "error", err)
 		}
 	}
+}
+
+// Engine capabilities are advertised by this generator binary, not by each
+// protocol plugin. Only external runtime capabilities need plugin validation.
+func requiredProtocolRuntimeFeature(script *dsl.Script) string {
+	required := requiredRuntimeFeature(script)
+	external := []string{}
+	for _, feature := range strings.Split(required, "+") {
+		switch feature {
+		case "", dsl.FeatureLRFidelityV1, FeatureControlParallelV1, FeatureMessageDetailCaptureV1, FeatureMessageDetailControlParallelV1:
+		default:
+			external = append(external, feature)
+		}
+	}
+	return strings.Join(external, "+")
 }

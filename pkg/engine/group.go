@@ -34,23 +34,24 @@ type GroupConfig struct {
 	// ScenarioID is the managed execution identity exposed to protocol
 	// runtimes. Direct/library callers may leave it empty to fall back to the
 	// script artifact ID.
-	ScenarioID      string
-	VUsers          int
-	RampUp          time.Duration
-	RampDown        time.Duration
-	AllowZeroVUsers bool
-	InitStrategy    string // "at_runtime", "at_once"
-	DataShard       DataShardConfig
-	StagedDataFiles map[string][]byte
-	VUserIDOffset   int
-	VUserIDSpan     int
-	ResultSink      ResultSink
-	RedactionConfig *RedactionConfig
-	SecretResolver  SecretResolver
-	rateLimiter     *TokenBucket
-	rendezvous      *RendezvousCoordinator
-	executionGoals  *ExecutionGoalLimiter
-	dataProvider    *DataProvider
+	ScenarioID          string
+	VUsers              int
+	RampUp              time.Duration
+	RampDown            time.Duration
+	AllowZeroVUsers     bool
+	InitStrategy        string // "at_runtime", "at_once"
+	DataShard           DataShardConfig
+	StagedDataFiles     map[string][]byte
+	VUserIDOffset       int
+	ParameterAllocation ParameterAllocation
+	VUserIDSpan         int
+	ResultSink          ResultSink
+	RedactionConfig     *RedactionConfig
+	SecretResolver      SecretResolver
+	rateLimiter         *TokenBucket
+	rendezvous          *RendezvousCoordinator
+	executionGoals      *ExecutionGoalLimiter
+	dataProvider        *DataProvider
 	// importedCredentials is this group's single retained-credential locator
 	// walk, produced by NewMultiGroup and handed to every VUser the group
 	// creates. Callers do not supply it; see runtimeSecretValuesForScript.
@@ -250,6 +251,15 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	persistentJavaConfigured := false
 	legacyJavaConfigured := false
 	effectiveGroupNames := make(map[string]int, len(cfg.Groups))
+	allocationScripts := make([]*dsl.Script, len(cfg.Groups))
+	allocationUsers := make([]int, len(cfg.Groups))
+	for i, group := range cfg.Groups {
+		allocationScripts[i], allocationUsers[i] = group.Script, group.VUsers
+	}
+	allocations, err := PlanScenarioParameterAllocations(allocationScripts, allocationUsers)
+	if err != nil {
+		return nil, err
+	}
 	for i, g := range cfg.Groups {
 		if g.Script == nil {
 			return nil, fmt.Errorf("group[%d] %q: script is required", i, g.Name)
@@ -327,6 +337,23 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] %q: initialize data sources: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
 		}
+		if err := ValidateParameterAllocationTopology(g.Script); err != nil {
+			return nil, err
+		}
+		if g.ParameterAllocation.Population == 0 {
+			g.ParameterAllocation = allocations[i]
+			if g.ParameterAllocation.Population == 0 {
+				g.ParameterAllocation.Population = g.VUsers
+				g.ParameterAllocation.Iterations = g.Script.Config.RunLogic.Iterations
+			}
+		}
+		if HasAllocatedParameters(g.Script) && (isOpenWorkload(g.Script) || groupLifecycleAtOnce(g)) {
+			return nil, fmt.Errorf("unique parameter allocation requires closed workload and per-VUser init")
+		}
+		if _, _, err := CompileParameterAllocation(g.Script.Parameters, dataProvider, g.ParameterAllocation); err != nil {
+			return nil, err
+		}
+		cfg.Groups[i].ParameterAllocation = g.ParameterAllocation
 		cfg.Groups[i].dataProvider = dataProvider
 	}
 	if persistentJavaConfigured && legacyJavaConfigured {
@@ -1680,6 +1707,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 	vu := &VUser{
 		ID:                           -1,
 		TotalVUsers:                  group.VUsers,
+		ParameterAllocation:          groupParameterAllocation(group, 0),
 		Group:                        group.Name,
 		Region:                       group.Region,
 		Proto:                        vuProto,
@@ -1928,6 +1956,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 		vu = &VUser{
 			ID:                           prepared.runtimeID,
 			TotalVUsers:                  prepared.group.VUsers,
+			ParameterAllocation:          groupParameterAllocation(prepared.group, prepared.identity.local),
 			Group:                        prepared.group.Name,
 			Region:                       prepared.group.Region,
 			Proto:                        prepared.proto,
@@ -2490,6 +2519,13 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 		return fmt.Errorf("engine not running")
 	}
 	snapshotGroup := mge.groups[groupIndex]
+	if HasAllocatedParameters(snapshotGroup.Script) {
+		mge.mu.Unlock()
+		if targetVUsers == snapshotGroup.VUsers {
+			return nil
+		} // no restart or row-cursor reset on an idempotent request
+		return fmt.Errorf("unique parameter blocks are frozen; changing VUser population requires a new run")
+	}
 	if isOpenWorkload(snapshotGroup.Script) {
 		mge.mu.Unlock()
 		return fmt.Errorf("scaling open workload groups is not supported")
@@ -3022,4 +3058,10 @@ func (mge *MultiGroupEngine) GroupNames() []string {
 		names[i] = g.Name
 	}
 	return names
+}
+
+func groupParameterAllocation(group GroupConfig, local int) *ParameterAllocation {
+	a := group.ParameterAllocation
+	a.Offset += local
+	return &a
 }

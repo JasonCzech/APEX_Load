@@ -73,6 +73,8 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 	fingerprintWriteDuration(h, assignment.GetPostBaseline())
 	fingerprintWriteUint64(h, uint64(assignment.GetShardOrdinal()))
 	fingerprintWriteUint64(h, uint64(assignment.GetShardCount()))
+	fingerprintWriteUint64(h, uint64(assignment.GetParameterPopulation()))
+	fingerprintWriteUint64(h, uint64(assignment.GetParameterOffset()))
 	fingerprintWriteUint64(h, assignment.GetVuserIdOffset())
 	fingerprintWriteBool(h, assignment.GetStartPaused())
 	fingerprintWriteDuration(h, assignment.GetDurationOffset())

@@ -736,6 +736,16 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 }
 
 func groupRequiredRuntimeFeature(group TestGroup) string {
+	base := groupBaseRuntimeFeature(group)
+	if dsl.RequiresLRFidelity(group.script) {
+		if base != "" {
+			return base + "+" + dsl.FeatureLRFidelityV1
+		}
+		return dsl.FeatureLRFidelityV1
+	}
+	return base
+}
+func groupBaseRuntimeFeature(group TestGroup) string {
 	detail := group.script != nil && scriptRequestsSuccessfulMessageDetail(group.script)
 	parallel := group.script != nil && scriptRequestsControlParallel(group.script)
 	if detail && parallel {

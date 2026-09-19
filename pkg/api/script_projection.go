@@ -121,6 +121,7 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	restoreBrunoNativeCompactProvenance(projectedScript, script)
 	restoreProjectedJavaVuserApprovalEvidence(projectedScript, script)
 	restoreProjectedBoundedNonSecretHeaders(projectedScript, script)
+	maskRestoredImportBodies(projectedScript, script)
 	return projectedScript
 }
 
@@ -2885,4 +2886,22 @@ func isScriptJSONObject(value map[string]any) bool {
 	_, hasActions := value["actions"]
 	_, hasProtocol := value["protocol"]
 	return hasConfig && hasActions && hasProtocol
+}
+
+// Restored LR bodies are operator-supplied protected payloads regardless of
+// whether their field names happen to match the credential classifier.
+func maskRestoredImportBodies(projected, source *dsl.Script) {
+	paths := map[string]bool{}
+	_ = dslwalk.Walk(source, func(ref dslwalk.SurfaceRef) error {
+		if dslwalk.MetadataBool(ref.Metadata(), "restored_body_protected") {
+			paths[ref.Path] = true
+		}
+		return nil
+	})
+	_ = dslwalk.Walk(projected, func(ref dslwalk.SurfaceRef) error {
+		if paths[ref.Path] {
+			setImportCommitSurfaceBody(ref, "[REDACTED]")
+		}
+		return nil
+	})
 }

@@ -37,8 +37,8 @@ web_enable_keep_alive,web,executable
 web_find,web,executable
 web_get_int_property,parameter,review_only
 web_global_verification,web,executable
-web_global_verification_pause,web,review_only
-web_global_verification_resume,web,review_only
+web_global_verification_pause,web,executable
+web_global_verification_resume,web,executable
 web_image,web,executable
 web_image_check,web,executable
 web_js_reset,web,review_only

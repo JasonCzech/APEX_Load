@@ -23,6 +23,8 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		Metadata: sourceFunctionMetadata(fn),
 	}
 
+	applyExtraResources(fn, action)
+
 	// Determine name
 	name := sanitizeName(fn.StepName)
 	if transaction != "" {
@@ -137,6 +139,7 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		action.Metadata["source_secret_ref"] = secretName
 		action.Metadata["source_secret_function"] = convertutil.FirstNonEmpty(fn.Args[maskedBodyFuncArgKey], "lr_unmask")
 		action.Metadata["body_gated_by_secret"] = true
+		importreview.ApplyToAction(action, []importreview.Finding{{Code: "restored_body_required", ReasonCode: "restored_body_required", Severity: diag.Blocker, Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber), Resolution: "restore_body", Detail: "Supply the restored body or a project secret containing it."}})
 	}
 	if reason := strings.TrimSpace(fn.itemDataReviewReason); reason != "" {
 		// The source review retains the original ITEMDATA call. Do not fabricate a
@@ -188,7 +191,7 @@ func filterHeaderListCaseInsensitive(headers dsl.HeaderList, name string) dsl.He
 
 // reOpaqueSourceTransformCall matches request arguments produced by opaque
 // source transforms: LR masking/encryption (lr_unmask / lr_decrypt /
-// lr_decrypt_ex) is bound to the recording machine's key, so the plaintext is
+// lr_decrypt_ex) may require an unavailable decoder or encryption key, so the plaintext is
 // unrecoverable at import time. lr_decrypt_ex precedes lr_decrypt so the
 // longer name wins the alternation.
 var reOpaqueSourceTransformCall = regexp.MustCompile(`\b(lr_unmask|lr_decrypt_ex|lr_decrypt)\s*\(`)
@@ -219,6 +222,15 @@ func annotateOpaqueTransformArgs(action *dsl.Action, fn ParsedFunction) []string
 		return nil
 	}
 
+	protection := "ordinary LR masking; restore the value in VuGen"
+	action.Metadata["source_protection"] = "masking"
+	for _, name := range names {
+		if !strings.EqualFold(name, "lr_unmask") {
+			protection = "encrypted payload; restore it using the original encryption configuration and key"
+			action.Metadata["source_protection"] = "encrypted"
+		}
+	}
+	importreview.ApplyToAction(action, []importreview.Finding{{Code: "restored_body_required", ReasonCode: "restored_body_required", Severity: diag.Blocker, Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: fmt.Sprintf("%s:%d", fn.Filename, fn.LineNumber), Resolution: "restore_body", Detail: protection}})
 	action.Metadata["masked_body"] = true
 	action.Metadata["masked_body_function"] = names[0]
 	action.Metadata["masked_body_raw"] = raws[0]
@@ -232,8 +244,8 @@ func annotateOpaqueTransformArgs(action *dsl.Action, fn ParsedFunction) []string
 		bodyNote = "the converted body may be incomplete"
 	}
 	return []string{fmt.Sprintf(
-		"%s line %d: %s '%s' passes %s(...) as a request argument; the masked value is bound to the recording machine's key and cannot be recovered at import time — %s and the action requires manual review (original call preserved in metadata.masked_body_raw)",
-		fn.Filename, fn.LineNumber, fn.Name, fn.StepName, strings.Join(uniqueSourceStrings(names), ", "), bodyNote)}
+		"%s line %d: %s '%s' passes %s(...) as a request argument; APEX has no verified decoder for this %s — %s and the action requires manual review (original call preserved in metadata.masked_body_raw)",
+		fn.Filename, fn.LineNumber, fn.Name, fn.StepName, strings.Join(uniqueSourceStrings(names), ", "), protection, bodyNote)}
 }
 
 func redactOpaqueTransformMetadata(action *dsl.Action) {

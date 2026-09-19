@@ -1153,6 +1153,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scripts/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScriptRuntimeSettingsReport)))))
 	s.mux.Handle("POST /api/v1/scripts/import/enterprise-script-archive", cors(log(auth(http.HandlerFunc(s.handleImportEnterpriseArchive)))))
 	s.mux.Handle("POST /api/v1/scripts/import/enterprise-script-archive/save", cors(log(auth(http.HandlerFunc(s.handleSaveEnterpriseArchiveImport)))))
+	s.mux.Handle("POST /api/v1/scripts/import/repairs/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewImportRepair)))))
+	s.mux.Handle("POST /api/v1/scripts/import/repairs/apply", cors(log(auth(http.HandlerFunc(s.handleApplyImportRepair)))))
 	s.mux.Handle("POST /api/v1/scripts/import/commit-batch", cors(log(auth(http.HandlerFunc(s.handleCommitGenericImportBatch)))))
 	s.mux.Handle("POST /api/v1/scripts/import/enterprise-script-archive/validate", cors(log(auth(http.HandlerFunc(s.handleValidateEnterpriseArchiveImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/enterprise-script-archive/support-matrix", cors(log(auth(http.HandlerFunc(s.handleEnterpriseArchiveSupportMatrix)))))

@@ -65,6 +65,7 @@ type importCandidateCredentialRequirement struct {
 }
 
 type protectedImportCandidate struct {
+	ExpiresAt              time.Time
 	Script                 *dsl.Script
 	CredentialRequirements []credentialpolicy.Requirement
 	// RawSource is unredacted uploaded source. Treat it like a credential:
@@ -199,6 +200,14 @@ func (s *Server) claimProtectedImportCandidateSession(
 	if err != nil {
 		return nil, nil, err
 	}
+	if profile == enterpriseArchiveSaveProfile {
+		if receipt, _, receiptErr := manager.Open(r.Context(), importsession.Scope{ID: repairReceiptID(sessionID), Profile: repairReceiptProfile, ProjectID: projectID, Actor: actor}, importCandidateSessionMaxBytes); receiptErr == nil {
+			clear(receipt)
+			return nil, nil, errors.New("candidate was superseded by repair")
+		} else if !errors.Is(receiptErr, os.ErrNotExist) {
+			return nil, nil, receiptErr
+		}
+	}
 	claimed, err := manager.Claim(r.Context(), importsession.Scope{
 		ID:        sessionID,
 		Profile:   profile,
@@ -244,6 +253,7 @@ func (s *Server) claimProtectedImportCandidateSession(
 		CredentialRequirements: requirements,
 		RawSource:              rawSource,
 		RawSourceFormat:        envelope.RawSourceFormat,
+		ExpiresAt:              envelope.ExpiresAt,
 	}, &claimed.Claim, nil
 }
 

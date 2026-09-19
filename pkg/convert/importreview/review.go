@@ -212,6 +212,10 @@ func ApplyToAction(action *dsl.Action, findings []Finding) {
 	if existingReviewGate != "" {
 		reviewCodes = append(reviewCodes, existingReviewGate)
 	}
+	if len(reviewCodes) == 0 && (metadataBool(action.Metadata, "review_required") || metadataBool(action.Metadata, "promotion_blocker")) {
+		// Preserve legacy review provenance before adding typed findings.
+		reviewCodes = append(reviewCodes, "import_review_required")
+	}
 	for _, finding := range findings {
 		code := firstNonEmpty(finding.Code, "import_finding")
 		switch {
