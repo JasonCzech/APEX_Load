@@ -26,6 +26,8 @@ export interface ImportCorrelationSuggestion {
 }
 
 export interface ImportRuntimeSettingParity {
+  notes?: string
+  fields?: string[]
   id: string
   area: string
   concept: string
@@ -364,7 +366,7 @@ function normalizeImportRuntimeSettingParity(value: unknown): ImportRuntimeSetti
   const concept = readString(value.concept)
   const status = readString(value.status)
   if (!id || !area || !concept || !status) return null
-  return { id, area, concept, status, runtime_files: readStringArray(value.runtime_files) }
+  return { id, area, concept, status, runtime_files: readStringArray(value.runtime_files), ...(readString(value.notes) ? { notes: readString(value.notes) } : {}), ...(Array.isArray(value.fields) ? { fields: readStringArray(value.fields) } : {}) }
 }
 
 function normalizeImportRuntimeSettingReadiness(value: unknown): ImportRuntimeSettingReadiness | null {

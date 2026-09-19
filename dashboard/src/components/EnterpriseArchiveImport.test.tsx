@@ -834,11 +834,11 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Review')
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).toBeNull()
     const conversionReviewTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Script archive review sections"] [role="tab"]'))
-    expect(conversionReviewTabs.map(tab => tab.textContent)).toEqual([
+    expect(conversionReviewTabs.map(tab => tab.getAttribute('aria-label') || tab.textContent)).toEqual([
       'Review',
       'Credentials',
       'Data & parameters',
-      'Preserved Source Settings',
+      'Runtime & source settings',
       'DSL Preview',
       'Source Mapping',
     ])
@@ -866,14 +866,14 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Runtime Settings Requiring Repair')
     expect(container.textContent).toContain('Partial: Logging')
     expect(container.textContent).toContain('Runtime Settings Parity')
-    expect(container.textContent).toContain('Executed: Run Logic')
+    expect(container.textContent).toContain('Run Logic: Iterations')
     expect(container.textContent).toContain('Correlation Suggestions')
     expect(container.textContent).toContain('SessionId')
     expect(container.textContent).toContain('Found in Step 1')
     expect(container.textContent).toContain('Used in Step 2, Step 3')
     expect(container.textContent).toContain('Parameter File Mappings')
     expect(container.querySelector('.lr-parameter-table')).not.toBeNull()
-    expect(Array.from(container.querySelectorAll('.lr-parameter-table th')).map(header => header.textContent)).toEqual([
+    expect(Array.from(container.querySelectorAll('.lr-parameter-table:not(.lr-runtime-table) th')).map(header => header.textContent)).toEqual([
       'File',
       'Section',
       'Mapped Data Source',
@@ -915,12 +915,12 @@ describe('EnterpriseArchiveImport', () => {
     const preview = reviewChildren.find(element => element.classList.contains('script-import-review-preview')) as HTMLDetailsElement | undefined
     expect(preview?.tagName).toBe('DETAILS')
     expect(preview?.open).toBe(true)
-    expect(preview?.querySelector('summary h4')?.textContent).toBe('DSL Preview')
+    expect(preview?.querySelector('summary h4')?.textContent).toBe('DSL Preview — redacted, read-only')
     const dslPreview = preview?.querySelector('pre')?.textContent || ''
     expect(dslPreview).toContain('"name": "Demo Enterprise Script Archive"')
     expect(dslPreview).toContain('"actions": [')
     expect(dslPreview).not.toContain('"script": {')
-    expect(review?.querySelector('.script-import-review-preview-aside')).toBeNull()
+    expect(review?.querySelector('.script-import-review-preview-aside')?.hasAttribute('hidden')).toBe(true)
     expect(review?.querySelector('.script-import-review-preview-row')).toBeNull()
 
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
@@ -4373,11 +4373,11 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).toBeNull()
 
     const reviewTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Script archive review sections"] [role="tab"]'))
-    expect(reviewTabs.map(tab => tab.textContent)).toEqual([
+    expect(reviewTabs.map(tab => tab.getAttribute('aria-label') || tab.textContent)).toEqual([
       'Review',
       'Credentials',
       'Data & parameters',
-      'Preserved Source Settings',
+      'Runtime & source settings',
       'DSL Preview',
       'Source Mapping',
     ])
@@ -4387,15 +4387,15 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.querySelector('.script-import-review-preview')).toBeNull()
     expect(container.querySelector('.script-import-review-preview-aside')).toBeNull()
 
-    await clickButton(findButton(container, 'Preserved Source Settings')!)
-    expect(reviewTabs.find(tab => tab.textContent === 'Preserved Source Settings')?.getAttribute('aria-selected')).toBe('true')
+    await clickButton(findButton(container, 'Runtime & source settings')!)
+    expect(reviewTabs.find(tab => tab.textContent === 'Runtime & source settings')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector<HTMLElement>('.lr-validation-review-overview')?.hidden).toBe(true)
     expect(container.querySelector<HTMLElement>('.lr-validation-review-preserved')?.hidden).toBe(false)
-    expect(container.textContent).toContain('Preserved Source Settings')
+    expect(container.textContent).toContain('Runtime & source settings')
 
     await clickButton(findButton(container, 'DSL Preview')!)
     expect(reviewTabs.find(tab => tab.textContent === 'DSL Preview')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.script-import-review-preview summary h4')?.textContent).toBe('DSL Preview')
+    expect(container.querySelector('.script-import-review-preview summary h4')?.textContent).toBe('DSL Preview — redacted, read-only')
     expect(container.querySelector('.script-import-review-preview-aside')).toBeNull()
 
     await clickButton(findButton(container, 'Source Mapping')!)

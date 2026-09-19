@@ -1556,7 +1556,7 @@ describe("RecordingStudio", () => {
     await flushPromises();
 
     expect(container.textContent).toContain("Preserved in script");
-    expect(container.textContent).toContain("0 to configure later");
+    expect(container.textContent).toContain("0 bindings need setup");
     expect(container.textContent).not.toContain("Save with 1 secret to configure");
     const saveButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>("button"),

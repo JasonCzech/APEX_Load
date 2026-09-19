@@ -1065,7 +1065,7 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Preserved in script')
-    expect(container.textContent).toContain('0 to configure later')
+    expect(container.textContent).toContain('0 bindings need setup')
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.trim() === 'Save and Continue Importing')
     expect(save).toBeDefined()
@@ -2341,7 +2341,7 @@ describe('ProtocolAssetImport', () => {
     await act(async () => jmsTab.click())
     expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain('Orders JMS')
     expect(container.textContent).toContain('Preserved in script')
-    expect(container.textContent).toContain('0 to configure later')
+    expect(container.textContent).toContain('0 bindings need setup')
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.trim() === 'Save All 2 Scripts')
     expect(saveAll).toBeDefined()

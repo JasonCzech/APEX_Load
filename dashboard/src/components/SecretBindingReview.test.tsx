@@ -90,12 +90,30 @@ describe('SecretBindingReview', () => {
     return onApply
   }
 
+  it('filters preserved and setup groups without changing their binding choices', () => {
+    act(() => root.render(<SecretBindingReview requirements={[
+      { ...requirements[0], destination_value_preserved: true, value_group_id: 'preserved' },
+      requirements[1],
+    ]} onApply={vi.fn()} />))
+    const state = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Credential state'))!
+    act(() => { state.value = 'setup'; state.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(1)
+    expect(container.querySelector('.secret-binding-review-item')?.textContent).toContain('Refresh')
+    expect(container.textContent).toContain('Credential groups (1 of 2)')
+    act(() => { state.value = 'preserved'; state.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(1)
+    expect(container.querySelector('.secret-binding-review-item')?.textContent).toContain('Create Order')
+    act(() => { state.value = 'all'; state.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(2)
+    expect(container.querySelector('button p')).toBeNull()
+  })
+
   it('groups only server-proven equal preserved values and keeps their controls collapsed', () => {
     const preserved = requirements.map((requirement, index) => ({ ...requirement, id:`equal-${index}`, affected_paths:[requirement.path], destination_value_preserved:true, value_group_id:'equal' }))
     const unknown = { ...preserved[0], id:'unverified', value_group_id:undefined }
     act(() => root.render(<SecretBindingReview requirements={[...preserved, unknown]} onApply={vi.fn()} />))
     expect(container.querySelectorAll('.secret-binding-review-item')).toHaveLength(2)
-    expect(container.textContent).toContain('3 protected occurrences')
+    expect(container.textContent).toContain('3 credential requirements')
     expect(container.textContent).toContain('View 2 affected locations')
     expect(container.textContent).not.toContain('affected request files')
     expect(Array.from(container.querySelectorAll<HTMLDetailsElement>('.secret-binding-review-control')).every(item => !item.open)).toBe(true)
@@ -156,7 +174,7 @@ describe('SecretBindingReview', () => {
     expect(container.querySelector<HTMLInputElement>('input[id$="-preserve"]')?.checked).toBe(true)
     expect(container.querySelector<HTMLInputElement>('input[type="text"]')?.disabled).toBe(true)
     expect(container.querySelector('.credentials-card-summary')?.textContent)
-      .toContain('0 to configure later')
+      .toContain('0 bindings need setup')
     await act(async () => {
       expect(await reviewRef.current?.commit()).toBe(true)
     })
@@ -862,7 +880,7 @@ describe('SecretBindingReview', () => {
     })
 
     expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledTimes(2)
-    expect(container.textContent).toContain('encrypted_database')
+    expect(container.textContent).toContain('Encrypted project store')
     expect(container.textContent).not.toContain('Credential status unavailable')
     expect(valueInput.disabled).toBe(false)
   })
@@ -1687,7 +1705,7 @@ describe('SecretBindingReview', () => {
       await Promise.resolve()
     })
 
-    expect(container.querySelector('.credentials-card-summary')?.textContent).toContain('0 to configure later')
+    expect(container.querySelector('.credentials-card-summary')?.textContent).toContain('0 bindings need setup')
     let rows = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item'))
     expect(rows.map(row => row.querySelector('.script-health-token')?.textContent)).toEqual([
       'Will be created',
@@ -1736,7 +1754,7 @@ describe('SecretBindingReview', () => {
 
     const row = container.querySelector<HTMLElement>('.secret-binding-review-item')
     expect(row?.querySelector('.script-health-token')?.textContent).toBe('Will be created')
-    expect(container.querySelector('.credentials-card-summary')?.textContent).toContain('0 to configure later')
+    expect(container.querySelector('.credentials-card-summary')?.textContent).toContain('0 bindings need setup')
 
     const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Continue with credentials'))

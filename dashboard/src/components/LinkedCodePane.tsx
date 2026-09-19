@@ -145,6 +145,16 @@ export default function LinkedCodePane({
   const offsetRef = useRef(offset)
   offsetRef.current = offset
   const viewRef = useRef<EditorView | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => viewRef.current?.requestMeasure())
+    observer.observe(element)
+    const visibility = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(entries => { if (entries.some(entry => entry.isIntersecting)) viewRef.current?.requestMeasure() })
+    visibility?.observe(element)
+    return () => { observer.disconnect(); visibility?.disconnect() }
+  }, [])
   const clickRef = useRef(onLineClick)
   clickRef.current = onLineClick
   // Suppress the scroll on the first highlight after the editor mounts: the
@@ -161,6 +171,7 @@ export default function LinkedCodePane({
       filterDecorationsField,
       ...(wrapLines ? [EditorView.lineWrapping] : []),
       EditorView.editable.of(false),
+      EditorView.contentAttributes.of({ 'aria-label': ariaLabel || 'Read-only code' }),
       EditorView.domEventHandlers({
         wheel(event, view) {
           return routeLinkedCodePaneWheel(event, view.scrollDOM)
@@ -182,7 +193,7 @@ export default function LinkedCodePane({
       exts.push(statusGutter(gutterStatuses))
     }
     return exts
-  }, [language, semanticMode, gutterStatuses, wrapLines, offset])
+  }, [language, semanticMode, gutterStatuses, wrapLines, offset, ariaLabel])
 
   // Apply the linked-line highlight and scroll it into view whenever the active
   // range (or the underlying document) changes. Depend on the range's line
@@ -247,8 +258,9 @@ export default function LinkedCodePane({
   }, [activeStartLine, activeEndLine, searchQuery, value, isSelectionChange, revealRequestId, revealOnMount])
 
   return (
-    <div className="linked-code-pane" role="region" aria-label={ariaLabel}>
+    <div ref={containerRef} className="linked-code-pane" role="region" aria-label={ariaLabel}>
       <CodeMirror
+        key={contextLines == null ? 'full' : `context-${offset}`}
         value={value}
         extensions={extensions}
         editable={false}

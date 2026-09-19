@@ -12,6 +12,7 @@ import { reachLabel, sharedValueNameError } from './sharedImportValueUtils'
 import './SharedImportValues.css'
 
 interface Props {
+  guided?: boolean
   sharedValues: SharedValues
   // The whole import, not just the script currently on screen. A collection-wide
   // value spans every generated script, so the panel must hand all of them to
@@ -61,6 +62,7 @@ function initialSelection(): Record<string, boolean> {
 
 export default function SharedImportValues({
   sharedValues,
+  guided = false,
   scripts = [],
   scriptCount,
   collectOnly = false,
@@ -71,11 +73,13 @@ export default function SharedImportValues({
   onApplied,
 }: Props) {
   const api = useApi()
-  const candidates = useMemo(() => sharedValues.candidates ?? [], [sharedValues.candidates])
+  const candidates = useMemo(() => (sharedValues.candidates ?? []).filter(candidate => !guided || candidate.kind !== 'source_variable'), [sharedValues.candidates, guided])
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(candidates))
   const [selected, setSelected] = useState<Record<string, boolean>>(initialSelection)
   const [applying, setApplying] = useState(false)
   const [appliedCount, setAppliedCount] = useState(0)
+  const [search, setSearch] = useState('')
+  const [reviewing, setReviewing] = useState(false)
   const [error, setError] = useState('')
 
   const onApplyingChangeRef = useRef(onApplyingChange)
@@ -97,7 +101,7 @@ export default function SharedImportValues({
     setSelected(initialSelection())
     setApplying(false)
     onApplyingChangeRef.current?.(false)
-    setAppliedCount(0)
+    setAppliedCount(0); setReviewing(false)
     setError('')
   }, [candidates, reviewGeneration])
 
@@ -132,7 +136,7 @@ export default function SharedImportValues({
   const toggle = (candidate: SharedValueCandidate) => {
     if (candidate.credential_shaped || applying || disabled) return
     setSelected(previous => ({ ...previous, [candidate.id]: !previous[candidate.id] }))
-    setAppliedCount(0)
+    setAppliedCount(0); setReviewing(false)
   }
 
   const setValue = (candidate: SharedValueCandidate, value: string) => {
@@ -140,7 +144,7 @@ export default function SharedImportValues({
     // Typing a value is intent to use it; requiring a separate checkbox click
     // after filling the field would be a pointless second step.
     setSelected(previous => ({ ...previous, [candidate.id]: value.trim() !== '' }))
-    setAppliedCount(0)
+    setAppliedCount(0); setReviewing(false)
   }
 
   const handleApply = async () => {
@@ -175,10 +179,9 @@ export default function SharedImportValues({
     <section className="shared-values" aria-labelledby="shared-values-heading">
       <div className="shared-values-header">
         <div>
-          <h4 id="shared-values-heading">Collection Values</h4>
+          <h4 id="shared-values-heading">{guided ? 'Optional substitutions' : 'Collection Values'}</h4>
           <p>
-            Values every request in this collection shares. Enter one once and it is written
-            into all {affectedScriptCount} generated {affectedScriptCount === 1 ? 'script' : 'scripts'}.
+            Choose values to replace at their detected locations across {affectedScriptCount} generated {affectedScriptCount === 1 ? 'script' : 'scripts'}. Usage counts describe each value’s scope. Resolve missing source variables and correlations in the Review queue; optional substitutions are shown here.
           </p>
         </div>
         {appliedCount > 0 && (
@@ -193,8 +196,9 @@ export default function SharedImportValues({
         <p className="shared-values-warning" key={warning} role="status">{warning}</p>
       ))}
 
-      <ul className="shared-values-list">
-        {candidates.map(candidate => {
+      {guided && <label>Find optional value<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>}
+      {(guided ? ['Environment overrides', 'Advanced repeated values'] : ['Values']).map(group => <details key={group} open={!guided || group === 'Environment overrides' || !!search}><summary>{group}</summary><ul className="shared-values-list">
+        {candidates.filter(candidate => (!guided || (group === 'Environment overrides') === (candidate.targets_base_url || candidate.name === 'base_url' || candidate.name.toLowerCase() === 'origin')) && (!search || candidate.name.toLowerCase().includes(search.toLowerCase()))).map(candidate => {
           const inputId = `shared-value-${candidate.id}`
           const nameError = nameErrors.get(candidate.id)
           return (
@@ -206,7 +210,7 @@ export default function SharedImportValues({
                 </span>
                 <span className="shared-values-reach">{reachLabel(candidate)}</span>
               </div>
-              {candidate.rationale && <p className="shared-values-rationale">{candidate.rationale}</p>}
+              {candidate.rationale && <p className="shared-values-rationale">{guided ? `${reachLabel(candidate)}. Only detected occurrences are eligible for this substitution.` : candidate.rationale}</p>}{guided && <details><summary>Affected scripts</summary><ul>{(candidate.script_names || []).map(name => <li key={name}>{name}</li>)}</ul><p>Exact request changes are returned after applying. The import does not expose individual request paths for these suggestions.</p></details>}
               {candidate.credential_shaped ? (
                 <p className="shared-values-credential">
                   This looks like a credential. Set it once in Secret Bindings below — a script
@@ -242,8 +246,8 @@ export default function SharedImportValues({
             </li>
           )
         })}
-      </ul>
-
+      </ul></details>)}
+      {guided && reviewing && <section aria-label="Substitution preview"><h4>Review selected substitutions</h4><p>Only the detected occurrences will change. Credential-shaped candidates cannot be submitted here.</p><ul>{editable.filter(c => selectedIds.includes(c.id)).map(c => <li key={c.id}><strong>{c.name}</strong> · {reachLabel(c)}<p>Before: <code>{c.current_value ? '[existing value]' : '[empty]'}</code> → After: <code>[replacement supplied]</code></p></li>)}</ul></section>}
       <div className="shared-values-actions">
         {collectOnly ? (
           <small role="status">
@@ -257,9 +261,9 @@ export default function SharedImportValues({
               type="button"
               className="btn btn-secondary btn-sm"
               disabled={!canApply}
-              onClick={handleApply}
+              onClick={() => { if (guided && !reviewing) setReviewing(true); else void handleApply() }}
             >
-              {applying ? 'Applying...' : `Apply to all scripts${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}
+              {applying ? 'Applying...' : guided ? reviewing ? 'Apply reviewed substitutions' : 'Preview substitutions' : `Apply to all scripts${selectedIds.length > 0 ? ` (${selectedIds.length})` : ''}`}
             </button>
             <small>Nothing changes until you apply.</small>
           </>

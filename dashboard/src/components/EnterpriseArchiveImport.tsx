@@ -26,7 +26,7 @@ import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
-import { draftImportFindings, type ImportFinding } from './importReviewIssues'
+import { groupImportFindings, draftImportFindings, type ImportFinding } from './importReviewIssues'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
@@ -897,7 +897,7 @@ const validationReviewTabs = [
   { id: 'overview', label: 'Review' },
   { id: 'credentials', label: 'Credentials' },
   { id: 'data', label: 'Data & parameters' },
-  { id: 'preserved', label: 'Preserved Source Settings' },
+  { id: 'preserved', label: 'Runtime & source settings' },
   { id: 'dsl', label: 'DSL Preview' },
   { id: 'source', label: 'Source Mapping' },
 ] as const
@@ -953,7 +953,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const resultScriptButtonRefs = useRef(new Map<number, HTMLButtonElement>())
   const pendingResultScriptFocusRef = useRef<number | null>(null)
   const [validationReviewTab, setValidationReviewTab] = useState<ValidationReviewTab>('overview')
-  const [repairSourceFocus, setRepairSourceFocus] = useState({ id: '', revision: 0 })
+  const [repairSourceFocus, setRepairSourceFocus] = useState({ id: '', file: '', revision: 0 })
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
@@ -1279,6 +1279,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   }, [activeResultScriptIndex, projectId, reviewScope, selectedItem?.id, selectedItem?.reviewGeneration])
   const importedScript = resultScripts[activeResultScriptIndex] ?? null
   const [protectedReview, setProtectedReview] = useState<{ project: string; result: RepairResult } | null>(null)
+  const [issueFocus, setIssueFocus] = useState({ path: '', revision: 0 })
   const currentRepairReview = protectedReview?.project === (projectId || '') && protectedReview.result.candidate_id === importedScript?.metadata?.import?.preserved?.server_import_attestation_v1 ? protectedReview.result : null
   const replayPreflight = getEnterpriseArchiveReplayPreflight(importedScript, result)
   const selectedResultScriptSaved = Boolean(
@@ -1435,6 +1436,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     if (needsExecutionRepair && !canonical.some(f => f.gate === 'execution') && !extra.some(f => f.gate === 'execution')) extra.push({ code: 'diagnostic:execution', detail: 'Additional protocol or execution checks need attention. Inspect conversion details and the related review sections before replay.', gate: 'execution' })
     return extra
   }, [currentRepairReview, importedScript, fidelityReport, reviewSections, replayPreflight, needsExecutionRepair])
+  const tabIssues = useMemo(() => importedScript ? groupImportFindings([...(currentRepairReview?.findings || draftImportFindings(importedScript)), ...additionalRepairFindings], importedScript) : [], [currentRepairReview, importedScript, additionalRepairFindings])
   const selectReviewSection = (tab: ValidationReviewTab) => {
     setValidationReviewTab(tab)
     document.getElementById(`lr-validation-review-tab-${tab}`)?.focus()
@@ -4388,13 +4390,16 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             </div>
           )}
-          <TabList className="lr-validation-review-tabs" role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
+          <div className="lr-tab-readiness" role="status">{importedScript && (() => { const issues = tabIssues; return `${issues.filter(i => i.blocking).length} grouped issues block replay · ${issues.filter(i => !i.blocking).length} need review`; })()}</div>
+          <TabList className="lr-validation-review-tabs"
+ role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
               {validationReviewTabs.map((tab) => (
                 <button
                   key={tab.id}
                   id={`lr-validation-review-tab-${tab.id}`}
                   type="button"
                   role="tab"
+                  aria-label={tab.label}
                   aria-selected={validationReviewTab === tab.id}
                   aria-controls="lr-validation-review-panel"
                   tabIndex={validationReviewTab === tab.id ? 0 : -1}
@@ -4418,7 +4423,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                       ?.focus()
                   }}
                 >
-                  {tab.label}
+                  {tab.label}{importedScript && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id) && (() => { const issues = tabIssues; const count = issues.filter(i => tab.id === 'overview' || (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length; return count ? <span className="lr-tab-count" aria-hidden="true">{count}</span> : null })()}
                 </button>
               ))}
           </TabList>
@@ -4437,7 +4442,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             showCredentials={validationReviewTab === 'credentials'}
             showDataReview={validationReviewTab === 'data'}
             credentialIntroduction={<div className="lr-repair-summary">
-              <h4>Runtime secret references</h4>
+              <h4>Credential setup</h4><p>Resolve missing project bindings here. Counts below describe unique groups and affected locations; the Review queue tracks execution requirements separately.</p><button type="button" className="btn btn-secondary btn-sm" onClick={() => selectReviewSection('overview')}>View remaining execution requirements</button>
               <p>{currentRepairReview ? `${currentRepairReview.readiness.unresolved_bindings || 0} unresolved credential requirements in the current protected draft.` : 'Secret references below reflect the last archive validation. Repair previews check the current protected draft.'}</p>
               {!currentRepairReview && (replayPreflight?.missing_secrets?.length || 0) > 0 && <>
                 <ul>{replayPreflight?.missing_secrets?.map(name => <li key={name}><code>{name}</code></li>)}</ul>
@@ -4485,14 +4490,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             previewData={importedScript}
             previewInitiallyOpen
             previewAside={sourceReview
-              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} focusedMappingId={repairSourceFocus.id} focusRequestId={repairSourceFocus.revision} />
+              ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} repairPaths={tabIssues.flatMap(issue => issue.findings.flatMap(f => f.action_path ? [f.action_path] : []))} onRepairTarget={path => { setIssueFocus(previous => ({ path, revision: previous.revision + 1 })); setValidationReviewTab('overview') }} focusedSourceFile={repairSourceFocus.file} focusedMappingId={repairSourceFocus.id} focusRequestId={repairSourceFocus.revision} />
               : <div className="lr-review-tab-empty">No source mapping was generated for this archive.</div>}
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}
           >
-            {importedScript && <ImportGuidedRepair key={`${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={selectReviewSection} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} onViewSource={path => {
+            {importedScript && <ImportGuidedRepair focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={`${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={selectReviewSection} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} onViewSource={path => {
               const mapping = sourceReview?.mappings?.find(entry => entry.target_path === path)
-              setRepairSourceFocus(previous => ({ id: mapping?.id || '', revision: previous.revision + 1 }))
+              setRepairSourceFocus(previous => ({ id: mapping?.id || '', file: '', revision: previous.revision + 1 }))
               setValidationReviewTab('source')
             }} onApplied={repaired => {
               if (!selectedItem || !result) return
@@ -4944,11 +4949,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               {importMetadata ? (
                 <div className="lr-preserved">
                 <div className="lr-preserved-header">
-                  <h4>Preserved Source Settings</h4>
+                  <h4>Runtime & source settings</h4>
                   <span>These values will be saved with the APEX Load script.</span>
                 </div>
 
-                <div className="lr-preserved-grid">
+                <div className="lr-runtime-intro"><p>Compare imported runtime behavior with the settings mapped for replay. Mapping is not evidence of a successful run.</p><button type="button" className="btn btn-primary btn-sm" onClick={() => selectReviewSection('overview')}>Review required decisions</button> <button type="button" className="btn btn-secondary btn-sm" onClick={() => selectReviewSection('data')}>View parameters & capacity</button><p>{editRequiresCredentialPreservingSave ? 'Opening the editor first saves this protected draft. Replay blockers remain in effect.' : 'Editor actions open the draft for further configuration.'}</p></div>
+                <details className="lr-source-inventory"><summary>Source files & import metadata</summary><div className="lr-preserved-grid">
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Project File</span>
                     <strong>{reviewSummary?.project_file || importMetadata.source_script_name || importedScript.name}</strong>
@@ -5068,6 +5074,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   )}
                 </div>
 
+                </details><details><summary>Parameter mapping evidence</summary>
                 {importSummary.parameterFileSections.length > 0 && (
                   <div className="lr-review-section">
                     <div className="lr-review-section-header">
@@ -5124,6 +5131,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   </div>
                 )}
 
+                </details>
                 {importSummary.correlationSuggestions.length > 0 && (
                   <div className="lr-review-section">
                     <div className="lr-review-section-header">
@@ -5230,27 +5238,15 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                         onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
                       } : null,
                     ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    <ul>
-                      {importSummary.runtimeSettingsParity.map((entry) => (
-                        <li key={`parity-${entry.id}`}>
-                          <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
-                          {`: ${entry.concept}`}
-                          {entry.runtime_files.length > 0 ? ` • ${entry.runtime_files.join(', ')}` : ''}
-                          {importedEditorAvailable && getImportedRuntimeSectionId(entry.area) && (
-                            <>
-                              {' '}
-                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>
-                                {`Open ${entry.area} Settings In Editor`}
-                              </button>
-                            </>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
+                    {['Requires decision', 'Mapped for replay', 'Preserved only', 'Not applicable'].map(group => {
+                      const rows = importSummary.runtimeSettingsParity.filter(entry => (entry.status === 'executed' ? 'Mapped for replay' : entry.status === 'compatibility_only' ? 'Preserved only' : entry.status === 'non_applicable' ? 'Not applicable' : 'Requires decision') === group)
+                      if (!rows.length) return null
+                      return <details key={group} open={group === 'Requires decision' || group === 'Mapped for replay'}><summary>{group} ({rows.length})</summary><div className="lr-table-wrap"><table className="lr-parameter-table lr-runtime-table"><thead><tr><th>Setting / source</th><th>APEX behavior</th><th>Review</th></tr></thead><tbody>{rows.map(entry => <tr key={entry.id}><th scope="row">{entry.area}: {entry.concept}<small>{entry.runtime_files?.join(', ')}</small></th><td>{entry.notes || (group === 'Mapped for replay' ? 'Mapped to supported replay settings; target behavior has not been verified.' : group === 'Preserved only' ? 'Retained as evidence without execution.' : group === 'Not applicable' ? 'No runtime behavior applies.' : 'A source or migration decision is required.')}<details><summary>Source fields</summary><p>{entry.fields?.join(', ') || 'Inspect the captured runtime file for original values.'}</p></details></td><td><button type="button" className="btn btn-secondary btn-sm" onClick={() => { if (group === 'Requires decision') { selectReviewSection('overview'); return } setRepairSourceFocus(previous => ({ id: '', file: entry.runtime_files?.[0] || '', revision: previous.revision + 1 })); selectReviewSection('source') }}>{group === 'Requires decision' ? 'Review decision' : 'View source'}</button>{importedEditorAvailable && getImportedRuntimeSectionId(entry.area) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>Configure {entry.area}</button>}</td></tr>)}</tbody></table></div></details>
+                    })}
                   </div>
                 )}
 
-                {generatedDataSources.length > 0 && (
+                <details><summary>Data source evidence</summary>{generatedDataSources.length > 0 && (
                   <div className="lr-review-section">
                     <div className="lr-review-section-header">
                       <strong>Generated Data Sources</strong>
@@ -5307,7 +5303,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   </div>
                 )}
 
-                <details className="lr-preserved-details">
+                </details><details className="lr-preserved-details">
                   <summary>View preserved metadata JSON</summary>
                   <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
                 </details>

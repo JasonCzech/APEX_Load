@@ -820,6 +820,7 @@ export interface ScriptParameterDefinition {
   data_source?: string
   column?: string
   start_row?: number
+  auto_allocate?: boolean
   block_size?: number
   value_for_each_vuser?: boolean
   format?: string

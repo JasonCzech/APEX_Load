@@ -941,6 +941,18 @@ describe('SourceMappingReview', () => {
     expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
   })
 
+  it('focuses a runtime source file without a request mapping and retains the operator selection', async () => {
+    const withRuntime = { ...sourceReview, source_files: [...sourceReview.source_files, { path: 'default.cfg', language: 'text', content: '[Browser]\nUseCustomAgent=1' }] }
+    await act(async () => { root.render(<SourceMappingReview sourceReview={withRuntime} script={script} focusedSourceFile="default.cfg" focusRequestId={1} />) })
+    await flushPromises()
+    const select = container.querySelector('.source-map-toolbar select') as HTMLSelectElement
+    expect(select.value).toBe('default.cfg')
+    expect(container.textContent).toContain('UseCustomAgent=1')
+    await act(async () => { select.value = sourceReview.source_files[0].path; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => { root.render(<SourceMappingReview sourceReview={{ ...withRuntime }} script={script} focusedSourceFile="default.cfg" focusRequestId={1} />) })
+    expect(select.value).toBe(sourceReview.source_files[0].path)
+  })
+
   it('keeps a clicked table row from snapping back to an earlier external focus target', async () => {
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
       callback(0)

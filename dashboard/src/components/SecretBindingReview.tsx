@@ -565,6 +565,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const [error, setError] = useState('')
   const [credentialPage, setCredentialPage] = useState(0)
   const [credentialSearch, setCredentialSearch] = useState('')
+  const [credentialState, setCredentialState] = useState('all')
   const [attentionOnly, setAttentionOnly] = useState(false)
   const [pendingReuse, setPendingReuse] = useState<string | null>(null)
   const resetReviewIdentityRef = useRef(reviewIdentity)
@@ -1388,8 +1389,14 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const preservedGroupCount = groups.filter(group => (
     effectiveDestinationChoice(group, destinationChoices) === 'preserve'
   )).length
-  const providerLabel = scopedStoreProvider || 'project secret store'
+  const providerLabel = scopedStoreProvider.split(',').map(provider => ({ encrypted_database: 'Encrypted project store', environment_read_only: 'Environment bindings (read-only)' }[provider] || 'Project secret provider')).join(' · ') || 'Project secret store'
   const filteredGroups = groups.filter(group => {
+    const preserved = effectiveDestinationChoice(group, destinationChoices) === 'preserve'
+    const name = (names[group.key] || '').trim()
+    const ready = !preserved && (scopedStatuses.get(name)?.configured === true || committedValueNamesSnapshot.names.has(name) || !!values[group.key])
+    if (credentialState === 'preserved' && !preserved) return false
+    if (credentialState === 'setup' && (preserved || ready)) return false
+    if (credentialState === 'ready' && !ready) return false
     if (attentionOnly && effectiveDestinationChoice(group, destinationChoices) === 'preserve') return false
     const search = credentialSearch.trim().toLowerCase()
     return !search || group.requirements.some(requirement =>
@@ -1407,8 +1414,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     <section className="secret-binding-review credentials-card" aria-labelledby={titleId}>
       <div className="secret-binding-review-header">
         <div>
-          <h4 id={titleId}>Credential groups ({groups.length})</h4>
-          <p>{requirements.length} protected occurrences. Preserved imported values are grouped only when verified equal by the server. Unresolved bindings are grouped by their proposed reference name.</p>
+          <h4 id={titleId}>Credential groups ({filteredGroups.length === groups.length ? groups.length : `${filteredGroups.length} of ${groups.length}`})</h4>
+          <p>{groups.length} unique credential groups across {requirements.length} credential requirements. Expand affected locations within each group to inspect their scope. Preserved imported values are grouped only when verified equal by the server. Unresolved bindings are grouped by their proposed reference name.</p>
           <p>
             Choose how each imported credential is stored in the destination. A server-confirmed imported value can remain
             runnable as-is, or you can replace it with a <code>{'{{secret.NAME}}'}</code> project-secret reference and
@@ -1424,8 +1431,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
 
       <div className="credentials-card-summary" role="status">
         <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
-        <span>{prepared.configureLaterCount} to configure later (selected bindings only)</span>
-        <span>{prepared.secrets.length} value{prepared.secrets.length === 1 ? '' : 's'} ready to create</span>
+        <span>{prepared.configureLaterCount} bindings need setup</span>
+        <span>{prepared.secrets.length} value{prepared.secrets.length === 1 ? '' : 's'} entered, not yet saved</span>
         <span>
           {scopedProbeState === 'loading'
             ? 'Checking project secret store…'
@@ -1477,6 +1484,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
 
       <div className="credentials-review-filters">
         <label>Search credential locations<input type="search" disabled={applying || disabled} value={credentialSearch} onChange={event => { setCredentialSearch(event.target.value); setCredentialPage(0) }} /></label>
+        <label>Credential state<select disabled={applying || disabled} value={credentialState} onChange={event => { setCredentialState(event.target.value); setCredentialPage(0) }}><option value="all">All groups</option><option value="setup">Needs setup</option><option value="preserved">Preserved</option><option value="ready">Configured or value entered</option></select></label>
         <label><input type="checkbox" disabled={applying || disabled} checked={attentionOnly} onChange={event => { setAttentionOnly(event.target.checked); setCredentialPage(0) }} /> Show bindings needing review</label>
       </div>
       {filteredGroups.length === 0 && <p role="status">No credential groups match this filter.</p>}
@@ -1628,6 +1636,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                     valueConflict ? valueConflictErrorId : '',
                   ].filter(Boolean).join(' ')}
                   nameInvalid={Boolean(nameError || valueConflict)}
+                  valueLabel="Secret value — supply now or later"
                   referenceKind={bindingSelected ? 'Script reference' : 'Optional project reference'}
                   valueAriaLabel={`Secret value for ${name || group.requirements[0]?.label || 'credential'}`}
                   valuePlaceholder={configured
@@ -1642,6 +1651,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                             ? 'Enter now or leave blank'
                             : 'Provider is read-only'}
                 />
+                {bindingSelected && !configured && !values[group.key] && <p>Leaving this blank keeps the binding unresolved until a usable value is configured in Project Secrets. Saving a draft does not prove replay readiness.</p>}
                 {pendingReuse === group.key && <div role="alert">
                   <p>This will replace the selected reference name and optional value in {reuseSetSize} groups. Inspect the affected locations below. Only continue if these locations intentionally share one credential.</p>
                   <AffectedPathsDisclosure id={`${inputId}-reuse-scope`} paths={reuseSet.map(member => `${member.requirements[0]?.label || member.suggestedName}: ${member.requirements.map(requirement => requirement.path).join(', ')}`)} hasAffectedSourcePaths={false} />

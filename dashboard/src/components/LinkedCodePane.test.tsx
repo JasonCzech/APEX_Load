@@ -20,7 +20,7 @@ const { codeMirrorProps } = vi.hoisted(() => ({
 }))
 const dispatchSpy = vi.fn()
 const measuredScroll = { scrollTop: 0, clientHeight: 100 }
-const measureSpy = vi.fn((spec: { read: () => { top: number; height: number }; write: (block: { top: number; height: number }) => void }) => spec.write(spec.read()))
+const measureSpy = vi.fn((spec?: { read: () => { top: number; height: number }; write: (block: { top: number; height: number }) => void }) => spec?.write(spec.read()))
 vi.mock('@uiw/react-codemirror', () => ({
   default: function MockCodeMirror({
     extensions,
@@ -210,4 +210,20 @@ describe('LinkedCodePane', () => {
     expect(codeScroller.scrollTop).toBe(0)
     expect(wheel.defaultPrevented).toBe(true)
   })
+})
+
+
+it('remeasures an editor after pane resize and disconnects the observer on unmount', async () => {
+  let resized: (() => void) | undefined
+  const disconnect = vi.fn()
+  vi.stubGlobal('ResizeObserver', class { constructor(callback: () => void) { resized = callback } observe() {} disconnect = disconnect })
+  const container = document.createElement('div'); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<LinkedCodePane value="sample" ariaLabel="Destination" />))
+    measureSpy.mockClear()
+    await act(async () => resized?.())
+    expect(measureSpy).toHaveBeenCalledOnce()
+    expect(measureSpy).toHaveBeenCalledWith()
+  } finally { await act(async () => root.unmount()); vi.unstubAllGlobals() }
+  expect(disconnect).toHaveBeenCalledOnce()
 })

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { ImportGuidedRepair } from './ImportGuidedRepair'
@@ -103,5 +103,46 @@ it('previews duration and iteration allocation from the data tab without applyin
     await act(async () => preview().click())
     expect(JSON.parse(mock.request.mock.calls[2][1].body).operation).toEqual({ type: 'preview_allocation', vusers: 2, iterations: 1 })
     expect(container.textContent).not.toContain('Apply reviewed repair')
+  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+
+it('retains allocation across tabs, calculates source row ranges, and invalidates it for a new candidate', async () => {
+  const script = { name: 'Allocation', protocol: 'http', actions: [], parameters: [{ name: 'ids', type: 'list', values: ['a', 'b', 'c', 'd', 'e'], selection: 'unique', start_row: 2, auto_allocate: true }], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:allocation' } } } } as unknown as ScriptDefinition
+  const result = { candidate_id: 'protected:allocation', revision: 'protected:allocation', script, findings: [], readiness: { replay_ready: false }, expires_at: '2099-01-01', fidelity_report: {}, allocation: [{ name: 'ids', rows: 4, block_size: 2, population: 2 }] }
+  mock.request.mockResolvedValue(result)
+  const container = document.createElement('div'); const root = createRoot(container); const onApplied = vi.fn()
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" view="data" onApplied={onApplied} />))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview allocation')!.click())
+    expect(container.textContent).toContain('2–3')
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" view="hidden" onApplied={onApplied} />))
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" view="data" onApplied={onApplied} />))
+    expect(container.textContent).toContain('2–3')
+    expect(container.textContent).toContain('does not clear other replay blockers')
+    expect(onApplied).not.toHaveBeenCalled()
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="another-project" view="data" onApplied={onApplied} />))
+    expect(container.querySelector('[aria-label="Allocation result"]')).toBeNull()
+  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+
+it('opens the authoritative issue for a source mapping focus request', async () => {
+  const script = { name: 'TLS', protocol: 'http', actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:tls' } } } } as unknown as ScriptDefinition
+  mock.request.mockResolvedValue({ candidate_id: 'protected:tls', script, findings: [{ code: 'legacy_tls_replacement', action_path: 'init[0]', gate: 'execution', detail: '' }], readiness: { replay_ready: false }, expires_at: '2099-01-01' })
+  const container = document.createElement('div'); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" focusPath="init[0]" focusRequest={1} onApplied={vi.fn()} />))
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Repair operation"]')?.value).toBe('select_tls')
+    expect(container.textContent).toContain('intentional migration change')
+  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+
+ it('shares protected candidate inspection across StrictMode effect replays', async () => {
+  const script = { name: 'Draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:strict' } } } } as ScriptDefinition
+  mock.request.mockResolvedValue({ script, findings: [], readiness: { replay_ready: true }, expires_at: '2099-09-19' })
+  const container = document.createElement('div'); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<StrictMode><ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} /></StrictMode>))
+    expect(mock.request).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Checking current repair requirements')
   } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
 })

@@ -957,7 +957,7 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Preserved in script')
-    expect(container.textContent).toContain('0 to configure later')
+    expect(container.textContent).toContain('0 bindings need setup')
     expect(container.textContent).not.toContain('Save with 1 secret to configure')
 
     expect(container.textContent).toContain('Save And Open In Visual Editor')
@@ -1025,7 +1025,7 @@ describe('BrowserRecorderControlPanel', () => {
       expect(edit.disabled).toBe(false)
       expect(applyParameterization.disabled).toBe(false)
       expect(useProjectSecret.disabled).toBe(false)
-      expect(container.textContent).toContain('0 to configure later')
+      expect(container.textContent).toContain('0 bindings need setup')
 
       await act(async () => {
         vi.advanceTimersByTime(1_011)

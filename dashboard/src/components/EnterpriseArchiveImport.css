@@ -970,3 +970,38 @@
   .lr-issue-queue { max-height: 60vh; }
   .lr-issue-detail, .lr-issue-detail h4 { scroll-margin-top: 150px; }
 }
+
+/* Import review: decisions first, evidence on demand. */
+.lr-tab-readiness { padding: 12px 18px; color: var(--text-primary); font-weight: 600; }
+.lr-tab-count { display: inline-block; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 12px; }
+.lr-validation-review-tabs { position: sticky; top: 0; z-index: 2; background: var(--bg-secondary); flex-wrap: wrap; }
+.lr-validation-review-panel .script-import-review-compact .script-import-review-header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px; }
+.lr-validation-review-panel .script-import-review-compact .script-import-review-header > p { flex: 1; margin: 0; }
+.lr-validation-review-panel .script-import-review-compact .script-import-review-header > div:empty { display: none; }
+.lr-validation-review-panel .script-import-review-session { padding: 6px 16px; font-size: .875rem; border: 0; }
+.lr-parameter-inventory { margin-bottom: 24px; }
+.lr-allocation-form, .lr-preview-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; padding: 16px; }
+.lr-allocation-form label { flex: 0 1 240px; }
+.lr-preview-toolbar label { display: grid; gap: 6px; max-width: 100%; }
+.lr-preview-toolbar select { max-width: 420px; }
+.lr-runtime-intro { margin-bottom: 16px; }
+.lr-source-inventory { margin: 16px 0; }
+.lr-preserved-grid { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.lr-preserved-card { overflow-wrap: anywhere; }
+.lr-mapping-navigation { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+.lr-parameter-table th small { display: block; font-weight: normal; }
+.lr-validation-review-panel details > summary { cursor: pointer; padding: 10px 0; }
+.lr-validation-review-panel input:not([type=checkbox]):not([type=radio]), .lr-validation-review-panel select { min-height: 38px; border: 1px solid var(--border); border-radius: 6px; padding: 8px; color: var(--text-primary); background: var(--bg-primary); }
+.lr-validation-review-panel input[type=checkbox], .lr-validation-review-panel input[type=radio] { width: 18px; height: 18px; }
+.lr-validation-review-panel .secret-binding-review-reference { display: block; margin: 8px 0 16px; }
+.lr-validation-review-panel .secret-binding-review-item input:not([type=radio]):not([type=checkbox]) { width: 100%; }
+.lr-validation-review-panel .lr-subtitle, .lr-validation-review-panel .shared-values-rationale, .lr-validation-review-panel small { color: var(--text-secondary); }
+.lr-validation-review-panel :focus-visible { outline: 2px solid var(--accent-primary, #88b5eb); outline-offset: 3px; }
+@media (max-width: 900px) { .lr-preview-toolbar select { max-width: 100%; } .lr-allocation-form label { flex: 1 1 180px; } }
+.lr-import-reviewed .lr-import-header { margin-bottom: 8px; }
+.lr-import-reviewed .lr-import-header h2 { font-size: 1.1rem; margin: 0; }
+.lr-import-reviewed .lr-import-steps { margin: 8px 0; padding-block: 4px; font-size: .875rem; }
+.lr-import-reviewed .lr-dropzone.has-file { padding: 12px; margin-bottom: 10px; }
+.lr-import-reviewed .lr-file-list { max-height: 140px; overflow: auto; }
+.lr-import-reviewed .lr-file-queue { gap: 8px; }
+.lr-validation-review-panel .script-import-review-preview-aside[hidden] { display: none; }

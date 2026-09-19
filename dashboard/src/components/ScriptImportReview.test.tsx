@@ -734,7 +734,7 @@ describe('ScriptImportReview', () => {
     })
 
     expect(container.textContent).toContain('server-confirmed imported value can remain')
-    expect(container.textContent).toContain('0 to configure later')
+    expect(container.textContent).toContain('0 bindings need setup')
     const saveButton = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
     const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent === 'Open In Visual Editor')!
@@ -1290,4 +1290,22 @@ describe('ScriptImportReview', () => {
     expect(container.textContent).toContain('jms_token')
     expect(container.textContent).not.toContain('kafka_token')
   })
+})
+
+it('navigates compact DSL by section and action while protecting explicit credential paths', async () => {
+  const container = document.createElement('div'); const root = createRoot(container)
+  const draft = { ...script, actions: [{ name: 'Opaque request', type: 'request', target: '/sample', body: 'private-body-value' }] }
+  try {
+    await act(async () => root.render(<ScriptImportReview title="Review" compactReview script={draft} secretBindingRequirements={[{ path: '/actions/0/body', label: 'Body', suggested_name: 'BODY' } as never]} />))
+    const jump = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Jump to action'))!
+    await act(async () => { jump.value = 'actions[0]'; jump.dispatchEvent(new Event('change', { bubbles: true })) })
+    const code = container.querySelector('pre')!
+    expect(code.textContent).toContain('Opaque request')
+    expect(code.textContent).not.toContain('private-body-value')
+    expect(code.textContent).toContain('[protected imported value]')
+    const section = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Section'))!
+    await act(async () => { section.value = 'config'; section.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.querySelector('pre')?.textContent).toContain('base_url')
+    expect(container.textContent).toContain('not an executable export')
+  } finally { await act(async () => root.unmount()) }
 })

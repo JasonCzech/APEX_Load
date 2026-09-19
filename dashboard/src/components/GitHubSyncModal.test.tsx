@@ -367,7 +367,7 @@ describe('GitHubSyncModal (import)', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('Preserved in script')
-    expect(container.textContent).toContain('0 to configure later')
+    expect(container.textContent).toContain('0 bindings need setup')
     await act(async () => {
       findButton('Save Script')?.click()
     })

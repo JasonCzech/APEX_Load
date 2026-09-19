@@ -43,8 +43,11 @@ interface Props {
   baselineScript?: ScriptDefinition | null
   onChangeReview?: (state: MappingReviewState) => void
   draftDirty?: boolean
+  repairPaths?: string[]
+  onRepairTarget?: (path: string) => void
   onEditTarget?: (path: string) => void
   focusRequestId?: number
+  focusedSourceFile?: string
   focusedMappingId?: string
   id?: string
   onToggleWorkspaceMaximized?: () => void
@@ -181,9 +184,10 @@ const COVERAGE_TOOLTIPS: Record<string, string> = {
 }
 
 export default function SourceMappingReview({
-  baselineScript, onChangeReview, draftDirty, onEditTarget,
+  baselineScript, onChangeReview, draftDirty, onEditTarget, onRepairTarget, repairPaths,
   focusRequestId = 0,
   focusedMappingId = '',
+  focusedSourceFile = '',
   id,
   onToggleWorkspaceMaximized,
   showTitle = true,
@@ -335,23 +339,24 @@ export default function SourceMappingReview({
   ])
 
   useEffect(() => {
-    if (!focusedMappingId) return
+    if (!focusedMappingId && !focusedSourceFile) return
     if (lastAppliedFocusRequestRef.current === focusRequestId) return
-    const nextMapping = mappings.find(mapping => mapping.id === focusedMappingId)
-    if (!nextMapping) return
+    const requestedFile = focusedSourceFile ? findSourceFile(files, focusedSourceFile, sourcePathResolver) : null
+    const nextMapping = focusedMappingId
+      ? mappings.find(mapping => mapping.id === focusedMappingId)
+      : requestedFile ? findFirstMappingForFile(mappings, requestedFile.path, sourcePathResolver) : undefined
+    if (!nextMapping && !requestedFile) return
     lastAppliedFocusRequestRef.current = focusRequestId
-    setInspectedUnmappedFilePath('')
-    setSelectedMappingId(nextMapping.id)
-    if (nextMapping.source_file) {
-      const nextFile = findSourceFile(files, nextMapping.source_file, sourcePathResolver)
-      setSelectedFilePath(nextFile?.path || '')
-    }
+    const nextFile = requestedFile || (nextMapping?.source_file ? findSourceFile(files, nextMapping.source_file, sourcePathResolver) : null)
+    setInspectedUnmappedFilePath(nextMapping ? '' : nextFile?.path || '')
+    setSelectedMappingId(nextMapping?.id || '')
+    setSelectedFilePath(nextFile?.path || '')
     setCategoryFilter('')
     setFilter('')
     setNoOriginTarget('')
     setRevealRequestId(value => value + 1)
     setCopied('')
-  }, [files, focusedMappingId, focusRequestId, mappings, sourcePathResolver])
+  }, [files, focusedMappingId, focusedSourceFile, focusRequestId, mappings, sourcePathResolver])
 
   const filteredMappings = useMemo(() => {
     const needle = filter.trim().toLowerCase()
@@ -728,11 +733,12 @@ export default function SourceMappingReview({
       {identity.error && <p role="alert">{identity.error}</p>}
       {(omittedFiles.length > 0 || truncatedFiles.length > 0) && <details><summary>Inspect omitted and truncated files</summary><ul>{omittedFiles.map(path => <li key={path}>Omitted: {path}</li>)}{truncatedFiles.map(file => <li key={file.path}><button type="button" onClick={() => selectSourceFile(file.path)}>Truncated: {file.path}</button></li>)}</ul></details>}
       {showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
+      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<span>Mapping coverage is source evidence, not execution readiness. Review acknowledgement does not resolve blockers.</span></nav>
       {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
         <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
         <span>Conversion: {formatStatusLabel(selectedMapping.status)} · Runtime support: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
         <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}</span>
-        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}
+        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
         {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
         <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />
       </div>}

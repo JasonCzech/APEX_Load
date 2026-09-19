@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import ImportParameterInventory from './ImportParameterInventory'
 import { request } from '../hooks/apiClient'
 import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '../types/scriptImports'
 import type { ScriptDefinition } from '../types/scripts'
@@ -9,18 +10,22 @@ type Operation = { type: string; [key: string]: unknown }
 type Props = {
   script: ScriptDefinition; projectId: string; disabled?: boolean; onApplied: (result: RepairResult) => void; onViewSource?: (path: string) => void
   onSection?: (section: 'credentials' | 'data' | 'preserved' | 'source') => void
+  focusPath?: string; focusRequest?: number
   view?: 'overview' | 'data' | 'hidden'; additionalFindings?: ImportFinding[]; onReview?: (result: RepairResult) => void
 }
 const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name' }
 
-export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onViewSource, onSection, view = 'overview', additionalFindings = [], onReview }: Props) {
+export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onViewSource, onSection, view = 'overview', additionalFindings = [], onReview, focusPath, focusRequest }: Props) {
   const candidate = String(script.metadata?.import?.preserved?.server_import_attestation_v1 || '')
   const scope = `${candidate}:${projectId}`
   const currentScope = useRef(scope)
   currentScope.current = scope
+  const inspectionRef = useRef<{ scope: string; promise: Promise<RepairResult> } | null>(null)
   const onReviewRef = useRef(onReview); onReviewRef.current = onReview
   useEffect(() => { currentScope.current = scope; return () => { currentScope.current = '' } }, [scope])
   const [review, setReview] = useState<RepairResult | null>(null)
+  const [allocationPreview, setAllocationPreview] = useState<RepairResult | null>(null)
+  const [allocationUser, setAllocationUser] = useState(1)
   const [preview, setPreview] = useState<RepairResult | null>(null)
   const [selection, setSelection] = useState('')
   const [occurrence, setOccurrence] = useState('')
@@ -62,16 +67,28 @@ export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onV
     return () => clearInterval(timer)
   }, [])
   useEffect(() => {
-    setReview(null); setPreview(null); setValue(''); setError(''); setPending(null); setBusy(false)
+    setAllocationPreview(null); setReview(null); setPreview(null); setValue(''); setError(''); setPending(null); setBusy(false)
     setLoading(false)
     if (!candidate.startsWith('protected:')) return
     let active = true
     setLoading(true)
-    request<RepairResult>('/scripts/import/repairs/preview', { method: 'POST', body: JSON.stringify({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: '', action_path: '', operation: { type: 'inspect' } }) })
+    // StrictMode replays effects; duplicate inspections compete for the protected candidate lease.
+    const inspectionScope = `${candidate}:${projectId}`
+    if (inspectionRef.current?.scope !== inspectionScope) inspectionRef.current = { scope: inspectionScope, promise: request<RepairResult>('/scripts/import/repairs/preview', { method: 'POST', body: JSON.stringify({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: '', action_path: '', operation: { type: 'inspect' } }) }) }
+    inspectionRef.current.promise
       .then(result => { if (active) { setReview(result); onReviewRef.current?.(result) } }).catch(e => { if (active) setError(String(e.message || e)) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [candidate, projectId])
-  useEffect(() => { setPreview(null); setPending(null) }, [view])
+  const lastFocus = useRef<number>()
+  useEffect(() => {
+    if (!focusPath || lastFocus.current === focusRequest) return
+    const issue = issues.find(i => i.findings.some(f => f.action_path === focusPath))
+    if (!issue) return
+    lastFocus.current = focusRequest
+    setSelection(issue.id); setOccurrence(focusPath)
+    setKind(issueRepairOptions(issue.findings.find(f => f.action_path === focusPath)?.code || '')[0]?.value || '')
+    setValue(''); setResponsePath(''); setPreview(null); setPending(null)
+  }, [focusPath, focusRequest, issues])
   function choose(issue: ImportIssue) {
     setSelection(issue.id); setOccurrence(issue.findings[0]?.action_path || ''); setKind(issueRepairOptions(issue.findings[0]?.code || '')[0]?.value || '')
     setValue(''); setResponsePath(''); setError(''); resetPreview()
@@ -88,7 +105,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onV
         const remaining = groupImportFindings(result.findings, result.script)
         setResolved(previous => [...previous.filter(i => !remaining.some(next => next.id === i.id)), ...issues.filter(i => !i.findings[0]?.code.startsWith('diagnostic:') && !remaining.some(next => next.id === i.id) && !previous.some(p => p.id === i.id))])
         setValue(''); resetPreview(); setReview(result); setAnnouncement(`Repair applied. ${remaining.filter(i => i.blocking).length} grouped issues block replay.`); onApplied(result)
-      } else { setPreview(result); setPending(target ? { operation, finding: target } : null) }
+      } else if (operation.type === 'preview_allocation') { setAllocationPreview(result) } else { setPreview(result); setPending(target ? { operation, finding: target } : null) }
     } catch (e) { if (requestScope === currentScope.current) setError(e instanceof Error ? e.message : 'Repair failed') }
     finally { if (requestScope === currentScope.current) setBusy(false) }
   }
@@ -152,8 +169,12 @@ export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onV
         </>}
       </section></div>
     </> : <>
-      <h3>Unique parameter allocation</h3><p>Preview reserved rows for your planned VUsers and run mode. This does not change or launch a run.</p>
-      <fieldset className="lr-repair-form" disabled={locked || !candidate.startsWith('protected:')}><legend>Planned run</legend><label>Planned VUsers<input type="number" min={1} value={users} onChange={e => { setUsers(Number(e.target.value)); resetPreview() }} /></label><label>Run mode<select value={runMode} onChange={e => { setRunMode(e.target.value); resetPreview() }}><option value="duration">Duration</option><option value="iterations">Iterations</option></select></label>{runMode === 'iterations' && <label>Iterations per VUser<input type="number" min={1} value={iterations} onChange={e => { setIterations(Number(e.target.value)); resetPreview() }} /></label>}<button className="btn btn-secondary" type="button" disabled={!Number.isInteger(users) || users < 1 || (runMode === 'iterations' && (!Number.isInteger(iterations) || iterations < 1))} onClick={() => run({ type: 'preview_allocation', vusers: users, iterations: runMode === 'duration' ? 0 : iterations })}>Preview allocation</button></fieldset>{previewContent}
+      <ImportParameterInventory script={script} /><h3>Unique parameter allocation</h3><p>Preview reserved rows for your planned VUsers and run mode. This does not change or launch a run.</p>
+      <fieldset className="lr-repair-form lr-allocation-form" disabled={locked || !candidate.startsWith('protected:')}><legend>Planned run</legend><label>Planned VUsers<input type="number" min={1} value={users} onChange={e => { setUsers(Number(e.target.value)); setAllocationPreview(null); setAllocationUser(1) }} /></label><label>Run mode<select value={runMode} onChange={e => { setRunMode(e.target.value); setAllocationPreview(null) }}><option value="duration">Duration</option><option value="iterations">Iterations</option></select></label>{runMode === 'iterations' && <label>Iterations per VUser<input type="number" min={1} value={iterations} onChange={e => { setIterations(Number(e.target.value)); setAllocationPreview(null) }} /></label>}<button className="btn btn-secondary" type="button" disabled={!Number.isInteger(users) || users < 1 || (runMode === 'iterations' && (!Number.isInteger(iterations) || iterations < 1))} onClick={() => run({ type: 'preview_allocation', vusers: users, iterations: runMode === 'duration' ? 0 : iterations })}>{busy ? 'Calculating allocation…' : 'Preview allocation'}</button></fieldset>
+      {allocationPreview && <section aria-label="Allocation result" className="lr-repair-preview"><h4>Capacity preview: {users} VUsers · {runMode === 'duration' ? 'duration run' : `${iterations} iterations per VUser`}</h4>
+        <p role="status">{allocationPreview.allocation?.length ? 'Capacity available for the planned population. This does not clear other replay blockers.' : 'No uniquely allocated parameters in this draft.'}</p>
+        {!!allocationPreview.allocation?.length && <><label>Inspect VUser ordinal<input type="number" min={1} max={users} value={allocationUser} onChange={e => setAllocationUser(Math.max(1, Math.min(users, Number(e.target.value) || 1)))} /></label><div className="lr-table-wrap"><table className="lr-parameter-table"><thead><tr><th>Parameter</th><th>Usable rows</th><th>Rows per VUser</th><th>Unused rows</th><th>VUser {allocationUser} row range</th></tr></thead><tbody>{allocationPreview.allocation.map(p => { const start = Math.max(1, script.parameters?.find(x => x.name === p.name)?.start_row || 1) + (allocationUser - 1) * p.block_size; return <tr key={p.name}><th scope="row">{p.name}</th><td>{p.rows}</td><td>{p.block_size}</td><td>{p.rows - p.block_size * p.population}</td><td>{start}–{start + p.block_size - 1}</td></tr> })}</tbody></table></div><p>Row numbers refer to data rows, excluding a header. Allocation is reserved across the whole planned population, including ramps.</p></>}
+      </section>}
     </>}
     {error && <p className="lr-warnings" role="alert">{error} Re-import if the protected candidate has expired. If an apply request was interrupted, retry the same reviewed repair.</p>}
   </section>

@@ -98,7 +98,7 @@ describe('SharedImportValues', () => {
   it('pre-fills the value the importer already produced', () => {
     render(buildSharedValues([candidate({})]))
     expect(inputFor('sv_base').value).toBe('https://stage.example.com')
-    expect(container.textContent).toContain('all 2 generated scripts')
+    expect(container.textContent).toContain('across 2 generated scripts')
   })
 
   // Rewriting every generated script is not something that should happen just
@@ -170,7 +170,7 @@ describe('SharedImportValues', () => {
     type(inputFor('sv_base'), 'https://prod.example.com')
     expect(applyMock).not.toHaveBeenCalled()
     expect(onValuesChange).toHaveBeenLastCalledWith({ sv_base: 'https://prod.example.com' })
-    expect(container.textContent).toContain('all 40 generated scripts')
+    expect(container.textContent).toContain('across 40 generated scripts')
   })
 
   it('renders nothing when there is no shared value', () => {
@@ -197,4 +197,23 @@ describe('sharedValueNameError', () => {
     expect(sharedValueNameError('2fast')).not.toBe('')
     expect(sharedValueNameError('base-url')).not.toBe('')
   })
+})
+
+it('requires a redacted substitution preview and invalidates it when the selection changes', async () => {
+  const container = document.createElement('div'); const root = createRoot(container)
+  applyMock.mockResolvedValue({ scripts, diffs: [], applied_count: 1 })
+  try {
+    await act(async () => root.render(<SharedImportValues guided sharedValues={buildSharedValues([candidate({}), candidate({ id: 'missing', name: 'tstamp', kind: 'source_variable' })])} scripts={scripts} onApplied={vi.fn()} />))
+    expect(container.textContent).not.toContain('tstamp')
+    const checkbox = container.querySelector<HTMLInputElement>('input[type=checkbox]')!
+    await act(async () => checkbox.click())
+    const button = () => container.querySelector<HTMLButtonElement>('.shared-values-actions button')!
+    await act(async () => button().click())
+    expect(button().textContent).toBe('Apply reviewed substitutions')
+    expect(container.querySelector('[aria-label="Substitution preview"]')?.textContent).toContain('[replacement supplied]')
+    expect(container.querySelector('[aria-label="Substitution preview"]')?.textContent).not.toContain('https://stage.example.com')
+    await act(async () => checkbox.click())
+    expect(container.querySelector('[aria-label="Substitution preview"]')).toBeNull()
+    expect(button().disabled).toBe(true)
+  } finally { await act(async () => root.unmount()) }
 })
