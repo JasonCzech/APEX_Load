@@ -615,18 +615,24 @@
   color: var(--text-muted);
 }
 
-.script-import-review-preview pre {
-  max-height: 560px;
-  overflow: auto;
+.script-import-review-preview .linked-code-pane {
   margin: 0 20px 16px;
-  padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  overflow: hidden;
+}
+
+.script-import-review-preview .linked-code-pane > div {
+  min-width: 0;
+}
+
+.script-import-review-preview .linked-code-pane .cm-editor {
   background: var(--bg-primary);
-  color: var(--text-secondary);
   font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
+}
+
+.script-import-review-preview .linked-code-pane .cm-scroller {
+  overflow: auto;
 }
 
 .script-import-review-preview-note {

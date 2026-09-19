@@ -35,8 +35,12 @@ for (const scenario of [
     await page.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
     const dslPreview = page.locator('.script-import-review-preview')
     await expect(dslPreview).toHaveAttribute('open', '')
-    await expect(dslPreview.locator('pre')).toContainText(`"name": "${String((result.script as Record<string, unknown>).name)}"`)
-    await expect(dslPreview.locator('pre')).not.toContainText('"script": {')
+    const dslEditor = dslPreview.getByRole('region', { name: 'DSL Preview JSON' })
+    // CodeMirror virtualizes off-screen lines, so assert the visible DSL opening
+    // instead of relying on the full document being in the DOM like <pre> was.
+    await expect(dslEditor.locator('.cm-content')).toContainText('"actions": [')
+    await expect(dslEditor).not.toContainText('"script": {')
+    await expect(dslEditor.locator('.apex-dsl-section-key').first()).toBeVisible()
     await page.getByRole('tab', { name: 'Review', exact: true }).click()
     await expect(page.getByRole('tab', { name: 'Conversion Complete', exact: true })).toHaveCount(0)
     await expect(page.getByText(scenario.text, { exact: true }).first()).toBeVisible()

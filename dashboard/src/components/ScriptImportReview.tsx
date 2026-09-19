@@ -20,6 +20,7 @@ import SecretBindingReview, {
 } from './SecretBindingReview'
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
+import LinkedCodePane from './LinkedCodePane'
 import './ScriptImportReview.css'
 
 const severityRank: Record<string, number> = {
@@ -773,7 +774,13 @@ export default function ScriptImportReview({
       }}>Download complete protected JSON</button>
       <p>Credential values, source metadata, and opaque positional arguments are protected. Every generated action is included; this review copy is not an executable export.</p>
       {previewExportError && <p role="alert">{previewExportError}</p>}
-      <pre>{preview.text}</pre>
+      <LinkedCodePane
+        value={preview.text}
+        language="json"
+        semanticMode="apex-dsl"
+        ariaLabel={`${previewTitle} JSON`}
+        maxHeight="560px"
+      />
     </details>
   ) : null
   const sortedReviewSections = [...reviewSections].sort((a, b) => {

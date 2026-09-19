@@ -22,6 +22,17 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
 
+// CodeMirror requires layout APIs unavailable in jsdom. The production editor
+// and its semantic DSL highlighting are covered in the browser workflow.
+vi.mock('./LinkedCodePane', () => ({
+  default: ({ value, ariaLabel, language, semanticMode }: {
+    value: string
+    ariaLabel?: string
+    language?: string
+    semanticMode?: string
+  }) => <pre aria-label={ariaLabel} data-language={language} data-semantic-mode={semanticMode}>{value}</pre>,
+}))
+
 const script = {
   name: 'Imported API Script',
   version: '1.0.0',
@@ -526,6 +537,17 @@ describe('ScriptImportReview', () => {
     expect(comparison?.textContent).toContain('Source Comparison')
     expect(preview && comparison ? children.indexOf(preview) < children.indexOf(comparison) : false).toBe(true)
     expect(container.querySelector('.script-import-review-preview-row')).toBeNull()
+  })
+
+  it('renders the generated DSL preview with the semantic JSON highlighter', () => {
+    act(() => {
+      root.render(<ScriptImportReview title="Review" previewTitle="DSL Preview" script={script} />)
+    })
+
+    const preview = container.querySelector<HTMLPreElement>('.script-import-review-preview pre')
+    expect(preview?.dataset.language).toBe('json')
+    expect(preview?.dataset.semanticMode).toBe('apex-dsl')
+    expect(preview?.getAttribute('aria-label')).toBe('DSL Preview JSON')
   })
 
   it('caps very large generated previews', () => {
