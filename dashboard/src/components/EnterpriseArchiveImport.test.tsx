@@ -914,8 +914,12 @@ describe('EnterpriseArchiveImport', () => {
     const reviewChildren = Array.from(review?.children || [])
     const preview = reviewChildren.find(element => element.classList.contains('script-import-review-preview')) as HTMLDetailsElement | undefined
     expect(preview?.tagName).toBe('DETAILS')
-    expect(preview?.open).toBe(false)
+    expect(preview?.open).toBe(true)
     expect(preview?.querySelector('summary h4')?.textContent).toBe('DSL Preview')
+    const dslPreview = preview?.querySelector('pre')?.textContent || ''
+    expect(dslPreview).toContain('"name": "Demo Enterprise Script Archive"')
+    expect(dslPreview).toContain('"actions": [')
+    expect(dslPreview).not.toContain('"script": {')
     expect(review?.querySelector('.script-import-review-preview-aside')).toBeNull()
     expect(review?.querySelector('.script-import-review-preview-row')).toBeNull()
 

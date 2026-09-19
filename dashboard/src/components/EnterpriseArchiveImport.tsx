@@ -4455,6 +4455,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             onEdit={importedEditorAvailable && !selectedResultScriptSaved && (!editRequiresCredentialPreservingSave || (queuedFileCount === 1 && resultScripts.length === 1)) ? () => { openImportedScriptInEditor() } : undefined}
             editLabel={editRequiresCredentialPreservingSave ? 'Save Draft and Open in Visual Editor' : 'Open Draft in Visual Editor'}
             previewTitle="DSL Preview"
+            previewData={importedScript}
+            previewInitiallyOpen
             previewAside={sourceReview
               ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} />
               : <div className="lr-review-tab-empty">No source mapping was generated for this archive.</div>}

@@ -460,6 +460,7 @@ interface Props {
   previewTitle?: string
   previewAside?: ReactNode
   showPreview?: boolean
+  previewInitiallyOpen?: boolean
   showPreviewAside?: boolean
   onSave?: () => void
   onEdit?: () => void
@@ -510,6 +511,7 @@ export default function ScriptImportReview({
   previewTitle = 'Generated Script Preview',
   previewAside,
   showPreview = true,
+  previewInitiallyOpen = false,
   showPreviewAside = true,
   onSave,
   onEdit,
@@ -744,7 +746,7 @@ export default function ScriptImportReview({
     [previewData, script, showPreview],
   )
   const previewPane = preview ? (
-    <details className="script-import-review-preview">
+    <details className="script-import-review-preview" open={previewInitiallyOpen}>
       <summary>
         <h4>{previewTitle}</h4>
       </summary>
