@@ -34,6 +34,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 7, Name: "scenario-group-transaction-response-time-sla", Fingerprint: "2b27fdaf2af24996243a8aa5d67e97b01cbe81515ce391653da7f744df80ad2e"},
 	{Version: 8, Name: "peak-pod-capacity-reservations", Fingerprint: "3c72a2e09f9362c4167a2f804a8c3d1b8a275bf96ce98822705f67d1ef4b11a1"},
 	{Version: 9, Name: "durable-monitoring-threshold-incidents", Fingerprint: "0f74cef209dd4dfda0093ec2c27fb7cd581b66875ca1549aa88966720d660232"},
+	{Version: 10, Name: "library-application-release-assignments", Fingerprint: "9ca4de0a07a29ffe6bd32864699ecf0a6147fc4ec5228a0ad276db246f831d7b"},
 }
 
 type SchemaMigrationRecord struct {

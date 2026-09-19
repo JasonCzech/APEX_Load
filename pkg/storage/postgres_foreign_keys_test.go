@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 80; got != want {
+	if got, want := len(specs), 88; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 

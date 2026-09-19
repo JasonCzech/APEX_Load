@@ -756,6 +756,13 @@ func (s *SQLiteStore) DeleteApplication(id string) error {
 		id, id, id, id, id, id).Scan(&dependentCount); err != nil {
 		return err
 	}
+	var assignments int
+	if err := tx.QueryRow(`SELECT (SELECT COUNT(*) FROM script_library_assignments WHERE application_id = ?) + (SELECT COUNT(*) FROM scenario_library_assignments WHERE application_id = ?)`, id, id).Scan(&assignments); err != nil {
+		return err
+	}
+	if assignments > 0 {
+		return errors.New("application has library assignments; clear or replace them first")
+	}
 	if dependentCount > 0 {
 		return errors.New("application has associated results, schedules, or governance records")
 	}
@@ -1289,6 +1296,15 @@ func (s *SQLiteStore) DeleteRelease(id string) error {
 		projectID, groupID, projectID, groupID, projectID, groupID, projectID, groupID).Scan(&dependentCount); err != nil {
 		return err
 	}
+	var assignments int
+	if err := tx.QueryRow(`SELECT
+      (SELECT COUNT(*) FROM script_library_assignments_releases WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?)) +
+      (SELECT COUNT(*) FROM scenario_library_assignments_releases WHERE release_id IN (SELECT id FROM releases WHERE project_id = ? AND COALESCE(NULLIF(group_id, ''), id) = ?))`, projectID, groupID, projectID, groupID).Scan(&assignments); err != nil {
+		return err
+	}
+	if assignments > 0 {
+		return errors.New("release has library assignments; clear or replace them first")
+	}
 	if dependentCount > 0 {
 		return errors.New("release has associated results, schedules, or governance records")
 	}
@@ -1698,6 +1714,11 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		// Audit history is intentionally retained after project deletion. It is an
 		// immutable governance trail, not project-owned mutable content.
 
+		// Library metadata is removed before its application/release parents.
+		{`DELETE FROM script_library_assignments_releases WHERE item_id IN (SELECT item_id FROM script_library_assignments WHERE application_id IN (SELECT id FROM applications WHERE project_id = ?))`, []any{id}},
+		{`DELETE FROM scenario_library_assignments_releases WHERE item_id IN (SELECT item_id FROM scenario_library_assignments WHERE application_id IN (SELECT id FROM applications WHERE project_id = ?))`, []any{id}},
+		{`DELETE FROM script_library_assignments WHERE application_id IN (SELECT id FROM applications WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM scenario_library_assignments WHERE application_id IN (SELECT id FROM applications WHERE project_id = ?)`, []any{id}},
 		// Application/release hierarchy and its governance records.
 		{`DELETE FROM release_sla_waivers WHERE project_id = ? OR release_id IN (SELECT id FROM releases WHERE project_id = ? OR application_id IN (SELECT id FROM applications WHERE project_id = ?))`, []any{id, id, id}},
 		{`DELETE FROM releases WHERE project_id = ? OR application_id IN (SELECT id FROM applications WHERE project_id = ?)`, []any{id, id}},

@@ -1096,6 +1096,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/{id}/clone-draft", cors(log(auth(http.HandlerFunc(s.handleCloneScriptDraft)))))
 	s.mux.Handle("PUT /api/v1/scripts/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScript)))))
 	s.mux.Handle("DELETE /api/v1/scripts/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScript)))))
+	s.mux.Handle("PUT /api/v1/scripts/{id}/library-assignment", cors(log(auth(http.HandlerFunc(s.handleScriptLibraryAssignment)))))
+	s.mux.Handle("PUT /api/v1/scenarios/{id}/library-assignment", cors(log(auth(http.HandlerFunc(s.handleScenarioLibraryAssignment)))))
 	s.mux.Handle("PATCH /api/v1/scripts/{id}/move", cors(log(auth(http.HandlerFunc(s.handleMoveScript)))))
 	// Protected import source, revision history, and rollback. These serve every
 	// format that retains durable source, not just Bruno, so the canonical paths

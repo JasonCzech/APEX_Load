@@ -1,5 +1,9 @@
+import LibraryAssignmentFilters from './LibraryAssignmentFilters'
+import { matchesAssignmentFilter } from './libraryAssignmentModel'
+import LibraryAssignmentDialog from './LibraryAssignmentDialog'
 import { useLibraryFilter } from './useLibraryFilter'
 import BulkActions from './ux/BulkActions'
+import MoveScriptsDialog from './MoveScriptsDialog'
 import { confirmAction } from './ux/confirmAction'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ApplicationRepository, AuthoringCorrelationPreviewRequest, AuthoringCorrelationPreviewResponse, AuthoringSession, DashboardAuthEffectiveAccessResource, Folder, GitHubConfigResponse, GitHubPushResponse, GitHubScriptStatus, StoredScript } from '../types'
@@ -167,6 +171,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const filterScope = `scripts:${activeProject?.domain_id || ''}:${activeProjectId || ''}`
   const [libraryQuery, setLibraryQuery] = useLibraryFilter<string>(filterScope, 'query', '')
   const [healthFilter, setHealthFilter] = useLibraryFilter<AuthoringHealthFilter>(filterScope, 'health', 'all', healthFilterKeys)
+  const [assignedApplicationFilter, setAssignedApplicationFilter] = useLibraryFilter<string>(filterScope, 'assignedApplication', 'all')
+  const [assignedReleaseFilter, setAssignedReleaseFilter] = useLibraryFilter<string>(filterScope, 'assignedRelease', 'all')
   const [releaseFilter, setReleaseFilter] = useLibraryFilter<string>(filterScope, 'release', 'all')
   const [folderFilter, setFolderFilter] = useLibraryFilter<string>(filterScope, 'folder', 'all')
   const [effectiveAuthAccessResources, setEffectiveAuthAccessResources] = useState<DashboardAuthEffectiveAccessResource[]>([])
@@ -174,6 +180,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const [libraryNotice, setLibraryNotice] = useState('')
   const [secretDialogScript, setSecretDialogScript] = useState<StoredScript | null>(null)
   const [selectedScriptIds, setSelectedScriptIds] = useState<Set<string>>(new Set())
+  const [assignmentScripts, setAssignmentScripts] = useState<StoredScript[] | null>(null)
+  const [moveScripts, setMoveScripts] = useState<StoredScript[] | null>(null)
+  const [movingScriptIds, setMovingScriptIds] = useState<Set<string>>(new Set())
   const [deletingScriptIds, setDeletingScriptIds] = useState<Set<string>>(new Set())
   const projectScopeRef = useRef({ id: activeProjectId, generation: 0 })
   const scriptsRequestGenerationRef = useRef(0)
@@ -428,6 +437,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     setLibraryNotice('')
     setSelectedScriptIds(new Set())
     setDeletingScriptIds(new Set())
+    setAssignmentScripts(null)
+    setMoveScripts(null)
+    setMovingScriptIds(new Set())
   }, [activeProjectId])
 
   const {
@@ -523,13 +535,14 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   const scriptsMatchingLibraryFilters = useMemo(() => {
     const query = libraryQuery.trim().toLowerCase()
     return scripts.filter(script => {
+      if (!matchesAssignmentFilter(script.library_assignment, assignedApplicationFilter, assignedReleaseFilter)) return false
       if (releaseFilter !== 'all' && !(script.associated_releases || []).some(release => release.name === releaseFilter)) return false
       if (folderFilter === 'unfiled' && script.folder_id) return false
       if (folderFilter !== 'all' && folderFilter !== 'unfiled' && script.folder_id !== folderFilter) return false
       if (!query) return true
       return scriptSearchText(script).includes(query)
     })
-  }, [folderFilter, libraryQuery, releaseFilter, scripts])
+  }, [folderFilter, libraryQuery, releaseFilter, scripts, assignedApplicationFilter, assignedReleaseFilter])
   const filteredScripts = useMemo(() => scriptsMatchingLibraryFilters.filter(script => scriptMatchesHealthFilter(script, healthFilter)), [scriptsMatchingLibraryFilters, healthFilter])
 
   const healthFilterCounts = useMemo(() => {
@@ -731,7 +744,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   )
 
   const federationRemoteRows = useMemo(() => {
-    if (federation.sourceFilter === 'local' || releaseFilter !== 'all' || folderFilter !== 'all' || healthFilter !== 'all') return []
+    if (assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || federation.sourceFilter === 'local' || releaseFilter !== 'all' || folderFilter !== 'all' || healthFilter !== 'all') return []
     const query = libraryQuery.trim().toLowerCase()
     return federation.remoteItems.filter(item => {
       // On "all", local scripts already cover assets that exist on both sides; only
@@ -740,7 +753,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       if (!query) return true
       return [item.name, item.protocol, item.project_id].filter(Boolean).join(' ').toLowerCase().includes(query)
     })
-  }, [federation.remoteItems, federation.sourceFilter, knownScriptIds, libraryQuery, releaseFilter, folderFilter, healthFilter])
+  }, [federation.remoteItems, federation.sourceFilter, knownScriptIds, libraryQuery, releaseFilter, folderFilter, healthFilter, assignedApplicationFilter, assignedReleaseFilter])
 
   const matchingScriptCount = (federation.sourceFilter === 'host' ? 0 : sortedScripts.length) + federationRemoteRows.length
 
@@ -805,7 +818,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   }, [authoringState.editingId, authoringState.subView, onAuthoringStateChange])
 
   const handleDelete = async (id: string) => {
-    if (!canManageScripts) return
+    if (!canManageScripts || movingScriptIds.has(id)) return
     if (!(await confirmAction('Delete this script?'))) return
     const scope = { ...projectScopeRef.current }
     setDeletingScriptIds(current => new Set(current).add(id))
@@ -852,7 +865,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
   }
 
   const deleteSelectedScripts = async () => {
-    const ids = selectedVisibleScriptIds.filter(id => !deletingScriptIds.has(id))
+    const ids = selectedVisibleScriptIds.filter(id => !deletingScriptIds.has(id) && !movingScriptIds.has(id))
     if (!canManageScripts || ids.length === 0 || !(await confirmAction(`Delete ${ids.length} selected script${ids.length === 1 ? '' : 's'}?`))) return
     const scope = { ...projectScopeRef.current }
     setDeletingScriptIds(current => new Set([...current, ...ids]))
@@ -1109,8 +1122,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           )}
           <LibraryFederationControls
             kind="script"
-            filtersActive={Boolean(libraryQuery.trim()) || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' || federation.sourceFilter !== 'all'}
-            onResetFilters={() => { setLibraryQuery(''); setHealthFilter('all'); setReleaseFilter('all'); setFolderFilter('all'); federation.setSourceFilter('all') }}
+            filtersActive={assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || Boolean(libraryQuery.trim()) || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' || federation.sourceFilter !== 'all'}
+            onResetFilters={() => { setAssignedApplicationFilter('all'); setAssignedReleaseFilter('all'); setLibraryQuery(''); setHealthFilter('all'); setReleaseFilter('all'); setFolderFilter('all'); federation.setSourceFilter('all') }}
             primaryAction={canManageScripts && <button className="btn btn-primary" type="button" onClick={openCreateOptions}>Create script</button>}
             federation={federation}
             projectName={activeProject?.name}
@@ -1128,8 +1141,9 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
                 </label>)}
             filterControls={(
               <>
+              <LibraryAssignmentFilters items={scripts} application={assignedApplicationFilter} release={assignedReleaseFilter} onApplication={setAssignedApplicationFilter} onRelease={setAssignedReleaseFilter} />
                 <label className="project-redaction-rule-field">
-                  <span>Associated Release</span>
+                  <span>Run release</span>
                   <select
                     className="settings-input library-source-select library-release-filter"
                     value={releaseFilter}
@@ -1178,6 +1192,8 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           </div>
           {canManageScripts && (
             <BulkActions count={selectedVisibleScriptIds.length}>
+                <button type="button" className="btn btn-secondary" disabled={selectedVisibleScriptIds.length === 0 || selectedVisibleScriptIds.some(id => deletingScriptIds.has(id) || movingScriptIds.has(id))} onClick={() => setMoveScripts(scripts.filter(script => selectedVisibleScriptIds.includes(script.id)))}>Move Selected…</button>
+                <button className="btn btn-secondary" disabled={selectedVisibleScriptIds.some(id => deletingScriptIds.has(id) || movingScriptIds.has(id))} onClick={() => setAssignmentScripts(scripts.filter(script => selectedVisibleScriptIds.includes(script.id)))}>Change application/releases…</button>
                 {selectedVisibleScriptIds.length < visibleSelectableScriptIds.length && <button type="button" className="btn btn-secondary" onClick={() => toggleAllVisibleScripts(true)}>Select all {visibleSelectableScriptIds.length} matching scripts</button>}
                 <button
                   type="button"
@@ -1191,7 +1207,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
                   type="button"
                   className="btn btn-danger"
                   onClick={() => { void deleteSelectedScripts() }}
-                  disabled={selectedVisibleScriptIds.length === 0 || selectedVisibleScriptIds.some(id => deletingScriptIds.has(id))}
+                  disabled={selectedVisibleScriptIds.length === 0 || selectedVisibleScriptIds.some(id => deletingScriptIds.has(id) || movingScriptIds.has(id))}
                 >
                   Delete Selected ({selectedVisibleScriptIds.length})
                 </button>
@@ -1214,13 +1230,16 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
             getSortedInnerRuns={getSortedInnerRuns}
             onSelectScenario={onSelectScenario}
             onEdit={(id) => { void handleEdit(id) }}
+            onChangeAssignment={script => setAssignmentScripts([script])}
+            onMove={script => setMoveScripts([script])}
+            movingScriptIds={movingScriptIds}
             onDelete={(id) => { void handleDelete(id) }}
             selectedScriptIds={selectedScriptIds}
             onToggleScriptSelection={toggleScriptSelection}
             onToggleAllVisibleScripts={toggleAllVisibleScripts}
             deletingScriptIds={deletingScriptIds}
             canManageScripts={canManageScripts}
-            emptyMessage={scriptsLoading ? 'Loading scripts…' : scriptsLoadFailed ? 'Scripts unavailable. Use Refresh to retry.' : libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
+            emptyMessage={scriptsLoading ? 'Loading scripts…' : scriptsLoadFailed ? 'Scripts unavailable. Use Refresh to retry.' : assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || libraryQuery.trim() || healthFilter !== 'all' || releaseFilter !== 'all' || folderFilter !== 'all' ? 'No scripts match these filters.' : 'No scripts yet.'}
             onCreate={!scriptsLoading && !scriptsLoadFailed && scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' && folderFilter === 'all' ? openCreateOptions : undefined}
             folders={scriptFolders}
             federation={scriptFederation}
@@ -1239,6 +1258,32 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
           <CorrelationRulesetPanel projectId={activeProject?.id} canManage={canManageScripts} />
         </details>
       </div>
+      {assignmentScripts && activeProjectId && canManageScripts && <LibraryAssignmentDialog key={activeProjectId} projectId={activeProjectId} kind="scripts" items={assignmentScripts} onClose={() => setAssignmentScripts(null)} onBusy={ids => setMovingScriptIds(new Set(ids))} onResult={(values, notice) => {
+        scriptsRequestGenerationRef.current += 1
+        setScripts(current => current.map(script => values.has(script.id) ? { ...script, library_assignment: values.get(script.id) } : script))
+        setSelectedScriptIds(current => new Set([...current].filter(id => !values.has(id))))
+        appendLibraryNotice(notice)
+        void refresh()
+      }} />}
+      {moveScripts && activeProjectId && canManageScripts && (
+        <MoveScriptsDialog
+          key={activeProjectId}
+          projectId={activeProjectId}
+          scripts={moveScripts}
+          onFoldersLoaded={setScriptFolders}
+          onClose={() => setMoveScripts(null)}
+          onBusy={ids => setMovingScriptIds(new Set(ids))}
+          onResult={(movedIds, unchangedIds, folderId, notice) => {
+            scriptsRequestGenerationRef.current += 1
+            setScripts(current => current.map(script => movedIds.includes(script.id)
+              ? { ...script, folder_id: folderId, script: script.script ? { ...script.script, folder_id: folderId } : script.script }
+              : script))
+            setSelectedScriptIds(current => new Set([...current].filter(id => !movedIds.includes(id) && !unchangedIds.includes(id))))
+            appendLibraryNotice(notice)
+            void refresh()
+          }}
+        />
+      )}
       {githubPushScript && githubConfig && (
         <Suspense fallback={null}>
           <GitHubSyncModal

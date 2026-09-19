@@ -9,7 +9,7 @@ import {
   TestSummary,
 } from '../../types'
 import type { GoalConfig, ScenarioMode } from '../../types/goals'
-import type { StoredScenario, StoredScript } from '../../types/storedContent'
+import type { LibraryAssignment, StoredScenario, StoredScript } from '../../types/storedContent'
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type {
@@ -386,6 +386,13 @@ export function useScriptApi() {
   )
 
   const deleteScript = useCallback((id: string) => request<DeleteScriptResponse>(`/scripts/${id}`, { method: 'DELETE' }), [])
+
+  const replaceLibraryAssignment = useCallback(
+    (kind: 'scripts' | 'scenarios', id: string, applicationId: string | null, releaseIds: string[], expectedRevision: number) =>
+      kind === 'scripts'
+        ? request<LibraryAssignment>(`/scripts/${encodeURIComponent(id)}/library-assignment`, { method: 'PUT', body: JSON.stringify({ application_id: applicationId, release_ids: releaseIds, expected_revision: expectedRevision }) })
+        : request<LibraryAssignment>(`/scenarios/${encodeURIComponent(id)}/library-assignment`, { method: 'PUT', body: JSON.stringify({ application_id: applicationId, release_ids: releaseIds, expected_revision: expectedRevision }) }), [],
+  )
 
   const moveScript = useCallback(
     (id: string, folderId: string | null) =>
@@ -1538,6 +1545,7 @@ export function useScriptApi() {
       updateScript,
       deleteScript,
       moveScript,
+      replaceLibraryAssignment,
       validateScript,
       getScriptSecretStatus,
       rebindScriptSecretReference,
@@ -1660,6 +1668,7 @@ export function useScriptApi() {
       updateScript,
       deleteScript,
       moveScript,
+      replaceLibraryAssignment,
       validateScript,
       getScriptSecretStatus,
       rebindScriptSecretReference,

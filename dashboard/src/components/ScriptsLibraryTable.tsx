@@ -1,3 +1,4 @@
+import { assignmentSummary } from './libraryAssignmentModel'
 import LibraryPagination from './LibraryPagination'
 import { useLibraryPagination } from './useLibraryPagination'
 import RowActions from './ux/RowActions'
@@ -55,6 +56,9 @@ interface Props {
   getSortedInnerRuns: (runs: TestSummary[]) => TestSummary[]
   onSelectScenario?: (id: string) => void
   onEdit: (id: string) => void
+  onChangeAssignment?: (script: StoredScript) => void
+  onMove?: (script: StoredScript) => void
+  movingScriptIds?: Set<string>
   onDelete: (id: string) => void
   selectedScriptIds?: Set<string>
   onToggleScriptSelection?: (id: string) => void
@@ -228,6 +232,9 @@ export default function ScriptsLibraryTable({
   onSelectScenario,
   onEdit,
   onDelete,
+  onMove,
+  onChangeAssignment,
+  movingScriptIds = new Set(),
   selectedScriptIds = new Set(),
   onToggleScriptSelection,
   onToggleAllVisibleScripts,
@@ -332,7 +339,7 @@ export default function ScriptsLibraryTable({
   const selectableScriptCount = localScripts.filter(script => isAddressableScriptId(script.id)).length
   const selectedVisibleScriptCount = localScripts.filter(script => isAddressableScriptId(script.id) && selectedScriptIds.has(script.id!)).length
   const showSelection = canManageScripts && Boolean(onToggleScriptSelection) && Boolean(onToggleAllVisibleScripts)
-  const columnCount = (showSelection ? 1 : 0) + (showSource ? 1 : 0) + 8
+  const columnCount = (showSelection ? 1 : 0) + (showSource ? 1 : 0) + 9
   const isEmpty = localScripts.length === 0 && remoteRows.length === 0
   return (
     <div className="data-table">
@@ -356,7 +363,8 @@ export default function ScriptsLibraryTable({
             <SortHeader field="folder" activeField={sortField} direction={sortDirection} label="Folder" onActivate={onSort} />
             <SortHeader field="authoring_health" activeField={sortField} direction={sortDirection} label="Authoring health" onActivate={onSort} />
             <SortHeader field="scenario_count" activeField={sortField} direction={sortDirection} label="Usage" onActivate={onSort} />
-            <SortHeader field="associated_releases" activeField={sortField} direction={sortDirection} label="Associated Releases" onActivate={onSort} />
+            <th>Assigned application/releases</th>
+            <SortHeader field="associated_releases" activeField={sortField} direction={sortDirection} label="Run releases" onActivate={onSort} />
             <SortHeader field="created_at" activeField={sortField} direction={sortDirection} label="Create Date" onActivate={onSort} />
             <SortHeader field="last_run_at" activeField={sortField} direction={sortDirection} label="Last Run" onActivate={onSort} />
             <th style={{ textAlign: 'right' }}>Actions</th>
@@ -537,7 +545,8 @@ export default function ScriptsLibraryTable({
                       <span>{scenarioRunReleaseList(script)}</span>
                     </div>
                   </td>
-                  <td aria-label="Associated releases">
+                  <td aria-label="Assigned application/releases">{assignmentSummary(script.library_assignment)}</td>
+                  <td aria-label="Run releases">
                     <div className="script-table-usage">
                       <span>{releaseList(script)}</span>
                     </div>
@@ -551,15 +560,17 @@ export default function ScriptsLibraryTable({
                       </span>
                     ) : canManageScripts ? (
                       <>
-                        <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>Edit</button>
+                        <button className="btn btn-sm btn-ghost" disabled={movingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onEdit(scriptId) }}>Edit</button>
                         <RowActions className="library-more-actions">
+                        {onChangeAssignment && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onChangeAssignment(script)}>Change application/releases…</button>}
+                        {onMove && <button className="btn btn-sm btn-ghost" disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={() => onMove(script)}>Move to folder…</button>}
                         {configureSecretsAvailable && (
                           <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onConfigureSecrets?.(script) }}>Configure secrets</button>
                         )}
                         {secretStatusUnknown && secretStatusState === 'error' && onRetrySecretStatus && (
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onRetrySecretStatus(script) }}>Retry secret check</button>
                         )}
-                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onDelete(scriptId) }}>{deletingScriptIds.has(scriptId) ? 'Deleting…' : 'Delete'}</button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScriptIds.has(scriptId) || movingScriptIds.has(scriptId)} onClick={(event) => { event.stopPropagation(); onDelete(scriptId) }}>{deletingScriptIds.has(scriptId) ? 'Deleting…' : 'Delete'}</button>
                         {github?.enabled && (
                           <button
                             className="btn btn-sm btn-ghost"
@@ -726,6 +737,7 @@ export default function ScriptsLibraryTable({
                     {remoteItemMetadata(item).map(piece => <span key={piece}>{piece}</span>)}
                   </div>
                 </td>
+                <td className="cell-muted">—</td>
                 <td className="cell-muted">—</td>
                 <td className="cell-muted">—</td>
                 <td className="cell-muted">{formatLibraryDateTime(item.updated_at)}</td>

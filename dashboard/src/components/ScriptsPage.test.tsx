@@ -32,6 +32,7 @@ const apiMock = {
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
   deleteScript: vi.fn(),
+  moveScript: vi.fn(),
   listTests: vi.fn(),
   listAuthoringTemplates: vi.fn(),
   listAuthoringComponents: vi.fn(),
@@ -800,7 +801,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Script Library (')
     expect(container.textContent).not.toContain('Start New Script')
     expect(container.textContent).toContain('Script assets')
-    expect(container.textContent).toContain('Associated Release')
+    expect(container.textContent).toContain('Run release')
     expect(container.textContent).toContain('Search scripts')
     expect(container.textContent).not.toContain('Asset Type')
     expect(container.textContent).not.toContain('Select a Remote Workspace first.')
@@ -818,7 +819,7 @@ describe('ScriptsPage', () => {
     expect(builderHeaders.some(header => header.includes('Script'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Health'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Usage'))).toBe(true)
-    expect(builderHeaders.some(header => header.includes('Associated Releases'))).toBe(true)
+    expect(builderHeaders.some(header => header.includes('Run releases'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Create Date'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Last Run'))).toBe(true)
     expect(builderHeaders.some(header => header.includes('Actions'))).toBe(true)
@@ -1428,6 +1429,46 @@ describe('ScriptsPage', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('Deleted 1 of 2 selected scripts')
   })
 
+  it('moves selected scripts, preserves failures for retry, and refreshes folder filtering', async () => {
+    let scripts = [
+      { ...scriptRecord('script-1', 'First Script', 'project-1'), folder_id: 'a' },
+      { ...scriptRecord('script-2', 'Second Script', 'project-1'), folder_id: 'a' },
+    ]
+    apiMock.listFolders.mockResolvedValue({ folders: [
+      { id: 'a', name: 'Source', category: 'scripts', project_id: 'project-1' },
+      { id: 'b', name: 'Destination', category: 'scripts', project_id: 'project-1' },
+    ], count: 2 } as never)
+    apiMock.listScripts.mockImplementation(async () => ({ scripts, count: scripts.length }))
+    apiMock.moveScript.mockImplementation(async (id: string, folderId: string) => {
+      if (id === 'script-2') throw new Error('Move conflict')
+      scripts = scripts.map(script => script.id === id ? { ...script, folder_id: folderId } : script)
+      return { id, folder_id: folderId }
+    })
+    await act(async () => root.render(<ScriptsPage />))
+    await flushPromises()
+    await act(async () => setSelectValue(container.querySelector('.library-folder-filter') as HTMLSelectElement, 'a'))
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Select all scripts on this page"]')?.click())
+    await clickButton('Move Selected…')
+    const dialog = document.querySelector('[role="dialog"]')!
+    await act(async () => setSelectValue(dialog.querySelector('select')!, 'b'))
+    await act(async () => [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Move')?.click())
+    await flushPromises()
+    expect(apiMock.moveScript.mock.calls).toEqual([['script-1', 'b'], ['script-2', 'b']])
+    expect(container.querySelector('.scripts-library-table')?.textContent).not.toContain('First Script')
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Select Second Script"]')?.checked).toBe(true)
+    expect(document.body.textContent).toContain('Second Script: Move conflict')
+    expect(container.querySelector<HTMLSelectElement>('.library-folder-filter')?.value).toBe('a')
+    apiMock.moveScript.mockImplementation(async (id: string, folderId: string) => {
+      scripts = scripts.map(script => script.id === id ? { ...script, folder_id: folderId } : script)
+      return { id, folder_id: folderId }
+    })
+    await act(async () => [...dialog.querySelectorAll('button')].find(button => button.textContent === 'Retry failed moves')?.click())
+    await flushPromises()
+    expect(apiMock.moveScript.mock.calls).toEqual([['script-1', 'b'], ['script-2', 'b'], ['script-2', 'b']])
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('.scripts-library-table')?.textContent).not.toContain('Second Script')
+  })
+
   it('filters the script library by visible script metadata', async () => {
     await act(async () => {
       root.render(<ScriptsPage />)
@@ -1507,7 +1548,7 @@ describe('ScriptsPage', () => {
     await flushPromises()
 
     const headers = Array.from(container.querySelectorAll('th')).map(th => th.textContent || '')
-    expect(headers.some(header => header.includes('Associated Releases'))).toBe(true)
+    expect(headers.some(header => header.includes('Run releases'))).toBe(true)
     expect(headers.some(header => header.includes('Create Date'))).toBe(true)
     expect(headers.some(header => header.includes('Folder'))).toBe(true)
     expect(container.textContent).toContain('Checkout Script')
@@ -2558,6 +2599,8 @@ describe('ScriptsPage', () => {
     expect(container.textContent).not.toContain('Edit')
     expect(container.textContent).not.toContain('Delete')
     expect(container.textContent).toContain('Read-only')
+    expect(container.textContent).not.toContain('Move to folder')
+    expect(container.textContent).not.toContain('Move Selected')
   })
 
   it('loads the requested script when opened in edit mode from the parent route', async () => {

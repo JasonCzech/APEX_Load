@@ -1,3 +1,7 @@
+import LibraryAssignmentFilters from './LibraryAssignmentFilters'
+import { matchesAssignmentFilter } from './libraryAssignmentModel'
+import LibraryAssignmentDialog from './LibraryAssignmentDialog'
+import { assignmentSummary } from './libraryAssignmentModel'
 import { useLibraryFilter } from './useLibraryFilter'
 import LibraryPagination from './LibraryPagination'
 import { useLibraryPagination } from './useLibraryPagination'
@@ -999,6 +1003,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   useEffect(() => { if (error) errorRef.current?.focus() }, [error])
   const filterScope = `scenarios:${activeProject?.domain_id || ''}:${activeProjectId || ''}`
   const [scenarioQuery, setScenarioQuery] = useLibraryFilter<string>(filterScope, 'query', '')
+  const [assignedApplicationFilter, setAssignedApplicationFilter] = useLibraryFilter<string>(filterScope, 'assignedApplication', 'all')
+  const [assignedReleaseFilter, setAssignedReleaseFilter] = useLibraryFilter<string>(filterScope, 'assignedRelease', 'all')
   const [scenarioReleaseFilter, setScenarioReleaseFilter] = useLibraryFilter<string>(filterScope, 'release', 'all')
   const [scriptLibraryQuery, setScriptLibraryQuery] = useState('')
   const [scriptReadinessFilter, setScriptReadinessFilter] = useState('all')
@@ -1020,6 +1026,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
   const [confirmDeleteScenarioId, setConfirmDeleteScenarioId] = useState<string | null>(null)
   const [selectedScenarioIds, setSelectedScenarioIds] = useState<Set<string>>(new Set())
+  const [assignmentScenarios, setAssignmentScenarios] = useState<StoredScenario[] | null>(null)
+  const [assigningScenarioIds, setAssigningScenarioIds] = useState<Set<string>>(new Set())
+  const [assignmentNotice, setAssignmentNotice] = useState('')
   const [deletingScenarioIds, setDeletingScenarioIds] = useState<Set<string>>(new Set())
   // Goal-Driven worksheet: completed-baseline import for per-group ART.
   const [goalBaselineTests, setGoalBaselineTests] = useState<TestSummary[]>([])
@@ -1084,6 +1093,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     checkpointBaselineRef.current = ''
     activeCheckpointSavedAtRef.current = ''
     setScenarios([])
+    setAssignmentScenarios(null)
+    setAssigningScenarioIds(new Set())
+    setAssignmentNotice('')
     setScripts([])
     setDataPools([])
     setSelectedCloneScenarioId('')
@@ -1625,6 +1637,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const sorted = useMemo(() => {
     const query = scenarioQuery.trim().toLowerCase()
     const filteredScenarios = scenarios.filter(scenario => {
+      if (!matchesAssignmentFilter(scenario.library_assignment, assignedApplicationFilter, assignedReleaseFilter)) return false
       if (scenarioReleaseFilter !== 'all' && !(scenario.associated_releases || []).some(release => release.name === scenarioReleaseFilter)) return false
       if (!query) return true
       return scenarioSearchText(scenario).includes(query)
@@ -1636,7 +1649,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
       return 0
     })
-  }, [scenarios, scenarioQuery, scenarioReleaseFilter, sortField, sortDirection])
+  }, [scenarios, scenarioQuery, scenarioReleaseFilter, sortField, sortDirection, assignedApplicationFilter, assignedReleaseFilter])
 
   const scenarioFederation = useLibraryFederation({
     kind: 'scenario',
@@ -1649,14 +1662,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
   const federationRemoteScenarioRows = useMemo(() => {
     if (scenarioFederation.sourceFilter === 'local') return []
-    if (scenarioReleaseFilter !== 'all') return []
+    if (scenarioReleaseFilter !== 'all' || assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all') return []
     const query = scenarioQuery.trim().toLowerCase()
     return scenarioFederation.remoteItems.filter(item => {
       if (scenarioFederation.sourceFilter === 'all' && item.local_item_id && knownScenarioIds.has(item.local_item_id)) return false
       if (!query) return true
       return [item.name, item.protocol, item.project_id].filter(Boolean).join(' ').toLowerCase().includes(query)
     })
-  }, [scenarioFederation.remoteItems, scenarioFederation.sourceFilter, knownScenarioIds, scenarioQuery, scenarioReleaseFilter])
+  }, [scenarioFederation.remoteItems, scenarioFederation.sourceFilter, knownScenarioIds, scenarioQuery, scenarioReleaseFilter, assignedApplicationFilter, assignedReleaseFilter])
 
   const showLocalScenarios = scenarioFederation.sourceFilter !== 'host'
   const visibleScenarioIds = useMemo(
@@ -1851,6 +1864,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   useTopbarContribution(scenarioTopbarContribution)
 
   const openEdit = (scenario: StoredScenario) => {
+    if (assigningScenarioIds.has(scenario.id)) return
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot create or edit them.')
       return
@@ -3023,6 +3037,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   const deleteScenario = async (id: string) => {
+    if (assigningScenarioIds.has(id)) return
     setConfirmDeleteScenarioId(null)
     if (!canManageTests) {
       setError('Current session can view scenarios but cannot delete them.')
@@ -3626,7 +3641,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                         >
                           <td className="cell-name">
                             <div>{scenario.name}</div>
-                            <details onClick={event => event.stopPropagation()}><summary>Associated Releases / Updated</summary><p>Source: Local · {releaseList(scenario)} · Updated {formatDate(scenario.updated_at || scenario.created_at)}</p></details>
+                            <details onClick={event => event.stopPropagation()}><summary>Run releases / Updated</summary><p>Source: Local · {releaseList(scenario)} · Updated {formatDate(scenario.updated_at || scenario.created_at)}</p></details>
                             {showScenarioMeta && (
                               <div className="scenario-table-assignment">
                                 <ReferenceKeyBadge value={scenario.ref_key} />
@@ -4587,6 +4602,14 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
   return (
     <div className="page">
+      {assignmentNotice && <p role="status">{assignmentNotice}</p>}
+      {assignmentScenarios && activeProjectId && canManageTests && <LibraryAssignmentDialog key={activeProjectId} projectId={activeProjectId} kind="scenarios" items={assignmentScenarios} onClose={() => setAssignmentScenarios(null)} onBusy={ids => setAssigningScenarioIds(new Set(ids))} onResult={(values, notice) => {
+        refreshGenerationRef.current += 1
+        setScenarios(current => current.map(scenario => values.has(scenario.id) ? { ...scenario, library_assignment: values.get(scenario.id) } : scenario))
+        setSelectedScenarioIds(current => new Set([...current].filter(id => !values.has(id))))
+        setAssignmentNotice(notice)
+        void refresh()
+      }} />}
       {(!showForm || !hasTopbarContributionProvider) && (
         <div className="page-header">
           <div>
@@ -4768,8 +4791,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       <div className="page-section">
         <LibraryFederationControls
           kind="scenario"
-            filtersActive={Boolean(scenarioQuery.trim()) || scenarioReleaseFilter !== 'all' || scenarioFederation.sourceFilter !== 'all'}
-          onResetFilters={() => { setScenarioQuery(''); setScenarioReleaseFilter('all'); scenarioFederation.setSourceFilter('all') }}
+            filtersActive={assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || Boolean(scenarioQuery.trim()) || scenarioReleaseFilter !== 'all' || scenarioFederation.sourceFilter !== 'all'}
+          onResetFilters={() => { setAssignedApplicationFilter('all'); setAssignedReleaseFilter('all'); setScenarioQuery(''); setScenarioReleaseFilter('all'); scenarioFederation.setSourceFilter('all') }}
           primaryAction={canManageTests && <button className="btn btn-primary" onClick={openCreate}>Create scenario</button>}
           federation={scenarioFederation}
           projectName={activeProject?.name}
@@ -4787,8 +4810,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               </label>)}
             filterControls={(
             <>
+              <LibraryAssignmentFilters items={scenarios} application={assignedApplicationFilter} release={assignedReleaseFilter} onApplication={setAssignedApplicationFilter} onRelease={setAssignedReleaseFilter} />
               <label className="project-redaction-rule-field">
-                <span>Associated Release</span>
+                <span>Run release</span>
                 <select
                   className="settings-input library-source-select library-release-filter"
                   value={scenarioReleaseFilter}
@@ -4808,6 +4832,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
         {canManageTests && selectedVisibleScenarioIds.length > 0 && (
           <BulkActions count={selectedVisibleScenarioIds.length}>
+              <button className="btn btn-secondary" disabled={selectedVisibleScenarioIds.some(id => deletingScenarioIds.has(id) || assigningScenarioIds.has(id))} onClick={() => setAssignmentScenarios(scenarios.filter(scenario => selectedVisibleScenarioIds.includes(scenario.id)))}>Change application/releases…</button>
               {selectedVisibleScenarioIds.length < visibleScenarioIds.length && <button type="button" className="btn btn-secondary" onClick={() => toggleAllVisibleScenarios(true)}>Select all {visibleScenarioIds.length} matching scenarios</button>}
               <button
                 type="button"
@@ -4821,7 +4846,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 type="button"
                 className="btn btn-danger"
                 onClick={() => { void deleteSelectedScenarios() }}
-                disabled={selectedVisibleScenarioIds.length === 0 || selectedVisibleScenarioIds.some(id => deletingScenarioIds.has(id))}
+                disabled={selectedVisibleScenarioIds.length === 0 || selectedVisibleScenarioIds.some(id => deletingScenarioIds.has(id) || assigningScenarioIds.has(id))}
               >
                 Delete Selected ({selectedVisibleScenarioIds.length})
               </button>
@@ -4845,7 +4870,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 <th>Source</th>
                 <SortHeader label="Scenario" field="name" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <SortHeader label="Workload" field="scripts" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
-                <SortHeader label="Associated Releases" field="associated_releases" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
+                <th>Assigned application/releases</th>
+                <SortHeader label="Run releases" field="associated_releases" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} numeric />
                 <SortHeader label="Updated" field="updated_at" sort={{ field: sortField, direction: sortDirection }} onSort={handleSort} />
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -4866,7 +4892,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                           type="checkbox"
                           aria-label={`Select ${scenario.name}`}
                           checked={selectedScenarioIds.has(scenario.id)}
-                          disabled={deletingScenarioIds.has(scenario.id)}
+                          disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)}
                           onClick={event => event.stopPropagation()}
                           onChange={() => toggleScenarioSelection(scenario.id)}
                         />
@@ -4902,6 +4928,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                         <span>{formatScenarioResultCount(scenario)}</span><span>{scenario.scripts.some(group => scriptReadiness.get(group.script_id)?.blocked) ? 'Script review required' : 'Validate before creating a run'}</span>
                       </div>
                     </td>
+                    <td aria-label="Assigned application/releases">{assignmentSummary(scenario.library_assignment)}</td>
                     <td aria-label="Scenario releases">
                       <div className="scenario-table-workload">
                         <strong>{releaseList(scenario)}</strong>
@@ -4915,10 +4942,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                       }}>{expandedScenarioId === scenario.id ? 'Hide Runs' : 'View Runs'}</button>
                       {canManageTests ? (
                         <>
-                          <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); openEdit(scenario) }}>Edit</button>
-                          <RowActions className="scenario-more-actions"><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
+                          <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); if (!assigningScenarioIds.has(scenario.id)) openEdit(scenario) }}>Edit</button>
+                          <RowActions className="scenario-more-actions"><button className="btn btn-sm btn-ghost" disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={() => setAssignmentScenarios([scenario])}>Change application/releases…</button><button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); duplicateScenario(scenario) }}>Duplicate</button>
                           <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); addScenarioToPlan(scenario.id) }} title="Seed a new execution plan with this scenario">Add to plan</button>
-                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
+                          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} disabled={deletingScenarioIds.has(scenario.id) || assigningScenarioIds.has(scenario.id)} onClick={(event) => { event.stopPropagation(); setConfirmDeleteScenarioId(scenario.id) }}>{deletingScenarioIds.has(scenario.id) ? 'Deleting…' : 'Delete'}</button>
                           <button
                             className="btn btn-sm btn-secondary"
                             onClick={(event) => { event.stopPropagation(); void scenarioFederation.pushLocalItem({ kind: 'scenario', id: scenario.id, name: scenario.name }) }}
@@ -4936,7 +4963,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   </tr>
                   {expandedScenarioId === scenario.id && (
                     <tr className="no-hover">
-                      <td colSpan={canManageTests ? 7 : 6} style={{ background: 'var(--bg-primary)' }}>
+                      <td colSpan={canManageTests ? 8 : 7} style={{ background: 'var(--bg-primary)' }}>
                         {renderScenarioRunsContent(scenario)}
                       </td>
                     </tr>
@@ -4965,6 +4992,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                     </td>
                     <td className="cell-muted">—</td>
                     <td className="cell-muted">—</td>
+                    <td className="cell-muted">—</td>
                     <td style={{ textAlign: 'right' }}>
                       {canManageTests ? (
                         <>
@@ -4988,8 +5016,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               })}
               {(!showLocalScenarios || sorted.length === 0) && federationRemoteScenarioRows.length === 0 && (
                 <tr>
-                  <td colSpan={canManageTests ? 7 : 6} className="cell-muted">
-                    {scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
+                  <td colSpan={canManageTests ? 8 : 7} className="cell-muted">
+                    {assignedApplicationFilter !== 'all' || assignedReleaseFilter !== 'all' || scenarioQuery.trim() || scenarioReleaseFilter !== 'all' ? 'No scenarios match these filters.' : 'No scenarios yet. Create a scenario from an existing script.'}
                   </td>
                 </tr>
               )}

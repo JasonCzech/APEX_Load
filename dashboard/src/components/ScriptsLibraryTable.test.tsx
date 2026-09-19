@@ -82,6 +82,22 @@ describe('ScriptsLibraryTable federation', () => {
     vi.clearAllMocks()
   })
 
+  it('offers moving only addressable local scripts and disables conflicting actions while moving', async () => {
+    const onMove = vi.fn()
+    const scripts = [script, { ...script, id: '', name: 'Legacy Script' }]
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} scripts={scripts} federation={makeFederation()} onMove={onMove} />))
+    const moveButtons = [...container.querySelectorAll('button')].filter(button => button.textContent === 'Move to folder…')
+    expect(moveButtons).toHaveLength(1)
+    await act(async () => moveButtons[0].click())
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(script)
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} onMove={onMove} movingScriptIds={new Set([script.id])} />))
+    for (const name of ['Edit', 'Delete', 'Move to folder…']) {
+      expect([...container.querySelectorAll('button')].find(button => button.textContent === name)?.disabled).toBe(true)
+    }
+    await act(async () => root.render(<ScriptsLibraryTable {...baseProps} onMove={onMove} canManageScripts={false} />))
+    expect(container.textContent).not.toContain('Move to folder')
+  })
+
   it('paginates local and remote assets together and selects only local rows on the page', async () => {
     const scripts = Array.from({ length: 11 }, (_, index) => ({ ...script, id: `script-${index}`, name: `Script ${index}` }))
     const onToggleScriptSelection = vi.fn()

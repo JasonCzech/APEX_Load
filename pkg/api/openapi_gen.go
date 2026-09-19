@@ -648,6 +648,22 @@ func openAPIComponentSchemas() map[string]oasSchema {
 			},
 			Required: []string{"status", "generated_at", "checks"},
 		},
+		"LibraryAssignmentRequest": {
+			Type: "object", Required: []string{"application_id", "release_ids", "expected_revision"},
+			Properties: map[string]oasSchema{
+				"application_id":    {Type: "string", Nullable: true},
+				"release_ids":       {Type: "array", Items: &oasSchema{Type: "string"}},
+				"expected_revision": {Type: "integer", Format: "int64"},
+			},
+		},
+		"LibraryAssignment": {
+			Type: "object", Required: []string{"application", "releases", "revision"},
+			Properties: map[string]oasSchema{
+				"application": {Type: "object", Nullable: true, Required: []string{"id", "name"}, Properties: map[string]oasSchema{"id": {Type: "string"}, "name": {Type: "string"}}},
+				"releases":    {Type: "array", Items: &oasSchema{Type: "object", Required: []string{"id", "name", "application_id"}, Properties: map[string]oasSchema{"id": {Type: "string"}, "name": {Type: "string"}, "application_id": {Type: "string"}, "archived_at": {Type: "string", Format: "date-time"}}}},
+				"revision":    {Type: "integer", Format: "int64"},
+			},
+		},
 		"ProjectReleaseCreateRequest": {
 			Type:        "object",
 			Description: "Creates one logical release family joined to every application in the project.",
@@ -1383,6 +1399,9 @@ func openAPIStringMap(description string) oasSchema {
 }
 
 func requestBodyForRoute(method, path string) *oasRequestBody {
+	if method == http.MethodPut && strings.HasSuffix(path, "/library-assignment") {
+		return jsonRequestBody("LibraryAssignmentRequest", true)
+	}
 	if method == http.MethodPost && path == "/api/v1/projects/{id}/releases" {
 		return jsonRequestBody("ProjectReleaseCreateRequest", true)
 	}
@@ -1408,6 +1427,10 @@ func requestBodyForRoute(method, path string) *oasRequestBody {
 }
 
 func responseSchemasForRoute(method, path string, responses map[string]oasResponse) map[string]oasResponse {
+	if method == http.MethodPut && strings.HasSuffix(path, "/library-assignment") {
+		setJSONResponseSchema(responses, "200", "LibraryAssignment")
+		return responses
+	}
 	switch {
 	case method == http.MethodGet && path == "/api/v1/system/readiness":
 		return systemReadinessOpenAPIResponses()

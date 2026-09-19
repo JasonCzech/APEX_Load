@@ -1,3 +1,5 @@
+import { suggestedApplication, suggestedReleases } from './libraryLaunchAssignments'
+import type { StoredScript } from '../types/storedContent'
 import FormErrorSummary from './ux/FormErrorSummary'
 import FormField from './ux/FormField'
 import DialogLayer from './ux/DialogLayer'
@@ -532,7 +534,7 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
   }
 }
 
-export default function NewTestPage({ activeApplication, applicationRepository, activeRelease, releases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
+export default function NewTestPage({ activeApplication: workspaceApplication, applicationRepository, releases: workspaceReleases, initialScenarioId, initialPrefillStartLocal, onSelectTest, onOpenCommandCenter, onCreateRelease, onOpenScenarioBuilder }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
   const activeProjectID = activeProject?.id || ''
@@ -542,7 +544,51 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const [scenarioState, setScenarioState] = useState<{ projectID: string; scenarios: StoredScenario[] }>({ projectID: '', scenarios: [] })
   const scenarios = scenarioState.projectID === activeProjectID ? scenarioState.scenarios : EMPTY_SCENARIOS
   const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
-  const [releaseId, setReleaseId] = useState(activeRelease?.id || '')
+  const [activeApplication, setLaunchApplication] = useState(workspaceApplication)
+  const [applications, setApplications] = useState<Application[]>([])
+  const [assignmentScripts, setAssignmentScripts] = useState<StoredScript[]>([])
+  const [releaseCatalogRefresh, setReleaseCatalogRefresh] = useState(0)
+  const [launchReleaseState, setLaunchReleaseState] = useState<{ applicationId: string; releases: Release[] }>({ applicationId: '', releases: [] })
+  const releases = (launchReleaseState.applicationId === activeApplication?.id ? launchReleaseState.releases : activeApplication?.id === workspaceApplication?.id ? workspaceReleases : []).filter(release => !release.archived_at)
+  const [releaseId, setReleaseId] = useState('')
+  const launchProjectRef = useRef(activeProjectID)
+  const launchPlacementPinnedRef = useRef(false)
+  const explicitPlacementRef = useRef(false)
+  const releaseCreationScopeRef = useRef<object>({})
+  const releaseCreationPendingRef = useRef(false)
+  const [releaseCreating, setReleaseCreating] = useState(false)
+  useLayoutEffect(() => {
+    releaseCreationScopeRef.current = {}
+    releaseCreationPendingRef.current = false
+    setReleaseCreating(false)
+    return () => { releaseCreationScopeRef.current = {} }
+  }, [activeProjectID, activeApplication?.id])
+  useEffect(() => {
+    const projectChanged = launchProjectRef.current !== activeProjectID
+    launchProjectRef.current = activeProjectID
+    if (projectChanged) { launchPlacementPinnedRef.current = false; explicitPlacementRef.current = false }
+    const workspaceMatches = !workspaceApplication?.project_id || workspaceApplication.project_id === activeProjectID
+    // Workspace hydration can briefly publish another application. Once a launch
+    // has an explicit choice or assignment suggestion, keep that placement.
+    setLaunchApplication(current => !projectChanged && launchPlacementPinnedRef.current && current && (!current.project_id || current.project_id === activeProjectID)
+      ? current : workspaceMatches ? workspaceApplication : null)
+  }, [workspaceApplication, activeProjectID])
+  useEffect(() => {
+    let cancelled = false
+    setApplications([]); setAssignmentScripts([])
+    void Promise.all([api.listApplications(activeProjectID), api.listScripts(activeProjectID)]).then(([apps, scripts]) => {
+      if (!cancelled) { setApplications(apps.applications || []); setAssignmentScripts(scripts.scripts || []) }
+    }).catch(() => { /* Workspace selection remains usable if suggestions cannot load. */ })
+    return () => { cancelled = true }
+  }, [api, activeProjectID])
+  useEffect(() => {
+    let cancelled = false
+    const applicationId = activeApplication?.id
+    if (applicationId) void api.listReleases(applicationId).then(response => {
+      if (!cancelled) setLaunchReleaseState({ applicationId, releases: response.releases || [] })
+    }).catch(() => { if (!cancelled) setLaunchReleaseState({ applicationId, releases: [] }) })
+    return () => { cancelled = true }
+  }, [api, activeApplication?.id, releaseCatalogRefresh])
   const [schedules, setSchedules] = useState<ScenarioSchedule[]>([])
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
@@ -814,8 +860,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setGroupSaveNotice('')
     setShowAllRuntimeDefaults(false)
   }, [scenarioId])
-  const defaultReleaseId = activeRelease?.id || releases[0]?.id || ''
-  useEffect(() => { setReleaseId(defaultReleaseId) }, [defaultReleaseId])
+  const defaultReleaseId = ''
+  useEffect(() => {
+    setReleaseId('')
+    setScheduleDraft(current => ({ ...current, release_id: '' }))
+  }, [activeApplication?.id, activeProjectID])
   useEffect(() => {
     let cancelled = false
     setEffectiveAuthAccessResources([])
@@ -899,6 +948,21 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }, [api, inventoryRefresh])
 
   const scenario = useMemo(() => scenarios.find(item => item.id === scenarioId), [scenarios, scenarioId])
+  const suggestedForScenario = useRef('')
+  useEffect(() => { suggestedForScenario.current = '' }, [activeProjectID])
+  useEffect(() => {
+    if (!scenario || restoreDraft || !applications.length) return
+    const key = `${activeProjectID}:${scenario.id}`
+    if (suggestedForScenario.current === key) return
+    if (explicitPlacementRef.current) { suggestedForScenario.current = key; return }
+    const target = suggestedApplication(scenario, assignmentScripts)
+    // Wait for script metadata before deciding whether a scenario has a common application.
+    if (!scenario.library_assignment?.application && scenario.scripts.length && !assignmentScripts.length) return
+    suggestedForScenario.current = key
+    const application = applications.find(item => item.id === target && item.project_id === activeProjectID)
+    if (application) { launchPlacementPinnedRef.current = true; setLaunchApplication(application) }
+  }, [scenario, assignmentScripts, applications, activeProjectID, restoreDraft, releaseId])
+  const highlightedReleases = suggestedReleases(scenario, assignmentScripts, activeApplication?.id || '')
   const replaceScheduleDraft = useCallback((next: ScheduleDraft) => {
     setScheduleDraft(next)
     setScheduleDraftBaseline(next)
@@ -1353,10 +1417,33 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
   const createRelease = async () => {
     const name = newReleaseName.trim()
-    if (!name) return
-    const created = await onCreateRelease(name)
-    if (created) setReleaseId(created.id)
-    setNewReleaseName('')
+    if (!name || !activeApplication || releaseCreationPendingRef.current) return
+    const scope = releaseCreationScopeRef.current
+    releaseCreationPendingRef.current = true
+    setReleaseCreating(true)
+    setError('')
+    launchPlacementPinnedRef.current = true
+    explicitPlacementRef.current = true
+    try {
+      const created = activeApplication.id !== workspaceApplication?.id
+        ? await api.createRelease(activeApplication.id, { name }) : await onCreateRelease(name)
+      if (scope !== releaseCreationScopeRef.current) return
+      if (created && created.application_id === activeApplication.id) {
+        setLaunchReleaseState(current => ({ applicationId: created.application_id, releases: [...(current.applicationId === created.application_id ? current.releases : releases).filter(item => item.id !== created.id), created] }))
+        setReleaseId(created.id)
+        // Supersede any list read started before creation, then load the full
+        // current catalog so a late response cannot remove the new selection.
+        setReleaseCatalogRefresh(value => value + 1)
+        setNewReleaseName('')
+      }
+    } catch (error) {
+      if (scope === releaseCreationScopeRef.current) setError(getErrorMessage(error, 'Unable to create release'))
+    } finally {
+      if (scope === releaseCreationScopeRef.current) {
+        releaseCreationPendingRef.current = false
+        setReleaseCreating(false)
+      }
+    }
   }
 
   const selectScenario = (nextScenarioId: string) => {
@@ -2246,6 +2333,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	  setError('Choose a scenario before managing schedules.')
 	  return false
 	}
+	if (!editingScheduleId && !scheduleDraft.release_id) { setError('Choose a release for the new schedule.'); return false }
 	if (schedulePreviewPending || scheduleFormError) {
       setError(scheduleFormError || 'Wait for the schedule preview before saving.')
       return false
@@ -2464,6 +2552,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setNewReleaseName(restoreDraft.newReleaseName)
     setShowNewRelease(restoreDraft.showNewRelease)
     setRunName(restoreDraft.runName)
+    launchPlacementPinnedRef.current = true
+    explicitPlacementRef.current = true
     setReleaseId(restoreDraft.releaseId)
     setScheduledStartLocal(restoreDraft.scheduledStartLocal)
     setSelectedTimeslotId(restoreDraft.selectedTimeslotId)
@@ -2471,6 +2561,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     setEditingScheduleId(restoreDraft.editingScheduleId)
     setPageMode(restoreDraft.pageMode)
     setExpandedScenarioId(scenario.id)
+    suggestedForScenario.current = `${activeProjectID}:${scenario.id}`
     setRestoreDraft(null)
     setDraftNotice('Saved draft restored. Review current capacity and settings before starting or scheduling.')
   }, [restoreDraft, scenario, activeProjectID, activeApplication?.id, scheduleDefaults])
@@ -2599,7 +2690,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       Cancel Edit
                     </button>
                   )}
-                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests || schedulePreviewPending || Boolean(scheduleFormError)}>
+                  <button type="button" className="btn btn-primary" onClick={submitSchedule} disabled={!scenario || scheduleSubmitting || !canManageTests || schedulePreviewPending || Boolean(scheduleFormError) || (!editingScheduleId && !scheduleDraft.release_id)}>
                     {editingScheduleId ? 'Update Schedule' : 'Save Schedule'}
                   </button>
                 </div>
@@ -2679,11 +2770,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label" id="schedule-release-label">Release Context</span>
-                    <span className="setting-desc">Optional release to attach to scheduled runs</span>
+                    <span className="setting-desc">Choose a release for new scheduled runs</span>
                   </div>
-                  <select className="settings-input" aria-labelledby="schedule-release-label" value={scheduleDraft.release_id} onChange={(event) => setScheduleDraft(prev => ({ ...prev, release_id: event.target.value }))}>
-                    <option value="">No release</option>
-                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  <select className="settings-input" aria-labelledby="schedule-release-label" value={scheduleDraft.release_id} onChange={(event) => { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setScheduleDraft(prev => ({ ...prev, release_id: event.target.value })) }}>
+                    <option value="">Select release</option>
+                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}{highlightedReleases.has(item.id) ? ' — assigned' : ''}</option>)}
                   </select>
                 </div>
                 <div className="setting-row">
@@ -3180,6 +3271,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                 </div>
               </div>
               <div className="settings-group new-test-setup-grid">
+                <label>Launch application<select aria-label="Launch application" className="settings-input" value={activeApplication?.id || ''} onChange={event => { const next = applications.find(item => item.id === event.target.value); if (next) { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setLaunchApplication(next) } }}><option value="" disabled>Select application</option>{applications.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 <div className="setting-row">
                   <div className="setting-info">
                     <span className="setting-label" id="new-test-run-name-label">Run Name</span>
@@ -3192,14 +3284,14 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     <span className="setting-label" id="new-test-release-label">Release</span>
                     <span className="setting-desc">Required target for results</span>
                   </div>
-                  <select className="settings-input" aria-labelledby="new-test-release-label" value={releaseId} onChange={(event) => setReleaseId(event.target.value)}>
+                  <select className="settings-input" aria-labelledby="new-test-release-label" value={releaseId} onChange={(event) => { launchPlacementPinnedRef.current = true; explicitPlacementRef.current = true; setReleaseId(event.target.value) }}>
                     <option value="">Select release</option>
-                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    {releases.map(item => <option key={item.id} value={item.id}>{item.name}{highlightedReleases.has(item.id) ? ' — assigned' : ''}</option>)}
                   </select>
                   {showNewRelease ? (
                     <div className="new-test-release-create-row">
                       <FormField label="Release name" htmlFor="NewTestPage-newReleaseName"><input className="settings-input" aria-label="New release name" value={newReleaseName} onChange={event => setNewReleaseName(event.target.value)} placeholder="Release name, e.g. PI30" id="NewTestPage-newReleaseName" /></FormField>
-                      <button className="btn btn-secondary" onClick={createRelease} disabled={!newReleaseName.trim()}>Add</button>
+                      <button className="btn btn-secondary" onClick={() => { void createRelease() }} disabled={releaseCreating || !newReleaseName.trim()}>Add</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewRelease(false); setNewReleaseName('') }}>Cancel</button>
                     </div>
                   ) : (

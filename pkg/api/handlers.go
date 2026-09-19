@@ -916,6 +916,9 @@ func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {
 		response["limit"] = limit
 		response["offset"] = offset
 	}
+	if !s.scriptLibraryAssignments(w, scripts) {
+		return
+	}
 	response["scripts"] = maskStoredScripts(scripts)
 	writeJSON(w, http.StatusOK, response)
 }
@@ -943,6 +946,9 @@ func (s *Server) handleGetScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !requireAuthorizedProjectMatch(w, r, script.ProjectID) {
+		return
+	}
+	if !s.scriptLibraryAssignments(w, []*StoredScript{script}) {
 		return
 	}
 	writeJSON(w, http.StatusOK, viewStoredScript(script))

@@ -362,6 +362,24 @@ export interface components {
       "security_profile"?: Record<string, unknown>;
       "source_format": string;
     };
+    "LibraryAssignment": {
+      "application": ({
+        "id": string;
+        "name": string;
+      }) | null;
+      "releases": Array<{
+        "application_id": string;
+        "archived_at"?: string;
+        "id": string;
+        "name": string;
+      }>;
+      "revision": number;
+    };
+    "LibraryAssignmentRequest": {
+      "application_id": (string) | null;
+      "expected_revision": number;
+      "release_ids": Array<string>;
+    };
     "ProjectReleaseCreateRequest": {
       "application_id"?: string;
       "name": string;
@@ -7523,6 +7541,19 @@ export interface operations {
               "last_run_at"?: (string) | null;
               "last_run_ended_at"?: (string) | null;
               "last_run_test_id"?: string;
+              "library_assignment"?: ({
+                "application": ({
+                  "id": string;
+                  "name": string;
+                }) | null;
+                "releases": Array<{
+                  "application_id": string;
+                  "archived_at"?: (string) | null;
+                  "id": string;
+                  "name": string;
+                }>;
+                "revision": number;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "ref_key"?: string;
@@ -8571,6 +8602,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "id": string;
               "last_run_at"?: (string) | null;
+              "library_assignment"?: ({
+                "application": ({
+                  "id": string;
+                  "name": string;
+                }) | null;
+                "releases": Array<{
+                  "application_id": string;
+                  "archived_at"?: (string) | null;
+                  "id": string;
+                  "name": string;
+                }>;
+                "revision": number;
+              }) | null;
               "name": string;
               "project_id"?: string;
               "protocol": string;
@@ -19202,6 +19246,19 @@ export interface operations {
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
+            "library_assignment"?: ({
+              "application": ({
+                "id": string;
+                "name": string;
+              }) | null;
+              "releases": Array<{
+                "application_id": string;
+                "archived_at"?: (string) | null;
+                "id": string;
+                "name": string;
+              }>;
+              "revision": number;
+            }) | null;
             "name": string;
             "project_id"?: string;
             "ref_key"?: string;
@@ -20762,6 +20819,19 @@ export interface operations {
             "folder_id"?: (string) | null;
             "id": string;
             "last_run_at"?: (string) | null;
+            "library_assignment"?: ({
+              "application": ({
+                "id": string;
+                "name": string;
+              }) | null;
+              "releases": Array<{
+                "application_id": string;
+                "archived_at"?: (string) | null;
+                "id": string;
+                "name": string;
+              }>;
+              "revision": number;
+            }) | null;
             "name": string;
             "project_id"?: string;
             "protocol": string;
@@ -39805,6 +39875,19 @@ export interface operations {
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
+            "library_assignment"?: ({
+              "application": ({
+                "id": string;
+                "name": string;
+              }) | null;
+              "releases": Array<{
+                "application_id": string;
+                "archived_at"?: (string) | null;
+                "id": string;
+                "name": string;
+              }>;
+              "revision": number;
+            }) | null;
             "name": string;
             "project_id"?: string;
             "ref_key"?: string;
@@ -40495,6 +40578,19 @@ export interface operations {
             "folder_id"?: (string) | null;
             "id": string;
             "last_run_at"?: (string) | null;
+            "library_assignment"?: ({
+              "application": ({
+                "id": string;
+                "name": string;
+              }) | null;
+              "releases": Array<{
+                "application_id": string;
+                "archived_at"?: (string) | null;
+                "id": string;
+                "name": string;
+              }>;
+              "revision": number;
+            }) | null;
             "name": string;
             "project_id"?: string;
             "protocol": string;
@@ -74167,6 +74263,63 @@ export interface operations {
       };
     };
   };
+  "handleScenarioLibraryAssignment": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LibraryAssignmentRequest"];
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": components["schemas"]["LibraryAssignment"];
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleScenarioResults": {
     parameters: {
       "path": {
@@ -74374,6 +74527,63 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleScriptLibraryAssignment": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["LibraryAssignmentRequest"];
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": components["schemas"]["LibraryAssignment"];
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -90489,6 +90699,19 @@ export interface operations {
             "last_run_at"?: (string) | null;
             "last_run_ended_at"?: (string) | null;
             "last_run_test_id"?: string;
+            "library_assignment"?: ({
+              "application": ({
+                "id": string;
+                "name": string;
+              }) | null;
+              "releases": Array<{
+                "application_id": string;
+                "archived_at"?: (string) | null;
+                "id": string;
+                "name": string;
+              }>;
+              "revision": number;
+            }) | null;
             "name": string;
             "project_id"?: string;
             "ref_key"?: string;
@@ -92148,6 +92371,19 @@ export interface operations {
             "folder_id"?: (string) | null;
             "id": string;
             "last_run_at"?: (string) | null;
+            "library_assignment"?: ({
+              "application": ({
+                "id": string;
+                "name": string;
+              }) | null;
+              "releases": Array<{
+                "application_id": string;
+                "archived_at"?: (string) | null;
+                "id": string;
+                "name": string;
+              }>;
+              "revision": number;
+            }) | null;
             "name": string;
             "project_id"?: string;
             "protocol": string;
@@ -98926,6 +99162,9 @@ export interface paths {
     "get": operations["handleListScenarioDataPools"];
     "put": operations["handleUpdateScenarioDataPools"];
   };
+  "/api/v1/scenarios/{id}/library-assignment": {
+    "put": operations["handleScenarioLibraryAssignment"];
+  };
   "/api/v1/scenarios/{id}/results": {
     "get": operations["handleScenarioResults"];
   };
@@ -99264,6 +99503,9 @@ export interface paths {
   };
   "/api/v1/scripts/{id}/imports/source": {
     "get": operations["handleGetImportSource_2"];
+  };
+  "/api/v1/scripts/{id}/library-assignment": {
+    "put": operations["handleScriptLibraryAssignment"];
   };
   "/api/v1/scripts/{id}/move": {
     "patch": operations["handleMoveScript"];

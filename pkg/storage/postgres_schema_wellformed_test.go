@@ -40,7 +40,7 @@ func TestPostgresRewrittenSchemaIsWellFormed(t *testing.T) {
 		}
 		// FKs are re-added by postgres_foreign_keys.go, so none may survive the
 		// CREATE — a forward reference to a not-yet-created table would fail.
-		if strings.Contains(rewritten, "REFERENCES") || strings.Contains(rewritten, "FOREIGN KEY") {
+		if strings.Contains(rewritten, "REFERENCES") || strings.Contains(rewritten, "FOREIGN KEY") || strings.Contains(rewritten, "ON DELETE") {
 			t.Errorf("%s: a foreign key survived the Postgres rewrite: %s", name, compact)
 		}
 		// DATETIME is not a Postgres type.
@@ -56,7 +56,7 @@ func TestPostgresRewrittenColumnMigrationsAreWellFormed(t *testing.T) {
 	for _, migration := range schemaColumnMigrations() {
 		rewritten := rewriteSQL(migration.query, storeDialectPostgres)
 		compact := strings.Join(strings.Fields(rewritten), " ")
-		if strings.Contains(rewritten, "REFERENCES") || strings.Contains(rewritten, "FOREIGN KEY") {
+		if strings.Contains(rewritten, "REFERENCES") || strings.Contains(rewritten, "FOREIGN KEY") || strings.Contains(rewritten, "ON DELETE") {
 			t.Errorf("%s: a foreign key survived the Postgres rewrite: %s", migration.name, compact)
 		}
 		if regexp.MustCompile(`(?i)\bDATETIME\b`).MatchString(rewritten) {

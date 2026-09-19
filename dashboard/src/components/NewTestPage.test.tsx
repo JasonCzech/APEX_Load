@@ -14,6 +14,10 @@ import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
+  listApplications: vi.fn(),
+  listScripts: vi.fn(),
+  listReleases: vi.fn(),
+  createRelease: vi.fn(),
   listScenarios: vi.fn(),
   previewScenarioSchedule: vi.fn(),
   getScript: vi.fn(),
@@ -140,6 +144,9 @@ describe('NewTestPage', () => {
 
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
 
+    apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'app-1', name: 'ACC', project_id: 'project-1' }] })
+    apiMock.listScripts.mockResolvedValue({ scripts: [] })
+    apiMock.listReleases.mockResolvedValue({ releases: [{ id: 'release-1', name: 'PI29', application_id: 'app-1' }] })
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [
         {
@@ -265,6 +272,132 @@ describe('NewTestPage', () => {
         },
       ],
     })
+  })
+
+  it('suggests assigned applications but requires release selection and clears it on application override', async () => {
+    const initial = await apiMock.listScenarios()
+    initial.scenarios[0].library_assignment = { application: { id: 'app-2', name: 'Assigned App' }, releases: [{ id: 'release-2', name: 'Assigned Release', application_id: 'app-2' }], revision: 1 }
+    apiMock.listScenarios.mockResolvedValue(initial)
+    apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'app-1', name: 'Workspace App', project_id: 'project-1' }, { id: 'app-2', name: 'Assigned App', project_id: 'project-1' }] })
+    apiMock.listReleases.mockImplementation((id: string) => Promise.resolve({ releases: [{ id: id === 'app-2' ? 'release-2' : 'release-1', name: 'Assigned Release', application_id: id }] }))
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'Workspace App', created_at: '', updated_at: '' }} activeRelease={{ id: 'release-1', name: 'Workspace Release', application_id: 'app-1', created_at: '', updated_at: '' }} releases={[]} initialScenarioId={initial.scenarios[0].id} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await flushPromises()
+    const application = Array.from(container.querySelectorAll('select')).find(select => select.closest('label')?.textContent?.includes('Launch application'))!
+    const release = container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')!
+    expect(application.value).toBe('app-2')
+    expect(release.value).toBe('')
+    expect(release.textContent).toContain('assigned')
+    await act(async () => setSelectValue(release, 'release-2'))
+    expect(release.value).toBe('release-2')
+    await act(async () => setSelectValue(application, 'app-1'))
+    expect(release.value).toBe('')
+  })
+
+  it('keeps an explicit release through transient workspace application hydration', async () => {
+    const props = { activeApplication: { id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }, activeRelease: null, releases: [{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }], onSelectTest: vi.fn(), onCreateRelease: vi.fn() }
+    await act(async () => root.render(<NewTestPage {...props} />))
+    await flushPromises()
+    await selectLaunchRelease()
+    await act(async () => root.render(<NewTestPage {...props} activeApplication={{ ...props.activeApplication, id: 'transient-app' }} />))
+    await act(async () => root.render(<NewTestPage {...props} />))
+    expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')?.value).toBe('release-1')
+  })
+
+  it('does not replace a release choice when assignment suggestions arrive late', async () => {
+    const initial = await apiMock.listScenarios()
+    initial.scenarios[0].library_assignment = { application: { id: 'app-2', name: 'Assigned App' }, releases: [], revision: 1 }
+    apiMock.listScenarios.mockResolvedValue(initial)
+    let resolveApplications!: (value: unknown) => void
+    apiMock.listApplications.mockImplementation(() => new Promise(resolve => { resolveApplications = resolve }))
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={null} releases={[{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }]} initialScenarioId={initial.scenarios[0].id} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await selectLaunchRelease()
+    await act(async () => resolveApplications({ applications: [{ id: 'app-1', name: 'App', project_id: 'project-1' }, { id: 'app-2', name: 'Assigned App', project_id: 'project-1' }] }))
+    expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')?.value).toBe('release-1')
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')?.value).toBe('app-1')
+  })
+
+  it('keeps an explicit application override when scenario assignments arrive before a release is chosen', async () => {
+    const initial = await apiMock.listScenarios()
+    initial.scenarios[0].library_assignment = { application: { id: 'app-1', name: 'Assigned App' }, releases: [], revision: 1 }
+    let resolveScenarios!: (value: unknown) => void
+    apiMock.listScenarios.mockImplementation(() => new Promise(resolve => { resolveScenarios = resolve }))
+    apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'app-1', name: 'Assigned App', project_id: 'project-1' }, { id: 'app-2', name: 'Override App', project_id: 'project-1' }] })
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={null} releases={[]} initialScenarioId={initial.scenarios[0].id} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')!, 'app-2'))
+    await act(async () => resolveScenarios(initial))
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')?.value).toBe('app-2')
+    expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')?.value).toBe('')
+  })
+
+  it('keeps a schedule release choice through transient workspace hydration', async () => {
+    const props = { activeApplication: { id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }, activeRelease: null, releases: [{ id: 'release-1', name: 'Release', application_id: 'app-1', created_at: '', updated_at: '' }], onSelectTest: vi.fn(), onCreateRelease: vi.fn() }
+    await act(async () => root.render(<NewTestPage {...props} />))
+    await flushPromises()
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Schedules')!.click())
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!, 'release-1'))
+    await act(async () => root.render(<NewTestPage {...props} activeApplication={{ ...props.activeApplication, id: 'transient-app' }} />))
+    await act(async () => root.render(<NewTestPage {...props} />))
+    expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')?.value).toBe('release-1')
+  })
+
+  it('fences duplicate release creation and ignores its result after application changes', async () => {
+    const apps = [{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }, { id: 'app-2', name: 'Other', project_id: 'project-1', created_at: '', updated_at: '' }]
+    apiMock.listApplications.mockResolvedValue({ applications: apps })
+    let resolveRelease!: (value: { id: string; name: string; application_id: string; created_at: string; updated_at: string }) => void
+    const create = vi.fn(() => new Promise<Parameters<typeof resolveRelease>[0]>(resolve => { resolveRelease = resolve }))
+    await act(async () => root.render(<NewTestPage activeApplication={apps[0]} activeRelease={null} releases={[]} onSelectTest={vi.fn()} onCreateRelease={create} />))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ New Release')!.click())
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-label="New release name"]')!, 'Created release'))
+    const add = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Add')!
+    await act(async () => { add.click(); add.click() })
+    expect(create).toHaveBeenCalledTimes(1)
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')!, 'app-2'))
+    await act(async () => resolveRelease({ id: 'created', name: 'Created release', application_id: 'app-1', created_at: '', updated_at: '' }))
+    const release = container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')!
+    expect(release.value).toBe('')
+    expect(release.textContent).not.toContain('Created release')
+  })
+
+  it('reports release creation failures in an override application', async () => {
+    const apps = [{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }, { id: 'app-2', name: 'Other', project_id: 'project-1', created_at: '', updated_at: '' }]
+    apiMock.listApplications.mockResolvedValue({ applications: apps })
+    apiMock.createRelease.mockRejectedValue(new Error('Release creation unavailable'))
+    await act(async () => root.render(<NewTestPage activeApplication={apps[0]} activeRelease={null} releases={[]} onSelectTest={vi.fn()} onCreateRelease={vi.fn()} />))
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')!, 'app-2'))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ New Release')!.click())
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-label="New release name"]')!, 'Created release'))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Add')!.click())
+    expect(apiMock.createRelease).toHaveBeenCalledWith('app-2', { name: 'Created release' })
+    expect(container.textContent).toContain('Release creation unavailable')
+  })
+
+  it('preserves a newly created release when an older catalog read resolves late', async () => {
+    const created = { id: 'created', name: 'Created release', application_id: 'app-1', created_at: '', updated_at: '' }
+    let resolveOldCatalog!: (value: { releases: typeof created[] }) => void
+    apiMock.listReleases.mockImplementationOnce(() => new Promise(resolve => { resolveOldCatalog = resolve }))
+      .mockResolvedValue({ releases: [created] })
+    await act(async () => root.render(<NewTestPage activeApplication={{ id: 'app-1', name: 'App', project_id: 'project-1', created_at: '', updated_at: '' }} activeRelease={null} releases={[]} onSelectTest={vi.fn()} onCreateRelease={vi.fn().mockResolvedValue(created)} />))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ New Release')!.click())
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-label="New release name"]')!, created.name))
+    await act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Add')!.click())
+    await act(async () => resolveOldCatalog({ releases: [] }))
+    expect(container.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')?.value).toBe(created.id)
+    expect(apiMock.listReleases).toHaveBeenCalledTimes(2)
+  })
+
+  it('reapplies assignment suggestions when returning through a project without scenarios', async () => {
+    const initial = await apiMock.listScenarios()
+    initial.scenarios[0].library_assignment = { application: { id: 'app-2', name: 'Assigned App' }, releases: [], revision: 1 }
+    apiMock.listScenarios.mockImplementation(() => Promise.resolve(projectMock.activeProject?.id === 'project-1' ? initial : { scenarios: [] }))
+    apiMock.listApplications.mockResolvedValue({ applications: [{ id: 'app-1', name: 'Workspace', project_id: 'project-1' }, { id: 'app-2', name: 'Assigned App', project_id: 'project-1' }] })
+    const props = { activeApplication: { id: 'app-1', name: 'Workspace', project_id: 'project-1', created_at: '', updated_at: '' }, activeRelease: null, releases: [], initialScenarioId: initial.scenarios[0].id, onSelectTest: vi.fn(), onCreateRelease: vi.fn() }
+    await act(async () => root.render(<NewTestPage {...props} />))
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')?.value).toBe('app-2')
+    projectMock.activeProject = { id: 'project-2', name: 'Empty', created_at: '', updated_at: '' }
+    await act(async () => root.render(<NewTestPage {...props} activeApplication={null} />))
+    projectMock.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
+    await act(async () => root.render(<NewTestPage {...props} />))
+    expect(container.querySelector<HTMLSelectElement>('[aria-label="Launch application"]')?.value).toBe('app-2')
   })
 
   afterEach(async () => {
@@ -791,6 +924,8 @@ describe('NewTestPage', () => {
     expect(runSetupButton?.getAttribute('aria-pressed')).toBe('false')
     expect(schedulesButton?.getAttribute('aria-pressed')).toBe('true')
 
+    const scheduleRelease = container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!
+    await act(async () => setSelectValue(scheduleRelease, 'release-1'))
     const saveButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Save Schedule')
     expect(saveButton).toBeTruthy()
     expect(saveButton?.closest('.new-test-step-header')).toBeTruthy()
@@ -1276,7 +1411,7 @@ describe('NewTestPage', () => {
     expect(summaryList?.textContent).toContain('Run Name')
     expect(summaryList?.textContent).toContain('Checkout Smoke')
     expect(summaryList?.textContent).toContain('Release')
-    expect(summaryList?.textContent).toContain('PI29')
+    expect(summaryList?.textContent).toContain('None selected')
     expect(summaryList?.textContent).toContain('Total VUsers')
     expect(summaryList?.textContent).toContain('Script Groups')
     expect(summaryList?.textContent).toContain('Capacity')
@@ -4316,6 +4451,7 @@ describe('NewTestPage', () => {
     await renderAuditPage()
     await act(async () => auditButton('Schedules')?.click())
     await flushDebouncedPreflight()
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!, 'release-1'))
     expect(auditButton('Save Schedule')?.disabled).toBe(false)
     apiMock.previewScenarioSchedule.mockRejectedValueOnce(new Error('Invalid cron expression'))
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('[aria-label="Raw cron expression"]')!, 'invalid'))
@@ -4340,6 +4476,7 @@ describe('NewTestPage', () => {
     await act(async () => auditButton('Retry scheduling defaults')?.click())
     await flushPromises()
     expect(container.querySelector('[aria-label="Effective schedule policies"]')?.textContent).toContain('manual review')
+    await act(async () => setSelectValue(container.querySelector<HTMLSelectElement>('[aria-labelledby="schedule-release-label"]')!, 'release-1'))
     expect(auditButton('Save Schedule')?.disabled).toBe(false)
   })
 
@@ -4358,6 +4495,11 @@ describe('NewTestPage', () => {
 
 })
 
+async function selectLaunchRelease() {
+  const select = document.querySelector<HTMLSelectElement>('[aria-labelledby="new-test-release-label"]')
+  if (select && !select.value) await act(async () => setSelectValue(select, 'release-1'))
+}
+
 async function flushPromises() {
   await act(async () => {
     await Promise.resolve()
@@ -4366,6 +4508,7 @@ async function flushPromises() {
 }
 
 async function flushDebouncedPreflight() {
+  await selectLaunchRelease()
   await act(async () => {
     await new Promise(resolve => window.setTimeout(resolve, 450))
   })

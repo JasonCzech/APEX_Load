@@ -20,6 +20,34 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS script_library_assignments (
+            item_id TEXT PRIMARY KEY,
+            application_id TEXT,
+            revision BIGINT NOT NULL DEFAULT 0,
+            FOREIGN KEY (item_id) REFERENCES scripts(id) ON DELETE CASCADE,
+            FOREIGN KEY (application_id) REFERENCES applications(id)
+        )`,
+		`CREATE TABLE IF NOT EXISTS script_library_assignments_releases (
+            item_id TEXT NOT NULL,
+            release_id TEXT NOT NULL,
+            PRIMARY KEY(item_id, release_id),
+            FOREIGN KEY (item_id) REFERENCES script_library_assignments(item_id) ON DELETE CASCADE,
+            FOREIGN KEY (release_id) REFERENCES releases(id)
+        )`,
+		`CREATE TABLE IF NOT EXISTS scenario_library_assignments (
+            item_id TEXT PRIMARY KEY,
+            application_id TEXT,
+            revision BIGINT NOT NULL DEFAULT 0,
+            FOREIGN KEY (item_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+            FOREIGN KEY (application_id) REFERENCES applications(id)
+        )`,
+		`CREATE TABLE IF NOT EXISTS scenario_library_assignments_releases (
+            item_id TEXT NOT NULL,
+            release_id TEXT NOT NULL,
+            PRIMARY KEY(item_id, release_id),
+            FOREIGN KEY (item_id) REFERENCES scenario_library_assignments(item_id) ON DELETE CASCADE,
+            FOREIGN KEY (release_id) REFERENCES releases(id)
+        )`,
 		`CREATE TABLE IF NOT EXISTS pod_capacity_reservations (
 			target TEXT NOT NULL,
 			test_id TEXT NOT NULL,

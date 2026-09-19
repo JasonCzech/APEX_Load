@@ -13,12 +13,14 @@ test('[U10 U11] unavailable preflight blocks launch; recovery creates only one r
   const pattern = '**/api/v1/tests/preflight'
   await page.route(pattern, route => route.fulfill({ status: 503, json: { error: 'Capacity service unavailable; retry preflight' } }))
   await page.goto(`/#/new-test?scenarioId=${scenarioId}&${scopeQuery(workspace)}`)
+  await page.getByRole('combobox', { name: 'Release', exact: true }).selectOption(workspace.releaseId)
   const start = page.getByRole('button', { name: 'Start Now', exact: true })
   await expect(page.getByText('Capacity service unavailable; retry preflight', { exact: false }).first()).toBeVisible()
   await expect(start).toBeDisabled()
   expect(target.count()).toBe(0)
   await page.unroute(pattern)
   await page.reload()
+  await page.getByRole('combobox', { name: 'Release', exact: true }).selectOption(workspace.releaseId)
   const runName = `once-${Date.now()}`
   await page.getByLabel('Run Name', { exact: true }).fill(runName)
   await expect(start).toBeEnabled({ timeout: 30_000 })
@@ -40,6 +42,7 @@ test('[U15] held run stays reserved across reload and starts only on explicit ac
   const scriptId = await seedScript(request, workspace, 'Held_HTTP', target.url)
   const scenarioId = await seedScenario(request, workspace, scriptId)
   await page.goto(`/#/new-test?scenarioId=${scenarioId}&${scopeQuery(workspace)}`)
+  await page.getByRole('combobox', { name: 'Release', exact: true }).selectOption(workspace.releaseId)
   const hold = page.getByRole('button', { name: 'Hold for Manual Start', exact: true })
   await expect(hold).toBeEnabled({ timeout: 30_000 })
   const created = mutation(page, 'POST', '/api/v1/tests')
@@ -114,6 +117,7 @@ test('[U15] scheduled run preserves its future start across reload without traff
   const scriptId = await seedScript(request, workspace, 'Scheduled_HTTP', target.url)
   const scenarioId = await seedScenario(request, workspace, scriptId)
   await page.goto(`/#/new-test?scenarioId=${scenarioId}&${scopeQuery(workspace)}`)
+  await page.getByRole('combobox', { name: 'Release', exact: true }).selectOption(workspace.releaseId)
   const future = new Date(Date.now() + 24 * 60 * 60 * 1000)
   future.setSeconds(0, 0)
   const local = await page.evaluate(timestamp => {

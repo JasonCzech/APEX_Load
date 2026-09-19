@@ -283,3 +283,19 @@ describe('repositoryCatalogUtils', () => {
     expect(sortRepositoryRows(rows, { key: 'last_activity', direction: 'desc' })[0].id).toBe('pool-1')
   })
 })
+
+it('shows assigned scripts and scenarios before their first run and labels history separately', () => {
+  const assignment = { application: { id: 'app-1', name: 'Checkout App' }, releases: [{ id: 'release-1', name: 'Next Release', application_id: 'app-1' }], revision: 1 }
+  const rows = buildRepositoryCatalogRows({
+    activeDomain: domain, activeApplication: { id: 'app-1', name: 'Checkout App', project_id: project.id, created_at: '', updated_at: '' },
+    categories: [category], projects: [project], releasesByProject: {}, testsByProject: {}, dataPoolsByProject: {},
+    scriptsByProject: { [project.id]: [{ id: 'new-script', name: 'Never run', protocol: 'http', version: '1', created_at: '', library_assignment: assignment }] },
+    scenariosByProject: { [project.id]: [{ id: 'new-scenario', name: 'Never run scenario', duration: '1m', scripts: [], script_count: 0, created_at: '', updated_at: '', library_assignment: { ...assignment, releases: [] } }] },
+  })
+  const script = rows.find(row => row.id === 'new-script')!
+  const scenario = rows.find(row => row.id === 'new-scenario')!
+  expect(script.releaseIds).toContain('release-1')
+  expect(script.detail).toContain('Assigned releases: Next Release')
+  expect(script.detail).toContain('Run releases: None')
+  expect(scenario.detail).toContain('Assignment: Checkout App')
+})

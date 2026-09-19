@@ -1,0 +1,16 @@
+.move-scripts-dialog .modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.move-scripts-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.move-scripts-dialog :is(p, ul) {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

@@ -58,10 +58,16 @@ func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
 	projectID := r.URL.Query().Get("project_id")
 	if projectID != "" {
 		scenarios := s.runner.ListScenariosFiltered(projectID)
+		if !s.scenarioLibraryAssignments(w, scenarios) {
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"scenarios": maskStoredScenarios(scenarios), "count": len(scenarios)})
 		return
 	}
 	scenarios := s.runner.ListScenarios()
+	if !s.scenarioLibraryAssignments(w, scenarios) {
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"scenarios": maskStoredScenarios(scenarios), "count": len(scenarios)})
 }
 
@@ -69,6 +75,9 @@ func (s *Server) handleGetScenario(w http.ResponseWriter, r *http.Request) {
 	scenario, ok := s.runner.GetScenario(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario not found")
+		return
+	}
+	if !s.scenarioLibraryAssignments(w, []*StoredScenario{scenario}) {
 		return
 	}
 	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
@@ -124,6 +133,9 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(r, "scenario.update", "success", "scenario", scenario.ID, scenario.ProjectID, map[string]any{"name": scenario.Name, "duration": scenario.Duration})
+	if !s.scenarioLibraryAssignments(w, []*StoredScenario{scenario}) {
+		return
+	}
 	writeJSON(w, http.StatusOK, maskStoredScenario(scenario))
 }
 

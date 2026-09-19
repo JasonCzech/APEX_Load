@@ -8,6 +8,12 @@ import type { ScriptDefinition } from './scripts'
 import type { GeneratorAssignmentSettings } from './testConfiguration'
 import type { TrafficProfile } from './trafficProfiles'
 
+export interface LibraryAssignment {
+  application: { id: string; name: string } | null
+  releases: Array<ReleaseRef & { archived_at?: string }>
+  revision: number
+}
+
 export interface ReleaseRef {
   id: string
   name: string
@@ -30,6 +36,7 @@ export interface StoredScript {
   created_at: string
   scenario_count?: number
   associated_scenarios?: ScenarioRef[]
+  library_assignment?: LibraryAssignment
   associated_releases?: ReleaseRef[]
   scenario_run_releases?: ReleaseRef[]
   last_run_at?: string
@@ -76,6 +83,7 @@ export interface StoredScenario {
   updated_at: string
   script_count: number
   result_count?: number
+  library_assignment?: LibraryAssignment
   associated_releases?: ReleaseRef[]
   last_run_test_id?: string
   last_run_at?: string

@@ -34,6 +34,8 @@ func TestRBACMatrixAgreesWithRouteCatalog(t *testing.T) {
 		{operation: "manage_domains", method: http.MethodPost, path: "/api/v1/domains"},
 		{operation: "view_tests", method: http.MethodGet, path: "/api/v1/tests/t1/notes", pathValues: map[string]string{"id": "t1"}, checkProject: true},
 		{operation: "manage_tests", method: http.MethodPost, path: "/api/v1/tests/t1/notes", pathValues: map[string]string{"id": "t1"}, checkProject: true},
+		{operation: "manage_scripts", method: http.MethodPut, path: "/api/v1/scripts/s1/library-assignment", pathValues: map[string]string{"id": "s1"}, checkProject: true},
+		{operation: "manage_tests", method: http.MethodPut, path: "/api/v1/scenarios/s1/library-assignment", pathValues: map[string]string{"id": "s1"}, checkProject: true},
 		{operation: "view_scripts", method: http.MethodPost, path: "/api/v1/scripts/validate", checkProject: true},
 	}
 

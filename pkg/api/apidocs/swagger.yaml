@@ -1102,6 +1102,62 @@ components:
         - compatibility_version
         - active
         - created_at
+    LibraryAssignment:
+      type: object
+      properties:
+        application:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+          required:
+            - id
+            - name
+          nullable: true
+        releases:
+          type: array
+          items:
+            type: object
+            properties:
+              application_id:
+                type: string
+              archived_at:
+                type: string
+                format: date-time
+              id:
+                type: string
+              name:
+                type: string
+            required:
+              - id
+              - name
+              - application_id
+        revision:
+          type: integer
+          format: int64
+      required:
+        - application
+        - releases
+        - revision
+    LibraryAssignmentRequest:
+      type: object
+      properties:
+        application_id:
+          type: string
+          nullable: true
+        expected_revision:
+          type: integer
+          format: int64
+        release_ids:
+          type: array
+          items:
+            type: string
+      required:
+        - application_id
+        - release_ids
+        - expected_revision
     ProjectReleaseCreateRequest:
       type: object
       description: Creates one logical release family joined to every application in the project.
@@ -83255,6 +83311,47 @@ paths:
                     nullable: true
                   last_run_test_id:
                     type: string
+                  library_assignment:
+                    type: object
+                    properties:
+                      application:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        nullable: true
+                      releases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            application_id:
+                              type: string
+                            archived_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - application_id
+                            - id
+                            - name
+                      revision:
+                        type: integer
+                        format: int64
+                    required:
+                      - application
+                      - releases
+                      - revision
+                    nullable: true
                   name:
                     type: string
                   project_id:
@@ -85215,6 +85312,47 @@ paths:
                     nullable: true
                   last_run_test_id:
                     type: string
+                  library_assignment:
+                    type: object
+                    properties:
+                      application:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        nullable: true
+                      releases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            application_id:
+                              type: string
+                            archived_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - application_id
+                            - id
+                            - name
+                      revision:
+                        type: integer
+                        format: int64
+                    required:
+                      - application
+                      - releases
+                      - revision
+                    nullable: true
                   name:
                     type: string
                   project_id:
@@ -88614,6 +88752,47 @@ paths:
                     nullable: true
                   last_run_test_id:
                     type: string
+                  library_assignment:
+                    type: object
+                    properties:
+                      application:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        nullable: true
+                      releases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            application_id:
+                              type: string
+                            archived_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - application_id
+                            - id
+                            - name
+                      revision:
+                        type: integer
+                        format: int64
+                    required:
+                      - application
+                      - releases
+                      - revision
+                    nullable: true
                   name:
                     type: string
                   project_id:
@@ -90410,6 +90589,78 @@ paths:
       tags:
         - Scenarios
       x-handler: handleUpdateScenarioDataPools
+  /api/v1/scenarios/{id}/library-assignment:
+    put:
+      summary: Scenario Library Assignment
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      operationId: handleScenarioLibraryAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryAssignmentRequest'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryAssignment'
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scenarios
+      x-handler: handleScenarioLibraryAssignment
   /api/v1/scenarios/{id}/results:
     get:
       summary: Scenario Results
@@ -90805,6 +91056,47 @@ paths:
                         nullable: true
                       last_run_test_id:
                         type: string
+                      library_assignment:
+                        type: object
+                        properties:
+                          application:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                              - id
+                              - name
+                            nullable: true
+                          releases:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                application_id:
+                                  type: string
+                                archived_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                id:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - application_id
+                                - id
+                                - name
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - application
+                          - releases
+                          - revision
+                        nullable: true
                       name:
                         type: string
                       project_id:
@@ -112827,6 +113119,47 @@ paths:
                     type: string
                     format: date-time
                     nullable: true
+                  library_assignment:
+                    type: object
+                    properties:
+                      application:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        nullable: true
+                      releases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            application_id:
+                              type: string
+                            archived_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - application_id
+                            - id
+                            - name
+                      revision:
+                        type: integer
+                        format: int64
+                    required:
+                      - application
+                      - releases
+                      - revision
+                    nullable: true
                   name:
                     type: string
                   project_id:
@@ -114648,6 +114981,47 @@ paths:
                   last_run_at:
                     type: string
                     format: date-time
+                    nullable: true
+                  library_assignment:
+                    type: object
+                    properties:
+                      application:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        nullable: true
+                      releases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            application_id:
+                              type: string
+                            archived_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - application_id
+                            - id
+                            - name
+                      revision:
+                        type: integer
+                        format: int64
+                    required:
+                      - application
+                      - releases
+                      - revision
                     nullable: true
                   name:
                     type: string
@@ -118216,6 +118590,47 @@ paths:
                   last_run_at:
                     type: string
                     format: date-time
+                    nullable: true
+                  library_assignment:
+                    type: object
+                    properties:
+                      application:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                          - id
+                          - name
+                        nullable: true
+                      releases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            application_id:
+                              type: string
+                            archived_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                          required:
+                            - application_id
+                            - id
+                            - name
+                      revision:
+                        type: integer
+                        format: int64
+                    required:
+                      - application
+                      - releases
+                      - revision
                     nullable: true
                   name:
                     type: string
@@ -126551,6 +126966,78 @@ paths:
       tags:
         - Scripts
       x-handler: handleGetImportSource
+  /api/v1/scripts/{id}/library-assignment:
+    put:
+      summary: Script Library Assignment
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      operationId: handleScriptLibraryAssignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LibraryAssignmentRequest'
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryAssignment'
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+      x-handler: handleScriptLibraryAssignment
   /api/v1/scripts/{id}/move:
     patch:
       summary: Move Script
@@ -141352,6 +141839,47 @@ paths:
                       last_run_at:
                         type: string
                         format: date-time
+                        nullable: true
+                      library_assignment:
+                        type: object
+                        properties:
+                          application:
+                            type: object
+                            properties:
+                              id:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                              - id
+                              - name
+                            nullable: true
+                          releases:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                application_id:
+                                  type: string
+                                archived_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                id:
+                                  type: string
+                                name:
+                                  type: string
+                              required:
+                                - application_id
+                                - id
+                                - name
+                          revision:
+                            type: integer
+                            format: int64
+                        required:
+                          - application
+                          - releases
+                          - revision
                         nullable: true
                       name:
                         type: string

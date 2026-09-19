@@ -74,6 +74,7 @@ test('New Test exposes editable groups and saves a paused recurring schedule wit
   await expect(page.getByRole('region', { name: 'Effective schedule policies' })).toContainText('system scheduling defaults')
   await page.getByRole('textbox', { name: 'Schedule Name', exact: true }).fill('Paused review trigger')
   await page.getByRole('checkbox', { name: /^Enabled/ }).uncheck()
+  await page.getByRole('combobox', { name: 'Release Context', exact: true }).selectOption({ index: 1 })
   await expect(page.getByRole('button', { name: 'Save Schedule', exact: true })).toBeEnabled()
   const saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === `/api/v1/scenarios/${scenarioId}/schedules`)
   await page.getByRole('button', { name: 'Save Schedule', exact: true }).click()

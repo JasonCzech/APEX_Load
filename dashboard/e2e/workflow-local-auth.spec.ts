@@ -25,6 +25,7 @@ test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve th
   await expect(page).toHaveURL(new RegExp(`scenarioId=${scenarioId}`))
   const runName = `${label} run`
   await page.getByLabel('Run Name', { exact: true }).fill(runName)
+  await page.getByRole('combobox', { name: 'Release', exact: true }).selectOption(workspace.releaseId)
   await expect(page.getByRole('button', { name: 'Start Now' })).toBeEnabled({ timeout: 30_000 })
   const created = mutation(page, 'POST', '/api/v1/tests')
   await page.getByRole('button', { name: 'Start Now' }).click()

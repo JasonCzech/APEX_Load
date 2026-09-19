@@ -18,6 +18,7 @@ import (
 // schema-derived guard: adding a project-owned table now requires either a real
 // cascade or an intentional deletion/retention decision.
 var manuallyDeletedProjectTables = stringSet(
+	"script_library_assignments", "scenario_library_assignments", "script_library_assignments_releases", "scenario_library_assignments_releases",
 	"applications", "archive_finalization_jobs", "archive_refresh_jobs",
 	"authoring_sessions", "bruno_native_import_batches", "bruno_source_artifacts",
 	"bruno_source_revisions", "capacity_reservations", "correlation_rulesets",

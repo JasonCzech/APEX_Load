@@ -251,10 +251,11 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const script of scripts) {
       const scriptReleaseRefs = releaseRefsForApplication([
+        ...(script.library_assignment?.releases || []),
         ...(script.associated_releases || []),
         ...(script.scenario_run_releases || []),
       ], activeApplicationId, releaseMap)
-      if (activeApplicationId && scriptReleaseRefs.length === 0) continue
+      if (activeApplicationId && script.library_assignment?.application?.id !== activeApplicationId && scriptReleaseRefs.length === 0) continue
       const releaseNames = unique([
         ...releaseNamesFromRefs(scriptReleaseRefs),
       ])
@@ -277,7 +278,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         protocol: script.protocol || 'http',
         status,
         summary: `${script.version || '1.0.0'} · ${plural(script.scenario_count || 0, 'scenario')}`,
-        detail: script.last_run_at ? 'Has run history' : 'No runs yet',
+        detail: `Assignment: ${script.library_assignment?.application?.name || 'Unassigned'} · Assigned releases: ${(script.library_assignment?.releases || []).map(release => release.name).join(', ') || 'None'} · Run releases: ${(script.associated_releases || []).map(release => release.name).join(', ') || 'None'}`,
         createdAt: script.created_at,
         lastActivityAt: newestTimestamp([script.last_run_at, script.created_at]),
         searchText: buildSearchText([script.id, script.name, script.protocol, script.version, status, project.name, category?.name, releaseNames, 'script']),
@@ -290,8 +291,8 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
     if (!project) continue
     const category = project.category_id ? categoryMap.get(project.category_id) : undefined
     for (const scenario of scenarios) {
-      const scenarioReleaseRefs = releaseRefsForApplication(scenario.associated_releases, activeApplicationId, releaseMap)
-      if (activeApplicationId && scenarioReleaseRefs.length === 0) continue
+      const scenarioReleaseRefs = releaseRefsForApplication([...(scenario.library_assignment?.releases || []), ...(scenario.associated_releases || [])], activeApplicationId, releaseMap)
+      if (activeApplicationId && scenario.library_assignment?.application?.id !== activeApplicationId && scenarioReleaseRefs.length === 0) continue
       const releaseNames = releaseNamesFromRefs(scenarioReleaseRefs)
       const releaseIds = releaseIdsFromRefs(scenarioReleaseRefs)
       const protocols = protocolListFromScenario(scenario)
@@ -311,7 +312,7 @@ export function buildRepositoryCatalogRows(input: RepositoryCatalogBuildInput): 
         protocol: protocols,
         status,
         summary: `${scenarioModeLabel(scenario.scenario_mode)} · ${scenario.duration || 'No duration'} · ${plural(scenario.script_count || scenario.scripts.length, 'script')} · ${plural(scenario.result_count || 0, 'run')}`,
-        detail: scenario.data_pools?.length ? plural(scenario.data_pools.length, 'data pool') : 'No data pool',
+        detail: `Assignment: ${scenario.library_assignment?.application?.name || 'Unassigned'} · Assigned releases: ${(scenario.library_assignment?.releases || []).map(release => release.name).join(', ') || 'None'} · Run releases: ${(scenario.associated_releases || []).map(release => release.name).join(', ') || 'None'}`,
         createdAt: scenario.created_at,
         updatedAt: scenario.updated_at,
         lastActivityAt: newestTimestamp([scenario.last_run_at, scenario.updated_at, scenario.created_at]),

@@ -1,0 +1,17 @@
+.library-assignment-dialog fieldset {
+  max-height: 18rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+.library-assignment-dialog fieldset label {
+  padding: 4px 0;
+}
+.library-assignment-dialog input[type="checkbox"] {
+  margin-right: 8px;
+}
+.library-assignment-dialog details ul {
+  max-height: 10rem;
+  overflow: auto;
+}

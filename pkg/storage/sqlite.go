@@ -403,7 +403,7 @@ func (tx *storeTx) Rollback() error {
 
 var (
 	insertOrIgnorePrefix = regexp.MustCompile(`(?is)^(\s*)INSERT\s+OR\s+IGNORE\s+INTO\s+`)
-	inlineReferences     = regexp.MustCompile(`(?i)\s+REFERENCES\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)`)
+	inlineReferences     = regexp.MustCompile(`(?i)\s+REFERENCES\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\([^)]*\)(?:\s+ON\s+DELETE\s+(?:CASCADE|SET\s+NULL|RESTRICT|NO\s+ACTION))?`)
 	trailingCreateComma  = regexp.MustCompile(`,\s*\)`)
 	// postgresSQLRewrites translates SQLite SQL into Postgres SQL by SUBSTRING
 	// match: every entry is pinned to one column name written one exact way.

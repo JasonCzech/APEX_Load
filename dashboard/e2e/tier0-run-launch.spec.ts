@@ -59,6 +59,7 @@ test('[U10] preflight and estimate lead to an immediate launch that reaches RUNN
   })
 
   await page.goto(`/#/new-test?scenarioId=${scenarioId}&${scopeQuery(workspace)}`)
+  await page.getByRole('combobox', { name: 'Release', exact: true }).selectOption(workspace.releaseId)
   const startNow = page.getByRole('button', { name: 'Start Now' })
   await expect(startNow, 'launch stays disabled until preflight has made a start-now decision').toBeEnabled({ timeout: 30_000 })
   expect(estimateResponses.some(response => response.ok()), 'the UI must obtain a successful capacity estimate').toBeTruthy()

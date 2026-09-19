@@ -456,6 +456,9 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordAuditEvent(r, "script.update", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": disclosureSafeScriptName(updated.Name, updated.Script), "folder_id": updated.FolderID})
 
+	if !s.scriptLibraryAssignments(w, []*StoredScript{updated}) {
+		return
+	}
 	writeJSON(w, http.StatusOK, viewStoredScript(updated))
 }
 
