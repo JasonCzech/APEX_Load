@@ -1768,7 +1768,26 @@ func (s *Server) handleCommitBrunoNativeImport(
 	// anything is canonicalized or persisted: one value can touch every script,
 	// so a per-script pass would leave the batch inconsistent.
 	if len(request.SharedValues) > 0 {
-		trusted := trustedSharedValueCandidates(scripts)
+		// Bind the submitted IDs to the immutable inspection, then rebase its
+		// server-owned locations onto the selected batch. Re-detecting only the
+		// subset changes location-based IDs and can discard repeated literals
+		// whose other occurrences were deselected.
+		projection, projectionErr := publicBrunoNativeInspectResult(session.Result)
+		if projectionErr != nil {
+			writeError(w, http.StatusInternalServerError, "unable to project inspected Bruno values")
+			return
+		}
+		selectedIndexes := make(map[int]int, len(selected))
+		selectedByID := make(map[string]int, len(selected))
+		for index, candidate := range selected {
+			selectedByID[candidate.CandidateID] = index
+		}
+		for originalIndex, original := range session.Result.Scripts {
+			if selectedIndex, ok := selectedByID[original.CandidateID]; ok {
+				selectedIndexes[originalIndex] = selectedIndex
+			}
+		}
+		trusted := rebaseBrunoSharedValues(trustedSharedValueCandidates(brunoNativeCandidateScripts(projection)), selectedIndexes)
 		known := make(map[string]bool, len(trusted))
 		for _, candidate := range trusted {
 			known[candidate.ID] = true

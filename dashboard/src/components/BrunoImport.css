@@ -298,7 +298,8 @@
 
 .bruno-native-table {
   width: 100%;
-  min-width: 940px;
+  min-width: 1180px;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -1121,3 +1122,44 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Keep decisions readable at wide desktop sizes and within narrow containers. */
+.bruno-review-toolbar, .bruno-setup-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.bruno-readiness { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px; }
+.bruno-readiness p, .bruno-data-review p { max-width: 80ch; line-height: 1.6; }
+.bruno-review-toolbar label, .bruno-data-review label { display: flex; flex-direction: column; gap: 6px; }
+.bruno-import input:not([type=checkbox]):not([type=radio]):not([type=file]), .bruno-import select {
+  min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-primary); background: var(--bg-input, var(--bg-card)); max-width: 100%; box-sizing: border-box;
+}
+.bruno-import :is(button, input, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.bruno-import summary { cursor: pointer; padding: 8px 0; }
+.bruno-import .bruno-finding { display: flex; flex-direction: column; align-items: stretch; overflow-wrap: anywhere; }
+.bruno-native-table code { display: block; white-space: normal; overflow-wrap: anywhere; max-width: 40ch; }
+.bruno-input-list { list-style: none; padding: 0; }
+.bruno-input-list li { display: flex; flex-direction: column; gap: 10px; padding: 18px 0; border-bottom: 1px solid var(--border); }
+.bruno-data-review input:not([type=checkbox]) { width: min(100%, 36rem); }
+.bruno-data-review details button { margin: 6px; }
+.bruno-optional-values label { margin: 16px 0; }
+.bruno-import [role=tabpanel] { scroll-margin-top: 90px; }
+.bruno-import .bruno-tabs { position: sticky; top: 72px; z-index: 2; background: var(--bg-card); flex-wrap: wrap; }
+@container bruno-import (max-width: 700px) {
+  .bruno-import .bruno-tabs { position: static; }
+  .bruno-commit-bar { flex-direction: column; }
+  .bruno-readiness { grid-template-columns: 1fr; }
+}
+
+.bruno-native-table th:nth-child(1) { width: 40px; }
+.bruno-native-table th:nth-child(2) { width: 300px; }
+.bruno-native-table th:nth-child(3) { width: 180px; }
+.bruno-native-table th:nth-child(4) { width: 300px; }
+.bruno-native-table th:nth-child(5) { width: 210px; }
+.bruno-native-table th:nth-child(6) { width: 100px; }
+.bruno-native-table td { overflow-wrap: anywhere; }
+.bruno-native-table td > small { white-space: normal; overflow: visible; }
+.bruno-native-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

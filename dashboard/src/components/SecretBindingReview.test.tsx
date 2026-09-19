@@ -1183,6 +1183,7 @@ describe('SecretBindingReview', () => {
       'authorization-header': {
         usesProjectSecret: true,
         secretName: 'RENAMED_TOKEN',
+        readyForExecution: true,
         guidance: 'The selected project secret is already configured and will be used when the imported scripts run.',
       },
     })
@@ -1213,6 +1214,7 @@ describe('SecretBindingReview', () => {
       'authorization-header': {
         usesProjectSecret: true,
         secretName: 'ORDER_API_TOKEN',
+        readyForExecution: true,
         guidance: 'A value will be stored in Project Secrets during import.',
       },
     })
@@ -1255,6 +1257,7 @@ describe('SecretBindingReview', () => {
       'authorization-header': {
         usesProjectSecret: true,
         secretName: 'ORDER_API_TOKEN',
+        readyForExecution: true,
         guidance: 'The selected project secret is already configured and will be used when the imported scripts run.',
       },
     })
@@ -1277,6 +1280,7 @@ describe('SecretBindingReview', () => {
       'authorization-header': {
         usesProjectSecret: true,
         secretName: 'ORDER_API_TOKEN',
+        readyForExecution: false,
         guidance: 'Enter the value now or configure it in Project Secrets before running the imported scripts.',
       },
     })
@@ -1518,6 +1522,7 @@ describe('SecretBindingReview', () => {
       'authorization-header': {
         usesProjectSecret: true,
         secretName: 'ORDER_API_TOKEN',
+        readyForExecution: false,
         guidance: 'Enter the value now or configure it in Project Secrets before running the imported scripts.',
       },
     })

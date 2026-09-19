@@ -49,3 +49,32 @@ func sanitizeSharedValueDiffs(diffs []sharedvalue.Diff) []sharedvalue.Diff {
 	}
 	return sanitized
 }
+
+// rebaseBrunoSharedValues preserves inspection identities while restricting
+// all mutations to the selected script positions. Neither locations nor index
+// mappings come from client-supplied descriptors. Valid edits for deselected
+// scripts remain no-ops, so returning to the selection does not lose work.
+func rebaseBrunoSharedValues(candidates []sharedvalue.Candidate, selected map[int]int) []sharedvalue.Candidate {
+	result := make([]sharedvalue.Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidate.ScriptIndexes = append([]int(nil), candidate.ScriptIndexes...)
+		candidate.Locations = append([]sharedvalue.Location(nil), candidate.Locations...)
+		indexes := candidate.ScriptIndexes[:0]
+		for _, index := range candidate.ScriptIndexes {
+			if target, ok := selected[index]; ok {
+				indexes = append(indexes, target)
+			}
+		}
+		candidate.ScriptIndexes = indexes
+		locations := candidate.Locations[:0]
+		for _, location := range candidate.Locations {
+			if target, ok := selected[location.ScriptIndex]; ok {
+				location.ScriptIndex = target
+				locations = append(locations, location)
+			}
+		}
+		candidate.Locations = locations
+		result = append(result, candidate)
+	}
+	return result
+}

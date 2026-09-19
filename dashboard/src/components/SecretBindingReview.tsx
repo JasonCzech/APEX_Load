@@ -84,6 +84,7 @@ export interface PreparedSecretBindings {
 }
 
 export interface RequirementDestinationState {
+  readyForExecution?: boolean
   usesProjectSecret: boolean
   secretName: string
   guidance: string
@@ -883,6 +884,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         for (const requirement of group.requirements) {
           state[requirement.id] = {
             usesProjectSecret: false,
+            readyForExecution: true,
             secretName: '',
             guidance: 'The imported value remains preserved in the script.',
           }
@@ -903,13 +905,14 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       for (const requirement of group.requirements) {
         state[requirement.id] = {
           usesProjectSecret: true,
+          readyForExecution: !validationErrors[group.key] && !conflictingValueNames.has(name) && !configuredNameCollision && (configured || willCreate),
           secretName: name,
           guidance: nextStep,
         }
       }
     }
     return state
-  }, [committedValueNamesSnapshot, destinationChoices, destinationValueStateByName, effectiveSourceMigrationSelected, groups, names, scopedProbeState, scopedStatuses, scopedStoreWritable])
+  }, [committedValueNamesSnapshot, destinationChoices, destinationValueStateByName, effectiveSourceMigrationSelected, groups, names, scopedProbeState, scopedStatuses, scopedStoreWritable, validationErrors, conflictingValueNames])
 
   useEffect(() => {
     // Never lift write-only values, binding payloads, or migration intent into

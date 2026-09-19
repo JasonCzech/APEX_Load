@@ -1,6 +1,7 @@
 import { expect, test, type Response } from '@playwright/test'
 
 import { createWorkspace, scopeQuery } from './support/workspace'
+import { login } from './support/workflow'
 
 type ZipMember = { name: string; content: string }
 
@@ -64,8 +65,10 @@ function isImportResponse(response: Response, endpoint: string): boolean {
   return response.request().method() === 'POST' && url.pathname === endpoint
 }
 
-test('[U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform', async ({ page, request }) => {
+test('[U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform', async ({ page }) => {
   test.setTimeout(120_000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
   const workspace = await createWorkspace(request)
   const archive = storedZip([
     {
@@ -77,7 +80,7 @@ test('[U23] Bruno native collection inspection, acknowledgements, and atomic sav
       content: `info: {name: UnsupportedHook, uid: unsupported-hook, type: http, seq: 1}
 http:
   method: GET
-  url: https://example.test/hook
+  url: https://{{env}}.example.test/hook
 runtime:
   scripts:
     - type: after-response
@@ -98,6 +101,8 @@ http:
   ])
 
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  // Workspace creation follows login; refresh the cached workspace hierarchy.
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   await page.getByRole('button', { name: 'Import', exact: true }).click()
   await page.getByRole('button', { name: /Bruno Collection/ }).click()
   const controls = page.getByRole('group', { name: 'Script import controls' })
@@ -118,13 +123,24 @@ http:
   expect(inspection.ok(), await inspection.text()).toBeTruthy()
   await expect(controls.getByText(/2 API requests found.*2 native scripts/).first()).toBeVisible()
 
-  await controls.getByRole('tab', { name: 'Import APIs', exact: true }).click()
+  await expect(controls.getByRole('button', { name: 'Inputs: 1 unresolved', exact: true })).toBeVisible()
+  await controls.getByRole('tab', { name: 'Data', exact: true }).click()
+  await controls.getByRole('textbox', { name: 'Literal value for env', exact: true }).fill('qa')
+  await expect(controls.getByRole('button', { name: 'Inputs: 0 unresolved', exact: true })).toBeVisible()
+  await controls.getByRole('tab', { name: 'APIs', exact: true }).click()
+  await controls.getByRole('searchbox', { name: 'Find API', exact: true }).fill('UnsupportedHook')
+  await expect(controls.locator('.bruno-native-table tbody tr')).toHaveCount(1)
+  await expect(controls.getByText('1 matching · 2 selected across all pages', { exact: true })).toBeVisible()
+  await controls.getByRole('searchbox', { name: 'Find API', exact: true }).fill('')
+  await expect(controls.locator('.bruno-native-table tbody tr')).toHaveCount(2)
+
+  await controls.getByRole('tab', { name: 'Review & save', exact: true }).click()
   const acknowledgements = controls.getByRole('checkbox', { name: /^Acknowledge / })
   await expect(acknowledgements).toHaveCount(2)
   for (let index = 0; index < 2; index += 1) await acknowledgements.nth(index).check()
 
   const savePromise = page.waitForResponse(response => isImportResponse(response, '/api/v1/scripts/import/bruno/commit'))
-  await controls.getByRole('button', { name: /Save and Continue Importing/ }).click()
+  await controls.getByRole('button', { name: /Save \d+ drafts?/ }).click()
   const save = await savePromise
   expect(save.ok(), await save.text()).toBeTruthy()
 

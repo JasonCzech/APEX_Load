@@ -36,7 +36,8 @@ import SecretBindingReview, {
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
 import ParameterizationReview from './ParameterizationReview'
-import SharedImportValues from './SharedImportValues'
+import BrunoDataReview from './BrunoDataReview'
+import { brunoMissingVariables, brunoCandidateNeedsSecrets } from './brunoReviewState'
 import { formatBytes } from './settingsPageFormatters'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import {
@@ -87,7 +88,7 @@ type RunOptions = {
 
 type OutputMode = 'canonical' | 'native_requests'
 type BrunoInspectionTab = 'summary' | 'source_apis' | 'credentials' | 'data' | 'import'
-type NativeCandidateSortKey = 'source' | 'script' | 'request' | 'status' | 'details'
+type NativeCandidateSortKey = 'sequence' | 'source' | 'script' | 'request' | 'status' | 'details'
 type FolderCreationAccess = 'checking' | 'allowed' | 'denied' | 'unavailable'
 
 const FOLDER_CREATION_DENIED_MESSAGE = 'Your current role can import scripts but cannot create project folders. Select an existing script folder, or ask a Project Administrator to create one for this project.'
@@ -114,10 +115,10 @@ const COLLECTION_TREE_PAGE_SIZE = 100
 const MAX_DETAILED_REVIEW_FINDING_BLOCKERS = 10
 const BRUNO_INSPECTION_TABS: ReadonlyArray<{ id: BrunoInspectionTab; label: string }> = [
   { id: 'summary', label: 'Summary' },
-  { id: 'source_apis', label: 'Source APIs' },
+  { id: 'source_apis', label: 'APIs' },
   { id: 'credentials', label: 'Credentials' },
   { id: 'data', label: 'Data' },
-  { id: 'import', label: 'Import APIs' },
+  { id: 'import', label: 'Review & save' },
 ]
 
 function splitList(value: string) {
@@ -253,6 +254,8 @@ function nativeCandidateTarget(candidate: BrunoNativeScriptCandidate) {
 
 function nativeCandidateSortValue(candidate: BrunoNativeScriptCandidate, key: NativeCandidateSortKey) {
   switch (key) {
+    case 'sequence':
+      return String(candidate.sequence ?? Number.MAX_SAFE_INTEGER)
     case 'source':
       return `${candidate.source_path || ''}\u0000${candidate.sequence ?? Number.MAX_SAFE_INTEGER}`
     case 'script':
@@ -295,11 +298,15 @@ function BrunoNativeReviewDialog({
   candidate,
   candidateSelected,
   requirementDestinationState,
+  onSource,
+  onRepair,
   onClose,
 }: {
   candidate: BrunoNativeScriptCandidate
   candidateSelected: boolean
   requirementDestinationState: Readonly<Record<string, RequirementDestinationState>>
+  onSource: () => void
+  onRepair: (tab: BrunoInspectionTab) => void
   onClose: () => void
 }) {
   const dialogRef = useRef<HTMLElement | null>(null)
@@ -353,13 +360,13 @@ function BrunoNativeReviewDialog({
           </div>
           {(candidate.missing_variables || []).length > 0 && (
             <section className="bruno-native-review-section">
-              <h4>Missing variables</h4>
+              <h4>Missing variables</h4><button className="btn btn-secondary" type="button" onClick={() => onRepair('data')}>Configure runtime inputs</button>
               <p>{candidate.missing_variables?.join(', ')}</p>
             </section>
           )}
           {(candidate.secret_requirements || []).length > 0 && (
             <section className="bruno-native-review-section">
-              <h4>Secrets</h4>
+              <h4>Secrets</h4><button className="btn btn-secondary" type="button" onClick={() => onRepair('credentials')}>Configure credentials</button>
               <ul>
                 {candidate.secret_requirements?.map(requirement => {
                   const presentation = brunoSecretPresentation(requirement)
@@ -411,7 +418,8 @@ function BrunoNativeReviewDialog({
           )}
           {(candidate.diagnostics || []).length > 0 && (
             <section className="bruno-native-review-section bruno-native-diagnostics">
-              <h4>Diagnostics</h4>
+              <h4>Diagnostics</h4><button className="btn btn-secondary" type="button" onClick={() => onRepair('import')}>Review conversion requirements</button>
+              <p>Original inspection findings are retained below. The readiness summary and missing-variable list reflect your pending input changes.</p>
               {candidate.diagnostics?.map((diagnostic, index) => (
                 <p key={nativeFindingID(diagnostic) || `${diagnostic.code}-${index}`}>
                   <code>{diagnostic.code || 'finding'}</code> {diagnostic.message}
@@ -421,7 +429,7 @@ function BrunoNativeReviewDialog({
           )}
           {(candidate.source_mappings || []).length > 0 && (
             <section className="bruno-native-review-section">
-              <h4>Source mappings</h4>
+              <h4>Source mappings</h4><button className="btn btn-secondary" type="button" onClick={onSource}>Inspect sanitized source</button>
               <SourceCodeViewer
                 ariaLabel="Source mappings JSON"
                 className="bruno-native-review-code-viewer"
@@ -615,7 +623,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [folderCreationAccess, setFolderCreationAccess] = useState<FolderCreationAccess>(projectId ? 'checking' : 'denied')
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([])
   const [nativeCandidatePage, setNativeCandidatePage] = useState(0)
-  const [nativeCandidateSort, setNativeCandidateSort] = useState<{ key: NativeCandidateSortKey; direction: 'asc' | 'desc' }>({ key: 'source', direction: 'asc' })
+  const [nativeCandidateSort, setNativeCandidateSort] = useState<{ key: NativeCandidateSortKey; direction: 'asc' | 'desc' }>({ key: 'sequence', direction: 'asc' })
   const [nativeFindingPage, setNativeFindingPage] = useState(0)
   const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
@@ -638,6 +646,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   // Bruno artifacts never leave the server, so collection values are collected
   // here and applied server-side by the native commit rather than through the
   // generic shared-values apply endpoint.
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [apiSearch, setApiSearch] = useState('')
+  const [apiFilter, setApiFilter] = useState('all')
+  const goToReviewTab = (tab: BrunoInspectionTab) => {
+    setActiveInspectionTab(tab)
+    requestAnimationFrame(() => document.getElementById(`bruno-inspection-tab-${tab}`)?.focus())
+  }
   const [sharedValueSelections, setSharedValueSelections] = useState<Record<string, string>>({})
   const [revisions, setRevisions] = useState<ImportSourceRevision[]>([])
   const [projection, setProjection] = useState<BrunoProjectionPreview | null>(null)
@@ -824,20 +839,26 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     [inspection],
   )
   const sortedNativeCandidates = useMemo(() => {
+    const selectedIDs = new Set(selectedCandidateIds)
     const direction = nativeCandidateSort.direction === 'asc' ? 1 : -1
-    return [...nativeCandidates].sort((left, right) => {
+    return nativeCandidates.filter(candidate => {
+      const text = `${candidate.source_path} ${candidate.script.name} ${nativeCandidateMethod(candidate)} ${nativeCandidateTarget(candidate)}`.toLowerCase()
+      const review = nativeCandidateReviewFindings(candidate).length > 0
+      const blocked = review || brunoMissingVariables([candidate], inspection?.shared_values, sharedValueSelections).length > 0 || brunoCandidateNeedsSecrets(candidate, selectedIDs.has(candidate.candidate_id) ? credentialDestinationState : {})
+      return text.includes(apiSearch.toLowerCase()) && (apiFilter === 'all' || (apiFilter === 'review' ? review : apiFilter === 'blocked' ? blocked : !blocked))
+    }).sort((left, right) => {
       const comparison = nativeCandidateSortValue(left, nativeCandidateSort.key)
         .localeCompare(nativeCandidateSortValue(right, nativeCandidateSort.key), undefined, { numeric: true, sensitivity: 'base' })
       return comparison === 0 ? left.candidate_id.localeCompare(right.candidate_id) : comparison * direction
     })
-  }, [nativeCandidateSort, nativeCandidates])
+  }, [nativeCandidateSort, nativeCandidates, apiSearch, apiFilter, inspection?.shared_values, sharedValueSelections, selectedCandidateIds, credentialDestinationState])
   const selectedCandidateIdSet = useMemo(
     () => new Set(selectedCandidateIds),
     [selectedCandidateIds],
   )
   const nativeCandidatePageCount = Math.max(
     1,
-    Math.ceil(nativeCandidates.length / NATIVE_CANDIDATE_PAGE_SIZE),
+    Math.ceil(sortedNativeCandidates.length / NATIVE_CANDIDATE_PAGE_SIZE),
   )
   const safeNativeCandidatePage = Math.min(nativeCandidatePage, nativeCandidatePageCount - 1)
   const nativeCandidatePageStart = safeNativeCandidatePage * NATIVE_CANDIDATE_PAGE_SIZE
@@ -940,7 +961,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       sourcePath: candidate.source_path || candidate.script.name,
       message: diagnostic.message || diagnostic.code || 'Imported behavior requires review.',
     }] as const]
-  }))).values()).sort((left, right) => left.id.localeCompare(right.id)), [selectedNativeCandidates])
+  }))).values()).sort((left, right) => left.code.localeCompare(right.code) || left.id.localeCompare(right.id)), [selectedNativeCandidates])
   const nativeReviewFindingIds = useMemo(
     () => nativeReviewFindings.map(finding => finding.id),
     [nativeReviewFindings],
@@ -970,9 +991,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     ),
     [nativeFindingPageStart, nativeReviewFindings],
   )
-  const selectedNativeMissingVariables = Array.from(new Set(
-    selectedNativeCandidates.flatMap(candidate => candidate.missing_variables || []),
-  )).sort()
+  const selectedNativeMissingVariables = brunoMissingVariables(selectedNativeCandidates, inspection?.shared_values, sharedValueSelections)
   const selectedNativeNames = selectedNativeCandidates.map(candidate => (nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name).trim())
   const duplicateNativeNames = new Set(selectedNativeNames.map(value => value.toLowerCase())).size !== selectedNativeNames.length
   const credentialsValid = requirements.length === 0 || preparedSecrets?.valid === true
@@ -1035,11 +1054,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   }
   const canCommit = Boolean(inspection) && saveBlockers.length === 0
   const commitActionLabel = outputMode === 'native_requests'
-    ? 'Save and Continue Importing'
+    ? `Save ${selectedNativeCandidates.length} draft${selectedNativeCandidates.length === 1 ? '' : 's'}`
     : syncScriptId ? 'Synchronize Bruno source and Continue Importing' : 'Save and Continue Importing'
   const commitButtonLabel = loading
     ? 'Committing…'
-    : deferredSecretCount > 0
+    : outputMode === 'canonical' && deferredSecretCount > 0
       ? `${commitActionLabel} with ${deferredSecretCount} ${deferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
       : commitActionLabel
   const developerBlocked = outputMode === 'canonical' && sandbox === 'developer' && support && !support.developer_execution_enabled
@@ -1202,6 +1221,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       })
       if (!requestIsCurrent()) return
       setInspection(response)
+      setSetupOpen(false)
+      setApiSearch('')
+      setApiFilter('all')
       // The protected Bruno session already contains the operator-authored
       // runtime values. A suggested logical name is review information, not an
       // implicit instruction to replace that value with an unconfigured secret
@@ -1516,6 +1538,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
       {notice && <div className="settings-notice" role="status">{notice}</div>}
       {!projectId && <div className="settings-error">Select a project before importing Bruno source.</div>}
 
+      {inspection && <div className="bruno-card bruno-setup-summary">
+        <strong>{files.map(file => file.name).join(', ')} · {outputMode === 'native_requests' ? `${nativeCandidates.length} native candidates` : 'Canonical collection'}</strong>
+        <span>Destination: {selectedDestinationFolderLabel || 'Choose a script folder'}</span>
+        <button className="btn btn-secondary" type="button" aria-expanded={setupOpen} onClick={() => setSetupOpen(value => !value)}>Change source, mode or destination</button>
+      </div>}
+      <div hidden={!!inspection && !setupOpen}>
+      {inspection && <p role="note">Changing the source or execution mode replaces this inspection and resets unsaved review choices. Re-inspection creates a new session.</p>}
       <section className="bruno-card">
         <div className="bruno-card-heading">
           <div>
@@ -1591,7 +1620,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           </div>
         )}
         {outputMode === 'canonical' ? (
-          <>
+          <details><summary>Canonical execution settings</summary>
         <div className="bruno-options-grid">
           <label>
             <span>Script name</span>
@@ -1672,14 +1701,14 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           <label><input type="checkbox" disabled={loading} checked={runOptions.testsOnly} onChange={event => updateRunOption('testsOnly', event.target.checked)} /> Tests only</label>
           <label><input type="checkbox" disabled={loading} checked={runOptions.persistSession} onChange={event => updateRunOption('persistSession', event.target.checked)} /> Persist VUser session across APEX iterations</label>
         </div>
-          </>
+          </details>
         ) : null}
         {!destinationFolderManagedExternally && (
           <>
             <div className="bruno-options-grid">
               <label>
                 <span>Destination folder</span>
-                <select
+                <select id="bruno-destination-folder"
                   aria-describedby={outputMode === 'native_requests' && destinationFolderOptions.length === 0 ? 'bruno-folder-empty-guidance' : undefined}
                   aria-busy={folderLoading || undefined}
                   disabled={loading || folderLoading || Boolean(folderLoadError) || creatingFolder || (outputMode === 'native_requests' && destinationFolderOptions.length === 0)}
@@ -1783,10 +1812,16 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         </button>
       </section>
 
+      </div>
       {inspection && (
         <>
           {outputMode === 'native_requests' ? (
             <>
+              <section className="bruno-card bruno-readiness" aria-label="Import readiness">
+                <div role="status"><strong>{selectedNativeCandidates.length} of {nativeCandidates.length} APIs selected</strong><p>Save readiness: {committed ? 'Saved' : canCommit ? 'Ready to save drafts' : `${saveBlockers.length} requirements remain`}</p><p>Replay readiness: {protectedSessionExpired ? 'Session expired — re-inspect source' : selectedNativeCandidates.length === 0 ? 'Select APIs to assess' : nativeReviewFindingIds.length || selectedNativeMissingVariables.length || !credentialsReadyForExecution ? 'Blocked' : 'Ready for controlled validation'}</p></div>
+                <div><strong>Needed to save</strong><div className="bruno-review-toolbar"><button type="button" className="btn btn-secondary" onClick={() => { setSetupOpen(true); requestAnimationFrame(() => document.getElementById('bruno-destination-folder')?.focus()) }}>Choose destination</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('source_apis')}>Select APIs</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Review {unacknowledgedFindingIds.length} acknowledgements</button></div></div>
+                <div><strong>Needed before replay</strong><div className="bruno-review-toolbar"><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('credentials')}>Credentials: {deferredSecretCount} missing{!credentialsValid ? ' · review pending' : ''}</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('data')}>Inputs: {selectedNativeMissingVariables.length} unresolved</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Conversions: {nativeReviewFindingIds.length} to repair</button></div></div>
+              </section>
               <TabList className="bruno-tabs" role="tablist" aria-label="Bruno native inspection panels" onKeyDown={handleTabKey}>
                 {BRUNO_INSPECTION_TABS.map((tab, index) => (
                   <button
@@ -1794,6 +1829,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     type="button"
                     id={`bruno-inspection-tab-${tab.id}`}
                     role="tab"
+                    aria-label={tab.label}
                     className="bruno-tab"
                     aria-selected={activeInspectionTab === tab.id}
                     aria-controls={`bruno-inspection-panel-${tab.id}`}
@@ -1823,7 +1859,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                       document.getElementById(`bruno-inspection-tab-${nextTab.id}`)?.focus()
                     }}
                   >
-                    {tab.label}
+                    {tab.label}{tab.id !== 'summary' && <span aria-hidden="true" className="bruno-tab-count"> {tab.id === 'source_apis' ? selectedNativeCandidates.length : tab.id === 'credentials' ? deferredSecretCount : tab.id === 'data' ? selectedNativeMissingVariables.length : unacknowledgedFindingIds.length}</span>}
                   </button>
                 ))}
               </TabList>
@@ -1839,13 +1875,13 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     <article className="bruno-card">
                       <h3>Collection</h3>
                       <strong>{inspection.result.collection.name}</strong>
-                      <p>{inspection.result.fidelity.executable_items} executable items · {inspection.result.fidelity.preserved_apps} Bruno Apps preserved</p>
+                      <p>{inspection.result.fidelity.executable_items} requests detected · {inspection.result.fidelity.preserved_apps} Bruno Apps preserved</p>
                       <CollectionTree items={inspection.result.collection.items} />
                     </article>
                     <article className="bruno-card">
                       <h3>Fidelity and capabilities</h3>
                       <dl className="bruno-details">
-                        <div><dt>Fidelity</dt><dd>{inspection.result.fidelity.status}</dd></div>
+                        <div><dt>Selected native conversion</dt><dd>{nativeReviewFindingIds.length ? "Review required" : "No conversion review gates"}</dd></div><div><dt>Source bundle preservation</dt><dd>{inspection.result.fidelity.status}</dd></div>
                         <div><dt>Compatibility</dt><dd>{inspection.result.fidelity.compatibility}</dd></div>
                         <div><dt>Bundle</dt><dd>{formatBytes(inspection.result.manifest.total_bytes)}</dd></div>
                         <div><dt>Requests</dt><dd>{inspection.result.capabilities.request_types.join(', ') || 'None'}</dd></div>
@@ -1886,7 +1922,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                           : !credentialsValid
                             ? `Review ${requirements.length} detected credential requirement${requirements.length === 1 ? '' : 's'}. Keep preserved source values for exact replay, or explicitly bind them to project secrets.`
                             : deferredSecretCount > 0
-                              ? `Credential review is complete, but ${deferredSecretCount} project secret${deferredSecretCount === 1 ? '' : 's'} must still be configured before execution. Saving now is allowed.`
+                              ? `Destination choices are valid; ${deferredSecretCount} project secret${deferredSecretCount === 1 ? '' : 's'} must still be configured before execution. Saving now is allowed.`
                               : `Credential handling is complete for ${requirements.length} detected requirement${requirements.length === 1 ? '' : 's'}.`}</span>
                       </li>
                       <li className={selectedNativeMissingVariables.length === 0 ? 'ready' : 'warning'}>
@@ -1904,20 +1940,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     </ol>
                   </section>
 
-                  {(inspection.result.security_findings || []).length > 0 && (
-                    <section className="bruno-card">
-                      <h3>Security findings</h3>
-                      <div className="bruno-findings">
-                        {(inspection.result.security_findings || []).map(finding => (
-                          <div key={`${finding.code}-${finding.path || ''}`} className={`bruno-finding ${finding.severity}`}>
-                            <strong>{finding.code}</strong>
-                            <span>{finding.summary}</span>
-                            {finding.path && <small>{finding.path}</small>}
-                          </div>
-                        ))}
-                      </div>
-                    </section>
-                  )}
+                  <details className="bruno-card"><summary>Automatically handled source protection</summary>
+                    <p>These events describe source sanitization. Credential values still needed before replay are listed in Credentials.</p>
+                    <div className="bruno-findings">{(inspection.result.security_findings || []).filter(finding => !finding.code.includes('review_required')).map(finding => <div className="bruno-finding" key={`${finding.code}-${finding.path || ''}`}><span>{finding.summary}</span><details><summary>Technical detail</summary><code>{finding.code}</code>{finding.path && <p>{finding.path}</p>}</details></div>)}</div>
+                  </details>
               </section>
 
               <section
@@ -1953,7 +1979,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                         Select all
                       </label>
                     </div>
-                    <div className="bruno-native-table-wrap">
+                    <div className="bruno-review-toolbar"><label>Find API<input type="search" value={apiSearch} onChange={event => { setApiSearch(event.target.value); setNativeCandidatePage(0) }} /></label><label>Readiness<select value={apiFilter} onChange={event => { setApiFilter(event.target.value); setNativeCandidatePage(0) }}><option value="all">All APIs</option><option value="review">Conversion review</option><option value="blocked">Needs configuration</option><option value="ready">No detected requirements</option></select></label><button type="button" className="btn btn-secondary" onClick={() => setNativeCandidateSort({ key: 'sequence', direction: 'asc' })}>Sort by Bruno sequence</button><span>{sortedNativeCandidates.length} matching · {selectedNativeCandidates.length} selected across all pages</span></div>
+                    <p>Selection covers the entire collection, including filtered-out APIs. Display sorting does not change saved Bruno sequence.</p>
+                    {sortedNativeCandidates.length === 0 && <p role="status">No APIs match these filters.</p>}
+                    <div className="bruno-native-table-wrap" role="region" aria-label="API selection table; scroll horizontally for details" tabIndex={0}>
                       <table className="bruno-native-table">
                         <thead>
                           <tr>
@@ -1970,8 +1999,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                             const selected = selectedCandidateIdSet.has(candidate.candidate_id)
                             const reviewFindings = nativeCandidateReviewFindings(candidate)
                             const diagnosticCount = (candidate.diagnostics || []).length
-                            const missingVariableCount = (candidate.missing_variables || []).length
-                            const secretCount = (candidate.secret_requirements || []).length
+                            const missingVariableCount = brunoMissingVariables([candidate], inspection.shared_values, sharedValueSelections).length
+                            const secretCount = (candidate.secret_requirements || []).filter(requirement => selected && credentialDestinationState[requirement.id]?.readyForExecution !== undefined ? !credentialDestinationState[requirement.id].readyForExecution : requirement.destination_value_preserved !== true).length
                             const status = reviewFindings.length > 0
                               ? 'review'
                               : missingVariableCount > 0
@@ -2011,31 +2040,21 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                                   <strong>{candidate.source_path}</strong>
                                   {candidate.sequence !== undefined && <small>Sequence {candidate.sequence}</small>}
                                   {inheritedBadges.length > 0 && (
-                                    <span className="bruno-native-badges">
-                                      {inheritedBadges.map(field => <em key={field}>inherited {field}</em>)}
-                                    </span>
+                                    <details><summary>Inherited settings</summary>{inheritedBadges.map(field => <p key={field}>{field}</p>)}</details>
                                   )}
                                 </td>
                                 <td>
-                                  <input
+                                  <details><summary>Edit script name</summary><input
                                     aria-label={`Name for ${candidate.source_path}`}
                                     disabled={loading || !selected}
                                     value={nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name}
                                     onChange={event => setNativeNameOverrides(previous => ({ ...previous, [candidate.candidate_id]: event.target.value }))}
-                                  />
+                                  /></details>
                                 </td>
-                                <td>
-                                  <button
-                                    type="button"
-                                    className="btn btn-ghost bruno-native-inspect-button"
-                                    aria-haspopup="dialog"
-                                    aria-label={`Inspect source API ${candidate.source_path}`}
-                                    onClick={() => setNativeSourceCandidateId(candidate.candidate_id)}
-                                  >
-                                    Inspect
-                                  </button>
+                                <td><strong>{nativeCandidateMethod(candidate)}</strong><code>{nativeCandidateTarget(candidate)}</code>
+
                                 </td>
-                                <td><span className={`bruno-native-status ${status}`}>{statusLabel}</span></td>
+                                <td><span className={`bruno-native-status ${status}`}>{statusLabel}</span><small>{reviewFindings.length} conversion reviews · {missingVariableCount} missing inputs · {secretCount} secret bindings</small></td>
                                 <td>
                                   <button
                                     type="button"
@@ -2046,7 +2065,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                                       : `Preview ${candidate.source_path}; not selected for import`}
                                     onClick={() => setNativeReviewCandidateId(candidate.candidate_id)}
                                   >
-                                    Review
+                                    Details
                                   </button>
                                 </td>
                               </tr>
@@ -2059,9 +2078,9 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                       <nav className="bruno-native-table-pagination" aria-label="Native scripts table pages">
                         <span aria-live="polite">
                           Showing {nativeCandidatePageStart + 1}–{Math.min(
-                            nativeCandidates.length,
+                            sortedNativeCandidates.length,
                             nativeCandidatePageStart + visibleNativeCandidates.length,
-                          )} of {nativeCandidates.length} scripts. Page {safeNativeCandidatePage + 1} of {nativeCandidatePageCount}.
+                          )} of {sortedNativeCandidates.length} matching scripts. Page {safeNativeCandidatePage + 1} of {nativeCandidatePageCount}.
                         </span>
                         <div role="group" aria-label="Native scripts page controls">
                           <button
@@ -2096,6 +2115,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   {!committed && (
                     <>
                       <h3>Credentials</h3>
+                      <p>Configure missing values now, or configure later — replay stays blocked until the selected bindings have usable values.</p>
+                      {onConfigureSecrets && projectId && <button className="btn btn-secondary" type="button" onClick={() => onConfigureSecrets(projectId)}>Open Project Secrets</button>}
                       <SecretBindingReview
                         ref={credentialReviewRef}
                         requirements={credentialRequirements}
@@ -2128,28 +2149,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   aria-labelledby="bruno-inspection-tab-data"
                   hidden={activeInspectionTab !== 'data'}
                 >
-                  {inspection.shared_values && (inspection.shared_values.candidates?.length ?? 0) > 0 && !committed && (
-                    <section className="bruno-card">
-                      <h3>Collection values</h3>
-                      <SharedImportValues
-                        sharedValues={inspection.shared_values}
-                        collectOnly
-                        scriptCount={selectedNativeCandidates.length}
-                        onValuesChange={setSharedValueSelections}
-                        reviewGeneration={`${sourceGeneration}:${projectId || ''}`}
-                        disabled={loading || protectedSessionExpired}
-                      />
-                    </section>
-                  )}
-                  {(inspection.result.missing_variables || []).length > 0 && (
-                    <section className="bruno-card">
-                      <h3>Preflight requirements</h3>
-                      <p>These values were referenced but not defined in the uploaded source. Supply them above under Collection Values, through Bruno environments, or through APEX runtime bindings before execution.</p>
-                      <div className="bruno-capability-list">
-                        {(inspection.result.missing_variables || []).map(variable => <span key={variable}>{variable}</span>)}
-                      </div>
-                    </section>
-                  )}
+                  {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired} />}
               </section>
 
               <section
@@ -2170,10 +2170,12 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                           const detailsId = `bruno-review-finding-${index + 1}`
                           return (
                             <article key={finding.id} className="bruno-native-acknowledgement-card">
+                              {(pageIndex === 0 || visibleNativeReviewFindings[pageIndex - 1].code !== finding.code) && <h4>{guidance.title} · {nativeReviewFindings.filter(item => item.code === finding.code).length} affected findings</h4>}
                               <div className="bruno-native-acknowledgement-heading">
                                 <strong>{guidance.title}</strong>
                                 <span>{finding.sourcePath}</span>
                               </div>
+                              <div className="bruno-review-toolbar"><button className="btn btn-secondary" type="button" onClick={() => setNativeSourceCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '')}>Inspect affected source</button><button className="btn btn-secondary" type="button" onClick={() => { if (finding.code.includes('header')) goToReviewTab('credentials'); else setNativeReviewCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '') }}>{finding.code.includes('header') ? 'Configure header binding' : 'Open API conversion details'}</button></div>
                               <dl id={detailsId}>
                                 <div>
                                   <dt>What was found</dt>
@@ -2236,7 +2238,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   {!committed && (
                     <section className="bruno-commit-bar">
                       <div>
-                        <strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
+                        <p role="status">Before replay: {deferredSecretCount} missing secrets · {selectedNativeMissingVariables.length} unresolved inputs · {nativeReviewFindingIds.length} conversion repairs.</p><p>Saving keeps this review open. Open a saved script in the Visual Editor to resolve remaining conversion requirements, then debug one iteration against a controlled target. Import More Files starts a new review.</p><strong>{`Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`}</strong>
                         <span>{destinationFolderId
                           ? 'All selected scripts will be saved atomically to the selected folder.'
                           : 'Select a destination folder before saving.'}</span>
@@ -2379,9 +2381,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
           {nativeReviewCandidate && (
             <BrunoNativeReviewDialog
-              candidate={nativeReviewCandidate}
+              candidate={{ ...nativeReviewCandidate, missing_variables: brunoMissingVariables([nativeReviewCandidate], inspection.shared_values, selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id) ? sharedValueSelections : {}) }}
               candidateSelected={selectedCandidateIdSet.has(nativeReviewCandidate.candidate_id)}
               requirementDestinationState={credentialDestinationState}
+              onSource={() => { setNativeReviewCandidateId(null); setNativeSourceCandidateId(nativeReviewCandidate.candidate_id) }}
+              onRepair={tab => { setNativeReviewCandidateId(null); goToReviewTab(tab) }}
               onClose={() => setNativeReviewCandidateId(null)}
             />
           )}
