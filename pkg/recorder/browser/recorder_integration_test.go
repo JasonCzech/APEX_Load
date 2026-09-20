@@ -457,3 +457,112 @@ func evalInt(t *testing.T, raw any) int {
 		return 0
 	}
 }
+
+func TestRecorderStopFlushesLastDebouncedClick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration is excluded by -short")
+	}
+	server := fixtureServer()
+	defer server.Close()
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer recorder.ForceStop()
+	page := recorder.context.Pages()[0]
+	if err := page.Click(`[data-testid="go-btn"]`); err != nil {
+		t.Fatal(err)
+	}
+	// Stop immediately, before the capture script's 250ms click timer fires.
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	for _, step := range session.Steps {
+		if step.Kind == StepClick {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Fatalf("final click count = %d, want 1; steps=%+v", found, session.Steps)
+	}
+}
+
+func TestControlPanelTrafficIsExcludedFromHAR(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration is excluded by -short")
+	}
+	target := fixtureServer()
+	defer target.Close()
+	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<title>Recorder panel</title><script>fetch('/api/panel-only')</script>`))
+	}))
+	defer panel.Close()
+	recorder := New(Options{StartURL: target.URL, Headless: true, CaptureHAR: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer recorder.ForceStop()
+	if err := recorder.OpenControlPanel(panel.URL+"/#/recorder-panel?session=test", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(recorder.context.Pages()) != 1 {
+		t.Fatal("control page shares capture context")
+	}
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(session.HAR), target.URL) {
+		t.Fatal("application traffic missing")
+	}
+	if strings.Contains(string(session.HAR), panel.URL) {
+		t.Fatal("control traffic leaked into replay HAR")
+	}
+}
+
+func TestControlTransitionsFlushThePrecedingClick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser integration is excluded by -short")
+	}
+	for _, control := range []string{"section", "pause", "transaction"} {
+		t.Run(control, func(t *testing.T) {
+			server := fixtureServer()
+			defer server.Close()
+			recorder := New(Options{StartURL: server.URL, Headless: true})
+			if err := recorder.Start(); err != nil {
+				t.Skipf("browser runtime unavailable: %v", err)
+			}
+			defer recorder.ForceStop()
+			recorder.SetSection(SectionTeardown)
+			if err := recorder.context.Pages()[0].Click(`[data-testid="go-btn"]`); err != nil {
+				t.Fatal(err)
+			}
+			switch control {
+			case "section":
+				recorder.SetSection(SectionActions)
+			case "pause":
+				recorder.Pause()
+			case "transaction":
+				if _, err := recorder.AddMarker(MarkerTransactionStart, "after click", "", 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			session := recorder.Snapshot()
+			var click *Step
+			for i := range session.Steps {
+				if session.Steps[i].Kind == StepClick {
+					click = &session.Steps[i]
+				}
+			}
+			if click == nil || click.Section != SectionTeardown {
+				t.Fatalf("preceding click lost or reclassified: %+v", session.Steps)
+			}
+			if control == "transaction" && !session.Markers[0].Timestamp.After(click.Timestamp) {
+				t.Fatal("transaction boundary precedes its flushed input")
+			}
+		})
+	}
+}

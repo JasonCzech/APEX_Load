@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { bridgeRequest, type BrowserRecorderBridgeConnection } from './browserRecorderBridge'
+import { bridgeRequest, bridgeFetch, pairBrowserRecorderBridge, verifyBrowserRecorderBridgeAgent, type BrowserRecorderBridgeConnection } from './browserRecorderBridge'
 
 describe('browser recorder bridge requests', () => {
   afterEach(() => {
@@ -30,5 +30,15 @@ describe('browser recorder bridge requests', () => {
     expect(headers.get('X-APEXLoad-Bridge-Token')).toBe('tok-1')
     expect(headers.get('X-APEXLoad-Bridge-Session')).toBe('session-1')
     expect(headers.get('X-Custom')).toBe('keep-me')
+    expect(fetchMock.mock.calls[0][1]?.credentials).toBe('omit')
+  })
+
+  it('omits controller cookies for health, pairing and artifact downloads', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ bridge: { session_id: 'paired', availability: { available: true } } }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    await verifyBrowserRecorderBridgeAgent('http://127.0.0.1:49152')
+    const connection = await pairBrowserRecorderBridge('http://127.0.0.1:49152', 'test-token')
+    await bridgeFetch(connection, '/browser-recorder/sessions/test/export', { credentials: 'include' })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    for (const call of fetchMock.mock.calls) expect(call[1]?.credentials).toBe('omit')
   })
 })

@@ -91,6 +91,10 @@ run_suite "eventhubs_real (azeventhubs adapter)" \
   "nothing (compiles the real client)" "true" \
   go test -tags eventhubs_real -count=1 ./pkg/protocol/eventhubs ./pkg/dsl
 
+run_suite "recording_e2e (real recording and replay)" \
+  "--all, pinned Node/Chromium, and desktop display or Xvfb" "[[ ${run_all} == 1 ]]" \
+  ./scripts/run-recording-e2e.sh
+
 # --- Category 1: needs the pinned public LR_Scripts corpus on disk. ---
 # The test itself auto-discovers the corpus and skips with instructions when absent,
 # so it is always safe to invoke.

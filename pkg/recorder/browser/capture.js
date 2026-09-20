@@ -90,6 +90,9 @@
     ? window.__apexloadRecord.bind(window) : null;
   const SAFE_JSON_STRINGIFY = JSON.stringify.bind(JSON);
   const CONTROL_NONCE_SUFFIX = ',"nonce":' + SAFE_JSON_STRINGIFY(CONTROL_NONCE) + '}';
+  const pendingBindings = new Set();
+  const controlKinds = new Set(['recording_stop', 'delete_last_step', 'step_exclude', 'step_mark',
+    'section_set', 'transaction_start', 'transaction_end', 'note_add', 'pause_toggle', 'pick_toggle', 'navigate']);
 
   function send(payload) {
     if (!RECORD_BINDING || !payload || typeof payload !== 'object') return;
@@ -108,7 +111,15 @@
     // the Go handler serializes them under its own lock so ordering is kept.
     try {
       const result = RECORD_BINDING(serialized);
-      if (result && typeof result.catch === 'function') result.catch(() => {});
+      if (result && typeof result.catch === 'function') {
+        const settled = result.catch(() => {});
+        // A control handler may itself flush capture. Including its own
+        // binding would make that flush wait for itself until the deadline.
+        if (!controlKinds.has(payload.kind)) {
+          pendingBindings.add(settled);
+          settled.then(() => pendingBindings.delete(settled));
+        }
+      }
     } catch (e) {
       /* binding torn down mid-navigation; nothing more we can do */
     }
@@ -591,6 +602,14 @@
     // in the generated DSL.
     if (!paused) record('click', pending.el, '', false, Object.assign({ ts: pending.ts }, pending.extra || {}));
   }
+
+  // Stop must preserve the last trusted click even during its double-click
+  // debounce window. The Go recorder awaits these already-dispatched bindings
+  // before closing its capture gate. This never fabricates DOM events.
+  window.__apexloadRecorderFlush = async function () {
+    flushPendingClick();
+    await Promise.all(Array.from(pendingBindings));
+  };
 
   function scheduleClick(el, extra) {
     if (pendingClick) {

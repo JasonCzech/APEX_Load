@@ -95,7 +95,9 @@ function withBridgeToken(connection: BrowserRecorderBridgeConnection, options?: 
   const headers = new Headers(options?.headers)
   headers.set(BRIDGE_TOKEN_HEADER, connection.token)
   headers.set(BRIDGE_SESSION_HEADER, connection.session_id)
-  return { ...options, headers }
+  // The bridge authenticates with its explicit capability, not controller
+  // cookies. Credentialed cross-origin fetches also fail its token-only CORS.
+  return { ...options, headers, credentials: 'omit' }
 }
 
 export function bridgeRequest<T>(connection: BrowserRecorderBridgeConnection, path: string, options?: RequestInit): Promise<T> {
@@ -114,6 +116,7 @@ export async function pairBrowserRecorderBridge(
   const normalized = normalizeBridgeOrigin(origin)
   const res = await requestFromOrigin<BrowserRecorderBridgeStatusEnvelope>(normalized, '/bridge/pair', {
     method: 'POST',
+    credentials: 'omit',
     body: JSON.stringify({ token: token.trim() }),
   })
   if (!res.bridge.session_id) {
@@ -135,6 +138,7 @@ export async function pairBrowserRecorderBridge(
 export function verifyBrowserRecorderBridgeAgent(origin: string): Promise<BrowserRecorderBridgeHealth> {
   return requestFromOrigin<BrowserRecorderBridgeHealth>(normalizeBridgeOrigin(origin), '/system/health', {
     method: 'GET',
+    credentials: 'omit',
   })
 }
 

@@ -192,6 +192,7 @@ import {
 import {
   buildBrowserHTTPConversionReview,
   replayEvidenceIndex,
+  mergeReplayEvent,
   debugBreakpointKey,
   formatDebugLeafSuffix,
   humanizeStepSegment,
@@ -1928,9 +1929,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       if (msg.session) setBrowserReplaySession(msg.session)
       setReplayReport(prev => {
         if (!prev) return prev
-        const nextEvents = [...prev.events]
-        const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : nextEvents.length
-        nextEvents[index] = replayEvent
+        const nextEvents = mergeReplayEvent(prev.events, replayEvent, msg.event_index)
         return {
           ...prev,
           events: nextEvents,
@@ -2108,9 +2107,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       const replayEvent = msg.event
       setReplayReport(prev => {
         if (!prev) return prev
-        const nextEvents = [...prev.events]
-        const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : nextEvents.length
-        nextEvents[index] = replayEvent
+        const nextEvents = mergeReplayEvent(prev.events, replayEvent, msg.event_index)
         return {
           ...prev,
           events: nextEvents,
@@ -2143,8 +2140,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         if (msg.session) return msg.session
         if (!prev) return prev
         const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : prev.events?.length || 0
-        const events = [...(prev.events || [])]
-        events[index] = replayEvent as unknown as BrowserReplayEvent
+        const events = mergeReplayEvent(prev.events || [], replayEvent as unknown as BrowserReplayEvent, index)
         return {
           ...prev,
           current_event_index: index,
@@ -2154,9 +2150,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       })
       setReplayReport(prev => {
         if (!prev) return prev
-        const nextEvents = [...prev.events]
-        const index = typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : nextEvents.length
-        nextEvents[index] = replayEvent
+        const nextEvents = mergeReplayEvent(prev.events, replayEvent, msg.event_index)
         return {
           ...prev,
           events: nextEvents,

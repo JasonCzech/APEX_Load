@@ -815,6 +815,30 @@ func TestPickToggleControlEvent(t *testing.T) {
 	}
 }
 
+func TestCapturedAssertionConsumesAuthoritativePickMode(t *testing.T) {
+	for _, kind := range []string{"assert", "click"} {
+		t.Run(kind, func(t *testing.T) {
+			var pickEvents []bool
+			r := New(Options{StartURL: "https://app.example/", OnEvent: func(e Event) {
+				if e.Type == EventPickState {
+					pickEvents = append(pickEvents, e.Picking)
+				}
+			}})
+			r.SetAssertMode(true)
+			r.handleRecordBinding(nil, `{"kind":"`+kind+`","ts":1,"value":"Ready","element":{"tag":"div","css_path":"#result"}}`)
+			if len(r.Snapshot().Steps) != 1 {
+				t.Fatal("capture was not retained")
+			}
+			if got, want := r.AssertMode(), kind != "assert"; got != want {
+				t.Fatalf("picking = %v, want %v", got, want)
+			}
+			if kind == "assert" && (len(pickEvents) != 2 || pickEvents[1]) {
+				t.Fatalf("missing observer reset: %v", pickEvents)
+			}
+		})
+	}
+}
+
 func TestControlEventKindRecognizesSidebarActions(t *testing.T) {
 	cases := map[string]string{
 		`{"kind":"pause_toggle"}`:                 "pause_toggle",

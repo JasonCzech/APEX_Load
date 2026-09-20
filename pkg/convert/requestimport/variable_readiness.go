@@ -65,6 +65,8 @@ type variableState struct {
 	available      map[string]struct{}
 	saveAll        map[string]struct{}
 	parameterNames map[string]struct{}
+	rowPrefixes    map[string]struct{}
+	dataSources    map[string]struct{}
 }
 
 type configVariableRefs struct {
@@ -81,6 +83,11 @@ func newVariableState(script *dsl.Script, seeded map[string]string) *variableSta
 		available:      make(map[string]struct{}, len(seeded)),
 		saveAll:        make(map[string]struct{}),
 		parameterNames: make(map[string]struct{}, len(script.Parameters)),
+		rowPrefixes:    make(map[string]struct{}),
+		dataSources:    make(map[string]struct{}),
+	}
+	for _, source := range script.DataSources {
+		state.dataSources[source.Name] = struct{}{}
 	}
 	for name := range seeded {
 		if name = strings.TrimSpace(name); name != "" {
@@ -100,6 +107,11 @@ func (state *variableState) clone() *variableState {
 		available:      make(map[string]struct{}, len(state.available)),
 		saveAll:        make(map[string]struct{}, len(state.saveAll)),
 		parameterNames: state.parameterNames,
+		rowPrefixes:    make(map[string]struct{}, len(state.rowPrefixes)),
+		dataSources:    state.dataSources,
+	}
+	for prefix := range state.rowPrefixes {
+		cloned.rowPrefixes[prefix] = struct{}{}
 	}
 	for name := range state.available {
 		cloned.available[name] = struct{}{}
@@ -111,6 +123,11 @@ func (state *variableState) clone() *variableState {
 }
 
 func (state *variableState) satisfied(name string) bool {
+	for prefix := range state.rowPrefixes {
+		if strings.HasPrefix(name, prefix+".") {
+			return true
+		}
+	}
 	if _, ok := state.available[name]; ok {
 		return true
 	}
@@ -198,17 +215,43 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 				replaceVariableState(state, merged)
 			}
 		case "control_loop":
+			bodyState := state.clone()
+			bodyState.available["loop_index"] = struct{}{}
+			if action.Control != nil && action.Control.ForEach != nil {
+				fe := action.Control.ForEach
+				if _, exists := state.dataSources[strings.TrimSpace(fe.Source)]; exists && strings.TrimSpace(fe.Var) != "" {
+					bodyState.rowPrefixes[strings.TrimSpace(fe.Var)] = struct{}{}
+				}
+			}
 			shell := *action
 			shell.Control = cloneControlShell(action.Control)
 			shell.Extractors = nil
-			recordMissingVariableRefs(shell, path, state, configVariableRefs{}, result)
+			recordMissingVariableRefs(shell, path, bodyState, configVariableRefs{}, result)
 			if action.Control == nil {
 				continue
 			}
-			bodyState := state.clone()
 			analyzeVariableActions(action.Control.Steps, path+".control.steps", bodyState, configRefs, result)
 			if loopRunsAtLeastOnce(action.Control) {
+				// Runtime restores loop locals on exit, including nested loops.
+				if _, existed := state.available["loop_index"]; !existed {
+					delete(bodyState.available, "loop_index")
+				}
 				replaceVariableState(state, bodyState)
+			}
+		case "control_parallel":
+			if action.Control == nil {
+				continue
+			}
+			parallelSeed := state.clone()
+			for branchIndex, branch := range action.Control.Branches {
+				branchState := parallelSeed.clone()
+				analyzeVariableActions(branch.Steps, fmt.Sprintf("%s.control.branches[%d].steps", path, branchIndex), branchState, configRefs, result)
+				for name := range branchState.available {
+					if _, seeded := parallelSeed.available[name]; seeded {
+						continue
+					}
+					state.available["parallel."+branch.Name+"."+name] = struct{}{}
+				}
 			}
 		case "http_sequence":
 			shell := *action
@@ -230,6 +273,10 @@ func analyzeVariableActions(actions []dsl.Action, prefix string, state *variable
 }
 
 func (state *variableState) registerActionOutputs(action dsl.Action) {
+	if state != nil && dsl.CanonicalActionType(action.Type) == "browser_evaluate_js" {
+		state.available["result"] = struct{}{}
+		return
+	}
 	if state == nil || dsl.CanonicalActionType(action.Type) != "http_oauth2_token" {
 		return
 	}

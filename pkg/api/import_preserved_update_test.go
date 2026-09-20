@@ -483,3 +483,35 @@ func TestMaskedUpdateCannotRemoveRawImportArtifactDisclosureMarker(t *testing.T)
 		t.Fatalf("later read exposed raw bundle reference: %#v", projected)
 	}
 }
+
+func TestRecordedProvenanceDoesNotLockParameterEdits(t *testing.T) {
+	prior := &dsl.Script{Protocol: "browser", Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "browser_recorder", Preserved: map[string]any{"recorder_session_id": "rec_1789860341606891000"}}}, Actions: []dsl.Action{{Name: "Customer", Type: "browser_fill", Selector: "#customer", Value: "captured"}}}
+	candidate := cloneScriptDefinition(prior)
+	candidate.Parameters = []dsl.Parameter{{Name: "customer", Type: "list", Values: []string{"new-customer"}}}
+	candidate.Actions[0].Value = "{{param.customer}}"
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err != nil {
+		t.Fatal(err)
+	}
+	if prior.Metadata.Import.Preserved["recorder_session_id"] == nil || candidate.Metadata.Import.Preserved["recorder_session_id"] == nil {
+		t.Fatal("validation mutated provenance")
+	}
+	prior.Config.Browser.HTTPCredentials.Password = "real-credential"
+	candidate.Config.Browser.HTTPCredentials.Password = "real-credential"
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
+		t.Fatal("credential-bearing transport context was allowed to change")
+	}
+}
+
+func TestImportedCredentialsPermitReplayEvidenceCapture(t *testing.T) {
+	prior := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Type: "request", Method: "GET", Target: "/", Headers: map[string]string{"Authorization": "Bearer synthetic-credential"}}}}
+	candidate := cloneScriptDefinition(prior)
+	// Diagnostic capture changes retained evidence, never request routing.
+	candidate.Config.Results.MessageDetail = &dsl.MessageDetailConfig{Mode: "sampled", SampleRate: 1}
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err != nil {
+		t.Fatal(err)
+	}
+	candidate.Config.BaseURL = "https://elsewhere.test"
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
+		t.Fatal("credential destination change was allowed")
+	}
+}

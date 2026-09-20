@@ -1,0 +1,23 @@
+[
+  "browser: recorded actions exercise branches and every loop mode",
+  "http: recorded actions exercise branches and every loop mode",
+  "recorded browser inputs use list parameters, CSV rows and session overrides",
+  "debugger steps a recorded HTTP script, diagnoses failure and repairs it",
+  "saved browser and HTTP recordings execute one VUser through New Test",
+  "recorded HTTP correlation fails with the wrong extraction and succeeds after repair",
+  "recorded browser flow consumes a fresh browser extraction result",
+  "controller: capture checkout, verify, save and replay",
+  "agent: capture checkout, verify, save and replay",
+  "unavailable and disconnected agent can be verified and paired again",
+  "dashboard and closed-shadow toolbar control the same live session",
+  "capture modern web surfaces and preserve conversion warnings",
+  "conversion preview is ephemeral and changing options invalidates verification before unverified save",
+  "HTTP proxy captures HTTP and HTTPS, edits requests, correlates and replays",
+  "reject duplicate capture, survive dashboard reload and recover after window closure",
+  "mobile recording reuses exported session state with HAR disabled",
+  "force-finish preserves captured steps and releases a stuck recording for the next session",
+  "HAR host filtering preserves browser actions and disabled WebSocket payloads stay absent",
+  "transaction splitting accounts for every output",
+  "recording verification promotes a working fallback selector and re-verifies the changed conversion",
+  "parameterization review applies a recorded input and saves it into the selected folder"
+]

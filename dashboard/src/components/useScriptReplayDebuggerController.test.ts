@@ -65,6 +65,17 @@ describe('script replay debugger controller selectors', () => {
     expect(selectDebugEvents(null, null)).toEqual([])
   })
 
+  it('renders out-of-order live deltas while a full snapshot catches up', () => {
+    const first = replayEvent({ action_index: 0 })
+    const last = replayEvent({ action_index: 2 })
+    const sparse: BrowserReplayEvent[] = []
+    sparse[2] = last
+    const available = selectDebugEvents(null, replayReport([...sparse]))
+    expect(available).toEqual([last])
+    expect(() => buildEventIndexByLocation(available)).not.toThrow()
+    expect(selectDebugEvents({ events: [first, last] } as ScriptDebugSession, replayReport([...sparse]))).toEqual([first, last])
+  })
+
   it.each([
     [true, false, null, 'running'],
     [true, true, null, 'paused'],

@@ -120,6 +120,17 @@ func validatePreservedImportCredentialEdits(candidate, prior *dsl.Script) error 
 	if candidate == nil || prior == nil {
 		return fmt.Errorf("credential-preserving update requires a durable prior script")
 	}
+	// The recorder session is provenance, not an application credential. Its
+	// credential-shaped name is intentionally masked on disclosure, but must
+	// not lock every action and parameter in an otherwise credential-free draft.
+	// Work on copies so validation never alters persisted provenance.
+	candidate = cloneScriptDefinition(candidate)
+	prior = cloneScriptDefinition(prior)
+	for _, script := range []*dsl.Script{candidate, prior} {
+		if script.Metadata != nil && script.Metadata.Import != nil {
+			delete(script.Metadata.Import.Preserved, "recorder_session_id")
+		}
+	}
 	projectedCandidate := maskScriptSecrets(candidate)
 	projectedPrior := maskScriptSecrets(prior)
 	if projectedCandidate == nil || projectedPrior == nil {
@@ -349,7 +360,7 @@ func importTransportContext(script map[string]any) map[string]any {
 	transport := make(map[string]any, len(config))
 	for key, value := range config {
 		switch normalizeScriptFieldName(key) {
-		case "thinktime", "pacing", "errorhandling", "runlogic", "observability", "log":
+		case "thinktime", "pacing", "errorhandling", "runlogic", "observability", "log", "results":
 			continue
 		default:
 			transport[key] = value

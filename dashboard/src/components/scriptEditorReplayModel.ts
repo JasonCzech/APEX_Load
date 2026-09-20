@@ -365,3 +365,17 @@ export function replayEvidenceIndex(report: BrowserReplayReport): number | null 
   const failed = report.events.findIndex(event => !event.success)
   return failed >= 0 ? failed : report.events.length ? report.events.length - 1 : null
 }
+
+// Deltas are indexed in the complete server stream, but WebSocket delivery can
+// begin after earlier actions have finished. Never create sparse arrays: all
+// evidence consumers expect real events. Retain server indexes on each event
+// so subsequent deltas replace the same execution until polling reconciles it.
+export function mergeReplayEvent(events: BrowserReplayEvent[], event: BrowserReplayEvent, eventIndex?: number): BrowserReplayEvent[] {
+  const indexed = new Map<number, BrowserReplayEvent>()
+  events.forEach((entry,index) => { if (entry) indexed.set(entry.event_index ?? index, entry) })
+  let nextIndex = 0
+  for (const key of indexed.keys()) nextIndex = Math.max(nextIndex,key+1)
+  const index = eventIndex != null && eventIndex >= 0 ? eventIndex : event.event_index ?? nextIndex
+  indexed.set(index, { ...event, event_index: index })
+  return [...indexed].sort(([left],[right]) => left-right).map(([,entry]) => entry)
+}

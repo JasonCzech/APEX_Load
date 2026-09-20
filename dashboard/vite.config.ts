@@ -38,7 +38,7 @@ export default defineConfig({
     __APEXLOAD_VITE_BUILD_TIME__: JSON.stringify(resolveBuildTime(process.env.APEXLOAD_VITE_BUILD_TIME || sharedBuildTime)),
   },
   test: {
-    exclude: [...configDefaults.exclude, 'e2e/**'],
+    exclude: [...configDefaults.exclude, 'e2e/**', 'e2e-recording/**/*.spec.ts'],
     setupFiles: ['./src/test/vitestSetup.ts'],
   },
   build: {

@@ -21,6 +21,7 @@ function AuthoringStateHarness({ api, initialMode, initialEditId }: HarnessProps
 
   return (
     <div>
+      <button data-testid="open-recorder" onClick={model.createOptionActions.openRecorder}>open-recorder</button>
       <span data-testid="subview">{model.authoringState.subView}</span>
       <span data-testid="import-launcher">{model.authoringState.importLauncher || 'none'}</span>
       <span data-testid="import-mode">{model.authoringState.importMode || 'none'}</span>
@@ -82,6 +83,16 @@ describe('useScriptsAuthoringState', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('keeps recording open when pairing changes the composite API object', async () => {
+    const getScript = vi.fn()
+    await act(async () => { root.render(<AuthoringStateHarness api={{ getScript }} initialMode="list" />) })
+    await click('open-recorder')
+    expect(readTestId('subview')).toBe('recorder')
+    await act(async () => { root.render(<AuthoringStateHarness api={{ getScript }} initialMode="list" />) })
+    expect(readTestId('subview')).toBe('recorder')
+    expect(getScript).not.toHaveBeenCalled()
   })
 
   it('normalizes create mode to create-options and drives draft entry transitions', async () => {

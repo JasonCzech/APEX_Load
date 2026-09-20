@@ -494,3 +494,39 @@ func TestFinalizeAddsDurableMissingVariableGate(t *testing.T) {
 		t.Fatalf("blocked draft validation issues = %#v", issues)
 	}
 }
+
+func TestRecordingControlLocalsAreScopedDuringReadiness(t *testing.T) {
+	request := func(target string) dsl.Action { return dsl.Action{Type: "request", Method: "GET", Target: target} }
+	loop := dsl.Action{Type: "control_loop", Control: &dsl.ControlFlow{Count: 2, Steps: []dsl.Action{request("/{{var.loop_index}}"), {Type: "control_loop", Control: &dsl.ControlFlow{ForEach: &dsl.ForEachLoop{Source: "rows", Var: "row"}, Steps: []dsl.Action{request("/{{var.row.value}}/{{var.loop_index}}")}}}}, Condition: &dsl.Condition{Left: "{{var.loop_index}}", Op: "lte", Right: "2"}}}
+	for _, tc := range []struct {
+		name    string
+		actions []dsl.Action
+		missing []string
+	}{
+		{"nested locals", []dsl.Action{loop}, nil},
+		{"locals do not escape", []dsl.Action{loop, request("/{{var.loop_index}}/{{var.row.value}}")}, []string{"loop_index", "row.value"}},
+		{"other references still fail", []dsl.Action{loop, request("/{{var.unbound}}")}, []string{"unbound"}},
+		{"browser extraction", []dsl.Action{{Type: "browser_evaluate_js", Target: "document.title"}, request("/{{var.result}}")}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script := &dsl.Script{DataSources: []dsl.DataSource{{Name: "rows", Type: "csv", InlineData: "value\na", FirstRowHeader: true}}, Actions: tc.actions}
+			if got := MissingVariables(script, nil); !reflect.DeepEqual(got, tc.missing) {
+				t.Fatalf("missing=%v want %v", got, tc.missing)
+			}
+		})
+	}
+}
+
+func TestParallelReadinessIsolatesBranchExtractors(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{{Type: "control_parallel", Control: &dsl.ControlFlow{Branches: []dsl.ParallelBranch{
+		{Name: "left", Steps: []dsl.Action{{Type: "request", Target: "/", Extractors: []dsl.Extractor{{Name: "token", Type: "jsonpath", Expression: "$.token"}}}}},
+		{Name: "right", Steps: []dsl.Action{{Type: "request", Target: "/{{var.token}}/{{var.parallel.left.token}}"}}},
+	}}}, {Type: "request", Target: "/{{var.parallel.left.token}}"}}}
+	got := AnalyzeVariableReadiness(script, nil)
+	if !reflect.DeepEqual(got.Missing, []string{"parallel.left.token", "token"}) {
+		t.Fatalf("missing=%v", got.Missing)
+	}
+	if len(got.ByAction["actions[1]"]) != 0 {
+		t.Fatal("joined branch extraction unavailable")
+	}
+}

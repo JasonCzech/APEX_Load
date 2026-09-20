@@ -70,6 +70,7 @@ corpus-backed suites remain manual.
 
 | Build tag | What it swaps in | Package(s) | How to run |
 |---|---|---|---|
+| `recording_e2e` | Enables a loopback-only CDP attachment hook in test-built controller/agent binaries; normal builds ignore the hook | `pkg/recorder/browser` and dedicated dashboard E2E | `scripts/run-recording-e2e.sh`; see [Recording E2E](qa/RECORDING_E2E.md). The separate Playwright configuration excludes these scenarios from the normal test cycle. |
 | `kafka_real` | franz-go network client instead of the in-memory mock broker | `pkg/protocol/kafka`, `pkg/dsl` | `go test -tags kafka_real ./pkg/protocol/kafka ./pkg/dsl -count=1` |
 | `kafka_integration` | Live-broker Kafka tests (also needs `KAFKA_BROKERS`) | `pkg/protocol/kafka` | see the env table above |
 | `jms_solace_real` | Real AMQP adapter instead of the mock | `pkg/protocol/jms` | `make test-jms-solace-real` |

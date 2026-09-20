@@ -40,8 +40,16 @@ export function selectDebugEvents(
   session: ScriptDebugSession | null,
   report: BrowserReplayReport | null,
 ): BrowserReplayEvent[] {
-  const sessionEvents = session?.events
-  const reportEvents = report?.events
+  // Indexed WebSocket deltas can overtake the start response or a polling
+  // snapshot. Array spread materializes the resulting holes as undefined.
+  // Display available evidence until the next full snapshot fills the gap.
+  const dense = (events: BrowserReplayEvent[] | undefined) => {
+    if (!events) return events
+    const present = events.filter((event): event is BrowserReplayEvent => event != null)
+    return present.length === events.length ? events : present
+  }
+  const sessionEvents = dense(session?.events)
+  const reportEvents = dense(report?.events)
   if (sessionEvents && reportEvents) return sessionEvents.length >= reportEvents.length ? sessionEvents : reportEvents
   return sessionEvents ?? reportEvents ?? []
 }

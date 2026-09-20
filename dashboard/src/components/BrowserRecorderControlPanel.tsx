@@ -1240,24 +1240,26 @@ export default function BrowserRecorderControlPanel({
   }
 
   const editableScript = importResultScripts(preview)[0] || savedScript?.script
-  const previewParameterizationPanels = useMemo(() => {
-    const parameterization = preview?.parameterization
-    if (!parameterization?.suggestions?.length) return []
-    return importResultScripts(preview).flatMap((script, scriptIndex) => {
-      const suggestions = parameterization.suggestions.filter(suggestion =>
-        suggestion.script_name
-          ? suggestion.script_name === script.name
-          : scriptIndex === 0,
-      )
-      return suggestions.length > 0
-        ? [{
-            script,
-            scriptIndex,
-            parameterization: { ...parameterization, suggestions },
-          }]
-        : []
-    })
-  }, [preview])
+  const previewScripts = importResultScripts(preview)
+  const previewOutputNames = JSON.stringify(previewScripts.map(script => script.name))
+  const previewParameterization = preview?.parameterization
+  // Applying a suggestion replaces the script but keeps the same review.
+  // Preserve the scoped parameterization identity so its applied state and
+  // selected checkboxes survive that parent update.
+  const scopedPreviewParameterizations = useMemo(() => {
+    if (!previewParameterization?.suggestions?.length) return []
+    const names = JSON.parse(previewOutputNames) as string[]
+    return names.map((name, scriptIndex) => ({
+      ...previewParameterization,
+      suggestions: previewParameterization.suggestions.filter(suggestion =>
+        suggestion.script_name ? suggestion.script_name === name : scriptIndex === 0,
+      ),
+    }))
+  }, [previewParameterization, previewOutputNames])
+  const previewParameterizationPanels = previewScripts.flatMap((script, scriptIndex) => {
+    const parameterization = scopedPreviewParameterizations[scriptIndex]
+    return parameterization?.suggestions.length ? [{ script, scriptIndex, parameterization }] : []
+  })
 
   const handleOpenEditor = async () => {
     if (!preview) return

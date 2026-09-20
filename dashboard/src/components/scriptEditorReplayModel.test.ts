@@ -1,4 +1,4 @@
-import { replayEvidenceIndex } from './scriptEditorReplayModel'
+import { replayEvidenceIndex, mergeReplayEvent } from './scriptEditorReplayModel'
 import { describe, expect, it } from 'vitest'
 import type {
   BrowserReplayEvent,
@@ -215,4 +215,14 @@ describe('replayEvidenceIndex', () => {
     expect(replayEvidenceIndex({ events: [{ success: true }, { success: false }, { success: true }] } as BrowserReplayReport)).toBe(1)
     expect(replayEvidenceIndex({ events: [] } as unknown as BrowserReplayReport)).toBeNull()
   })
+})
+
+it('merges delayed replay deltas without holes, duplicates or lost earlier evidence', () => {
+  let events = mergeReplayEvent([], replayEvent({action_name:'third'}),2)
+  expect(events.map(e=>e.action_name)).toEqual(['third'])
+  events=mergeReplayEvent(events,replayEvent({action_name:'first'}),0)
+  events=mergeReplayEvent(events,replayEvent({action_name:'second'}),1)
+  events=mergeReplayEvent(events,replayEvent({action_name:'third updated'}),2)
+  expect(events.map(e=>e.event_index)).toEqual([0,1,2])
+  expect(events.map(e=>e.action_name)).toEqual(['first','second','third updated'])
 })

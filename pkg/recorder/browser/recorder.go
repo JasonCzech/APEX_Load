@@ -97,12 +97,14 @@ const BrowserRecorderBridgeStoragePrefix = "apexload.browserRecorderBridge."
 
 // Recorder drives one headed Chromium session and accumulates a Session.
 type Recorder struct {
-	opts    Options
-	pw      *playwright.Playwright
-	browser playwright.Browser
-	context playwright.BrowserContext
+	opts           Options
+	pw             *playwright.Playwright
+	browser        playwright.Browser
+	context        playwright.BrowserContext
+	controlContext playwright.BrowserContext
 
 	mu             sync.Mutex
+	stopMu         sync.Mutex
 	session        *Session
 	stopped        bool
 	paused         bool
@@ -371,6 +373,10 @@ func (r *Recorder) Start() error {
 	}
 	if args := r.windowArgs(); len(args) > 0 {
 		launchOptions.Args = args
+	}
+	if err := recordingTestLaunchOptions(&launchOptions); err != nil {
+		r.cleanup()
+		return err
 	}
 	browser, err := pw.Chromium.Launch(launchOptions)
 	if err != nil {
@@ -859,6 +865,11 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		r.emit(Event{Type: EventStep, Step: switched})
 	}
 	for index := range recorded {
+		// Picking is one-shot in capture.js. Consume the authoritative state
+		// too, otherwise the next sidebar push re-enables it in every page.
+		if recorded[index].Kind == StepAssert {
+			r.SetAssertMode(false)
+		}
 		r.emit(Event{Type: EventStep, Step: &recorded[index]})
 		if r.opts.CaptureScreenshots && source != nil && source.Page != nil {
 			r.captureThumbnailAsync(source.Page, recorded[index].Seq)
@@ -948,6 +959,9 @@ func (r *Recorder) Pause() { r.setPaused(true) }
 func (r *Recorder) Resume() { r.setPaused(false) }
 
 func (r *Recorder) setPaused(paused bool) {
+	if paused {
+		r.flushPendingCapture(time.Now().Add(2 * time.Second))
+	}
 	r.mu.Lock()
 	if r.stopped || r.paused == paused {
 		r.mu.Unlock()
@@ -1077,8 +1091,8 @@ func (r *Recorder) Focus() error {
 }
 
 // OpenControlPanel opens the standalone dashboard control panel as a sibling
-// tab in the same browser context as the recorded page. The tab is deliberately
-// excluded from capture so panel clicks do not become script steps.
+// tab in a separate context in the same browser. Besides excluding its clicks,
+// this keeps dashboard API traffic out of the application's side-car HAR.
 func (r *Recorder) OpenControlPanel(targetURL string, localStorage map[string]string) error {
 	targetURL = strings.TrimSpace(targetURL)
 	if err := ValidateControlPanelURL(targetURL); err != nil {
@@ -1100,15 +1114,28 @@ func (r *Recorder) OpenControlPanel(targetURL string, localStorage map[string]st
 		r.mu.Unlock()
 		return fmt.Errorf("browser control panel limit reached")
 	}
-	context := r.context
+	context := r.controlContext
+	browser := r.browser
 	active := r.activePage
-	r.openingControl = true
 	r.mu.Unlock()
 	if context == nil {
+		if browser == nil {
+			r.mu.Lock()
+			r.openingControl = false
+			r.mu.Unlock()
+			return fmt.Errorf("browser recorder context unavailable")
+		}
+		var err error
+		context, err = browser.NewContext()
 		r.mu.Lock()
+		if err == nil {
+			r.controlContext = context
+		}
 		r.openingControl = false
 		r.mu.Unlock()
-		return fmt.Errorf("browser recorder context unavailable")
+		if err != nil {
+			return fmt.Errorf("open control panel context: %w", err)
+		}
 	}
 
 	page, err := context.NewPage()
@@ -1121,6 +1148,7 @@ func (r *Recorder) OpenControlPanel(targetURL string, localStorage map[string]st
 	if err != nil {
 		return fmt.Errorf("open control panel tab: %w", err)
 	}
+	page.OnClose(func(closed playwright.Page) { r.handlePageClose(closed) })
 	if script := controlPanelLocalStorageScript(localStorage); script != "" {
 		if err := page.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
 			_ = page.Close()
@@ -1156,6 +1184,9 @@ func (r *Recorder) currentPage() playwright.Page {
 
 // AddMarker inserts a transaction boundary or note into the timeline.
 func (r *Recorder) AddMarker(kind, name, text string, atStepSeq int) (Marker, error) {
+	if atStepSeq == 0 {
+		r.flushPendingCapture(time.Now().Add(2 * time.Second))
+	}
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
@@ -1305,14 +1336,46 @@ func (r *Recorder) Done() <-chan struct{} { return r.done }
 
 func (r *Recorder) signalDone() { r.doneOnce.Do(func() { close(r.done) }) }
 
+// flushPendingCapture settles debounced application input before a control
+// transition can change its section, inclusion window, or transaction boundary.
+// Never hold mu while evaluating: the bindings re-enter handleRecordBinding.
+func (r *Recorder) flushPendingCapture(deadline time.Time) {
+	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		return
+	}
+	pages := append([]playwright.Page(nil), r.recordablePagesLocked()...)
+	r.mu.Unlock()
+	for _, page := range pages {
+		for _, frame := range page.Frames() {
+			_ = runOperationUntil(deadline, func() error {
+				_, err := frame.Evaluate(`() => window.__apexloadRecorderFlush ? window.__apexloadRecorderFlush() : undefined`)
+				return err
+			}, nil)
+		}
+	}
+}
+
 // Stop closes the browser (flushing the side-car HAR), loads the HAR into the
 // session, and returns the finished session. Safe to call after the user
 // already closed the window.
 func (r *Recorder) Stop() (*Session, error) {
+	r.stopMu.Lock()
+	defer r.stopMu.Unlock()
+	recordingTestBeforeStop(r.done)
 	stopDeadline := time.Now().Add(maxBrowserStopDuration)
 	r.mu.Lock()
 	if r.stopped {
 		session := r.session
+		r.mu.Unlock()
+		return session, nil
+	}
+	r.mu.Unlock()
+	r.flushPendingCapture(minTime(stopDeadline, time.Now().Add(2*time.Second)))
+	r.mu.Lock()
+	if r.stopped { // ForceStop may have won while a page was unresponsive.
+		session := r.session.clone()
 		r.mu.Unlock()
 		return session, nil
 	}
@@ -1521,6 +1584,7 @@ func (r *Recorder) discardManagedHARTemp() {
 // Subsequent steps are tagged so conversion routes them into the matching DSL
 // block.
 func (r *Recorder) SetSection(section string) string {
+	r.flushPendingCapture(time.Now().Add(2 * time.Second))
 	normalized := normalizeSection(section)
 	r.mu.Lock()
 	r.currentSection = normalized
@@ -2377,6 +2441,7 @@ func (r *Recorder) cleanup() {
 func (r *Recorder) detachRuntime() (playwright.Browser, *playwright.Playwright) {
 	r.mu.Lock()
 	r.context = nil
+	r.controlContext = nil
 	browser := r.browser
 	r.browser = nil
 	pw := r.pw

@@ -344,6 +344,9 @@ export function useScriptsAuthoringState({
     openDraftEditor(composeComponentDraft(component))
   }, [openDraftEditor])
 
+  // Pairing a recorder changes the composite API object. It must not reset the
+  // active authoring surface through the initial-route effect below.
+  const getScript = api.getScript
   const handleEdit = useCallback(async (id: string) => {
     const requestGeneration = ++editRequestGenerationRef.current
     setAuthoringState(previous => previous.subView === 'edit'
@@ -362,7 +365,7 @@ export function useScriptsAuthoringState({
         }
       : previous)
     try {
-      const res = await api.getScript(id)
+      const res = await getScript(id)
       if (editRequestGenerationRef.current !== requestGeneration) return
       setAuthoringState({
         subView: 'edit',
@@ -393,7 +396,7 @@ export function useScriptsAuthoringState({
         importFiles: null,
       })
     }
-  }, [api])
+  }, [getScript])
 
   const handleSavedScript = useCallback((savedScript: StoredScript, notice?: string | null) => {
     invalidateEditRequest()
