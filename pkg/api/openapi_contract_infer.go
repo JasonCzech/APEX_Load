@@ -746,6 +746,13 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 			return true
 		}
 		callName := calledFunctionName(call.Fun)
+		// This parser receives url.Values rather than the request, so its
+		// finite-window and population parameters are not request-AST reads.
+		if callName == "parseLoadComparisonQuery" {
+			for _, name := range []string{"population", "start_seconds", "end_seconds"} {
+				analysis.queryNames[name] = true
+			}
+		}
 
 		if selector, ok := call.Fun.(*ast.SelectorExpr); ok && len(call.Args) > 0 {
 			if (selector.Sel.Name == "Get" || selector.Sel.Name == "Has" || selector.Sel.Name == "Values") && receiverIsQuery(selector.X, queryVariables) {
@@ -1039,6 +1046,15 @@ func queryParameterSchema(route discoveredRoute, name string, repeated bool) oas
 		"from": true, "to": true, "start": true, "end": true,
 	}
 	item := oasParamSchema{Type: "string"}
+	if route.Path == "/api/v1/applications/{id}/load-comparison" {
+		if name == "population" {
+			return oasParamSchema{Type: "string", Enum: []string{"action", "transaction", "unknown"}}
+		}
+		if name == "start_seconds" || name == "end_seconds" {
+			return oasParamSchema{Type: "number", Format: "double"}
+		}
+	}
+
 	if route.Method == http.MethodPost && route.Path == "/api/v1/scripts/import/bruno/inspect" && name == "output_mode" {
 		item.Enum = []string{"canonical", "native_requests"}
 	} else if route.Method == http.MethodPost && route.Path == "/api/v1/scripts/import/bruno/inspect" && name == "sandbox" {

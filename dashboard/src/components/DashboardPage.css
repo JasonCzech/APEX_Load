@@ -1794,3 +1794,36 @@
 .dashboard-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 /* A top summary must not reduce history to a single-row scroll viewport. */
 .dash .dash-activity .trend-table-wrap { max-height: max(320px, var(--dashboard-table-max-height, 60vh)); }
+
+/* Analysis workspaces keep controls and evidence together at every width. */
+.analysis-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.analysis-controls label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 180px; min-width: 0; color: var(--text-secondary); font-size: 12px; }
+.analysis-controls input, .analysis-controls select { box-sizing: border-box; min-height: 36px; width: 100%; min-width: 0; max-width: 100%; padding: 7px 10px; color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.analysis-controls input:focus-visible, .analysis-controls select:focus-visible, .analysis-run-button:focus-visible, .analysis-table-wrap:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.analysis-settings, .analysis-qualification, .analysis-readiness { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.analysis-settings summary, .analysis-qualification summary, .analysis-readiness summary { cursor: pointer; color: var(--text-primary); font-weight: 600; }
+.analysis-settings[open] summary, .analysis-qualification[open] summary { margin-bottom: 14px; }
+.analysis-settings p, .analysis-qualification p, .analysis-qualification li { color: var(--text-secondary); line-height: 1.6; }
+.analysis-readiness { margin-bottom: 16px; }
+.analysis-readiness .dashboard-landing-summary { margin-top: 12px; }
+.analysis-context { padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.analysis-warning { padding: 12px 14px; border-left: 3px solid var(--warning); background: var(--bg-secondary); color: var(--text-primary); line-height: 1.6; }
+.analysis-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.analysis-table-wrap { overflow: auto; max-width: 100%; border: 1px solid var(--border); border-radius: 8px; }
+.analysis-table-wrap .trend-table { width: 100%; min-width: 850px; }
+.analysis-table-wrap caption { text-align: left; padding: 12px; font-weight: 600; color: var(--text-primary); }
+.analysis-table-wrap td { vertical-align: top; white-space: normal; min-width: 95px; max-width: 290px; overflow-wrap: anywhere; }
+.analysis-table-wrap th { white-space: normal; }
+.analysis-table-wrap th:first-child, .analysis-table-wrap td:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg-secondary); min-width: 170px; }
+.analysis-id { display: block; color: var(--text-secondary); font-size: 11px; line-height: 1.6; margin-top: 4px; overflow-wrap: anywhere; }
+.analysis-run-button { padding: 3px 0; color: var(--accent); background: transparent; border: 0; text-align: left; font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.analysis-trend-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.load-comparison-chart h4 { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; }
+.load-comparison-chart-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); }
+.release-trend-panel .analysis-table-wrap tbody tr { cursor: default; }
+.release-trend-header { gap: 12px; flex-wrap: wrap; }
+@media (max-width: 900px) {
+  .analysis-trend-charts { grid-template-columns: minmax(0, 1fr); }
+  .analysis-controls label { flex-basis: 160px; }
+  .analysis-table-wrap th:first-child, .analysis-table-wrap td:first-child { min-width: 145px; max-width: 180px; }
+}

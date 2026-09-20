@@ -1,3 +1,4 @@
+import type { AnalysisReportContext } from './dashboardAnalysisModel'
 import TabList from './ux/TabList'
 import DashboardLandingSummary from './DashboardLandingSummary'
 import { buildDashboardAttention, dashboardAcceptance, emptyRunFilters, filterDashboardRuns, pendingRunDetail, runReference, type RunFilters } from './dashboardLandingModel'
@@ -34,6 +35,7 @@ interface Props {
   connectionState: WebSocketConnectionState
   onSelectTest: (id: string) => void
   onOpenTestArchive?: (id: string) => void
+  onOpenAnalysisReport?: (id: string, context: AnalysisReportContext) => void
   onOpenCommandCenter?: (id: string) => void
   onNavigate: (page: NavPage) => void
   snapshotAudience?: DashboardSnapshotAudience
@@ -579,7 +581,7 @@ function ReleaseSnapshotPanel({
   )
 }
 
-export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenTestArchive, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
+export default function DashboardPage({ testStatuses, metricsHistory, connectionState, onSelectTest, onOpenTestArchive, onOpenAnalysisReport, onOpenCommandCenter, onNavigate, snapshotAudience = 'admin' }: Props) {
   const api = useApi()
   const {
     activeApplication,
@@ -901,12 +903,12 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const activeLiveMetrics = activeTests.map(test => test.live_metrics).filter(Boolean)
 
   // Run metadata by id, so the Release Trend panel can resolve each trend point's
-  // scenario without refetching the catalog.
+  // scenario without refetching the catalog. Baselines may span releases.
   const releaseTestsById = useMemo(() => {
     const byId: Record<string, TestSummary> = {}
-    releaseTests.forEach(test => { byId[test.id] = test })
+    tests.forEach(test => { byId[test.id] = test })
     return byId
-  }, [releaseTests])
+  }, [tests])
 
   const archivedReleaseRuns = useMemo(() =>
     releaseCompleted
@@ -914,8 +916,13 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     [releaseCompleted],
   )
 
+  const archivedApplicationRuns = useMemo(() => tests.filter(test => isCompletedTestStatus(test.status) && test.archive), [tests])
+  const analysisActive = activeDashboardTab === 'performance' || activeDashboardTab === 'releaseTrend'
+  const reportRuns = analysisActive ? archivedApplicationRuns : archivedReleaseRuns
+  useEffect(() => { if (analysisActive) setReleasePanelOpen(false) }, [analysisActive])
+
   useEffect(() => {
-    const missingReports = archivedReleaseRuns.filter(test => !(test.id in archiveReports))
+    const missingReports = reportRuns.filter(test => !(test.id in archiveReports))
     if (missingReports.length === 0) return
 
     let cancelled = false
@@ -982,11 +989,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     return () => {
       cancelled = true
     }
-  }, [activeProjectId, api, archivedReleaseRuns, archiveReports])
+  }, [activeProjectId, api, reportRuns, archiveReports])
 
   const failedArchiveReportCount = useMemo(
-    () => archivedReleaseRuns.filter(test => archiveReports[test.id] === null).length,
-    [archiveReports, archivedReleaseRuns],
+    () => reportRuns.filter(test => archiveReports[test.id] === null).length,
+    [archiveReports, reportRuns],
   )
   const archiveReportsError = failedArchiveReportCount > 0
     ? `${failedArchiveReportCount} archived performance report${failedArchiveReportCount === 1 ? '' : 's'} could not be loaded.`
@@ -999,7 +1006,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   }
 
   const performanceTrend = useMemo(() =>
-    archivedReleaseRuns
+    archivedApplicationRuns
       .map(test => {
         const report = archiveReports[test.id]
         if (!report) return null
@@ -1010,7 +1017,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         }
       })
       .filter((entry): entry is PerformanceTrendEntry => Boolean(entry)),
-    [archivedReleaseRuns, archiveReports],
+    [archivedApplicationRuns, archiveReports],
   )
 
   const releaseNameById = useMemo(() => {
@@ -1144,7 +1151,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
     })
   }
 
-  const releaseTrendStats = useMemo(() => buildReleaseTrendStats(performanceTrend), [performanceTrend])
+  const releaseTrendStats = useMemo(() => buildReleaseTrendStats(performanceTrend.filter(entry => !activeRelease || entry.test.release_id === activeRelease.id)), [performanceTrend, activeRelease])
 
   const sortedRecentTests = useMemo(() => {
     return filterDashboardRuns(recentTests, runFilters, archiveReports, testListUpdatedAt ?? Date.now()).sort((left, right) => {
@@ -1389,7 +1396,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       <DashboardTestListStatus {...testListState} />
       {connectionState !== 'connected' && <p className="dashboard-context-note" role="status">Live stream: {connectionState}. Run metadata is polled separately; live workload samples may be stale.</p>}
 
-      {testListState.ready && <DashboardLandingSummary
+      {testListState.ready && <DashboardLandingSummary compact={analysisActive}
         releaseName={activeRelease?.name || 'All releases'} completed={releaseCompleted} reports={archiveReports}
         activeCount={activeTests.length} queuedCount={pendingTests.length} updatedAt={testListUpdatedAt}
         stale={Boolean(testListState.error)} attention={visibleAttentionItems}
@@ -1411,19 +1418,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         {testListState.ready && activeDashboardTab === 'performance' && (
           <section className="dash-section dash-performance-trend">
             <div className="dash-section-heading-row">
-              <h3 className="dash-section-title">Load Comparison</h3>
+              <h3 className="dash-section-title">Application performance evidence</h3>
               <div className="dash-section-heading-actions">
-                {activeRelease?.id && performanceTrend.length > 0 && (
-                  <button type="button" className="btn btn-secondary btn-sm" title="Exports the complete release series, not the selected load-comparison runs." onClick={() => void downloadTrendCsv()}>
-                    Export release trend CSV
-                  </button>
-                )}
                 {performanceTrend.length > 0 && (
                   <button type="button" className="btn btn-secondary btn-sm" onClick={navigateToResults}>
                     View Results
                   </button>
                 )}
-                <span className="dash-context-chip">Last {archivedReleaseRuns.length || 0} archived runs</span>
+                <span className="dash-context-chip">{archivedApplicationRuns.length || 0} archived runs across application releases</span>
               </div>
             </div>
             {archiveReportsError && (
@@ -1445,10 +1447,14 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               <>
                 {activeApplicationId && (
                   <LoadComparisonPanel
+                    key={activeApplicationId}
                     applicationId={activeApplicationId}
+                    runsById={releaseTestsById}
+                    reportsById={archiveReports}
                     getLoadComparison={api.getLoadComparison}
                     testOptions={loadComparisonTestOptions}
                     selectedTestIds={selectedPerformanceTestIdList}
+                    onSelectedTestIdsChange={ids => setSelectedPerformanceTestIds(new Set(ids))}
                   />
                 )}
                 <div className="trend-table-wrap" ref={performanceTableBounds.ref} style={performanceTableBounds.style}>
@@ -1491,7 +1497,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             <label className="trend-table-checkbox">
                               <input
                                 type="checkbox"
-                                aria-label={`Select ${test.name} for load comparison`}
+                                aria-label={`Select ${test.name} (${runReference(test)}) for load comparison`}
                                 checked={effectiveSelectedPerformanceTestIds.has(test.id)}
                                 onChange={event => setPerformanceTestSelected(test.id, event.currentTarget.checked)}
                               />
@@ -1508,7 +1514,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                             >
                               {test.name}
                             </button>
-                            <span className="trend-run-meta">{test.script_name || `${test.total_vusers} VUsers`}</span>
+                            <span className="trend-run-meta">{runReference(test)} · {releaseNameById.get(test.release_id || '') || test.release_id} · {test.total_vusers} planned VUsers</span>
                             {runtimeSummary && <span className="trend-run-meta">{runtimeSummary}</span>}
                           </td>
                           <td>{formatDateTime(test.ended_at || test.start_time || test.created_at)}</td>
@@ -1795,11 +1801,16 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
         {testListState.ready && activeDashboardTab === 'releaseTrend' && (
           <section className="dash-section dash-release-trend-analysis">
+            {trendDownloadError && <p role="alert">{trendDownloadError}</p>}
             {activeRelease?.id ? (
               <ReleaseTrendPanel
+                key={activeApplicationId}
+                applicationId={activeApplicationId}
+                onOpenAnalysisReport={onOpenAnalysisReport}
+                onExportRelease={() => void downloadTrendCsv()}
                 releaseId={activeRelease.id}
                 getReleaseTrend={api.getReleaseTrend}
-                releaseOptions={dashboardReleaseOptions}
+                releaseOptions={releases}
                 onReleaseChange={setActiveRelease}
                 runsById={releaseTestsById}
                 reportsById={archiveReports}

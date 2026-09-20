@@ -78,6 +78,10 @@ type scriptImportResponseOptions struct {
 	// Those responses replace the editable draft with a masked StoredScript, so
 	// issuing a second one-shot save capability would only consume capacity.
 	SkipDraftAttestation bool
+	// DisableDraftExpiration keeps the one-shot, server-scoped save capability
+	// valid until it is consumed or explicitly discarded. Enterprise archive
+	// imports expose this as an opt-in expiration policy and default it off.
+	DisableDraftExpiration bool
 	// RecordingSessionID is trusted server-only lineage for a proxy recording
 	// preview. It lets subsequent server-owned binding/parameterization
 	// mutations retain baseline provenance without accepting a client-supplied
@@ -723,7 +727,7 @@ func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
 }
 
 // newScriptImportResponseWithSourceSecrets augments the exact imported
-// authoring response with an optional, short-lived server-side migration
+// authoring response with an optional, server-side migration
 // session. Migration descriptors remain value-free even though imported
 // scripts and source-review material retain their authored values.
 func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts scriptImportResponseOptions) map[string]any {

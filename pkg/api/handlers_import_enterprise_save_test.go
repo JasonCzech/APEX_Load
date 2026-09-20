@@ -411,8 +411,43 @@ func TestHandleSaveEnterpriseArchiveImportRejectsUnavailableCredentialWithoutCap
 	if !strings.Contains(response.Body.String(), "missing its server capability") {
 		t.Fatalf("response did not explain the save gate: %s", response.Body.String())
 	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != enterpriseArchiveDraftInvalidCode {
+		t.Fatalf("response code = %q, want %q", body["code"], enterpriseArchiveDraftInvalidCode)
+	}
 	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
 		t.Fatalf("rejected batch stored scripts: %#v", scripts)
+	}
+}
+
+func TestHandleSaveEnterpriseArchiveImportCodesInvalidAttestationForFreshConversion(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := enterpriseBatchTestScript("Expired capability", storage.DefaultProjectID)
+	metadata := script["metadata"].(map[string]any)
+	importMetadata := metadata["import"].(map[string]any)
+	importMetadata["preserved"] = map[string]any{
+		importDraftAttestationMetadataKey: "expired-enterprise-capability",
+	}
+
+	response := postEnterpriseArchiveBatch(t, server, map[string]any{
+		"operation_id": "enterprise-expired-capability",
+		"scripts":      []any{script},
+	})
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusConflict, response.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != enterpriseArchiveDraftInvalidCode || !strings.Contains(body["error"], "invalid or expired") {
+		t.Fatalf("response = %#v, want coded expired-draft guidance", body)
+	}
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("invalid attestation stored scripts: %#v", scripts)
 	}
 }
 

@@ -16,14 +16,15 @@ import (
 func TestImportCandidateEnvelopeRoundTripsRawSource(t *testing.T) {
 	source := []byte("openapi: 3.0.0\ninfo:\n  title: probe\n")
 	envelope := importCandidateEnvelope{
-		Version:         importCandidateSessionVersion,
-		Profile:         "openapi",
-		ProjectID:       "project-1",
-		Script:          dsl.Script{ID: "script-1", Name: "probe", Protocol: "http"},
-		RawSource:       source,
-		RawSourceFormat: "openapi",
-		CreatedAt:       time.Now().UTC(),
-		ExpiresAt:       time.Now().UTC().Add(time.Minute),
+		Version:            importCandidateSessionVersion,
+		Profile:            "openapi",
+		ProjectID:          "project-1",
+		Script:             dsl.Script{ID: "script-1", Name: "probe", Protocol: "http"},
+		RawSource:          source,
+		RawSourceFormat:    "openapi",
+		CreatedAt:          time.Now().UTC(),
+		ExpiresAt:          importCandidateNoExpiration,
+		ExpirationDisabled: true,
 	}
 
 	payload, err := marshalImportCandidateEnvelope(envelope, nil)
@@ -40,6 +41,9 @@ func TestImportCandidateEnvelopeRoundTripsRawSource(t *testing.T) {
 	if decoded.RawSourceFormat != "openapi" {
 		t.Fatalf("raw source format = %q, want openapi", decoded.RawSourceFormat)
 	}
+	if !decoded.ExpirationDisabled {
+		t.Fatal("non-expiring policy did not round trip")
+	}
 }
 
 // TestImportCandidateEnvelopeAcceptsPriorVersion pins the upgrade path. A
@@ -49,7 +53,10 @@ func TestImportCandidateEnvelopeRoundTripsRawSource(t *testing.T) {
 // across a restart.
 func TestImportCandidateEnvelopeAcceptsPriorVersion(t *testing.T) {
 	if !supportedImportCandidateSessionVersion(1) {
-		t.Fatal("v1 candidate envelopes must remain claimable after the v2 bump")
+		t.Fatal("v1 candidate envelopes must remain claimable after later version bumps")
+	}
+	if !supportedImportCandidateSessionVersion(2) {
+		t.Fatal("v2 candidate envelopes must remain claimable after the v3 bump")
 	}
 	if !supportedImportCandidateSessionVersion(importCandidateSessionVersion) {
 		t.Fatal("the current envelope version must be claimable")

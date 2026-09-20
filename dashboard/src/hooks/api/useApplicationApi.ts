@@ -63,6 +63,9 @@ export function useApplicationApi() {
     if (key.trim()) {
       params.set('key', key.trim())
     }
+    if (options?.population) params.set('population', options.population)
+    if (options?.startSeconds !== undefined) params.set('start_seconds', String(options.startSeconds))
+    if (options?.endSeconds !== undefined) params.set('end_seconds', String(options.endSeconds))
     options?.testIds?.forEach(testId => {
       const trimmed = testId.trim()
       if (trimmed) params.append('test_id', trimmed)

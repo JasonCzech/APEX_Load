@@ -92,6 +92,88 @@ func TestLegacyImportSaveAttestationPreservesCredentialWithoutReentry(t *testing
 	}
 }
 
+func TestImportDraftExpirationCanBeDisabledWithoutWeakeningOneShotClaim(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := attestedImportTestScript("non-expiring-import", "non-expiring-password-31af")
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil)
+	response := server.newScriptImportResponseWithSourceSecrets(request, scriptImportResponseOptions{
+		Script:                 script,
+		DisableDraftExpiration: true,
+	})
+	if _, present := response["import_draft_expires_at"]; present {
+		t.Fatalf("non-expiring response published an expiry: %#v", response["import_draft_expires_at"])
+	}
+	token := importDraftAttestationToken(script)
+	server.importDraftAttestationMu.Lock()
+	record := server.importDraftAttestations[token]
+	server.sweepImportDraftAttestationsLocked(time.Now().UTC().Add(100 * 365 * 24 * time.Hour))
+	retained := server.importDraftAttestations[token]
+	server.importDraftAttestationMu.Unlock()
+	if record == nil || !record.ExpirationDisabled || !record.ExpiresAt.IsZero() || retained == nil {
+		t.Fatalf("non-expiring attestation = %#v, retained=%v", record, retained != nil)
+	}
+
+	claim, err := server.claimImportDraftAttestation(request, script)
+	if err != nil || claim == nil || !claim.ExpirationDisabled {
+		t.Fatalf("claim non-expiring attestation = %#v, err=%v", claim, err)
+	}
+	mutated := cloneScriptDefinition(script)
+	mutated.Name = "Non-expiring import after review"
+	rotatedExpiry, err := server.completeImportDraftMutation(request, claim, mutated)
+	if err != nil || !rotatedExpiry.IsZero() {
+		t.Fatalf("rotate non-expiring attestation expiry = %v, err=%v", rotatedExpiry, err)
+	}
+	if rotated := server.importDraftAttestations[importDraftAttestationToken(mutated)]; rotated == nil || !rotated.ExpirationDisabled {
+		t.Fatalf("rotated attestation did not retain expiration policy: %#v", rotated)
+	}
+	script = mutated
+
+	created := createAttestedImportScript(t, server, script)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("save non-expiring draft = %d body=%s", created.Code, created.Body.String())
+	}
+	if reused := createAttestedImportScript(t, server, script); reused.Code != http.StatusConflict {
+		t.Fatalf("reuse non-expiring one-shot capability = %d body=%s", reused.Code, reused.Body.String())
+	}
+}
+
+func TestProtectedImportDraftExpirationPolicySurvivesStoreRoundTrip(t *testing.T) {
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
+		Key:   bytes.Repeat([]byte{0x35}, 32),
+		KeyID: "non-expiring-import-attestation",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{
+		BrunoArtifactDir:     t.TempDir(),
+		BrunoArtifactWrapper: wrapper,
+	})
+	script := attestedImportTestScript("protected-non-expiring-import", "protected-password-81ce")
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil)
+	response := server.newScriptImportResponseWithSourceSecrets(request, scriptImportResponseOptions{
+		Script:                 script,
+		DisableDraftExpiration: true,
+	})
+	if _, present := response["import_draft_expires_at"]; present {
+		t.Fatalf("protected non-expiring response published an expiry: %#v", response["import_draft_expires_at"])
+	}
+	token := importDraftAttestationToken(script)
+	sessionID := strings.TrimPrefix(token, importDraftProtectedTokenPrefix)
+	if sessionID == token || sessionID == "" {
+		t.Fatalf("protected token = %q", token)
+	}
+	candidate, claim, err := server.claimProtectedImportCandidateSession(request, "sample", sessionID, script.ProjectID)
+	if err != nil {
+		t.Fatalf("claim protected non-expiring draft: %v", err)
+	}
+	if !candidate.ExpirationDisabled || !candidate.ExpiresAt.Equal(importCandidateNoExpiration) {
+		t.Fatalf("protected expiration policy = disabled:%v expires:%v", candidate.ExpirationDisabled, candidate.ExpiresAt)
+	}
+	clearProtectedImportCandidate(candidate)
+	server.releaseImportCandidateClaim(claim)
+}
+
 func TestConfiguredProtectedImportStoreFailureNeverFallsBackToMemory(t *testing.T) {
 	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x6d}, 32),

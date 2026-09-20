@@ -257,6 +257,15 @@ describe('RunReportPage', () => {
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
   })
 
+  it('applies a dashboard transaction selection once without overriding later operator choices', async () => {
+    mocks.archiveModel.archiveReport = { by_transaction: { Checkout: {transactions: 100, errors: 0, error_pct: 0, avg_response_ms: 10} } } as unknown as RunArchiveReport
+    const render = () => <RunReportPage testId="run-1" initialPopulation="transaction" initialTransaction="Checkout" onOpenCommandCenter={vi.fn()} onNavigateReport={vi.fn()} />
+    await act(async () => root.render(render()))
+    expect(mocks.archiveModel.onSelectedArchiveActionChange).toHaveBeenCalledWith('Checkout')
+    mocks.archiveModel.onSelectedArchiveActionChange.mockClear()
+    await act(async () => root.render(render()))
+    expect(mocks.archiveModel.onSelectedArchiveActionChange).not.toHaveBeenCalled()
+  })
   it('does not label controller timing as archived evidence while the archive report is unavailable', async () => {
     mocks.polling.test = { ...buildTest('COMPLETE'), started_at: '2026-05-12T20:00:00Z', ended_at: '2026-05-12T20:05:00Z' }
     mocks.archiveModel.archiveReport = null
@@ -271,7 +280,7 @@ describe('RunReportPage', () => {
     mocks.api.listTests.mockResolvedValueOnce({ tests: firstPage, total: 101, count: 100 }).mockResolvedValueOnce({ tests: [{ ...buildTest('COMPLETE'), id: 'older', name: 'Older archived baseline' }], total: 101, count: 1 })
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     await act(async () => buttonByText(container, 'Compare')?.click())
-    expect(mocks.api.listTests).toHaveBeenCalledWith(expect.objectContaining({ offset: 100, project_id: 'project', application_id: 'app', release_id: 'release' }))
+    expect(mocks.api.listTests).toHaveBeenCalledWith(expect.objectContaining({ offset: 100, project_id: 'project', application_id: 'app' }))
     expect(container.textContent).toContain('Older archived baseline')
     expect(container.querySelector('[data-testid="compare"]')?.querySelectorAll('span')).toHaveLength(1)
   })

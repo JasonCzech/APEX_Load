@@ -43,6 +43,7 @@ type enterpriseArchiveImportRequest struct {
 	Opts             enterprisearchive.ConvertOptions
 	ReadinessPolicy  enterprisearchive.RuntimeSettingMigrationPolicy
 	SalesforceNative bool
+	ExpireDraft      bool
 }
 
 type devWebImportRequest struct {

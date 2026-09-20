@@ -236,6 +236,7 @@ type EnterpriseArchiveImportOptions = {
   har_file?: File
   supplemental_files?: File[]
   salesforce_native?: boolean
+  expire_draft?: boolean
 }
 
 type PostmanImportOptions = {
@@ -698,6 +699,7 @@ export function useScriptApi() {
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
       if (options?.salesforce_native) formData.append('salesforce_native', 'true')
+      if (options?.expire_draft) formData.append('expire_draft', 'true')
 
       const res = await apiFetch('/scripts/import/enterprise-script-archive', {
         method: 'POST',
@@ -729,6 +731,7 @@ export function useScriptApi() {
       if (options?.preserve_transactions !== undefined) formData.append('preserve_transactions', String(options.preserve_transactions))
       if (options?.migration_block_statuses?.length) formData.append('migration_block_statuses', options.migration_block_statuses.join(','))
       if (options?.salesforce_native) formData.append('salesforce_native', 'true')
+      if (options?.expire_draft) formData.append('expire_draft', 'true')
 
       const res = await apiFetch('/scripts/import/enterprise-script-archive/validate', {
         method: 'POST',

@@ -3399,6 +3399,7 @@ function AppShell({
                   connectionState={connectionState}
                   onSelectTest={openRun}
                   onOpenTestArchive={openCompletedRun}
+                  onOpenAnalysisReport={runReportEnabled ? (id, context) => setGuardedView({page: "report", testId: id, lens: "engineer", section: "performance", ...context, ...(activeProject?.id ? {projectId: activeProject.id} : {})}) : undefined}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onNavigate={handleNavigate}
                   snapshotAudience={snapshotAudience}
@@ -3490,12 +3491,16 @@ function AppShell({
                   initialSection={view.section}
                   initialLens={view.lens}
                   initialCompare={view.compare}
+                  initialTransaction={view.transaction}
+                  initialPopulation={view.population}
                   statusOverride={testStatuses[view.testId]}
                   onOpenCommandCenter={navigateToCommandCenter}
                   onNavigateReport={(next) =>
                     setGuardedView({
                       page: "report",
                       testId: view.testId,
+                      ...(view.transaction ? {transaction: view.transaction} : {}),
+                      ...(view.population ? {population: view.population} : {}),
                       ...(view.projectId ? { projectId: view.projectId } : {}),
                       ...(view.applicationId ? { applicationId: view.applicationId } : {}),
                       ...(view.releaseId ? { releaseId: view.releaseId } : {}),

@@ -666,6 +666,44 @@ func TestEncryptedStoreDeleteExpiredSessionsSkipsInFlightClaims(t *testing.T) {
 	_ = reader.Close()
 }
 
+func TestEncryptedStoreSweepRecoversStaleNonExpiringClaimWithoutDeletingSession(t *testing.T) {
+	store := newEncryptedArtifactTestStore(t)
+	now := time.Now().UTC()
+	descriptor := SessionDescriptor{
+		ID:                 "non-expiring",
+		ProjectID:          "project-a",
+		Actor:              "actor-a",
+		ExpiresAt:          time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC),
+		ExpirationDisabled: true,
+	}
+	if err := store.SaveSession(context.Background(), descriptor, strings.NewReader(`{"payload":true}`), 1024); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.ClaimSession(context.Background(), descriptor.ID, descriptor.ProjectID, descriptor.Actor, 1024); err != nil {
+		t.Fatal(err)
+	}
+	claimPath := filepath.Join(store.root, ".sessions", descriptor.ID+".claim.json")
+	stale := now.Add(-sessionClaimLease - time.Second)
+	if err := os.Chtimes(claimPath, stale, stale); err != nil {
+		t.Fatalf("age non-expiring claim: %v", err)
+	}
+	expired, err := store.DeleteExpiredSessions(context.Background(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expired) != 0 {
+		t.Fatalf("non-expiring session reported expired: %#v", expired)
+	}
+	reader, restored, err := store.OpenSession(context.Background(), descriptor.ID, descriptor.ProjectID, descriptor.Actor)
+	if err != nil {
+		t.Fatalf("open recovered non-expiring session: %v", err)
+	}
+	_ = reader.Close()
+	if !restored.ExpirationDisabled {
+		t.Fatalf("restored descriptor lost non-expiring policy: %#v", restored)
+	}
+}
+
 func TestEncryptedStoreRecoveredClaimFencesPreviousOwner(t *testing.T) {
 	store := newEncryptedArtifactTestStore(t)
 	ctx := context.Background()

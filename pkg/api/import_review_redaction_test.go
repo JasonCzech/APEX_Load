@@ -152,6 +152,7 @@ func TestEnterpriseImportResponsePreservesRecordedResourceURLCredentials(t *test
 		http.StatusOK,
 		result,
 		enterprisearchive.ParseRuntimeSettingMigrationPolicy(""),
+		false,
 	)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())

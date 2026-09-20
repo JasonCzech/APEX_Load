@@ -14,7 +14,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID; guideArticle?: string; guideSection?: string }
   | { page: 'command-center'; testId?: string }
-  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; section?: ReportSection }
+  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown' }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
@@ -185,12 +185,16 @@ export function parseAppViewFromHash(hash: string): AppView {
     const section = params.get('section') as ReportSection | null
     const lens = params.get('lens')
     const compare = params.get('compare') || undefined
+    const transaction = params.get('transaction') || undefined
+    const population = params.get('population')
     return {
       page: 'report',
       testId: segments[1],
       ...(isReportLens(lens) ? { lens } : {}),
       ...(section && REPORT_SECTIONS.includes(section) ? { section } : {}),
       ...(compare ? { compare } : {}),
+      ...(transaction ? { transaction } : {}),
+      ...(population === 'action' || population === 'transaction' || population === 'unknown' ? { population } : {}),
       ...workspaceScope,
     }
   }
@@ -359,6 +363,8 @@ export function viewToLocationHash(view: AppView): string {
     if (view.section) params.set('section', view.section)
     if (view.lens) params.set('lens', view.lens)
     if (view.compare) params.set('compare', view.compare)
+    if (view.transaction) params.set('transaction', view.transaction)
+    if (view.population) params.set('population', view.population)
     appendWorkspaceScope(params, view)
     const query = params.toString()
     return query ? `#/report/${encodeURIComponent(view.testId)}?${query}` : `#/report/${encodeURIComponent(view.testId)}`

@@ -2,6 +2,7 @@ import type { TestSummary } from '../types'
 import { runReference, summarizeAcceptance, type DashboardAttentionItem, type DashboardReports } from './dashboardLandingModel'
 
 interface Props {
+  compact?: boolean
   releaseName: string
   completed: TestSummary[]
   reports: DashboardReports
@@ -16,7 +17,7 @@ interface Props {
   onResults: () => void
 }
 
-export default function DashboardLandingSummary({ releaseName, completed, reports, activeCount, queuedCount, updatedAt, stale, attention, onAttention, onDismissAttention, onQueue, onResults }: Props) {
+export default function DashboardLandingSummary({ compact = false, releaseName, completed, reports, activeCount, queuedCount, updatedAt, stale, attention, onAttention, onDismissAttention, onQueue, onResults }: Props) {
   const counts = summarizeAcceptance(completed, reports)
   const archived = completed.filter(test => test.archive).length
   const latest = completed[0]
@@ -40,7 +41,7 @@ export default function DashboardLandingSummary({ releaseName, completed, report
       </button>
     </div>
   )
-  return (
+  const body = (
     <section className="dashboard-landing-summary" aria-label="Release readiness and attention">
       <div className="dashboard-readiness">
         <div className="dashboard-summary-heading"><h2>{releaseName} · Release quality</h2><button type="button" className="btn btn-secondary btn-sm" onClick={onResults}>Review results</button></div>
@@ -63,4 +64,5 @@ export default function DashboardLandingSummary({ releaseName, completed, report
       </div>
     </section>
   )
+  return compact ? <details className="analysis-readiness"><summary>{releaseName} · {archived}/{completed.length} archives · {counts['Fail'] || 0} acceptance failures · {attention.length} attention items · Expand release context</summary>{body}</details> : body
 }

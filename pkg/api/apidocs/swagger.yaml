@@ -12955,6 +12955,20 @@ paths:
               schema:
                 type: object
                 properties:
+                  analysis:
+                    type: object
+                    properties:
+                      end_seconds:
+                        type: number
+                        format: double
+                        nullable: true
+                      population:
+                        type: string
+                      start_seconds:
+                        type: number
+                        format: double
+                    required:
+                      - start_seconds
                   application_id:
                     type: string
                   load_levels:
@@ -13031,22 +13045,49 @@ paths:
                               avg_response_ms:
                                 type: number
                                 format: double
+                              duration_estimated:
+                                type: boolean
                               error_pct:
                                 type: number
                                 format: double
                               errors:
                                 type: integer
                                 format: int64
+                              evidence_status:
+                                type: string
+                              failed_latency:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              latency:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               load_label:
                                 type: string
                               load_level_id:
                                 type: string
+                              observed_seconds:
+                                type: number
+                                format: double
                               run_count:
                                 type: integer
                                 format: int64
+                              run_ids:
+                                type: array
+                                items:
+                                  type: string
                               sample_count:
                                 type: integer
                                 format: int64
+                              successful_latency:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              successful_rate:
+                                type: number
+                                format: double
+                                nullable: true
                               tps:
                                 type: number
                                 format: double
@@ -13057,9 +13098,12 @@ paths:
                               - avg_response_ms
                               - error_pct
                               - errors
+                              - evidence_status
                               - load_label
                               - load_level_id
+                              - observed_seconds
                               - run_count
+                              - run_ids
                               - sample_count
                               - tps
                               - transactions
@@ -13070,6 +13114,105 @@ paths:
                         run_count:
                           type: integer
                           format: int64
+                        run_id:
+                          type: string
+                        run_name:
+                          type: string
+                        transaction_count:
+                          type: integer
+                          format: int64
+                      required:
+                        - points
+                        - release_id
+                        - release_name
+                        - run_count
+                        - transaction_count
+                  run_series:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        points:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              avg_response_ms:
+                                type: number
+                                format: double
+                              duration_estimated:
+                                type: boolean
+                              error_pct:
+                                type: number
+                                format: double
+                              errors:
+                                type: integer
+                                format: int64
+                              evidence_status:
+                                type: string
+                              failed_latency:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              latency:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              load_label:
+                                type: string
+                              load_level_id:
+                                type: string
+                              observed_seconds:
+                                type: number
+                                format: double
+                              run_count:
+                                type: integer
+                                format: int64
+                              run_ids:
+                                type: array
+                                items:
+                                  type: string
+                              sample_count:
+                                type: integer
+                                format: int64
+                              successful_latency:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              successful_rate:
+                                type: number
+                                format: double
+                                nullable: true
+                              tps:
+                                type: number
+                                format: double
+                              transactions:
+                                type: integer
+                                format: int64
+                            required:
+                              - avg_response_ms
+                              - error_pct
+                              - errors
+                              - evidence_status
+                              - load_label
+                              - load_level_id
+                              - observed_seconds
+                              - run_count
+                              - run_ids
+                              - sample_count
+                              - tps
+                              - transactions
+                        release_id:
+                          type: string
+                        release_name:
+                          type: string
+                        run_count:
+                          type: integer
+                          format: int64
+                        run_id:
+                          type: string
+                        run_name:
+                          type: string
                         transaction_count:
                           type: integer
                           format: int64
@@ -13100,6 +13243,7 @@ paths:
                     items:
                       type: string
                 required:
+                  - analysis
                   - application_id
                   - load_levels
                   - options
@@ -13138,18 +13282,42 @@ paths:
           required: true
           schema:
             type: string
+        - name: end_seconds
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: number
+            format: double
         - name: key
           in: query
           description: Handler-defined query parameter.
           required: false
           schema:
             type: string
+        - name: population
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+            enum:
+              - action
+              - transaction
+              - unknown
         - name: scope
           in: query
           description: Handler-defined query parameter.
           required: true
           schema:
             type: string
+        - name: start_seconds
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: number
+            format: double
       tags:
         - Applications
       x-handler: handleGetApplicationLoadComparison
@@ -163480,6 +163648,8 @@ paths:
                   deprecated: true
                 base_url:
                   type: string
+                expire_draft:
+                  type: string
                 file:
                   type: string
                   format: binary
@@ -163536,6 +163706,12 @@ paths:
           in: query
           description: Deprecated compatibility input; accepted but ignored. Every LoadRunner Java archive produces one combined java_vuser draft regardless of this value.
           deprecated: true
+          required: false
+          schema:
+            type: string
+        - name: expire_draft
+          in: query
+          description: Handler-defined query parameter.
           required: false
           schema:
             type: string
@@ -164884,6 +165060,8 @@ paths:
                   deprecated: true
                 base_url:
                   type: string
+                expire_draft:
+                  type: string
                 file:
                   type: string
                   format: binary
@@ -164940,6 +165118,12 @@ paths:
           in: query
           description: Deprecated compatibility input; accepted but ignored. Every LoadRunner Java archive produces one combined java_vuser draft regardless of this value.
           deprecated: true
+          required: false
+          schema:
+            type: string
+        - name: expire_draft
+          in: query
+          description: Handler-defined query parameter.
           required: false
           schema:
             type: string

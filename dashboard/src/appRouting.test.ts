@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { terminalRunReportView, APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, mergeAppViewWithWorkspace, navPageForAppView, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, projectAssetForAppView, readAppHistoryIndex, recoveryViewForUnscopedProjectAsset, resetProjectScopedAssetView, scopeAppViewToProject, scopeAppViewToWorkspace, testIdForAppView, unscopedProjectAssetForAppView, viewToLocationHash, withAppHistoryIndex, workspaceScopeForAppView, type AppView } from './appRouting'
 
 describe('appRouting', () => {
+  it('round-trips analysis baseline and population into a transaction report', () => {
+    const view: AppView = {page: 'report', testId: 'run-2', section: 'performance', lens: 'engineer', compare: 'run-1', transaction: 'Checkout & pay', population: 'transaction'}
+    expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+    expect(parseAppViewFromHash('#/report/run-2?population=invalid')).toEqual({page: 'report', testId: 'run-2'})
+  })
+
   it('maps run workspaces to the sidebar area that owns their current flow', () => {
     for (const tab of [undefined, 'overview', 'control', 'graphs', 'diagnostics'] as const) {
       expect(navPageForAppView({ page: 'test', testId: 'run-1', ...(tab ? { tab } : {}) })).toBe('command-center')

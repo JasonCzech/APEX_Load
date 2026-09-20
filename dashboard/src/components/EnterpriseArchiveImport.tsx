@@ -78,6 +78,21 @@ function isHARFile(file: File) {
   return lowerName.endsWith('.har') || lowerName.endsWith('.json') || file.type === 'application/json'
 }
 
+// A definite draft-attestation rejection is fundamentally different from a
+// lost save response. The latter must retain the exact request and operation
+// identity so the durable receipt can be reconciled. An expired attestation is
+// a one-shot server capability, though, and resubmitting it can never work.
+// Drop that retained request so the next Convert action obtains a fresh draft.
+function enterpriseArchiveDraftNeedsRefresh(error: unknown): boolean {
+  return error instanceof ApiError
+    && error.status === 409
+    && (error.code === 'import_draft_attestation_invalid'
+      // Older controllers did not return the structured code. Retain a narrow
+      // message fallback so a newer dashboard can still recover against them.
+      || /enterprise archive import draft (?:is invalid or expired|is missing its server capability)/i
+        .test(getErrorMessage(error, '')))
+}
+
 function javaSimpleClassName(className: string) {
   const normalized = className.trim().replace(/\$/g, '.')
   const parts = normalized.split('.')
@@ -612,6 +627,7 @@ type ImportOptions = {
   block_partial: boolean
   block_compatibility_only: boolean
   block_non_applicable: boolean
+  expire_draft: boolean
 }
 
 type RelaxableMigrationBlockStatus = 'partial' | 'compatibility_only' | 'non_applicable'
@@ -634,6 +650,7 @@ const DEFAULT_IMPORT_OPTIONS: ImportOptions = {
   block_partial: false,
   block_compatibility_only: false,
   block_non_applicable: false,
+  expire_draft: false,
 }
 const EMPTY_REPLAY_VALIDATION_WARNINGS: string[] = []
 const EMPTY_SUPPLEMENTAL_FILES: File[] = []
@@ -2491,6 +2508,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           include_assertions: reviewOptions.include_assertions,
           preserve_transactions: reviewOptions.preserve_transactions,
           migration_block_statuses: buildMigrationBlockStatuses(reviewOptions),
+          ...(reviewOptions.expire_draft ? { expire_draft: true } : {}),
           ...(item.harFile ? { har_file: item.harFile } : {}),
           ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
@@ -2624,6 +2642,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     let failureCount = 0
     let skippedCount = 0
     let atomicSaveUnconfirmed = false
+    let atomicSaveNeedsFreshDraft = false
 
     setWorkingMode('convert')
     setError('')
@@ -2665,6 +2684,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           include_assertions: options.include_assertions,
           preserve_transactions: options.preserve_transactions,
           migration_block_statuses: buildMigrationBlockStatuses(options),
+          ...(options.expire_draft ? { expire_draft: true } : {}),
           ...(item.harFile ? { har_file: item.harFile } : {}),
           ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(options.salesforce_native ? { salesforce_native: true } : {}),
@@ -2879,13 +2899,22 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         if (!operationIsCurrent() || currentReadySaves.some(({ item }) => !requestIsCurrent(item))) {
           skippedCount += currentReadySaves.length
         } else {
-          atomicSaveUnconfirmed = true
+          atomicSaveNeedsFreshDraft = enterpriseArchiveDraftNeedsRefresh(saveError)
+          if (atomicSaveNeedsFreshDraft) {
+            // Do not leave the next Convert action pinned to a capability the
+            // server has explicitly said can no longer authorize a save.
+            saveOperationIDsRef.current.delete(operationKey)
+            if (retainedAtomicSaveRef.current?.operationId === operationID) {
+              retainedAtomicSaveRef.current = null
+            }
+          } else {
+            atomicSaveUnconfirmed = true
+          }
           failureCount += currentReadySaves.length
           for (const entry of currentReadySaves) {
             const patch: Partial<EnterpriseArchiveImportQueueItem> = {
-              // Preserve a retry path that reuses operationID. If the response was
-              // lost after commit, running Convert again reconciles the receipt;
-              // it must not fall through to an unrelated one-script create.
+              // Preserve a retry path only for ambiguous outcomes. A definitive
+              // expired-draft response needs a new conversion and attestation.
               status: 'validated',
               result: entry.result,
               reviewMode: 'validation',
@@ -2893,7 +2922,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               savedResultScripts: {},
               sourceSecretProjectId: sourceProjectId || '',
               error: getErrorMessage(saveError, 'Atomic batch save failed'),
-              notice: 'APEX could not confirm the atomic batch save. Choose Convert again to reconcile the same operation; no individual script save will be attempted.',
+              notice: atomicSaveNeedsFreshDraft
+                ? 'The import draft is invalid or expired and could not be saved. Choose Convert again to generate a fresh draft; no individual script save will be attempted.'
+                : 'APEX could not confirm the atomic batch save. Choose Convert again to reconcile the same operation; no individual script save will be attempted.',
             }
             conversionItemPatches.set(entry.item.id, patch)
             updateImportItem(entry.item.id, patch)
@@ -2942,6 +2973,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
 
     if (atomicSaveUnconfirmed) {
       setNotice('APEX could not confirm the atomic batch save. Choose Convert again to reconcile the same operation; no individual script save will be attempted.')
+      return
+    }
+
+    if (atomicSaveNeedsFreshDraft) {
+      setNotice('The import draft is invalid or expired and could not be saved. Choose Convert again to generate a fresh draft; no individual script save will be attempted.')
       return
     }
 
@@ -4016,6 +4052,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             <label className="lr-checkbox">
               <input type="checkbox" checked={options.block_non_applicable} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, block_non_applicable: e.target.checked })} />
               <span>Treat non-applicable runtime settings as blockers</span>
+            </label>
+            <div className="lr-policy-heading">
+              <strong>Draft Lifecycle</strong>
+              <span>Drafts remain valid unless expiration is enabled.</span>
+            </div>
+            <label className="lr-checkbox">
+              <input type="checkbox" checked={options.expire_draft} disabled={sourceMutationLocked} onChange={e => replaceOptionsAndInvalidate({ ...options, expire_draft: e.target.checked })} />
+              <span>Expire converted drafts after 30 minutes</span>
             </label></details>
             <details className="lr-har-panel" open={Boolean(options.salesforce_native || selectedHARFile || salesforceReview)}><summary>Salesforce-specific options</summary>
               <label className="lr-checkbox">

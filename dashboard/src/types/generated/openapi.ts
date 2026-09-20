@@ -33067,8 +33067,11 @@ export interface operations {
         "id": string;
       };
       "query": {
+        "end_seconds"?: number;
         "key"?: string;
+        "population"?: "action" | "transaction" | "unknown";
         "scope": string;
+        "start_seconds"?: number;
       };
     };
     requestBody?: never;
@@ -33076,6 +33079,11 @@ export interface operations {
       "200": {
         content: {
           "application/json": {
+            "analysis": {
+              "end_seconds"?: (number) | null;
+              "population"?: string;
+              "start_seconds": number;
+            };
             "application_id": string;
             "load_levels": Array<{
               "exact": boolean;
@@ -33098,18 +33106,55 @@ export interface operations {
             "releases": Array<{
               "points": Array<{
                 "avg_response_ms": number;
+                "duration_estimated"?: boolean;
                 "error_pct": number;
                 "errors": number;
+                "evidence_status": string;
+                "failed_latency"?: (Record<string, unknown>) | null;
+                "latency"?: (Record<string, unknown>) | null;
                 "load_label": string;
                 "load_level_id": string;
+                "observed_seconds": number;
                 "run_count": number;
+                "run_ids": Array<string>;
                 "sample_count": number;
+                "successful_latency"?: (Record<string, unknown>) | null;
+                "successful_rate"?: (number) | null;
                 "tps": number;
                 "transactions": number;
               }>;
               "release_id": string;
               "release_name": string;
               "run_count": number;
+              "run_id"?: string;
+              "run_name"?: string;
+              "transaction_count": number;
+            }>;
+            "run_series"?: Array<{
+              "points": Array<{
+                "avg_response_ms": number;
+                "duration_estimated"?: boolean;
+                "error_pct": number;
+                "errors": number;
+                "evidence_status": string;
+                "failed_latency"?: (Record<string, unknown>) | null;
+                "latency"?: (Record<string, unknown>) | null;
+                "load_label": string;
+                "load_level_id": string;
+                "observed_seconds": number;
+                "run_count": number;
+                "run_ids": Array<string>;
+                "sample_count": number;
+                "successful_latency"?: (Record<string, unknown>) | null;
+                "successful_rate"?: (number) | null;
+                "tps": number;
+                "transactions": number;
+              }>;
+              "release_id": string;
+              "release_name": string;
+              "run_count": number;
+              "run_id"?: string;
+              "run_name"?: string;
               "transaction_count": number;
             }>;
             "scope": string;
@@ -49230,6 +49275,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "allow_java_vuser_runner"?: string;
+        "expire_draft"?: string;
         "salesforce_native"?: boolean;
       };
     };
@@ -49238,6 +49284,7 @@ export interface operations {
         "multipart/form-data": {
           "allow_java_vuser_runner"?: string;
           "base_url"?: string;
+          "expire_draft"?: string;
           "file"?: string;
           "har_file"?: string;
           "include_assertions"?: string;
@@ -99533,6 +99580,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "allow_java_vuser_runner"?: string;
+        "expire_draft"?: string;
         "salesforce_native"?: boolean;
       };
     };
@@ -99541,6 +99589,7 @@ export interface operations {
         "multipart/form-data": {
           "allow_java_vuser_runner"?: string;
           "base_url"?: string;
+          "expire_draft"?: string;
           "file"?: string;
           "har_file"?: string;
           "include_assertions"?: string;

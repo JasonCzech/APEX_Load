@@ -1,5 +1,5 @@
 // Package importsession defines the importer-neutral contract for protected,
-// short-lived inspection sessions.
+// policy-governed inspection sessions.
 //
 // Session payloads are deliberately opaque to this package. Import adapters
 // own their payload codecs and are responsible for clearing decrypted bytes
@@ -62,13 +62,16 @@ type SessionDescriptor struct {
 	// ClaimToken fences one lease epoch from a later stale-claim recovery.
 	// Normal descriptors omit it; each successful claim replaces it with a
 	// fresh token before publishing the claimed state.
-	ClaimToken     string      `json:"claim_token,omitempty"`
-	BackendKey     string      `json:"backend_key"`
-	SHA256         string      `json:"sha256"`
-	SizeBytes      int64       `json:"size_bytes"`
-	ExpiresAt      time.Time   `json:"expires_at"`
-	RelatedObjects []ObjectRef `json:"related_objects,omitempty"`
-	CapacitySlot   *int        `json:"capacity_slot,omitempty"`
+	ClaimToken string    `json:"claim_token,omitempty"`
+	BackendKey string    `json:"backend_key"`
+	SHA256     string    `json:"sha256"`
+	SizeBytes  int64     `json:"size_bytes"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	// ExpirationDisabled keeps the session payload until explicit completion or
+	// deletion. Stores still use ExpiresAt as a far-future bookkeeping bound.
+	ExpirationDisabled bool        `json:"expiration_disabled,omitempty"`
+	RelatedObjects     []ObjectRef `json:"related_objects,omitempty"`
+	CapacitySlot       *int        `json:"capacity_slot,omitempty"`
 }
 
 // EffectiveProfile returns the stored profile or the legacy Bruno profile for

@@ -57,6 +57,20 @@ describe('useScriptApi import wrappers', () => {
     },
   )
 
+  it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
+    '%s sends draft expiration only when explicitly enabled', async method => {
+      const archive = new File(['fixture'], 'script.zip')
+      await api[method](archive)
+      let body = (apiFetch as Mock).mock.calls[0][1].body as FormData
+      expect(body.has('expire_draft')).toBe(false)
+
+      ;(apiFetch as Mock).mockClear()
+      await api[method](archive, { expire_draft: true })
+      body = (apiFetch as Mock).mock.calls[0][1].body as FormData
+      expect(body.get('expire_draft')).toBe('true')
+    },
+  )
+
   it.each(['importJMeter', 'validateJMeterImport'] as const)('%s authorizes the project before streaming file bytes', async method => {
     const file = new File(['<jmeterTestPlan/>'], 'plan.jmx')
     await api[method](file, { project_id: 'project-1', name: 'Orders' })

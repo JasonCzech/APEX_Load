@@ -1,622 +1,1125 @@
-import { formatReportPercent } from './runReport/reportPresentation'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-
+import { AnalysisSavedViews } from './AnalysisSavedViews'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import type {
   Release,
   ReleaseTrend,
-  ReleaseTrendPoint,
-  RunArchiveActionStats,
   RunArchiveReport,
   TestSummary,
 } from '../types'
+import { downloadTextFile } from '../utils/fileUtils'
+import {
+  analysisCSV,
+  analysisRuleVersion,
+  displayNumber,
+  finite,
+  metricLabels,
+  signedChange,
+  type AnalysisMetric,
+  type AnalysisReportContext,
+} from './dashboardAnalysisModel'
+import {
+  compareTrendMeasurements,
+  trendMeasurement,
+  trendStats,
+  validTrendStats,
+  type TrendPopulation,
+} from './releaseTrendModel'
+import { chartTooltipContentStyle } from './chartTooltipTheme'
 import StatusBadge from './StatusBadge'
 
-interface ReleaseTrendPanelProps {
+interface Props {
   releaseId: string
+  applicationId?: string
+  onOpenAnalysisReport?: (id: string, context: AnalysisReportContext) => void
   getReleaseTrend: (id: string) => Promise<ReleaseTrend>
-  /** Releases the in-tab release filter can switch between. */
   releaseOptions?: Release[]
   onReleaseChange?: (release: Release) => void
-  /** Run metadata (scenario association) keyed by run id. */
   runsById?: Record<string, TestSummary>
-  /** Archive reports keyed by run id; supplies transaction-level detail. */
   reportsById?: Record<string, RunArchiveReport | null>
-  /** Display names for scenario ids; falls back to the raw id when absent. */
   scenarioNames?: Record<string, string>
   onOpenRun?: (id: string) => void
   onOpenRunArchive?: (id: string) => void
+  onExportRelease?: () => void
 }
-
-const tableBottomGutterPx = 24
-const tableMinimumViewportHeightPx = 80
-const detailTransactionLimit = 12
+const emptyRuns: Record<string, TestSummary> = {}
+const emptyReports: Record<string, RunArchiveReport | null> = {}
+const emptyNames: Record<string, string> = {}
+const emptyReleases: Release[] = []
 const ALL = '__all__'
-const UNASSIGNED_SCENARIO = '__unassigned__'
 
-const EMPTY_RUNS: Record<string, TestSummary> = {}
-const EMPTY_REPORTS: Record<string, RunArchiveReport | null> = {}
-const EMPTY_SCENARIO_NAMES: Record<string, string> = {}
-const EMPTY_RELEASES: Release[] = []
-
-function formatSignedMs(value: number): string {
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(0)}ms`
-}
-
-function formatSignedPct(value: number): string {
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(1)}%`
-}
-
-function formatSignedPoints(value: number, digits = 2): string {
-  const sign = value > 0 ? '+' : ''
-  return `${sign}${value.toFixed(digits)}`
-}
-
-function formatOptional(value: number | undefined, digits = 1): string {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
-}
-
-function formatCount(value: number | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? Math.round(value).toLocaleString() : '—'
-}
-
-function formatTimestamp(value?: string): string {
-  if (!value) return '—'
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleString()
-}
-
-function useBottomBoundedTable(dependencySignature: string) {
-  const ref = useRef<HTMLDivElement | null>(null)
-  const [maxHeight, setMaxHeight] = useState<number | null>(null)
-
-  useLayoutEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const updateMaxHeight = () => {
-      const node = ref.current
-      if (!node) return
-      const rect = node.getBoundingClientRect()
-      const availableHeight = Math.floor(window.innerHeight - rect.top - tableBottomGutterPx)
-      const nextMaxHeight = Math.max(tableMinimumViewportHeightPx, availableHeight)
-      setMaxHeight(current => current === nextMaxHeight ? current : nextMaxHeight)
-    }
-
-    updateMaxHeight()
-    window.addEventListener('resize', updateMaxHeight)
-    window.addEventListener('scroll', updateMaxHeight, { passive: true })
-
-    return () => {
-      window.removeEventListener('resize', updateMaxHeight)
-      window.removeEventListener('scroll', updateMaxHeight)
-    }
-  }, [dependencySignature])
-
-  const style = maxHeight === null ? undefined : ({ '--dashboard-table-max-height': `${maxHeight}px` } as CSSProperties)
-  return { ref, style }
-}
-
-// A row in the rendered series: the trend point plus the scenario association and
-// (when a transaction filter is active) that transaction's stats for the run.
-interface TrendRow {
-  point: ReleaseTrendPoint
-  scenarioId: string
-  scenarioLabel: string
-  transaction?: RunArchiveActionStats
-  transactionDeltaMs?: number
-}
-
-// ReleaseTrendPanel surfaces the multi-run trend analysis (run-over-run deltas
-// and regression flags) from GET /api/v1/releases/{id}/trend — the value the raw
-// CSV export lacks. Release/scenario/transaction filters narrow the series, and
-// selecting a run expands its archived detail below the table.
 export function ReleaseTrendPanel({
   releaseId,
+  applicationId,
+  onOpenAnalysisReport,
   getReleaseTrend,
-  releaseOptions = EMPTY_RELEASES,
+  releaseOptions = emptyReleases,
   onReleaseChange,
-  runsById = EMPTY_RUNS,
-  reportsById = EMPTY_REPORTS,
-  scenarioNames = EMPTY_SCENARIO_NAMES,
+  runsById = emptyRuns,
+  reportsById = emptyReports,
+  scenarioNames = emptyNames,
   onOpenRun,
   onOpenRunArchive,
-}: ReleaseTrendPanelProps) {
-  const [trend, setTrend] = useState<ReleaseTrend | null>(null)
+  onExportRelease,
+}: Props) {
+  const [trends, setTrends] = useState<ReleaseTrend[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [scenarioFilter, setScenarioFilter] = useState(ALL)
-  const [transactionFilter, setTransactionFilter] = useState(ALL)
+  const [retry, setRetry] = useState(0)
+  const [mode, setMode] = useState('within')
+  const [otherRelease, setOtherRelease] = useState('')
+  const [scenario, setScenario] = useState(ALL)
+  const [transaction, setTransaction] = useState('')
+  const [population, setPopulation] = useState<TrendPopulation>('transaction')
+  const [metric, setMetric] = useState<AnalysisMetric>('p95_ms')
+  const [baselineMode, setBaselineMode] = useState('previous')
+  const [pinnedId, setPinnedId] = useState('')
   const [selectedRunId, setSelectedRunId] = useState('')
+  const [latencyRule, setLatencyRule] = useState(10)
+  const [errorRule, setErrorRule] = useState(1)
+  const [sort, setSort] = useState('time')
+  const [detailSort, setDetailSort] = useState('regression')
+  const [exportError, setExportError] = useState('')
+  const otherId = releaseOptions.some(
+    (release) => release.id === otherRelease && release.id !== releaseId,
+  )
+    ? otherRelease
+    : releaseOptions.find((release) => release.id !== releaseId)?.id
 
   useEffect(() => {
-    let cancelled = false
+    let active = true
     setLoading(true)
     setError('')
-    void getReleaseTrend(releaseId)
-      .then(response => {
-        if (!cancelled) setTrend(response)
+    setTrends([])
+    setSelectedRunId('')
+    const ids =
+      mode === 'across' && otherId ? [releaseId, otherId] : [releaseId]
+    void Promise.all(ids.map((id) => getReleaseTrend(id)))
+      .then((result) => {
+        if (active) setTrends(result)
       })
-      .catch(err => {
-        if (!cancelled) {
-          setTrend(null)
-          setError(err instanceof Error ? err.message : 'Failed to load release trend.')
-        }
+      .catch((cause) => {
+        if (active)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'Could not load release trend.',
+          )
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (active) setLoading(false)
       })
     return () => {
-      cancelled = true
+      active = false
     }
-  }, [getReleaseTrend, releaseId])
+  }, [releaseId, otherId, mode, getReleaseTrend, retry])
 
-  // Filters and the expanded run are scoped to one release; switching releases
-  // starts from a clean, unfiltered series.
-  useEffect(() => {
-    setScenarioFilter(ALL)
-    setTransactionFilter(ALL)
-    setSelectedRunId('')
-  }, [releaseId])
-
-  const points = useMemo(() => trend?.points ?? [], [trend])
-
-  const scenarioIdForRun = useMemo(() => {
-    const resolve = (runId: string) => runsById[runId]?.scenario_id?.trim() || UNASSIGNED_SCENARIO
-    return resolve
-  }, [runsById])
-
-  const scenarioOptions = useMemo(() => {
-    const seen = new Map<string, string>()
-    points.forEach(point => {
-      const scenarioId = scenarioIdForRun(point.run_id)
-      if (seen.has(scenarioId)) return
-      seen.set(scenarioId, scenarioId === UNASSIGNED_SCENARIO
-        ? 'Unassigned scenario'
-        : scenarioNames[scenarioId] || scenarioId)
-    })
-    return Array.from(seen.entries())
-      .map(([id, label]) => ({ id, label }))
-      .sort((left, right) => left.label.localeCompare(right.label))
-  }, [points, scenarioIdForRun, scenarioNames])
-
-  const transactionOptions = useMemo(() => {
-    const names = new Set<string>()
-    points.forEach(point => {
-      const report = reportsById[point.run_id]
-      const stats = report?.metric_populations ? report.by_transaction : report?.by_action
-      if (!stats) return
-      Object.keys(stats).forEach(name => names.add(name))
-    })
-    return Array.from(names).sort((left, right) => left.localeCompare(right))
-  }, [points, reportsById])
-
-  // A stale filter (its scenario/transaction left the series after a data refresh)
-  // would silently render an empty table, so fall back to "all".
-  useEffect(() => {
-    if (scenarioFilter !== ALL && !scenarioOptions.some(option => option.id === scenarioFilter)) {
-      setScenarioFilter(ALL)
-    }
-  }, [scenarioFilter, scenarioOptions])
-
-  useEffect(() => {
-    if (transactionFilter !== ALL && !transactionOptions.includes(transactionFilter)) {
-      setTransactionFilter(ALL)
-    }
-  }, [transactionFilter, transactionOptions])
-
-  const rows = useMemo<TrendRow[]>(() => {
-    const filtered: TrendRow[] = []
-    points.forEach(point => {
-      const scenarioId = scenarioIdForRun(point.run_id)
-      if (scenarioFilter !== ALL && scenarioId !== scenarioFilter) return
-
-      let transaction: RunArchiveActionStats | undefined
-      if (transactionFilter !== ALL) {
+  const points = useMemo(
+    () =>
+      [
+        ...new Map(
+          trends
+            .flatMap((trend) => trend.points)
+            .map((point) => [point.run_id, point]),
+        ).values(),
+      ].sort(
+        (a, b) =>
+          Date.parse(a.completed_at) - Date.parse(b.completed_at) ||
+          a.run_id.localeCompare(b.run_id),
+      ),
+    [trends],
+  )
+  const scenarios = [
+    ...new Set(
+      points.map(
+        (point) => runsById[point.run_id]?.scenario_id || '__unassigned__',
+      ),
+    ),
+  ]
+  const effectiveScenario = scenarios.includes(scenario) ? scenario : ALL
+  const sourcePoints = points.filter(
+    (point) =>
+      effectiveScenario === ALL ||
+      (runsById[point.run_id]?.scenario_id || '__unassigned__') ===
+        effectiveScenario,
+  )
+  const transactionOptions = [
+    ...new Set(
+      sourcePoints.flatMap((point) => {
         const report = reportsById[point.run_id]
-        transaction = (report?.metric_populations ? report.by_transaction : report?.by_action)?.[transactionFilter]
-        // A run that never executed the selected transaction has nothing to plot.
-        if (!transaction) return
-      }
-
-      filtered.push({
+        const stats =
+          population === 'transaction'
+            ? report?.by_transaction
+            : population === 'action'
+              ? report?.by_request
+              : !report?.metric_populations
+                ? report?.by_action
+                : undefined
+        return Object.keys(stats ?? {})
+      }),
+    ),
+  ].sort()
+  const effectiveTransaction = transactionOptions.includes(transaction)
+    ? transaction
+    : ''
+  const measurements = sourcePoints
+    .map((point) =>
+      trendMeasurement(
         point,
-        scenarioId,
-        scenarioLabel: scenarioId === UNASSIGNED_SCENARIO
-          ? '—'
-          : scenarioNames[scenarioId] || scenarioId,
-        transaction,
-      })
-    })
-
-    // Run-over-run deltas are recomputed against the filtered series so the Δ column
-    // always compares the two runs the user can actually see.
-    return filtered.map((row, index) => {
-      if (!row.transaction || index === 0) return row
-      const previous = filtered[index - 1].transaction
-      if (!previous || previous.transactions === 0 || row.transaction.transactions === 0 || row.point.metric_population !== filtered[index - 1].point.metric_population) return row
-      return { ...row, transactionDeltaMs: row.transaction.avg_response_ms - previous.avg_response_ms }
-    })
-  }, [points, reportsById, scenarioFilter, scenarioIdForRun, scenarioNames, transactionFilter])
-
-  // Keep the expanded run in sync with the visible rows: a run filtered out of the
-  // series must not keep a detail card open below the table.
-  useEffect(() => {
-    if (selectedRunId && !rows.some(row => row.point.run_id === selectedRunId)) {
-      setSelectedRunId('')
+        reportsById[point.run_id],
+        population,
+        effectiveTransaction,
+        metric,
+      ),
+    )
+    .filter((row) => !effectiveTransaction || row.stats)
+  const eligiblePinned = pinnedId
+    ? measurements.find((row) => row.point.run_id === pinnedId)
+    : measurements.find((row) => runsById[row.point.run_id]?.baseline_pinned) ??
+      measurements[0]
+  const analysis = measurements.map((row, index) => {
+    const recordedId =
+      runsById[row.point.run_id]?.comparison_baseline?.source_test_id
+    const baseline =
+      baselineMode === 'pinned'
+        ? eligiblePinned
+        : baselineMode === 'recorded'
+          ? measurements.find((item) => item.point.run_id === recordedId)
+          : [...measurements.slice(0, index)].reverse().find((previous) => {
+              if (!validTrendStats(previous.stats)) return false
+              return (
+                compareTrendMeasurements(row, previous, runsById, reportsById, {
+                  latencyPct: latencyRule,
+                  errorPoints: errorRule,
+                }).eligibility.status !== 'Not comparable'
+              )
+            })
+    return {
+      row,
+      comparison: compareTrendMeasurements(
+        row,
+        baseline,
+        runsById,
+        reportsById,
+        { latencyPct: latencyRule, errorPoints: errorRule },
+      ),
     }
-  }, [rows, selectedRunId])
-
-  const selectedRow = useMemo(
-    () => rows.find(row => row.point.run_id === selectedRunId),
-    [rows, selectedRunId],
+  })
+  const sorted = [...analysis].sort((a, b) =>
+    sort === 'regression'
+      ? b.comparison.regressions.length - a.comparison.regressions.length ||
+        (b.comparison.latencyPct ?? -Infinity) -
+          (a.comparison.latencyPct ?? -Infinity)
+      : sort === 'latency'
+        ? (b.row.latency ?? -Infinity) - (a.row.latency ?? -Infinity)
+        : 0,
   )
-  const selectedIndex = selectedRow ? rows.indexOf(selectedRow) : -1
-  const selectedPreviousPoint = selectedIndex > 0 ? rows[selectedIndex - 1].point : undefined
-
-  const tableBounds = useBottomBoundedTable(
-    `${loading}:${error}:${rows.length}:${transactionFilter}:${Boolean(selectedRow)}`,
+  const selected = analysis.find(
+    (item) => item.row.point.run_id === selectedRunId,
   )
+  const latest = analysis[analysis.length - 1]
+  const report = selected ? reportsById[selected.row.point.run_id] : undefined
+  const baselineReport = selected?.comparison.baseline
+    ? reportsById[selected.comparison.baseline.point.run_id]
+    : undefined
+  const run = selected ? runsById[selected.row.point.run_id] : undefined
+  const statSet =
+    population === 'transaction'
+      ? report?.by_transaction
+      : population === 'action'
+        ? report?.by_request
+        : !report?.metric_populations
+          ? report?.by_action
+          : undefined
+  const transactionRows = Object.entries(statSet ?? {})
+    .filter(([name]) => !effectiveTransaction || name === effectiveTransaction)
+    .map(([name, stats]) => {
+      const baselineStats = trendStats(baselineReport, population, name)
+      const current =
+        metric === 'average_ms' ? stats.avg_response_ms : stats[metric]
+      const prior =
+        metric === 'average_ms'
+          ? baselineStats?.avg_response_ms
+          : baselineStats?.[metric]
+      return {
+        name,
+        stats,
+        current,
+        prior,
+        delta:
+          selected?.comparison.eligibility.status !== 'Not comparable' &&
+          finite(current) &&
+          finite(prior)
+            ? current - prior
+            : undefined,
+        sla:
+          population === 'transaction' ? report?.sla_rows?.[name] : undefined,
+      }
+    })
+    .sort((a, b) =>
+      detailSort === 'volume'
+        ? b.stats.transactions - a.stats.transactions
+        : detailSort === 'slowest'
+          ? (b.current ?? -Infinity) - (a.current ?? -Infinity)
+          : Number(b.sla?.result_kind === 'fail') -
+              Number(a.sla?.result_kind === 'fail') ||
+            (b.delta ?? -Infinity) - (a.delta ?? -Infinity),
+    )
+  const chartRows = analysis.map(({ row }) => ({
+    run: row.point.run_id,
+    time: Date.parse(row.point.completed_at),
+    name: row.point.run_name,
+    latency: row.latency,
+    throughput: row.successfulRate,
+    errors: validTrendStats(row.stats) ? row.stats.error_pct : undefined,
+    load: row.point.peak_active_vusers,
+  }))
+  const rowLabel = (id: string) => {
+    const point = points.find((item) => item.run_id === id)
+    return `${point?.run_name || id} · ${runsById[id]?.ref_key || id}`
+  }
+  const acceptance = (id: string) =>
+    reportsById[id]?.verdict?.status || 'Not assessed'
+  const reset = () => {
+    setScenario(ALL)
+    setTransaction('')
+    setPopulation('transaction')
+    setMetric('p95_ms')
+    setBaselineMode('previous')
+    setPinnedId('')
+    setSort('time')
+    setSelectedRunId('')
+    setLatencyRule(10)
+    setErrorRule(1)
+    setMode('within')
+    setDetailSort('regression')
+  }
+  const exportView = async () => {
+    setExportError('')
+    const rows: unknown[][] = [
+      ['APEX Load filtered trend', analysisRuleVersion],
+      ['Releases', ...trends.map((trend) => trend.release_id)],
+      ['Population', population],
+      ['Scenario', effectiveScenario],
+      ['Transaction', effectiveTransaction || 'All'],
+      ['Statistic', metric],
+      ['Window', 'Entire recorded run'],
+      ['Baseline policy', baselineMode],
+      ['Latency regression %', latencyRule],
+      ['Error regression percentage points', errorRule],
+      [
+        'Run ID',
+        'Run name',
+        'Release',
+        'Completed',
+        'Baseline ID',
+        'Latency ms',
+        'Latency delta ms',
+        'Latency delta %',
+        'Successful / s',
+        'Error %',
+        'Error delta pp',
+        'Samples',
+        'Observed peak VUsers',
+        'Acceptance',
+        'Eligibility',
+        'Reasons',
+        'Regression rules triggered',
+      ],
+    ]
+    analysis.forEach(({ row, comparison }) =>
+      rows.push([
+        row.point.run_id,
+        row.point.run_name,
+        runsById[row.point.run_id]?.release_id,
+        row.point.completed_at,
+        comparison.baseline?.point.run_id,
+        row.latency,
+        comparison.latencyDelta,
+        comparison.latencyPct,
+        row.successfulRate,
+        validTrendStats(row.stats) ? row.stats.error_pct : undefined,
+        comparison.errorDelta,
+        row.stats?.transactions,
+        row.point.peak_active_vusers,
+        acceptance(row.point.run_id),
+        comparison.eligibility.status,
+        comparison.reason || comparison.eligibility.reasons.join('; '),
+        comparison.regressions.join('; '),
+      ]),
+    )
+    try {
+      await downloadTextFile(
+        analysisCSV(rows),
+        'apexload-filtered-release-trend.csv',
+        'text/csv;charset=utf-8',
+      )
+    } catch (cause) {
+      setExportError(
+        cause instanceof Error ? cause.message : 'Could not export trend.',
+      )
+    }
+  }
 
-  const releaseInOptions = releaseOptions.some(release => release.id === releaseId)
-  const showReleaseFilter = Boolean(onReleaseChange) && releaseOptions.length > 0
-
-  const filters = (
-    <div className="release-trend-filters" role="group" aria-label="Release trend filters">
-      {showReleaseFilter && (
+  return (
+    <section
+      className="release-trend-panel"
+      data-testid="release-trend-panel"
+      aria-busy={loading}
+    >
+      <div className="release-trend-header">
+        <div>
+          <h3 className="release-trend-title">Release Trend Analysis</h3>
+          <p>
+            Track changes against a visible baseline under comparable test
+            conditions.
+          </p>
+        </div>
+        <div className="analysis-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void exportView()}
+            disabled={loading || !analysis.length}
+          >
+            Export this analysis
+          </button>
+          {onExportRelease && (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={onExportRelease}
+            >
+              Export complete release CSV
+            </button>
+          )}
+        </div>
+      </div>
+      <div
+        className="release-trend-filters analysis-controls"
+        role="group"
+        aria-label="Release trend filters"
+      >
         <label className="release-trend-filter">
-          <span>Release</span>
+          <span>Trend scope</span>
           <select
-            value={releaseInOptions ? releaseId : ''}
-            onChange={event => {
-              const next = releaseOptions.find(release => release.id === event.target.value)
-              if (next) onReleaseChange?.(next)
+            value={mode}
+            onChange={(event) => setMode(event.target.value)}
+          >
+            <option value="within">Runs within this release</option>
+            <option value="across">Compare releases</option>
+          </select>
+        </label>
+        {onReleaseChange && releaseOptions.length > 0 && (
+          <label className="release-trend-filter">
+            <span>Release</span>
+            <select
+              value={releaseId}
+              onChange={(event) => {
+                const release = releaseOptions.find(
+                  (item) => item.id === event.target.value,
+                )
+                if (release) {
+                  reset()
+                  onReleaseChange(release)
+                }
+              }}
+            >
+              {releaseOptions.map((release) => (
+                <option key={release.id} value={release.id}>
+                  {release.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {mode === 'across' && (
+          <label className="release-trend-filter">
+            <span>Comparison release</span>
+            <select
+              value={otherId ?? ''}
+              onChange={(event) => setOtherRelease(event.target.value)}
+            >
+              {!otherId && <option value="">Another release required</option>}
+              {releaseOptions
+                .filter((release) => release.id !== releaseId)
+                .map((release) => (
+                  <option key={release.id} value={release.id}>
+                    {release.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        <label className="release-trend-filter">
+          <span>Population</span>
+          <select
+            value={population}
+            onChange={(event) => {
+              setPopulation(event.target.value as TrendPopulation)
+              setTransaction('')
             }}
           >
-            {!releaseInOptions && <option value="">Current release</option>}
-            {releaseOptions.map(release => (
-              <option key={release.id} value={release.id}>{release.name}</option>
+            <option value="transaction">Named transactions</option>
+            <option value="action">Requests / actions</option>
+            <option value="unknown">Legacy / unclassified</option>
+          </select>
+        </label>
+        <label className="release-trend-filter">
+          <span>Scenario</span>
+          <select
+            value={effectiveScenario}
+            onChange={(event) => setScenario(event.target.value)}
+          >
+            <option value={ALL}>All scenarios</option>
+            {scenarios.map((id) => (
+              <option value={id} key={id}>
+                {id === '__unassigned__'
+                  ? 'Unassigned scenario'
+                  : scenarioNames[id] || `Scenario ${id}`}
+              </option>
             ))}
           </select>
         </label>
-      )}
-      <label className="release-trend-filter">
-        <span>Scenario</span>
-        <select
-          value={scenarioFilter}
-          onChange={event => setScenarioFilter(event.target.value)}
-          disabled={scenarioOptions.length === 0}
+        <label className="release-trend-filter">
+          <span>Transaction</span>
+          <select
+            value={effectiveTransaction}
+            onChange={(event) => setTransaction(event.target.value)}
+            disabled={!transactionOptions.length}
+          >
+            <option value="">
+              {transactionOptions.length
+                ? 'All in selected population'
+                : 'No transaction data'}
+            </option>
+            {transactionOptions.map((name) => (
+              <option value={name} key={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="release-trend-filter">
+          <span>Latency statistic</span>
+          <select
+            value={metric}
+            onChange={(event) =>
+              setMetric(event.target.value as AnalysisMetric)
+            }
+          >
+            {Object.entries(metricLabels).map(([value, label]) => (
+              <option value={value} key={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="btn btn-secondary btn-sm"
+          type="button"
+          onClick={reset}
         >
-          <option value={ALL}>All scenarios</option>
-          {scenarioOptions.map(option => (
-            <option key={option.id} value={option.id}>{option.label}</option>
-          ))}
-        </select>
-      </label>
-      <label className="release-trend-filter">
-        <span>Transaction</span>
-        <select
-          value={transactionFilter}
-          onChange={event => setTransactionFilter(event.target.value)}
-          disabled={transactionOptions.length === 0}
-        >
-          <option value={ALL}>
-            {transactionOptions.length === 0 ? 'No transaction data' : 'All transactions'}
-          </option>
-          {transactionOptions.map(name => (
-            <option key={name} value={name}>{name}</option>
-          ))}
-        </select>
-      </label>
-    </div>
-  )
-
-  if (loading) {
-    return <div className="release-trend-panel release-trend-note" data-testid="release-trend-panel">Loading release trend…</div>
-  }
-  if (error) {
-    return <div className="release-trend-panel release-trend-note" data-testid="release-trend-panel">{error}</div>
-  }
-  if (!trend || trend.run_count === 0) {
-    return (
-      <div className="release-trend-panel" data-testid="release-trend-panel">
-        {showReleaseFilter && filters}
-        <div className="release-trend-note">No archived runs yet for this release.</div>
+          Reset analysis
+        </button>
       </div>
-    )
-  }
-
-  const transactionScoped = transactionFilter !== ALL
-
-  return (
-    <div className="release-trend-panel" data-testid="release-trend-panel">
-      <div className="release-trend-header">
-        <div>
-          <h4 className="release-trend-title">Release Trend Analysis</h4>
-          <p>Metric population: {points.every(point => point.metric_population === 'transaction') ? 'named transaction attempts' : 'Unknown for legacy records; comparisons require matching populations'}.</p>
-          <p className="release-trend-subtitle">
-            {trend.run_count} run{trend.run_count === 1 ? '' : 's'} · {points.length > 1 && points[0].transactions > 0 && points[points.length - 1].transactions > 0 && points[0].metric_population === points[points.length - 1].metric_population ? `avg response ${formatSignedPct(trend.summary.avg_response_trend_pct)} · error rate ${trend.summary.error_pct_trend.toFixed(2)} pp across the series.` : 'No comparable samples for a series trend.'}
-            {rows.length !== points.length && ` Showing ${rows.length} of ${points.length} runs.`}
-          </p>
-        </div>
-        {trend.summary.latest_regressed && (
-          <span className="status-badge status-failed" data-testid="release-trend-latest-regressed">Latest run regressed</span>
-        )}
-      </div>
-      {filters}
-      {rows.some(row => (row.transaction?.transactions ?? row.point.transactions) === 0) && <p className="dashboard-context-note" role="note">
-        Some runs have no samples in this population. Request / action samples in Load Comparison do not establish named transaction attempts. Open a run's evidence to check instrumentation and archive coverage; collect named transactions in a subsequent run before comparing this series.
-      </p>}
-      {rows.length < 2 && <p className="dashboard-context-note">A trend needs at least two comparable runs with samples from the same population. Broaden the scenario filter or collect another run with the same workload and acceptance criteria.</p>}
-      {transactionScoped && (
-        <p className="release-trend-scope-note" data-testid="release-trend-scope-note">
-          Response and error columns are scoped to <strong>{transactionFilter}</strong>; runs without that transaction are hidden.
-        </p>
-      )}
-      {rows.length === 0 ? (
-        <div className="release-trend-note">No runs match the selected filters.</div>
-      ) : (
-        <div className="trend-table-wrap" ref={tableBounds.ref} style={tableBounds.style}>
-          <table className="trend-table">
-            <thead>
-              <tr>
-                <th>Run</th>
-                <th>Scenario</th>
-                <th>Completed</th>
-                <th className="num">{transactionScoped ? 'Txn Avg (ms)' : 'Avg (ms)'}</th>
-                <th className="num">Δ Avg</th>
-                <th className="num">{transactionScoped ? 'Txn Error %' : 'Error %'}</th>
-                <th className="num">{transactionScoped ? 'Txn Volume' : 'Transactions'}</th>
-                <th className="num">SLA</th>
-                <th>Regressions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(row => {
-                const { point } = row
-                const regressed = Boolean(point.regressions && point.regressions.length > 0)
-                const selected = point.run_id === selectedRunId
-                const avgMs = row.transaction ? row.transaction.avg_response_ms : point.avg_response_ms
-                const errorPct = row.transaction ? row.transaction.error_pct : point.error_pct
-                const volume = row.transaction ? row.transaction.transactions : point.transactions
-                const deltaMs = row.transaction ? row.transactionDeltaMs : point.deltas?.avg_response_ms_delta
-                const classNames = [
-                  regressed ? 'release-trend-row-regressed' : '',
-                  selected ? 'release-trend-row-selected' : '',
-                ].filter(Boolean).join(' ')
-                return (
-                  <tr
-                    key={point.run_id}
-                    className={classNames}
-                    data-testid={`release-trend-row-${point.run_id}`}
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={selected}
-                    aria-label={`Show details for ${point.run_name || point.run_id}`}
-                    onClick={() => setSelectedRunId(current => current === point.run_id ? '' : point.run_id)}
-                    onKeyDown={event => {
-                      if (event.key !== 'Enter' && event.key !== ' ') return
-                      event.preventDefault()
-                      setSelectedRunId(current => current === point.run_id ? '' : point.run_id)
-                    }}
-                  >
-                    <td><span className="trend-run-name">{point.run_name || point.run_id}</span></td>
-                    <td>{row.scenarioLabel}</td>
-                    <td>{formatTimestamp(point.completed_at)}</td>
-                    <td className="num">{volume > 0 ? formatOptional(avgMs) : 'No samples'}</td>
-                    <td className={`num ${typeof deltaMs === 'number' && deltaMs > 0 ? 'text-danger strong' : ''}`}>
-                      {volume > 0 && typeof deltaMs === 'number' ? formatSignedMs(deltaMs) : '—'}
-                    </td>
-                    <td className={`num ${errorPct > 0 ? 'text-danger' : ''}`}>{volume > 0 ? formatReportPercent(errorPct) : 'No samples'}</td>
-                    <td className="num">{formatCount(volume)}</td>
-                    <td className={`num ${point.sla_breached ? 'text-danger strong' : ''}`}>
-                      {reportsById[point.run_id]?.verdict?.status || (point.sla_breached ? 'Breached' : 'Not available')}
-                    </td>
-                    <td>{regressed ? point.regressions!.join(', ') : '—'}</td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <ReleaseTrendRunDetail
-        row={selectedRow}
-        previousPoint={selectedPreviousPoint}
-        report={selectedRow ? reportsById[selectedRow.point.run_id] ?? null : null}
-        run={selectedRow ? runsById[selectedRow.point.run_id] : undefined}
-        transactionFilter={transactionScoped ? transactionFilter : ''}
-        onOpenRun={onOpenRun}
-        onOpenRunArchive={onOpenRunArchive}
+      <AnalysisSavedViews
+        storageKey={`apexload.analysis.trend.v1.${applicationId || releaseId}`}
+        values={{
+          mode,
+          otherRelease: otherId || '',
+          releaseId,
+          scenario: effectiveScenario,
+          transaction: effectiveTransaction,
+          population,
+          metric,
+          baselineMode,
+          pinnedId: eligiblePinned?.point.run_id || '',
+          latencyRule: String(latencyRule),
+          errorRule: String(errorRule),
+          sort,
+          rules: analysisRuleVersion,
+        }}
+        onRestore={(values) => {
+          const release = releaseOptions.find(
+            (item) => item.id === values.releaseId,
+          )
+          if (release) onReleaseChange?.(release)
+          setMode(values.mode === 'across' ? 'across' : 'within')
+          setOtherRelease(values.otherRelease || '')
+          setScenario(values.scenario || ALL)
+          setTransaction(values.transaction || '')
+          setPopulation(
+            values.population === 'action' || values.population === 'unknown'
+              ? values.population
+              : 'transaction',
+          )
+          setMetric(
+            Object.prototype.hasOwnProperty.call(metricLabels, values.metric)
+              ? (values.metric as AnalysisMetric)
+              : 'p95_ms',
+          )
+          setBaselineMode(
+            values.baselineMode === 'pinned' ||
+              values.baselineMode === 'recorded'
+              ? values.baselineMode
+              : 'previous',
+          )
+          setPinnedId(values.pinnedId || '')
+          const latency = Number(values.latencyRule)
+          const errors = Number(values.errorRule)
+          setLatencyRule(
+            Number.isFinite(latency) && latency >= 0 ? latency : 10,
+          )
+          setErrorRule(Number.isFinite(errors) && errors >= 0 ? errors : 1)
+          setSort(
+            values.sort === 'latency' || values.sort === 'regression'
+              ? values.sort
+              : 'time',
+          )
+        }}
       />
-    </div>
-  )
-}
-
-interface ReleaseTrendRunDetailProps {
-  row?: TrendRow
-  previousPoint?: ReleaseTrendPoint
-  report: RunArchiveReport | null
-  run?: TestSummary
-  transactionFilter: string
-  onOpenRun?: (id: string) => void
-  onOpenRunArchive?: (id: string) => void
-}
-
-function ReleaseTrendRunDetail({
-  row,
-  previousPoint,
-  report,
-  run,
-  transactionFilter,
-  onOpenRun,
-  onOpenRunArchive,
-}: ReleaseTrendRunDetailProps) {
-  const transactionRows = useMemo(() => {
-    const byAction = report?.metric_populations ? report.by_transaction : report?.by_action
-    if (!byAction) return []
-    const entries = Object.entries(byAction)
-    const scoped = transactionFilter
-      ? entries.filter(([name]) => name === transactionFilter)
-      : entries
-    return scoped
-      .sort((left, right) => right[1].transactions - left[1].transactions)
-      .slice(0, detailTransactionLimit)
-      .map(([name, stats]) => ({ name, stats, sla: report?.sla_rows?.[name] }))
-  }, [report, transactionFilter])
-
-  if (!row) {
-    return (
-      <div className="release-trend-detail is-empty" data-testid="release-trend-detail">
-        <span className="release-trend-note">Select a run above to see its scenario, transaction, and resource detail.</span>
-      </div>
-    )
-  }
-
-  const { point } = row
-  const deltas = point.deltas
-  const overview = report?.metric_populations?.transaction
-  const peaks = report?.resource_peaks
-
-  return (
-    <div className="release-trend-detail" data-testid="release-trend-detail">
-      <div className="release-trend-detail-header">
-        <div>
-          <h5 className="release-trend-detail-title">{point.run_name || point.run_id}</h5>
-          <p className="release-trend-detail-meta">
-            {row.scenarioLabel !== '—' ? `${row.scenarioLabel} · ` : ''}
-            Completed {formatTimestamp(point.completed_at)}
-            {run?.total_vusers ? ` · ${run.total_vusers} VUsers` : ''}
-            {run?.duration ? ` · ${run.duration}` : ''}
-            {previousPoint ? ` · compared against ${previousPoint.run_name || previousPoint.run_id}` : ' · first run in the filtered series'}
-          </p>
-        </div>
-        <div className="release-trend-detail-actions">
-          <StatusBadge status={point.status} />
-          {onOpenRun && (
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenRun(point.run_id)}>
-              Open run
-            </button>
-          )}
-          {onOpenRunArchive && (
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => onOpenRunArchive(point.run_id)}>
-              Full report
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="release-trend-detail-stats">
-        <DetailStat label="Transactions" value={formatCount(point.transactions)} />
-        <DetailStat label="Error %" value={point.transactions > 0 ? formatReportPercent(point.error_pct) : 'No samples'} tone={point.error_pct > 0 ? 'danger' : 'neutral'} />
-        <DetailStat label="Avg Response" value={point.transactions > 0 ? `${formatOptional(point.avg_response_ms)} ms` : 'No samples'} />
-        <DetailStat label="P95" value={overview?.p95_ms === undefined ? '—' : `${formatOptional(overview.p95_ms)} ms`} />
-        <DetailStat label="Peak TPS" value={point.transactions > 0 ? formatOptional(point.peak_tps) : 'No samples'} />
-        <DetailStat label="Peak VUsers" value={formatCount(point.peak_active_vusers)} />
-        <DetailStat label="Completeness" value={`${formatOptional(point.completeness_pct, 0)}%`} />
-        <DetailStat
-          label="SLA"
-          value={report?.verdict?.status || (point.sla_breached ? 'Breached' : 'Not available')}
-          tone={point.sla_breached ? 'danger' : 'neutral'}
-        />
-        {point.telemetry_status && <DetailStat label="Telemetry" value={point.telemetry_status} />}
-        {peaks && <DetailStat label="Peak CPU" value={`${formatOptional(peaks.cpu_process_pct)}%`} />}
-        {peaks && <DetailStat label="Peak Memory" value={`${formatOptional(peaks.mem_process_mb, 0)} MB`} />}
-      </div>
-
-      <div className="release-trend-detail-grid">
-        <section className="release-trend-detail-block">
-          <h6 className="release-trend-detail-subtitle">Change vs previous run</h6>
-          {deltas ? (
-            <ul className="release-trend-delta-list">
-              <li>
-                <span>Avg response</span>
-                <strong className={deltas.avg_response_ms_delta > 0 ? 'text-danger' : 'text-success'}>
-                  {formatSignedMs(deltas.avg_response_ms_delta)} ({formatSignedPct(deltas.avg_response_pct_delta)})
-                </strong>
-              </li>
-              <li>
-                <span>Error rate</span>
-                <strong className={deltas.error_pct_delta > 0 ? 'text-danger' : 'text-success'}>
-                  {formatSignedPoints(deltas.error_pct_delta)} pts
-                </strong>
-              </li>
-              <li>
-                <span>Peak TPS</span>
-                <strong className={deltas.peak_tps_delta < 0 ? 'text-danger' : 'text-success'}>
-                  {formatSignedPoints(deltas.peak_tps_delta, 1)}
-                </strong>
-              </li>
-              <li>
-                <span>Completeness</span>
-                <strong className={deltas.completeness_delta < 0 ? 'text-danger' : 'text-success'}>
-                  {formatSignedPoints(deltas.completeness_delta, 1)} pts
-                </strong>
-              </li>
-            </ul>
-          ) : (
-            <p className="release-trend-note">No prior run in this release to compare against.</p>
-          )}
-          {point.regressions && point.regressions.length > 0 && (
-            <ul className="release-trend-regression-list">
-              {point.regressions.map(regression => (
-                <li key={regression} className="text-danger">{regression}</li>
+      <div className="analysis-controls">
+        <label>
+          Baseline policy
+          <select
+            value={baselineMode}
+            onChange={(event) => setBaselineMode(event.target.value)}
+          >
+            <option value="previous">Previous eligible visible run</option>
+            <option value="pinned">Choose a fixed baseline</option>
+            <option value="recorded">Recorded run baseline</option>
+          </select>
+        </label>
+        {baselineMode === 'pinned' && (
+          <label>
+            Fixed baseline
+            <select
+              value={eligiblePinned?.point.run_id ?? ''}
+              onChange={(event) => setPinnedId(event.target.value)}
+            >
+              {!eligiblePinned && (
+                <option value="">Selected baseline has no matching evidence</option>
+              )}
+              {measurements.map((row) => (
+                <option value={row.point.run_id} key={row.point.run_id}>
+                  {rowLabel(row.point.run_id)}
+                  {runsById[row.point.run_id]?.baseline_pinned
+                    ? ' · pinned'
+                    : ''}
+                </option>
               ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="release-trend-detail-block">
-          <h6 className="release-trend-detail-subtitle">
-            {transactionFilter ? `Transaction: ${transactionFilter}` : 'Top transactions'}
-          </h6>
-          {transactionRows.length === 0 ? (
-            <p className="release-trend-note">
-              {report
-                ? 'This run has no per-transaction breakdown archived.'
-                : 'Transaction detail is not available for this run.'}
-            </p>
-          ) : (
-            <div className="release-trend-detail-table-wrap">
-              {/* Short, already-scrollable list: the global table paginator would
-                  add a toolbar for a handful of rows. */}
-              <table className="trend-table release-trend-detail-table" data-table-pagination="off">
-                <thead>
-                  <tr>
-                    <th>Transaction</th>
-                    <th className="num">Volume</th>
-                    <th className="num">Avg (ms)</th>
-                    <th className="num">P95</th>
-                    <th className="num">Error %</th>
-                    <th>SLA</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactionRows.map(({ name, stats, sla }) => (
-                    <tr key={name}>
-                      <td>{name}</td>
-                      <td className="num">{formatCount(stats.transactions)}</td>
-                      <td className="num">{formatOptional(stats.avg_response_ms)}</td>
-                      <td className="num">{formatOptional(stats.p95_ms)}</td>
-                      <td className={`num ${stats.error_pct > 0 ? 'text-danger' : ''}`}>{formatReportPercent(stats.error_pct)}</td>
-                      <td className={sla?.result_kind === 'fail' ? 'text-danger strong' : ''}>{sla?.result || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+            </select>
+          </label>
+        )}
+        <label>
+          Table order
+          <select
+            value={sort}
+            onChange={(event) => setSort(event.target.value)}
+          >
+            <option value="time">Completion time</option>
+            <option value="regression">Largest regressions</option>
+            <option value="latency">Slowest latency</option>
+          </select>
+        </label>
       </div>
-    </div>
-  )
-}
-
-function DetailStat({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'danger' | 'success' }) {
-  return (
-    <div className={`release-trend-detail-stat tone-${tone}`}>
-      <span className="release-trend-detail-stat-value">{value}</span>
-      <span className="release-trend-detail-stat-label">{label}</span>
-    </div>
+      {baselineMode === 'pinned' && pinnedId && !eligiblePinned && (
+        <p role="status">The fixed baseline has no matching evidence for these filters. Change the filters or explicitly choose another baseline to compare.</p>
+      )}
+      <details className="analysis-settings">
+        <summary>Regression rules · {analysisRuleVersion}</summary>
+        <div className="analysis-controls">
+          <label>
+            Latency increase (%)
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={latencyRule}
+              onChange={(event) => {
+                const value = Number(event.target.value)
+                if (finite(value) && value >= 0) setLatencyRule(value)
+              }}
+            />
+          </label>
+          <label>
+            Error increase (percentage points)
+            <input
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={errorRule}
+              onChange={(event) => {
+                const value = Number(event.target.value)
+                if (finite(value) && value >= 0 && value <= 100)
+                  setErrorRule(value)
+              }}
+            />
+          </label>
+        </div>
+        <p>
+          Flags require a change greater than the selected rule. These are
+          exploratory rules, not statistical significance tests or changes to
+          stored acceptance. Missing provenance or fewer than 100 samples makes
+          a comparison unverified.
+        </p>
+      </details>
+      {loading ? (
+        <p role="status">Loading release trend…</p>
+      ) : error ? (
+        <p role="alert">
+          {error}{' '}
+          <button type="button" onClick={() => setRetry((value) => value + 1)}>
+            Retry
+          </button>
+        </p>
+      ) : !points.length ? (
+        <p>No archived runs yet for this release.</p>
+      ) : (
+        <>
+          <p className="release-trend-subtitle">
+            Showing {analysis.length} of {points.length} runs · Entire recorded
+            run · {effectiveTransaction || 'All selected-population attempts'}.
+            Chart, summary, deltas, and export use these filters.
+          </p>
+          {effectiveTransaction && (
+            <p
+              className="release-trend-scope-note"
+              data-testid="release-trend-scope-note"
+            >
+              Response and error columns are scoped to{' '}
+              <strong>{effectiveTransaction}</strong>; runs without that
+              transaction are hidden.
+            </p>
+          )}
+          {analysis.some((item) => !item.row.stats?.transactions) && (
+            <p className="analysis-warning">
+              Some runs have no samples in this population. Request / action
+              samples in Load Comparison do not establish named transaction
+              attempts. Choose Requests / actions to inspect protocol evidence,
+              or open the full report to check instrumentation.
+            </p>
+          )}
+          {analysis.length < 2 && (
+            <p className="analysis-warning">
+              A trend needs at least two comparable runs with matching
+              population samples.
+            </p>
+          )}
+          <div className="analysis-context" role="status">
+            Latest visible run:{' '}
+            {latest ? rowLabel(latest.row.point.run_id) : 'No matching runs'} ·{' '}
+            {latest?.comparison.reason ||
+              (latest?.comparison.regressions.length
+                ? `${latest.comparison.eligibility.status === 'Comparable' ? 'Regressed' : 'Potential regression (unverified)'}: ${latest.comparison.regressions.join('; ')}`
+                : 'No selected regression rule exceeded; acceptance is separate.')}
+            {latest?.comparison.baseline && (
+              <span>
+                {' '}
+                · Baseline: {rowLabel(latest.comparison.baseline.point.run_id)}
+              </span>
+            )}
+          </div>
+          <div className="analysis-trend-charts">
+            {(
+              [
+                {
+                  key: 'latency',
+                  label: `${metricLabels[metric]} latency (ms)`,
+                },
+                { key: 'throughput', label: 'Successful throughput (/s)' },
+                { key: 'errors', label: 'Errors (%)' },
+                { key: 'load', label: 'Observed peak active VUsers' },
+              ] as const
+            ).map((chart, index) => (
+              <div className="load-comparison-chart" key={chart.key}>
+                <h4>{chart.label}</h4>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart
+                    data={chartRows}
+                    syncId="release-analysis"
+                    margin={{ top: 8, right: 20, left: 0, bottom: 8 }}
+                  >
+                    <CartesianGrid
+                      stroke="var(--border)"
+                      strokeDasharray="3 3"
+                    />
+                    <XAxis
+                      dataKey="time"
+                      type="number"
+                      domain={['dataMin', 'dataMax']}
+                      tickFormatter={(value) =>
+                        new Date(Number(value)).toLocaleString(undefined, {
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      }
+                      minTickGap={40}
+                      tickCount={3}
+                      stroke="var(--text-secondary)"
+                    />
+                    <YAxis stroke="var(--text-secondary)" width={55} />
+                    <Tooltip
+                      contentStyle={chartTooltipContentStyle}
+                      labelFormatter={(value) =>
+                        new Date(Number(value)).toLocaleString()
+                      }
+                      formatter={(value) => displayNumber(Number(value))}
+                    />
+                    {latest?.comparison.baseline && (
+                      <ReferenceLine
+                        x={Date.parse(
+                          latest.comparison.baseline.point.completed_at,
+                        )}
+                        stroke="var(--text-secondary)"
+                        strokeDasharray="4 4"
+                        label={{
+                          value: 'Latest baseline',
+                          position: 'insideTopLeft',
+                          fill: 'var(--text-secondary)',
+                          fontSize: 10,
+                        }}
+                      />
+                    )}
+                    <Line
+                      dataKey={chart.key}
+                      name={chart.label}
+                      stroke={`var(--chart-${index + 1})`}
+                      type="linear"
+                      dot={{ r: 4 }}
+                      connectNulls={false}
+                      isAnimationActive={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ))}
+          </div>
+          <div
+            className="analysis-table-wrap"
+            role="region"
+            aria-label="Release trend data"
+            tabIndex={0}
+          >
+            <table className="trend-table" data-table-pagination="off">
+              <caption>Run evidence and baseline comparisons</caption>
+              <thead>
+                <tr>
+                  <th>Run / release</th>
+                  <th>Comparison outcome</th>
+                  <th>{metricLabels[metric]} (ms)</th>
+                  <th>Δ latency</th>
+                  <th>Error % / Δ pp</th>
+                  <th>Successful / s</th>
+                  <th>Samples</th>
+                  <th>Acceptance</th>
+                  <th>Baseline</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(({ row, comparison }) => (
+                  <tr
+                    key={row.point.run_id}
+                    data-testid={`release-trend-row-${row.point.run_id}`}
+                    className={
+                      selectedRunId === row.point.run_id
+                        ? 'release-trend-row-selected'
+                        : comparison.regressions.length
+                          ? 'release-trend-row-regressed'
+                          : ''
+                    }
+                  >
+                    <td>
+                      <button
+                        type="button"
+                        className="analysis-run-button"
+                        aria-expanded={selectedRunId === row.point.run_id}
+                        aria-controls="release-trend-run-detail"
+                        onClick={() =>
+                          setSelectedRunId((id) =>
+                            id === row.point.run_id ? '' : row.point.run_id,
+                          )
+                        }
+                      >
+                        {row.point.run_name || row.point.run_id}
+                      </button>
+                      <small className="analysis-id">
+                        {runsById[row.point.run_id]?.ref_key ||
+                          row.point.run_id}{' '}
+                        ·{' '}
+                        {releaseOptions.find(
+                          (release) =>
+                            release.id ===
+                            runsById[row.point.run_id]?.release_id,
+                        )?.name || runsById[row.point.run_id]?.release_id}
+                      </small>
+                      <small className="analysis-id">
+                        {new Date(row.point.completed_at).toLocaleString()} ·{' '}
+                        {scenarioNames[
+                          runsById[row.point.run_id]?.scenario_id || ''
+                        ] ||
+                          runsById[row.point.run_id]?.scenario_id ||
+                          'Unassigned scenario'}
+                      </small>
+                    </td>
+                    <td>
+                      {comparison.reason ||
+                        (comparison.regressions.length
+                          ? `${comparison.eligibility.status === 'Comparable' ? 'Regression' : 'Potential regression'}: ${comparison.regressions.join('; ')}`
+                          : 'No rule exceeded')}
+                      <small className="analysis-id">
+                        {comparison.eligibility.status}
+                      </small>
+                    </td>
+                    <td>
+                      {validTrendStats(row.stats)
+                        ? displayNumber(row.latency)
+                        : 'No samples'}
+                    </td>
+                    <td>
+                      {finite(comparison.latencyDelta)
+                        ? signedChange(
+                            row.latency,
+                            comparison.baseline?.latency,
+                          )
+                        : '—'}
+                    </td>
+                    <td>
+                      {validTrendStats(row.stats)
+                        ? displayNumber(row.stats.error_pct, 2)
+                        : 'No samples'}
+                      <small className="analysis-id">
+                        {finite(comparison.errorDelta)
+                          ? `${comparison.errorDelta > 0 ? '+' : ''}${displayNumber(comparison.errorDelta, 2)} pp`
+                          : '—'}
+                      </small>
+                    </td>
+                    <td>{displayNumber(row.successfulRate)}</td>
+                    <td>{row.stats?.transactions ?? 0}</td>
+                    <td>{acceptance(row.point.run_id)}</td>
+                    <td>
+                      {comparison.baseline
+                        ? rowLabel(comparison.baseline.point.run_id)
+                        : 'None'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div
+            id="release-trend-run-detail"
+            className="release-trend-detail"
+            data-testid="release-trend-detail"
+          >
+            {!selected ? (
+              <p>
+                Select a run above to see its scenario, transaction, and
+                resource detail.
+              </p>
+            ) : (
+              <>
+                <div className="release-trend-detail-header">
+                  <div>
+                    <h4>{rowLabel(selectedRunId)}</h4>
+                    <p>
+                      {run?.total_vusers ?? 'Unknown'} planned VUsers ·{' '}
+                      {selected.row.point.peak_active_vusers} observed peak
+                      VUsers · {run?.duration || 'Unknown duration'}
+                    </p>
+                    <p>
+                      Baseline:{' '}
+                      {selected.comparison.baseline
+                        ? rowLabel(selected.comparison.baseline.point.run_id)
+                        : 'None'}{' '}
+                      · {selected.comparison.eligibility.status}
+                    </p>
+                  </div>
+                  <div className="analysis-actions">
+                    <StatusBadge status={selected.row.point.status} />
+                    {onOpenRun && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => onOpenRun(selectedRunId)}
+                      >
+                        Open run
+                      </button>
+                    )}
+                    {(onOpenAnalysisReport || onOpenRunArchive) && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() =>
+                          onOpenAnalysisReport
+                            ? onOpenAnalysisReport(selectedRunId, {
+                                compare:
+                                  selected.comparison.baseline?.point.run_id,
+                                transaction: effectiveTransaction || undefined,
+                                population,
+                              })
+                            : onOpenRunArchive?.(selectedRunId)
+                        }
+                      >
+                        Full report
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="analysis-context">
+                  {effectiveTransaction || 'All selected-population attempts'} ·{' '}
+                  {selected.row.stats?.transactions ?? 0} samples ·{' '}
+                  {metricLabels[metric]}: {displayNumber(selected.row.latency)}{' '}
+                  ms · Acceptance: {acceptance(selectedRunId)} · Completeness:{' '}
+                  {displayNumber(selected.row.point.completeness_pct, 0)}%
+                </p>
+                <h5>Change vs selected baseline</h5>
+                {selected.comparison.reason ? (
+                  <p>{selected.comparison.reason}</p>
+                ) : (
+                  <p>
+                    {signedChange(
+                      selected.row.latency,
+                      selected.comparison.baseline?.latency,
+                    )}{' '}
+                    · Error change{' '}
+                    {displayNumber(selected.comparison.errorDelta, 2)} pp ·
+                    Successful throughput change{' '}
+                    {displayNumber(selected.comparison.throughputDelta)} /s
+                  </p>
+                )}
+                <ul>
+                  {selected.comparison.eligibility.reasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                  {selected.comparison.regressions.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+                <details>
+                  <summary>Run context and telemetry evidence</summary>
+                  <p>
+                    Scenario revision:{' '}
+                    {report?.change_attribution?.scenario_revision ||
+                      'Unverified'}{' '}
+                    · Environment:{' '}
+                    {report?.change_attribution?.environment || 'Unverified'} ·
+                    Data revision:{' '}
+                    {report?.change_attribution?.data_revision || 'Unverified'}
+                  </p>
+                  <p>
+                    Script revisions:{' '}
+                    {report?.change_attribution?.script_revisions?.join(', ') ||
+                      'Unverified'}
+                  </p>
+                  <p>
+                    Telemetry status:{' '}
+                    {selected.row.point.telemetry_status || 'Unavailable'} ·
+                    Recorded process peak CPU:{' '}
+                    {displayNumber(report?.resource_peaks?.cpu_process_pct)}% ·
+                    Recorded process peak memory:{' '}
+                    {displayNumber(report?.resource_peaks?.mem_process_mb)} MB.
+                  </p>
+                  <p>
+                    Process resource peaks do not establish system-under-test
+                    utilization or time correlation. Use the full report’s
+                    resource timeline and telemetry evidence to investigate the
+                    same interval.
+                  </p>
+                </details>
+                <div className="analysis-controls">
+                  <label>
+                    Transaction ranking
+                    <select
+                      value={detailSort}
+                      onChange={(event) => setDetailSort(event.target.value)}
+                    >
+                      <option value="regression">
+                        Acceptance breaches and degradation
+                      </option>
+                      <option value="slowest">Slowest</option>
+                      <option value="volume">Most traffic</option>
+                    </select>
+                  </label>
+                </div>
+                {!transactionRows.length ? (
+                  <p>
+                    This run has no per-transaction breakdown archived for this
+                    population.
+                  </p>
+                ) : (
+                  <div
+                    className="analysis-table-wrap"
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Transaction investigation"
+                  >
+                    <table className="trend-table" data-table-pagination="off">
+                      <caption>
+                        Transaction investigation · {transactionRows.length}{' '}
+                        entries
+                      </caption>
+                      <thead>
+                        <tr>
+                          <th>Transaction</th>
+                          <th>Samples</th>
+                          <th>{metricLabels[metric]} (ms)</th>
+                          <th>Δ vs baseline</th>
+                          <th>Error %</th>
+                          <th>Acceptance</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactionRows.map((item) => (
+                          <tr key={item.name}>
+                            <td>
+                              <button
+                                className="analysis-run-button"
+                                type="button"
+                                onClick={() => setTransaction(item.name)}
+                              >
+                                {item.name}
+                              </button>
+                            </td>
+                            <td>{item.stats.transactions}</td>
+                            <td>{displayNumber(item.current)}</td>
+                            <td>
+                              {selected.comparison.eligibility.status ===
+                              'Not comparable'
+                                ? 'Not comparable'
+                                : signedChange(item.current, item.prior)}
+                            </td>
+                            <td>
+                              {validTrendStats(item.stats)
+                                ? displayNumber(item.stats.error_pct, 2)
+                                : 'No samples'}
+                            </td>
+                            <td>{item.sla?.result || 'Not assessed'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </>
+      )}
+      {exportError && <p role="alert">{exportError}</p>}
+    </section>
   )
 }

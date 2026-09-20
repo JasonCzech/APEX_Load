@@ -597,7 +597,23 @@ export interface LoadComparisonLoadLevel {
   sample_count: number
 }
 
+export interface LoadComparisonLatency {
+  samples: number
+  average_ms: number
+  p50_ms: number
+  p95_ms: number
+  p99_ms: number
+}
+
 export interface LoadComparisonPoint {
+  duration_estimated?: boolean
+  evidence_status?: 'observed' | 'no_samples' | 'inconsistent_counts'
+  observed_seconds?: number
+  successful_rate?: number
+  latency?: LoadComparisonLatency
+  successful_latency?: LoadComparisonLatency
+  failed_latency?: LoadComparisonLatency
+  run_ids?: string[]
   load_level_id: string
   load_label: string
   tps: number
@@ -610,6 +626,8 @@ export interface LoadComparisonPoint {
 }
 
 export interface LoadComparisonReleaseSeries {
+  run_id?: string
+  run_name?: string
   release_id: string
   release_name: string
   run_count: number
@@ -618,6 +636,10 @@ export interface LoadComparisonReleaseSeries {
 }
 
 export interface LoadComparisonResponse {
+  analysis?: { population?: string; start_seconds: number; end_seconds?: number }
+  run_series?: LoadComparisonReleaseSeries[]
+  warnings?: string[]
+  skipped_runs?: { test_id: string; reason: string }[]
   application_id: string
   scope: LoadComparisonScope
   selected_key?: string
@@ -627,6 +649,9 @@ export interface LoadComparisonResponse {
 }
 
 export interface LoadComparisonRequestOptions {
+  population?: 'action' | 'transaction' | 'unknown'
+  startSeconds?: number
+  endSeconds?: number
   testIds?: string[]
 }
 

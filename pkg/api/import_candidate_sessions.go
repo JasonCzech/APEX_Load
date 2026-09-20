@@ -20,9 +20,14 @@ import (
 const (
 	importCandidateSessionTTL      = 30 * time.Minute
 	importCandidateSessionMaxBytes = importsession.MaxPayloadBytes
-	importCandidateSessionVersion  = 2
+	importCandidateSessionVersion  = 3
 	importCandidateClaimRenewEvery = 10 * time.Second
 )
+
+// The protected store requires a durable timestamp for capacity and claim
+// bookkeeping. This sentinel represents an operator-selected non-expiring
+// draft while keeping legacy descriptor validation unchanged.
+var importCandidateNoExpiration = time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC)
 
 type importCandidateEnvelope struct {
 	Version                int                                    `json:"version"`
@@ -36,17 +41,18 @@ type importCandidateEnvelope struct {
 	// It is carried here rather than written as an artifact at inspect time
 	// because most inspections are never committed: writing then would leave an
 	// orphaned encrypted object for every abandoned import. The session object is
-	// already encrypted at rest and already expires on its own, so deferring the
-	// artifact write to commit means abandonment cleans up for free.
+	// already encrypted at rest and is removed by its configured draft lifecycle,
+	// so deferring the artifact write to commit avoids an extra durable copy.
 	//
 	// This is unredacted source and must be treated as credential material: it is
 	// cleared after use, never logged, and never returned in a response. A v1
 	// payload has no such field and decodes with RawSource empty, which disables
 	// retention for that session -- the safe direction during an upgrade.
-	RawSource       []byte    `json:"raw_source,omitempty"`
-	RawSourceFormat string    `json:"raw_source_format,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	ExpiresAt       time.Time `json:"expires_at"`
+	RawSource          []byte    `json:"raw_source,omitempty"`
+	RawSourceFormat    string    `json:"raw_source_format,omitempty"`
+	CreatedAt          time.Time `json:"created_at"`
+	ExpiresAt          time.Time `json:"expires_at"`
+	ExpirationDisabled bool      `json:"expiration_disabled,omitempty"`
 }
 
 // importCandidateSource is the uploaded document a caller wants retained.
@@ -66,6 +72,7 @@ type importCandidateCredentialRequirement struct {
 
 type protectedImportCandidate struct {
 	ExpiresAt              time.Time
+	ExpirationDisabled     bool
 	Script                 *dsl.Script
 	CredentialRequirements []credentialpolicy.Requirement
 	// RawSource is unredacted uploaded source. Treat it like a credential:
@@ -100,12 +107,27 @@ func (s *Server) registerImportCandidateSession(r *http.Request, profile string,
 	return s.registerImportCandidateSessionWithRequirements(r, profile, script, nil, importCandidateSource{})
 }
 
+func (s *Server) registerImportCandidateSessionWithExpirationPolicy(r *http.Request, profile string, script *dsl.Script, disableExpiration bool) (string, time.Time, error) {
+	return s.registerImportCandidateSessionInternal(r, profile, script, nil, importCandidateSource{}, disableExpiration)
+}
+
 func (s *Server) registerImportCandidateSessionWithRequirements(
 	r *http.Request,
 	profile string,
 	script *dsl.Script,
 	requirements []credentialpolicy.Requirement,
 	source importCandidateSource,
+) (string, time.Time, error) {
+	return s.registerImportCandidateSessionInternal(r, profile, script, requirements, source, false)
+}
+
+func (s *Server) registerImportCandidateSessionInternal(
+	r *http.Request,
+	profile string,
+	script *dsl.Script,
+	requirements []credentialpolicy.Requirement,
+	source importCandidateSource,
+	disableExpiration bool,
 ) (string, time.Time, error) {
 	if r == nil || script == nil {
 		return "", time.Time{}, errors.New("protected import candidate is required")
@@ -129,14 +151,24 @@ func (s *Server) registerImportCandidateSessionWithRequirements(
 	}
 	_, actor, _ := s.resolveAuditActor(r)
 	now := time.Now().UTC()
-	expiresAt := now.Add(importCandidateSessionTTL)
+	publicExpiresAt := now.Add(importCandidateSessionTTL)
+	storedExpiresAt := publicExpiresAt
+	if disableExpiration {
+		publicExpiresAt = time.Time{}
+		storedExpiresAt = importCandidateNoExpiration
+	}
+	envelopeVersion := 2
+	if disableExpiration {
+		envelopeVersion = importCandidateSessionVersion
+	}
 	envelope := importCandidateEnvelope{
-		Version:   importCandidateSessionVersion,
-		Profile:   profile,
-		ProjectID: projectID,
-		Script:    *script,
-		CreatedAt: now,
-		ExpiresAt: expiresAt,
+		Version:            envelopeVersion,
+		Profile:            profile,
+		ProjectID:          projectID,
+		Script:             *script,
+		CreatedAt:          now,
+		ExpiresAt:          storedExpiresAt,
+		ExpirationDisabled: disableExpiration,
 	}
 	if len(source.Bytes) > 0 {
 		envelope.RawSource = source.Bytes
@@ -156,16 +188,17 @@ func (s *Server) registerImportCandidateSessionWithRequirements(
 	}
 	id := uuid.NewString()
 	err = manager.Save(r.Context(), importsession.SessionDescriptor{
-		ID:        id,
-		Profile:   profile,
-		ProjectID: projectID,
-		Actor:     actor,
-		ExpiresAt: expiresAt,
+		ID:                 id,
+		Profile:            profile,
+		ProjectID:          projectID,
+		Actor:              actor,
+		ExpiresAt:          storedExpiresAt,
+		ExpirationDisabled: disableExpiration,
 	}, payload, importCandidateSessionMaxBytes)
 	if err != nil {
 		return "", time.Time{}, markProtectedImportStoreUnavailable(err)
 	}
-	return id, expiresAt, nil
+	return id, publicExpiresAt, nil
 }
 
 func (s *Server) claimImportCandidateSession(
@@ -235,7 +268,7 @@ func (s *Server) claimProtectedImportCandidateSession(
 		releaseErr := manager.Release(claimed.Claim)
 		return nil, nil, errors.Join(errors.New("protected import candidate scope is invalid"), releaseErr)
 	}
-	if !envelope.ExpiresAt.After(time.Now().UTC()) {
+	if !envelope.ExpirationDisabled && !envelope.ExpiresAt.After(time.Now().UTC()) {
 		clearCredentialRequirementValues(requirements)
 		if releaseErr := manager.Release(claimed.Claim); releaseErr != nil {
 			return nil, nil, fmt.Errorf("release expired protected import candidate claim: %w", releaseErr)
@@ -254,12 +287,14 @@ func (s *Server) claimProtectedImportCandidateSession(
 		RawSource:              rawSource,
 		RawSourceFormat:        envelope.RawSourceFormat,
 		ExpiresAt:              envelope.ExpiresAt,
+		ExpirationDisabled:     envelope.ExpirationDisabled,
 	}, &claimed.Claim, nil
 }
 
 // supportedImportCandidateSessionVersion reports whether this build can decode a
 // stored candidate envelope. Versions are additive: v2 added retained raw
-// source, so a v1 payload is still valid and simply retains nothing.
+// source and v3 added the explicit non-expiring-draft policy. Older payloads
+// remain valid and use their original time-limited behavior.
 func supportedImportCandidateSessionVersion(version int) bool {
 	return version >= 1 && version <= importCandidateSessionVersion
 }

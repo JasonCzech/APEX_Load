@@ -41,12 +41,13 @@ type importDraftAttestation struct {
 	// unsafe encoding. It grants no literal-preservation authority; it only lets
 	// commit replace that unchanged slot with a governed reference.
 	HasUnavailableCredentialValues bool
-	// Script is the exact short-lived server-owned candidate. Responses carry
-	// only its disclosure projection plus Token.
+	// Script is the exact server-owned candidate. Responses carry only its
+	// disclosure projection plus Token; expiry is policy-controlled.
 	Script                  *dsl.Script
 	RecordingSessionID      string
 	RecordingSnapshotDigest string
 	ExpiresAt               time.Time
+	ExpirationDisabled      bool
 	Claimed                 bool
 }
 
@@ -65,6 +66,9 @@ type importDraftAttestationClaim struct {
 	// the submitted draft. Commit/mutation callers must use it instead of the
 	// browser-visible projection.
 	Script *dsl.Script
+	// ExpirationDisabled follows the original draft through server-owned
+	// mutations so applying a repair or binding cannot silently change policy.
+	ExpirationDisabled bool
 	// RecordingSessionID is populated only when the submitted execution graph
 	// still matches a server-attested recording preview (or a server-owned
 	// transformation descended from it).
@@ -104,9 +108,10 @@ func (s *Server) attachImportDraftAttestations(
 			continue
 		}
 		seen[script] = struct{}{}
-		expiresAt, err := s.attachImportDraftAttestationWithExpiry(
+		expiresAt, err := s.attachImportDraftAttestationWithExpirationPolicy(
 			r,
 			script,
+			opts.DisableDraftExpiration,
 			opts.RecordingSessionID,
 			opts.RecordingSnapshotDigest,
 		)
@@ -155,6 +160,15 @@ func (s *Server) attachImportDraftAttestation(r *http.Request, script *dsl.Scrip
 func (s *Server) attachImportDraftAttestationWithExpiry(
 	r *http.Request,
 	script *dsl.Script,
+	recordingSessionIDs ...string,
+) (time.Time, error) {
+	return s.attachImportDraftAttestationWithExpirationPolicy(r, script, false, recordingSessionIDs...)
+}
+
+func (s *Server) attachImportDraftAttestationWithExpirationPolicy(
+	r *http.Request,
+	script *dsl.Script,
+	disableExpiration bool,
 	recordingSessionIDs ...string,
 ) (time.Time, error) {
 	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
@@ -229,10 +243,11 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 				"execution_graph_digest":    fingerprint.ExecutionGraphDigest,
 			}
 		}
-		sessionID, expiresAt, err := s.registerImportCandidateSession(
+		sessionID, expiresAt, err := s.registerImportCandidateSessionWithExpirationPolicy(
 			r,
 			profile,
 			protectedCandidate,
+			disableExpiration,
 		)
 		if err != nil {
 			// A configured protected store is an explicit durability boundary.
@@ -252,6 +267,10 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 		return time.Time{}, errors.New("credential-preserving legacy import saves require shared protected sessions in HA mode")
 	}
 
+	expiresAt := now.Add(importDraftAttestationTTL)
+	if disableExpiration {
+		expiresAt = time.Time{}
+	}
 	record := &importDraftAttestation{
 		Token:                          token,
 		Profile:                        profile,
@@ -266,7 +285,8 @@ func (s *Server) attachImportDraftAttestationWithExpiry(
 		Script:                         exactCandidate,
 		RecordingSessionID:             recordingSessionID,
 		RecordingSnapshotDigest:        recordingSnapshotDigest,
-		ExpiresAt:                      now.Add(importDraftAttestationTTL),
+		ExpiresAt:                      expiresAt,
+		ExpirationDisabled:             disableExpiration,
 	}
 
 	s.importDraftAttestationMu.Lock()
@@ -318,9 +338,10 @@ func (s *Server) completeImportDraftMutation(
 		return time.Time{}, nil
 	}
 	stripImportDraftAttestation(script)
-	expiresAt, err := s.attachImportDraftAttestationWithExpiry(
+	expiresAt, err := s.attachImportDraftAttestationWithExpirationPolicy(
 		r,
 		script,
+		claim.ExpirationDisabled,
 		claim.RecordingSessionID,
 		claim.RecordingSnapshotDigest,
 	)
@@ -393,6 +414,7 @@ func (s *Server) claimImportDraftAttestation(
 	claim := &importDraftAttestationClaim{
 		Token:                         token,
 		Profile:                       record.Profile,
+		ExpirationDisabled:            record.ExpirationDisabled,
 		AttestedExecutionGraphDigest:  record.ExecutionGraphDigest,
 		SubmittedExecutionGraphDigest: fingerprint.ExecutionGraphDigest,
 		Script:                        restored,
@@ -510,6 +532,7 @@ func (s *Server) claimProtectedImportDraftAttestation(
 	claim := &importDraftAttestationClaim{
 		Token:                         token,
 		Profile:                       profile,
+		ExpirationDisabled:            candidate.ExpirationDisabled,
 		Context:                       r.Context(),
 		ProtectedClaim:                protectedClaim,
 		ProtectedLease:                lease,
@@ -579,7 +602,7 @@ func (s *Server) releaseImportDraftAttestation(claim *importDraftAttestationClai
 // retainCommittedImportDraftAttestation drops process-local sensitive bytes and
 // stops lease renewal without releasing the one-shot capability. Once imported
 // assets are durable, a cleanup failure must leave the capability claimed until
-// its normal expiry/reconciliation path; releasing it would authorize the same
+// its normal lifecycle/reconciliation path; releasing it would authorize the same
 // credential-bearing draft to create a second batch under a new operation ID.
 func (s *Server) retainCommittedImportDraftAttestation(claim *importDraftAttestationClaim) {
 	if s == nil || claim == nil {
@@ -673,7 +696,7 @@ func importDraftProjectIDForRequest(r *http.Request, script *dsl.Script) string 
 
 func (s *Server) sweepImportDraftAttestationsLocked(now time.Time) {
 	for token, record := range s.importDraftAttestations {
-		if record == nil || !record.ExpiresAt.After(now) {
+		if record == nil || (!record.ExpirationDisabled && !record.ExpiresAt.After(now)) {
 			if record != nil {
 				record.Script = nil
 			}
@@ -1022,9 +1045,10 @@ func (s *Server) completeImportDraftMutations(
 			return nil, false, err
 		}
 		stripImportDraftAttestation(scripts[index])
-		expiresAt, err := s.attachImportDraftAttestationWithExpiry(
+		expiresAt, err := s.attachImportDraftAttestationWithExpirationPolicy(
 			r,
 			scripts[index],
+			claim.ExpirationDisabled,
 			claim.RecordingSessionID,
 			claim.RecordingSnapshotDigest,
 		)

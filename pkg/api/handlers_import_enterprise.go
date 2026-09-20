@@ -83,7 +83,7 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
-	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy)
+	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy, importReq.ExpireDraft)
 }
 
 func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +111,7 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
-	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy)
+	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy, importReq.ExpireDraft)
 }
 
 func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.ConvertResult, importReq *enterpriseArchiveImportRequest) {
@@ -318,6 +318,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		SupplementalName: supplementalNames,
 		ProjectID:        authorizedImportProjectID(r),
 		SalesforceNative: parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
+		ExpireDraft:      parseBoolDefault(firstNonEmpty(r.FormValue("expire_draft"), r.URL.Query().Get("expire_draft")), false),
 		Opts: enterprisearchive.ConvertOptions{
 			ScriptName:           r.FormValue("name"),
 			BaseURL:              r.FormValue("base_url"),
@@ -510,7 +511,7 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 	return out.Bytes(), nil
 }
 
-func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *http.Request, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy) {
+func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *http.Request, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy, expireDraft bool) {
 	if result == nil {
 		s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{})
 		return
@@ -560,24 +561,25 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 	warnings = augmented.Warnings
 
 	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
-		Result:                result,
-		Scripts:               scripts,
-		Script:                result.Script,
-		Warnings:              warnings,
-		Stats:                 result.Stats,
-		UnsupportedElements:   unsupportedElements,
-		ReviewSections:        augmented.Sections,
-		RepairSuggestions:     repairSuggestions,
-		Summary:               summary,
-		DetectedProtocol:      result.DetectedProtocol,
-		FidelityReport:        summary.FidelityReport,
-		ReviewArtifact:        result.ReviewArtifact,
-		SourceReview:          summary.SourceReview,
-		TrueClient2Compat:     summary.TrueClient2CompatReport,
-		ProtocolCompat:        protocolCompat,
-		Parameterization:      parameterization,
-		ProtectedRequirements: protectedRequirements,
-		Preflight:             augmented.Preflight,
+		Result:                 result,
+		Scripts:                scripts,
+		Script:                 result.Script,
+		Warnings:               warnings,
+		Stats:                  result.Stats,
+		UnsupportedElements:    unsupportedElements,
+		ReviewSections:         augmented.Sections,
+		RepairSuggestions:      repairSuggestions,
+		Summary:                summary,
+		DetectedProtocol:       result.DetectedProtocol,
+		FidelityReport:         summary.FidelityReport,
+		ReviewArtifact:         result.ReviewArtifact,
+		SourceReview:           summary.SourceReview,
+		TrueClient2Compat:      summary.TrueClient2CompatReport,
+		ProtocolCompat:         protocolCompat,
+		Parameterization:       parameterization,
+		ProtectedRequirements:  protectedRequirements,
+		Preflight:              augmented.Preflight,
+		DisableDraftExpiration: !expireDraft,
 	})
 }
 

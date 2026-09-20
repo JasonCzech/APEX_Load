@@ -707,3 +707,6 @@
     align-items: stretch;
   }
 }
+
+/* Dashboard analysis must stay legible when charts scroll beneath the toolbar. */
+.main-content.page-dashboard > .main-topbar { background: var(--bg-primary); }

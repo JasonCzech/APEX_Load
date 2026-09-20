@@ -48,6 +48,8 @@ interface Props {
   testId: string
   initialLens?: ReportLens
   initialCompare?: string
+  initialTransaction?: string
+  initialPopulation?: MetricPopulation
   initialSection?: ReportSection
   statusOverride?: string
   onOpenCommandCenter: (id?: string) => void
@@ -76,6 +78,8 @@ export default function RunReportPage({
   testId,
   initialLens,
   initialCompare,
+  initialTransaction,
+  initialPopulation,
   initialSection,
   statusOverride,
   onOpenCommandCenter,
@@ -142,7 +146,7 @@ export default function RunReportPage({
     setBaselineOptionsError('')
     setBaselineOptions([])
     setBaselineOptionsLoading(true)
-    loadAllTestSummaries(api.listTests, { project_id: test.project_id, application_id: test.application_id, release_id: test.release_id, summary: true }, 100).then(result => {
+    loadAllTestSummaries(api.listTests, { project_id: test.project_id, application_id: test.application_id, summary: true }, 100).then(result => {
       if (!cancelled) setBaselineOptions((result.tests || []).filter(run => run.id !== testId && isCompletedTestStatus(run.status) && Boolean(run.archive)))
     }).catch(error => { if (!cancelled) setBaselineOptionsError(getErrorMessage(error, 'Unable to load baseline runs')) }).finally(() => { if (!cancelled) setBaselineOptionsLoading(false) })
     return () => { cancelled = true }
@@ -176,7 +180,16 @@ export default function RunReportPage({
     setCompareId(initialCompare || '')
     if (initialCompare) setShowCompare(true)
   }, [initialCompare, testId])
-  useEffect(() => { setAreaState('Summary'); setPopulationChoice(null); setShowComposer(false) }, [testId])
+  useEffect(() => { setAreaState('Summary'); setPopulationChoice(initialPopulation || null); setShowComposer(false) }, [testId, initialPopulation])
+  const appliedAnalysisSelection = useRef('')
+  useEffect(() => {
+    const stamp = JSON.stringify([testId, initialTransaction, initialPopulation])
+    if (!archiveModel.archiveReport || !initialTransaction || appliedAnalysisSelection.current === stamp) return
+    if (archiveModel.archiveReport.manifest?.test_id && archiveModel.archiveReport.manifest.test_id !== testId) return
+    const stats = initialPopulation === 'transaction' ? archiveModel.archiveReport.by_transaction : initialPopulation === 'action' ? archiveModel.archiveReport.by_request : archiveModel.archiveReport.by_action
+    if (stats?.[initialTransaction]) archiveModel.onSelectedArchiveActionChange(initialTransaction)
+    appliedAnalysisSelection.current = stamp
+  }, [testId, initialTransaction, initialPopulation, archiveModel])
   useEffect(() => { setAreaState(({ summary: 'Summary', performance: 'Performance', diagnostics: 'Diagnostics', evidence: 'Evidence', execution: 'Execution' } as const)[initialSection ?? 'summary']) }, [testId, initialSection])
   useEffect(() => {
     pinCompareStamp.current += 1

@@ -68,7 +68,7 @@ pkg/
   netpolicy/     — Shared outbound-network trust decisions (public-IP / SSRF guard)
   Import and asset plumbing:
   dslwalk/       — Bounded deterministic traversal of every action incl. nested control flow
-  importsession/ — Importer-neutral protected short-lived inspection sessions
+  importsession/ — Importer-neutral protected policy-governed inspection sessions
   importartifact/ — Content-addressed, encrypted immutable source bundles for governed runners
   fileasset/     — Bounded local file/asset opening for import paths
   internal/      — Cross-package internal guards: archiveingest, boundedcache, boundedtext, diskspace,

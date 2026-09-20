@@ -33,8 +33,8 @@ describe('baseline qualification', () => {
     expect(result.observedLoadUnknown).toBe(false)
     expect(result.differentObservedLoad).toBe(true)
   })
-  it('normalizes duration and checks release scope', () => {
+  it('normalizes duration and permits the intended cross-release comparison', () => {
     expect(reportComparisonQualification(report, report, test, { ...test, duration: '300s' }, 'action').summary).toBe('Recorded planned context matches.')
-    expect(reportComparisonQualification(report, report, test, { ...test, release_id: 'other' }, 'action').summary).toContain('release')
+    expect(reportComparisonQualification(report, report, test, { ...test, release_id: 'other' }, 'action').summary).toBe('Recorded planned context matches.')
   })
 })

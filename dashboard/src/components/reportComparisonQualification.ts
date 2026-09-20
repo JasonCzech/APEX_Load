@@ -10,7 +10,6 @@ export function reportComparisonQualification(current: RunArchiveReport, baselin
     ['Scenario', a?.scenario_id || test.scenario_id, b?.scenario_id || baselineTest?.scenario_id],
     ['Project', test.project_id, baselineTest?.project_id],
     ['Application', test.application_id, baselineTest?.application_id],
-    ['Release', test.release_id, baselineTest?.release_id],
     ['Planned VUsers', a?.total_vusers ?? test.total_vusers, b?.total_vusers ?? baselineTest?.total_vusers],
     ['Planned duration', parseDurationToSeconds(a?.duration || test.duration) || undefined, parseDurationToSeconds(b?.duration || baselineTest?.duration) || undefined],
   ]

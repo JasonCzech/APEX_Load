@@ -472,11 +472,42 @@ describe('EnterpriseArchiveImport', () => {
     expect(salesforce.querySelector('summary')?.textContent).toBe('Salesforce-specific options')
     expect(container.querySelector('.lr-import-actions-card .lr-har-panel')).toBeNull()
     expect(salesforce.open).toBe(false)
+    const expirationLabel = Array.from(policy.querySelectorAll('label')).find(label => label.textContent?.includes('Expire converted drafts after 30 minutes'))
+    const expirationInput = expirationLabel?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(expirationInput?.checked).toBe(false)
     const nativePreview = salesforce.querySelector<HTMLInputElement>('input[type="checkbox"]')!
     await act(async () => nativePreview.click())
     expect(nativePreview.checked).toBe(true)
     expect(salesforce.open).toBe(true)
     expect(salesforce.textContent).toContain('Attach HAR')
+  })
+
+  it('opts into draft expiration from advanced migration policy', async () => {
+    const file = new File(['zip'], 'script.zip', { type: 'application/zip' })
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult({
+      id: 'script',
+      name: 'Script',
+      protocol: 'http',
+      config: {},
+      actions: [],
+    }))
+    await act(async () => root.render(<EnterpriseArchiveImport />))
+    const policy = container.querySelector('.lr-advanced-policy')!
+    const expirationLabel = Array.from(policy.querySelectorAll('label')).find(label => label.textContent?.includes('Expire converted drafts after 30 minutes'))
+    const expirationInput = expirationLabel?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(expirationInput?.checked).toBe(false)
+    await act(async () => expirationInput?.click())
+
+    const fileInput = container.querySelector<HTMLInputElement>('input[accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenCalledWith(file, expect.objectContaining({
+      expire_draft: true,
+    }))
   })
 
   it('renders the import close action as a Back button', async () => {
@@ -3698,6 +3729,76 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
     expect(apiMock.saveEnterpriseArchiveImport.mock.calls[2][0].scripts)
       .toBe(apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts)
+    expect(container.textContent).toContain('Converted and saved 2 scripts to the library')
+  })
+
+  it('reconverts an expired enterprise draft instead of retrying its stale attestation', async () => {
+    const files = [
+      new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+      new File(['gamma'], 'gamma.zip', { type: 'application/zip' }),
+    ]
+    let conversion = 0
+    apiMock.importEnterpriseArchive.mockImplementation(async (file: File) => {
+      conversion += 1
+      return executableEnterpriseResult({
+        name: file.name.replace(/\.zip$/i, ''),
+        version: '1.0.0',
+        protocol: 'http',
+        actions: [{ name: 'Homepage', type: 'request', method: 'GET', target: '/' }],
+        metadata: {
+          import: {
+            source: 'enterprise_script_archive',
+            preserved: { server_import_attestation_v1: `attestation-${conversion}` },
+          },
+        },
+      })
+    })
+    apiMock.saveEnterpriseArchiveImport
+      .mockRejectedValueOnce(new ApiError('Conflict', 409, {
+        code: 'import_draft_attestation_invalid',
+        error: 'enterprise archive import draft is invalid or expired; run the conversion again',
+      }))
+      .mockResolvedValueOnce({
+        scripts: files.map((file, index) => ({
+          id: `saved-${index}`,
+          name: file.name.replace(/\.zip$/i, ''),
+          protocol: 'http',
+          version: '1.0.0',
+          created_at: '2026-05-17T00:00:00Z',
+        })),
+        count: 2,
+      })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: files })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Save Ready Scripts and Continue Importing')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(2)
+    const expiredOperationID = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].operation_id
+    const expiredScripts = apiMock.saveEnterpriseArchiveImport.mock.calls[0][0].scripts
+    const expiredAttestations = expiredScripts.map((script: { metadata?: { import?: { preserved?: Record<string, unknown> } } }) => (
+      script.metadata?.import?.preserved?.server_import_attestation_v1
+    ))
+    expect(container.textContent).toContain('The import draft is invalid or expired and could not be saved')
+
+    await clickButton(findButton(container, 'Save Ready Scripts and Continue Importing')!)
+    await flushPromises()
+
+    expect(apiMock.saveEnterpriseArchiveImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.importEnterpriseArchive).toHaveBeenCalledTimes(4)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].operation_id).not.toBe(expiredOperationID)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].scripts).not.toBe(expiredScripts)
+    expect(apiMock.saveEnterpriseArchiveImport.mock.calls[1][0].scripts.map((script: { metadata?: { import?: { preserved?: Record<string, unknown> } } }) => (
+      script.metadata?.import?.preserved?.server_import_attestation_v1
+    ))).not.toEqual(expiredAttestations)
     expect(container.textContent).toContain('Converted and saved 2 scripts to the library')
   })
 

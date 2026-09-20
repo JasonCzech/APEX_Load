@@ -27,11 +27,20 @@ for (const scenario of [
     await expect(salesforceOptions.getByRole('button', { name: 'Attach HAR' })).toBeVisible()
     await expect(page.locator('.lr-import-actions-card .lr-har-panel')).toHaveCount(0)
     await salesforceOptions.locator('summary').click()
+    if (scenario.file === 'transaction-labels.zip') {
+      const advancedPolicy = conversionOptions.locator('.lr-advanced-policy')
+      await advancedPolicy.locator('summary').click()
+      const expireDraft = advancedPolicy.getByRole('checkbox', { name: 'Expire converted drafts after 30 minutes' })
+      await expect(expireDraft).not.toBeChecked()
+      await expireDraft.check()
+      await expect(expireDraft).toBeChecked()
+    }
     await page.locator('input[type=file][accept=".zip"]').setInputFiles(path.join(process.cwd(), 'e2e/fixtures', scenario.file))
     await expect(page.getByRole('button', { name: 'Add archives', exact: true })).toBeVisible()
     const validated = mutation(page, 'POST', '/api/v1/scripts/import/enterprise-script-archive/validate')
     await page.getByRole('button', { name: 'Validate Script(s)', exact: true }).click()
-    const result = await json(await validated)
+    const validatedResponse = await validated
+    const result = await json(validatedResponse)
     await expect(page.getByRole('tab', { name: 'Review', exact: true })).toBeVisible()
     await page.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
     const dslPreview = page.locator('.script-import-review-preview')

@@ -10,6 +10,7 @@ import (
 )
 
 const enterpriseArchiveSaveProfile = "enterprise_script_archive"
+const enterpriseArchiveDraftInvalidCode = "import_draft_attestation_invalid"
 
 // enterpriseArchiveSaveWorkflow names this endpoint in the shared receipt helpers.
 var enterpriseArchiveSaveWorkflow = importBatchWorkflow{
@@ -168,7 +169,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 				if claim != nil {
 					s.releaseImportDraftAttestation(claim)
 				}
-				writeError(w, http.StatusConflict, "enterprise archive import draft is invalid or expired; run the conversion again")
+				writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is invalid or expired; run the conversion again")
 				return
 			}
 			profile = strings.TrimSpace(claim.Profile)
@@ -179,7 +180,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 			}
 			if claim.Script == nil {
 				s.releaseImportDraftAttestation(claim)
-				writeError(w, http.StatusConflict, "enterprise archive import draft is invalid or expired; run the conversion again")
+				writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is invalid or expired; run the conversion again")
 				return
 			}
 			// Record the claim before any subsequent validation so every error path
@@ -193,7 +194,7 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 			}
 			draft = *restored
 		} else if scriptHasUnavailableImportCredentialValues(&draft) {
-			writeError(w, http.StatusConflict, "enterprise archive import draft is missing its server capability; run the conversion again")
+			writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is missing its server capability; run the conversion again")
 			return
 		}
 		draft.Name = requestedName
@@ -287,6 +288,13 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 	completeEnterpriseArchiveDraftClaims(s, claims, stored)
 	finished = true
 	writeEnterpriseArchiveSaveResponse(w, stored)
+}
+
+func writeEnterpriseArchiveDraftInvalid(w http.ResponseWriter, message string) {
+	writeJSON(w, http.StatusConflict, map[string]string{
+		"error": message,
+		"code":  enterpriseArchiveDraftInvalidCode,
+	})
 }
 
 // allocateAtomicImportBatchScriptNames mirrors the dashboard's friendly

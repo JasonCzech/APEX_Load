@@ -15,6 +15,8 @@ const (
 )
 
 type LoadComparisonResponse struct {
+	Analysis      loadComparisonQuery           `json:"analysis"`
+	RunSeries     []LoadComparisonReleaseSeries `json:"run_series,omitempty"`
 	ApplicationID string                        `json:"application_id"`
 	Scope         string                        `json:"scope"`
 	SelectedKey   string                        `json:"selected_key,omitempty"`
@@ -51,6 +53,8 @@ type LoadComparisonLoadLevel struct {
 }
 
 type LoadComparisonReleaseSeries struct {
+	RunID            string                `json:"run_id,omitempty"`
+	RunName          string                `json:"run_name,omitempty"`
 	ReleaseID        string                `json:"release_id"`
 	ReleaseName      string                `json:"release_name"`
 	RunCount         int                   `json:"run_count"`
@@ -59,18 +63,28 @@ type LoadComparisonReleaseSeries struct {
 }
 
 type LoadComparisonPoint struct {
-	LoadLevelID   string  `json:"load_level_id"`
-	LoadLabel     string  `json:"load_label"`
-	TPS           float64 `json:"tps"`
-	AvgResponseMs float64 `json:"avg_response_ms"`
-	Transactions  int64   `json:"transactions"`
-	Errors        int64   `json:"errors"`
-	ErrorPct      float64 `json:"error_pct"`
-	RunCount      int     `json:"run_count"`
-	SampleCount   int     `json:"sample_count"`
+	DurationEstimated bool                   `json:"duration_estimated,omitempty"`
+	EvidenceStatus    string                 `json:"evidence_status"`
+	ObservedSeconds   float64                `json:"observed_seconds"`
+	SuccessfulRate    *float64               `json:"successful_rate,omitempty"`
+	Latency           *LoadComparisonLatency `json:"latency,omitempty"`
+	SuccessfulLatency *LoadComparisonLatency `json:"successful_latency,omitempty"`
+	FailedLatency     *LoadComparisonLatency `json:"failed_latency,omitempty"`
+	RunIDs            []string               `json:"run_ids"`
+	LoadLevelID       string                 `json:"load_level_id"`
+	LoadLabel         string                 `json:"load_label"`
+	TPS               float64                `json:"tps"`
+	AvgResponseMs     float64                `json:"avg_response_ms"`
+	Transactions      int64                  `json:"transactions"`
+	Errors            int64                  `json:"errors"`
+	ErrorPct          float64                `json:"error_pct"`
+	RunCount          int                    `json:"run_count"`
+	SampleCount       int                    `json:"sample_count"`
 }
 
 type loadComparisonRun struct {
+	Query            loadComparisonQuery
+	Started          time.Time
 	Test             *ManagedTest
 	ReleaseID        string
 	ReleaseName      string
@@ -81,6 +95,7 @@ type loadComparisonRun struct {
 }
 
 type loadComparisonTransactionAggregate struct {
+	Groups           map[string]struct{}
 	SourceKind       string
 	TransactionCount int64
 	Intervals        map[transactionIntervalLoadKey]*transactionIntervalAccumulator
@@ -106,14 +121,17 @@ type loadComparisonReleaseAccumulator struct {
 }
 
 type loadComparisonMetricAccumulator struct {
-	TPSNumerator   float64
-	TPSSeconds     float64
-	ResponseTotal  float64
-	ResponseWeight float64
-	Transactions   int64
-	Errors         int64
-	SampleCount    int
-	RunIDs         map[string]struct{}
+	DurationEstimated bool
+	Distribution      loadComparisonDistribution
+	RawEvents         bool
+	TPSNumerator      float64
+	TPSSeconds        float64
+	ResponseTotal     float64
+	ResponseWeight    float64
+	Transactions      int64
+	Errors            int64
+	SampleCount       int
+	RunIDs            map[string]struct{}
 }
 
 type transactionIntervalLoadKey struct {
@@ -122,6 +140,7 @@ type transactionIntervalLoadKey struct {
 }
 
 type transactionIntervalAccumulator struct {
+	Distribution  *loadComparisonDistribution
 	Transactions  int64
 	Errors        int64
 	DurationTotal float64
@@ -138,7 +157,7 @@ func normalizeLoadComparisonScope(value string) (string, bool) {
 	}
 }
 
-func buildLoadComparison(applicationID string, scope string, selectedKey string, runs []loadComparisonRun) LoadComparisonResponse {
+func buildLoadComparison(applicationID string, scope string, selectedKey string, runs []loadComparisonRun, queries ...loadComparisonQuery) LoadComparisonResponse {
 	normalizedScope, ok := normalizeLoadComparisonScope(scope)
 	if !ok {
 		normalizedScope = LoadComparisonScopeTransaction
@@ -146,6 +165,12 @@ func buildLoadComparison(applicationID string, scope string, selectedKey string,
 	response := LoadComparisonResponse{
 		ApplicationID: applicationID,
 		Scope:         normalizedScope,
+	}
+	if len(queries) > 0 {
+		response.Analysis = queries[0]
+		for i := range runs {
+			runs[i].Query = queries[0]
+		}
 	}
 	options := loadComparisonOptions(normalizedScope, runs)
 	response.Options = options
@@ -161,6 +186,16 @@ func buildLoadComparison(applicationID string, scope string, selectedKey string,
 	releases, loadSamples := accumulateLoadComparison(normalizedScope, selectedKey, runs)
 	response.LoadLevels = buildLoadComparisonLoadLevels(loadSamples)
 	response.Releases = finalizeLoadComparisonReleases(releases, response.LoadLevels)
+	for _, run := range runs {
+		if run.Test == nil {
+			continue
+		}
+		acc, _ := accumulateLoadComparison(normalizedScope, selectedKey, []loadComparisonRun{run})
+		for _, series := range finalizeLoadComparisonReleases(acc, response.LoadLevels) {
+			series.RunID, series.RunName = run.Test.ID, run.Test.Name
+			response.RunSeries = append(response.RunSeries, series)
+		}
+	}
 	return response
 }
 
@@ -349,6 +384,9 @@ func loadComparisonReleaseAccumulatorFor(releases map[string]*loadComparisonRele
 
 func accumulateGroupLoadComparison(release *loadComparisonReleaseAccumulator, loadSamples map[int]int, selectedKey string, run loadComparisonRun) {
 	for index, summary := range run.Summaries {
+		if !run.Query.includesSummary(run.Summaries, index, run.Started) {
+			continue
+		}
 		group := loadComparisonGroupForSummary(summary, selectedKey)
 		if group == nil {
 			continue
@@ -357,18 +395,19 @@ func accumulateGroupLoadComparison(release *loadComparisonReleaseAccumulator, lo
 		if load <= 0 {
 			continue
 		}
-		seconds := archiveSummaryBucketSeconds(run.Summaries, index)
+		seconds, estimated := loadComparisonIntervalSeconds(run.Summaries, index, run.Started)
 		if seconds <= 0 {
 			seconds = 1
 		}
 		acc := release.loadAccumulator(load)
+		acc.DurationEstimated = acc.DurationEstimated || estimated
 		acc.SampleCount++
 		acc.RunIDs[run.Test.ID] = struct{}{}
 		acc.TPSNumerator += group.TPS * seconds
 		acc.TPSSeconds += seconds
 		responseWeight := float64(group.Transactions)
 		if responseWeight <= 0 {
-			responseWeight = 1
+			responseWeight = 0
 		}
 		acc.ResponseTotal += group.AvgResponseMs * responseWeight
 		acc.ResponseWeight += responseWeight
@@ -391,13 +430,22 @@ func accumulateTransactionLoadComparison(release *loadComparisonReleaseAccumulat
 		return
 	}
 	intervals := make(map[transactionIntervalLoadKey]*transactionIntervalAccumulator)
+	groups := make(map[string]struct{})
+	distributions := make(map[int]*loadComparisonDistribution)
 	for _, tx := range run.Transactions {
+		if run.Query.Population != "" && archiveEventPopulation(tx) != run.Query.Population {
+			continue
+		}
 		key, _ := loadComparisonTransactionIdentity(tx)
 		if key != selectedKey {
 			continue
 		}
+		groups[tx.Group] = struct{}{}
+		if !run.Query.includesEvent(tx.Timestamp, run.Started) {
+			continue
+		}
 		index := archiveSummaryBucketIndex(run.Summaries, tx.Timestamp)
-		if index < 0 || index >= len(run.Summaries) {
+		if index < 0 || index >= len(run.Summaries) || !run.Query.includesSummary(run.Summaries, index, run.Started) {
 			continue
 		}
 		load := transactionLoadForSummary(tx, run.Summaries[index])
@@ -407,30 +455,39 @@ func accumulateTransactionLoadComparison(release *loadComparisonReleaseAccumulat
 		intervalKey := transactionIntervalLoadKey{Index: index, Load: load}
 		interval := intervals[intervalKey]
 		if interval == nil {
-			interval = &transactionIntervalAccumulator{}
+			if distributions[load] == nil {
+				distributions[load] = &loadComparisonDistribution{}
+			}
+			interval = &transactionIntervalAccumulator{Distribution: distributions[load]}
 			intervals[intervalKey] = interval
 		}
 		interval.Transactions++
 		interval.DurationTotal += tx.DurationMs
+		interval.Distribution.add(tx)
 		if !tx.Success {
 			interval.Errors++
 		}
 	}
 
+	fillLoadComparisonIdleIntervals(intervals, groups, run.Summaries, run.Query, run.Started, maxArchiveReportAggregateCells)
 	accumulateTransactionIntervals(release, loadSamples, run, intervals)
 }
 
 func accumulateTransactionIntervals(release *loadComparisonReleaseAccumulator, loadSamples map[int]int, run loadComparisonRun, intervals map[transactionIntervalLoadKey]*transactionIntervalAccumulator) {
+	seenDistributions := make(map[*loadComparisonDistribution]bool)
 	for intervalKey, interval := range intervals {
-		if interval.Transactions == 0 {
-			continue
-		}
-		seconds := archiveSummaryBucketSeconds(run.Summaries, intervalKey.Index)
+		seconds, estimated := loadComparisonIntervalSeconds(run.Summaries, intervalKey.Index, run.Started)
 		if seconds <= 0 {
 			seconds = 1
 		}
 		acc := release.loadAccumulator(intervalKey.Load)
+		acc.DurationEstimated = acc.DurationEstimated || estimated
 		acc.SampleCount++
+		acc.RawEvents = true
+		if interval.Distribution != nil && !seenDistributions[interval.Distribution] {
+			acc.Distribution.merge(interval.Distribution)
+			seenDistributions[interval.Distribution] = true
+		}
 		acc.RunIDs[run.Test.ID] = struct{}{}
 		acc.TPSNumerator += float64(interval.Transactions)
 		acc.TPSSeconds += seconds
@@ -599,6 +656,9 @@ func (acc *loadComparisonMetricAccumulator) merge(other *loadComparisonMetricAcc
 	if other == nil {
 		return
 	}
+	acc.Distribution.merge(&other.Distribution)
+	acc.RawEvents = acc.RawEvents || other.RawEvents
+	acc.DurationEstimated = acc.DurationEstimated || other.DurationEstimated
 	acc.TPSNumerator += other.TPSNumerator
 	acc.TPSSeconds += other.TPSSeconds
 	acc.ResponseTotal += other.ResponseTotal
@@ -622,6 +682,26 @@ func (acc *loadComparisonMetricAccumulator) point(level LoadComparisonLoadLevel)
 		Errors:       acc.Errors,
 		RunCount:     len(acc.RunIDs),
 		SampleCount:  acc.SampleCount,
+	}
+	point.EvidenceStatus = "observed"
+	if acc.Transactions == 0 {
+		point.EvidenceStatus = "no_samples"
+	}
+	if acc.Errors < 0 || acc.Errors > acc.Transactions {
+		point.EvidenceStatus = "inconsistent_counts"
+	}
+	point.ObservedSeconds = acc.TPSSeconds
+	point.DurationEstimated = acc.DurationEstimated
+	for id := range acc.RunIDs {
+		point.RunIDs = append(point.RunIDs, id)
+	}
+	sort.Strings(point.RunIDs)
+	point.Latency = loadComparisonLatency(acc.Distribution.All, acc.ResponseTotal)
+	point.SuccessfulLatency = loadComparisonLatency(acc.Distribution.Successful, acc.Distribution.SuccessfulTotal)
+	point.FailedLatency = loadComparisonLatency(acc.Distribution.Failed, acc.Distribution.FailedTotal)
+	if acc.RawEvents && acc.TPSSeconds > 0 && point.EvidenceStatus == "observed" {
+		rate := float64(acc.Transactions-acc.Errors) / acc.TPSSeconds
+		point.SuccessfulRate = &rate
 	}
 	if acc.TPSSeconds > 0 {
 		point.TPS = acc.TPSNumerator / acc.TPSSeconds

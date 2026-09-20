@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +7,11 @@ import { ReleaseTrendPanel } from './ReleaseTrendPanel'
 import type { Release, ReleaseTrend, RunArchiveReport, TestSummary } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('recharts', () => {
+  const Mock = ({ children }: { children?: ReactNode }) => <g>{children}</g>
+  return { ReferenceLine: Mock, CartesianGrid: Mock, LineChart: ({ children }: { children?: ReactNode }) => <svg>{children}</svg>, ResponsiveContainer: ({ children }: { children?: ReactNode }) => <div>{children}</div>, Tooltip: Mock, XAxis: Mock, YAxis: Mock, Line: Mock }
+})
 
 let container: HTMLDivElement
 let root: Root
@@ -29,8 +34,8 @@ function trendFixture(): ReleaseTrend {
     release_id: 'rel-1',
     run_count: 2,
     points: [
-      { run_id: 'a', run_name: 'Run A', status: 'COMPLETE', completed_at: '2026-06-01T10:00:00Z', transactions: 1000, error_pct: 1, avg_response_ms: 100, peak_tps: 50, peak_active_vusers: 100, completeness_pct: 100, sla_breached: false },
-      { run_id: 'b', run_name: 'Run B', status: 'COMPLETE', completed_at: '2026-06-01T11:00:00Z', transactions: 1000, error_pct: 4, avg_response_ms: 140, peak_tps: 48, peak_active_vusers: 100, completeness_pct: 100, sla_breached: true, deltas: { error_pct_delta: 3, avg_response_ms_delta: 40, avg_response_pct_delta: 40, peak_tps_delta: -2, completeness_delta: 0 }, regressions: ['error rate regressed', 'SLA newly breached'] },
+      { metric_population: 'transaction', run_id: 'a', run_name: 'Run A', status: 'COMPLETE', completed_at: '2026-06-01T10:00:00Z', transactions: 1000, error_pct: 1, avg_response_ms: 100, peak_tps: 50, peak_active_vusers: 100, completeness_pct: 100, sla_breached: false },
+      { metric_population: 'transaction', run_id: 'b', run_name: 'Run B', status: 'COMPLETE', completed_at: '2026-06-01T11:00:00Z', transactions: 1000, error_pct: 4, avg_response_ms: 140, peak_tps: 48, peak_active_vusers: 100, completeness_pct: 100, sla_breached: true, deltas: { error_pct_delta: 3, avg_response_ms_delta: 40, avg_response_pct_delta: 40, peak_tps_delta: -2, completeness_delta: 0 }, regressions: ['error rate regressed', 'SLA newly breached'] },
     ],
     summary: { latest_regressed: true, latest_regressions: ['error rate regressed', 'SLA newly breached'], avg_response_trend_pct: 40, error_pct_trend: 3 },
   }
@@ -54,7 +59,8 @@ function reportFixture(actions: Record<string, { transactions: number; avg: numb
   return {
     manifest: { test_id: 'x' },
     overview: { transactions: 1000, errors: 10, error_pct: 1, avg_response_ms: 100, min_response_ms: 10, max_response_ms: 900, p95_ms: 220, resource_samples: 4, interval_summaries: 4, peak_tps: 50, peak_active_vusers: 100 },
-    by_action: Object.fromEntries(Object.entries(actions).map(([name, stats]) => [name, {
+    metric_populations: { transaction: { transactions: 1000, errors: 10, error_pct: 1, avg_response_ms: 100, p95_ms: 200, average_rate_per_second: 10 } },
+    by_transaction: Object.fromEntries(Object.entries(actions).map(([name, stats]) => [name, {
       transactions: stats.transactions,
       errors: 0,
       error_pct: stats.errorPct,
@@ -70,7 +76,7 @@ function reportFixture(actions: Record<string, { transactions: number; avg: numb
 function clickRow(runId: string) {
   const row = container.querySelector(`[data-testid="release-trend-row-${runId}"]`) as HTMLElement
   expect(row).toBeTruthy()
-  act(() => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+  act(() => { row.querySelector('button')!.click() })
 }
 
 function selectByLabel(label: string): HTMLSelectElement {
@@ -104,6 +110,48 @@ describe('ReleaseTrendPanel', () => {
     expect(container.textContent).toContain('No samples')
   })
 
+  it('recomputes scenario-only rows, latest summary and detail against the previous visible run', async () => {
+    const trend = trendFixture()
+    trend.points = [trend.points[0], {...trend.points[1], avg_response_ms: 400}, {...trend.points[1], run_id: 'c', run_name: 'Run C', completed_at: '2026-06-01T12:00:00Z', avg_response_ms: 150}]
+    trend.run_count = 3
+    await act(async () => root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={vi.fn().mockResolvedValue(trend)} runsById={{a: runFixture('a', 'checkout'), b: runFixture('b', 'search'), c: runFixture('c', 'checkout')}} />))
+    const metric = selectByLabel('Latency statistic')
+    await act(async () => {metric.value = 'average_ms'; metric.dispatchEvent(new Event('change', {bubbles: true}))})
+    const scenario = selectByLabel('Scenario')
+    await act(async () => {scenario.value = 'checkout'; scenario.dispatchEvent(new Event('change', {bubbles: true}))})
+    expect(container.querySelector('[data-testid="release-trend-row-b"]')).toBeNull()
+    expect(container.querySelector('[data-testid="release-trend-row-c"]')?.textContent).toContain('+50.0 ms')
+    expect(container.textContent).toContain('Latency +50.0% exceeds 10% rule')
+    clickRow('c')
+    const detail = container.querySelector('[data-testid="release-trend-detail"]')!
+    expect(detail.textContent).toContain('Run A')
+    expect(detail.textContent).not.toContain('Run B')
+  })
+
+  it('does not silently replace a fixed baseline excluded by a scenario filter', async () => {
+    const trend = trendFixture()
+    trend.points.push({ ...trend.points[1], run_id: 'c', run_name: 'Run C', completed_at: '2026-06-01T12:00:00Z', avg_response_ms: 150 })
+    trend.run_count = 3
+    await act(async () => root.render(<ReleaseTrendPanel releaseId="rel-1" getReleaseTrend={vi.fn().mockResolvedValue(trend)} runsById={{ a: runFixture('a', 'checkout'), b: runFixture('b', 'search'), c: runFixture('c', 'checkout') }} />))
+    const change = async (select: HTMLSelectElement, value: string) => {
+      await act(async () => { select.value = value; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    }
+    const control = (label: string) => Array.from(container.querySelectorAll('label')).find(node => node.textContent?.startsWith(label))!.querySelector('select')!
+    await change(selectByLabel('Latency statistic'), 'average_ms')
+    await change(control('Baseline policy'), 'pinned')
+    await change(control('Fixed baseline'), 'b')
+    await change(selectByLabel('Scenario'), 'checkout')
+    expect(control('Fixed baseline').value).toBe('')
+    expect(container.textContent).toContain('The fixed baseline has no matching evidence for these filters')
+    const row = container.querySelector('[data-testid="release-trend-row-c"]')!
+    expect(row.textContent).not.toContain('+50.0 ms')
+    expect(row.textContent).not.toContain('Potential regression')
+    clickRow('c')
+    expect(container.querySelector('[data-testid="release-trend-detail"]')?.textContent).toContain('None')
+    await change(selectByLabel('Scenario'), '')
+    expect(control('Fixed baseline').value).toBe('b')
+  })
+
   it('renders the run series with deltas and a regression flag', async () => {
     const getReleaseTrend = vi.fn().mockResolvedValue(trendFixture())
     await act(async () => {
@@ -115,9 +163,11 @@ describe('ReleaseTrendPanel', () => {
     expect(container.textContent).toContain('Release Trend Analysis')
     expect(container.textContent).toContain('Run A')
     expect(container.textContent).toContain('Run B')
-    expect(container.textContent).toContain('+40ms')
-    expect(container.textContent).toContain('error rate regressed')
-    expect(container.querySelector('[data-testid="release-trend-latest-regressed"]')).toBeTruthy()
+    const select = selectByLabel('Latency statistic')
+    await act(async () => { select.value = 'average_ms'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+    expect(container.textContent).toContain('+40.0 ms')
+    expect(container.textContent).toContain('Potential regression (unverified)')
+    expect(container.textContent).toContain('Error rate +3.00 pp exceeds 1 pp rule')
   })
 
   it('renders an empty state when there are no runs', async () => {
@@ -212,7 +262,7 @@ describe('ReleaseTrendPanel', () => {
     expect(container.querySelector('[data-testid="release-trend-row-a"]')).toBeTruthy()
     expect(container.querySelector('[data-testid="release-trend-row-b"]')).toBeNull()
     expect(container.querySelector('[data-testid="release-trend-scope-note"]')?.textContent).toContain('Search')
-    expect(container.querySelector('[data-testid="release-trend-row-a"]')?.textContent).toContain('40.0')
+    expect(container.querySelector('[data-testid="release-trend-row-a"]')?.textContent).toContain('80.0')
   })
 
   it('populates the detail area from the selected run and collapses on reselect', async () => {
@@ -233,15 +283,17 @@ describe('ReleaseTrendPanel', () => {
     expect(container.querySelector('[data-testid="release-trend-detail"]')?.textContent)
       .toContain('Select a run above')
 
+    const baseline = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.startsWith('Baseline policy'))!.querySelector('select')!
+    await act(async () => { baseline.value = 'pinned'; baseline.dispatchEvent(new Event('change', { bubbles: true })) })
     clickRow('b')
     const detail = container.querySelector('[data-testid="release-trend-detail"]') as HTMLElement
     expect(detail.textContent).toContain('Run B')
-    expect(detail.textContent).toContain('Search Browse')
+    expect(detail.textContent).toContain('Not comparable')
     // Run-over-run deltas, the transaction breakdown, and archived resource peaks.
-    expect(detail.textContent).toContain('+40ms')
+    expect(detail.textContent).not.toContain('+40.0 ms')
     expect(detail.textContent).toContain('Checkout')
     expect(detail.textContent).toContain('41.5%')
-    expect(detail.textContent).toContain('SLA newly breached')
+    expect(detail.textContent).toContain('Test conditions differ')
 
     clickRow('b')
     expect(container.querySelector('[data-testid="release-trend-detail"]')?.textContent)

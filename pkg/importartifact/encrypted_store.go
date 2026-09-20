@@ -1982,6 +1982,24 @@ func (s *EncryptedStore) DeleteExpiredSessions(ctx context.Context, now time.Tim
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("read Bruno import session %q: %w", entry.Name(), readErr))
 			continue
 		}
+		if descriptor.ExpirationDisabled {
+			if !strings.HasSuffix(entry.Name(), ".claim.json") {
+				continue
+			}
+			// Non-expiring sessions still need abandoned claim recovery. Without
+			// this path, a controller crash after Claim would strand the draft
+			// forever because its durable expiry intentionally never arrives.
+			recoverErr := s.recoverStaleSessionClaimLocked(
+				descriptor.ID, descriptor.ProjectID, descriptor.Actor, now.UTC(),
+			)
+			if errors.Is(recoverErr, ErrSessionClaimed) || errors.Is(recoverErr, os.ErrNotExist) {
+				continue
+			}
+			if recoverErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("recover non-expiring Bruno import session claim %q: %w", descriptor.ID, recoverErr))
+			}
+			continue
+		}
 		if descriptor.ExpiresAt.After(now) {
 			continue
 		}
