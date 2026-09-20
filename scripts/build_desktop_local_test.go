@@ -97,7 +97,7 @@ func TestBuildDesktopLocalPreservesConcurrentWailsConfigEdit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(desktopDir, ".wails-version"), []byte("v2.13.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(desktopDir, ".wails-version"), []byte("v2.16.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(desktopDir, "wails.json")
@@ -110,7 +110,7 @@ func TestBuildDesktopLocalPreservesConcurrentWailsConfigEdit(t *testing.T) {
 	fakeWails := filepath.Join(toolDir, "wails")
 	writeExecutable(t, fakeWails, `#!/bin/sh
 if [ "${1:-}" = "version" ]; then
-  printf '%s\n' v2.13.0
+  printf '%s\n' v2.16.0
   exit 0
 fi
 printf '%s\n' "$WAILS_CONCURRENT_EDIT" > "$WAILS_TEST_CONFIG"
@@ -181,7 +181,7 @@ func TestBuildDesktopLocalFindsWailsInCustomGoBin(t *testing.T) {
 	toolDir := t.TempDir()
 	goBinDir := t.TempDir()
 	writeExecutable(t, filepath.Join(goBinDir, "wails"), `#!/bin/sh
-if [ "${1:-}" = "version" ]; then printf '%s\n' v2.13.0; fi
+if [ "${1:-}" = "version" ]; then printf '%s\n' v2.16.0; fi
 `)
 	writeExecutable(t, filepath.Join(toolDir, "go"), `#!/bin/sh
 if [ "${1:-}" != "env" ]; then exit 2; fi
@@ -228,7 +228,7 @@ set -eu
 if [ "${1:-}" = "install" ]; then
   cat > "$FAKE_GOBIN/wails" <<'WAILS'
 #!/bin/sh
-if [ "${1:-}" = "version" ]; then printf '%s\n' v2.13.0; fi
+if [ "${1:-}" = "version" ]; then printf '%s\n' v2.16.0; fi
 WAILS
   chmod 0755 "$FAKE_GOBIN/wails"
   printf '%s\n' "$2" > "$FAKE_INSTALL_MARKER"
@@ -268,7 +268,7 @@ esac
 	if err != nil {
 		t.Fatalf("fake go install was not called: %v", err)
 	}
-	if got, want := strings.TrimSpace(string(installed)), "github.com/wailsapp/wails/v2/cmd/wails@v2.13.0"; got != want {
+	if got, want := strings.TrimSpace(string(installed)), "github.com/wailsapp/wails/v2/cmd/wails@v2.16.0"; got != want {
 		t.Fatalf("installed module = %q, want %q", got, want)
 	}
 }
@@ -295,7 +295,7 @@ fi
 	fakeWails := filepath.Join(toolDir, "wails")
 	writeExecutable(t, fakeWails, `#!/bin/sh
 if [ "${1:-}" = "version" ]; then
-  printf '%s\n' v2.13.0
+  printf '%s\n' v2.16.0
 fi
 `)
 
@@ -356,7 +356,7 @@ esac
 	writeExecutable(t, filepath.Join(toolDir, "npm"), "#!/bin/sh\nexit 0\n")
 	fakeWails := filepath.Join(toolDir, "wails")
 	writeExecutable(t, fakeWails, `#!/bin/sh
-if [ "${1:-}" = "version" ]; then printf '%s\n' v2.13.0; fi
+if [ "${1:-}" = "version" ]; then printf '%s\n' v2.16.0; fi
 `)
 	writeFakeMakensis(t, toolDir)
 
@@ -438,7 +438,7 @@ func TestBuildDesktopLocalRequiresExactWailsVersion(t *testing.T) {
 	}
 	writeFakeMakensis(t, toolDir)
 
-	for _, reported := range []string{"v12.13.0", "v2.13.0-dev", ""} {
+	for _, reported := range []string{"v12.16.0", "v2.16.0-dev", ""} {
 		t.Run("reported_"+strings.ReplaceAll(reported, ".", "_"), func(t *testing.T) {
 			fakeWails := filepath.Join(toolDir, "wails-"+strings.NewReplacer(".", "_", "-", "_").Replace(reported))
 			if reported == "" {
@@ -458,7 +458,7 @@ func TestBuildDesktopLocalRequiresExactWailsVersion(t *testing.T) {
 			if err == nil {
 				t.Fatalf("non-exact Wails version %q unexpectedly passed:\n%s", reported, output)
 			}
-			if !strings.Contains(string(output), "differs from pinned v2.13.0") {
+			if !strings.Contains(string(output), "differs from pinned v2.16.0") {
 				t.Fatalf("Wails mismatch was not actionable:\n%s", output)
 			}
 		})
