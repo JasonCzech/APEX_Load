@@ -795,6 +795,39 @@ func readAllArchiveSummaries(record *storage.RunArchiveRecord) ([]IntervalSummar
 	})
 }
 
+func readAllArchiveELKSamples(record *storage.RunArchiveRecord) ([]ELKLogSample, error) {
+	samples, err := readAllArchiveRecords[ELKLogSample](record, func(manifest *RunArchiveManifest) string {
+		return manifest.ELKEvidenceFile
+	})
+	if err != nil {
+		return nil, err
+	}
+	for index := range samples {
+		samples[index] = sanitizeELKSample(samples[index])
+	}
+	return samples, nil
+}
+
+func readAllArchiveDynatraceEvidence(record *storage.RunArchiveRecord) ([]DynatraceEvidenceRecord, error) {
+	records, err := readAllArchiveRecords[DynatraceEvidenceRecord](record, func(manifest *RunArchiveManifest) string {
+		return manifest.DynatraceEvidenceFile
+	})
+	if err != nil {
+		return nil, err
+	}
+	for index := range records {
+		if records[index].Log != nil {
+			sample := sanitizeDynatraceLog(*records[index].Log)
+			records[index].Log = &sample
+		}
+		if records[index].Problem != nil {
+			problem := sanitizeDynatraceProblem(*records[index].Problem)
+			records[index].Problem = &problem
+		}
+	}
+	return records, nil
+}
+
 func readAllArchiveSummariesContext(ctx context.Context, record *storage.RunArchiveRecord) ([]IntervalSummaryRecord, error) {
 	return readAllArchiveRecordsContext[IntervalSummaryRecord](ctx, record, func(manifest *RunArchiveManifest) string {
 		return manifest.IntervalSummariesFile

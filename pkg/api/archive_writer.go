@@ -36,7 +36,14 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 	if err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
 	}
-	if err := validateArchiveArtifactTargets(archiveDir, "transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", runArchiveManifestFileName); err != nil {
+	targets := []string{"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", runArchiveManifestFileName}
+	if test.ELKCapture != nil {
+		targets = append(targets, "elk_evidence.jsonl")
+	}
+	if test.DynatraceCapture != nil {
+		targets = append(targets, "dynatrace_evidence.jsonl")
+	}
+	if err := validateArchiveArtifactTargets(archiveDir, targets...); err != nil {
 		return nil, fmt.Errorf("inspect archive targets: %w", err)
 	}
 
@@ -64,6 +71,37 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		resourceFile.Close()
 		return nil, fmt.Errorf("open summaries archive: %w", err)
 	}
+	var elkFile *os.File
+	var elkBuf *bufio.Writer
+	var elkEncoder *json.Encoder
+	elkEvidenceFile := ""
+	if test.ELKCapture != nil {
+		elkFile, elkBuf, elkEncoder, err = open("elk_evidence.jsonl")
+		if err != nil {
+			txFile.Close()
+			resourceFile.Close()
+			summaryFile.Close()
+			return nil, fmt.Errorf("open ELK evidence archive: %w", err)
+		}
+		elkEvidenceFile = "elk_evidence.jsonl"
+	}
+	var dynatraceFile *os.File
+	var dynatraceBuf *bufio.Writer
+	var dynatraceEncoder *json.Encoder
+	dynatraceEvidenceFile := ""
+	if test.DynatraceCapture != nil {
+		dynatraceFile, dynatraceBuf, dynatraceEncoder, err = open("dynatrace_evidence.jsonl")
+		if err != nil {
+			txFile.Close()
+			resourceFile.Close()
+			summaryFile.Close()
+			if elkFile != nil {
+				elkFile.Close()
+			}
+			return nil, fmt.Errorf("open Dynatrace evidence archive: %w", err)
+		}
+		dynatraceEvidenceFile = "dynatrace_evidence.jsonl"
+	}
 
 	initialProvenance := maskRunArchiveProvenance(provenance)
 	writer := &runArchiveWriter{
@@ -80,21 +118,29 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 			ResourceSamplesParquetFile:   "resources.parquet",
 			IntervalSummariesFile:        "interval_summaries.jsonl",
 			IntervalSummariesParquetFile: "interval_summaries.parquet",
+			ELKEvidenceFile:              elkEvidenceFile,
+			DynatraceEvidenceFile:        dynatraceEvidenceFile,
 		},
-		region:          strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
-		rootDir:         archiveDir,
-		manifestPath:    filepath.Join(archiveDir, runArchiveManifestFileName),
-		txFile:          txFile,
-		resourceFile:    resourceFile,
-		summaryFile:     summaryFile,
-		txBuf:           txBuf,
-		resourceBuf:     resourceBuf,
-		summaryBuf:      summaryBuf,
-		txEncoder:       txEncoder,
-		resourceEncoder: resourceEncoder,
-		summaryEncoder:  summaryEncoder,
-		flushStop:       make(chan struct{}),
-		flushStopped:    make(chan struct{}),
+		region:           strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
+		rootDir:          archiveDir,
+		manifestPath:     filepath.Join(archiveDir, runArchiveManifestFileName),
+		txFile:           txFile,
+		resourceFile:     resourceFile,
+		summaryFile:      summaryFile,
+		elkFile:          elkFile,
+		dynatraceFile:    dynatraceFile,
+		txBuf:            txBuf,
+		resourceBuf:      resourceBuf,
+		summaryBuf:       summaryBuf,
+		elkBuf:           elkBuf,
+		dynatraceBuf:     dynatraceBuf,
+		txEncoder:        txEncoder,
+		resourceEncoder:  resourceEncoder,
+		summaryEncoder:   summaryEncoder,
+		elkEncoder:       elkEncoder,
+		dynatraceEncoder: dynatraceEncoder,
+		flushStop:        make(chan struct{}),
+		flushStopped:     make(chan struct{}),
 	}
 	go writer.flushLoop()
 	return writer, nil
@@ -131,7 +177,7 @@ func (w *runArchiveWriter) stopFlushLoop() {
 
 func (w *runArchiveWriter) flushBuffersLocked() error {
 	var failures []error
-	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf} {
+	for _, writer := range []*bufio.Writer{w.txBuf, w.resourceBuf, w.summaryBuf, w.elkBuf, w.dynatraceBuf} {
 		if writer == nil {
 			continue
 		}
@@ -498,11 +544,61 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		BrowserByDevice:          cloneBrowserByDeviceMetrics(live.BrowserByDevice),
 		Telemetry:                cloneTelemetryHealth(live.Telemetry),
 		TelemetryStatus:          cloneTelemetryRunHealth(live.TelemetryStatus),
+		ELK:                      cloneELKCaptureStatus(live.ELK),
+		Dynatrace:                cloneDynatraceCaptureStatus(live.Dynatrace),
 	}
 	if err := w.summaryEncoder.Encode(record); err != nil {
 		return err
 	}
 	w.manifest.IntervalSummaryCount++
+	return nil
+}
+
+// RecordELKSamples appends the already bounded, deduplicated capture selected by
+// the controller. Redaction is repeated here so every archive writer boundary is
+// safe even when a caller bypasses the Elasticsearch polling path.
+func (w *runArchiveWriter) RecordELKSamples(samples []ELKLogSample) error {
+	if w == nil || w.elkEncoder == nil || len(samples) == 0 {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.flushErr != nil {
+		return w.flushErr
+	}
+	for _, sample := range samples {
+		sample = sanitizeELKSample(sample)
+		if err := w.elkEncoder.Encode(sample); err != nil {
+			return err
+		}
+		w.manifest.ELKEvidenceCount++
+	}
+	return nil
+}
+
+func (w *runArchiveWriter) RecordDynatraceEvidence(records []DynatraceEvidenceRecord) error {
+	if w == nil || w.dynatraceEncoder == nil || len(records) == 0 {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.flushErr != nil {
+		return w.flushErr
+	}
+	for _, record := range records {
+		if record.Log != nil {
+			sample := sanitizeDynatraceLog(*record.Log)
+			record.Log = &sample
+		}
+		if record.Problem != nil {
+			problem := sanitizeDynatraceProblem(*record.Problem)
+			record.Problem = &problem
+		}
+		if err := w.dynatraceEncoder.Encode(record); err != nil {
+			return err
+		}
+		w.manifest.DynatraceEvidenceCount++
+	}
 	return nil
 }
 
@@ -616,10 +712,12 @@ func (w *runArchiveWriter) syncAndCloseDataFilesLocked() error {
 	if w == nil {
 		return nil
 	}
-	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile}
+	files := []*os.File{w.txFile, w.resourceFile, w.summaryFile, w.elkFile, w.dynatraceFile}
 	w.txFile = nil
 	w.resourceFile = nil
 	w.summaryFile = nil
+	w.elkFile = nil
+	w.dynatraceFile = nil
 	var failures []error
 	for _, file := range files {
 		if file == nil {
@@ -804,6 +902,8 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.IntervalSummariesParquetFile, Kind: "dataset", Format: "parquet", RecordType: "interval_summaries", Count: manifest.IntervalSummaryCount},
 		{Name: manifest.TestManifestFile, Kind: "manifest", Format: "json", RecordType: "test_manifest"},
 		{Name: manifest.TestNotesFile, Kind: "notes", Format: "json", RecordType: "test_notes"},
+		{Name: manifest.ELKEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "elk_log_samples", Count: manifest.ELKEvidenceCount},
+		{Name: manifest.DynatraceEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "dynatrace_evidence", Count: manifest.DynatraceEvidenceCount},
 	}
 	artifacts := make([]RunArchiveArtifact, 0, len(descriptors))
 	for _, artifact := range descriptors {

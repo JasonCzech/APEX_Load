@@ -6,7 +6,7 @@ import DialogLayer from './ux/DialogLayer'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator, TestSummary } from '../types'
+import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, DynatraceConnection, ELKConnection, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator, TestSummary } from '../types'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
@@ -544,6 +544,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [scenarioState, setScenarioState] = useState<{ projectID: string; scenarios: StoredScenario[] }>({ projectID: '', scenarios: [] })
   const scenarios = scenarioState.projectID === activeProjectID ? scenarioState.scenarios : EMPTY_SCENARIOS
   const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
+  const [elkConnections, setELKConnections] = useState<ELKConnection[]>([])
+  const [elkConnectionId, setELKConnectionId] = useState('')
+  const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
+  const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
   const [activeApplication, setLaunchApplication] = useState(workspaceApplication)
   const [applications, setApplications] = useState<Application[]>([])
   const [assignmentScripts, setAssignmentScripts] = useState<StoredScript[]>([])
@@ -579,6 +583,31 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     void Promise.all([api.listApplications(activeProjectID), api.listScripts(activeProjectID)]).then(([apps, scripts]) => {
       if (!cancelled) { setApplications(apps.applications || []); setAssignmentScripts(scripts.scripts || []) }
     }).catch(() => { /* Workspace selection remains usable if suggestions cannot load. */ })
+    return () => { cancelled = true }
+  }, [api, activeProjectID])
+  useEffect(() => {
+    let cancelled = false
+    const list = api.listDynatraceConnections
+    if (!activeProjectID || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceConnectionId(''); return () => { cancelled = true } }
+    void list(activeProjectID).then(response => { if (cancelled) return; const ready = (response.connections || []).filter(connection => connection.status === 'ready'); setDynatraceConnections(ready); setDynatraceConnectionId(current => current && ready.some(connection => connection.id === current) ? current : '') }).catch(() => { if (!cancelled) { setDynatraceConnections([]); setDynatraceConnectionId('') } })
+    return () => { cancelled = true }
+  }, [api, activeProjectID])
+  useEffect(() => {
+    let cancelled = false
+    const listELKConnections = api.listELKConnections
+    if (!activeProjectID || typeof listELKConnections !== 'function') {
+      setELKConnections([])
+      setELKConnectionId('')
+      return () => { cancelled = true }
+    }
+    void listELKConnections(activeProjectID).then(response => {
+      if (cancelled) return
+      const ready = (response.connections || []).filter(connection => connection.status === 'ready')
+      setELKConnections(ready)
+      setELKConnectionId(current => current && ready.some(connection => connection.id === current) ? current : '')
+    }).catch(() => {
+      if (!cancelled) { setELKConnections([]); setELKConnectionId('') }
+    })
     return () => { cancelled = true }
   }, [api, activeProjectID])
   useEffect(() => {
@@ -1314,8 +1343,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       ...(groupPayloads ? { groups: groupPayloads } : {}),
       ...(hasOwnKey(currentRunDefaults, 'script_shakeout') ? { script_shakeout: Boolean(currentRunDefaults.script_shakeout) } : {}),
       ...(hasOwnKey(currentRunDefaults, 'resource_baseline') ? { resource_baseline: Boolean(currentRunDefaults.resource_baseline) } : {}),
+      ...(elkConnectionId ? { elk_capture: { connection_id: elkConnectionId } } : {}),
+	  ...(dynatraceConnectionId ? { dynatrace_capture: { connection_id: dynatraceConnectionId } } : {}),
     }
-  }, [activeApplication, activeProject?.id, releaseId, runName, scenario])
+  }, [activeApplication, activeProject?.id, dynatraceConnectionId, elkConnectionId, releaseId, runName, scenario])
   const runCreatePayload = useMemo(
     () => buildCurrentRunCreatePayload(runDefaultOverrides, groupRunOverrides),
     [buildCurrentRunCreatePayload, groupRunOverrides, runDefaultOverrides],
@@ -1674,6 +1705,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     }
     setQueueRecovery(null)
     setSelectedTimeslotId('')
+    setELKConnectionId('')
+	setDynatraceConnectionId('')
     void refreshBindableTimeslots()
   }, [refreshBindableTimeslots])
 
@@ -1730,6 +1763,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setGroupSaveNotice('')
     setShowAllRuntimeDefaults(false)
     setSelectedTimeslotId('')
+    setELKConnectionId('')
+	setDynatraceConnectionId('')
     scheduledStartBaselineRef.current = ''
     setScheduledStartLocal('')
   }, [defaultReleaseId, scenario?.name])
@@ -1750,6 +1785,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     || releaseDirty
     || runOverridesCount > 0
     || selectedTimeslotId
+    || elkConnectionId
+	|| dynatraceConnectionId
     || scheduledStartLocal !== scheduledStartBaselineRef.current
     || newReleaseName.trim()
     || pendingDefaultDirty
@@ -1760,7 +1797,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       version: 1, projectId: activeProjectID, applicationId: activeApplication?.id || '',
       scenarioId: scenario?.id || '', scenarioUpdatedAt: scenario?.updated_at || '', pageMode,
       runName, releaseId, runDefaultOverrides: runDefaultOverridesRef.current,
-      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, newReleaseName, showNewRelease,
+      groupRunOverrides: groupRunOverridesRef.current, scheduledStartLocal, selectedTimeslotId, elkConnectionId, dynatraceConnectionId, newReleaseName, showNewRelease,
       scheduleDraft, editingScheduleId,
     })
   const savedDraftMatches = savedDraft && JSON.stringify({ ...savedDraft, pageMode: null }) === JSON.stringify({ ...buildCurrentDraft(), pageMode: null })
@@ -2557,6 +2594,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setReleaseId(restoreDraft.releaseId)
     setScheduledStartLocal(restoreDraft.scheduledStartLocal)
     setSelectedTimeslotId(restoreDraft.selectedTimeslotId)
+    setELKConnectionId(restoreDraft.elkConnectionId || '')
+	setDynatraceConnectionId(restoreDraft.dynatraceConnectionId || '')
     setScheduleDraft(restoreDraft.editingScheduleId ? restoreDraft.scheduleDraft : { ...restoreDraft.scheduleDraft, approval_policy: scheduleDefaults.approval_policy || 'auto', missed_run_policy: scheduleDefaults.missed_run_policy || 'skip' })
     setEditingScheduleId(restoreDraft.editingScheduleId)
     setPageMode(restoreDraft.pageMode)
@@ -3315,6 +3354,26 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </select>
                   </div>
                 )}
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label" id="new-test-elk-label">Elastic log capture</span>
+                    <span className="setting-desc">Optional controller-side polling; load generators are unaffected</span>
+                  </div>
+                  <select className="settings-input" aria-labelledby="new-test-elk-label" value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
+                    <option value="">Off for this test</option>
+                    {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+                  </select>
+                </div>
+                <div className="setting-row">
+                  <div className="setting-info">
+                    <span className="setting-label" id="new-test-dynatrace-label">Dynatrace SaaS capture</span>
+                    <span className="setting-desc">Optional Metrics, Problems, and Grail log polling from the controller</span>
+                  </div>
+                  <select className="settings-input" aria-labelledby="new-test-dynatrace-label" value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
+                    <option value="">Off for this test</option>
+                    {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+                  </select>
+                </div>
               </div>
             </section>
 

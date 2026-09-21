@@ -4228,6 +4228,68 @@ paths:
                               title:
                                 type: string
                       nullable: true
+                    dynatrace_evidence:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          log:
+                            type: object
+                            properties:
+                              message:
+                                type: string
+                              status:
+                                type: string
+                              test_id:
+                                type: string
+                              timestamp:
+                                type: string
+                                format: date-time
+                              trace_id:
+                                type: string
+                            nullable: true
+                          problem:
+                            type: object
+                            properties:
+                              affected_entity:
+                                type: string
+                              display_id:
+                                type: string
+                              end_time:
+                                type: string
+                                format: date-time
+                              id:
+                                type: string
+                              severity:
+                                type: string
+                              start_time:
+                                type: string
+                                format: date-time
+                              status:
+                                type: string
+                              title:
+                                type: string
+                            nullable: true
+                          type:
+                            type: string
+                    elk_samples:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          id:
+                            type: string
+                          level:
+                            type: string
+                          message:
+                            type: string
+                          test_id:
+                            type: string
+                          timestamp:
+                            type: string
+                            format: date-time
+                          trace_id:
+                            type: string
                     error_patterns:
                       type: array
                       items:
@@ -4399,6 +4461,16 @@ paths:
                         created_at:
                           type: string
                           format: date-time
+                        dynatrace_evidence_count:
+                          type: integer
+                          format: int64
+                        dynatrace_evidence_file:
+                          type: string
+                        elk_evidence_count:
+                          type: integer
+                          format: int64
+                        elk_evidence_file:
+                          type: string
                         error:
                           type: string
                         initial_provenance:
@@ -4426,6 +4498,14 @@ paths:
                               type: string
                             duration:
                               type: string
+                            dynatrace_capture:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            elk_capture:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             execution_settings:
                               type: object
                               additionalProperties: true
@@ -4554,6 +4634,14 @@ paths:
                               type: string
                             duration:
                               type: string
+                            dynatrace_capture:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            elk_capture:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             execution_settings:
                               type: object
                               additionalProperties: true
@@ -35321,6 +35409,16 @@ paths:
                                   type: integer
                                   format: int64
                                   description: Duration in nanoseconds.
+                                dynatrace_capture:
+                                  type: object
+                                  description: 'Go type: DynatraceCaptureConfig'
+                                  additionalProperties: true
+                                  nullable: true
+                                elk_capture:
+                                  type: object
+                                  description: 'Go type: ELKCaptureConfig'
+                                  additionalProperties: true
+                                  nullable: true
                                 ended_at:
                                   type: string
                                   format: date-time
@@ -41905,6 +42003,1455 @@ paths:
       tags:
         - Projects
       x-handler: handleUpdateProjectGitHubPolicy
+  /api/v1/projects/{id}/monitoring/dynatrace-connections:
+    get:
+      summary: List Dynatrace Connections
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleListDynatraceConnections
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleListDynatraceConnections
+    post:
+      summary: Create Dynatrace Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleCreateDynatraceConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+                environment_token_secret:
+                  type: string
+                  nullable: true
+                environment_url:
+                  type: string
+                log_base_filter:
+                  type: string
+                log_message_field:
+                  type: string
+                log_status_field:
+                  type: string
+                log_test_id_field:
+                  type: string
+                log_timestamp_field:
+                  type: string
+                log_trace_id_field:
+                  type: string
+                logs_enabled:
+                  type: boolean
+                metric_queries:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      aggregation:
+                        type: string
+                      entity_selector:
+                        type: string
+                      metric_selector:
+                        type: string
+                      name:
+                        type: string
+                metrics_enabled:
+                  type: boolean
+                name:
+                  type: string
+                oauth_client_id_secret:
+                  type: string
+                  nullable: true
+                oauth_client_secret_secret:
+                  type: string
+                  nullable: true
+                oauth_resource:
+                  type: string
+                oauth_scopes:
+                  type: array
+                  items:
+                    type: string
+                platform_auth_type:
+                  type: string
+                platform_token_secret:
+                  type: string
+                  nullable: true
+                platform_url:
+                  type: string
+                poll_interval_seconds:
+                  type: integer
+                  format: int64
+                problem_entity_selector:
+                  type: string
+                problem_selector:
+                  type: string
+                problems_enabled:
+                  type: boolean
+                updated_at:
+                  type: string
+                  format: date-time
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  environment_url:
+                    type: string
+                  has_environment_token:
+                    type: boolean
+                  has_oauth_client_id:
+                    type: boolean
+                  has_oauth_client_secret:
+                    type: boolean
+                  has_platform_token:
+                    type: boolean
+                  id:
+                    type: string
+                  last_capability_health:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        message:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - status
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  log_base_filter:
+                    type: string
+                  log_message_field:
+                    type: string
+                  log_status_field:
+                    type: string
+                  log_test_id_field:
+                    type: string
+                  log_timestamp_field:
+                    type: string
+                  log_trace_id_field:
+                    type: string
+                  logs_enabled:
+                    type: boolean
+                  metric_queries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        aggregation:
+                          type: string
+                        entity_selector:
+                          type: string
+                        metric_selector:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - aggregation
+                        - metric_selector
+                        - name
+                  metrics_enabled:
+                    type: boolean
+                  name:
+                    type: string
+                  oauth_resource:
+                    type: string
+                  oauth_scopes:
+                    type: array
+                    items:
+                      type: string
+                  platform_auth_type:
+                    type: string
+                  platform_url:
+                    type: string
+                  poll_interval_seconds:
+                    type: integer
+                    format: int64
+                  problem_entity_selector:
+                    type: string
+                  problem_selector:
+                    type: string
+                  problems_enabled:
+                    type: boolean
+                  project_id:
+                    type: string
+                  status:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - enabled
+                  - has_environment_token
+                  - has_oauth_client_id
+                  - has_oauth_client_secret
+                  - has_platform_token
+                  - id
+                  - logs_enabled
+                  - metric_queries
+                  - metrics_enabled
+                  - name
+                  - oauth_scopes
+                  - poll_interval_seconds
+                  - problems_enabled
+                  - project_id
+                  - status
+                  - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleCreateDynatraceConnection
+  /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}:
+    delete:
+      summary: Delete Dynatrace Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleDeleteDynatraceConnection
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleDeleteDynatraceConnection
+    get:
+      summary: Get Dynatrace Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      operationId: handleGetDynatraceConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  environment_url:
+                    type: string
+                  has_environment_token:
+                    type: boolean
+                  has_oauth_client_id:
+                    type: boolean
+                  has_oauth_client_secret:
+                    type: boolean
+                  has_platform_token:
+                    type: boolean
+                  id:
+                    type: string
+                  last_capability_health:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        message:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - status
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  log_base_filter:
+                    type: string
+                  log_message_field:
+                    type: string
+                  log_status_field:
+                    type: string
+                  log_test_id_field:
+                    type: string
+                  log_timestamp_field:
+                    type: string
+                  log_trace_id_field:
+                    type: string
+                  logs_enabled:
+                    type: boolean
+                  metric_queries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        aggregation:
+                          type: string
+                        entity_selector:
+                          type: string
+                        metric_selector:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - aggregation
+                        - metric_selector
+                        - name
+                  metrics_enabled:
+                    type: boolean
+                  name:
+                    type: string
+                  oauth_resource:
+                    type: string
+                  oauth_scopes:
+                    type: array
+                    items:
+                      type: string
+                  platform_auth_type:
+                    type: string
+                  platform_url:
+                    type: string
+                  poll_interval_seconds:
+                    type: integer
+                    format: int64
+                  problem_entity_selector:
+                    type: string
+                  problem_selector:
+                    type: string
+                  problems_enabled:
+                    type: boolean
+                  project_id:
+                    type: string
+                  status:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - enabled
+                  - has_environment_token
+                  - has_oauth_client_id
+                  - has_oauth_client_secret
+                  - has_platform_token
+                  - id
+                  - logs_enabled
+                  - metric_queries
+                  - metrics_enabled
+                  - name
+                  - oauth_scopes
+                  - poll_interval_seconds
+                  - problems_enabled
+                  - project_id
+                  - status
+                  - updated_at
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetDynatraceConnection
+    put:
+      summary: Update Dynatrace Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleUpdateDynatraceConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+                environment_token_secret:
+                  type: string
+                  nullable: true
+                environment_url:
+                  type: string
+                log_base_filter:
+                  type: string
+                log_message_field:
+                  type: string
+                log_status_field:
+                  type: string
+                log_test_id_field:
+                  type: string
+                log_timestamp_field:
+                  type: string
+                log_trace_id_field:
+                  type: string
+                logs_enabled:
+                  type: boolean
+                metric_queries:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      aggregation:
+                        type: string
+                      entity_selector:
+                        type: string
+                      metric_selector:
+                        type: string
+                      name:
+                        type: string
+                metrics_enabled:
+                  type: boolean
+                name:
+                  type: string
+                oauth_client_id_secret:
+                  type: string
+                  nullable: true
+                oauth_client_secret_secret:
+                  type: string
+                  nullable: true
+                oauth_resource:
+                  type: string
+                oauth_scopes:
+                  type: array
+                  items:
+                    type: string
+                platform_auth_type:
+                  type: string
+                platform_token_secret:
+                  type: string
+                  nullable: true
+                platform_url:
+                  type: string
+                poll_interval_seconds:
+                  type: integer
+                  format: int64
+                problem_entity_selector:
+                  type: string
+                problem_selector:
+                  type: string
+                problems_enabled:
+                  type: boolean
+                updated_at:
+                  type: string
+                  format: date-time
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  environment_url:
+                    type: string
+                  has_environment_token:
+                    type: boolean
+                  has_oauth_client_id:
+                    type: boolean
+                  has_oauth_client_secret:
+                    type: boolean
+                  has_platform_token:
+                    type: boolean
+                  id:
+                    type: string
+                  last_capability_health:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        message:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - status
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  log_base_filter:
+                    type: string
+                  log_message_field:
+                    type: string
+                  log_status_field:
+                    type: string
+                  log_test_id_field:
+                    type: string
+                  log_timestamp_field:
+                    type: string
+                  log_trace_id_field:
+                    type: string
+                  logs_enabled:
+                    type: boolean
+                  metric_queries:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        aggregation:
+                          type: string
+                        entity_selector:
+                          type: string
+                        metric_selector:
+                          type: string
+                        name:
+                          type: string
+                      required:
+                        - aggregation
+                        - metric_selector
+                        - name
+                  metrics_enabled:
+                    type: boolean
+                  name:
+                    type: string
+                  oauth_resource:
+                    type: string
+                  oauth_scopes:
+                    type: array
+                    items:
+                      type: string
+                  platform_auth_type:
+                    type: string
+                  platform_url:
+                    type: string
+                  poll_interval_seconds:
+                    type: integer
+                    format: int64
+                  problem_entity_selector:
+                    type: string
+                  problem_selector:
+                    type: string
+                  problems_enabled:
+                    type: boolean
+                  project_id:
+                    type: string
+                  status:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - enabled
+                  - has_environment_token
+                  - has_oauth_client_id
+                  - has_oauth_client_secret
+                  - has_platform_token
+                  - id
+                  - logs_enabled
+                  - metric_queries
+                  - metrics_enabled
+                  - name
+                  - oauth_scopes
+                  - poll_interval_seconds
+                  - problems_enabled
+                  - project_id
+                  - status
+                  - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleUpdateDynatraceConnection
+  /api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test:
+    post:
+      summary: Test Dynatrace Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleTestDynatraceConnection
+      responses:
+        2XX:
+          description: Successful response; exact status is selected by the handler.
+          content:
+            application/json:
+              schema:
+                description: Operation-specific JSON response.
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleTestDynatraceConnection
+  /api/v1/projects/{id}/monitoring/elk-connections:
+    get:
+      summary: List ELK Connections
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      operationId: handleListELKConnections
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleListELKConnections
+    post:
+      summary: Create ELK Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleCreateELKConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key_secret_name:
+                  type: string
+                  nullable: true
+                auth_type:
+                  type: string
+                base_filter:
+                  type: string
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+                endpoint:
+                  type: string
+                error_filter:
+                  type: string
+                index_pattern:
+                  type: string
+                level_field:
+                  type: string
+                message_field:
+                  type: string
+                metric_aggregations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                      name:
+                        type: string
+                      operation:
+                        type: string
+                name:
+                  type: string
+                password_secret_name:
+                  type: string
+                  nullable: true
+                test_id_field:
+                  type: string
+                timestamp_field:
+                  type: string
+                trace_id_field:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+                username_secret_name:
+                  type: string
+                  nullable: true
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth_type:
+                    type: string
+                  base_filter:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  endpoint:
+                    type: string
+                  error_filter:
+                    type: string
+                  has_api_key:
+                    type: boolean
+                  has_basic_password:
+                    type: boolean
+                  has_basic_username:
+                    type: boolean
+                  id:
+                    type: string
+                  index_pattern:
+                    type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  level_field:
+                    type: string
+                  message_field:
+                    type: string
+                  metric_aggregations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                        name:
+                          type: string
+                        operation:
+                          type: string
+                      required:
+                        - field
+                        - name
+                        - operation
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  status:
+                    type: string
+                  test_id_field:
+                    type: string
+                  timestamp_field:
+                    type: string
+                  trace_id_field:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - enabled
+                  - has_api_key
+                  - has_basic_password
+                  - has_basic_username
+                  - id
+                  - metric_aggregations
+                  - name
+                  - project_id
+                  - status
+                  - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleCreateELKConnection
+  /api/v1/projects/{id}/monitoring/elk-connections/{connection_id}:
+    delete:
+      summary: Delete ELK Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleDeleteELKConnection
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleDeleteELKConnection
+    get:
+      summary: Get ELK Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      operationId: handleGetELKConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth_type:
+                    type: string
+                  base_filter:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  endpoint:
+                    type: string
+                  error_filter:
+                    type: string
+                  has_api_key:
+                    type: boolean
+                  has_basic_password:
+                    type: boolean
+                  has_basic_username:
+                    type: boolean
+                  id:
+                    type: string
+                  index_pattern:
+                    type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  level_field:
+                    type: string
+                  message_field:
+                    type: string
+                  metric_aggregations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                        name:
+                          type: string
+                        operation:
+                          type: string
+                      required:
+                        - field
+                        - name
+                        - operation
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  status:
+                    type: string
+                  test_id_field:
+                    type: string
+                  timestamp_field:
+                    type: string
+                  trace_id_field:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - enabled
+                  - has_api_key
+                  - has_basic_password
+                  - has_basic_username
+                  - id
+                  - metric_aggregations
+                  - name
+                  - project_id
+                  - status
+                  - updated_at
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleGetELKConnection
+    put:
+      summary: Update ELK Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleUpdateELKConnection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key_secret_name:
+                  type: string
+                  nullable: true
+                auth_type:
+                  type: string
+                base_filter:
+                  type: string
+                description:
+                  type: string
+                enabled:
+                  type: boolean
+                endpoint:
+                  type: string
+                error_filter:
+                  type: string
+                index_pattern:
+                  type: string
+                level_field:
+                  type: string
+                message_field:
+                  type: string
+                metric_aggregations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                      name:
+                        type: string
+                      operation:
+                        type: string
+                name:
+                  type: string
+                password_secret_name:
+                  type: string
+                  nullable: true
+                test_id_field:
+                  type: string
+                timestamp_field:
+                  type: string
+                trace_id_field:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+                username_secret_name:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth_type:
+                    type: string
+                  base_filter:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+                  description:
+                    type: string
+                  enabled:
+                    type: boolean
+                  endpoint:
+                    type: string
+                  error_filter:
+                    type: string
+                  has_api_key:
+                    type: boolean
+                  has_basic_password:
+                    type: boolean
+                  has_basic_username:
+                    type: boolean
+                  id:
+                    type: string
+                  index_pattern:
+                    type: string
+                  last_check_message:
+                    type: string
+                  last_check_status:
+                    type: string
+                  last_checked_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  level_field:
+                    type: string
+                  message_field:
+                    type: string
+                  metric_aggregations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        field:
+                          type: string
+                        name:
+                          type: string
+                        operation:
+                          type: string
+                      required:
+                        - field
+                        - name
+                        - operation
+                  name:
+                    type: string
+                  project_id:
+                    type: string
+                  status:
+                    type: string
+                  test_id_field:
+                    type: string
+                  timestamp_field:
+                    type: string
+                  trace_id_field:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+                required:
+                  - created_at
+                  - enabled
+                  - has_api_key
+                  - has_basic_password
+                  - has_basic_username
+                  - id
+                  - metric_aggregations
+                  - name
+                  - project_id
+                  - status
+                  - updated_at
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleUpdateELKConnection
+  /api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test:
+    post:
+      summary: Test ELK Connection
+      description: '**Access Control:** Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      operationId: handleTestELKConnection
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Bad Gateway
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connection_id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+      x-handler: handleTestELKConnection
   /api/v1/projects/{id}/releases:
     get:
       summary: List Project Releases
@@ -45201,6 +46748,22 @@ paths:
                         format: date-time
                 duration:
                   type: string
+                dynatrace_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
+                elk_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
                 folder_id:
                   type: string
                   nullable: true
@@ -45960,6 +47523,22 @@ paths:
                             format: date-time
                     duration:
                       type: string
+                    dynatrace_capture:
+                      type: object
+                      properties:
+                        connection_id:
+                          type: string
+                        connection_name:
+                          type: string
+                      nullable: true
+                    elk_capture:
+                      type: object
+                      properties:
+                        connection_id:
+                          type: string
+                        connection_name:
+                          type: string
+                      nullable: true
                     folder_id:
                       type: string
                       nullable: true
@@ -47593,6 +49172,26 @@ paths:
                         type: integer
                         format: int64
                         description: Duration in nanoseconds.
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -48168,6 +49767,78 @@ paths:
                               required:
                                 - edges
                                 - nodes
+                              nullable: true
+                            dynatrace:
+                              type: object
+                              properties:
+                                capabilities:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: DynatraceCapabilityStatus'
+                                    additionalProperties: true
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                logs:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceLogSample'
+                                    additionalProperties: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                problems:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceProblemSummary'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
+                              nullable: true
+                            elk:
+                              type: object
+                              properties:
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                samples:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ELKLogSample'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
                               nullable: true
                             error_breakdown:
                               type: object
@@ -48924,6 +50595,78 @@ paths:
                             required:
                               - edges
                               - nodes
+                            nullable: true
+                          dynatrace:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: DynatraceCapabilityStatus'
+                                  additionalProperties: true
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              logs:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceLogSample'
+                                  additionalProperties: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              problems:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceProblemSummary'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
+                            nullable: true
+                          elk:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              samples:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ELKLogSample'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
                             nullable: true
                           error_breakdown:
                             type: object
@@ -51350,6 +53093,26 @@ paths:
                         type: integer
                         format: int64
                         description: Duration in nanoseconds.
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -51925,6 +53688,78 @@ paths:
                               required:
                                 - edges
                                 - nodes
+                              nullable: true
+                            dynatrace:
+                              type: object
+                              properties:
+                                capabilities:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: DynatraceCapabilityStatus'
+                                    additionalProperties: true
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                logs:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceLogSample'
+                                    additionalProperties: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                problems:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceProblemSummary'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
+                              nullable: true
+                            elk:
+                              type: object
+                              properties:
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                samples:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ELKLogSample'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
                               nullable: true
                             error_breakdown:
                               type: object
@@ -52681,6 +54516,78 @@ paths:
                             required:
                               - edges
                               - nodes
+                            nullable: true
+                          dynatrace:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: DynatraceCapabilityStatus'
+                                  additionalProperties: true
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              logs:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceLogSample'
+                                  additionalProperties: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              problems:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceProblemSummary'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
+                            nullable: true
+                          elk:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              samples:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ELKLogSample'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
                             nullable: true
                           error_breakdown:
                             type: object
@@ -55104,6 +57011,26 @@ paths:
                         type: integer
                         format: int64
                         description: Duration in nanoseconds.
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -55679,6 +57606,78 @@ paths:
                               required:
                                 - edges
                                 - nodes
+                              nullable: true
+                            dynatrace:
+                              type: object
+                              properties:
+                                capabilities:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: DynatraceCapabilityStatus'
+                                    additionalProperties: true
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                logs:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceLogSample'
+                                    additionalProperties: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                problems:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceProblemSummary'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
+                              nullable: true
+                            elk:
+                              type: object
+                              properties:
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                samples:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ELKLogSample'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
                               nullable: true
                             error_breakdown:
                               type: object
@@ -56435,6 +58434,78 @@ paths:
                             required:
                               - edges
                               - nodes
+                            nullable: true
+                          dynatrace:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: DynatraceCapabilityStatus'
+                                  additionalProperties: true
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              logs:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceLogSample'
+                                  additionalProperties: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              problems:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceProblemSummary'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
+                            nullable: true
+                          elk:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              samples:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ELKLogSample'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
                             nullable: true
                           error_breakdown:
                             type: object
@@ -58870,6 +60941,26 @@ paths:
                         type: integer
                         format: int64
                         description: Duration in nanoseconds.
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -59445,6 +61536,78 @@ paths:
                               required:
                                 - edges
                                 - nodes
+                              nullable: true
+                            dynatrace:
+                              type: object
+                              properties:
+                                capabilities:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: DynatraceCapabilityStatus'
+                                    additionalProperties: true
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                logs:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceLogSample'
+                                    additionalProperties: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                problems:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceProblemSummary'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
+                              nullable: true
+                            elk:
+                              type: object
+                              properties:
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                samples:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ELKLogSample'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
                               nullable: true
                             error_breakdown:
                               type: object
@@ -60201,6 +62364,78 @@ paths:
                             required:
                               - edges
                               - nodes
+                            nullable: true
+                          dynatrace:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: DynatraceCapabilityStatus'
+                                  additionalProperties: true
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              logs:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceLogSample'
+                                  additionalProperties: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              problems:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceProblemSummary'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
+                            nullable: true
+                          elk:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              samples:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ELKLogSample'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
                             nullable: true
                           error_breakdown:
                             type: object
@@ -62636,6 +64871,26 @@ paths:
                         type: integer
                         format: int64
                         description: Duration in nanoseconds.
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -63211,6 +65466,78 @@ paths:
                               required:
                                 - edges
                                 - nodes
+                              nullable: true
+                            dynatrace:
+                              type: object
+                              properties:
+                                capabilities:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: DynatraceCapabilityStatus'
+                                    additionalProperties: true
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                logs:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceLogSample'
+                                    additionalProperties: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                problems:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceProblemSummary'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
+                              nullable: true
+                            elk:
+                              type: object
+                              properties:
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                samples:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ELKLogSample'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
                               nullable: true
                             error_breakdown:
                               type: object
@@ -63967,6 +66294,78 @@ paths:
                             required:
                               - edges
                               - nodes
+                            nullable: true
+                          dynatrace:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: DynatraceCapabilityStatus'
+                                  additionalProperties: true
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              logs:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceLogSample'
+                                  additionalProperties: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              problems:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceProblemSummary'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
+                            nullable: true
+                          elk:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              samples:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ELKLogSample'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
                             nullable: true
                           error_breakdown:
                             type: object
@@ -66402,6 +68801,26 @@ paths:
                         type: integer
                         format: int64
                         description: Duration in nanoseconds.
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -66977,6 +69396,78 @@ paths:
                               required:
                                 - edges
                                 - nodes
+                              nullable: true
+                            dynatrace:
+                              type: object
+                              properties:
+                                capabilities:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: DynatraceCapabilityStatus'
+                                    additionalProperties: true
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                logs:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceLogSample'
+                                    additionalProperties: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                problems:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceProblemSummary'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
+                              nullable: true
+                            elk:
+                              type: object
+                              properties:
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                samples:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ELKLogSample'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
                               nullable: true
                             error_breakdown:
                               type: object
@@ -67733,6 +70224,78 @@ paths:
                             required:
                               - edges
                               - nodes
+                            nullable: true
+                          dynatrace:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: DynatraceCapabilityStatus'
+                                  additionalProperties: true
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              logs:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceLogSample'
+                                  additionalProperties: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              problems:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceProblemSummary'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
+                            nullable: true
+                          elk:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              samples:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ELKLogSample'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
                             nullable: true
                           error_breakdown:
                             type: object
@@ -70168,6 +72731,26 @@ paths:
                         type: integer
                         format: int64
                         description: Duration in nanoseconds.
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -70743,6 +73326,78 @@ paths:
                               required:
                                 - edges
                                 - nodes
+                              nullable: true
+                            dynatrace:
+                              type: object
+                              properties:
+                                capabilities:
+                                  type: object
+                                  additionalProperties:
+                                    type: object
+                                    description: 'Go type: DynatraceCapabilityStatus'
+                                    additionalProperties: true
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                logs:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceLogSample'
+                                    additionalProperties: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                problems:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: DynatraceProblemSummary'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
+                              nullable: true
+                            elk:
+                              type: object
+                              properties:
+                                connection_id:
+                                  type: string
+                                connection_name:
+                                  type: string
+                                last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                message:
+                                  type: string
+                                metrics:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                samples:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: ELKLogSample'
+                                    additionalProperties: true
+                                status:
+                                  type: string
+                              required:
+                                - connection_id
+                                - status
                               nullable: true
                             error_breakdown:
                               type: object
@@ -71499,6 +74154,78 @@ paths:
                             required:
                               - edges
                               - nodes
+                            nullable: true
+                          dynatrace:
+                            type: object
+                            properties:
+                              capabilities:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: DynatraceCapabilityStatus'
+                                  additionalProperties: true
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              logs:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceLogSample'
+                                  additionalProperties: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              problems:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: DynatraceProblemSummary'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
+                            nullable: true
+                          elk:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                              last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              message:
+                                type: string
+                              metrics:
+                                type: object
+                                additionalProperties:
+                                  type: number
+                                  format: double
+                              samples:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: ELKLogSample'
+                                  additionalProperties: true
+                              status:
+                                type: string
+                            required:
+                              - connection_id
+                              - status
                             nullable: true
                           error_breakdown:
                             type: object
@@ -201473,6 +204200,22 @@ paths:
                         format: date-time
                 duration:
                   type: string
+                dynatrace_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
+                elk_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
                 folder_id:
                   type: string
                   nullable: true
@@ -203718,6 +206461,26 @@ paths:
                     type: integer
                     format: int64
                     description: Duration in nanoseconds.
+                  dynatrace_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
+                  elk_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
                   ended_at:
                     type: string
                     format: date-time
@@ -204852,6 +207615,74 @@ paths:
                           required:
                             - edges
                             - nodes
+                          nullable: true
+                        dynatrace:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            logs:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            problems:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
+                          nullable: true
+                        elk:
+                          type: object
+                          properties:
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            samples:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
                           nullable: true
                         error_breakdown:
                           type: object
@@ -206350,6 +209181,122 @@ paths:
                         required:
                           - edges
                           - nodes
+                        nullable: true
+                      dynatrace:
+                        type: object
+                        properties:
+                          capabilities:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - status
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          logs:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          problems:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                affected_entity:
+                                  type: string
+                                display_id:
+                                  type: string
+                                end_time:
+                                  type: string
+                                  format: date-time
+                                id:
+                                  type: string
+                                severity:
+                                  type: string
+                                start_time:
+                                  type: string
+                                  format: date-time
+                                status:
+                                  type: string
+                                title:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
+                        nullable: true
+                      elk:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          samples:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                level:
+                                  type: string
+                                message:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
                         nullable: true
                       error_breakdown:
                         type: object
@@ -209836,6 +212783,26 @@ paths:
                     type: integer
                     format: int64
                     description: Duration in nanoseconds.
+                  dynatrace_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
+                  elk_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
                   ended_at:
                     type: string
                     format: date-time
@@ -210970,6 +213937,74 @@ paths:
                           required:
                             - edges
                             - nodes
+                          nullable: true
+                        dynatrace:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            logs:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            problems:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
+                          nullable: true
+                        elk:
+                          type: object
+                          properties:
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            samples:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
                           nullable: true
                         error_breakdown:
                           type: object
@@ -212468,6 +215503,122 @@ paths:
                         required:
                           - edges
                           - nodes
+                        nullable: true
+                      dynatrace:
+                        type: object
+                        properties:
+                          capabilities:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - status
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          logs:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          problems:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                affected_entity:
+                                  type: string
+                                display_id:
+                                  type: string
+                                end_time:
+                                  type: string
+                                  format: date-time
+                                id:
+                                  type: string
+                                severity:
+                                  type: string
+                                start_time:
+                                  type: string
+                                  format: date-time
+                                status:
+                                  type: string
+                                title:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
+                        nullable: true
+                      elk:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          samples:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                level:
+                                  type: string
+                                message:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
                         nullable: true
                       error_breakdown:
                         type: object
@@ -215969,6 +219120,16 @@ paths:
                   created_at:
                     type: string
                     format: date-time
+                  dynatrace_evidence_count:
+                    type: integer
+                    format: int64
+                  dynatrace_evidence_file:
+                    type: string
+                  elk_evidence_count:
+                    type: integer
+                    format: int64
+                  elk_evidence_file:
+                    type: string
                   error:
                     type: string
                   initial_provenance:
@@ -216024,6 +219185,26 @@ paths:
                         type: string
                       duration:
                         type: string
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       execution_settings:
                         type: object
                         properties:
@@ -217603,6 +220784,26 @@ paths:
                         type: string
                       duration:
                         type: string
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       execution_settings:
                         type: object
                         properties:
@@ -219934,6 +223135,70 @@ paths:
                     required:
                       - dashboards
                     nullable: true
+                  dynatrace_evidence:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        log:
+                          type: object
+                          properties:
+                            message:
+                              type: string
+                            status:
+                              type: string
+                            test_id:
+                              type: string
+                            timestamp:
+                              type: string
+                              format: date-time
+                            trace_id:
+                              type: string
+                          nullable: true
+                        problem:
+                          type: object
+                          properties:
+                            affected_entity:
+                              type: string
+                            display_id:
+                              type: string
+                            end_time:
+                              type: string
+                              format: date-time
+                            id:
+                              type: string
+                            severity:
+                              type: string
+                            start_time:
+                              type: string
+                              format: date-time
+                            status:
+                              type: string
+                            title:
+                              type: string
+                          nullable: true
+                        type:
+                          type: string
+                      required:
+                        - type
+                  elk_samples:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        level:
+                          type: string
+                        message:
+                          type: string
+                        test_id:
+                          type: string
+                        timestamp:
+                          type: string
+                          format: date-time
+                        trace_id:
+                          type: string
                   error_patterns:
                     type: array
                     items:
@@ -220147,6 +223412,16 @@ paths:
                       created_at:
                         type: string
                         format: date-time
+                      dynatrace_evidence_count:
+                        type: integer
+                        format: int64
+                      dynatrace_evidence_file:
+                        type: string
+                      elk_evidence_count:
+                        type: integer
+                        format: int64
+                      elk_evidence_file:
+                        type: string
                       error:
                         type: string
                       initial_provenance:
@@ -220202,6 +223477,26 @@ paths:
                             type: string
                           duration:
                             type: string
+                          dynatrace_capture:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                            required:
+                              - connection_id
+                            nullable: true
+                          elk_capture:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                            required:
+                              - connection_id
+                            nullable: true
                           execution_settings:
                             type: object
                             properties:
@@ -220940,6 +224235,26 @@ paths:
                             type: string
                           duration:
                             type: string
+                          dynatrace_capture:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                            required:
+                              - connection_id
+                            nullable: true
+                          elk_capture:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              connection_name:
+                                type: string
+                            required:
+                              - connection_id
+                            nullable: true
                           execution_settings:
                             type: object
                             properties:
@@ -224330,6 +227645,26 @@ paths:
                     type: integer
                     format: int64
                     description: Duration in nanoseconds.
+                  dynatrace_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
+                  elk_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
                   ended_at:
                     type: string
                     format: date-time
@@ -225464,6 +228799,74 @@ paths:
                           required:
                             - edges
                             - nodes
+                          nullable: true
+                        dynatrace:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            logs:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            problems:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
+                          nullable: true
+                        elk:
+                          type: object
+                          properties:
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            samples:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
                           nullable: true
                         error_breakdown:
                           type: object
@@ -226962,6 +230365,122 @@ paths:
                         required:
                           - edges
                           - nodes
+                        nullable: true
+                      dynatrace:
+                        type: object
+                        properties:
+                          capabilities:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - status
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          logs:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          problems:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                affected_entity:
+                                  type: string
+                                display_id:
+                                  type: string
+                                end_time:
+                                  type: string
+                                  format: date-time
+                                id:
+                                  type: string
+                                severity:
+                                  type: string
+                                start_time:
+                                  type: string
+                                  format: date-time
+                                status:
+                                  type: string
+                                title:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
+                        nullable: true
+                      elk:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          samples:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                level:
+                                  type: string
+                                message:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
                         nullable: true
                       error_breakdown:
                         type: object
@@ -230392,6 +233911,26 @@ paths:
                     type: integer
                     format: int64
                     description: Duration in nanoseconds.
+                  dynatrace_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
+                  elk_capture:
+                    type: object
+                    properties:
+                      connection_id:
+                        type: string
+                      connection_name:
+                        type: string
+                    required:
+                      - connection_id
+                    nullable: true
                   ended_at:
                     type: string
                     format: date-time
@@ -231526,6 +235065,74 @@ paths:
                           required:
                             - edges
                             - nodes
+                          nullable: true
+                        dynatrace:
+                          type: object
+                          properties:
+                            capabilities:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            logs:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            problems:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
+                          nullable: true
+                        elk:
+                          type: object
+                          properties:
+                            connection_id:
+                              type: string
+                            connection_name:
+                              type: string
+                            last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            message:
+                              type: string
+                            metrics:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            samples:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            status:
+                              type: string
+                          required:
+                            - connection_id
+                            - status
                           nullable: true
                         error_breakdown:
                           type: object
@@ -233024,6 +236631,122 @@ paths:
                         required:
                           - edges
                           - nodes
+                        nullable: true
+                      dynatrace:
+                        type: object
+                        properties:
+                          capabilities:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                              required:
+                                - status
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          logs:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                                status:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          problems:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                affected_entity:
+                                  type: string
+                                display_id:
+                                  type: string
+                                end_time:
+                                  type: string
+                                  format: date-time
+                                id:
+                                  type: string
+                                severity:
+                                  type: string
+                                start_time:
+                                  type: string
+                                  format: date-time
+                                status:
+                                  type: string
+                                title:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
+                        nullable: true
+                      elk:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                          last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          message:
+                            type: string
+                          metrics:
+                            type: object
+                            additionalProperties:
+                              type: number
+                              format: double
+                          samples:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: string
+                                level:
+                                  type: string
+                                message:
+                                  type: string
+                                test_id:
+                                  type: string
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                trace_id:
+                                  type: string
+                          status:
+                            type: string
+                        required:
+                          - connection_id
+                          - status
                         nullable: true
                       error_breakdown:
                         type: object
@@ -240016,6 +243739,26 @@ paths:
                         nullable: true
                       duration:
                         type: string
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -241184,6 +244927,26 @@ paths:
                         nullable: true
                       duration:
                         type: string
+                      dynatrace_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
+                      elk_capture:
+                        type: object
+                        properties:
+                          connection_id:
+                            type: string
+                          connection_name:
+                            type: string
+                        required:
+                          - connection_id
+                        nullable: true
                       ended_at:
                         type: string
                         format: date-time
@@ -245255,6 +249018,22 @@ paths:
                         format: date-time
                 duration:
                   type: string
+                dynatrace_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
+                elk_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
                 folder_id:
                   type: string
                   nullable: true
@@ -247807,6 +251586,22 @@ paths:
                         format: date-time
                 duration:
                   type: string
+                dynatrace_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
+                elk_capture:
+                  type: object
+                  properties:
+                    connection_id:
+                      type: string
+                    connection_name:
+                      type: string
+                  nullable: true
                 folder_id:
                   type: string
                   nullable: true

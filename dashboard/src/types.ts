@@ -257,6 +257,18 @@ export type {
   MonitoringCollector,
   MonitoringCollectorListResponse,
   MonitoringCollectorTokenResponse,
+  ELKConnection,
+  ELKConnectionListResponse,
+  ELKMetricAggregation,
+  ELKCaptureStatus,
+  ELKLogSample,
+  DynatraceConnection,
+  DynatraceConnectionListResponse,
+  DynatraceMetricQuery,
+  DynatraceCaptureStatus,
+  DynatraceLogSample,
+  DynatraceProblemSummary,
+  DynatraceEvidenceRecord,
 } from './types/monitoring'
 export type {
   EntitlementBundleConsumption,
@@ -1587,6 +1599,8 @@ export interface RunArchiveReport {
 	transaction_response_time_sla_results?: TransactionResponseTimeSLAResult[]
   sla_rollup?: RunArchiveSLARollup
   evidence_tiers?: RunArchiveEvidenceTier[]
+  elk_samples?: import('./types/monitoring').ELKLogSample[]
+  dynatrace_evidence?: import('./types/monitoring').DynatraceEvidenceRecord[]
   error_patterns?: RunArchiveErrorPattern[]
   summary_timeline?: RunArchiveSummaryPoint[]
 	load_level_summaries?: RunArchiveLoadLevelSummary[]
@@ -1989,6 +2003,8 @@ export interface LiveMetrics {
   generator_resources?: Record<string, GeneratorResourceSnapshot>
   latency?: NetworkLatency
 	load_levels?: ActiveLoadLevel[]
+	elk?: import('./types/monitoring').ELKCaptureStatus
+	dynatrace?: import('./types/monitoring').DynatraceCaptureStatus
 }
 
 export interface GeneratorResourceSnapshot {

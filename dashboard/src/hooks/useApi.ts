@@ -19,6 +19,8 @@ import { useObjectRepositoryApi } from './api/useObjectRepositoryApi'
 import { useCorrelationRulesetApi } from './api/useCorrelationRulesetApi'
 import { useEntitlementsApi } from './api/useEntitlementsApi'
 import { useDashboardDefinitionsApi } from './api/useDashboardDefinitionsApi'
+import { useELKConnectionsApi } from './api/useELKConnectionsApi'
+import { useDynatraceConnectionsApi } from './api/useDynatraceConnectionsApi'
 
 export { ApiError }
 
@@ -40,6 +42,8 @@ function useApiServices() {
   const correlationRulesets = useCorrelationRulesetApi()
   const entitlements = useEntitlementsApi()
   const dashboardDefinitions = useDashboardDefinitionsApi()
+  const elkConnections = useELKConnectionsApi()
+  const dynatraceConnections = useDynatraceConnectionsApi()
 
   // Spread order is preserved by mergeApiServiceGroups; the group names are the
   // labels a collision report points at.
@@ -63,8 +67,10 @@ function useApiServices() {
         correlationRulesets,
 		entitlements,
 		dashboardDefinitions,
+		elkConnections,
+		dynatraceConnections,
       }),
-    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions],
+    [tests, applications, projects, repository, scripts, system, recorder, browserRecorder, library, capacity, fleet, executionPlans, monitoringCollectors, objectRepositories, correlationRulesets, entitlements, dashboardDefinitions, elkConnections, dynatraceConnections],
   )
 }
 

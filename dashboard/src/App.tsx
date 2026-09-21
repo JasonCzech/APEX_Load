@@ -1261,6 +1261,11 @@ function AppShell({
     "manage_system",
     false,
   );
+  const canManageProjects = effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(
+    effectiveAccessResources,
+    "manage_projects",
+    false,
+  );
   const selectProjectScopeForRoute = useCallback(
     (projectID: string) => {
       const project = projects.find((candidate) => candidate.id === projectID);
@@ -3549,6 +3554,7 @@ function AppShell({
                   onAcknowledgeThresholdAlert={acknowledgeThresholdAlertByKey}
                   onSelectTest={openRun}
                   canManageSystem={canManageSystem}
+                  canManageProjects={canManageProjects}
                   onScheduleForDate={navigateToScheduleForDate}
                   activeCategoryId={monitorCategoryForView(view)}
                   onCategoryChange={navigateToMonitorCategory}

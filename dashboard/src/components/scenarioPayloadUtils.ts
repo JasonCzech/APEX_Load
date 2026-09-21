@@ -86,6 +86,8 @@ export type CreateTestPayload = {
   traffic_profile?: TrafficProfile
   runtime_settings?: ScenarioUpsertPayload['runtime_settings']
   data_pools?: ScenarioDataPoolBinding[]
+  elk_capture?: { connection_id: string }
+  dynatrace_capture?: { connection_id: string }
 }
 
 type ScenarioPayloadInput = {
@@ -117,6 +119,8 @@ type CreateTestPayloadInput = ScenarioPayloadInput & {
   projectId?: string
   folderId?: string | null
   dataPools?: ScenarioDataPoolBinding[]
+  elkConnectionId?: string
+  dynatraceConnectionId?: string
 }
 
 export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): ScenarioGroupPayload[] {
@@ -461,6 +465,8 @@ export function buildCreateTestPayload({
   projectId,
   folderId,
   dataPools,
+  elkConnectionId,
+  dynatraceConnectionId,
 }: CreateTestPayloadInput): CreateTestPayload {
   const resolvedAssignment = buildRootAssignmentPayload(assignment)
 
@@ -520,6 +526,13 @@ export function buildCreateTestPayload({
 
   if (dataPools !== undefined) {
     payload.data_pools = dataPools.map(binding => ({ ...binding }))
+  }
+
+  if (elkConnectionId) {
+    payload.elk_capture = { connection_id: elkConnectionId }
+  }
+  if (dynatraceConnectionId) {
+    payload.dynatrace_capture = { connection_id: dynatraceConnectionId }
   }
 
   // Always use the canonical group representation. The legacy single-script

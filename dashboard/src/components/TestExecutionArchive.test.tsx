@@ -217,6 +217,8 @@ describe('TestExecutionArchive', () => {
       { tier: 'summary', label: 'Summary', status: 'present', count: 3, description: 'Aggregated run totals.' },
       { tier: 'external_metrics', label: 'External Metrics', status: 'missing', count: 0, reason: 'No external metrics were archived.' },
     ],
+    elk_samples: [{ id: 'elk-one', timestamp: '2026-05-14T20:00:20Z', level: 'error', message: 'checkout dependency timed out', trace_id: 'trace-1' }],
+    dynatrace_evidence: [{ type: 'problem', problem: { id: 'dt-problem-1', title: 'Checkout service unavailable', severity: 'ERROR', affected_entity: 'checkout-service' } }, { type: 'log', log: { timestamp: '2026-05-14T20:00:21Z', status: 'ERROR', message: 'redacted Dynatrace log', trace_id: 'trace-dt-1' } }],
     by_action: {},
     by_soap_operation: {},
     by_region: {
@@ -542,6 +544,12 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('present · 3')
     expect(container.textContent).toContain('External Metrics')
     expect(container.textContent).toContain('missing · 0')
+    expect(container.textContent).toContain('Elastic evidence')
+    expect(container.textContent).toContain('checkout dependency timed out')
+    expect(container.textContent).toContain('trace-1')
+    expect(container.textContent).toContain('Dynatrace evidence')
+    expect(container.textContent).toContain('Checkout service unavailable')
+    expect(container.textContent).toContain('redacted Dynatrace log')
     expect(container.textContent).toContain('Executive')
     expect(container.textContent).toContain('Engineer')
     expect(container.textContent).toContain('Audit')

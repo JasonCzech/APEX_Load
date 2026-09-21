@@ -23,7 +23,7 @@ func TestSQLiteSchemaStatusRecordsConvergenceIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema status: %v", err)
 	}
-	if status.CurrentVersion != 10 || status.AppliedVersion != 10 || len(status.Applied) != 10 || len(status.Pending) != 0 {
+	if status.CurrentVersion != 12 || status.AppliedVersion != 12 || len(status.Applied) != 12 || len(status.Pending) != 0 {
 		t.Fatalf("schema status after init = %#v", status)
 	}
 	firstAppliedAt := status.Applied[0].AppliedAt
@@ -40,7 +40,7 @@ func TestSQLiteSchemaStatusRecordsConvergenceIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema status after reopen: %v", err)
 	}
-	if len(reopenedStatus.Applied) != 10 || !reopenedStatus.Applied[0].AppliedAt.Equal(firstAppliedAt) {
+	if len(reopenedStatus.Applied) != 12 || !reopenedStatus.Applied[0].AppliedAt.Equal(firstAppliedAt) {
 		t.Fatalf("idempotent reopen changed ledger: first=%#v reopened=%#v", status, reopenedStatus)
 	}
 }
@@ -88,7 +88,7 @@ func TestProductionTrafficSnapshotReleaseUpgradesPriorProfileRelease(t *testing.
 	}
 	defer store.Close()
 	status, err := store.SchemaStatus()
-	if err != nil || status.AppliedVersion != 10 || len(status.Pending) != 0 {
+	if err != nil || status.AppliedVersion != 12 || len(status.Pending) != 0 {
 		t.Fatalf("upgraded status = %#v, %v", status, err)
 	}
 }

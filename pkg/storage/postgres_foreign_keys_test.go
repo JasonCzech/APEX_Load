@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 88; got != want {
+	if got, want := len(specs), 90; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -72,6 +72,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		"github_script_sync_target_owners.target_key":           "github_script_sync_targets.target_key",
 		"import_assets.project_id":                              "projects.id",
 		"project_secrets.project_id":                            "projects.id",
+		"elk_connections.project_id":                            "projects.id",
 		"protected_source_secret_sessions.project_id":           "projects.id",
 		"runtime_secret_provisioning_attempts.project_id":       "projects.id",
 		"grafana_dashboard_snapshots.test_id":                   "tests.id",
@@ -86,6 +87,9 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		if target := got.references + "." + got.refColumn; target != want {
 			t.Errorf("foreign key %s targets %s, want %s", key, target, want)
 		}
+	}
+	if got := byColumn["elk_connections.project_id"].onDelete; got != "CASCADE" {
+		t.Errorf("elk_connections.project_id on delete = %q, want CASCADE", got)
 	}
 	if got := byColumn["user_role_bindings.user_id"].onDelete; got != "CASCADE" {
 		t.Errorf("user role binding ON DELETE = %q, want CASCADE", got)

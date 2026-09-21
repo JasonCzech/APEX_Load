@@ -1520,6 +1520,34 @@ export interface operations {
                 "title"?: string;
               }>;
             }) | null;
+            "dynatrace_evidence"?: Array<{
+              "log"?: ({
+                "message"?: string;
+                "status"?: string;
+                "test_id"?: string;
+                "timestamp"?: string;
+                "trace_id"?: string;
+              }) | null;
+              "problem"?: ({
+                "affected_entity"?: string;
+                "display_id"?: string;
+                "end_time"?: string;
+                "id"?: string;
+                "severity"?: string;
+                "start_time"?: string;
+                "status"?: string;
+                "title"?: string;
+              }) | null;
+              "type"?: string;
+            }>;
+            "elk_samples"?: Array<{
+              "id"?: string;
+              "level"?: string;
+              "message"?: string;
+              "test_id"?: string;
+              "timestamp"?: string;
+              "trace_id"?: string;
+            }>;
             "error_patterns"?: Array<{
               "actions"?: Array<string>;
               "count"?: number;
@@ -1587,6 +1615,10 @@ export interface operations {
               }>;
               "completed_at"?: string;
               "created_at"?: string;
+              "dynatrace_evidence_count"?: number;
+              "dynatrace_evidence_file"?: string;
+              "elk_evidence_count"?: number;
+              "elk_evidence_file"?: string;
               "error"?: string;
               "initial_provenance"?: ({
                 "application_id"?: string;
@@ -1597,6 +1629,8 @@ export interface operations {
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
                 "duration"?: string;
+                "dynatrace_capture"?: (Record<string, unknown>) | null;
+                "elk_capture"?: (Record<string, unknown>) | null;
                 "execution_settings"?: Record<string, unknown>;
                 "generator_inventory"?: Array<Record<string, unknown>>;
                 "generator_shards"?: Array<Record<string, unknown>>;
@@ -1640,6 +1674,8 @@ export interface operations {
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
                 "duration"?: string;
+                "dynatrace_capture"?: (Record<string, unknown>) | null;
+                "elk_capture"?: (Record<string, unknown>) | null;
                 "execution_settings"?: Record<string, unknown>;
                 "generator_inventory"?: Array<Record<string, unknown>>;
                 "generator_shards"?: Array<Record<string, unknown>>;
@@ -16385,6 +16421,228 @@ export interface operations {
       };
     };
   };
+  "handleCreateDynatraceConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "description"?: string;
+          "enabled"?: boolean;
+          "environment_token_secret"?: (string) | null;
+          "environment_url"?: string;
+          "log_base_filter"?: string;
+          "log_message_field"?: string;
+          "log_status_field"?: string;
+          "log_test_id_field"?: string;
+          "log_timestamp_field"?: string;
+          "log_trace_id_field"?: string;
+          "logs_enabled"?: boolean;
+          "metric_queries"?: Array<{
+            "aggregation"?: string;
+            "entity_selector"?: string;
+            "metric_selector"?: string;
+            "name"?: string;
+          }>;
+          "metrics_enabled"?: boolean;
+          "name"?: string;
+          "oauth_client_id_secret"?: (string) | null;
+          "oauth_client_secret_secret"?: (string) | null;
+          "oauth_resource"?: string;
+          "oauth_scopes"?: Array<string>;
+          "platform_auth_type"?: string;
+          "platform_token_secret"?: (string) | null;
+          "platform_url"?: string;
+          "poll_interval_seconds"?: number;
+          "problem_entity_selector"?: string;
+          "problem_selector"?: string;
+          "problems_enabled"?: boolean;
+          "updated_at"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "environment_url"?: string;
+            "has_environment_token": boolean;
+            "has_oauth_client_id": boolean;
+            "has_oauth_client_secret": boolean;
+            "has_platform_token": boolean;
+            "id": string;
+            "last_capability_health"?: Record<string, {
+              "message"?: string;
+              "status": string;
+            }>;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "log_base_filter"?: string;
+            "log_message_field"?: string;
+            "log_status_field"?: string;
+            "log_test_id_field"?: string;
+            "log_timestamp_field"?: string;
+            "log_trace_id_field"?: string;
+            "logs_enabled": boolean;
+            "metric_queries": Array<{
+              "aggregation": string;
+              "entity_selector"?: string;
+              "metric_selector": string;
+              "name": string;
+            }>;
+            "metrics_enabled": boolean;
+            "name": string;
+            "oauth_resource"?: string;
+            "oauth_scopes": Array<string>;
+            "platform_auth_type"?: string;
+            "platform_url"?: string;
+            "poll_interval_seconds": number;
+            "problem_entity_selector"?: string;
+            "problem_selector"?: string;
+            "problems_enabled": boolean;
+            "project_id": string;
+            "status": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateELKConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "api_key_secret_name"?: (string) | null;
+          "auth_type"?: string;
+          "base_filter"?: string;
+          "description"?: string;
+          "enabled"?: boolean;
+          "endpoint"?: string;
+          "error_filter"?: string;
+          "index_pattern"?: string;
+          "level_field"?: string;
+          "message_field"?: string;
+          "metric_aggregations"?: Array<{
+            "field"?: string;
+            "name"?: string;
+            "operation"?: string;
+          }>;
+          "name"?: string;
+          "password_secret_name"?: (string) | null;
+          "test_id_field"?: string;
+          "timestamp_field"?: string;
+          "trace_id_field"?: string;
+          "updated_at"?: string;
+          "username_secret_name"?: (string) | null;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "auth_type"?: string;
+            "base_filter"?: string;
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "endpoint"?: string;
+            "error_filter"?: string;
+            "has_api_key": boolean;
+            "has_basic_password": boolean;
+            "has_basic_username": boolean;
+            "id": string;
+            "index_pattern"?: string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "level_field"?: string;
+            "message_field"?: string;
+            "metric_aggregations": Array<{
+              "field": string;
+              "name": string;
+              "operation": string;
+            }>;
+            "name": string;
+            "project_id": string;
+            "status": string;
+            "test_id_field"?: string;
+            "timestamp_field"?: string;
+            "trace_id_field"?: string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateExecutionPlan": {
     parameters?: never;
     requestBody: {
@@ -17685,6 +17943,14 @@ export interface operations {
             "updated_at"?: string;
           }>;
           "duration"?: string;
+          "dynatrace_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
+          "elk_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
             "early_stop"?: ({
@@ -17959,6 +18225,14 @@ export interface operations {
               "updated_at"?: string;
             }>;
             "duration"?: string;
+            "dynatrace_capture"?: ({
+              "connection_id"?: string;
+              "connection_name"?: string;
+            }) | null;
+            "elk_capture"?: ({
+              "connection_id"?: string;
+              "connection_name"?: string;
+            }) | null;
             "folder_id"?: (string) | null;
             "goal_config"?: ({
               "early_stop"?: ({
@@ -18533,6 +18807,14 @@ export interface operations {
               }>;
               "duration": string;
               "duration_ns": number;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
               "execution_plan_approval"?: ({
@@ -18710,6 +18992,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
@@ -18942,6 +19244,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
@@ -22966,6 +23288,14 @@ export interface operations {
             "updated_at"?: string;
           }>;
           "duration"?: string;
+          "dynatrace_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
+          "elk_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
             "early_stop"?: ({
@@ -23783,6 +24113,14 @@ export interface operations {
             }>;
             "duration": string;
             "duration_ns": number;
+            "dynatrace_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
+            "elk_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
             "execution_plan_approval"?: ({
@@ -24157,6 +24495,26 @@ export interface operations {
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
                 "nodes": Array<Record<string, unknown>>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, Record<string, unknown>>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<Record<string, unknown>>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<Record<string, unknown>>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -24629,6 +24987,51 @@ export interface operations {
                   "status"?: string;
                   "transactions"?: number;
                 }>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, {
+                  "message"?: string;
+                  "status": string;
+                }>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<{
+                  "message"?: string;
+                  "status"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<{
+                  "affected_entity"?: string;
+                  "display_id"?: string;
+                  "end_time"?: string;
+                  "id"?: string;
+                  "severity"?: string;
+                  "start_time"?: string;
+                  "status"?: string;
+                  "title"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<{
+                  "id"?: string;
+                  "level"?: string;
+                  "message"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -26314,6 +26717,80 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDeleteDynatraceConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleDeleteELKConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -30573,6 +31050,14 @@ export interface operations {
             "updated_at"?: string;
           }>;
           "duration"?: string;
+          "dynatrace_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
+          "elk_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
             "early_stop"?: ({
@@ -35297,6 +35782,137 @@ export interface operations {
       };
     };
   };
+  "handleGetDynatraceConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "environment_url"?: string;
+            "has_environment_token": boolean;
+            "has_oauth_client_id": boolean;
+            "has_oauth_client_secret": boolean;
+            "has_platform_token": boolean;
+            "id": string;
+            "last_capability_health"?: Record<string, {
+              "message"?: string;
+              "status": string;
+            }>;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "log_base_filter"?: string;
+            "log_message_field"?: string;
+            "log_status_field"?: string;
+            "log_test_id_field"?: string;
+            "log_timestamp_field"?: string;
+            "log_trace_id_field"?: string;
+            "logs_enabled": boolean;
+            "metric_queries": Array<{
+              "aggregation": string;
+              "entity_selector"?: string;
+              "metric_selector": string;
+              "name": string;
+            }>;
+            "metrics_enabled": boolean;
+            "name": string;
+            "oauth_resource"?: string;
+            "oauth_scopes": Array<string>;
+            "platform_auth_type"?: string;
+            "platform_url"?: string;
+            "poll_interval_seconds": number;
+            "problem_entity_selector"?: string;
+            "problem_selector"?: string;
+            "problems_enabled": boolean;
+            "project_id": string;
+            "status": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetELKConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "auth_type"?: string;
+            "base_filter"?: string;
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "endpoint"?: string;
+            "error_filter"?: string;
+            "has_api_key": boolean;
+            "has_basic_password": boolean;
+            "has_basic_username": boolean;
+            "id": string;
+            "index_pattern"?: string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "level_field"?: string;
+            "message_field"?: string;
+            "metric_aggregations": Array<{
+              "field": string;
+              "name": string;
+              "operation": string;
+            }>;
+            "name": string;
+            "project_id": string;
+            "status": string;
+            "test_id_field"?: string;
+            "timestamp_field"?: string;
+            "trace_id_field"?: string;
+            "updated_at": string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetEntitlements": {
     parameters?: never;
     requestBody?: never;
@@ -37193,6 +37809,14 @@ export interface operations {
               }>;
               "duration": string;
               "duration_ns": number;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
               "execution_plan_approval"?: ({
@@ -37370,6 +37994,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
@@ -37602,6 +38246,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
@@ -38534,6 +39198,10 @@ export interface operations {
             }>;
             "completed_at"?: string;
             "created_at": string;
+            "dynatrace_evidence_count"?: number;
+            "dynatrace_evidence_file"?: string;
+            "elk_evidence_count"?: number;
+            "elk_evidence_file"?: string;
             "error"?: string;
             "initial_provenance"?: ({
               "application_id"?: string;
@@ -38554,6 +39222,14 @@ export interface operations {
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "duration"?: string;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "execution_settings": {
                 "capacity_planning": {
                   "availability": Record<string, unknown>;
@@ -39084,6 +39760,14 @@ export interface operations {
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
               "duration"?: string;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "execution_settings": {
                 "capacity_planning": {
                   "availability": Record<string, unknown>;
@@ -39879,6 +40563,34 @@ export interface operations {
                 "title": string;
               }>;
             }) | null;
+            "dynatrace_evidence"?: Array<{
+              "log"?: ({
+                "message"?: string;
+                "status"?: string;
+                "test_id"?: string;
+                "timestamp"?: string;
+                "trace_id"?: string;
+              }) | null;
+              "problem"?: ({
+                "affected_entity"?: string;
+                "display_id"?: string;
+                "end_time"?: string;
+                "id"?: string;
+                "severity"?: string;
+                "start_time"?: string;
+                "status"?: string;
+                "title"?: string;
+              }) | null;
+              "type": string;
+            }>;
+            "elk_samples"?: Array<{
+              "id"?: string;
+              "level"?: string;
+              "message"?: string;
+              "test_id"?: string;
+              "timestamp"?: string;
+              "trace_id"?: string;
+            }>;
             "error_patterns"?: Array<{
               "actions"?: Array<string>;
               "count": number;
@@ -39946,6 +40658,10 @@ export interface operations {
               }>;
               "completed_at"?: string;
               "created_at": string;
+              "dynatrace_evidence_count"?: number;
+              "dynatrace_evidence_file"?: string;
+              "elk_evidence_count"?: number;
+              "elk_evidence_file"?: string;
               "error"?: string;
               "initial_provenance"?: ({
                 "application_id"?: string;
@@ -39966,6 +40682,14 @@ export interface operations {
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
                 "duration"?: string;
+                "dynatrace_capture"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                }) | null;
+                "elk_capture"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                }) | null;
                 "execution_settings": {
                   "capacity_planning": Record<string, unknown>;
                   "general": Record<string, unknown>;
@@ -40192,6 +40916,14 @@ export interface operations {
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
                 "duration"?: string;
+                "dynatrace_capture"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                }) | null;
+                "elk_capture"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                }) | null;
                 "execution_settings": {
                   "capacity_planning": Record<string, unknown>;
                   "general": Record<string, unknown>;
@@ -44105,6 +44837,14 @@ export interface operations {
             }>;
             "duration": string;
             "duration_ns": number;
+            "dynatrace_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
+            "elk_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
             "execution_plan_approval"?: ({
@@ -44479,6 +45219,26 @@ export interface operations {
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
                 "nodes": Array<Record<string, unknown>>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, Record<string, unknown>>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<Record<string, unknown>>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<Record<string, unknown>>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -44951,6 +45711,51 @@ export interface operations {
                   "status"?: string;
                   "transactions"?: number;
                 }>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, {
+                  "message"?: string;
+                  "status": string;
+                }>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<{
+                  "message"?: string;
+                  "status"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<{
+                  "affected_entity"?: string;
+                  "display_id"?: string;
+                  "end_time"?: string;
+                  "id"?: string;
+                  "severity"?: string;
+                  "start_time"?: string;
+                  "status"?: string;
+                  "title"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<{
+                  "id"?: string;
+                  "level"?: string;
+                  "message"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -46986,6 +47791,14 @@ export interface operations {
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
               "duration"?: string;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
@@ -47388,6 +48201,14 @@ export interface operations {
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
               "duration"?: string;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
@@ -50714,6 +51535,8 @@ export interface operations {
                   "data_pools"?: Array<Record<string, unknown>>;
                   "duration": string;
                   "duration_ns": number;
+                  "dynatrace_capture"?: (Record<string, unknown>) | null;
+                  "elk_capture"?: (Record<string, unknown>) | null;
                   "ended_at"?: (string) | null;
                   "error"?: string;
                   "execution_plan_approval"?: (Record<string, unknown>) | null;
@@ -52306,6 +53129,72 @@ export interface operations {
   };
   "handleListDomains": {
     parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListDynatraceConnections": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListELKConnections": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
     requestBody?: never;
     responses: {
       "200": {
@@ -56737,6 +57626,14 @@ export interface operations {
             }>;
             "duration": string;
             "duration_ns": number;
+            "dynatrace_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
+            "elk_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
             "execution_plan_approval"?: ({
@@ -57111,6 +58008,26 @@ export interface operations {
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
                 "nodes": Array<Record<string, unknown>>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, Record<string, unknown>>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<Record<string, unknown>>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<Record<string, unknown>>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -57583,6 +58500,51 @@ export interface operations {
                   "status"?: string;
                   "transactions"?: number;
                 }>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, {
+                  "message"?: string;
+                  "status": string;
+                }>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<{
+                  "message"?: string;
+                  "status"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<{
+                  "affected_entity"?: string;
+                  "display_id"?: string;
+                  "end_time"?: string;
+                  "id"?: string;
+                  "severity"?: string;
+                  "start_time"?: string;
+                  "status"?: string;
+                  "title"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<{
+                  "id"?: string;
+                  "level"?: string;
+                  "message"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -58621,6 +59583,14 @@ export interface operations {
             "updated_at"?: string;
           }>;
           "duration"?: string;
+          "dynatrace_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
+          "elk_capture"?: ({
+            "connection_id"?: string;
+            "connection_name"?: string;
+          }) | null;
           "folder_id"?: (string) | null;
           "goal_config"?: ({
             "early_stop"?: ({
@@ -65303,6 +66273,14 @@ export interface operations {
               }>;
               "duration": string;
               "duration_ns": number;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
               "execution_plan_approval"?: ({
@@ -65480,6 +66458,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
@@ -65712,6 +66710,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
@@ -66549,6 +67567,14 @@ export interface operations {
               }>;
               "duration": string;
               "duration_ns": number;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
               "execution_plan_approval"?: ({
@@ -66726,6 +67752,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
@@ -66958,6 +68004,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
@@ -67795,6 +68861,14 @@ export interface operations {
               }>;
               "duration": string;
               "duration_ns": number;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
               "execution_plan_approval"?: ({
@@ -67972,6 +69046,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
@@ -68204,6 +69298,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
@@ -69041,6 +70155,14 @@ export interface operations {
               }>;
               "duration": string;
               "duration_ns": number;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
               "execution_plan_approval"?: ({
@@ -69218,6 +70340,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
@@ -69450,6 +70592,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
@@ -70287,6 +71449,14 @@ export interface operations {
               }>;
               "duration": string;
               "duration_ns": number;
+              "dynatrace_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
+              "elk_capture"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+              }) | null;
               "ended_at"?: (string) | null;
               "error"?: string;
               "execution_plan_approval"?: ({
@@ -70464,6 +71634,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<Record<string, unknown>>;
@@ -70696,6 +71886,26 @@ export interface operations {
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
                   "nodes": Array<Record<string, unknown>>;
+                }) | null;
+                "dynatrace"?: ({
+                  "capabilities"?: Record<string, Record<string, unknown>>;
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "logs"?: Array<Record<string, unknown>>;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "problems"?: Array<Record<string, unknown>>;
+                  "status": string;
+                }) | null;
+                "elk"?: ({
+                  "connection_id": string;
+                  "connection_name"?: string;
+                  "last_polled_at"?: (string) | null;
+                  "message"?: string;
+                  "metrics"?: Record<string, number>;
+                  "samples"?: Array<Record<string, unknown>>;
+                  "status": string;
                 }) | null;
                 "error_breakdown"?: Record<string, number>;
                 "error_patterns"?: Array<{
@@ -87037,6 +88247,79 @@ export interface operations {
       };
     };
   };
+  "handleTestDynatraceConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "2XX": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleTestELKConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestExecutionTarget": {
     parameters: {
       "path": {
@@ -87485,6 +88768,14 @@ export interface operations {
             }>;
             "duration": string;
             "duration_ns": number;
+            "dynatrace_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
+            "elk_capture"?: ({
+              "connection_id": string;
+              "connection_name"?: string;
+            }) | null;
             "ended_at"?: (string) | null;
             "error"?: string;
             "execution_plan_approval"?: ({
@@ -87859,6 +89150,26 @@ export interface operations {
               "dependency_map"?: ({
                 "edges": Array<Record<string, unknown>>;
                 "nodes": Array<Record<string, unknown>>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, Record<string, unknown>>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<Record<string, unknown>>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<Record<string, unknown>>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<Record<string, unknown>>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -88331,6 +89642,51 @@ export interface operations {
                   "status"?: string;
                   "transactions"?: number;
                 }>;
+              }) | null;
+              "dynatrace"?: ({
+                "capabilities"?: Record<string, {
+                  "message"?: string;
+                  "status": string;
+                }>;
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "logs"?: Array<{
+                  "message"?: string;
+                  "status"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "problems"?: Array<{
+                  "affected_entity"?: string;
+                  "display_id"?: string;
+                  "end_time"?: string;
+                  "id"?: string;
+                  "severity"?: string;
+                  "start_time"?: string;
+                  "status"?: string;
+                  "title"?: string;
+                }>;
+                "status": string;
+              }) | null;
+              "elk"?: ({
+                "connection_id": string;
+                "connection_name"?: string;
+                "last_polled_at"?: (string) | null;
+                "message"?: string;
+                "metrics"?: Record<string, number>;
+                "samples"?: Array<{
+                  "id"?: string;
+                  "level"?: string;
+                  "message"?: string;
+                  "test_id"?: string;
+                  "timestamp"?: string;
+                  "trace_id"?: string;
+                }>;
+                "status": string;
               }) | null;
               "error_breakdown"?: Record<string, number>;
               "error_patterns"?: Array<{
@@ -91451,6 +92807,230 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateDynatraceConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "description"?: string;
+          "enabled"?: boolean;
+          "environment_token_secret"?: (string) | null;
+          "environment_url"?: string;
+          "log_base_filter"?: string;
+          "log_message_field"?: string;
+          "log_status_field"?: string;
+          "log_test_id_field"?: string;
+          "log_timestamp_field"?: string;
+          "log_trace_id_field"?: string;
+          "logs_enabled"?: boolean;
+          "metric_queries"?: Array<{
+            "aggregation"?: string;
+            "entity_selector"?: string;
+            "metric_selector"?: string;
+            "name"?: string;
+          }>;
+          "metrics_enabled"?: boolean;
+          "name"?: string;
+          "oauth_client_id_secret"?: (string) | null;
+          "oauth_client_secret_secret"?: (string) | null;
+          "oauth_resource"?: string;
+          "oauth_scopes"?: Array<string>;
+          "platform_auth_type"?: string;
+          "platform_token_secret"?: (string) | null;
+          "platform_url"?: string;
+          "poll_interval_seconds"?: number;
+          "problem_entity_selector"?: string;
+          "problem_selector"?: string;
+          "problems_enabled"?: boolean;
+          "updated_at"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "environment_url"?: string;
+            "has_environment_token": boolean;
+            "has_oauth_client_id": boolean;
+            "has_oauth_client_secret": boolean;
+            "has_platform_token": boolean;
+            "id": string;
+            "last_capability_health"?: Record<string, {
+              "message"?: string;
+              "status": string;
+            }>;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "log_base_filter"?: string;
+            "log_message_field"?: string;
+            "log_status_field"?: string;
+            "log_test_id_field"?: string;
+            "log_timestamp_field"?: string;
+            "log_trace_id_field"?: string;
+            "logs_enabled": boolean;
+            "metric_queries": Array<{
+              "aggregation": string;
+              "entity_selector"?: string;
+              "metric_selector": string;
+              "name": string;
+            }>;
+            "metrics_enabled": boolean;
+            "name": string;
+            "oauth_resource"?: string;
+            "oauth_scopes": Array<string>;
+            "platform_auth_type"?: string;
+            "platform_url"?: string;
+            "poll_interval_seconds": number;
+            "problem_entity_selector"?: string;
+            "problem_selector"?: string;
+            "problems_enabled": boolean;
+            "project_id": string;
+            "status": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateELKConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "api_key_secret_name"?: (string) | null;
+          "auth_type"?: string;
+          "base_filter"?: string;
+          "description"?: string;
+          "enabled"?: boolean;
+          "endpoint"?: string;
+          "error_filter"?: string;
+          "index_pattern"?: string;
+          "level_field"?: string;
+          "message_field"?: string;
+          "metric_aggregations"?: Array<{
+            "field"?: string;
+            "name"?: string;
+            "operation"?: string;
+          }>;
+          "name"?: string;
+          "password_secret_name"?: (string) | null;
+          "test_id_field"?: string;
+          "timestamp_field"?: string;
+          "trace_id_field"?: string;
+          "updated_at"?: string;
+          "username_secret_name"?: (string) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "auth_type"?: string;
+            "base_filter"?: string;
+            "created_at": string;
+            "description"?: string;
+            "enabled": boolean;
+            "endpoint"?: string;
+            "error_filter"?: string;
+            "has_api_key": boolean;
+            "has_basic_password": boolean;
+            "has_basic_username": boolean;
+            "id": string;
+            "index_pattern"?: string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "level_field"?: string;
+            "message_field"?: string;
+            "metric_aggregations": Array<{
+              "field": string;
+              "name": string;
+              "operation": string;
+            }>;
+            "name": string;
+            "project_id": string;
+            "status": string;
+            "test_id_field"?: string;
+            "timestamp_field"?: string;
+            "trace_id_field"?: string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -101757,6 +103337,30 @@ export interface paths {
   "/api/v1/projects/{id}/github/policy": {
     "get": operations["handleGetProjectGitHubPolicy"];
     "put": operations["handleUpdateProjectGitHubPolicy"];
+  };
+  "/api/v1/projects/{id}/monitoring/dynatrace-connections": {
+    "get": operations["handleListDynatraceConnections"];
+    "post": operations["handleCreateDynatraceConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}": {
+    "get": operations["handleGetDynatraceConnection"];
+    "put": operations["handleUpdateDynatraceConnection"];
+    "delete": operations["handleDeleteDynatraceConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test": {
+    "post": operations["handleTestDynatraceConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/elk-connections": {
+    "get": operations["handleListELKConnections"];
+    "post": operations["handleCreateELKConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}": {
+    "get": operations["handleGetELKConnection"];
+    "put": operations["handleUpdateELKConnection"];
+    "delete": operations["handleDeleteELKConnection"];
+  };
+  "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test": {
+    "post": operations["handleTestELKConnection"];
   };
   "/api/v1/projects/{id}/releases": {
     "get": operations["handleListProjectReleases"];

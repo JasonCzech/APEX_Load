@@ -7,6 +7,7 @@ import (
 	"container/heap"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -96,6 +97,12 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	if err := writeMergedRemoteArchiveFiles(workingDir, &manifest, bundles, targetHistory, test); err != nil {
 		return nil, err
 	}
+	if err := writeDistributedELKEvidence(workingDir, &manifest, tr, test, completedAt); err != nil {
+		return nil, err
+	}
+	if err := writeDistributedDynatraceEvidence(workingDir, &manifest, tr, test, completedAt); err != nil {
+		return nil, err
+	}
 	if err := applyTransactionSLARules(workingDir, &manifest); err != nil {
 		return nil, err
 	}
@@ -142,6 +149,134 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	// outbox. The merged local directory is the recoverable source of truth until
 	// adjunct generation, object upload, and the catalog UPSERT all commit.
 	return record, nil
+}
+
+func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, completedAt time.Time) error {
+	if manifest == nil || test == nil || test.ELKCapture == nil {
+		return nil
+	}
+	manifest.ELKEvidenceFile = "elk_evidence.jsonl"
+	var artifacts *runArtifacts
+	if tr != nil {
+		tr.mu.RLock()
+		artifacts = test.elkArtifacts
+		tr.mu.RUnlock()
+	} else {
+		artifacts = test.elkArtifacts
+	}
+	var samples []ELKLogSample
+	var metrics map[string]float64
+	if artifacts != nil {
+		artifacts.elkMu.Lock()
+		samples = append(samples, artifacts.elkSamples...)
+		if artifacts.elkStatus != nil {
+			metrics = cloneFloat64Map(artifacts.elkStatus.Metrics)
+		}
+		artifacts.elkMu.Unlock()
+	}
+	var evidence bytes.Buffer
+	encoder := json.NewEncoder(&evidence)
+	for _, sample := range samples {
+		sample = sanitizeELKSample(sample)
+		if err := encoder.Encode(sample); err != nil {
+			return err
+		}
+		manifest.ELKEvidenceCount++
+	}
+	if err := writeSyncedArchiveFile(filepath.Join(root, manifest.ELKEvidenceFile), evidence.Bytes()); err != nil {
+		return err
+	}
+	if len(metrics) == 0 {
+		return nil
+	}
+	resourcePath, err := archiveArtifactPath(root, manifest.ResourceSamplesFile)
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(resourcePath, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	record := ResourceSample{Timestamp: completedAt, TestID: test.ID, TestName: test.Name, External: elkExternalMetrics(test.ELKCapture.ConnectionID, metrics)}
+	encodeErr := json.NewEncoder(file).Encode(record)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if err := errors.Join(encodeErr, syncErr, closeErr); err != nil {
+		return err
+	}
+	manifest.ResourceSampleCount++
+	return nil
+}
+
+func writeDistributedDynatraceEvidence(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, completedAt time.Time) error {
+	if manifest == nil || test == nil || test.DynatraceCapture == nil {
+		return nil
+	}
+	manifest.DynatraceEvidenceFile = "dynatrace_evidence.jsonl"
+	var artifacts *runArtifacts
+	if tr != nil {
+		tr.mu.RLock()
+		artifacts = test.dynatraceArtifacts
+		tr.mu.RUnlock()
+	} else {
+		artifacts = test.dynatraceArtifacts
+	}
+	var records []DynatraceEvidenceRecord
+	var metrics map[string]float64
+	if artifacts != nil {
+		artifacts.dynatraceMu.Lock()
+		for index := range artifacts.dynatraceLogs {
+			logSample := artifacts.dynatraceLogs[index]
+			records = append(records, DynatraceEvidenceRecord{Type: "log_sample", Log: &logSample})
+		}
+		for index := range artifacts.dynatraceProblems {
+			problem := artifacts.dynatraceProblems[index]
+			records = append(records, DynatraceEvidenceRecord{Type: "problem_summary", Problem: &problem})
+		}
+		if artifacts.dynatraceStatus != nil {
+			metrics = cloneFloat64Map(artifacts.dynatraceStatus.Metrics)
+		}
+		artifacts.dynatraceMu.Unlock()
+	}
+	var evidence bytes.Buffer
+	encoder := json.NewEncoder(&evidence)
+	for _, record := range records {
+		if record.Log != nil {
+			sample := sanitizeDynatraceLog(*record.Log)
+			record.Log = &sample
+		}
+		if record.Problem != nil {
+			problem := sanitizeDynatraceProblem(*record.Problem)
+			record.Problem = &problem
+		}
+		if err := encoder.Encode(record); err != nil {
+			return err
+		}
+		manifest.DynatraceEvidenceCount++
+	}
+	if err := writeSyncedArchiveFile(filepath.Join(root, manifest.DynatraceEvidenceFile), evidence.Bytes()); err != nil {
+		return err
+	}
+	if len(metrics) == 0 {
+		return nil
+	}
+	resourcePath, err := archiveArtifactPath(root, manifest.ResourceSamplesFile)
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(resourcePath, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	record := ResourceSample{Timestamp: completedAt, TestID: test.ID, TestName: test.Name, External: dynatraceExternalMetrics(test.DynatraceCapture.ConnectionID, metrics)}
+	encodeErr := json.NewEncoder(file).Encode(record)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	if err := errors.Join(encodeErr, syncErr, closeErr); err != nil {
+		return err
+	}
+	manifest.ResourceSampleCount++
+	return nil
 }
 
 type remoteArchiveBundle struct {

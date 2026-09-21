@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"golang.org/x/sync/singleflight"
 )
 
 type scriptPersistence interface {
@@ -246,6 +247,11 @@ type TestRunner struct {
 	settingsStore               settingsPersistence
 	usageStore                  usageSnapshotPersistence
 	projectSecretStore          secretstore.Store
+	elkStore                    storage.ELKConnectionStore
+	dynatraceStore              storage.DynatraceConnectionStore
+	dynatraceOAuthMu            sync.Mutex
+	dynatraceOAuthTokens        map[string]dynatraceOAuthToken
+	dynatraceOAuthRefresh       singleflight.Group
 	secretAttemptStore          storage.RuntimeSecretProvisioningAttemptStore
 	secretRecovery              runtimeSecretRecoveryState
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
@@ -444,29 +450,33 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 
 type ManagedTest struct {
 	podCapacityEnabled    bool
-	ID                    string                                   `json:"id"`
-	RefKey                string                                   `json:"ref_key,omitempty"`
-	MaterializationKey    string                                   `json:"-"`
-	Name                  string                                   `json:"name"`
-	Status                string                                   `json:"status"`
-	ApplicationID         string                                   `json:"application_id,omitempty"`
-	ReleaseID             string                                   `json:"release_id,omitempty"`
-	ScenarioID            string                                   `json:"scenario_id,omitempty"`
-	ProjectID             string                                   `json:"project_id,omitempty"`
-	FolderID              *string                                  `json:"folder_id,omitempty"`
-	DataPools             []storage.ScenarioDataPoolBinding        `json:"data_pools,omitempty"`
-	Groups                []TestGroup                              `json:"groups"`
-	CapacityAdvisory      *CapacityAdvisory                        `json:"capacity_advisory,omitempty"`
-	RuntimeSettingsReview *RuntimeSettingsReview                   `json:"runtime_settings_review,omitempty"`
-	Assignment            *GeneratorAssignmentSettings             `json:"assignment,omitempty"`
-	ScenarioMode          string                                   `json:"scenario_mode,omitempty"`
-	ScriptShakeout        bool                                     `json:"script_shakeout,omitempty"`
-	ResourceBaseline      bool                                     `json:"resource_baseline,omitempty"`
-	StartDelay            string                                   `json:"start_delay,omitempty"`
-	GoalConfig            *GoalConfig                              `json:"goal_config,omitempty"`
-	GoalTargets           map[string]GoalTargetStatus              `json:"goal_targets,omitempty"`
-	TrafficProfile        *TrafficProfile                          `json:"traffic_profile,omitempty"`
-	RuntimeSettings       *RuntimeSettingsOverride                 `json:"runtime_settings,omitempty"`
+	ID                    string                            `json:"id"`
+	RefKey                string                            `json:"ref_key,omitempty"`
+	MaterializationKey    string                            `json:"-"`
+	Name                  string                            `json:"name"`
+	Status                string                            `json:"status"`
+	ApplicationID         string                            `json:"application_id,omitempty"`
+	ReleaseID             string                            `json:"release_id,omitempty"`
+	ScenarioID            string                            `json:"scenario_id,omitempty"`
+	ProjectID             string                            `json:"project_id,omitempty"`
+	FolderID              *string                           `json:"folder_id,omitempty"`
+	DataPools             []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+	Groups                []TestGroup                       `json:"groups"`
+	CapacityAdvisory      *CapacityAdvisory                 `json:"capacity_advisory,omitempty"`
+	RuntimeSettingsReview *RuntimeSettingsReview            `json:"runtime_settings_review,omitempty"`
+	Assignment            *GeneratorAssignmentSettings      `json:"assignment,omitempty"`
+	ScenarioMode          string                            `json:"scenario_mode,omitempty"`
+	ScriptShakeout        bool                              `json:"script_shakeout,omitempty"`
+	ResourceBaseline      bool                              `json:"resource_baseline,omitempty"`
+	StartDelay            string                            `json:"start_delay,omitempty"`
+	GoalConfig            *GoalConfig                       `json:"goal_config,omitempty"`
+	GoalTargets           map[string]GoalTargetStatus       `json:"goal_targets,omitempty"`
+	TrafficProfile        *TrafficProfile                   `json:"traffic_profile,omitempty"`
+	RuntimeSettings       *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
+	ELKCapture            *ELKCaptureConfig                 `json:"elk_capture,omitempty"`
+	elkArtifacts          *runArtifacts
+	DynatraceCapture      *DynatraceCaptureConfig `json:"dynatrace_capture,omitempty"`
+	dynatraceArtifacts    *runArtifacts
 	TotalVUsers           int                                      `json:"total_vusers"`
 	GeneratorShards       []GeneratorShardSummary                  `json:"generator_shards,omitempty"`
 	Duration              time.Duration                            `json:"duration_ns"`
@@ -797,6 +807,8 @@ type LiveMetrics struct {
 	Resources                  *engine.SystemResources               `json:"resources,omitempty"`
 	GeneratorResources         map[string]*GeneratorResourceSnapshot `json:"generator_resources,omitempty"`
 	Latency                    *NetworkLatency                       `json:"latency,omitempty"`
+	ELK                        *ELKCaptureStatus                     `json:"elk,omitempty"`
+	Dynatrace                  *DynatraceCaptureStatus               `json:"dynatrace,omitempty"`
 	LoadLevels                 []ActiveLoadLevel                     `json:"load_levels,omitempty"`
 	ActiveRuntimeSeconds       float64                               `json:"-"`
 	SampleWindowSeconds        float64                               `json:"-"`
@@ -1370,14 +1382,29 @@ type archiveRecorder interface {
 }
 
 type runArtifacts struct {
-	runner          *TestRunner
-	test            *ManagedTest
-	recorder        archiveRecorder
-	saveRecord      func(record *storage.RunArchiveRecord) error
-	externalMetrics *externalMetricCollector
-	slaEvaluated    bool
-	slaBreached     bool
-	slaDetails      []string
+	runner               *TestRunner
+	test                 *ManagedTest
+	recorder             archiveRecorder
+	saveRecord           func(record *storage.RunArchiveRecord) error
+	externalMetrics      *externalMetricCollector
+	elkPollMu            sync.Mutex
+	elkMu                sync.Mutex
+	elkLastPoll          time.Time
+	elkStatus            *ELKCaptureStatus
+	elkSampleIDs         map[string]struct{}
+	elkTraceIDs          map[string]struct{}
+	elkSamples           []ELKLogSample
+	dynatracePollMu      sync.Mutex
+	dynatraceMu          sync.Mutex
+	dynatraceLastPoll    time.Time
+	dynatraceStatus      *DynatraceCaptureStatus
+	dynatraceEvidenceIDs map[string]struct{}
+	dynatraceTraceIDs    map[string]struct{}
+	dynatraceLogs        []DynatraceLogSample
+	dynatraceProblems    []DynatraceProblemSummary
+	slaEvaluated         bool
+	slaBreached          bool
+	slaDetails           []string
 }
 
 // TestRunnerOption customizes a TestRunner at construction. Options are applied
@@ -1503,6 +1530,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		seqPlanRetrying:              make(map[string]struct{}),
 		ciRecoveryRetrying:           make(map[string]queuedCIRecoveryRetryState),
 		ciRecoveryRetryWake:          make(chan struct{}, 1),
+		dynatraceOAuthTokens:         make(map[string]dynatraceOAuthToken),
 		scriptShakeoutFingerprintKey: newScriptShakeoutFingerprintKey(),
 		terminalRetrying:             make(map[string]struct{}),
 		stopTeardownRetries:          make(map[string]stopTeardownRetryIntent),
@@ -1513,6 +1541,12 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 	}
 	if journal, ok := store.(storage.ThresholdIncidentStore); ok {
 		tr.thresholdJournal = &thresholdJournalWriter{store: journal}
+	}
+	if elkStore, ok := any(store).(storage.ELKConnectionStore); ok {
+		tr.elkStore = elkStore
+	}
+	if dynatraceStore, ok := any(store).(storage.DynatraceConnectionStore); ok {
+		tr.dynatraceStore = dynatraceStore
 	}
 	if githubStore, ok := store.(storage.GitHubEnterpriseStore); ok {
 		tr.githubCheckStore = githubStore
@@ -1731,7 +1765,9 @@ type CreateTestRequest struct {
 	VUsers   int    `json:"vusers,omitempty"`
 	RampUp   string `json:"ramp_up,omitempty"`
 	// Test-level runtime overrides (mirrors LR Controller override behavior)
-	RuntimeSettings *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	ELKCapture       *ELKCaptureConfig        `json:"elk_capture,omitempty"`
+	DynatraceCapture *DynatraceCaptureConfig  `json:"dynatrace_capture,omitempty"`
 
 	scriptShakeoutProvided   bool
 	resourceBaselineProvided bool

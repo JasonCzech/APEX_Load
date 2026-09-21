@@ -109,6 +109,8 @@ type TestRunManifestConfiguration struct {
 	GoalConfig            *GoalConfig                  `json:"goal_config,omitempty"`
 	TrafficProfile        *TrafficProfile              `json:"traffic_profile,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	ELKCapture            *ELKCaptureConfig            `json:"elk_capture,omitempty"`
+	DynatraceCapture      *DynatraceCaptureConfig      `json:"dynatrace_capture,omitempty"`
 	RuntimeSettingsReview *RuntimeSettingsReview       `json:"runtime_settings_review,omitempty"`
 	Groups                []TestGroup                  `json:"groups,omitempty"`
 	VUserRamps            map[string]VUserRampStatus   `json:"vuser_ramps,omitempty"`
@@ -441,6 +443,8 @@ func manifestConfigurationFromManagedTest(test *ManagedTest) TestRunManifestConf
 		GoalConfig:            cloneGoalConfig(test.GoalConfig),
 		TrafficProfile:        cloneTrafficProfile(test.TrafficProfile),
 		RuntimeSettings:       maskRuntimeSettings(test.RuntimeSettings),
+		ELKCapture:            cloneELKCaptureConfig(test.ELKCapture),
+		DynatraceCapture:      cloneDynatraceCaptureConfig(test.DynatraceCapture),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(test.RuntimeSettingsReview),
 		Groups:                maskTestGroupsRuntimeSettings(test.Groups),
 		VUserRamps:            cloneVUserRampStatusMap(test.VUserRamps),
@@ -467,6 +471,8 @@ func manifestConfigurationFromTestRecord(record *storage.TestRecord) TestRunMani
 		GoalConfig:       decodeStoredGoalConfig(record.GoalConfig),
 		TrafficProfile:   decodeStoredTrafficProfile(record.TrafficProfile),
 		RuntimeSettings:  maskRuntimeSettings(decodeStoredRuntimeSettings(record.RuntimeSettings)),
+		ELKCapture:       cloneELKCaptureConfig(decodeStoredELKCapture(record.ELKCapture)),
+		DynatraceCapture: cloneDynatraceCaptureConfig(decodeStoredDynatraceCapture(record.DynatraceCapture)),
 		Groups:           maskTestGroupsRuntimeSettings(decodeStoredGroups(record.Groups)),
 		BaselinePinned:   record.BaselinePinned,
 		BaselinePinnedAt: cloneTimePtr(record.BaselinePinnedAt),
@@ -493,6 +499,8 @@ func manifestConfigurationFromProvenance(provenance RunArchiveProvenance, status
 		GoalConfig:            cloneGoalConfig(provenance.GoalConfig),
 		TrafficProfile:        cloneTrafficProfile(provenance.TrafficProfile),
 		RuntimeSettings:       maskRuntimeSettings(provenance.RuntimeSettings),
+		ELKCapture:            cloneELKCaptureConfig(provenance.ELKCapture),
+		DynatraceCapture:      cloneDynatraceCaptureConfig(provenance.DynatraceCapture),
 		RuntimeSettingsReview: cloneRuntimeSettingsReview(provenance.RuntimeSettingsReview),
 		Groups:                maskTestGroupsRuntimeSettings(provenance.Groups),
 		BaselinePinned:        provenance.BaselinePinned,

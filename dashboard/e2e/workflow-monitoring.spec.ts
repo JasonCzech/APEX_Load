@@ -55,3 +55,82 @@ test('Collectors receive a heartbeat while Monitoring remains open', async ({ pa
   await expect(metrics).toContainText('cpu_pct')
   await expect(metrics.getByRole('button', { name: 'Refresh metrics', exact: true })).toBeVisible()
 })
+
+test('ELK connection plumbing is manageable without exposing secret references', async ({ page }) => {
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await page.goto(`/#/monitoring?category=telemetry&${scopeQuery(workspace)}`)
+  await page.reload()
+
+  const card = page.locator('[data-card-id="elk-connections"]')
+  const form = card.locator('[aria-label="ELK connections"]')
+  await expect(card.getByText('Add ELK connection', { exact: true })).toBeVisible()
+  await form.getByLabel('Name', { exact: true }).fill('Workflow Elastic logs')
+  await form.getByLabel('Elasticsearch endpoint', { exact: true }).fill('https://127.0.0.1:1')
+  await form.getByLabel('Index pattern', { exact: true }).fill('workflow-logs-*')
+  await form.getByRole('combobox', { name: 'Authentication', exact: true }).selectOption('api_key')
+  await form.getByLabel('API key project-secret reference', { exact: true }).fill('workflow-elastic-api-key')
+  await form.getByRole('checkbox', { name: 'Ready for test selection', exact: true }).check()
+
+  const created = page.waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `/api/v1/projects/${workspace.projectId}/monitoring/elk-connections`)
+  await form.getByRole('button', { name: 'Save connection', exact: true }).click()
+  const createdResponse = await created
+  expect(createdResponse.ok()).toBeTruthy()
+  const safeResponse = await createdResponse.text()
+  expect(safeResponse).not.toContain('workflow-elastic-api-key')
+  await expect(card).toContainText('Workflow Elastic logs')
+  await expect(card).toContainText('ready')
+
+  await card.getByRole('button', { name: 'Edit', exact: true }).click()
+  await form.getByLabel('Name', { exact: true }).fill('Workflow Elastic logs updated')
+  const updated = page.waitForResponse(response => response.request().method() === 'PUT'
+    && new URL(response.url()).pathname.includes('/monitoring/elk-connections/'))
+  await form.getByRole('button', { name: 'Save connection', exact: true }).click()
+  expect((await updated).ok()).toBeTruthy()
+  await expect(card).toContainText('Workflow Elastic logs updated')
+
+  const tested = page.waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname.endsWith('/test'))
+  await card.getByRole('button', { name: 'Test', exact: true }).click()
+  expect((await tested).status()).toBe(502)
+  await expect(card).toContainText('ELK connection test failed')
+
+  const deleted = page.waitForResponse(response => response.request().method() === 'DELETE'
+    && new URL(response.url()).pathname.includes('/monitoring/elk-connections/'))
+  await card.getByRole('button', { name: 'Delete', exact: true }).click()
+  expect((await deleted).status()).toBe(204)
+  await expect(card).not.toContainText('Workflow Elastic logs updated')
+})
+
+test('Dynatrace SaaS connection plumbing is manageable without exposing secret references', async ({ page }) => {
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await page.goto(`/#/monitoring?category=telemetry&${scopeQuery(workspace)}`)
+  await page.reload()
+  const card = page.locator('[data-card-id="dynatrace-connections"]')
+  const form = card.locator('[aria-label="Dynatrace connections"]')
+  await expect(card.getByText('Add Dynatrace connection', { exact: true })).toBeVisible()
+  await form.getByLabel('Name', { exact: true }).fill('Workflow Dynatrace')
+  await form.getByLabel('Environment URL', { exact: true }).fill('https://workflow.live.dynatrace.com')
+  await form.getByLabel('Environment token project-secret reference', { exact: true }).fill('workflow-dynatrace-token')
+  await form.getByRole('checkbox', { name: 'Problems API', exact: true }).check()
+  await form.getByRole('checkbox', { name: 'Ready for test selection', exact: true }).check()
+  const created = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === `/api/v1/projects/${workspace.projectId}/monitoring/dynatrace-connections`)
+  await form.getByRole('button', { name: 'Save connection', exact: true }).click()
+  const createdResponse = await created
+  expect(createdResponse.ok()).toBeTruthy()
+  expect(await createdResponse.text()).not.toContain('workflow-dynatrace-token')
+  await expect(card).toContainText('Workflow Dynatrace')
+  await expect(card).toContainText('ready')
+  await card.getByRole('button', { name: 'Edit', exact: true }).click()
+  await form.getByLabel('Name', { exact: true }).fill('Workflow Dynatrace updated')
+  const updated = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname.includes('/monitoring/dynatrace-connections/'))
+  await form.getByRole('button', { name: 'Save connection', exact: true }).click()
+  expect((await updated).ok()).toBeTruthy()
+  await expect(card).toContainText('Workflow Dynatrace updated')
+  const deleted = page.waitForResponse(response => response.request().method() === 'DELETE' && new URL(response.url()).pathname.includes('/monitoring/dynatrace-connections/'))
+  await card.getByRole('button', { name: 'Delete', exact: true }).click()
+  expect((await deleted).status()).toBe(204)
+  await expect(card).not.toContainText('Workflow Dynatrace updated')
+})

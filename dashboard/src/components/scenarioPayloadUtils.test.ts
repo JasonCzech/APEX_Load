@@ -1468,4 +1468,24 @@ describe('scenarioPayloadUtils', () => {
       error_handling: { continue_on_error: true, snapshot_on_error: false },
     })
   })
+
+  it('adds ELK capture only when a ready connection was selected', () => {
+    const common = {
+      duration: '1m', startDelay: '', scenarioMode: 'vuser_driven' as const, scriptShakeout: false,
+      resourceBaseline: false, groups: [{ name: '', scriptId: 'script-1', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime' as const }],
+      goalConfig: {}, runtimeSettings: { log_level: '', auto_transactions: '' },
+    }
+    expect(buildCreateTestPayload(common).elk_capture).toBeUndefined()
+    expect(buildCreateTestPayload({ ...common, elkConnectionId: 'elk-a' }).elk_capture).toEqual({ connection_id: 'elk-a' })
+  })
+
+  it('adds Dynatrace capture only when a ready connection was selected', () => {
+    const common = {
+      duration: '1m', startDelay: '', scenarioMode: 'vuser_driven' as const, scriptShakeout: false,
+      resourceBaseline: false, groups: [{ name: '', scriptId: 'script-1', vusers: 1, rampUp: '', rampDown: '', initialization: 'at_runtime' as const }],
+      goalConfig: {}, runtimeSettings: { log_level: '', auto_transactions: '' },
+    }
+    expect(buildCreateTestPayload(common).dynatrace_capture).toBeUndefined()
+    expect(buildCreateTestPayload({ ...common, dynatraceConnectionId: 'dt-a' }).dynatrace_capture).toEqual({ connection_id: 'dt-a' })
+  })
 })

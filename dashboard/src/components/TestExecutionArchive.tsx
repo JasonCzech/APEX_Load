@@ -1151,6 +1151,33 @@ export default function TestExecutionArchive({
                       </div>
                     ))}
                   </div>
+                  {(archiveReport.elk_samples?.length || 0) > 0 && (
+                    <div className="advanced-group-table-wrap">
+                      <h3>Elastic evidence</h3>
+                      <p className="scenario-script-status">Bounded, deduplicated, redacted log samples captured during the run.</p>
+                      <table className="advanced-group-table">
+                        <thead><tr><th>Time</th><th>Level</th><th>Message</th><th>Trace</th></tr></thead>
+                        <tbody>{archiveReport.elk_samples?.map((sample, index) => (
+                          <tr key={sample.id || `${sample.timestamp}-${index}`}>
+                            <td>{sample.timestamp ? new Date(sample.timestamp).toLocaleString() : '—'}</td>
+                            <td>{sample.level || '—'}</td>
+                            <td>{sample.message || '—'}</td>
+                            <td>{sample.trace_id || '—'}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  )}
+                  {(archiveReport.dynatrace_evidence?.length || 0) > 0 && (
+                    <div className="advanced-group-table-wrap">
+                      <h3>Dynatrace evidence</h3>
+                      <p className="scenario-script-status">Bounded, deduplicated, redacted problem summaries and Grail log samples captured during the run.</p>
+                      <table className="advanced-group-table">
+                        <thead><tr><th>Type</th><th>Time</th><th>Status</th><th>Summary</th><th>Correlation</th></tr></thead>
+                        <tbody>{archiveReport.dynatrace_evidence?.map((record, index) => <tr key={`${record.type}-${record.problem?.id || record.log?.trace_id || index}`}><td>{record.type}</td><td>{record.log?.timestamp ? new Date(record.log.timestamp).toLocaleString() : record.problem?.start_time ? new Date(record.problem.start_time).toLocaleString() : '—'}</td><td>{record.log?.status || record.problem?.severity || record.problem?.status || '—'}</td><td>{record.log?.message || record.problem?.title || '—'}</td><td>{record.log?.trace_id || record.problem?.affected_entity || '—'}</td></tr>)}</tbody>
+                      </table>
+                    </div>
+                  )}
                 </section>
               )}
             </>

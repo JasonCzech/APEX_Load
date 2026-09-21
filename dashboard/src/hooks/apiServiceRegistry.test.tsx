@@ -40,6 +40,8 @@ import { useRepositoryApi } from './api/useRepositoryApi'
 import { useScriptApi } from './api/useScriptApi'
 import { useSystemApi } from './api/useSystemApi'
 import { useTestApi } from './api/useTestApi'
+import { useELKConnectionsApi } from './api/useELKConnectionsApi'
+import { useDynatraceConnectionsApi } from './api/useDynatraceConnectionsApi'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -153,6 +155,8 @@ describe('domain hook name space', () => {
         objectRepositories: useObjectRepositoryApi(),
         correlationRulesets: useCorrelationRulesetApi(),
         entitlements: useEntitlementsApi(),
+        elkConnections: useELKConnectionsApi(),
+        dynatraceConnections: useDynatraceConnectionsApi(),
       }
       return null
     }

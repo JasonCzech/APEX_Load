@@ -232,7 +232,7 @@ func TestLibraryAssignmentMigrationFromVersionNine(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := store.db.Exec("DELETE FROM schema_migrations WHERE version = 10"); err != nil {
+	if _, err := store.db.Exec("DELETE FROM schema_migrations WHERE version >= 10"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {
@@ -244,7 +244,7 @@ func TestLibraryAssignmentMigrationFromVersionNine(t *testing.T) {
 	}
 	defer store.Close()
 	status, err := store.SchemaStatus()
-	if err != nil || status.AppliedVersion != 10 {
+	if err != nil || status.AppliedVersion != 12 {
 		t.Fatalf("upgrade: %+v %v", status, err)
 	}
 	for _, kind := range []string{"script", "scenario"} {

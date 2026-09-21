@@ -281,6 +281,8 @@ func cloneManagedTestCapacitySnapshotLocked(test *ManagedTest) *ManagedTest {
 		StartDelay:            test.StartDelay,
 		GoalConfig:            cloneGoalConfig(test.GoalConfig),
 		TrafficProfile:        cloneTrafficProfile(test.TrafficProfile),
+		ELKCapture:            cloneELKCaptureConfig(test.ELKCapture),
+		DynatraceCapture:      cloneDynatraceCaptureConfig(test.DynatraceCapture),
 		TotalVUsers:           test.TotalVUsers,
 		Duration:              test.Duration,
 		DurationStr:           test.DurationStr,
@@ -572,6 +574,8 @@ func (tr *TestRunner) managedTestBuildSnapshotLocked(req CreateTestRequest) (*Te
 		releaseStore:            tr.releaseStore,
 		settingsStore:           tr.settingsStore,
 		projectSecretStore:      tr.projectSecretStore,
+		elkStore:                tr.elkStore,
+		dynatraceStore:          tr.dynatraceStore,
 		objectRepoStore:         tr.objectRepoStore,
 		fleetStore:              tr.fleetStore,
 		leadership:              tr.leadership,
@@ -1304,6 +1308,14 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if revisionSource != nil && normalizeProjectID(revisionSource.ProjectID) != projectID {
 		return nil, fmt.Errorf("revision source test and referenced test resources must belong to one project")
 	}
+	elkCapture, err := tr.resolveELKCaptureForTest(projectID, req.ELKCapture)
+	if err != nil {
+		return nil, err
+	}
+	dynatraceCapture, err := tr.resolveDynatraceCaptureForTest(projectID, req.DynatraceCapture)
+	if err != nil {
+		return nil, err
+	}
 	projectQuota, quotaOK := req.projectQuotaEvidence.quotaFor(&ManagedTest{ProjectID: projectID, Assignment: req.Assignment})
 	if !quotaOK && status != "DRAFT" {
 		return nil, fmt.Errorf("project quota evidence changed or is unavailable; retry test creation")
@@ -1416,6 +1428,8 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		GoalConfig:                   cloneGoalConfig(req.GoalConfig),
 		TrafficProfile:               cloneTrafficProfile(req.TrafficProfile),
 		RuntimeSettings:              cloneRuntimeSettings(protectedRuntimeSettings),
+		ELKCapture:                   elkCapture,
+		DynatraceCapture:             dynatraceCapture,
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
 		DurationStr:                  req.Duration,

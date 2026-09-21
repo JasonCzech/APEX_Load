@@ -1356,6 +1356,8 @@ type TestRecord struct {
 	RuntimeSettings       any                       `json:"runtime_settings,omitempty"`        // JSON blob
 	GoalConfig            any                       `json:"goal_config,omitempty"`             // JSON blob
 	TrafficProfile        any                       `json:"traffic_profile,omitempty"`         // JSON blob
+	ELKCapture            any                       `json:"elk_capture,omitempty"`             // JSON blob
+	DynatraceCapture      any                       `json:"dynatrace_capture,omitempty"`       // JSON blob
 	StartAuthorization    any                       `json:"start_authorization,omitempty"`     // JSON blob
 	ExecutionPlanApproval any                       `json:"execution_plan_approval,omitempty"` // JSON blob
 	// InitialProvenance is the immutable, masked start-of-run archive snapshot.

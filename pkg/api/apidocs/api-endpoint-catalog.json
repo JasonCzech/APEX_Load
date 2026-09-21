@@ -2657,6 +2657,126 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections",
+      "operationId": "handleListDynatraceConnections",
+      "summary": "List Dynatrace Connections",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections",
+      "operationId": "handleCreateDynatraceConnection",
+      "summary": "Create Dynatrace Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}",
+      "operationId": "handleDeleteDynatraceConnection",
+      "summary": "Delete Dynatrace Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}",
+      "operationId": "handleGetDynatraceConnection",
+      "summary": "Get Dynatrace Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}",
+      "operationId": "handleUpdateDynatraceConnection",
+      "summary": "Update Dynatrace Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test",
+      "operationId": "handleTestDynatraceConnection",
+      "summary": "Test Dynatrace Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections",
+      "operationId": "handleListELKConnections",
+      "summary": "List ELK Connections",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections",
+      "operationId": "handleCreateELKConnection",
+      "summary": "Create ELK Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}",
+      "operationId": "handleDeleteELKConnection",
+      "summary": "Delete ELK Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}",
+      "operationId": "handleGetELKConnection",
+      "summary": "Get ELK Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}",
+      "operationId": "handleUpdateELKConnection",
+      "summary": "Update ELK Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test",
+      "operationId": "handleTestELKConnection",
+      "summary": "Test ELK Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/releases",
       "operationId": "handleListProjectReleases",
       "summary": "List Project Releases",

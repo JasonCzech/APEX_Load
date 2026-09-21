@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 577,
+    "routes": 589,
     "public": 22,
-    "protected": 555,
-    "rbac": 553,
+    "protected": 567,
+    "rbac": 565,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 577,
+    "green": 589,
     "partial": 0,
     "missing": 0
   },
@@ -5910,6 +5910,286 @@
       "allowed_roles": {
         "global": [
           "system_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections",
+      "operation_id": "handleListDynatraceConnections",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections",
+      "operation_id": "handleCreateDynatraceConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}",
+      "operation_id": "handleDeleteDynatraceConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}",
+      "operation_id": "handleGetDynatraceConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}",
+      "operation_id": "handleUpdateDynatraceConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test",
+      "operation_id": "handleTestDynatraceConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections",
+      "operation_id": "handleListELKConnections",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections",
+      "operation_id": "handleCreateELKConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}",
+      "operation_id": "handleDeleteELKConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}",
+      "operation_id": "handleGetELKConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: read",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}",
+      "operation_id": "handleUpdateELKConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test",
+      "operation_id": "handleTestELKConnection",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "project_admin"
         ]
       },
       "denied_role": "qa_contract_unlisted",

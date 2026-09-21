@@ -842,6 +842,8 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		GoalConfig:               decodeStoredGoalConfig(record.GoalConfig),
 		TrafficProfile:           decodeStoredTrafficProfile(record.TrafficProfile),
 		RuntimeSettings:          decodeStoredRuntimeSettings(record.RuntimeSettings),
+		ELKCapture:               decodeStoredELKCapture(record.ELKCapture),
+		DynatraceCapture:         decodeStoredDynatraceCapture(record.DynatraceCapture),
 		TotalVUsers:              record.TotalVUsers,
 		Duration:                 time.Duration(record.Duration),
 		DurationStr:              time.Duration(record.Duration).String(),
@@ -1734,6 +1736,8 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		GoalConfig:                     test.GoalConfig,
 		TrafficProfile:                 trafficProfileForStorage(test.TrafficProfile),
 		RuntimeSettings:                test.RuntimeSettings,
+		ELKCapture:                     elkCaptureForStorage(test.ELKCapture),
+		DynatraceCapture:               dynatraceCaptureForStorage(test.DynatraceCapture),
 	}
 }
 

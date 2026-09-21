@@ -146,6 +146,17 @@ func buildAPMIntegrationProfiles(settings SystemSettings, tracing telemetry.Stat
 			SetupActions:      []string{"Preview Dynatrace Events API v2 payloads with the dry-run endpoint before enabling delivery.", "Enable a Dynatrace notification webhook in system settings.", "Pass W3C trace-context headers from scripts to the service under test."},
 		},
 		{
+			ID:                "elastic",
+			Name:              "Elastic (ELK)",
+			Status:            "available",
+			Capabilities:      []string{"controller_side_log_polling", "cumulative_log_and_error_counts", "numeric_aggregations", "bounded_redacted_samples", "archive_evidence"},
+			SupportedSignals:  []string{"logs", "errors", "numeric_log_fields"},
+			CorrelationFields: []string{"test_id", "trace_id", "timestamp"},
+			RequiredSettings:  []string{"project ELK connection", "Elasticsearch read privileges", "project-secret authentication references", "per-test opt-in"},
+			Evidence:          []string{"pkg/api/elk_monitoring.go", "docs/ELK_MONITORING.md"},
+			SetupActions:      []string{"Create an intentionally incomplete project connection in Monitoring → Telemetry.", "Add endpoint, field mappings, and project-secret references when connectivity is available.", "Test the connection, enable it, and opt individual tests into capture."},
+		},
+		{
 			ID:                "datadog",
 			Name:              "Datadog",
 			Status:            statusFor("datadog"),

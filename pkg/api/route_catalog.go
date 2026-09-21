@@ -56,6 +56,18 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 
 	// Enterprise entitlements (read-only consumption vs limits).
 	routeAuth(http.MethodGet, "/api/v1/projects/{id}/entitlements/usage", viewerProjectAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/monitoring/elk-connections", editorProjectAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}", projectAdminAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodPost, "/api/v1/projects/{id}/monitoring/elk-connections", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveProjectIDFromPath, MaxBodyBytes: 65536}),
+	routeAuth(http.MethodPut, "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveProjectIDFromPath, MaxBodyBytes: 65536}),
+	routeAuth(http.MethodDelete, "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}", projectAdminAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodPost, "/api/v1/projects/{id}/monitoring/elk-connections/{connection_id}/test", projectAdminAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/monitoring/dynatrace-connections", editorProjectAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodGet, "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}", projectAdminAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodPost, "/api/v1/projects/{id}/monitoring/dynatrace-connections", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveProjectIDFromPath, MaxBodyBytes: 65536}),
+	routeAuth(http.MethodPut, "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveProjectIDFromPath, MaxBodyBytes: 65536}),
+	routeAuth(http.MethodDelete, "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}", projectAdminAccess(resolveProjectIDFromPath)),
+	routeAuth(http.MethodPost, "/api/v1/projects/{id}/monitoring/dynatrace-connections/{connection_id}/test", projectAdminAccess(resolveProjectIDFromPath)),
 
 	routeAuth(http.MethodPost, "/api/v1/tests/preflight", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/validate-load-model", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveScenarioCreateProjectID}),

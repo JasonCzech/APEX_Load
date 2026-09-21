@@ -24,6 +24,8 @@ import { formatTelemetryDiagnosticTime, telemetryDiagnosticSeverityClass } from 
 import { type ThresholdAlertEntry } from '../thresholdAlerts'
 import ConfirmDestructiveModal, { type DestructiveConfirmation } from './ConfirmDestructiveModal'
 import MonitoringCollectorsCard from './MonitoringCollectorsCard'
+import ELKConnectionsCard from './ELKConnectionsCard'
+import DynatraceConnectionsCard from './DynatraceConnectionsCard'
 import TimeslotsPanel from './TimeslotsPanel'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { frontendBuildMetadata, type FrontendBuildComponentInfo } from '../buildMetadata'
@@ -37,6 +39,7 @@ interface Props {
   onAcknowledgeThresholdAlert?: (key: string) => void
   onSelectTest?: (id: string) => void
   canManageSystem?: boolean
+  canManageProjects?: boolean
   initialCategoryId?: MonitorCategoryId
   activeCategoryId?: MonitorCategoryId
   onCategoryChange?: (categoryId: MonitorCategoryId) => void
@@ -53,7 +56,7 @@ const MONITOR_CATEGORIES = [
   // Cloud connections and execution targets are the normalized path; the
   // cluster registry remains available unchanged for Kubernetes deployments.
   { id: 'fleet', label: 'Fleet', cardIds: ['capacity', 'generators', 'fleet-alerts', 'fleet-audit'] },
-  { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors'] },
+  { id: 'telemetry', label: 'Telemetry', cardIds: ['telemetry-diagnostics', 'apm-integrations', 'monitor-packs', 'collectors', 'elk-connections', 'dynatrace-connections'] },
   { id: 'alerts', label: 'Alerts', cardIds: ['production-readiness', 'threshold-alerts', 'fleet-alerts', 'telemetry-diagnostics'] },
   { id: 'schedules', label: 'Schedules', cardIds: ['run-calendar'] },
 ] as const
@@ -405,7 +408,7 @@ function restartErrorMessage(error: unknown): string {
   return 'Restart request failed.'
 }
 
-export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
+export default function MonitoringPage({ connectionState, telemetryDiagnostics = [], onSelectTest, canManageSystem = false, canManageProjects = false, initialCategoryId = 'overview', activeCategoryId: controlledCategoryId, onCategoryChange, onScheduleForDate, fleetEventSignal = 0 }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const { activeProject } = useProject()
@@ -1636,8 +1639,20 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       ),
       content: <MonitoringCollectorsCard projectId={activeProject?.id} canManage={canManageSystem} />,
     },
+    {
+      id: 'elk-connections',
+      title: 'Elastic (ELK) Connections',
+      icon: <span aria-hidden="true">ELK</span>,
+      content: <ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
+    },
+    {
+      id: 'dynatrace-connections',
+      title: 'Dynatrace SaaS Connections',
+      icon: <span aria-hidden="true">DT</span>,
+      content: <DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
+    },
 
-  ], [activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
+  ], [activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
 
   useEffect(() => {
     setCardOrder(prev => {

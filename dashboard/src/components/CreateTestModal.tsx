@@ -2,7 +2,7 @@ import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
-import { DraftCapacityEstimate, ScenarioDraft, ScenarioDraftGroup, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
+import { DraftCapacityEstimate, DynatraceConnection, ELKConnection, ScenarioDraft, ScenarioDraftGroup, StoredScript, SystemInventoryGenerator, TestSummary } from '../types'
 import './CreateTestModal.css'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import CreateTestCapacityPreview from './CreateTestCapacityPreview'
@@ -52,6 +52,10 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
+  const [elkConnections, setELKConnections] = useState<ELKConnection[]>([])
+  const [elkConnectionId, setELKConnectionId] = useState('')
+  const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
+  const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const scenarioNameRef = useRef<HTMLInputElement | null>(null)
   const titleId = useId()
@@ -104,6 +108,36 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const availableLabels = assignmentRecommendation?.available_labels || {}
   const footprint = draftEstimate?.footprint
   const hasGoalModeConfig = hasGoalModeConfiguration(goalConfig)
+  const effectiveProjectId = revisionContext?.projectId ?? projectId
+
+  useEffect(() => {
+    const listELKConnections = api.listELKConnections
+    if (!effectiveProjectId || typeof listELKConnections !== 'function') {
+      setELKConnections([])
+      setELKConnectionId('')
+      return
+    }
+    let active = true
+    listELKConnections(effectiveProjectId).then(result => {
+      if (!active) return
+      const ready = result.connections.filter(connection => connection.status === 'ready')
+      setELKConnections(ready)
+      setELKConnectionId(current => current && !ready.some(connection => connection.id === current) ? '' : current)
+    }).catch(() => {
+      if (!active) return
+      setELKConnections([])
+      setELKConnectionId('')
+    })
+    return () => { active = false }
+  }, [api, effectiveProjectId])
+
+  useEffect(() => {
+    const list = api.listDynatraceConnections
+    if (!effectiveProjectId || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceConnectionId(''); return }
+    let active = true
+    list(effectiveProjectId).then(result => { if (!active) return; const ready = result.connections.filter(connection => connection.status === 'ready'); setDynatraceConnections(ready); setDynatraceConnectionId(current => current && ready.some(connection => connection.id === current) ? current : '') }).catch(() => { if (active) { setDynatraceConnections([]); setDynatraceConnectionId('') } })
+    return () => { active = false }
+  }, [api, effectiveProjectId])
 
   // Calculate chart data
   const chartData = (() => {
@@ -176,6 +210,8 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     projectId: revisionContext?.projectId ?? projectId,
     folderId: revisionContext ? revisionContext.folderId : folderId,
     dataPools: revisionContext?.dataPools,
+    elkConnectionId,
+    dynatraceConnectionId,
   })
 
   const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
@@ -388,6 +424,22 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                   />
                   <p>Add a fixed 5 minute baseline before load starts and another 5 minute baseline after load stops so resource utilization can be observed without user traffic.</p>
                 </div>
+              </label>
+              <label>
+                <span>Elastic log capture</span>
+                <select value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
+                  <option value="">Off for this test</option>
+                  {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+                </select>
+                <small>Optional. The controller polls the selected ready connection; load generators are unaffected.</small>
+              </label>
+              <label>
+                <span>Dynatrace SaaS capture</span>
+                <select value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
+                  <option value="">Off for this test</option>
+                  {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
+                </select>
+                <small>Optional. Metrics, problems, and Grail logs are polled by the controller.</small>
               </label>
             </div>
 

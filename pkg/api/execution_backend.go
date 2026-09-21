@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -338,6 +339,8 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.GoalConfig = cloneGoalConfig(snapshot.GoalConfig)
 	provenance.TrafficProfile = cloneTrafficProfile(snapshot.TrafficProfile)
 	provenance.RuntimeSettings = maskRuntimeSettings(snapshot.RuntimeSettings)
+	provenance.ELKCapture = cloneELKCaptureConfig(snapshot.ELKCapture)
+	provenance.DynatraceCapture = cloneDynatraceCaptureConfig(snapshot.DynatraceCapture)
 	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(snapshot.RuntimeSettingsReview)
 	provenance.Groups = maskTestGroupsRuntimeSettings(snapshot.Groups)
 	provenance.BaselinePinned = snapshot.BaselinePinned
@@ -460,7 +463,45 @@ func (a *runArtifacts) resultSink() engine.ResultSink {
 	return combinedResultSink{
 		a.recorder,
 		liveErrorEvidenceSink{runner: a.runner, test: a.test},
+		elkTraceEvidenceSink{artifacts: a},
 	}
+}
+
+type elkTraceEvidenceSink struct{ artifacts *runArtifacts }
+
+func (sink elkTraceEvidenceSink) RecordResult(result *protocol.Result) error {
+	if sink.artifacts == nil || result == nil || sink.artifacts.test == nil || (sink.artifacts.test.ELKCapture == nil && sink.artifacts.test.DynatraceCapture == nil) {
+		return nil
+	}
+	traceID := strings.TrimSpace(traceIDFromCorrelationID(result.CorrelationID))
+	if traceID == "" {
+		return nil
+	}
+	if sink.artifacts.test.ELKCapture != nil {
+		sink.artifacts.elkMu.Lock()
+		if sink.artifacts.elkTraceIDs == nil {
+			sink.artifacts.elkTraceIDs = make(map[string]struct{})
+		}
+		if len(sink.artifacts.elkTraceIDs) < 64 {
+			sink.artifacts.elkTraceIDs[traceID] = struct{}{}
+		}
+		sink.artifacts.elkMu.Unlock()
+	}
+	if sink.artifacts.test.DynatraceCapture != nil {
+		sink.artifacts.dynatraceMu.Lock()
+		if sink.artifacts.dynatraceTraceIDs == nil {
+			sink.artifacts.dynatraceTraceIDs = make(map[string]struct{})
+		}
+		if len(sink.artifacts.dynatraceTraceIDs) < 64 {
+			sink.artifacts.dynatraceTraceIDs[traceID] = struct{}{}
+		}
+		sink.artifacts.dynatraceMu.Unlock()
+	}
+	return nil
+}
+
+func (sink elkTraceEvidenceSink) RecordTransaction(result *protocol.Result) error {
+	return sink.RecordResult(result)
 }
 
 type combinedResultSink []engine.ResultSink
@@ -555,11 +596,213 @@ func (a *runArtifacts) recordSLAEvidence(goalConfig *GoalConfig, live *LiveMetri
 }
 
 func (a *runArtifacts) enrichLiveMetrics(test *ManagedTest, live *LiveMetrics) {
-	if a == nil || live == nil || a.externalMetrics == nil {
+	if a == nil || live == nil {
 		return
 	}
-	values := a.externalMetrics.collect(context.Background(), externalMetricTargetsForTest(test))
+	var values map[string]float64
+	if a.externalMetrics != nil {
+		values = a.externalMetrics.collect(context.Background(), externalMetricTargetsForTest(test))
+	}
+	for key, value := range a.collectELKMetrics(test, live) {
+		if values == nil {
+			values = make(map[string]float64)
+		}
+		values[key] = value
+	}
+	for key, value := range a.collectDynatraceMetrics(test, live) {
+		if values == nil {
+			values = make(map[string]float64)
+		}
+		values[key] = value
+	}
 	live.Resources = attachExternalMetrics(live.Resources, values)
+}
+
+func (a *runArtifacts) collectDynatraceMetrics(test *ManagedTest, live *LiveMetrics) map[string]float64 {
+	if a == nil || test == nil || test.DynatraceCapture == nil || live == nil {
+		return nil
+	}
+	a.dynatracePollMu.Lock()
+	defer a.dynatracePollMu.Unlock()
+	now := live.Timestamp
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	cadence := time.Duration(test.DynatraceCapture.PollIntervalSeconds) * time.Second
+	if cadence < 10*time.Second {
+		cadence = 15 * time.Second
+	}
+	a.dynatraceMu.Lock()
+	if a.dynatraceStatus != nil && !a.dynatraceLastPoll.IsZero() && now.Sub(a.dynatraceLastPoll) < cadence {
+		status := cloneDynatraceCaptureStatus(a.dynatraceStatus)
+		metrics := dynatraceExternalMetrics(test.DynatraceCapture.ConnectionID, a.dynatraceStatus.Metrics)
+		a.dynatraceMu.Unlock()
+		live.Dynatrace = status
+		return metrics
+	}
+	traceIDs := make([]string, 0, len(a.dynatraceTraceIDs))
+	for traceID := range a.dynatraceTraceIDs {
+		traceIDs = append(traceIDs, traceID)
+	}
+	a.dynatraceMu.Unlock()
+	sort.Strings(traceIDs)
+	start := test.CreatedAt
+	if test.StartedAt != nil {
+		start = *test.StartedAt
+	}
+	result := queryDynatrace(context.Background(), a.runner, test.DynatraceCapture, test.ID, traceIDs, start, now)
+
+	a.dynatraceMu.Lock()
+	a.dynatraceLastPoll = now
+	status := &DynatraceCaptureStatus{ConnectionID: test.DynatraceCapture.ConnectionID, ConnectionName: test.DynatraceCapture.ConnectionName, LastPolledAt: &now,
+		Capabilities: result.Capabilities, Metrics: cloneFloat64Map(result.Metrics)}
+	connected := 0
+	for _, health := range result.Capabilities {
+		if health.Status == "connected" {
+			connected++
+		}
+	}
+	switch {
+	case len(result.Capabilities) == 0 || connected == 0:
+		status.Status = "unavailable"
+	case connected < len(result.Capabilities):
+		status.Status = "partial"
+	default:
+		status.Status = "connected"
+	}
+	if status.Status != "connected" && a.dynatraceStatus != nil {
+		for key, value := range a.dynatraceStatus.Metrics {
+			if _, exists := status.Metrics[key]; !exists {
+				status.Metrics[key] = value
+			}
+		}
+	}
+	if a.dynatraceEvidenceIDs == nil {
+		a.dynatraceEvidenceIDs = make(map[string]struct{})
+	}
+	fresh := make([]DynatraceEvidenceRecord, 0)
+	for _, sample := range result.Logs {
+		record := DynatraceEvidenceRecord{Type: "log_sample", Log: &sample}
+		key := dynatraceEvidenceKey(record)
+		if _, exists := a.dynatraceEvidenceIDs[key]; exists || len(a.dynatraceEvidenceIDs) >= maxDynatraceEvidence {
+			continue
+		}
+		a.dynatraceEvidenceIDs[key] = struct{}{}
+		a.dynatraceLogs = append(a.dynatraceLogs, sample)
+		fresh = append(fresh, record)
+	}
+	for _, problem := range result.Problems {
+		record := DynatraceEvidenceRecord{Type: "problem_summary", Problem: &problem}
+		key := dynatraceEvidenceKey(record)
+		if _, exists := a.dynatraceEvidenceIDs[key]; exists || len(a.dynatraceEvidenceIDs) >= maxDynatraceEvidence {
+			continue
+		}
+		a.dynatraceEvidenceIDs[key] = struct{}{}
+		a.dynatraceProblems = append(a.dynatraceProblems, problem)
+		fresh = append(fresh, record)
+	}
+	status.Logs = append([]DynatraceLogSample(nil), a.dynatraceLogs...)
+	status.Problems = append([]DynatraceProblemSummary(nil), a.dynatraceProblems...)
+	a.dynatraceStatus = status
+	statusSnapshot := cloneDynatraceCaptureStatus(status)
+	metrics := dynatraceExternalMetrics(test.DynatraceCapture.ConnectionID, status.Metrics)
+	a.dynatraceMu.Unlock()
+
+	if len(fresh) > 0 {
+		if recorder, ok := a.recorder.(interface {
+			RecordDynatraceEvidence([]DynatraceEvidenceRecord) error
+		}); ok {
+			if err := recorder.RecordDynatraceEvidence(fresh); err != nil {
+				slog.Warn("failed to archive Dynatrace evidence", "test_id", test.ID, "error", err)
+			}
+		}
+	}
+	live.Dynatrace = statusSnapshot
+	return metrics
+}
+
+func (a *runArtifacts) collectELKMetrics(test *ManagedTest, live *LiveMetrics) map[string]float64 {
+	if a == nil || test == nil || test.ELKCapture == nil || live == nil {
+		return nil
+	}
+	// Only one controller poll may run at a time, but never hold elkMu across
+	// network or archive I/O: VUser result sinks use elkMu to contribute trace
+	// IDs and must remain independent of monitoring availability.
+	a.elkPollMu.Lock()
+	defer a.elkPollMu.Unlock()
+
+	now := live.Timestamp
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	a.elkMu.Lock()
+	if a.elkStatus != nil && !a.elkLastPoll.IsZero() {
+		if now.Sub(a.elkLastPoll) < 10*time.Second {
+			status := cloneELKCaptureStatus(a.elkStatus)
+			metrics := elkExternalMetrics(test.ELKCapture.ConnectionID, a.elkStatus.Metrics)
+			a.elkMu.Unlock()
+			live.ELK = status
+			return metrics
+		}
+	}
+	traceIDs := make([]string, 0, len(a.elkTraceIDs))
+	for traceID := range a.elkTraceIDs {
+		traceIDs = append(traceIDs, traceID)
+	}
+	a.elkMu.Unlock()
+	start := test.CreatedAt
+	if test.StartedAt != nil {
+		start = *test.StartedAt
+	}
+	sort.Strings(traceIDs)
+	result, err := queryELK(context.Background(), a.runner, test.ELKCapture, test.ID, traceIDs, start, now)
+
+	a.elkMu.Lock()
+	a.elkLastPoll = now
+	status := &ELKCaptureStatus{ConnectionID: test.ELKCapture.ConnectionID, ConnectionName: test.ELKCapture.ConnectionName, LastPolledAt: &now}
+	var fresh []ELKLogSample
+	if err != nil {
+		status.Status = "unavailable"
+		status.Message = err.Error()
+		if a.elkStatus != nil {
+			status.Metrics = cloneFloat64Map(a.elkStatus.Metrics)
+			status.Samples = append([]ELKLogSample(nil), a.elkStatus.Samples...)
+		}
+	} else {
+		status.Status = "connected"
+		status.Metrics = cloneFloat64Map(result.Metrics)
+		if a.elkSampleIDs == nil {
+			a.elkSampleIDs = make(map[string]struct{})
+		}
+		fresh = make([]ELKLogSample, 0, len(result.Samples))
+		for _, sample := range result.Samples {
+			key := sample.ID
+			if key == "" {
+				key = sample.Timestamp.String() + "\x00" + sample.Message
+			}
+			if _, exists := a.elkSampleIDs[key]; exists || len(a.elkSampleIDs) >= 50 {
+				continue
+			}
+			a.elkSampleIDs[key] = struct{}{}
+			a.elkSamples = append(a.elkSamples, sample)
+			fresh = append(fresh, sample)
+		}
+		status.Samples = append([]ELKLogSample(nil), a.elkSamples...)
+	}
+	a.elkStatus = status
+	statusSnapshot := cloneELKCaptureStatus(status)
+	metrics := elkExternalMetrics(test.ELKCapture.ConnectionID, status.Metrics)
+	a.elkMu.Unlock()
+
+	if len(fresh) > 0 {
+		if recorder, ok := a.recorder.(interface{ RecordELKSamples([]ELKLogSample) error }); ok {
+			if err := recorder.RecordELKSamples(fresh); err != nil {
+				slog.Warn("failed to archive ELK evidence samples", "test_id", test.ID, "error", err)
+			}
+		}
+	}
+	live.ELK = statusSnapshot
+	return metrics
 }
 
 func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {

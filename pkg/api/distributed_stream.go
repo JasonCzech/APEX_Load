@@ -20,6 +20,28 @@ import (
 	grpcStatus "google.golang.org/grpc/status"
 )
 
+func distributedMonitoringArtifacts(tr *TestRunner, test *ManagedTest) *runArtifacts {
+	if tr == nil || test == nil || (test.ELKCapture == nil && test.DynatraceCapture == nil) {
+		return nil
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	current := tr.tests[test.ID]
+	if current == nil {
+		return nil
+	}
+	artifacts := current.elkArtifacts
+	if artifacts == nil {
+		artifacts = current.dynatraceArtifacts
+	}
+	if artifacts == nil {
+		artifacts = &runArtifacts{runner: tr, test: current}
+	}
+	current.elkArtifacts = artifacts
+	current.dynatraceArtifacts = artifacts
+	return artifacts
+}
+
 func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupShards map[string][]GeneratorShardSummary, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) (bool, error) {
 	started, activate, err := b.prepareDistributedTestRun(tr, test, groupShards, clientsByTarget, streamsByTarget)
 	if err != nil || !started {
@@ -1058,7 +1080,7 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 		goalGroupVUsers map[string]int
 		goalUpdate      goalControllerUpdate
 	)
-	installed := tr.publishLiveMetrics(test, live, nil, func() bool {
+	installed := tr.publishLiveMetrics(test, live, distributedMonitoringArtifacts(tr, test), func() bool {
 		if ctx.Err() != nil ||
 			tr.tests[test.ID] != test ||
 			!tr.isExecutionLeader() ||

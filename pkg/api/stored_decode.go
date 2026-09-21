@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // storedTestGroup extends the public group snapshot with the exact compiled
@@ -106,6 +108,55 @@ func decodeStoredRuntimeSettings(value any) *RuntimeSettingsOverride {
 		return nil
 	}
 	return cloneRuntimeSettings(&overrides)
+}
+
+func decodeStoredELKCapture(value any) *ELKCaptureConfig {
+	if value == nil {
+		return nil
+	}
+	if typed, ok := value.(*ELKCaptureConfig); ok {
+		return cloneELKCaptureConfig(typed)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var stored storedELKCapture
+	if err := json.Unmarshal(encoded, &stored); err != nil || strings.TrimSpace(stored.ConnectionID) == "" {
+		return nil
+	}
+	return &ELKCaptureConfig{ConnectionID: stored.ConnectionID, ConnectionName: stored.ConnectionName, Endpoint: stored.Endpoint,
+		IndexPattern: stored.IndexPattern, TimestampField: stored.TimestampField, LevelField: stored.LevelField,
+		MessageField: stored.MessageField, TestIDField: stored.TestIDField, TraceIDField: stored.TraceIDField,
+		BaseFilter: stored.BaseFilter, ErrorFilter: stored.ErrorFilter, MetricAggregations: append([]storage.ELKMetricAggregation(nil), stored.MetricAggregations...),
+		ProjectID: stored.ProjectID, AuthType: stored.AuthType, APIKeySecretName: stored.APIKeySecretName,
+		UsernameSecretName: stored.UsernameSecretName, PasswordSecretName: stored.PasswordSecretName}
+}
+
+func decodeStoredDynatraceCapture(value any) *DynatraceCaptureConfig {
+	if value == nil {
+		return nil
+	}
+	if typed, ok := value.(*DynatraceCaptureConfig); ok {
+		return cloneDynatraceCaptureConfig(typed)
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var stored storedDynatraceCapture
+	if err := json.Unmarshal(encoded, &stored); err != nil || strings.TrimSpace(stored.ConnectionID) == "" {
+		return nil
+	}
+	return &DynatraceCaptureConfig{ConnectionID: stored.ConnectionID, ConnectionName: stored.ConnectionName, ProjectID: stored.ProjectID,
+		EnvironmentURL: stored.EnvironmentURL, PlatformURL: stored.PlatformURL, MetricsEnabled: stored.MetricsEnabled,
+		ProblemsEnabled: stored.ProblemsEnabled, LogsEnabled: stored.LogsEnabled, EnvironmentTokenSecret: stored.EnvironmentTokenSecret,
+		PlatformAuthType: stored.PlatformAuthType, PlatformTokenSecret: stored.PlatformTokenSecret, OAuthClientIDSecret: stored.OAuthClientIDSecret,
+		OAuthClientSecretSecret: stored.OAuthClientSecretSecret, OAuthResource: stored.OAuthResource, OAuthScopes: append([]string(nil), stored.OAuthScopes...),
+		MetricQueries: append([]storage.DynatraceMetricQuery(nil), stored.MetricQueries...), ProblemSelector: stored.ProblemSelector,
+		ProblemEntitySelector: stored.ProblemEntitySelector, LogBaseFilter: stored.LogBaseFilter, LogTestIDField: stored.LogTestIDField,
+		LogTimestampField: stored.LogTimestampField, LogStatusField: stored.LogStatusField, LogMessageField: stored.LogMessageField,
+		LogTraceIDField: stored.LogTraceIDField, PollIntervalSeconds: stored.PollIntervalSeconds}
 }
 
 func goalConfigForStorage(config *GoalConfig) any {

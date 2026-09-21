@@ -57,10 +57,14 @@ type RunArchiveManifest struct {
 	IntervalSummariesParquetFile      string                             `json:"interval_summaries_parquet_file,omitempty"`
 	TestManifestFile                  string                             `json:"test_manifest_file,omitempty"`
 	TestNotesFile                     string                             `json:"test_notes_file,omitempty"`
+	ELKEvidenceFile                   string                             `json:"elk_evidence_file,omitempty"`
+	DynatraceEvidenceFile             string                             `json:"dynatrace_evidence_file,omitempty"`
 	Artifacts                         []RunArchiveArtifact               `json:"artifacts,omitempty"`
 	TransactionCount                  int64                              `json:"transaction_count"`
 	ResourceSampleCount               int64                              `json:"resource_sample_count"`
 	IntervalSummaryCount              int64                              `json:"interval_summary_count"`
+	ELKEvidenceCount                  int64                              `json:"elk_evidence_count,omitempty"`
+	DynatraceEvidenceCount            int64                              `json:"dynatrace_evidence_count,omitempty"`
 	SLAEvaluated                      bool                               `json:"sla_evaluated,omitempty"`
 	SLABreached                       bool                               `json:"sla_breached"`
 	SLADetails                        []string                           `json:"sla_details,omitempty"`
@@ -136,6 +140,8 @@ type RunArchiveProvenance struct {
 	GoalConfig            *GoalConfig                         `json:"goal_config,omitempty"`
 	TrafficProfile        *TrafficProfile                     `json:"traffic_profile,omitempty"`
 	RuntimeSettings       *RuntimeSettingsOverride            `json:"runtime_settings,omitempty"`
+	ELKCapture            *ELKCaptureConfig                   `json:"elk_capture,omitempty"`
+	DynatraceCapture      *DynatraceCaptureConfig             `json:"dynatrace_capture,omitempty"`
 	RuntimeSettingsReview *RuntimeSettingsReview              `json:"runtime_settings_review,omitempty"`
 	Groups                []TestGroup                         `json:"groups,omitempty"`
 	BaselinePinned        bool                                `json:"baseline_pinned,omitempty"`
@@ -324,6 +330,8 @@ type IntervalSummaryRecord struct {
 	BrowserByDevice   map[string]*BrowserDeviceLiveMetrics   `json:"browser_by_device,omitempty"`
 	Telemetry         *TelemetryHealth                       `json:"telemetry,omitempty"`
 	TelemetryStatus   *TelemetryRunHealth                    `json:"telemetry_status,omitempty"`
+	ELK               *ELKCaptureStatus                      `json:"elk,omitempty"`
+	Dynatrace         *DynatraceCaptureStatus                `json:"dynatrace,omitempty"`
 }
 
 // IntervalTransactionMetrics is the bounded, chart-focused transaction
@@ -390,6 +398,8 @@ type RunArchiveReport struct {
 	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult     `json:"transaction_response_time_sla_results,omitempty"`
 	SLARollup                         *RunArchiveSLARollup                   `json:"sla_rollup,omitempty"`
 	EvidenceTiers                     []RunArchiveEvidenceTier               `json:"evidence_tiers,omitempty"`
+	ELKSamples                        []ELKLogSample                         `json:"elk_samples,omitempty"`
+	DynatraceEvidence                 []DynatraceEvidenceRecord              `json:"dynatrace_evidence,omitempty"`
 	ErrorPatterns                     []RunArchiveErrorPattern               `json:"error_patterns,omitempty"`
 	SummaryTimeline                   []RunArchiveSummaryPoint               `json:"summary_timeline,omitempty"`
 	LoadLevelSummaries                []RunArchiveLoadLevelSummary           `json:"load_level_summaries,omitempty"`
@@ -837,12 +847,18 @@ type runArchiveWriter struct {
 	txFile              *os.File
 	resourceFile        *os.File
 	summaryFile         *os.File
+	elkFile             *os.File
+	dynatraceFile       *os.File
 	txBuf               *bufio.Writer
 	resourceBuf         *bufio.Writer
 	summaryBuf          *bufio.Writer
+	elkBuf              *bufio.Writer
+	dynatraceBuf        *bufio.Writer
 	txEncoder           *json.Encoder
 	resourceEncoder     *json.Encoder
 	summaryEncoder      *json.Encoder
+	elkEncoder          *json.Encoder
+	dynatraceEncoder    *json.Encoder
 	flushStop           chan struct{}
 	flushStopped        chan struct{}
 	flushErr            error

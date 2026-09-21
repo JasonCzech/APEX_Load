@@ -37,6 +37,8 @@ export interface NewTestDraft {
   groupRunOverrides: Record<string, GroupRunOverride>
   scheduledStartLocal: string
   selectedTimeslotId: string
+  elkConnectionId?: string
+  dynatraceConnectionId?: string
   newReleaseName: string
   showNewRelease: boolean
   scheduleDraft: ScheduleDraft
@@ -48,6 +50,8 @@ const record = (value: unknown): value is Record<string, unknown> => Boolean(val
 function validDraft(value: unknown): value is NewTestDraft {
   if (!record(value) || value.version !== 1) return false
   if (!['projectId', 'applicationId', 'scenarioId', 'scenarioUpdatedAt', 'runName', 'releaseId', 'scheduledStartLocal', 'selectedTimeslotId', 'newReleaseName'].every(field => typeof value[field] === 'string')) return false
+  if (value.elkConnectionId !== undefined && typeof value.elkConnectionId !== 'string') return false
+  if (value.dynatraceConnectionId !== undefined && typeof value.dynatraceConnectionId !== 'string') return false
   if (typeof value.showNewRelease !== 'boolean') return false
   if (!['launch', 'schedules'].includes(String(value.pageMode))) return false
   if (value.editingScheduleId !== null && typeof value.editingScheduleId !== 'string') return false

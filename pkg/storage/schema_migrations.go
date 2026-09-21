@@ -35,6 +35,8 @@ var schemaReleases = []schemaRelease{
 	{Version: 8, Name: "peak-pod-capacity-reservations", Fingerprint: "3c72a2e09f9362c4167a2f804a8c3d1b8a275bf96ce98822705f67d1ef4b11a1"},
 	{Version: 9, Name: "durable-monitoring-threshold-incidents", Fingerprint: "0f74cef209dd4dfda0093ec2c27fb7cd581b66875ca1549aa88966720d660232"},
 	{Version: 10, Name: "library-application-release-assignments", Fingerprint: "9ca4de0a07a29ffe6bd32864699ecf0a6147fc4ec5228a0ad276db246f831d7b"},
+	{Version: 11, Name: "optional-elk-monitoring", Fingerprint: "32ec84499a06c93dc1a7ac86bf962134caf4efb5ce4019c4f4e101a3cf17f97d"},
+	{Version: 12, Name: "optional-dynatrace-saas-monitoring", Fingerprint: "47b102255d607b776d1cda7d3e4fc0c79cb978a4ed991a9e0bac18ae80008daf"},
 }
 
 type SchemaMigrationRecord struct {

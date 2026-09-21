@@ -33,6 +33,20 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	if err != nil {
 		return nil, err
 	}
+	var elkSamples []ELKLogSample
+	if strings.TrimSpace(manifest.ELKEvidenceFile) != "" {
+		elkSamples, err = readAllArchiveELKSamples(record)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var dynatraceEvidence []DynatraceEvidenceRecord
+	if strings.TrimSpace(manifest.DynatraceEvidenceFile) != "" {
+		dynatraceEvidence, err = readAllArchiveDynatraceEvidence(record)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	report := &RunArchiveReport{
 		SchemaVersion:       runArchiveReportSchemaVersion,
@@ -48,6 +62,8 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		BrowserByPlatform:   make(map[string]*BrowserPlatformLiveMetrics),
 		BrowserByDevice:     make(map[string]*BrowserDeviceLiveMetrics),
 		LoadLevelSummaries:  buildRunArchiveLoadLevelSummaries(summaries),
+		ELKSamples:          elkSamples,
+		DynatraceEvidence:   dynatraceEvidence,
 	}
 	faultTimelineBuckets := make(map[time.Time]*RunArchiveSOAPFaultTimelineBucket)
 	payloadTimelineBuckets := make(map[time.Time]*RunArchiveSOAPPayloadTimelineBucket)
@@ -1239,6 +1255,8 @@ func buildRunArchiveEvidenceTiersFromCounts(manifest *RunArchiveManifest, report
 		evidenceTier("browser_artifacts", "Browser Artifacts", browserArtifactCount, "Browser screenshots, HTML captures, DOM summaries, console entries, network entries, Core Web Vitals, and Web 2.0 source-step labels."),
 		evidenceTier("provenance", "Provenance", provenanceEvidenceCount(manifest), "Execution inputs, scenario shape, runtime settings, controller environment, and generator inventory."),
 		evidenceTier("external_metrics", "External Metrics", externalMetricSamples, "Target-side or imported resource metrics carried on resource samples."),
+		evidenceTier("elk_evidence", "ELK Evidence", manifest.ELKEvidenceCount, "Bounded, deduplicated, redacted Elasticsearch log samples captured during the run."),
+		evidenceTier("dynatrace_evidence", "Dynatrace Evidence", manifest.DynatraceEvidenceCount, "Bounded, deduplicated, redacted Dynatrace problem summaries and Grail log samples captured during the run."),
 		evidenceTier("oracle_db_metrics", "Oracle DB Metrics", oracleDBMetricSamples, "Canonical oracle.db.* target-side metrics prepared for Oracle Database correlation."),
 	}
 	for index := range tiers {
@@ -1275,6 +1293,10 @@ func evidenceMissingReason(tier string) string {
 		return "Archive manifest does not contain execution provenance."
 	case "external_metrics":
 		return "No external resource metrics were attached to archived resource samples."
+	case "elk_evidence":
+		return "No redacted Elasticsearch log samples were archived."
+	case "dynatrace_evidence":
+		return "No redacted Dynatrace problem summaries or Grail log samples were archived."
 	case "oracle_db_metrics":
 		return "No oracle.db.* external metrics were attached to archived resource samples."
 	default:

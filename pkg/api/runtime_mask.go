@@ -560,6 +560,8 @@ func maskTestGroupsRuntimeSettings(groups []TestGroup) []TestGroup {
 func maskRunArchiveProvenance(provenance RunArchiveProvenance) RunArchiveProvenance {
 	provenance.TrafficProfile = cloneTrafficProfile(provenance.TrafficProfile)
 	provenance.RuntimeSettings = maskRuntimeSettings(provenance.RuntimeSettings)
+	provenance.ELKCapture = cloneELKCaptureConfig(provenance.ELKCapture)
+	provenance.DynatraceCapture = cloneDynatraceCaptureConfig(provenance.DynatraceCapture)
 	provenance.Groups = maskTestGroupsRuntimeSettings(provenance.Groups)
 	return provenance
 }
