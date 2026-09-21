@@ -1643,13 +1643,13 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       id: 'elk-connections',
       title: 'Elastic (ELK) Connections',
       icon: <span aria-hidden="true">ELK</span>,
-      content: <ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
+      content: <ELKConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
     },
     {
       id: 'dynatrace-connections',
       title: 'Dynatrace SaaS Connections',
       icon: <span aria-hidden="true">DT</span>,
-      content: <DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
+      content: <DynatraceConnectionsCard summaryOnly projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} />,
     },
 
   ], [activeProjectId, activeProject?.id, allConfiguredReadinessChecksPassing, apiHealthSeverity, apmHeaderLabel, apmHeaderSeverity, apmProfiles, backendServices, calendarAnchor, calendarEvents, calendarFilter, calendarHeaderLabel, calendarHeaderSeverity, calendarModel, calendarView, showQueuedRuns, canManageProjects, canManageSystem, canRestart, componentBuildRows, controlPlaneHeaderLabel, controlPlaneHeaderSeverity, controllerGeneratorInventoryLabel, fleetAlertActionBusy, fleetAlertActionError, fleetAlertHeaderLabel, fleetAlertHeaderSeverity, fleetAlertList, fleetAlertsUnknown, fleetAuditEvents, fleetAuditHeaderLabel, fleetAuditHeaderSeverity, fleetCapacity, frontendServices, generatorActiveVUsers, generatorAvailableCapacity, generatorConnectedCount, generatorHeaderLabel, generatorHeaderSeverity, generatorIssueCount, generators.length, hasAllRequiredInfrastructureChecks, health, inventory, monitorPackContractCount, monitorPackCount, monitorPackHeaderLabel, monitorPackHeaderSeverity, monitorPackSupportedCount, monitorPacks, onScheduleForDate, onSelectTest, openControllerRestart, openSelectedTest, provisioner, readinessBlockedCount, readinessDegradedCount, readinessDisplayedCheckCount, readinessFailureChecks, readinessFetchState, readinessReadyCount, readinessServicesHeaderLabel, readinessServicesHeaderSeverity, restartCapabilities?.supports.controller_workload, runCalendar, selectCalendarEvent, selectedCalendarEvent, servicesHeaderLabel, servicesHeaderSeverity, shiftCalendar, systemReadiness, systemServices, telemetryDangerCount, telemetryHeaderLabel, telemetryHeaderSeverity, telemetryLatestEntry, telemetryDiagnostics, telemetryWarningCount, thresholdAlertHeaderLabel, thresholdAlertHeaderSeverity, toggleFleetAlertAck, websocketLabel, websocketValueClass])
@@ -1848,6 +1848,7 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
         <span>{activeCategoryId === 'fleet' ? 'Distributed fleet status. Local execution is separate from generator inventory.' : `Project: ${activeProject?.name || 'No project selected'} · Control-plane health is deployment-wide.`}</span>
         {canManageSystem && (activeCategoryId === 'fleet' ? [['pools', 'Configure pools'], ['clusters', 'Connect cluster'], ['cloud', 'Connections & targets'], ['capacity', 'Capacity source'], ['allocations', 'Standing allocations']] : activeCategoryId === 'alerts' ? [['thresholds', 'Alert & stop policies'], ['notifications', 'Notification routes']] : activeCategoryId === 'telemetry' ? [['prometheus', 'Prometheus'], ['grafana', 'Grafana'], ['dashboards', 'Import dashboards']] : activeCategoryId === 'schedules' ? [['scheduling', 'Schedule defaults'], ['allocations', 'Standing allocations']] : [['platform', 'Controller settings'], ['authentication', 'Authentication']]).map(([id, label]) => <a className="btn btn-secondary btn-sm" key={id} href={settingsHref(id)}>{label}</a>)}
       </div>
+      {activeCategoryId === 'telemetry' && <p className="monitor-context-actions">APM profiles describe outbound events and trace delivery. Test capture reads external data into an opted-in run. {(canManageSystem || canManageProjects) && <><a href={settingsHref('elk-capture')}>Elastic capture settings</a> · <a href={settingsHref('dynatrace-capture')}>Dynatrace capture settings</a></>}</p>}
       {activeCategoryId === 'telemetry' && <MonitoringEvidenceCard canManage={canManageSystem} />}
       {activeCategoryId === 'alerts' && <section className="monitor-advisories" aria-label="System advisories">
         <h2>System advisories</h2>

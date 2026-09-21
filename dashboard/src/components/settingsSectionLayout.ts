@@ -64,6 +64,8 @@ const PROJECT_SETTINGS_SUBSECTION_IDS = PROJECT_SETTINGS_SUBSECTIONS.map(section
 export const INTEGRATION_SETTINGS_SUBSECTIONS = [
   { id: 'library', title: 'Library Federation' },
   { id: 'github', title: 'GitHub' },
+  { id: 'elk-capture', title: 'Elastic test capture' },
+  { id: 'dynatrace-capture', title: 'Dynatrace test capture' },
   { id: 'prometheus', title: 'Prometheus' },
   { id: 'opensearch', title: 'OpenSearch' },
   { id: 'grafana', title: 'Grafana' },

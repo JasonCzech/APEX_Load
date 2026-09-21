@@ -49785,6 +49785,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                last_successful_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 logs:
                                   type: array
                                   items:
@@ -49818,6 +49822,10 @@ paths:
                                 connection_name:
                                   type: string
                                 last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                last_successful_at:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -50613,6 +50621,10 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              last_successful_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               logs:
                                 type: array
                                 items:
@@ -50646,6 +50658,10 @@ paths:
                               connection_name:
                                 type: string
                               last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              last_successful_at:
                                 type: string
                                 format: date-time
                                 nullable: true
@@ -53706,6 +53722,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                last_successful_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 logs:
                                   type: array
                                   items:
@@ -53739,6 +53759,10 @@ paths:
                                 connection_name:
                                   type: string
                                 last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                last_successful_at:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -54534,6 +54558,10 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              last_successful_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               logs:
                                 type: array
                                 items:
@@ -54567,6 +54595,10 @@ paths:
                               connection_name:
                                 type: string
                               last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              last_successful_at:
                                 type: string
                                 format: date-time
                                 nullable: true
@@ -57624,6 +57656,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                last_successful_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 logs:
                                   type: array
                                   items:
@@ -57657,6 +57693,10 @@ paths:
                                 connection_name:
                                   type: string
                                 last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                last_successful_at:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -58452,6 +58492,10 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              last_successful_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               logs:
                                 type: array
                                 items:
@@ -58485,6 +58529,10 @@ paths:
                               connection_name:
                                 type: string
                               last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              last_successful_at:
                                 type: string
                                 format: date-time
                                 nullable: true
@@ -61554,6 +61602,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                last_successful_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 logs:
                                   type: array
                                   items:
@@ -61587,6 +61639,10 @@ paths:
                                 connection_name:
                                   type: string
                                 last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                last_successful_at:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -62382,6 +62438,10 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              last_successful_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               logs:
                                 type: array
                                 items:
@@ -62415,6 +62475,10 @@ paths:
                               connection_name:
                                 type: string
                               last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              last_successful_at:
                                 type: string
                                 format: date-time
                                 nullable: true
@@ -65484,6 +65548,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                last_successful_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 logs:
                                   type: array
                                   items:
@@ -65517,6 +65585,10 @@ paths:
                                 connection_name:
                                   type: string
                                 last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                last_successful_at:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -66312,6 +66384,10 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              last_successful_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               logs:
                                 type: array
                                 items:
@@ -66345,6 +66421,10 @@ paths:
                               connection_name:
                                 type: string
                               last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              last_successful_at:
                                 type: string
                                 format: date-time
                                 nullable: true
@@ -69414,6 +69494,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                last_successful_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 logs:
                                   type: array
                                   items:
@@ -69447,6 +69531,10 @@ paths:
                                 connection_name:
                                   type: string
                                 last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                last_successful_at:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -70242,6 +70330,10 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              last_successful_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               logs:
                                 type: array
                                 items:
@@ -70275,6 +70367,10 @@ paths:
                               connection_name:
                                 type: string
                               last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              last_successful_at:
                                 type: string
                                 format: date-time
                                 nullable: true
@@ -73344,6 +73440,10 @@ paths:
                                   type: string
                                   format: date-time
                                   nullable: true
+                                last_successful_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
                                 logs:
                                   type: array
                                   items:
@@ -73377,6 +73477,10 @@ paths:
                                 connection_name:
                                   type: string
                                 last_polled_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                last_successful_at:
                                   type: string
                                   format: date-time
                                   nullable: true
@@ -74172,6 +74276,10 @@ paths:
                                 type: string
                                 format: date-time
                                 nullable: true
+                              last_successful_at:
+                                type: string
+                                format: date-time
+                                nullable: true
                               logs:
                                 type: array
                                 items:
@@ -74205,6 +74313,10 @@ paths:
                               connection_name:
                                 type: string
                               last_polled_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              last_successful_at:
                                 type: string
                                 format: date-time
                                 nullable: true
@@ -207632,6 +207744,10 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            last_successful_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             logs:
                               type: array
                               items:
@@ -207663,6 +207779,10 @@ paths:
                             connection_name:
                               type: string
                             last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            last_successful_at:
                               type: string
                               format: date-time
                               nullable: true
@@ -209204,6 +209324,10 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          last_successful_at:
+                            type: string
+                            format: date-time
+                            nullable: true
                           logs:
                             type: array
                             items:
@@ -209264,6 +209388,10 @@ paths:
                           connection_name:
                             type: string
                           last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          last_successful_at:
                             type: string
                             format: date-time
                             nullable: true
@@ -213954,6 +214082,10 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            last_successful_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             logs:
                               type: array
                               items:
@@ -213985,6 +214117,10 @@ paths:
                             connection_name:
                               type: string
                             last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            last_successful_at:
                               type: string
                               format: date-time
                               nullable: true
@@ -215526,6 +215662,10 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          last_successful_at:
+                            type: string
+                            format: date-time
+                            nullable: true
                           logs:
                             type: array
                             items:
@@ -215586,6 +215726,10 @@ paths:
                           connection_name:
                             type: string
                           last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          last_successful_at:
                             type: string
                             format: date-time
                             nullable: true
@@ -228816,6 +228960,10 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            last_successful_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             logs:
                               type: array
                               items:
@@ -228847,6 +228995,10 @@ paths:
                             connection_name:
                               type: string
                             last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            last_successful_at:
                               type: string
                               format: date-time
                               nullable: true
@@ -230388,6 +230540,10 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          last_successful_at:
+                            type: string
+                            format: date-time
+                            nullable: true
                           logs:
                             type: array
                             items:
@@ -230448,6 +230604,10 @@ paths:
                           connection_name:
                             type: string
                           last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          last_successful_at:
                             type: string
                             format: date-time
                             nullable: true
@@ -235082,6 +235242,10 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            last_successful_at:
+                              type: string
+                              format: date-time
+                              nullable: true
                             logs:
                               type: array
                               items:
@@ -235113,6 +235277,10 @@ paths:
                             connection_name:
                               type: string
                             last_polled_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            last_successful_at:
                               type: string
                               format: date-time
                               nullable: true
@@ -236654,6 +236822,10 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          last_successful_at:
+                            type: string
+                            format: date-time
+                            nullable: true
                           logs:
                             type: array
                             items:
@@ -236714,6 +236886,10 @@ paths:
                           connection_name:
                             type: string
                           last_polled_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          last_successful_at:
                             type: string
                             format: date-time
                             nullable: true

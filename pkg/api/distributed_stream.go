@@ -1780,6 +1780,11 @@ func distributedBatchErrorCount(batch generatorrpc.MetricsBatch) int64 {
 
 func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner, test *ManagedTest, finalStatus string, finalError string) {
 	completedAt := time.Now()
+	tr.mu.RLock()
+	elk, dynatrace := test.elkArtifacts, test.dynatraceArtifacts
+	tr.mu.RUnlock()
+	elk.stopMonitoring()
+	dynatrace.stopMonitoring()
 	if finalStatus == "FAILED" || finalStatus == "ABORTED" {
 		// Failure/abort cleanup and archive transfer are best effort and may be
 		// slow when a target is unreachable. Publish the already-derived terminal

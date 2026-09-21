@@ -225,7 +225,7 @@ export function parseAppViewFromHash(hash: string): AppView {
     const setting = params.get('setting') || undefined
     const returnTo = params.get('returnTo') || ''
     const resourceId = params.get('resourceId') || ''
-    return { page, ...(page === 'access' && isAccessView(params.get('accessView')) ? { accessView: params.get('accessView') as AccessView } : {}), ...(resourceId ? { resourceId } : {}), ...(setting ? { setting } : {}), ...(/^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(returnTo) ? { returnTo } : {}), ...workspaceScope }
+    return { page, ...(page === 'access' && isAccessView(params.get('accessView')) ? { accessView: params.get('accessView') as AccessView } : {}), ...(resourceId ? { resourceId } : {}), ...(setting ? { setting } : {}), ...(/^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(returnTo) ? { returnTo } : {}), ...workspaceScope }
   }
 
   if (page === 'monitoring') {
@@ -320,7 +320,7 @@ export function viewToLocationHash(view: AppView): string {
     if (view.setting) params.set('setting', view.setting)
     if (view.page === 'access' && view.accessView) params.set('accessView', view.accessView)
     if (view.resourceId) params.set('resourceId', view.resourceId)
-    if (view.returnTo && /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(view.returnTo)) params.set('returnTo', view.returnTo)
+    if (view.returnTo && /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(view.returnTo)) params.set('returnTo', view.returnTo)
     appendWorkspaceScope(params, view)
     return params.size ? `#/${view.page}?${params}` : `#/${view.page}`
   }

@@ -1,4 +1,6 @@
 import { suggestedApplication, suggestedReleases } from './libraryLaunchAssignments'
+import CaptureSelectionHelp from './CaptureSelectionHelp'
+import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
 import type { StoredScript } from '../types/storedContent'
 import FormErrorSummary from './ux/FormErrorSummary'
 import FormField from './ux/FormField'
@@ -544,10 +546,17 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [scenarioState, setScenarioState] = useState<{ projectID: string; scenarios: StoredScenario[] }>({ projectID: '', scenarios: [] })
   const scenarios = scenarioState.projectID === activeProjectID ? scenarioState.scenarios : EMPTY_SCENARIOS
   const [scenarioId, setScenarioId] = useState(initialScenarioId || '')
+  const [captureRetry, setCaptureRetry] = useState(0)
+  const [elkLoading, setELKLoading] = useState(false)
+  const [elkError, setELKError] = useState(false)
+  const [dynatraceLoading, setDynatraceLoading] = useState(false)
+  const [dynatraceError, setDynatraceError] = useState(false)
   const [elkConnections, setELKConnections] = useState<ELKConnection[]>([])
   const [elkConnectionId, setELKConnectionId] = useState('')
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
   const [dynatraceConnectionId, setDynatraceConnectionId] = useState('')
+  useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setELKConnections([]); setDynatraceConnections([]) }, [activeProjectID])
+  const captureNeedsReview = captureSelectionNeedsReview(elkConnectionId, elkConnections, elkLoading, elkError) || captureSelectionNeedsReview(dynatraceConnectionId, dynatraceConnections, dynatraceLoading, dynatraceError)
   const [activeApplication, setLaunchApplication] = useState(workspaceApplication)
   const [applications, setApplications] = useState<Application[]>([])
   const [assignmentScripts, setAssignmentScripts] = useState<StoredScript[]>([])
@@ -589,9 +598,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     let cancelled = false
     const list = api.listDynatraceConnections
     if (!activeProjectID || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceConnectionId(''); return () => { cancelled = true } }
-    void list(activeProjectID).then(response => { if (cancelled) return; const ready = (response.connections || []).filter(connection => connection.status === 'ready'); setDynatraceConnections(ready); setDynatraceConnectionId(current => current && ready.some(connection => connection.id === current) ? current : '') }).catch(() => { if (!cancelled) { setDynatraceConnections([]); setDynatraceConnectionId('') } })
+    setDynatraceLoading(true); setDynatraceError(false)
+    void list(activeProjectID).then(response => { if (cancelled) return; const ready = (response.connections || []).filter(connection => connection.status === 'ready'); setDynatraceConnections(ready);  }).catch(() => { if (!cancelled) { setDynatraceConnections([]); setDynatraceError(true) } }).finally(() => { if (!cancelled) setDynatraceLoading(false) })
     return () => { cancelled = true }
-  }, [api, activeProjectID])
+  }, [api, activeProjectID, captureRetry])
   useEffect(() => {
     let cancelled = false
     const listELKConnections = api.listELKConnections
@@ -600,16 +610,17 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       setELKConnectionId('')
       return () => { cancelled = true }
     }
+    setELKLoading(true); setELKError(false)
     void listELKConnections(activeProjectID).then(response => {
       if (cancelled) return
       const ready = (response.connections || []).filter(connection => connection.status === 'ready')
       setELKConnections(ready)
-      setELKConnectionId(current => current && ready.some(connection => connection.id === current) ? current : '')
+      // Retain an unavailable selection until the user explicitly reviews it.
     }).catch(() => {
-      if (!cancelled) { setELKConnections([]); setELKConnectionId('') }
-    })
+      if (!cancelled) { setELKConnections([]); setELKError(true) }
+    }).finally(() => { if (!cancelled) setELKLoading(false) })
     return () => { cancelled = true }
-  }, [api, activeProjectID])
+  }, [api, activeProjectID, captureRetry])
   useEffect(() => {
     let cancelled = false
     const applicationId = activeApplication?.id
@@ -1323,7 +1334,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     () => timeslotValidationError || validateRunSetup(scenario, effectiveScenarioGroups),
     [effectiveScenarioGroups, scenario, timeslotValidationError],
   )
-  const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError
+  const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError && !captureNeedsReview
   const buildCurrentRunCreatePayload = useCallback((
     currentRunDefaults: RunDefaultOverrides,
     currentGroupOverrides: Record<string, GroupRunOverride>,
@@ -1503,6 +1514,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   )
 
   const createRun = async (intent: 'start' | 'reserve' | 'queue' | 'schedule', options: { navigate?: boolean } = {}): Promise<boolean> => {
+    if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     if (creatingRef.current) return false
     const navigate = options.navigate ?? true
     const currentRunDefaults = runDefaultOverridesRef.current
@@ -3361,8 +3373,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   </div>
                   <select className="settings-input" aria-labelledby="new-test-elk-label" value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
                     <option value="">Off for this test</option>
+                    {elkConnectionId && !elkConnections.some(c => c.id === elkConnectionId) && <option value={elkConnectionId}>Selected connection unavailable — review required</option>}
                     {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                   </select>
+                  <CaptureSelectionHelp provider="elk" count={elkConnections.length} error={elkError} loading={elkLoading} retry={() => setCaptureRetry(value => value + 1)} selected={elkConnections.find(c => c.id === elkConnectionId)?.name} canManage={canManageProjects} />
                 </div>
                 <div className="setting-row">
                   <div className="setting-info">
@@ -3371,8 +3385,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                   </div>
                   <select className="settings-input" aria-labelledby="new-test-dynatrace-label" value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
                     <option value="">Off for this test</option>
+                    {dynatraceConnectionId && !dynatraceConnections.some(c => c.id === dynatraceConnectionId) && <option value={dynatraceConnectionId}>Selected connection unavailable — review required</option>}
                     {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                   </select>
+                  <CaptureSelectionHelp provider="dynatrace" capabilities={dynatraceCapabilities(dynatraceConnections.find(c => c.id === dynatraceConnectionId))} count={dynatraceConnections.length} error={dynatraceError} loading={dynatraceLoading} retry={() => setCaptureRetry(value => value + 1)} selected={dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name} canManage={canManageProjects} />
                 </div>
               </div>
             </section>
@@ -3654,6 +3670,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
             <p>{generatorInventoryError || (inventoryCheckedAt ? `${generatorInventory.length} live inventory hosts · checked ${inventoryCheckedAt}` : 'Live inventory not yet verified')}</p>
             <button type="button" className="btn btn-secondary btn-sm" disabled={generatorInventoryLoading} onClick={() => { setInventoryRefresh(value => value + 1); void refreshBindableTimeslots() }}>Refresh capacity and inventory</button>
             <dl className="new-test-summary-list" aria-label="Run settings summary">
+              <div><dt>Elastic capture</dt><dd>{elkConnections.find(c => c.id === elkConnectionId)?.name || (elkConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>
+              <div><dt>Dynatrace capture</dt><dd>{dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name || (dynatraceConnectionId ? 'Selected connection unavailable — review required' : 'Off for this test')}</dd></div>
               {launchSummaryItems.map(item => (
                 <div key={item.label} className={item.tone === 'warning' ? 'warning' : undefined}>
                   <dt>{item.label}</dt>

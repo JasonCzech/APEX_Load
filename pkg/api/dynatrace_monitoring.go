@@ -113,15 +113,16 @@ type DynatraceProblemSummary struct {
 }
 
 type DynatraceCaptureStatus struct {
-	ConnectionID   string                               `json:"connection_id"`
-	ConnectionName string                               `json:"connection_name,omitempty"`
-	Status         string                               `json:"status"`
-	LastPolledAt   *time.Time                           `json:"last_polled_at,omitempty"`
-	Message        string                               `json:"message,omitempty"`
-	Capabilities   map[string]DynatraceCapabilityStatus `json:"capabilities,omitempty"`
-	Metrics        map[string]float64                   `json:"metrics,omitempty"`
-	Logs           []DynatraceLogSample                 `json:"logs,omitempty"`
-	Problems       []DynatraceProblemSummary            `json:"problems,omitempty"`
+	ConnectionID     string                               `json:"connection_id"`
+	ConnectionName   string                               `json:"connection_name,omitempty"`
+	Status           string                               `json:"status"`
+	LastPolledAt     *time.Time                           `json:"last_polled_at,omitempty"`
+	LastSuccessfulAt *time.Time                           `json:"last_successful_at,omitempty"`
+	Message          string                               `json:"message,omitempty"`
+	Capabilities     map[string]DynatraceCapabilityStatus `json:"capabilities,omitempty"`
+	Metrics          map[string]float64                   `json:"metrics,omitempty"`
+	Logs             []DynatraceLogSample                 `json:"logs,omitempty"`
+	Problems         []DynatraceProblemSummary            `json:"problems,omitempty"`
 }
 
 type DynatraceEvidenceRecord struct {
@@ -295,10 +296,10 @@ func (s *Server) handleListDynatraceConnections(w http.ResponseWriter, r *http.R
 		writeJSON(w, 200, map[string]any{"connections": responses, "count": len(responses)})
 		return
 	}
-	responses := make([]map[string]string, 0, len(items))
+	responses := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		if item.ConfigurationStatus() == "ready" {
-			responses = append(responses, map[string]string{"id": item.ID, "project_id": item.ProjectID, "name": item.Name, "status": "ready"})
+			responses = append(responses, map[string]any{"id": item.ID, "project_id": item.ProjectID, "name": item.Name, "status": "ready", "metrics_enabled": item.MetricsEnabled, "problems_enabled": item.ProblemsEnabled, "logs_enabled": item.LogsEnabled})
 		}
 	}
 	writeJSON(w, 200, map[string]any{"connections": responses, "count": len(responses)})
@@ -381,8 +382,10 @@ func (s *Server) handleTestDynatraceConnection(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
-	if c.ConfigurationStatus() != "ready" {
-		writeError(w, 409, "Dynatrace connection is not fully configured and enabled")
+	check := *c
+	check.Enabled = true // Verify saved configuration without enabling it.
+	if check.ConfigurationStatus() != "ready" {
+		writeError(w, 409, "Dynatrace connection is not fully configured")
 		return
 	}
 	checkedAt := time.Now().UTC()
@@ -457,6 +460,7 @@ func cloneDynatraceCaptureStatus(status *DynatraceCaptureStatus) *DynatraceCaptu
 	}
 	cloned := *status
 	cloned.LastPolledAt = cloneTimePtr(status.LastPolledAt)
+	cloned.LastSuccessfulAt = cloneTimePtr(status.LastSuccessfulAt)
 	cloned.Metrics = cloneFloat64Map(status.Metrics)
 	cloned.Logs = append([]DynatraceLogSample(nil), status.Logs...)
 	cloned.Problems = append([]DynatraceProblemSummary(nil), status.Problems...)
@@ -503,32 +507,30 @@ type dynatraceOAuthToken struct {
 }
 
 func queryDynatrace(ctx context.Context, runner *TestRunner, cfg *DynatraceCaptureConfig, testID string, traceIDs []string, start, end time.Time) dynatraceQueryResult {
+	return queryDynatraceWithClient(ctx, runner, cfg, testID, traceIDs, start, end, nil)
+}
+
+func queryDynatraceWithClient(ctx context.Context, runner *TestRunner, cfg *DynatraceCaptureConfig, testID string, traceIDs []string, start, end time.Time, client *http.Client) dynatraceQueryResult {
 	result := dynatraceQueryResult{Capabilities: map[string]DynatraceCapabilityStatus{}, Metrics: map[string]float64{}, Logs: []DynatraceLogSample{}, Problems: []DynatraceProblemSummary{}}
 	if cfg == nil || runner == nil {
 		return result
 	}
 	if cfg.MetricsEnabled {
-		metrics, err := queryDynatraceMetrics(ctx, runner, cfg, start, end, nil)
+		metrics, err := queryDynatraceMetrics(ctx, runner, cfg, start, end, client)
 		result.Metrics = metrics
 		result.Capabilities["metrics"] = dynatraceCapabilityResult(err)
 	}
 	if cfg.ProblemsEnabled {
-		problems, count, err := queryDynatraceProblems(ctx, runner, cfg, start, end, nil)
+		problems, count, open, err := queryDynatraceProblems(ctx, runner, cfg, start, end, client)
 		result.Problems = problems
 		if err == nil {
 			result.Metrics["problems.total"] = count
-			open := 0
-			for _, problem := range problems {
-				if strings.EqualFold(strings.TrimSpace(problem.Status), "open") {
-					open++
-				}
-			}
-			result.Metrics["problems.open"] = float64(open)
+			result.Metrics["problems.open"] = open
 		}
 		result.Capabilities["problems"] = dynatraceCapabilityResult(err)
 	}
 	if cfg.LogsEnabled {
-		logs, totals, err := queryDynatraceLogs(ctx, runner, cfg, testID, traceIDs, start, end, nil)
+		logs, totals, err := queryDynatraceLogs(ctx, runner, cfg, testID, traceIDs, start, end, client)
 		result.Logs = logs
 		for key, value := range totals {
 			result.Metrics[key] = value
@@ -661,7 +663,7 @@ func reduceDynatraceValues(values []float64, operation string) (float64, bool) {
 	return value, true
 }
 
-func queryDynatraceProblems(ctx context.Context, runner *TestRunner, cfg *DynatraceCaptureConfig, start, end time.Time, client *http.Client) ([]DynatraceProblemSummary, float64, error) {
+func queryDynatraceProblems(ctx context.Context, runner *TestRunner, cfg *DynatraceCaptureConfig, start, end time.Time, client *http.Client) ([]DynatraceProblemSummary, float64, float64, error) {
 	params := url.Values{"from": {start.UTC().Format(time.RFC3339Nano)}, "to": {end.UTC().Format(time.RFC3339Nano)}, "pageSize": {"100"}}
 	if cfg.ProblemSelector != "" {
 		params.Set("problemSelector", cfg.ProblemSelector)
@@ -669,57 +671,82 @@ func queryDynatraceProblems(ctx context.Context, runner *TestRunner, cfg *Dynatr
 	if cfg.ProblemEntitySelector != "" {
 		params.Set("entitySelector", cfg.ProblemEntitySelector)
 	}
-	resp, err := dynatraceEnvironmentRequest(ctx, runner, cfg, http.MethodGet, "/api/v2/problems", params, client)
-	if err != nil {
-		return nil, 0, errors.New("Dynatrace problems request failed")
-	}
-	data, err := readDynatraceResponse(resp)
-	if err != nil {
-		return nil, 0, err
-	}
-	var payload struct {
-		TotalCount int `json:"totalCount"`
-		Problems   []struct {
-			ProblemID, DisplayID, Title, SeverityLevel, Status string
-			StartTime, EndTime                                 int64
-			AffectedEntities                                   []struct {
-				Name string `json:"name"`
-			} `json:"affectedEntities"`
-		} `json:"problems"`
-	}
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, 0, errors.New("Dynatrace problems returned invalid JSON")
-	}
-	result := make([]DynatraceProblemSummary, 0, len(payload.Problems))
-	for _, problem := range payload.Problems {
-		entity := ""
-		if len(problem.AffectedEntities) > 0 {
-			entity = problem.AffectedEntities[0].Name
+	var result []DynatraceProblemSummary
+	var total, open float64
+	seenPages := map[string]bool{}
+	// Bound network work independently of the much smaller retained evidence.
+	// Never publish a page-limited count as a complete aggregate.
+	for page := 0; page < 10; page++ {
+		resp, err := dynatraceEnvironmentRequest(ctx, runner, cfg, http.MethodGet, "/api/v2/problems", params, client)
+		if err != nil {
+			return nil, 0, 0, errors.New("Dynatrace problems request failed")
 		}
-		summary := DynatraceProblemSummary{ID: problem.ProblemID, DisplayID: problem.DisplayID, Title: problem.Title, Severity: problem.SeverityLevel, Status: problem.Status, AffectedEntity: entity}
-		if problem.StartTime > 0 {
-			summary.StartTime = time.UnixMilli(problem.StartTime).UTC()
+		data, err := readDynatraceResponse(resp)
+		if err != nil {
+			return nil, 0, 0, err
 		}
-		if problem.EndTime > 0 {
-			summary.EndTime = time.UnixMilli(problem.EndTime).UTC()
+		var payload struct {
+			TotalCount  int    `json:"totalCount"`
+			NextPageKey string `json:"nextPageKey"`
+			Problems    []struct {
+				ProblemID, DisplayID, Title, SeverityLevel, Status string
+				StartTime, EndTime                                 int64
+				AffectedEntities                                   []struct {
+					Name string `json:"name"`
+				} `json:"affectedEntities"`
+			} `json:"problems"`
 		}
-		result = append(result, sanitizeDynatraceProblem(summary))
+		if err := json.Unmarshal(data, &payload); err != nil {
+			return nil, 0, 0, errors.New("Dynatrace problems returned invalid JSON")
+		}
+		if len(payload.Problems) > 100 {
+			return nil, 0, 0, errors.New("Dynatrace problems exceeded the requested page size")
+		}
+		if page == 0 {
+			total = float64(payload.TotalCount)
+		}
+		for _, problem := range payload.Problems {
+			if strings.EqualFold(strings.TrimSpace(problem.Status), "open") {
+				open++
+			}
+			// Keep the bounded page results until merging into retained evidence:
+			// an already-retained problem may move onto a later page when closed.
+			entity := ""
+			if len(problem.AffectedEntities) > 0 {
+				entity = problem.AffectedEntities[0].Name
+			}
+			summary := DynatraceProblemSummary{ID: problem.ProblemID, DisplayID: problem.DisplayID, Title: problem.Title, Severity: problem.SeverityLevel, Status: problem.Status, AffectedEntity: entity}
+			if problem.StartTime > 0 {
+				summary.StartTime = time.UnixMilli(problem.StartTime).UTC()
+			}
+			if problem.EndTime > 0 {
+				summary.EndTime = time.UnixMilli(problem.EndTime).UTC()
+			}
+			result = append(result, sanitizeDynatraceProblem(summary))
+		}
+		if payload.NextPageKey == "" {
+			return result, total, open, nil
+		}
+		if seenPages[payload.NextPageKey] {
+			break
+		}
+		seenPages[payload.NextPageKey] = true
+		// The API requires all other query parameters to be omitted on later pages.
+		params = url.Values{"nextPageKey": {payload.NextPageKey}}
 	}
-	if payload.TotalCount == 0 && len(payload.Problems) > 0 {
-		payload.TotalCount = len(payload.Problems)
-	}
-	return result, float64(payload.TotalCount), nil
+	return nil, 0, 0, errors.New("Dynatrace problems exceeded the pagination budget; counts are incomplete")
 }
 
 func queryDynatraceLogs(ctx context.Context, runner *TestRunner, cfg *DynatraceCaptureConfig, testID string, traceIDs []string, start, end time.Time, client *http.Client) ([]DynatraceLogSample, map[string]float64, error) {
 	filter := buildDynatraceLogFilter(cfg, testID, traceIDs, start, end)
-	aggregateQuery := "fetch logs | filter " + filter + " | summarize logs_total = count(), errors_total = countIf(" + cfg.LogStatusField + " == \"ERROR\" or " + cfg.LogStatusField + " == \"FATAL\" or " + cfg.LogStatusField + " == \"CRITICAL\")"
+	fetch := fmt.Sprintf("fetch logs, from: toTimestamp(\"%s\"), to: toTimestamp(\"%s\")", start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano))
+	aggregateQuery := fetch + " | filter " + filter + " | summarize logs_total = count(), errors_total = countIf(" + cfg.LogStatusField + " == \"ERROR\" or " + cfg.LogStatusField + " == \"FATAL\" or " + cfg.LogStatusField + " == \"CRITICAL\")"
 	aggregates, err := executeDynatraceDQL(ctx, runner, cfg, aggregateQuery, client)
 	if err != nil {
 		return nil, nil, err
 	}
 	fields := strings.Join(compactNonEmptyStrings(cfg.LogTimestampField, cfg.LogStatusField, cfg.LogMessageField, cfg.LogTestIDField, cfg.LogTraceIDField), ", ")
-	query := "fetch logs | filter " + filter + " | fields " + fields + " | sort " + cfg.LogTimestampField + " desc | limit 100"
+	query := fetch + " | filter " + filter + " | fields " + fields + " | sort " + cfg.LogTimestampField + " desc | limit 100"
 	records, err := executeDynatraceDQL(ctx, runner, cfg, query, client)
 	if err != nil {
 		return nil, nil, err
@@ -763,7 +790,7 @@ func buildDynatraceLogFilter(cfg *DynatraceCaptureConfig, testID string, traceID
 		for _, id := range traceIDs {
 			values = append(values, "\""+escapeDQLString(id)+"\"")
 		}
-		parts = append(parts, cfg.LogTraceIDField+" in ["+strings.Join(values, ",")+"]")
+		parts = append(parts, "in(toString("+cfg.LogTraceIDField+"), {"+strings.Join(values, ",")+"})")
 	}
 	return strings.Join(parts, " and ")
 }
@@ -773,6 +800,8 @@ func escapeDQLString(value string) string {
 }
 
 func executeDynatraceDQL(ctx context.Context, runner *TestRunner, cfg *DynatraceCaptureConfig, query string, client *http.Client) ([]map[string]any, error) {
+	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
+	defer cancel()
 	payload, _ := json.Marshal(map[string]any{"query": query, "requestTimeoutMilliseconds": 5000})
 	endpoint, parsed, err := dynatraceEndpoint(cfg.PlatformURL, "/platform/storage/query/v1/query:execute", nil)
 	if err != nil {
@@ -812,7 +841,8 @@ func executeDynatraceDQL(ctx context.Context, runner *TestRunner, cfg *Dynatrace
 		return nil, errors.New("Dynatrace Grail query did not complete successfully")
 	}
 	for attempt := 0; attempt < 3; attempt++ {
-		params := url.Values{"request-token": {token}}
+		// A running poll response has no requestToken; always reuse the execute token.
+		params := url.Values{"request-token": {token}, "request-timeout-milliseconds": {"5000"}}
 		pollEndpoint, _, endpointErr := dynatraceEndpoint(cfg.PlatformURL, "/platform/storage/query/v1/query:poll", params)
 		if endpointErr != nil {
 			return nil, endpointErr
@@ -832,7 +862,7 @@ func executeDynatraceDQL(ctx context.Context, runner *TestRunner, cfg *Dynatrace
 		if responseErr != nil {
 			return nil, responseErr
 		}
-		records, token, state, err = decodeDynatraceDQLResponse(pollData)
+		records, _, state, err = decodeDynatraceDQLResponse(pollData)
 		if err != nil {
 			return nil, err
 		}
@@ -842,8 +872,15 @@ func executeDynatraceDQL(ctx context.Context, runner *TestRunner, cfg *Dynatrace
 		if state != "RUNNING" && state != "NOT_STARTED" {
 			return nil, errors.New("Dynatrace Grail query did not complete successfully")
 		}
-		if token == "" {
-			return nil, errors.New("Dynatrace Grail query did not provide a polling token")
+		// Avoid a tight loop if the server returns before its requested wait budget.
+		if attempt < 2 {
+			timer := time.NewTimer(100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
 		}
 	}
 	return nil, errors.New("Dynatrace Grail query did not complete within the polling budget")
@@ -861,7 +898,7 @@ func applyDynatracePlatformAuthentication(ctx context.Context, runner *TestRunne
 		return nil
 	case storage.DynatracePlatformAuthOAuth:
 		cacheKey := strings.Join([]string{cfg.ProjectID, cfg.ConnectionID, cfg.OAuthClientIDSecret, cfg.OAuthClientSecretSecret, cfg.OAuthResource, strings.Join(cfg.OAuthScopes, " ")}, "\x00")
-		value, err, _ := runner.dynatraceOAuthRefresh.Do(cacheKey, func() (any, error) {
+		refresh := runner.dynatraceOAuthRefresh.DoChan(cacheKey, func() (any, error) {
 			runner.dynatraceOAuthMu.Lock()
 			cached := runner.dynatraceOAuthTokens[cacheKey]
 			runner.dynatraceOAuthMu.Unlock()
@@ -909,8 +946,15 @@ func applyDynatracePlatformAuthentication(ctx context.Context, runner *TestRunne
 			runner.dynatraceOAuthMu.Unlock()
 			return token.AccessToken, nil
 		})
-		if err != nil {
-			return err
+		var value any
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case result := <-refresh:
+			if result.Err != nil {
+				return result.Err
+			}
+			value = result.Val
 		}
 		token, ok := value.(string)
 		if !ok || token == "" {

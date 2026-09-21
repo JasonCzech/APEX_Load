@@ -1,4 +1,6 @@
 import DialogLayer from './ux/DialogLayer'
+import CaptureSelectionHelp from './CaptureSelectionHelp'
+import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
 import { useCallback, useEffect, useId, useMemo, useReducer, useRef, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -19,6 +21,7 @@ import { hasGoalModeConfiguration, validateGoalConfig, validateTransactionRespon
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { effectiveGroupVUsers, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
+import { isEffectiveOperationAllowed } from '../utils/authAccessUtils'
 
 interface Props {
   scripts: StoredScript[]
@@ -52,6 +55,12 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [generatorInventory, setGeneratorInventory] = useState<SystemInventoryGenerator[]>([])
+  const [captureRetry, setCaptureRetry] = useState(0)
+  const [canManageConnections, setCanManageConnections] = useState(false)
+  const [elkLoading, setELKLoading] = useState(false)
+  const [elkError, setELKError] = useState(false)
+  const [dynatraceLoading, setDynatraceLoading] = useState(false)
+  const [dynatraceError, setDynatraceError] = useState(false)
   const [elkConnections, setELKConnections] = useState<ELKConnection[]>([])
   const [elkConnectionId, setELKConnectionId] = useState('')
   const [dynatraceConnections, setDynatraceConnections] = useState<DynatraceConnection[]>([])
@@ -109,6 +118,18 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const footprint = draftEstimate?.footprint
   const hasGoalModeConfig = hasGoalModeConfiguration(goalConfig)
   const effectiveProjectId = revisionContext?.projectId ?? projectId
+  useEffect(() => {
+    let active = true
+    setCanManageConnections(false)
+    if (effectiveProjectId && typeof api.getAuthEffectiveAccess === 'function') {
+      void api.getAuthEffectiveAccess(effectiveProjectId).then(result => {
+        if (active) setCanManageConnections(isEffectiveOperationAllowed(result.resources || [], 'manage_projects', false) || isEffectiveOperationAllowed(result.resources || [], 'manage_system', false))
+      }).catch(() => { /* Keep administration links hidden if access cannot be verified. */ })
+    }
+    return () => { active = false }
+  }, [api, effectiveProjectId])
+  useEffect(() => { setELKConnectionId(''); setDynatraceConnectionId(''); setELKConnections([]); setDynatraceConnections([]) }, [effectiveProjectId])
+  const captureNeedsReview = captureSelectionNeedsReview(elkConnectionId, elkConnections, elkLoading, elkError) || captureSelectionNeedsReview(dynatraceConnectionId, dynatraceConnections, dynatraceLoading, dynatraceError)
 
   useEffect(() => {
     const listELKConnections = api.listELKConnections
@@ -118,26 +139,28 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
       return
     }
     let active = true
+    setELKLoading(true); setELKError(false)
     listELKConnections(effectiveProjectId).then(result => {
       if (!active) return
       const ready = result.connections.filter(connection => connection.status === 'ready')
       setELKConnections(ready)
-      setELKConnectionId(current => current && !ready.some(connection => connection.id === current) ? '' : current)
+      // Retain an unavailable selection until the user explicitly reviews it.
     }).catch(() => {
       if (!active) return
       setELKConnections([])
-      setELKConnectionId('')
-    })
+      setELKError(true)
+    }).finally(() => { if (active) setELKLoading(false) })
     return () => { active = false }
-  }, [api, effectiveProjectId])
+  }, [api, effectiveProjectId, captureRetry])
 
   useEffect(() => {
     const list = api.listDynatraceConnections
     if (!effectiveProjectId || typeof list !== 'function') { setDynatraceConnections([]); setDynatraceConnectionId(''); return }
     let active = true
-    list(effectiveProjectId).then(result => { if (!active) return; const ready = result.connections.filter(connection => connection.status === 'ready'); setDynatraceConnections(ready); setDynatraceConnectionId(current => current && ready.some(connection => connection.id === current) ? current : '') }).catch(() => { if (active) { setDynatraceConnections([]); setDynatraceConnectionId('') } })
+    setDynatraceLoading(true); setDynatraceError(false)
+    list(effectiveProjectId).then(result => { if (!active) return; const ready = result.connections.filter(connection => connection.status === 'ready'); setDynatraceConnections(ready);  }).catch(() => { if (active) { setDynatraceConnections([]); setDynatraceError(true) } }).finally(() => { if (active) setDynatraceLoading(false) })
     return () => { active = false }
-  }, [api, effectiveProjectId])
+  }, [api, effectiveProjectId, captureRetry])
 
   // Calculate chart data
   const chartData = (() => {
@@ -287,6 +310,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   }, [api])
 
   const submitDraft = async (): Promise<boolean> => {
+    if (captureNeedsReview) { setError('Review the unavailable capture connection, retry, or explicitly turn capture off before launching.'); return false }
     setError('')
     setLoading(true)
     try {
@@ -429,6 +453,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 <span>Elastic log capture</span>
                 <select value={elkConnectionId} onChange={event => setELKConnectionId(event.target.value)}>
                   <option value="">Off for this test</option>
+                  {elkConnectionId && !elkConnections.some(c => c.id === elkConnectionId) && <option value={elkConnectionId}>Selected connection unavailable — review required</option>}
                   {elkConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                 </select>
                 <small>Optional. The controller polls the selected ready connection; load generators are unaffected.</small>
@@ -437,10 +462,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 <span>Dynatrace SaaS capture</span>
                 <select value={dynatraceConnectionId} onChange={event => setDynatraceConnectionId(event.target.value)}>
                   <option value="">Off for this test</option>
+                  {dynatraceConnectionId && !dynatraceConnections.some(c => c.id === dynatraceConnectionId) && <option value={dynatraceConnectionId}>Selected connection unavailable — review required</option>}
                   {dynatraceConnections.map(connection => <option key={connection.id} value={connection.id}>{connection.name}</option>)}
                 </select>
                 <small>Optional. Metrics, problems, and Grail logs are polled by the controller.</small>
               </label>
+              <CaptureSelectionHelp canManage={canManageConnections} provider="elk" count={elkConnections.length} error={elkError} loading={elkLoading} retry={() => setCaptureRetry(value => value + 1)} selected={elkConnections.find(c => c.id === elkConnectionId)?.name} />
+              <CaptureSelectionHelp canManage={canManageConnections} provider="dynatrace" capabilities={dynatraceCapabilities(dynatraceConnections.find(c => c.id === dynatraceConnectionId))} count={dynatraceConnections.length} error={dynatraceError} loading={dynatraceLoading} retry={() => setCaptureRetry(value => value + 1)} selected={dynatraceConnections.find(c => c.id === dynatraceConnectionId)?.name} />
             </div>
 
             <CreateTestCapacityPreview
@@ -559,7 +587,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
             <button
               type="submit"
               className="btn btn-primary"
-              disabled={loading || groups.every((g) => !g.scriptId)}
+              disabled={loading || captureNeedsReview || groups.every((g) => !g.scriptId)}
             >
               {loading ? loadingLabel : `${submitLabel} (${groups.length} group${groups.length > 1 ? 's' : ''})`}
             </button>

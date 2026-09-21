@@ -93,6 +93,7 @@ export interface ELKCaptureStatus {
   connection_name?: string
   status: string
   last_polled_at?: string
+  last_successful_at?: string
   message?: string
   metrics?: Record<string, number>
   samples?: ELKLogSample[]
@@ -150,10 +151,11 @@ export interface DynatraceCaptureStatus {
   connection_name?: string
   status: string
   last_polled_at?: string
+  last_successful_at?: string
   message?: string
   capabilities?: Record<string, { status: string; message?: string }>
   metrics?: Record<string, number>
   logs?: DynatraceLogSample[]
   problems?: DynatraceProblemSummary[]
 }
-export interface DynatraceEvidenceRecord { type: 'log' | 'problem'; log?: DynatraceLogSample; problem?: DynatraceProblemSummary }
+export interface DynatraceEvidenceRecord { type: 'log_sample' | 'problem_summary' | 'log' | 'problem'; log?: DynatraceLogSample; problem?: DynatraceProblemSummary }

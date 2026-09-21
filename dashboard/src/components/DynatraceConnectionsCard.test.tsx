@@ -19,7 +19,10 @@ describe('DynatraceConnectionsCard', () => {
     api.listDynatraceConnections.mockResolvedValue({ connections: [], count: 0 })
     await act(async () => root.render(<DynatraceConnectionsCard projectId="project-a" canManage />)); await flush()
     expect(container.textContent).toContain('Add Dynatrace connection')
+    await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Add Dynatrace connection')!.click())
     expect(container.textContent).toContain('Metrics API')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="https://abc.live.dynatrace.com"]')).toBeNull()
+    await act(async () => Array.from(container.querySelectorAll('label')).find(l => l.textContent === 'Problems API')!.querySelector('input')!.click())
     expect(container.querySelector<HTMLInputElement>('input[placeholder="https://abc.live.dynatrace.com"]')).toBeTruthy()
   })
   it('renders safe status without secret inputs for viewers', async () => {

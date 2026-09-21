@@ -1,0 +1,20 @@
+.capture-connections { min-width: 0; padding: 16px; }
+.capture-connections p { line-height: 1.5; overflow-wrap: anywhere; }
+.capture-connections .capture-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; margin: 16px 0; }
+.capture-form-grid > label { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.capture-form-grid input:not([type="checkbox"]), .capture-form-grid select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 40px; padding: 9px 12px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.capture-form-grid input:focus-visible, .capture-form-grid select:focus-visible, .capture-connections button:focus-visible, .capture-connections summary:focus-visible { outline: 2px solid var(--accent-primary, #8b5cf6); outline-offset: 3px; }
+.capture-form-grid > .capture-checkbox { flex-direction: row; align-items: center; min-height: 44px; }
+.capture-form-grid input[type="checkbox"] { width: 20px; height: 20px; flex: none; }
+.capture-form-grid fieldset, .capture-form-grid .capture-help { grid-column: 1 / -1; min-width: 0; }
+.capture-form-grid fieldset { border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.capture-form-grid .capture-metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 10px; margin-bottom: 12px; }
+.capture-connections .capture-setup-help { background: var(--bg-secondary); padding: 16px; border-radius: 8px; margin: 16px 0; }
+.capture-connections .capture-connection-row { border: 1px solid var(--border); padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+.capture-connections .capture-actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+.capture-connections fieldset.capture-editor { border: 0; padding: 0; margin: 0; min-width: 0; }
+.capture-connections summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.capture-connection-health { color: var(--text-secondary); font-size: 0.9rem; }
+.capture-connections button { min-height: 36px; }
+
+.capture-form-grid .capture-section-title { grid-column: 1 / -1; margin: 8px 0 0; }

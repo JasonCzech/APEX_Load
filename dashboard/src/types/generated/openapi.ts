@@ -18998,6 +18998,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -19008,6 +19009,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -19250,6 +19252,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -19260,6 +19263,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -24501,6 +24505,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<Record<string, unknown>>;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
@@ -24511,6 +24516,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<Record<string, unknown>>;
@@ -24996,6 +25002,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<{
                   "message"?: string;
                   "status"?: string;
@@ -25021,6 +25028,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<{
@@ -38000,6 +38008,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -38010,6 +38019,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -38252,6 +38262,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -38262,6 +38273,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -45225,6 +45237,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<Record<string, unknown>>;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
@@ -45235,6 +45248,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<Record<string, unknown>>;
@@ -45720,6 +45734,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<{
                   "message"?: string;
                   "status"?: string;
@@ -45745,6 +45760,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<{
@@ -58014,6 +58030,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<Record<string, unknown>>;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
@@ -58024,6 +58041,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<Record<string, unknown>>;
@@ -58509,6 +58527,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<{
                   "message"?: string;
                   "status"?: string;
@@ -58534,6 +58553,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<{
@@ -66464,6 +66484,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -66474,6 +66495,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -66716,6 +66738,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -66726,6 +66749,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -67758,6 +67782,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -67768,6 +67793,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -68010,6 +68036,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -68020,6 +68047,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -69052,6 +69080,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -69062,6 +69091,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -69304,6 +69334,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -69314,6 +69345,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -70346,6 +70378,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -70356,6 +70389,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -70598,6 +70632,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -70608,6 +70643,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -71640,6 +71676,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -71650,6 +71687,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -71892,6 +71930,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "logs"?: Array<Record<string, unknown>>;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
@@ -71902,6 +71941,7 @@ export interface operations {
                   "connection_id": string;
                   "connection_name"?: string;
                   "last_polled_at"?: (string) | null;
+                  "last_successful_at"?: (string) | null;
                   "message"?: string;
                   "metrics"?: Record<string, number>;
                   "samples"?: Array<Record<string, unknown>>;
@@ -89156,6 +89196,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<Record<string, unknown>>;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
@@ -89166,6 +89207,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<Record<string, unknown>>;
@@ -89651,6 +89693,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "logs"?: Array<{
                   "message"?: string;
                   "status"?: string;
@@ -89676,6 +89719,7 @@ export interface operations {
                 "connection_id": string;
                 "connection_name"?: string;
                 "last_polled_at"?: (string) | null;
+                "last_successful_at"?: (string) | null;
                 "message"?: string;
                 "metrics"?: Record<string, number>;
                 "samples"?: Array<{

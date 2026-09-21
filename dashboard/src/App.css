@@ -41,8 +41,8 @@
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--bg-elevated) 72%, transparent) 0%,
-      color-mix(in srgb, var(--topbar-bg) 92%, transparent) 100%
+      var(--bg-elevated) 0%,
+      var(--bg-primary) 100%
     );
   backdrop-filter: saturate(135%) blur(28px);
   -webkit-backdrop-filter: saturate(135%) blur(28px);

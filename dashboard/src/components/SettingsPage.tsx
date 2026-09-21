@@ -1,4 +1,6 @@
 import AccessNavigation from './AccessNavigation'
+import ELKConnectionsCard from './ELKConnectionsCard'
+import DynatraceConnectionsCard from './DynatraceConnectionsCard'
 import TabList from './ux/TabList'
 import FormField from './ux/FormField'
 import PanelToggle from "./ux/PanelToggle"
@@ -346,7 +348,7 @@ export default function SettingsPage({
   const accessSettings = destination?.group === 'Access & Security'
   const resourceId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('resourceId') || ''
   const requestedReturn = new URLSearchParams(window.location.hash.split('?')[1] || '').get('returnTo') || ''
-  const returnTo = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
+  const returnTo = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(requestedReturn) ? requestedReturn : ''
   const [navigationSearch, setNavigationSearch] = useState('')
   const [navigationOpen, setNavigationOpen] = useState(() => window.innerWidth > 1100)
   const desktopSurface = isDesktopSurface()
@@ -1145,6 +1147,8 @@ export default function SettingsPage({
     secrets: `${projectSecretCount} configured`,
   }), [customRuleCount, projectDraftGitHubEnabled, projectSecretCount, projects.length, selectedProject])
   const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
+    'elk-capture': activeProject?.name || 'Project scoped',
+    'dynatrace-capture': activeProject?.name || 'Project scoped',
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
     prometheus: settings.prometheus.enabled ? 'Enabled' : 'Disabled',
@@ -3185,7 +3189,7 @@ export default function SettingsPage({
   const settingsTopbarContribution = useMemo(() => ({
     id: 'settings-page',
     title: settingsOwner(currentDestination.id) === 'access' ? 'Access & Security' : settingsOwner(currentDestination.id) === 'repository' ? 'Test Data' : 'Settings',
-    controls: !hasAnyUnsavedChanges ? <span className="ux-save-status" role="status">No pending changes</span> : undefined,
+    controls: !hasAnyUnsavedChanges ? <span className="ux-save-status" role="status">{currentDestination.id.endsWith('-capture') ? 'Connection forms save independently' : 'No pending changes'}</span> : undefined,
     primaryActions: [
       {
         id: 'save-settings',
@@ -6227,6 +6231,8 @@ export default function SettingsPage({
               setActiveIntegrationSubsection,
               integrationSubsectionSummaries,
             )}
+            {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
+            {activeSection === 'integrations' && activeIntegrationSubsection === 'dynatrace-capture' && <section aria-label="Dynatrace test capture settings"><DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             <fieldset className="settings-fieldset settings-integration-panels" disabled={formDisabled}>
             <section
               id="settings-integrations-panel-library"

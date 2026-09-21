@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1387,6 +1388,12 @@ type runArtifacts struct {
 	recorder             archiveRecorder
 	saveRecord           func(record *storage.RunArchiveRecord) error
 	externalMetrics      *externalMetricCollector
+	monitorMu            sync.Mutex
+	monitorStarted       bool
+	monitorStopped       bool
+	monitorCancel        context.CancelFunc
+	monitorWorkers       sync.WaitGroup
+	monitorHTTPClient    *http.Client // Optional fixture client; production uses the restricted client.
 	elkPollMu            sync.Mutex
 	elkMu                sync.Mutex
 	elkLastPoll          time.Time

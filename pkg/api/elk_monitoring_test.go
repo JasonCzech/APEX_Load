@@ -32,6 +32,22 @@ func TestDecodeELKQueryResultRedactsAndBoundsSamples(t *testing.T) {
 	}
 }
 
+func TestDecodeELKRejectsIncompleteSearchResults(t *testing.T) {
+	for name, payload := range map[string]string{
+		"timeout":           `{"timed_out":true,"hits":{"total":1}}`,
+		"shard failure":     `{"_shards":{"failed":1},"hits":{"total":1}}`,
+		"early termination": `{"terminated_early":true,"hits":{"total":1}}`,
+		"lower bound":       `{"hits":{"total":{"value":10000,"relation":"gte"}}}`,
+		"missing hits":      `{}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeELKQueryResult([]byte(payload), &ELKCaptureConfig{}); err == nil {
+				t.Fatal("incomplete response accepted as a healthy capture")
+			}
+		})
+	}
+}
+
 func TestSanitizeELKSampleRedactsAndBoundsEveryString(t *testing.T) {
 	sample := sanitizeELKSample(ELKLogSample{
 		ID:      "Authorization: ApiKey private-key",

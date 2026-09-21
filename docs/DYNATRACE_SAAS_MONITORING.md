@@ -18,12 +18,12 @@ Environment API metrics/problems use an API token with only the read scopes requ
 
 ## Setup checklist
 
-1. In **Monitoring → Telemetry → Dynatrace SaaS Connections**, add a project connection.
+1. In **Settings → Connections → Dynatrace test capture**, add a project connection. Monitoring → Telemetry provides a summary and management link. Confirm the project; **Save draft** needs only a name.
 2. Enable one or more capabilities: metrics, problems, or Grail logs.
 3. Supply the corresponding SaaS endpoint and project-secret references.
 4. For metrics, add up to ten stable names and metric selectors, optional entity selectors, and an `avg`, `min`, `max`, or `sum` reduction.
 5. For logs, confirm the timestamp, status, message, test-ID, and trace-ID field mappings. Set an administrator-owned base DQL filter that limits capture to the intended service or environment.
-6. Enable the connection and use **Test**. Capability health is reported independently, so a partial result identifies which API needs attention.
+6. Use **Test saved connection** before enabling it for new tests. Capability health is reported independently, so a partial result identifies which API needs attention. Configuration, enablement, and last-check status are separate. Blank replacement credential fields preserve existing secrets; values and reference names remain hidden.
 7. Select the ready connection when launching a test. Leaving the selector off performs no Dynatrace calls.
 
 ## Correlation and retention
@@ -32,7 +32,9 @@ The capture snapshot is fixed at launch. Log queries use the run start-to-curren
 
 Live values are exposed through external resource metrics with the prefix `dynatrace.<connection-id>.`. Query failures are fail-open: they update capability health and retain last-good values but never affect test execution.
 
-Archives contain only numeric aggregates plus at most 100 deduplicated, scrubbed problem/log evidence records. Raw Dynatrace documents, arbitrary fields, DQL responses, token values, and secret-reference names are not archived. Evidence is covered by the normal archive integrity inventory, export, and distributed-run finalization.
+Archives contain only numeric aggregates plus at most 50 deduplicated, scrubbed log samples and 50 problem summaries. Problem summaries retain the latest observed state (including resolution), not an unbounded history of transitions. The separate limits prevent busy logs from crowding out problems. Raw Dynatrace documents, arbitrary fields, DQL responses, token values, and secret-reference names are not archived. Evidence is covered by the normal archive integrity inventory, export, and distributed-run finalization.
+
+Monitoring uses cancellable background workers; live metrics and test controls only read cached capture results. Each poll has a 30-second overall budget. Grail queries explicitly fetch the full test window, including tests longer than two hours. Problem counts traverse at most ten pages; incomplete or failed pagination degrades capture health and preserves last-good counts instead of reporting a truncated count as complete.
 
 ## API
 

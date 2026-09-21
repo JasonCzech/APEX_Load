@@ -26,7 +26,8 @@ describe('ELKConnectionsCard', () => {
     await act(async () => root.render(<ELKConnectionsCard projectId="project-a" canManage />))
     await flush()
     expect(container.textContent).toContain('Add ELK connection')
-    expect(container.textContent).toContain('Ready for test selection')
+    await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Add ELK connection')!.click())
+    expect(container.textContent).toContain('Enable for new tests')
     expect(container.querySelector<HTMLInputElement>('input[placeholder="https://elastic.example.com:9200"]')).toBeTruthy()
   })
 

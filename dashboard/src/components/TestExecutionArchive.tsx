@@ -1,4 +1,5 @@
 import TabList from './ux/TabList'
+import CaptureArchiveSummary from './CaptureArchiveSummary'
 import { handleTabKey } from './tabKeyboard'
 import './TestExecution.css'
 import { Fragment, useMemo, useState } from 'react'
@@ -1151,6 +1152,7 @@ export default function TestExecutionArchive({
                       </div>
                     ))}
                   </div>
+                  <CaptureArchiveSummary report={archiveReport} />
                   {(archiveReport.elk_samples?.length || 0) > 0 && (
                     <div className="advanced-group-table-wrap">
                       <h3>Elastic evidence</h3>
@@ -1174,7 +1176,7 @@ export default function TestExecutionArchive({
                       <p className="scenario-script-status">Bounded, deduplicated, redacted problem summaries and Grail log samples captured during the run.</p>
                       <table className="advanced-group-table">
                         <thead><tr><th>Type</th><th>Time</th><th>Status</th><th>Summary</th><th>Correlation</th></tr></thead>
-                        <tbody>{archiveReport.dynatrace_evidence?.map((record, index) => <tr key={`${record.type}-${record.problem?.id || record.log?.trace_id || index}`}><td>{record.type}</td><td>{record.log?.timestamp ? new Date(record.log.timestamp).toLocaleString() : record.problem?.start_time ? new Date(record.problem.start_time).toLocaleString() : '—'}</td><td>{record.log?.status || record.problem?.severity || record.problem?.status || '—'}</td><td>{record.log?.message || record.problem?.title || '—'}</td><td>{record.log?.trace_id || record.problem?.affected_entity || '—'}</td></tr>)}</tbody>
+                        <tbody>{archiveReport.dynatrace_evidence?.map((record, index) => <tr key={`${record.type}-${record.problem?.id || record.log?.trace_id || index}`}><td>{record.log ? 'Log sample' : record.problem ? 'Problem summary' : record.type}</td><td>{record.log?.timestamp ? new Date(record.log.timestamp).toLocaleString() : record.problem?.start_time ? new Date(record.problem.start_time).toLocaleString() : '—'}</td><td>{record.log?.status || record.problem?.severity || record.problem?.status || '—'}</td><td>{record.log?.message || record.problem?.title || '—'}</td><td>{record.log?.trace_id || record.problem?.affected_entity || '—'}</td></tr>)}</tbody>
                       </table>
                     </div>
                   )}

@@ -104,6 +104,7 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		tr.failTestBeforeRunAndLog(test, fmt.Sprintf("initialize archive writer: %v", err))
 		return
 	}
+	defer artifacts.stopMonitoring()
 	mge, err := tr.buildRunEngine(test, artifacts.resultSink())
 	if err != nil {
 		if tr.beforeLocalBuildFailureFinalize != nil {
@@ -145,6 +146,8 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 
 	result, err := mge.Run(ctx)
 	err = localExecutionRunError(ctx, err)
+	endTime := time.Now()
+	artifacts.stopMonitoring()
 
 	close(metricsDone)
 	lastPublishedSnapshot := <-metricsStopped
@@ -166,7 +169,6 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	tr.mu.RUnlock()
 	tr.publishFinalLocalMetrics(test, finalSnapshot, lastPublishedSnapshot, groupVUsers, artifacts)
 
-	endTime := time.Now()
 	tr.mu.RLock()
 	testStatus := test.Status
 	testError := test.Error
@@ -603,22 +605,34 @@ func (a *runArtifacts) enrichLiveMetrics(test *ManagedTest, live *LiveMetrics) {
 	if a.externalMetrics != nil {
 		values = a.externalMetrics.collect(context.Background(), externalMetricTargetsForTest(test))
 	}
-	for key, value := range a.collectELKMetrics(test, live) {
-		if values == nil {
-			values = make(map[string]float64)
+	a.observeMonitoringTraces(live)
+	a.startMonitoring(test)
+	a.elkMu.Lock()
+	live.ELK = cloneELKCaptureStatus(a.elkStatus)
+	a.elkMu.Unlock()
+	a.dynatraceMu.Lock()
+	live.Dynatrace = cloneDynatraceCaptureStatus(a.dynatraceStatus)
+	a.dynatraceMu.Unlock()
+	if live.ELK != nil {
+		for key, value := range elkExternalMetrics(live.ELK.ConnectionID, live.ELK.Metrics) {
+			if values == nil {
+				values = make(map[string]float64)
+			}
+			values[key] = value
 		}
-		values[key] = value
 	}
-	for key, value := range a.collectDynatraceMetrics(test, live) {
-		if values == nil {
-			values = make(map[string]float64)
+	if live.Dynatrace != nil {
+		for key, value := range dynatraceExternalMetrics(live.Dynatrace.ConnectionID, live.Dynatrace.Metrics) {
+			if values == nil {
+				values = make(map[string]float64)
+			}
+			values[key] = value
 		}
-		values[key] = value
 	}
 	live.Resources = attachExternalMetrics(live.Resources, values)
 }
 
-func (a *runArtifacts) collectDynatraceMetrics(test *ManagedTest, live *LiveMetrics) map[string]float64 {
+func (a *runArtifacts) collectDynatraceMetrics(ctx context.Context, test *ManagedTest, live *LiveMetrics) map[string]float64 {
 	if a == nil || test == nil || test.DynatraceCapture == nil || live == nil {
 		return nil
 	}
@@ -650,7 +664,10 @@ func (a *runArtifacts) collectDynatraceMetrics(test *ManagedTest, live *LiveMetr
 	if test.StartedAt != nil {
 		start = *test.StartedAt
 	}
-	result := queryDynatrace(context.Background(), a.runner, test.DynatraceCapture, test.ID, traceIDs, start, now)
+	result := queryDynatraceWithClient(ctx, a.runner, test.DynatraceCapture, test.ID, traceIDs, start, now, a.monitorHTTPClient)
+	if ctx.Err() == context.Canceled {
+		return nil // Shutdown must not replace the final good snapshot with an error.
+	}
 
 	a.dynatraceMu.Lock()
 	a.dynatraceLastPoll = now
@@ -671,35 +688,20 @@ func (a *runArtifacts) collectDynatraceMetrics(test *ManagedTest, live *LiveMetr
 		status.Status = "connected"
 	}
 	if status.Status != "connected" && a.dynatraceStatus != nil {
+		status.LastSuccessfulAt = cloneTimePtr(a.dynatraceStatus.LastSuccessfulAt)
+		if status.Metrics == nil {
+			status.Metrics = make(map[string]float64)
+		}
 		for key, value := range a.dynatraceStatus.Metrics {
 			if _, exists := status.Metrics[key]; !exists {
 				status.Metrics[key] = value
 			}
 		}
 	}
-	if a.dynatraceEvidenceIDs == nil {
-		a.dynatraceEvidenceIDs = make(map[string]struct{})
-	}
-	fresh := make([]DynatraceEvidenceRecord, 0)
-	for _, sample := range result.Logs {
-		record := DynatraceEvidenceRecord{Type: "log_sample", Log: &sample}
-		key := dynatraceEvidenceKey(record)
-		if _, exists := a.dynatraceEvidenceIDs[key]; exists || len(a.dynatraceEvidenceIDs) >= maxDynatraceEvidence {
-			continue
-		}
-		a.dynatraceEvidenceIDs[key] = struct{}{}
-		a.dynatraceLogs = append(a.dynatraceLogs, sample)
-		fresh = append(fresh, record)
-	}
-	for _, problem := range result.Problems {
-		record := DynatraceEvidenceRecord{Type: "problem_summary", Problem: &problem}
-		key := dynatraceEvidenceKey(record)
-		if _, exists := a.dynatraceEvidenceIDs[key]; exists || len(a.dynatraceEvidenceIDs) >= maxDynatraceEvidence {
-			continue
-		}
-		a.dynatraceEvidenceIDs[key] = struct{}{}
-		a.dynatraceProblems = append(a.dynatraceProblems, problem)
-		fresh = append(fresh, record)
+	fresh := a.retainDynatraceEvidence(result.Logs, result.Problems)
+	if status.Status == "connected" {
+		completedAt := time.Now().UTC()
+		status.LastSuccessfulAt = &completedAt
 	}
 	status.Logs = append([]DynatraceLogSample(nil), a.dynatraceLogs...)
 	status.Problems = append([]DynatraceProblemSummary(nil), a.dynatraceProblems...)
@@ -721,7 +723,7 @@ func (a *runArtifacts) collectDynatraceMetrics(test *ManagedTest, live *LiveMetr
 	return metrics
 }
 
-func (a *runArtifacts) collectELKMetrics(test *ManagedTest, live *LiveMetrics) map[string]float64 {
+func (a *runArtifacts) collectELKMetrics(ctx context.Context, test *ManagedTest, live *LiveMetrics) map[string]float64 {
 	if a == nil || test == nil || test.ELKCapture == nil || live == nil {
 		return nil
 	}
@@ -755,7 +757,10 @@ func (a *runArtifacts) collectELKMetrics(test *ManagedTest, live *LiveMetrics) m
 		start = *test.StartedAt
 	}
 	sort.Strings(traceIDs)
-	result, err := queryELK(context.Background(), a.runner, test.ELKCapture, test.ID, traceIDs, start, now)
+	result, err := queryELKWithClient(ctx, a.runner, test.ELKCapture, test.ID, traceIDs, start, now, a.monitorHTTPClient)
+	if ctx.Err() == context.Canceled {
+		return nil
+	}
 
 	a.elkMu.Lock()
 	a.elkLastPoll = now
@@ -765,11 +770,14 @@ func (a *runArtifacts) collectELKMetrics(test *ManagedTest, live *LiveMetrics) m
 		status.Status = "unavailable"
 		status.Message = err.Error()
 		if a.elkStatus != nil {
+			status.LastSuccessfulAt = cloneTimePtr(a.elkStatus.LastSuccessfulAt)
 			status.Metrics = cloneFloat64Map(a.elkStatus.Metrics)
 			status.Samples = append([]ELKLogSample(nil), a.elkStatus.Samples...)
 		}
 	} else {
 		status.Status = "connected"
+		completedAt := time.Now().UTC()
+		status.LastSuccessfulAt = &completedAt
 		status.Metrics = cloneFloat64Map(result.Metrics)
 		if a.elkSampleIDs == nil {
 			a.elkSampleIDs = make(map[string]struct{})
@@ -806,8 +814,22 @@ func (a *runArtifacts) collectELKMetrics(test *ManagedTest, live *LiveMetrics) m
 }
 
 func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime time.Time, finalError string) (*storage.RunArchiveRecord, string, string) {
+	a.stopMonitoring()
 	if a == nil || a.recorder == nil {
 		return nil, finalStatus, finalError
+	}
+	// Logs are append-only evidence; problem summaries are the latest retained
+	// state and are written once, after polling has stopped.
+	if recorder, ok := a.recorder.(interface {
+		RecordDynatraceEvidence([]DynatraceEvidenceRecord) error
+	}); ok {
+		var records []DynatraceEvidenceRecord
+		for _, problem := range a.dynatraceProblems {
+			records = append(records, DynatraceEvidenceRecord{Type: "problem_summary", Problem: &problem})
+		}
+		if err := recorder.RecordDynatraceEvidence(records); err != nil {
+			slog.Warn("failed to archive Dynatrace problem summaries", "test_id", test.ID, "error", err)
+		}
 	}
 
 	slaEvaluated := a.slaEvaluated

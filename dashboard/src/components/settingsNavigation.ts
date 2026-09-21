@@ -22,6 +22,8 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
   { id: 'usage', group: 'Workspaces', title: 'Usage accounting', section: 'general', subsection: 'usage', scope: 'project' },
   { id: 'github-policy', group: 'Workspaces', title: 'Project GitHub policy', section: 'projects', subsection: 'github', scope: 'project' },
   { id: 'github', group: 'Connections', title: 'GitHub', section: 'integrations', subsection: 'github', scope: 'deployment' },
+  { id: 'elk-capture', group: 'Connections', title: 'Elastic test capture', section: 'integrations', subsection: 'elk-capture', scope: 'project' },
+  { id: 'dynatrace-capture', group: 'Connections', title: 'Dynatrace test capture', section: 'integrations', subsection: 'dynatrace-capture', scope: 'project' },
   { id: 'prometheus', group: 'Connections', title: 'Prometheus', section: 'integrations', subsection: 'prometheus', scope: 'deployment' },
   { id: 'opensearch', group: 'Connections', title: 'OpenSearch', section: 'integrations', subsection: 'opensearch', scope: 'deployment' },
   { id: 'grafana', group: 'Connections', title: 'Grafana', section: 'integrations', subsection: 'grafana', scope: 'deployment' },
@@ -61,8 +63,8 @@ export function settingsOwner(id: string): 'settings' | 'access' | 'repository' 
 export function settingsHref(id: string, currentHash = typeof window === 'undefined' ? '' : window.location.hash, resourceId?: string): string {
   const current = new URLSearchParams(currentHash.split('?')[1] || '')
   const params = new URLSearchParams({ setting: settingsDestination(id)?.id || 'platform' })
-  const origin = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(currentHash) && !current.has('setting') ? currentHash : current.get('returnTo') || ''
-  if (/^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|tests|test\/[^?#]+)(\?|$)/.test(origin)) params.set('returnTo', origin)
+  const origin = /^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(currentHash) && !current.has('setting') ? currentHash : current.get('returnTo') || ''
+  if (/^#\/(repository|monitoring|fleet|dashboard|schedules|command-center|new-test|tests|test\/[^?#]+)(\?|$)/.test(origin)) params.set('returnTo', origin)
   if (resourceId) params.set('resourceId', resourceId)
   for (const key of ['projectId', 'applicationId', 'releaseId']) {
     const value = current.get(key)

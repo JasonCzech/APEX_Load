@@ -75,13 +75,14 @@ type storedELKCapture struct {
 }
 
 type ELKCaptureStatus struct {
-	ConnectionID   string             `json:"connection_id"`
-	ConnectionName string             `json:"connection_name,omitempty"`
-	Status         string             `json:"status"`
-	LastPolledAt   *time.Time         `json:"last_polled_at,omitempty"`
-	Message        string             `json:"message,omitempty"`
-	Metrics        map[string]float64 `json:"metrics,omitempty"`
-	Samples        []ELKLogSample     `json:"samples,omitempty"`
+	ConnectionID     string             `json:"connection_id"`
+	ConnectionName   string             `json:"connection_name,omitempty"`
+	Status           string             `json:"status"`
+	LastPolledAt     *time.Time         `json:"last_polled_at,omitempty"`
+	LastSuccessfulAt *time.Time         `json:"last_successful_at,omitempty"`
+	Message          string             `json:"message,omitempty"`
+	Metrics          map[string]float64 `json:"metrics,omitempty"`
+	Samples          []ELKLogSample     `json:"samples,omitempty"`
 }
 
 type ELKLogSample struct {
@@ -329,8 +330,10 @@ func (s *Server) handleTestELKConnection(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	checkedAt := time.Now().UTC()
-	if c.ConfigurationStatus() != "ready" {
-		writeError(w, 409, "ELK connection is not fully configured and enabled")
+	check := *c
+	check.Enabled = true // Verify saved configuration without enabling it.
+	if check.ConfigurationStatus() != "ready" {
+		writeError(w, 409, "ELK connection is not fully configured")
 		return
 	}
 	result, err := queryELK(r.Context(), s.runner, elkCaptureFromConnection(c), "", nil, checkedAt.Add(-time.Minute), checkedAt)
@@ -384,6 +387,7 @@ func cloneELKCaptureStatus(status *ELKCaptureStatus) *ELKCaptureStatus {
 	}
 	cloned := *status
 	cloned.LastPolledAt = cloneTimePtr(status.LastPolledAt)
+	cloned.LastSuccessfulAt = cloneTimePtr(status.LastSuccessfulAt)
 	cloned.Metrics = cloneFloat64Map(status.Metrics)
 	cloned.Samples = append([]ELKLogSample(nil), status.Samples...)
 	return &cloned
@@ -526,12 +530,29 @@ func decodeELKQueryResult(data []byte, cfg *ELKCaptureConfig) (elkQueryResult, e
 	if err := json.Unmarshal(data, &response); err != nil {
 		return elkQueryResult{}, errors.New("Elasticsearch returned invalid JSON")
 	}
+	if timedOut, _ := response["timed_out"].(bool); timedOut {
+		return elkQueryResult{}, errors.New("Elasticsearch search timed out; results are incomplete")
+	}
+	if shards, ok := response["_shards"].(map[string]any); ok {
+		if failed, _ := shards["failed"].(float64); failed > 0 {
+			return elkQueryResult{}, errors.New("Elasticsearch search has failed shards; results are incomplete")
+		}
+	}
+	if terminated, _ := response["terminated_early"].(bool); terminated {
+		return elkQueryResult{}, errors.New("Elasticsearch search terminated early; results are incomplete")
+	}
 	result := elkQueryResult{Metrics: map[string]float64{"logs_total": 0, "errors_total": 0}, Samples: []ELKLogSample{}}
-	hits, _ := response["hits"].(map[string]any)
+	hits, ok := response["hits"].(map[string]any)
+	if !ok {
+		return elkQueryResult{}, errors.New("Elasticsearch response is missing search results")
+	}
 	switch total := hits["total"].(type) {
 	case float64:
 		result.Metrics["logs_total"] = total
 	case map[string]any:
+		if relation, _ := total["relation"].(string); relation != "" && relation != "eq" {
+			return elkQueryResult{}, errors.New("Elasticsearch search returned an incomplete hit count")
+		}
 		result.Metrics["logs_total"], _ = total["value"].(float64)
 	}
 	if aggregations, ok := response["aggregations"].(map[string]any); ok {

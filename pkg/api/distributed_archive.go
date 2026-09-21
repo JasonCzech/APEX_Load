@@ -167,6 +167,7 @@ func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *
 	var samples []ELKLogSample
 	var metrics map[string]float64
 	if artifacts != nil {
+		artifacts.stopMonitoring()
 		artifacts.elkMu.Lock()
 		samples = append(samples, artifacts.elkSamples...)
 		if artifacts.elkStatus != nil {
@@ -224,6 +225,7 @@ func writeDistributedDynatraceEvidence(root string, manifest *RunArchiveManifest
 	var records []DynatraceEvidenceRecord
 	var metrics map[string]float64
 	if artifacts != nil {
+		artifacts.stopMonitoring()
 		artifacts.dynatraceMu.Lock()
 		for index := range artifacts.dynatraceLogs {
 			logSample := artifacts.dynatraceLogs[index]

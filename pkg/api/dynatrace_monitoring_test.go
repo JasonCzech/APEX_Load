@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +17,97 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func TestDynatraceLogFetchUsesFullSoakTestWindow(t *testing.T) {
+	t.Setenv(devFakeSecretsEnv, "true")
+	start := time.Date(2026, 9, 20, 1, 0, 0, 0, time.UTC)
+	end := start.Add(6 * time.Hour)
+	calls := 0
+	fixture := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		prefix := `fetch logs, from: toTimestamp("2026-09-20T01:00:00Z"), to: toTimestamp("2026-09-20T07:00:00Z") |`
+		if !strings.HasPrefix(body.Query, prefix) {
+			t.Errorf("fetch window missing: %s", body.Query)
+		}
+		if strings.Contains(body.Query, "summarize") {
+			_, _ = w.Write([]byte(`{"state":"SUCCEEDED","result":{"records":[{"logs_total":400,"errors_total":30}]}}`))
+		} else {
+			_, _ = w.Write([]byte(`{"state":"SUCCEEDED","result":{"records":[]}}`))
+		}
+	}))
+	defer fixture.Close()
+	cfg := &DynatraceCaptureConfig{PlatformURL: fixture.URL, PlatformAuthType: storage.DynatracePlatformAuthToken, PlatformTokenSecret: "token", LogTimestampField: "timestamp", LogStatusField: "status", LogMessageField: "content"}
+	_, totals, err := queryDynatraceLogs(t.Context(), NewTestRunner(1, NewHub(), nil), cfg, "run", nil, start, end, fixture.Client())
+	if err != nil || calls != 2 || totals["logs.total"] != 400 {
+		t.Fatalf("totals=%v calls=%d err=%v", totals, calls, err)
+	}
+}
+
+func TestDynatraceProblemCountsIncludeLaterPages(t *testing.T) {
+	t.Setenv(devFakeSecretsEnv, "true")
+	for _, mode := range []string{"complete", "cycle", "budget", "failure"} {
+		t.Run(mode, func(t *testing.T) {
+			calls := 0
+			fixture := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if calls > 1 && (len(r.URL.Query()) != 1 || r.URL.Query().Get("nextPageKey") == "") {
+					t.Errorf("invalid next-page parameters: %s", r.URL.RawQuery)
+				}
+				if mode == "failure" && calls == 2 {
+					w.WriteHeader(503)
+					return
+				}
+				var problems []map[string]string
+				for i := range 100 {
+					problems = append(problems, map[string]string{"problemId": fmt.Sprintf("p-%d-%d", calls, i), "status": "OPEN"})
+				}
+				next := ""
+				if calls == 1 || mode == "cycle" {
+					next = "page-2"
+				}
+				if mode == "budget" {
+					next = fmt.Sprintf("page-%d", calls+1)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"totalCount": 200, "nextPageKey": next, "problems": problems})
+			}))
+			defer fixture.Close()
+			cfg := &DynatraceCaptureConfig{EnvironmentURL: fixture.URL, EnvironmentTokenSecret: "token", ProblemSelector: `severityLevel("ERROR")`}
+			problems, total, open, err := queryDynatraceProblems(t.Context(), NewTestRunner(1, NewHub(), nil), cfg, time.Now().Add(-time.Hour), time.Now(), fixture.Client())
+			if mode == "complete" {
+				if err != nil || total != 200 || open != 200 || len(problems) != 200 || calls != 2 {
+					t.Fatalf("problems=%d total=%v open=%v calls=%d err=%v", len(problems), total, open, calls, err)
+				}
+			} else if err == nil || open != 0 || total != 0 || len(problems) != 0 || calls > 10 {
+				t.Fatalf("partial count published: %v %v %v, calls=%d", total, open, err, calls)
+			}
+		})
+	}
+}
+
+func TestDynatraceDQLPollingHonorsCancellation(t *testing.T) {
+	t.Setenv(devFakeSecretsEnv, "true")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client := &http.Client{Transport: dynatraceRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		body := `{"state":"RUNNING","requestToken":"token"}`
+		if strings.HasSuffix(r.URL.Path, "query:poll") {
+			cancel()
+			body = `{"state":"RUNNING"}`
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	cfg := &DynatraceCaptureConfig{PlatformURL: "https://tenant.apps.dynatrace.com", PlatformAuthType: storage.DynatracePlatformAuthToken, PlatformTokenSecret: "token"}
+	_, err := executeDynatraceDQL(ctx, NewTestRunner(1, NewHub(), nil), cfg, "fetch logs", client)
+	if err != context.Canceled {
+		t.Fatalf("cancellation = %v", err)
+	}
+}
 
 type dynatraceRoundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -47,7 +140,7 @@ func TestBuildDynatraceLogFilterUsesTestThenTraceCorrelation(t *testing.T) {
 	}
 	cfg.LogTestIDField = ""
 	withTrace := buildDynatraceLogFilter(cfg, "run-1", []string{"trace-1", "trace-2"}, start, start.Add(time.Minute))
-	if !strings.Contains(withTrace, `trace_id in ["trace-1","trace-2"]`) {
+	if !strings.Contains(withTrace, `in(toString(trace_id), {"trace-1","trace-2"})`) {
 		t.Fatalf("trace filter = %s", withTrace)
 	}
 }
@@ -81,8 +174,8 @@ func TestQueryDynatraceEnvironmentCapabilitiesAndGrailLogs(t *testing.T) {
 	if err != nil || metrics["latency"] != 15 {
 		t.Fatalf("metrics = %#v, %v", metrics, err)
 	}
-	problems, count, err := queryDynatraceProblems(t.Context(), runner, cfg, start, start.Add(time.Minute), fixture.Client())
-	if err != nil || count != 1 || len(problems) != 1 || strings.Contains(problems[0].Title, "hunter2") {
+	problems, count, open, err := queryDynatraceProblems(t.Context(), runner, cfg, start, start.Add(time.Minute), fixture.Client())
+	if err != nil || count != 1 || open != 1 || len(problems) != 1 || strings.Contains(problems[0].Title, "hunter2") {
 		t.Fatalf("problems = %#v count=%v err=%v", problems, count, err)
 	}
 	logs, totals, err := queryDynatraceLogs(t.Context(), runner, cfg, "run-1", nil, start, start.Add(time.Minute), fixture.Client())
@@ -103,6 +196,13 @@ func TestExecuteDynatraceDQLPollsBoundedAsyncQuery(t *testing.T) {
 			if r.URL.Query().Get("request-token") != "request-1" {
 				t.Errorf("poll token = %q", r.URL.Query().Get("request-token"))
 			}
+			if r.URL.Query().Get("request-timeout-milliseconds") != "5000" {
+				t.Error("poll must request a bounded server wait")
+			}
+			if polls < 3 {
+				_, _ = w.Write([]byte(`{"state":"RUNNING"}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{"state":"SUCCEEDED","result":{"records":[{"content":"done"}]}}`))
 		default:
 			http.NotFound(w, r)
@@ -111,7 +211,7 @@ func TestExecuteDynatraceDQLPollsBoundedAsyncQuery(t *testing.T) {
 	defer fixture.Close()
 	cfg := &DynatraceCaptureConfig{ProjectID: "project", ConnectionID: "dt", PlatformURL: fixture.URL, PlatformAuthType: storage.DynatracePlatformAuthToken, PlatformTokenSecret: "token"}
 	records, err := executeDynatraceDQL(t.Context(), NewTestRunner(1, NewHub(), nil), cfg, "fetch logs", fixture.Client())
-	if err != nil || polls != 1 || len(records) != 1 || records[0]["content"] != "done" {
+	if err != nil || polls != 3 || len(records) != 1 || records[0]["content"] != "done" {
 		t.Fatalf("records=%#v polls=%d err=%v", records, polls, err)
 	}
 }
@@ -190,6 +290,41 @@ func TestDynatraceOAuthRefreshIsSingleFlight(t *testing.T) {
 	}
 	if got := tokenCalls.Load(); got != 1 {
 		t.Fatalf("OAuth token requests = %d, want 1", got)
+	}
+}
+
+func TestDynatraceOAuthWaiterCanCancelSharedRefresh(t *testing.T) {
+	t.Setenv(devFakeSecretsEnv, "true")
+	started, release := make(chan struct{}), make(chan struct{})
+	client := &http.Client{Transport: dynatraceRoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		close(started)
+		<-release
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"access_token":"oauth-token","expires_in":300}`))}, nil
+	})}
+	runner := NewTestRunner(1, NewHub(), nil)
+	cfg := &DynatraceCaptureConfig{PlatformAuthType: storage.DynatracePlatformAuthOAuth, OAuthClientIDSecret: "client", OAuthClientSecretSecret: "secret"}
+	owner := make(chan error, 1)
+	go func() {
+		req, _ := http.NewRequest(http.MethodPost, "https://tenant.apps.dynatrace.com", nil)
+		owner <- applyDynatracePlatformAuthentication(t.Context(), runner, cfg, req, client)
+	}()
+	<-started
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req, _ := http.NewRequest(http.MethodPost, "https://tenant.apps.dynatrace.com", nil)
+	waiter := make(chan error, 1)
+	go func() { waiter <- applyDynatracePlatformAuthentication(ctx, runner, cfg, req, client) }()
+	select {
+	case err := <-waiter:
+		if err != context.Canceled {
+			t.Errorf("waiter error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("cancelled run waited on another run's OAuth request")
+	}
+	close(release)
+	if err := <-owner; err != nil {
+		t.Fatal(err)
 	}
 }
 

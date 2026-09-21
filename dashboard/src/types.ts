@@ -668,6 +668,8 @@ export interface LoadComparisonRequestOptions {
 }
 
 export interface RunArchiveProvenance {
+  elk_capture?: { connection_id: string; connection_name?: string }
+  dynatrace_capture?: { connection_id: string; connection_name?: string }
   application_id?: string
   release_id?: string
   scenario_id?: string

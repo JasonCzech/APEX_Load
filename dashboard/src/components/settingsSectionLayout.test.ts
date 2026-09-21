@@ -117,6 +117,8 @@ describe('settingsSectionLayout', () => {
     expect(INTEGRATION_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
       'library',
       'github',
+      'elk-capture',
+      'dynatrace-capture',
       'prometheus',
       'opensearch',
       'grafana',
