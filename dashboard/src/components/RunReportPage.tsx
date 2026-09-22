@@ -503,7 +503,7 @@ export default function RunReportPage({
         </>}
         {area === 'Performance' && hasArchive && <>
           <RunReportKpiScorecard kpis={kpis} />
-          <SynchronizedTimeline data={timelineHistory} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
+          <SynchronizedTimeline key={testId} data={timelineHistory} goalConfig={goalConfig} loading={archiveSummariesLoading || archiveResourcesLoading || baselineSummaryLoading} error={archiveSummaryError || archiveResourceError} showBaseline={Boolean(effectiveCompareId && timelineHistory.some(point => point.baselineTps !== undefined))} />
           <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />
           {(report?.transaction_response_time_sla_results?.length ?? 0) > 0 ? (
             <TransactionResponseTimeSLATable

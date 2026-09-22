@@ -108,6 +108,26 @@ test('[U16] a finished run produces a report and stays findable in results', asy
   for (const area of ['Performance', 'Diagnostics', 'Evidence', 'Execution', 'Summary']) {
     await page.getByRole('tab', { name: area, exact: true }).click()
     await expect(page.getByRole('tabpanel', { name: area, exact: true })).toBeVisible()
+    if (area === 'Performance') {
+      const timeline = page.getByRole('region', { name: 'Synchronized run timeline' })
+      await timeline.getByRole('button', { name: 'Graphs 4 / 6', exact: true }).click()
+      const catalog = timeline.getByRole('region', { name: 'Graph catalog' })
+      await expect(catalog.getByRole('checkbox')).toHaveCount(23)
+      await catalog.getByRole('checkbox', { name: 'P50 Response Time', exact: true }).check()
+      await catalog.getByRole('checkbox', { name: 'P99 Response Time', exact: true }).check()
+      await expect(catalog.getByRole('checkbox', { name: 'P90 Response Time', exact: true })).toBeDisabled()
+      await expect(timeline.locator('[data-lane]')).toHaveCount(6)
+      await catalog.getByRole('checkbox', { name: 'VUsers', exact: true }).uncheck()
+      await expect(catalog.getByRole('checkbox', { name: 'P90 Response Time', exact: true })).toBeEnabled()
+      await catalog.getByRole('searchbox', { name: 'Search graphs', exact: true }).fill('CPU')
+      await expect(catalog.getByRole('checkbox', { name: 'CPU Usage', exact: true })).toBeVisible()
+      await expect(catalog.getByRole('checkbox', { name: 'P50 Response Time', exact: true })).toHaveCount(0)
+      await catalog.getByRole('button', { name: 'Restore defaults' }).click()
+      await expect(timeline.locator('[data-lane]')).toHaveCount(4)
+      await timeline.getByRole('button', { name: 'Transactions Whole run', exact: true }).click()
+      await expect(timeline.getByRole('region', { name: 'Transaction filter' })).toBeVisible()
+      await expect(timeline.getByRole('combobox', { name: 'Display', exact: true })).toHaveValue('all')
+    }
   }
   await page.getByRole('button', { name: 'Export report', exact: true }).click()
   await page.getByRole('button', { name: 'Preview / edit commentary' }).click()

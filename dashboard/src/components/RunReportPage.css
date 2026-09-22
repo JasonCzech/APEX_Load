@@ -325,83 +325,115 @@
   gap: 8px;
 }
 
-.run-report-timeline-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 1fr);
-  gap: 12px;
+.run-report-timeline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
   margin: 16px 0;
 }
 
-.run-report-timeline-control-group {
+.run-report-timeline-count {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.run-report-timeline-toolbar > button[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.run-report-timeline-toolbar > button[aria-expanded="true"] .run-report-timeline-count {
+  color: inherit;
+}
+
+.run-report-timeline-picker {
   min-width: 0;
-  margin: 0;
+  margin-bottom: 16px;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 12px 12px;
+  background: var(--bg-card);
 }
 
-.run-report-timeline-control-group legend {
-  padding: 0 4px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.run-report-timeline-chips,
-.run-report-timeline-filter-actions {
+.run-report-timeline-picker-heading {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
-.run-report-timeline-chips .active {
-  color: var(--accent-contrast);
-  border-color: var(--accent);
-  background: var(--accent);
-}
+.run-report-timeline-picker h3 { margin: 0; font-size: 14px; }
 
-.run-report-transaction-filter {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 10px;
-}
-
-.run-report-transaction-filter > label {
+.run-report-timeline-search {
   display: grid;
   gap: 5px;
+  margin-bottom: 12px;
   color: var(--text-secondary);
   font-size: 12px;
 }
 
-.run-report-transaction-filter input[type="search"] {
+.run-report-timeline-search input,
+.run-report-timeline-search select {
+  width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 5px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   color: var(--text-primary);
-  background: var(--bg-card);
+  background: var(--bg-primary);
 }
 
-.run-report-timeline-filter-actions {
-  align-items: end;
-}
-
-.run-report-transaction-options {
-  display: flex;
-  grid-column: 1 / -1;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  max-height: 112px;
+.run-report-timeline-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 16px;
+  max-height: 340px;
   overflow: auto;
 }
 
-.run-report-transaction-options label {
+.run-report-timeline-catalog fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.run-report-timeline-catalog legend { padding: 0 0 8px; color: var(--text-muted); font-size: 12px; font-weight: 700; }
+
+.run-report-timeline-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 4px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.run-report-timeline-option input { margin-top: 2px; flex-shrink: 0; accent-color: var(--accent); }
+.run-report-timeline-option:has(input:disabled) { color: var(--text-muted); cursor: default; }
+.run-report-timeline-option small { display: block; margin-top: 3px; color: var(--text-muted); font-size: 11px; }
+.run-report-timeline-option:hover { background: var(--bg-hover); border-radius: 4px; }
+
+.run-report-transaction-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 0 12px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.run-report-timeline-scope { color: var(--text-secondary); font-size: 12px; overflow-wrap: anywhere; margin: 0 0 16px; }
+.run-report-timeline-empty { padding: 40px 16px; color: var(--text-muted); font-size: 13px; }
+.run-report-timeline-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0 24px 10px 52px; }
+.run-report-timeline-legend span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
+.run-report-timeline-legend i { width: 14px; border-top: 2px solid; flex-shrink: 0; }
+.run-report-lane-label > button { align-self: flex-start; margin-top: 8px; }
 
 .run-report-timeline-lane {
   display: grid;
@@ -432,12 +464,6 @@
 
 .run-report-lane-chart {
   min-width: 0;
-}
-
-@media (max-width: 760px) {
-  .run-report-timeline-controls {
-    grid-template-columns: 1fr;
-  }
 }
 
 .run-report-table-wrap {

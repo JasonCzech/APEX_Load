@@ -114,47 +114,135 @@ describe('SynchronizedTimeline', () => {
 
     const charts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
     expect(charts.every(chart => chart.getAttribute('data-length') === '2')).toBe(true)
+    await act(async () => button('Graphs').click())
+    await act(async () => checkbox('P99 Response Time').click())
+    const addedChart = container.querySelector('[data-lane="p99"] [data-testid="mock-chart"]')
+    expect(addedChart?.getAttribute('data-length')).toBe('2')
+    expect(addedChart?.getAttribute('data-sync-id')).toBe('metrics')
   })
 
-  it('lets operators add or remove lanes and filter transaction overlays without breaking synchronization', async () => {
+  const button = (text: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent?.startsWith(text))!
+  const checkbox = (label: string) => container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
+  const inputValue = async (input: HTMLInputElement, value: string) => {
     await act(async () => {
-      root.render(
-        <SynchronizedTimeline
-          data={[samplePoint('00', 100, 0), samplePoint('01', 100, 0)]}
-        />,
-      )
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
     })
-
-    const vusersButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'VUsers')
-    expect(vusersButton?.getAttribute('aria-pressed')).toBe('true')
-    await act(async () => vusersButton?.click())
-    expect(container.querySelectorAll('[data-testid="mock-chart"]')).toHaveLength(3)
-    expect(vusersButton?.getAttribute('aria-pressed')).toBe('false')
-
-    const filter = container.querySelector<HTMLInputElement>('input[type="search"]')
-    expect(filter).not.toBeNull()
+  }
+  const selectTransactions = async () => {
+    await act(async () => button('Transactions').click())
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(filter, 'check')
-      filter?.dispatchEvent(new Event('input', { bubbles: true }))
+      const select = container.querySelector('select')!
+      select.value = 'selected'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    expect(container.textContent).toContain('Checkout')
-    expect(container.textContent).not.toContain('Search')
+  }
 
-    const transactionTpsKey = transactionChartSeriesKey('Checkout', 'tps')
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-line"]')).some(line => line.getAttribute('data-key') === transactionTpsKey)).toBe(false)
+  it('offers a searchable graph catalog, enforces six graphs, and permits removal at the limit', async () => {
+    await act(async () => {
+      root.render(<SynchronizedTimeline data={[samplePoint('00', 100, 0), samplePoint('01', 100, 0)]} />)
+    })
+    await act(async () => button('Graphs').click())
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(23)
+    expect(checkbox('CPU Usage').disabled).toBe(true)
+    await act(async () => checkbox('P50 Response Time').click())
+    await act(async () => checkbox('P99 Response Time').click())
+    expect(container.querySelectorAll('[data-testid="mock-chart"]')).toHaveLength(6)
+    expect(checkbox('P90 Response Time').disabled).toBe(true)
+    expect(checkbox('VUsers').disabled).toBe(false)
+    expect(container.textContent).toContain('Remove a graph to add another.')
+    await act(async () => checkbox('VUsers').click())
+    expect(checkbox('P90 Response Time').disabled).toBe(false)
+    await inputValue(container.querySelector('input[type="search"]')!, 'p90')
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
+    await act(async () => checkbox('P90 Response Time').click())
+    expect(container.querySelector('[data-lane="p90"] [data-key="p90"]')).not.toBeNull()
+    await act(async () => button('Restore defaults').click())
+    expect(container.querySelectorAll('[data-testid="mock-chart"]')).toHaveLength(4)
+    await inputValue(container.querySelector('input[type="search"]')!, 'not-a-graph')
+    expect(container.textContent).toContain('No graphs match your search.')
+  })
 
-    const showAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Show all')
-    await act(async () => showAll?.click())
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-line"]')).some(line => line.getAttribute('data-key') === transactionTpsKey)).toBe(true)
+  it('filters performance to selected transactions, preserving choices across search and leaving load whole-run', async () => {
+    await act(async () => root.render(<SynchronizedTimeline data={[samplePoint('00', 700, 8), samplePoint('01', 100, 0)]} goalConfig={{ p95_latency_ms: 500, max_error_pct: 5 }} showBaseline />))
+    const transactionLines = () => Array.from(container.querySelectorAll('[data-testid="mock-line"]')).filter(line => line.getAttribute('data-key')?.startsWith('transaction:'))
+    expect(transactionLines()).toHaveLength(0)
+    await selectTransactions()
+    expect(container.textContent).toContain('No transactions selected.')
+    await inputValue(container.querySelector('input[type="search"]')!, 'check')
+    const choices = container.querySelector('[aria-label="Transaction selection"]')!
+    expect(choices.textContent).toContain('Checkout')
+    expect(choices.textContent).not.toContain('Search')
+    await act(async () => choices.querySelector<HTMLInputElement>('input')!.click())
+    expect(transactionLines()).toHaveLength(3)
+    expect(transactionLines().every(line => line.getAttribute('data-key')?.includes('Checkout'))).toBe(true)
+    expect(container.querySelector('[data-key="tps"]')).toBeNull()
+    expect(container.querySelector('[data-key="avgMs"]')).toBeNull()
+    expect(container.querySelector('[data-key="baselineTps"]')).toBeNull()
+    expect(container.querySelectorAll('[data-testid="mock-reference-area"], [data-testid="mock-reference-line"]')).toHaveLength(0)
+    expect(container.querySelector('[data-key="vusers"]')).not.toBeNull()
+    await inputValue(container.querySelector('input[type="search"]')!, 'search')
+    expect(transactionLines()).toHaveLength(3) // Searching options does not change the applied filter.
+    await act(async () => button('Transactions').click())
+    expect(container.textContent).toContain('Showing only: Checkout.')
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-chart"]')).every(chart => chart.getAttribute('data-sync-id') === 'metrics')).toBe(true)
+    await act(async () => button('Transactions').click())
+    await act(async () => button('Clear selection').click())
+    expect(transactionLines()).toHaveLength(0)
+    await act(async () => {
+      const select = container.querySelector('select')!
+      select.value = 'all'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelector('[data-key="tps"]')).not.toBeNull()
+    expect(container.querySelector('[data-key="baselineTps"]')).not.toBeNull()
+  })
 
-    const hideAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent === 'Hide all')
-    await act(async () => hideAll?.click())
-    expect(Array.from(container.querySelectorAll('[data-testid="mock-line"]')).some(line => line.getAttribute('data-key') === transactionTpsKey)).toBe(false)
+  it('limits transaction series, while keeping checked transactions removable', async () => {
+    const point = samplePoint('00', 100, 0)
+    for (let index = 0; index < 20; index++) point[transactionChartSeriesKey(`Tx ${index}`, 'tps')] = index
+    await act(async () => root.render(<SynchronizedTimeline data={[point]} />))
+    await selectTransactions()
+    const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('[aria-label="Transaction selection"] input'))
+    for (const input of inputs.slice(0, 12)) await act(async () => input.click())
+    expect(inputs[12].disabled).toBe(true)
+    expect(inputs[0].disabled).toBe(false)
+    await act(async () => inputs[0].click())
+    expect(inputs[12].disabled).toBe(false)
+  })
 
-    const remainingCharts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
-    expect(remainingCharts.every(chart => chart.getAttribute('data-sync-id') === 'metrics')).toBe(true)
+  it('uses transaction-specific percentile availability instead of the whole-run percentile', async () => {
+    const point = samplePoint('00', 100, 0)
+    point[transactionChartSeriesKey('Search', 'p99')] = 140
+    await act(async () => root.render(<SynchronizedTimeline data={[point]} />))
+    await selectTransactions()
+    const choices = container.querySelector('[aria-label="Transaction selection"]')!
+    await act(async () => choices.querySelector<HTMLInputElement>('input')!.click()) // Checkout has no P99.
+    await act(async () => button('Graphs').click())
+    expect(checkbox('P99 Response Time').disabled).toBe(true)
+    await act(async () => button('Transactions').click())
+    const searchChoice = Array.from(container.querySelectorAll<HTMLLabelElement>('[aria-label="Transaction selection"] label')).find(label => label.textContent === 'Search')!
+    await act(async () => searchChoice.querySelector<HTMLInputElement>('input')!.click())
+    await act(async () => button('Graphs').click())
+    expect(checkbox('P99 Response Time').disabled).toBe(false)
+    await act(async () => checkbox('P99 Response Time').click())
+    const lines = Array.from(container.querySelectorAll('[data-lane="p99"] [data-testid="mock-line"]'))
+    expect(lines.map(line => line.getAttribute('data-key'))).toEqual([transactionChartSeriesKey('Search', 'p99')])
+  })
+
+  it('explains unavailable transaction evidence and resource metrics without inventing values', async () => {
+    const point = { time: '00', vusers: 0, tps: 0, avgMs: 0, errorPct: 0, p50: 0, p90: 0, p99: 0, cpuProcess: 0, memProcess: Number.NaN }
+    await act(async () => root.render(<SynchronizedTimeline data={[point]} />))
+    await act(async () => button('Transactions').click())
+    expect(container.textContent).toContain('no recorded transaction-level timeline data')
+    expect(container.querySelector<HTMLOptionElement>('option[value="selected"]')?.disabled).toBe(true)
+    await act(async () => button('Graphs').click())
+    expect(checkbox('CPU Usage').disabled).toBe(false)
+    expect(checkbox('Memory').disabled).toBe(true)
+    await act(async () => checkbox('CPU Usage').click())
+    expect(container.querySelector('[data-key="cpuProcess"]')).not.toBeNull()
+    expect(container.querySelector('[data-key="cpuFree"]')).toBeNull()
+    for (const input of Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'))) await act(async () => input.click())
+    expect(container.textContent).toContain('No graphs selected.')
   })
 })

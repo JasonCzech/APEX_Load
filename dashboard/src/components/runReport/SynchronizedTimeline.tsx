@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useReducer, useState } from 'react'
+import { useId, useMemo, useReducer, useState } from 'react'
 import {
   Area,
   CartesianGrid,
@@ -18,10 +18,19 @@ import {
   transactionChartSeriesKey,
   transactionChartSeriesNames,
   transactionChartSeriesPresentation,
-  type TransactionChartMetric,
 } from '../transactionChartSeries'
 import { buildBreachWindows } from './runReportModel'
 import { initialTimelineZoomState, timelineZoomReducer } from './timelineZoomModel'
+import {
+  DEFAULT_TIMELINE_GRAPHS,
+  graphHasData,
+  graphSupportsTransactions,
+  MAX_TIMELINE_GRAPHS,
+  MAX_TIMELINE_TRANSACTIONS,
+  TIMELINE_GRAPHS,
+  timelineMetricKeys,
+  type TimelineGraph,
+} from './timelineGraphModel'
 
 interface Props {
   data: MetricsHistoryPoint[]
@@ -31,193 +40,244 @@ interface Props {
   showBaseline?: boolean
 }
 
-type LaneID = 'vusers' | 'throughput' | 'latency' | 'errors'
-
-interface LaneConfig {
-  id: LaneID
-  title: string
-  yLabel: string
-  unit: string
-  domain?: [number | string, number | string]
-}
-
-const LANES: LaneConfig[] = [
-  { id: 'vusers', title: 'VUsers', yLabel: 'VUsers', unit: '' },
-  { id: 'throughput', title: 'Throughput', yLabel: 'TPS', unit: ' TPS' },
-  { id: 'latency', title: 'Response Time', yLabel: 'ms', unit: ' ms' },
-  { id: 'errors', title: 'Error Rate', yLabel: '%', unit: '%', domain: [0, 'auto'] },
-]
-
-function formatTooltipValue(value: unknown, _name: unknown, item: { dataKey?: unknown }): [ReactNode, string] {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return ['n/a', String(item.dataKey || '')]
-  const key = String(item.dataKey || '')
-  const suffix = key.toLowerCase().includes('error') ? '%' : key.toLowerCase().includes('ms') || key.toLowerCase().includes('p95') ? ' ms' : ''
-  return [`${value.toFixed(suffix === '%' ? 2 : 1)}${suffix}`, key]
-}
-
-function renderBreachAreas(windows: ReturnType<typeof buildBreachWindows>) {
-  return windows.map(window => (
-    <ReferenceArea
-      key={`${window.start}-${window.end}`}
-      x1={window.start}
-      x2={window.end}
-      fill="var(--danger)"
-      fillOpacity={0.08}
-      strokeOpacity={0}
-    />
-  ))
-}
+const seriesColor = (index: number) => `var(--chart-${(index % 6) + 1})`
 
 function LaneChart({
   lane,
   data,
+  metricKeys,
   goalConfig,
   breachWindows,
   showBaseline,
-  transactionNames,
+  transactions,
+  onRemove,
 }: {
-  lane: LaneConfig
+  lane: TimelineGraph
   data: MetricsHistoryPoint[]
+  metricKeys: Set<string>
   goalConfig?: GoalConfig
   breachWindows: ReturnType<typeof buildBreachWindows>
   showBaseline?: boolean
-  transactionNames: string[]
+  transactions?: string[]
+  onRemove: () => void
 }) {
-  const p95Sla = goalConfig?.p95_latency_ms
-  const errorSla = goalConfig?.max_error_pct
-  const renderTransactionLines = (metric: TransactionChartMetric, unit: string) => {
-    const namesWithMetric = new Set(transactionChartSeriesNames(data, metric))
-    return transactionNames.filter(name => namesWithMetric.has(name)).map(name => {
-      const presentation = transactionChartSeriesPresentation(name)
-      return (
-        <Line
-          key={`transaction:${name}:${metric}`}
-          type="monotone"
-          dataKey={transactionChartSeriesKey(name, metric)}
-          name={`Transaction · ${name}`}
-          stroke={presentation.color}
-          strokeDasharray={presentation.strokeDasharray}
-          strokeWidth={1.5}
-          dot={false}
-          isAnimationActive={false}
-          unit={unit}
-        />
-      )
-    })
-  }
+  const transactionScoped = transactions !== undefined && graphSupportsTransactions(lane)
+  const series = lane.series.flatMap((item, index) => {
+    if (transactionScoped) {
+      if (!item.transactionMetric) return []
+      return transactions.flatMap((name) => {
+        const key = transactionChartSeriesKey(name, item.transactionMetric!)
+        if (!metricKeys.has(key)) return []
+        const presentation = transactionChartSeriesPresentation(name)
+        return [
+          {
+            key,
+            name: `${name} · ${item.name}`,
+            color: presentation.color,
+            dash: index > 0 ? '5 3' : presentation.strokeDasharray,
+          },
+        ]
+      })
+    }
+    const result = metricKeys.has(item.key)
+      ? [
+          {
+            key: item.key,
+            name: item.name,
+            color: seriesColor(index),
+            dash: item.key === 'targetTps' ? '4 4' : undefined,
+          },
+        ]
+      : []
+    if (showBaseline && item.baselineKey && metricKeys.has(item.baselineKey))
+      result.push({ key: item.baselineKey, name: `Baseline · ${item.name}`, color: seriesColor(index), dash: '5 4' })
+    return result
+  })
+  // Whole-run thresholds and bands are not transaction-specific evidence.
+  const sla = transactionScoped
+    ? undefined
+    : lane.id === 'latency' || lane.id === 'p95'
+      ? goalConfig?.p95_latency_ms
+      : lane.id === 'errors'
+        ? goalConfig?.max_error_pct
+        : undefined
   return (
     <div className="run-report-timeline-lane" data-lane={lane.id}>
       <div className="run-report-lane-label">
         <strong>{lane.title}</strong>
-        <span>{lane.yLabel}</span>
+        <span>
+          {lane.unit} · {transactionScoped ? 'Selected transactions' : 'Whole run'}
+        </span>
+        <button
+          className="btn btn-sm btn-ghost"
+          type="button"
+          aria-label={`Remove ${lane.title} graph`}
+          onClick={onRemove}
+        >
+          Remove
+        </button>
       </div>
       <div className="run-report-lane-chart">
-        <ResponsiveContainer width="100%" height={138}>
-          <ComposedChart data={data} syncId="metrics" margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-            <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
-            <YAxis stroke="var(--text-muted)" fontSize={11} width={48} domain={lane.domain} />
-            <Tooltip
-              formatter={formatTooltipValue}
-              contentStyle={chartTooltipContentStyle}
-              labelStyle={chartTooltipLabelStyle}
-            />
-            {renderBreachAreas(breachWindows)}
-            {lane.id === 'vusers' && (
-              <>
-                <Area type="monotone" dataKey="vusers" name="VUsers" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.18} isAnimationActive={false} />
-                {showBaseline && <Line type="monotone" dataKey="baselineVusers" name="Baseline VUsers" stroke="var(--chart-1)" strokeDasharray="5 4" dot={false} isAnimationActive={false} />}
-              </>
-            )}
-            {lane.id === 'throughput' && (
-              <>
-                <Line type="monotone" dataKey="tps" name="Actual TPS" stroke="var(--chart-2)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                <Line type="monotone" dataKey="targetTps" name="Target TPS" stroke="var(--warning)" strokeDasharray="4 4" dot={false} isAnimationActive={false} />
-                {showBaseline && <Line type="monotone" dataKey="baselineTps" name="Baseline TPS" stroke="var(--chart-2)" strokeDasharray="5 4" dot={false} isAnimationActive={false} />}
-                {renderTransactionLines('tps', ' TPS')}
-              </>
-            )}
-            {lane.id === 'latency' && (
-              <>
-                {typeof p95Sla === 'number' && <ReferenceLine y={p95Sla} stroke="var(--danger)" strokeDasharray="4 3" label={{ value: 'P95 SLA', fill: 'var(--danger)', fontSize: 11 }} />}
-                <Line type="monotone" dataKey="avgMs" name="Avg ms" stroke="var(--chart-5)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                <Line type="monotone" dataKey="p95" name="P95 ms" stroke="var(--chart-3)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                {showBaseline && <Line type="monotone" dataKey="baselineP95" name="Baseline P95" stroke="var(--chart-3)" strokeDasharray="5 4" dot={false} isAnimationActive={false} />}
-                {renderTransactionLines('avgMs', ' ms')}
-              </>
-            )}
-            {lane.id === 'errors' && (
-              <>
-                {typeof errorSla === 'number' && <ReferenceLine y={errorSla} stroke="var(--danger)" strokeDasharray="4 3" label={{ value: 'Error SLA', fill: 'var(--danger)', fontSize: 11 }} />}
-                <Line type="monotone" dataKey="errorPct" name="Error %" stroke="var(--danger)" strokeWidth={2} dot={false} isAnimationActive={false} />
-                {showBaseline && <Line type="monotone" dataKey="baselineErrorPct" name="Baseline Error %" stroke="var(--danger)" strokeDasharray="5 4" dot={false} isAnimationActive={false} />}
-                {renderTransactionLines('errorPct', '%')}
-              </>
-            )}
-
-          </ComposedChart>
-        </ResponsiveContainer>
+        {series.length === 0 ? (
+          <p className="run-report-timeline-empty">
+            {transactionScoped
+              ? 'No recorded values for the selected transactions in this window.'
+              : 'No recorded values in this window.'}
+          </p>
+        ) : (
+          <>
+            <ResponsiveContainer width="100%" height={138}>
+              <ComposedChart data={data} syncId="metrics" margin={{ top: 14, right: 24, bottom: 8, left: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={11} minTickGap={28} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} width={48} domain={[0, 'auto']} />
+                <Tooltip
+                  formatter={(value, name) => [
+                    typeof value === 'number' && Number.isFinite(value)
+                      ? `${value.toFixed(lane.unit === '%' ? 2 : 1)} ${lane.unit}`
+                      : 'n/a',
+                    String(name),
+                  ]}
+                  contentStyle={chartTooltipContentStyle}
+                  labelStyle={chartTooltipLabelStyle}
+                />
+                {transactions === undefined &&
+                  breachWindows.map((window) => (
+                    <ReferenceArea
+                      key={`${window.start}-${window.end}`}
+                      x1={window.start}
+                      x2={window.end}
+                      fill="var(--danger)"
+                      fillOpacity={0.08}
+                      strokeOpacity={0}
+                    />
+                  ))}
+                {typeof sla === 'number' && (
+                  <ReferenceLine
+                    y={sla}
+                    stroke="var(--danger)"
+                    strokeDasharray="4 3"
+                    label={{
+                      value: lane.id === 'errors' ? 'Error SLA' : 'P95 SLA',
+                      fill: 'var(--danger)',
+                      fontSize: 11,
+                    }}
+                  />
+                )}
+                {series.map((item) =>
+                  item.key === 'vusers' ? (
+                    <Area
+                      key={item.key}
+                      type="monotone"
+                      dataKey={item.key}
+                      name={item.name}
+                      stroke={item.color}
+                      fill={item.color}
+                      fillOpacity={0.18}
+                      isAnimationActive={false}
+                    />
+                  ) : (
+                    <Line
+                      key={item.key}
+                      type="monotone"
+                      dataKey={item.key}
+                      name={item.name}
+                      stroke={item.color}
+                      strokeDasharray={item.dash}
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  ),
+                )}
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div className="run-report-timeline-legend" aria-label={`${lane.title} series`}>
+              {series.map((item) => (
+                <span key={item.key}>
+                  <i style={{ borderColor: item.color, borderTopStyle: item.dash ? 'dashed' : 'solid' }} />
+                  {item.name}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
 }
 
 export default function SynchronizedTimeline({ data, goalConfig, loading, error, showBaseline }: Props) {
+  const controlsId = useId()
   const [zoomState, dispatchZoom] = useReducer(timelineZoomReducer, initialTimelineZoomState)
-  const [visibleLanes, setVisibleLanes] = useState<Set<LaneID>>(() => new Set(LANES.map(lane => lane.id)))
+  const [visibleLanes, setVisibleLanes] = useState(() => new Set(DEFAULT_TIMELINE_GRAPHS))
   const [visibleTransactions, setVisibleTransactions] = useState<Set<string>>(() => new Set())
-  const [transactionFilter, setTransactionFilter] = useState('')
+  const [selectedOnly, setSelectedOnly] = useState(false)
+  const [panel, setPanel] = useState<'graphs' | 'transactions' | null>(null)
+  const [graphSearch, setGraphSearch] = useState('')
+  const [transactionSearch, setTransactionSearch] = useState('')
   const startIndex = Math.min(zoomState.window?.startIndex ?? 0, Math.max(0, data.length - 1))
   const endIndex = Math.min(zoomState.window?.endIndex ?? Math.max(0, data.length - 1), Math.max(0, data.length - 1))
   const visibleData = useMemo(() => data.slice(startIndex, endIndex + 1), [data, startIndex, endIndex])
+  const metricKeys = useMemo(() => timelineMetricKeys(data), [data])
+  const visibleMetricKeys = useMemo(() => timelineMetricKeys(visibleData), [visibleData])
   const breachWindows = useMemo(
     () => buildBreachWindows(visibleData, goalConfig?.p95_latency_ms, goalConfig?.max_error_pct),
     [goalConfig?.max_error_pct, goalConfig?.p95_latency_ms, visibleData],
   )
   const transactionNames = useMemo(() => transactionChartSeriesNames(data), [data])
-  const filteredTransactionNames = useMemo(() => {
-    const query = transactionFilter.trim().toLocaleLowerCase()
-    return query ? transactionNames.filter(name => name.toLocaleLowerCase().includes(query)) : transactionNames
-  }, [transactionFilter, transactionNames])
-  const visibleTransactionNames = useMemo(
-    () => transactionNames.filter(name => visibleTransactions.has(name)),
+  const selectedTransactions = useMemo(
+    () => transactionNames.filter((name) => visibleTransactions.has(name)),
     [transactionNames, visibleTransactions],
   )
-
-  const toggleLane = (lane: LaneID) => {
-    setVisibleLanes(current => {
+  const filteredTransactions = transactionNames.filter((name) =>
+    name.toLocaleLowerCase().includes(transactionSearch.trim().toLocaleLowerCase()),
+  )
+  const filteredGraphs = TIMELINE_GRAPHS.filter((graph) =>
+    `${graph.title} ${graph.group} ${graph.series.map((series) => series.name).join(' ')}`
+      .toLocaleLowerCase()
+      .includes(graphSearch.trim().toLocaleLowerCase()),
+  )
+  const toggleGraph = (id: string) =>
+    setVisibleLanes((current) => {
       const next = new Set(current)
-      if (next.has(lane)) next.delete(lane)
-      else next.add(lane)
+      if (next.has(id)) next.delete(id)
+      else if (next.size < MAX_TIMELINE_GRAPHS) next.add(id)
       return next
     })
-  }
-
-  const setTransactionsVisible = (visible: boolean) => {
-    setVisibleTransactions(visible ? new Set(transactionNames) : new Set())
-  }
-
-  const toggleTransaction = (name: string) => {
-    setVisibleTransactions(current => {
-      const next = new Set(current)
+  const toggleTransaction = (name: string) =>
+    setVisibleTransactions((current) => {
+      const next = new Set(transactionNames.filter((transaction) => current.has(transaction)))
       if (next.has(name)) next.delete(name)
-      else next.add(name)
+      else if (next.size < MAX_TIMELINE_TRANSACTIONS) next.add(name)
       return next
     })
-  }
 
-  if (loading) return <section className="run-report-panel run-report-timeline"><p role="status">Loading timeline...</p></section>
-  if (error) return <section className="run-report-panel run-report-timeline"><p className="run-report-error">{error}</p></section>
-  if (data.length === 0) return <section className="run-report-panel run-report-timeline"><p>No interval summary history is available for this run.</p></section>
-
-  const slaConfigured = typeof goalConfig?.p95_latency_ms === 'number' || typeof goalConfig?.max_error_pct === 'number'
+  if (loading)
+    return (
+      <section className="run-report-panel run-report-timeline">
+        <p role="status">Loading timeline...</p>
+      </section>
+    )
+  if (error)
+    return (
+      <section className="run-report-panel run-report-timeline">
+        <p className="run-report-error">{error}</p>
+      </section>
+    )
+  if (data.length === 0)
+    return (
+      <section className="run-report-panel run-report-timeline">
+        <p>No interval summary history is available for this run.</p>
+      </section>
+    )
 
   return (
     <section className="run-report-panel run-report-timeline" aria-label="Synchronized run timeline">
       <div className="run-report-section-heading">
         <div>
           <h2>Synchronized Timeline</h2>
-          <p>{slaConfigured ? 'Hover across lanes to correlate load, throughput, latency, and errors.' : 'SLA not configured for this run.'}</p>
+          <p>Compare performance and resource signals on a shared time window.</p>
         </div>
         {zoomState.window && (
           <button className="btn btn-sm btn-secondary" type="button" onClick={() => dispatchZoom({ type: 'reset' })}>
@@ -225,80 +285,259 @@ export default function SynchronizedTimeline({ data, goalConfig, loading, error,
           </button>
         )}
       </div>
-      <div className="run-report-timeline-controls" aria-label="Timeline display controls">
-        <fieldset className="run-report-timeline-control-group">
-          <legend>Displayed graphs</legend>
-          <div className="run-report-timeline-chips">
-            {LANES.map(lane => (
-              <button
-                key={lane.id}
-                className={`btn btn-sm btn-secondary${visibleLanes.has(lane.id) ? ' active' : ''}`}
-                type="button"
-                aria-pressed={visibleLanes.has(lane.id)}
-                onClick={() => toggleLane(lane.id)}
-              >
-                {lane.title}
-              </button>
-            ))}
-          </div>
-        </fieldset>
-        {transactionNames.length > 0 && (
-          <fieldset className="run-report-timeline-control-group run-report-transaction-filter">
-            <legend>Transaction overlays</legend>
-            <label>
-              Filter transactions
-              <input
-                type="search"
-                value={transactionFilter}
-                onChange={event => setTransactionFilter(event.target.value)}
-                placeholder="Find a transaction"
-              />
-            </label>
-            <div className="run-report-timeline-filter-actions">
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setTransactionsVisible(true)}>Show all</button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setTransactionsVisible(false)}>Hide all</button>
-            </div>
-            <div className="run-report-transaction-options" aria-label="Transaction overlay selection">
-              {filteredTransactionNames.map(name => (
-                <label key={name}>
-                  <input
-                    type="checkbox"
-                    checked={visibleTransactions.has(name)}
-                    onChange={() => toggleTransaction(name)}
-                  />
-                  {name}
-                </label>
-              ))}
-              {filteredTransactionNames.length === 0 && <span className="run-report-muted">No transactions match this filter.</span>}
-            </div>
-          </fieldset>
-        )}
+      <div className="run-report-timeline-toolbar" aria-label="Timeline display controls">
+        <button
+          className="btn btn-sm btn-secondary"
+          type="button"
+          aria-expanded={panel === 'graphs'}
+          aria-controls={`${controlsId}-graphs`}
+          onClick={() => setPanel(panel === 'graphs' ? null : 'graphs')}
+        >
+          Graphs{' '}
+          <span className="run-report-timeline-count">
+            {visibleLanes.size} / {MAX_TIMELINE_GRAPHS}
+          </span>{' '}
+          <span aria-hidden="true">⌄</span>
+        </button>
+        <button
+          className="btn btn-sm btn-secondary"
+          type="button"
+          aria-expanded={panel === 'transactions'}
+          aria-controls={`${controlsId}-transactions`}
+          onClick={() => setPanel(panel === 'transactions' ? null : 'transactions')}
+        >
+          Transactions{' '}
+          <span className="run-report-timeline-count">
+            {selectedOnly ? `${selectedTransactions.length} selected` : 'Whole run'}
+          </span>{' '}
+          <span aria-hidden="true">⌄</span>
+        </button>
+        <span className="run-report-muted">Shared hover &amp; zoom</span>
       </div>
-      {data.length > 1 && <div className="run-report-timeline-window" aria-label="Timeline window">
-        <label>Window start: {data[startIndex]?.time}
-          <input type="range" aria-label="Timeline window start" min={0} max={endIndex} value={startIndex}
-            aria-valuetext={data[startIndex]?.time}
-            onChange={event => dispatchZoom({ type: 'set-window', startIndex: Number(event.target.value), endIndex, pointCount: data.length })} />
-        </label>
-        <label>Window end: {data[endIndex]?.time}
-          <input type="range" aria-label="Timeline window end" min={startIndex} max={data.length - 1} value={endIndex}
-            aria-valuetext={data[endIndex]?.time}
-            onChange={event => dispatchZoom({ type: 'set-window', startIndex, endIndex: Number(event.target.value), pointCount: data.length })} />
-        </label>
-      </div>}
+      {panel === 'graphs' && (
+        <div
+          id={`${controlsId}-graphs`}
+          className="run-report-timeline-picker"
+          role="region"
+          aria-label="Graph catalog"
+        >
+          <div className="run-report-timeline-picker-heading">
+            <div>
+              <h3>Choose graphs</h3>
+              <p className="run-report-muted" role="status">
+                {visibleLanes.size} of {MAX_TIMELINE_GRAPHS} displayed.{' '}
+                {visibleLanes.size === MAX_TIMELINE_GRAPHS
+                  ? 'Remove a graph to add another.'
+                  : 'Choose up to six to keep the timeline readable.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => setVisibleLanes(new Set(DEFAULT_TIMELINE_GRAPHS))}
+            >
+              Restore defaults
+            </button>
+          </div>
+          <label className="run-report-timeline-search">
+            Search graphs
+            <input
+              type="search"
+              value={graphSearch}
+              onChange={(event) => setGraphSearch(event.target.value)}
+              placeholder="Search by name or metric"
+            />
+          </label>
+          <div className="run-report-timeline-catalog">
+            {(['Performance', 'Resources', 'Diagnostics'] as const).map((group) => {
+              const graphs = filteredGraphs.filter((graph) => graph.group === group)
+              return (
+                graphs.length > 0 && (
+                  <fieldset key={group}>
+                    <legend>{group}</legend>
+                    {graphs.map((graph) => {
+                      const checked = visibleLanes.has(graph.id)
+                      const available = graphHasData(
+                        graph,
+                        metricKeys,
+                        selectedOnly && selectedTransactions.length > 0 ? selectedTransactions : undefined,
+                      )
+                      return (
+                        <label key={graph.id} className="run-report-timeline-option">
+                          <input
+                            type="checkbox"
+                            aria-label={graph.title}
+                            checked={checked}
+                            disabled={!checked && (!available || visibleLanes.size >= MAX_TIMELINE_GRAPHS)}
+                            onChange={() => toggleGraph(graph.id)}
+                          />
+                          <span>
+                            {graph.title}
+                            <small>
+                              {!available
+                                ? 'No recorded data for this scope'
+                                : graphSupportsTransactions(graph)
+                                  ? `${graph.unit} · Transaction filter supported`
+                                  : `${graph.unit} · Whole run`}
+                            </small>
+                          </span>
+                        </label>
+                      )
+                    })}
+                  </fieldset>
+                )
+              )
+            })}
+            {filteredGraphs.length === 0 && <p className="run-report-muted">No graphs match your search.</p>}
+          </div>
+        </div>
+      )}
+      {panel === 'transactions' && (
+        <div
+          id={`${controlsId}-transactions`}
+          className="run-report-timeline-picker"
+          role="region"
+          aria-label="Transaction filter"
+        >
+          <div className="run-report-timeline-picker-heading">
+            <div>
+              <h3>Transaction scope</h3>
+              <p className="run-report-muted">
+                Filter throughput, response times, and error rate. Load, resources, and diagnostics remain whole-run
+                context.
+              </p>
+            </div>
+          </div>
+          <label className="run-report-timeline-search">
+            Display
+            <select
+              value={selectedOnly ? 'selected' : 'all'}
+              onChange={(event) => setSelectedOnly(event.target.value === 'selected')}
+            >
+              <option value="all">Whole run</option>
+              <option value="selected" disabled={transactionNames.length === 0}>
+                Selected transactions only
+              </option>
+            </select>
+          </label>
+          {transactionNames.length === 0 ? (
+            <p className="run-report-muted">
+              This run has no recorded transaction-level timeline data. Whole-run graphs are still available.
+            </p>
+          ) : (
+            selectedOnly && (
+              <>
+                <label className="run-report-timeline-search">
+                  Search transactions
+                  <input
+                    type="search"
+                    value={transactionSearch}
+                    onChange={(event) => setTransactionSearch(event.target.value)}
+                    placeholder="Find a transaction"
+                  />
+                </label>
+                <div className="run-report-timeline-picker-heading">
+                  <span className="run-report-muted" role="status">
+                    {selectedTransactions.length} / {MAX_TIMELINE_TRANSACTIONS} selected. Whole-run performance lines,
+                    baselines, and SLA bands are hidden.
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => setVisibleTransactions(new Set())}
+                  >
+                    Clear selection
+                  </button>
+                </div>
+                <div className="run-report-transaction-options" aria-label="Transaction selection">
+                  {filteredTransactions.map((name) => (
+                    <label key={name} className="run-report-timeline-option">
+                      <input
+                        type="checkbox"
+                        checked={visibleTransactions.has(name)}
+                        disabled={
+                          !visibleTransactions.has(name) && selectedTransactions.length >= MAX_TIMELINE_TRANSACTIONS
+                        }
+                        onChange={() => toggleTransaction(name)}
+                      />
+                      <span>{name}</span>
+                    </label>
+                  ))}
+                  {filteredTransactions.length === 0 && (
+                    <p className="run-report-muted">No transactions match your search.</p>
+                  )}
+                </div>
+              </>
+            )
+          )}
+        </div>
+      )}
+      {selectedOnly && (
+        <p className="run-report-timeline-scope" role="status">
+          {selectedTransactions.length
+            ? `Showing only: ${selectedTransactions.join(', ')}. Load, resources, and diagnostics show the whole run.`
+            : 'No transactions selected. Choose transactions in the filter to display their performance.'}
+        </p>
+      )}
+      {data.length > 1 && (
+        <div className="run-report-timeline-window" aria-label="Timeline window">
+          <label>
+            Window start: {data[startIndex]?.time}
+            <input
+              type="range"
+              aria-label="Timeline window start"
+              min={0}
+              max={endIndex}
+              value={startIndex}
+              aria-valuetext={data[startIndex]?.time}
+              onChange={(event) =>
+                dispatchZoom({
+                  type: 'set-window',
+                  startIndex: Number(event.target.value),
+                  endIndex,
+                  pointCount: data.length,
+                })
+              }
+            />
+          </label>
+          <label>
+            Window end: {data[endIndex]?.time}
+            <input
+              type="range"
+              aria-label="Timeline window end"
+              min={startIndex}
+              max={data.length - 1}
+              value={endIndex}
+              aria-valuetext={data[endIndex]?.time}
+              onChange={(event) =>
+                dispatchZoom({
+                  type: 'set-window',
+                  startIndex,
+                  endIndex: Number(event.target.value),
+                  pointCount: data.length,
+                })
+              }
+            />
+          </label>
+        </div>
+      )}
       <div className="run-report-timeline-stack">
-        {LANES.filter(lane => visibleLanes.has(lane.id)).map((lane) => (
+        {TIMELINE_GRAPHS.filter((lane) => visibleLanes.has(lane.id)).map((lane) => (
           <LaneChart
             key={lane.id}
             lane={lane}
             data={visibleData}
+            metricKeys={visibleMetricKeys}
             goalConfig={goalConfig}
             breachWindows={breachWindows}
             showBaseline={showBaseline}
-            transactionNames={visibleTransactionNames}
+            transactions={selectedOnly ? selectedTransactions : undefined}
+            onRemove={() => toggleGraph(lane.id)}
           />
         ))}
-        {visibleLanes.size === 0 && <p className="run-report-muted">No graphs selected. Choose a graph above to display it.</p>}
+        {visibleLanes.size === 0 && (
+          <p className="run-report-muted">No graphs selected. Open Graphs to choose what to display.</p>
+        )}
       </div>
     </section>
   )
