@@ -6,6 +6,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { MetricsHistoryPoint } from '../../types'
+import { transactionChartSeriesKey } from '../transactionChartSeries'
 import SynchronizedTimeline from './SynchronizedTimeline'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -46,6 +47,12 @@ const samplePoint = (time: string, p95: number, errorPct: number): MetricsHistor
   baselineTps: 19,
   baselineP95: 110,
   baselineErrorPct: 0,
+  [transactionChartSeriesKey('Checkout', 'tps')]: 8,
+  [transactionChartSeriesKey('Checkout', 'avgMs')]: 92,
+  [transactionChartSeriesKey('Checkout', 'errorPct')]: 1,
+  [transactionChartSeriesKey('Search', 'tps')]: 12,
+  [transactionChartSeriesKey('Search', 'avgMs')]: 108,
+  [transactionChartSeriesKey('Search', 'errorPct')]: 0,
 })
 
 describe('SynchronizedTimeline', () => {
@@ -107,5 +114,47 @@ describe('SynchronizedTimeline', () => {
 
     const charts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
     expect(charts.every(chart => chart.getAttribute('data-length') === '2')).toBe(true)
+  })
+
+  it('lets operators add or remove lanes and filter transaction overlays without breaking synchronization', async () => {
+    await act(async () => {
+      root.render(
+        <SynchronizedTimeline
+          data={[samplePoint('00', 100, 0), samplePoint('01', 100, 0)]}
+        />,
+      )
+    })
+
+    const vusersButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'VUsers')
+    expect(vusersButton?.getAttribute('aria-pressed')).toBe('true')
+    await act(async () => vusersButton?.click())
+    expect(container.querySelectorAll('[data-testid="mock-chart"]')).toHaveLength(3)
+    expect(vusersButton?.getAttribute('aria-pressed')).toBe('false')
+
+    const filter = container.querySelector<HTMLInputElement>('input[type="search"]')
+    expect(filter).not.toBeNull()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(filter, 'check')
+      filter?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Checkout')
+    expect(container.textContent).not.toContain('Search')
+
+    const transactionTpsKey = transactionChartSeriesKey('Checkout', 'tps')
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-line"]')).some(line => line.getAttribute('data-key') === transactionTpsKey)).toBe(false)
+
+    const showAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Show all')
+    await act(async () => showAll?.click())
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-line"]')).some(line => line.getAttribute('data-key') === transactionTpsKey)).toBe(true)
+
+    const hideAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Hide all')
+    await act(async () => hideAll?.click())
+    expect(Array.from(container.querySelectorAll('[data-testid="mock-line"]')).some(line => line.getAttribute('data-key') === transactionTpsKey)).toBe(false)
+
+    const remainingCharts = Array.from(container.querySelectorAll('[data-testid="mock-chart"]'))
+    expect(remainingCharts.every(chart => chart.getAttribute('data-sync-id') === 'metrics')).toBe(true)
   })
 })

@@ -325,6 +325,84 @@
   gap: 8px;
 }
 
+.run-report-timeline-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.run-report-timeline-control-group {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px 12px;
+}
+
+.run-report-timeline-control-group legend {
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.run-report-timeline-chips,
+.run-report-timeline-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.run-report-timeline-chips .active {
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.run-report-transaction-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+}
+
+.run-report-transaction-filter > label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.run-report-transaction-filter input[type="search"] {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 8px;
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.run-report-timeline-filter-actions {
+  align-items: end;
+}
+
+.run-report-transaction-options {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  max-height: 112px;
+  overflow: auto;
+}
+
+.run-report-transaction-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 .run-report-timeline-lane {
   display: grid;
   grid-template-columns: 118px minmax(0, 1fr);
@@ -354,6 +432,12 @@
 
 .run-report-lane-chart {
   min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .run-report-timeline-controls {
+    grid-template-columns: 1fr;
+  }
 }
 
 .run-report-table-wrap {

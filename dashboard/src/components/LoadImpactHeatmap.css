@@ -312,6 +312,10 @@
   width: 150px;
 }
 
+.load-impact-table col.load-impact-metric-column {
+  width: 150px;
+}
+
 .load-impact-table small {
   display: block;
   margin-top: 3px;
@@ -555,9 +559,14 @@
 
 .load-impact-detail-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1120px;
   border-collapse: collapse;
+  table-layout: fixed;
 }
+
+.load-impact-detail-table col.load-impact-detail-timestamp-column { width: 190px; }
+.load-impact-detail-table col.load-impact-detail-vusers-column { width: 76px; }
+.load-impact-detail-table col.load-impact-detail-io-column { width: 172px; }
 
 .load-impact-detail-table th,
 .load-impact-detail-table td {
@@ -576,6 +585,34 @@
   color: var(--text-muted);
   font-size: 0.72rem;
   text-transform: uppercase;
+}
+
+.load-impact-detail-sort-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.load-impact-detail-sort-header:hover,
+.load-impact-detail-sort-header:focus-visible {
+  color: var(--accent);
+}
+
+.load-impact-detail-sort-header:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .load-impact-detail-table tr:last-child td {

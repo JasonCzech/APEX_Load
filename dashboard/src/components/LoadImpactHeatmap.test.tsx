@@ -150,7 +150,7 @@ describe('LoadImpactHeatmap', () => {
     expect(document.activeElement).toBe(configureButton)
   })
 
-  it('sorts heatmap rows alphabetically without ranking mixed-unit values', async () => {
+  it('sorts heatmap rows by every column without ranking mixed-unit values by default', async () => {
     await act(async () => {
       root.render(
         <LoadImpactHeatmap
@@ -164,13 +164,20 @@ describe('LoadImpactHeatmap', () => {
 
     expect(rowLabels()[0]).toBe('ARTms')
 
-    expect(sortButtonByLabel('5 VUsers')).toBeNull()
+    expect(sortButtonByLabel('5 VUsers')).not.toBeNull()
 
     await act(async () => {
       sortButtonByLabel('Metric')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(rowLabels().slice(0, 4)).toEqual(['ARTms', 'CPU VUsers%', 'P95ms', 'TPS'])
+
+    await act(async () => {
+      sortButtonByLabel('5 VUsers')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(rowLabels()[0]).toBe('P95ms')
+    expect(sortButtonByLabel('5 VUsers')?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
   })
 
   it('highlights the matching metric row and VUser load column on cell hover and focus', async () => {
@@ -244,6 +251,19 @@ describe('LoadImpactHeatmap', () => {
     expect(container.querySelector('.load-impact-detail')?.textContent).toContain('120ms')
     expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('100ms')
     expect(container.querySelector('.load-impact-detail-table')?.textContent).toContain('140ms')
+
+    const detailTable = container.querySelector<HTMLTableElement>('.load-impact-detail-table')
+    expect(detailTable?.tHead?.rows[0].cells.length).toBe(detailTable?.tBodies[0].rows[0].cells.length)
+
+    const timestampSortButton = Array.from(detailTable?.querySelectorAll<HTMLButtonElement>('thead button') || [])
+      .find(button => button.textContent?.includes('Timestamp'))
+    await act(async () => {
+      timestampSortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      timestampSortButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(timestampSortButton?.closest('th')?.getAttribute('aria-sort')).toBe('descending')
+    expect(detailTable?.tBodies[0].rows[0].cells[2].textContent).toBe('140ms')
   })
 
   it('shows loading and empty states without claiming data exists', async () => {

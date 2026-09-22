@@ -15,7 +15,13 @@ import {
   loadImpactCellKey,
 } from './loadImpactModel'
 import type { LoadImpactBucket, LoadImpactCell, LoadImpactRow } from './loadImpactModel'
-import { METRIC_SORT_KEY, sortLoadImpactRows, type LoadImpactSortState } from './loadImpactHeatmapUtils'
+import {
+  METRIC_SORT_KEY,
+  sortLoadImpactDetailPoints,
+  sortLoadImpactRows,
+  type LoadImpactDetailSortKey,
+  type LoadImpactSortState,
+} from './loadImpactHeatmapUtils'
 import './LoadImpactHeatmap.css'
 
 const LoadImpact3DHeatmap = lazy(() => import('./LoadImpact3DHeatmap'))
@@ -93,6 +99,7 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
   const [selectedMetricIds, setSelectedMetricIds] = useState<string[] | null>(null)
   const [selectedBucketIds, setSelectedBucketIds] = useState<string[] | null>(null)
   const [sortState, setSortState] = useState<LoadImpactSortState | null>(null)
+  const [detailSortState, setDetailSortState] = useState<LoadImpactSortState | null>(null)
   const [highlightedAxis, setHighlightedAxis] = useState<{ metricId: string; bucketId: string } | null>(null)
   const drawerRef = useRef<HTMLElement | null>(null)
   const drawerCloseButtonRef = useRef<HTMLButtonElement | null>(null)
@@ -117,6 +124,11 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
     }
     return null
   }, [displayModel.rows, selectedCellKey])
+  const selectedDetailColumns = useMemo(() => selectedCell ? detailColumns(selectedCell) : [], [selectedCell])
+  const sortedDetailPoints = useMemo(
+    () => selectedCell ? sortLoadImpactDetailPoints(selectedCell.points, detailSortState) : [],
+    [selectedCell, detailSortState],
+  )
   const availableMetricIdSet = useMemo(() => new Set(availableMetricIds), [availableMetricIds])
   const unavailableMetricCount = LOAD_IMPACT_METRICS.filter(metric => !availableMetricIdSet.has(metric.id)).length
 
@@ -155,6 +167,12 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
       : { key, direction: key === METRIC_SORT_KEY ? 'asc' : 'desc' })
   }
 
+  const toggleDetailSort = (key: LoadImpactDetailSortKey) => {
+    setDetailSortState(prev => prev?.key === key
+      ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
+      : { key, direction: key === 'timestamp' ? 'asc' : 'desc' })
+  }
+
   const sortIndicator = (key: string) => {
     if (sortState?.key !== key) return '↕'
     return sortState.direction === 'asc' ? '↑' : '↓'
@@ -163,6 +181,16 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
   const ariaSort = (key: string): 'ascending' | 'descending' | 'none' => {
     if (sortState?.key !== key) return 'none'
     return sortState.direction === 'asc' ? 'ascending' : 'descending'
+  }
+
+  const detailSortIndicator = (key: LoadImpactDetailSortKey) => {
+    if (detailSortState?.key !== key) return '↕'
+    return detailSortState.direction === 'asc' ? '↑' : '↓'
+  }
+
+  const detailAriaSort = (key: LoadImpactDetailSortKey): 'ascending' | 'descending' | 'none' => {
+    if (detailSortState?.key !== key) return 'none'
+    return detailSortState.direction === 'asc' ? 'ascending' : 'descending'
   }
 
   const toggleMetric = (metricId: string) => {
@@ -331,6 +359,10 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
           ) : (
             <div className="load-impact-table-wrap">
               <table className="load-impact-table" data-table-pagination="off">
+                <colgroup>
+                  <col className="load-impact-metric-column" />
+                  {displayModel.buckets.map(bucket => <col key={bucket.id} />)}
+                </colgroup>
                 <thead>
                   <tr>
             <th scope="col" aria-label="Sort by metric" aria-sort={ariaSort(METRIC_SORT_KEY)}>
@@ -347,17 +379,24 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
                       const columnHighlighted = highlightedAxis?.bucketId === bucket.id
                       return (
               <th
-                aria-label={bucket.label}
+                          aria-label={`Sort by ${bucket.label}`}
                           key={bucket.id}
                           scope="col"
-                          aria-sort="none"
+                          aria-sort={ariaSort(`bucket:${bucket.id}`)}
                           className={columnHighlighted ? 'load-impact-axis-highlighted' : undefined}
                           data-axis-active={columnHighlighted ? 'true' : undefined}
                         >
-                          <span>
-                            <span>{bucket.label}</span>
-                            <small>{telemetryIntervalCount(bucket.sampleCount)}</small>
-                          </span>
+                          <button
+                            type="button"
+                            className="load-impact-sort-header"
+                            onClick={() => toggleSort(`bucket:${bucket.id}`)}
+                          >
+                            <span>
+                              <span className="load-impact-column-label">{bucket.label}</span>
+                              <small>{telemetryIntervalCount(bucket.sampleCount)}</small>
+                            </span>
+                            <span className="load-impact-sort-icon" aria-hidden="true">{sortIndicator(`bucket:${bucket.id}`)}</span>
+                          </button>
                         </th>
                       )
                     })}
@@ -432,23 +471,45 @@ const LoadImpactHeatmap = forwardRef<HTMLElement, Props>(function LoadImpactHeat
               </div>
               <div className="load-impact-detail-table-wrap">
                 <table className="load-impact-detail-table" data-table-pagination="off">
+                  <colgroup>
+                    <col className="load-impact-detail-timestamp-column" />
+                    <col className="load-impact-detail-vusers-column" />
+                    <col />
+                    {selectedDetailColumns.map(column => <col key={column.key} />)}
+                    <col className="load-impact-detail-io-column" />
+                    <col className="load-impact-detail-io-column" />
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th>Timestamp</th>
-                      <th>VUsers</th>
-                      <th>{selectedCell.metric.label}</th>
-                      {detailColumns(selectedCell).map(column => <th key={column.key}>{column.label}</th>)}
-                      <th>Network</th>
-                      <th>Disk</th>
+                      {([
+                        ['timestamp', 'Timestamp'],
+                        ['vusers', 'VUsers'],
+                        ['metric', selectedCell.metric.label],
+                        ...selectedDetailColumns.map(column => [column.key, column.label] as const),
+                        ['net', 'Network'],
+                        ['disk', 'Disk'],
+                      ] as Array<readonly [LoadImpactDetailSortKey, string]>).map(([key, label]) => (
+                        <th key={key} scope="col" aria-sort={detailAriaSort(key)}>
+                          <button
+                            type="button"
+                            className="load-impact-detail-sort-header"
+                            onClick={() => toggleDetailSort(key)}
+                            aria-label={`Sort by ${label}`}
+                          >
+                            <span>{label}</span>
+                            <span className="load-impact-sort-icon" aria-hidden="true">{detailSortIndicator(key)}</span>
+                          </button>
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedCell.points.map((point, index) => (
+                    {sortedDetailPoints.map((point, index) => (
                       <tr key={`${point.timestampMs ?? point.time}-${index}`}>
                         <td className="tx-name">{formatPointTimestamp(point.source)}</td>
                         <td>{point.vusers}</td>
                         <td>{formatLoadImpactValue(point.value, selectedCell.metric.unit)}</td>
-                        {detailColumns(selectedCell).map(column => (
+                        {selectedDetailColumns.map(column => (
                           <td key={column.key}>{relatedValue(point.source, column.key, column.unit)}</td>
                         ))}
                         <td>{relatedValue(point.source, 'netSent', 'KB/s')} / {relatedValue(point.source, 'netRecv', 'KB/s')}</td>
