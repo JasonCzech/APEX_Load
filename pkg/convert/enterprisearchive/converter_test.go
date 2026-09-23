@@ -349,7 +349,7 @@ func TestConvert(t *testing.T) {
 		result.Stats.TotalFunctions, result.Stats.ConvertedActions, result.Stats.Extractors, result.Stats.ThinkTimes)
 }
 
-func TestConvertLiteralThinkTimePlacementAndAccumulation(t *testing.T) {
+func TestConvertLiteralThinkTimePlacementAndIndependentWaits(t *testing.T) {
 	initAction, err := ParseActionFile("vuser_init.c", `vuser_init() {
 		web_url("init request", "URL=https://example.com/init", LAST);
 	}`)
@@ -374,17 +374,17 @@ func TestConvertLiteralThinkTimePlacementAndAccumulation(t *testing.T) {
 	if result.Script.Init[0].ThinkTimeAfter {
 		t.Fatalf("cross-phase wait attached to init request: %#v", result.Script.Init[0].ThinkTime)
 	}
-	if !result.Script.Actions[0].ThinkTimeAfter || result.Script.Actions[0].ThinkTime.MeanMs != 4000 {
-		t.Fatalf("consecutive waits were not accumulated on the preceding action: %#v", result.Script.Actions[0].ThinkTime)
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("actions=%#v, want leading wait, first request with wait, separate wait, second request", result.Script.Actions)
 	}
-	foundPartial := false
-	for _, mapping := range result.SourceReview.Mappings {
-		if mapping.Function == "lr_think_time" && mapping.Status == "review_only" {
-			foundPartial = true
+	for index, want := range map[int]float64{0: 2000, 1: 1000, 2: 3000} {
+		got := result.Script.Actions[index]
+		if !got.ThinkTimeAfter || got.ThinkTime.MeanMs != want {
+			t.Fatalf("action %d wait=%#v, want %v ms", index, got.ThinkTime, want)
 		}
 	}
-	if !foundPartial {
-		t.Fatalf("unplaceable cross-phase wait was not marked review-only: %#v", result.SourceReview.Mappings)
+	if result.Stats.ReviewOnlyFunctions != 0 {
+		t.Fatalf("literal waits should not require review: %#v", result.SourceReview.Mappings)
 	}
 }
 
@@ -408,7 +408,7 @@ func TestConvertThinkTimeDoesNotCrossSourceControlBoundary(t *testing.T) {
 	}
 }
 
-func TestConvertConsecutiveThinkTimesWithCapPreservesFirstWait(t *testing.T) {
+func TestConvertConsecutiveThinkTimesWithCapPreservesEveryWait(t *testing.T) {
 	action, err := ParseActionFile("Action.c", `Action() {
 		web_url("first", "URL=https://example.test/first", LAST);
 		lr_think_time(1);
@@ -427,8 +427,11 @@ func TestConvertConsecutiveThinkTimesWithCapPreservesFirstWait(t *testing.T) {
 	if !got.ThinkTimeAfter || got.ThinkTime.MeanMs != 1000 {
 		t.Fatalf("first exact wait was discarded: %#v", got.ThinkTime)
 	}
-	if result.Stats.ReviewOnlyFunctions == 0 {
-		t.Fatal("non-combinable capped wait was not flagged for review")
+	if len(result.Script.Actions) != 2 || !result.Script.Actions[1].ThinkTimeAfter || result.Script.Actions[1].ThinkTime.MeanMs != 3000 {
+		t.Fatalf("second capped wait was not preserved independently: %#v", result.Script.Actions)
+	}
+	if result.Stats.ReviewOnlyFunctions != 0 {
+		t.Fatal("independently preserved capped waits should not require review")
 	}
 }
 
@@ -971,11 +974,7 @@ func TestSourceFunctionRegistryCoversDocumentedFunctions(t *testing.T) {
 			if len(result.Stats.UnsupportedFuncs) != 0 || result.Stats.Skipped != 0 {
 				t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
 			}
-			wantMode := def.SupportMode
-			if def.Name == "lr_think_time" {
-				wantMode = SourceFunctionSupportReviewOnly
-			}
-			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, def.Name, wantMode)
+			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, def.Name, def.SupportMode)
 		})
 	}
 }

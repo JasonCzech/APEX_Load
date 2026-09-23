@@ -1,3 +1,5 @@
+import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
+import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import { ImportGuidedRepair, type RepairResult } from './ImportGuidedRepair'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { type ImportSaveDestination } from './useImportSaveOutcome'
@@ -856,35 +858,6 @@ function buildMigrationPolicyRefreshNotice(mode: 'convert' | 'validate', options
   return `${prefix} with migration block policy: ${formatMigrationBlockPolicySummary(options)}.`
 }
 
-function findImportedActionName(script?: ScriptDefinition | null, location?: string | null): string | null {
-  const normalizedLocation = location?.trim()
-  if (!normalizedLocation || !Array.isArray(script?.actions)) return null
-
-  const match = normalizedLocation.match(/^(?:Step|Request)\s+(\d+)$/i)
-  if (!match) return null
-
-  const actionIndex = Number.parseInt(match[1], 10) - 1
-  if (!Number.isInteger(actionIndex) || actionIndex < 0 || actionIndex >= script.actions.length) {
-    return null
-  }
-
-  return script.actions[actionIndex]?.name?.trim() || null
-}
-
-function findFirstImportedActionTarget(script: ScriptDefinition | null, locations: Array<string | null | undefined>): { location: string; actionName: string } | null {
-  for (const location of locations) {
-    const normalizedLocation = location?.trim()
-    if (!normalizedLocation) continue
-
-    const actionName = findImportedActionName(script, normalizedLocation)
-    if (actionName) {
-      return { location: normalizedLocation, actionName }
-    }
-  }
-
-  return null
-}
-
 function findFirstImportedRuntimeArea(entries?: Array<{ area?: string | null }> | null): string | null {
   if (!Array.isArray(entries)) return null
 
@@ -914,7 +887,7 @@ const validationReviewTabs = [
   { id: 'overview', label: 'Review' },
   { id: 'credentials', label: 'Credentials' },
   { id: 'data', label: 'Data & parameters' },
-  { id: 'preserved', label: 'Runtime & source settings' },
+  { id: 'preserved', label: 'Runtime settings' },
   { id: 'dsl', label: 'DSL Preview' },
   { id: 'source', label: 'Source Mapping' },
 ] as const
@@ -974,7 +947,9 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
+  const [settingsEditing, setSettingsEditing] = useState(false)
   const [internalReviewBusy, setInternalReviewBusy] = useState(false)
+  const [guidedRepairBusy, setGuidedRepairBusy] = useState(false)
   type ImportSaveScope = {
     itemId: string
     generation: number
@@ -996,9 +971,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     || reviewArtifactPersistenceInProgress
     || editorActionPreparing
     || internalReviewBusy
+    || guidedRepairBusy
     || scriptSaveInProgress
     || atomicSaveInProgress
-  const sourceMutationLocked = reviewArtifactPersistenceInProgress || scriptSaveInProgress || atomicSaveInProgress
+  const sourceMutationLocked = settingsEditing || reviewArtifactPersistenceInProgress || scriptSaveInProgress || atomicSaveInProgress
   const sourceMutationLockedRef = useRef(sourceMutationLocked)
   sourceMutationLockedRef.current = sourceMutationLocked
   useEffect(() => {
@@ -1283,7 +1259,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const reviewScope = `${selectedItem?.id || ''}:${selectedItem?.reviewGeneration ?? -1}:${activeResultScriptIndex}:${projectId || ''}`
   useEffect(() => {
     setValidationReviewTab('overview')
-  }, [projectId, selectedItem?.id, selectedItem?.reviewGeneration])
+  }, [projectId, selectedItem?.id])
   useEffect(() => {
     const activeSave = reviewArtifactSaveInFlightRef.current
     setReviewArtifactSaving(Boolean(
@@ -1406,9 +1382,6 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const salesforceReview = reviewSummary?.salesforce_review || null
   const salesforceNativeScript = salesforceReview?.native_preview?.script || null
   const sourceReview = reviewSummary?.source_review || getSourceReviewFromMetadata(importMetadata)
-  const projectSections = getSummaryList(reviewSummary?.project_sections).length > 0
-    ? getSummaryList(reviewSummary?.project_sections)
-    : importSummary.projectSections
   const runtimeFiles = getSummaryList(reviewSummary?.runtime_files).length > 0
     ? getSummaryList(reviewSummary?.runtime_files)
     : importSummary.runtimeFiles
@@ -1652,20 +1625,6 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     : [], [importedScript])
   // These scans only need the first hit, so stop at it instead of walking every
   // correlation suggestion (and every action behind it) on each render.
-  const firstCorrelationSourceTarget = useMemo(() => {
-    for (const correlation of importSummary.correlationSuggestions) {
-      const target = findFirstImportedActionTarget(importedScript, [correlation.found_at])
-      if (target) return target
-    }
-    return null
-  }, [importSummary.correlationSuggestions, importedScript])
-  const firstCorrelationUsageTarget = useMemo(() => {
-    for (const correlation of importSummary.correlationSuggestions) {
-      const target = findFirstImportedActionTarget(importedScript, correlation.used_at)
-      if (target) return target
-    }
-    return null
-  }, [importSummary.correlationSuggestions, importedScript])
   const firstRuntimeBlockingArea = findFirstImportedRuntimeArea(runtimeBlockingSettings)
   const firstRuntimeParityArea = findFirstImportedRuntimeArea(importSummary.runtimeSettingsParity)
   const firstMappedParameterDataSourceName = useMemo(() => {
@@ -3536,6 +3495,8 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
     updateImportItem(selectedItem.id, {
       result: resolvedResult,
+      reviewMode: 'conversion',
+      status: 'converted',
       replayValidationLoading: false,
       replayValidationError: '',
       replayValidationWarnings: [],
@@ -3612,11 +3573,13 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     _diffs: unknown[],
     _selectedIds: string[],
     importDraftExpiresAt?: string,
+    refreshedRequirements?: EnterpriseArchiveImportResult['secret_binding_requirements'],
   ) => {
     if (!selectedItem || !result || !importedScript) return
     const nextScripts = resultScripts.map((script, index) => index === activeResultScriptIndex ? parameterizedScript : script)
     const nextResult = {
       ...result,
+      ...(refreshedRequirements ? { secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, activeResultScriptIndex, parameterizedScript, refreshedRequirements.map(requirement => ({ ...requirement, script_index: activeResultScriptIndex }))) } : {}),
       script: nextScripts[0],
       scripts: nextScripts,
       ...(nextScripts.length === 1 ? { import_draft_expires_at: importDraftExpiresAt } : {}),
@@ -3629,7 +3592,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       optionsIdentity: selectedItem.reviewOptionsIdentity || '',
       importedScript: parameterizedScript,
       result: nextResult,
-      secretBindingRequirements,
+      secretBindingRequirements: secretBindingRequirementsForScript(nextResult.secret_binding_requirements, activeResultScriptIndex, parameterizedScript),
     }
     nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
     updateImportItem(selectedItem.id, {
@@ -3805,7 +3768,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   }
 
   const selectEnterpriseQueueItem = (itemID: string, focusButton = false) => {
-    if (!importItems.some(item => item.id === itemID)) return
+    if (settingsEditing || !importItems.some(item => item.id === itemID)) return
     if (focusButton) pendingQueueItemFocusRef.current = itemID
     setSelectedItemId(itemID)
     setError('')
@@ -3827,6 +3790,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   }
 
   const selectEnterpriseResultScript = (index: number, focusButton = false) => {
+    if (settingsEditing) return
     if (resultScripts.length === 0) return
     const nextIndex = Math.max(0, Math.min(resultScripts.length - 1, index))
     if (nextIndex === activeResultScriptIndex) return
@@ -4333,7 +4297,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       {displayError && <div className="lr-error" role="alert">{displayError}</div>}
       {displayNotice && <div className="settings-notice">{displayNotice}</div>}
 
-      <ArchiveReviewBoundary key={`${selectedItem?.id}:${selectedItem?.reviewGeneration}`} archiveName={selectedItem?.file.name || 'Selected archive'} retryDisabled={sourceMutationLocked || workingMode !== null} onRetry={() => { if (selectedItem) void runReview('validate', options, undefined, [selectedItem.id]) }}>
+      <ArchiveReviewBoundary key={`${selectedItem?.id}:${projectId}`} resetKey={reviewScope} archiveName={selectedItem?.file.name || 'Selected archive'} retryDisabled={sourceMutationLocked || workingMode !== null} onRetry={() => { if (selectedItem) void runReview('validate', options, undefined, [selectedItem.id]) }}>
       {/* Results */}
       {result && !importedScript && reviewArtifact && (
         <div className="lr-result">
@@ -4496,9 +4460,18 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             </div>}
             script={importedScript}
             warnings={result.warnings}
+            unsupportedElements={unsupportedFunctions}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            onSettingsBusyChange={setSettingsEditing}
+            onSettingsApplied={updated => {
+              handleParameterizationApplied(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])
+              setProtectedReview(null)
+              if (selectedItem) updateImportItem(selectedItem.id, { reviewMode: 'conversion', status: 'converted', notice: 'Settings applied to the reviewed draft.' })
+            }}
+            settingsDisabled={selectedResultScriptSaved || !reviewMatchesCurrentOptions}
+            runtimeContent={<div className="lr-validation-review-preserved" hidden={validationReviewTab !== 'preserved'}><ImportRuntimeSettingsTable script={importedScript} /></div>}
             secretBindingRequirements={secretBindingRequirements}
             sourceMigrationRequirements={archiveSecretBindingRequirements}
             preserveSourceSessionAfterApply={archiveSecretBindingRequirements.length > secretBindingRequirements.length}
@@ -4514,7 +4487,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             onSourceSecretSessionSettled={handleSourceSecretSessionSettled}
             credentialReviewRef={credentialReviewRef}
             saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert' || scriptSaveInProgress}
-            reviewBusy={!reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress || selectedResultScriptSaved}
+            reviewBusy={guidedRepairBusy || !reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress || selectedResultScriptSaved}
             onReviewBusyChange={setInternalReviewBusy}
             saveDisabled={reviewSaveDisabled}
             saveDisabledReason={reviewSaveDisabledReason}
@@ -4539,7 +4512,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}
           >
-            {importedScript && <ImportGuidedRepair focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={`${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={selectReviewSection} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} onViewSource={path => {
+            {importedScript && <ImportGuidedRepair onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={`${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={selectReviewSection} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} onViewSource={path => {
               const mapping = sourceReview?.mappings?.find(entry => entry.target_path === path)
               setRepairSourceFocus(previous => ({ id: mapping?.id || '', file: '', revision: previous.revision + 1 }))
               setValidationReviewTab('source')
@@ -4556,10 +4529,6 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               hidden={validationReviewTab !== 'overview'}
             >
             {saveBlockedByProtocolGate && <div className="lr-warnings" role="status"><strong>Execution blocked</strong><p>{combinedJavaVuserGate ? 'Save the combined draft for approval. A compatible governed Java runner is also required before execution.' : 'Save a reference artifact. This protocol is not available for executable promotion in this import.'}</p></div>}
-            <details className="lr-conversion-details" open={browserImport || saveBlockedByProtocolGate}>
-              <summary>Conversion details & technical evidence</summary>
-              <p>Import accounting, original converter messages, and specialist runtime checks. Current actionable findings are grouped above.</p>
-              {replayPreflight && <details><summary>Passed static checks ({replayPreflight.checks?.filter(check => check.status === 'pass').length || 0})</summary><ul>{replayPreflight.checks?.filter(check => check.status === 'pass').map(check => <li key={check.id}><strong>{check.label}</strong>: {check.detail}</li>)}</ul><p>These checks describe the archive validation. Repairs are evaluated separately against the current protected draft.</p></details>}
             {saveBlockedByProtocolGate && detectedProtocol && (
               <div className="lr-warnings lr-protocol-gate">
                 <div className="lr-review-section">
@@ -4621,20 +4590,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                   <p>
                     {trueClient2CompatReport.source_script_type || 'TruClient source'} · {trueClient2CompatReport.import_mode || 'review'} · {trueClient2CompatReport.promotion_allowed ? 'Promotion allowed' : 'Promotion blocked'}
                   </p>
-                  <div className="lr-compat-grid">
-                    <div>
-                      <span>Steps</span>
-                      <strong>{trueClient2CompatReport.converted_actions ?? 0}/{trueClient2CompatReport.imported_steps ?? 0}</strong>
-                      <small>{trueClient2CompatReport.skipped_review_steps ?? 0} skipped/review</small>
-                    </div>
-                    <div>
-                      <span>Selectors</span>
-                      <strong>{trueClient2CompatReport.selector_confidence_pct ?? 0}%</strong>
-                      <small>{trueClient2CompatReport.selector_candidate_count ?? 0} candidates</small>
-                    </div>
-                    <div>
-                      <span>Runtime</span>
-                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.runtime_parity_status || 'unknown')}</strong>
+                  <ImportEvidenceFacts facts={[
+                    { label: 'Steps', value: `${trueClient2CompatReport.converted_actions ?? 0}/${trueClient2CompatReport.imported_steps ?? 0}`, detail: `${trueClient2CompatReport.skipped_review_steps ?? 0} skipped/review` },
+                    { label: 'Selectors', value: `${trueClient2CompatReport.selector_confidence_pct ?? 0}%`, detail: `${trueClient2CompatReport.selector_candidate_count ?? 0} candidates` },
+                    { label: 'Runtime', value: <>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.runtime_parity_status || 'unknown')}
                       <details>
                         <summary>Compatibility evidence</summary>
                         {typeof trueClient2CompatReport.fixture_contract_status === 'string'
@@ -4644,23 +4603,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                           ))}</ul>}
                         {!trueClient2CompatReport.fixture_contract_status && <p>Compatibility evidence not available.</p>}
                       </details>
-                    </div>
-                    <div>
-                      <span>Replay</span>
-                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.replay_status || 'required')}</strong>
-                      <small>{trueClient2CompatReport.frame_window_blockers ?? 0} frame/window blockers</small>
-                    </div>
-                    <div>
-                      <span>JavaScript</span>
-                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.javascript_review_gate || 'none')}</strong>
-                      <small>review gate</small>
-                    </div>
-                    <div>
-                      <span>HTTP Conversion</span>
-                      <strong>{formatRuntimeSettingStatusLabel(trueClient2CompatReport.http_conversion_readiness || 'not ready')}</strong>
-                      <small>scale path</small>
-                    </div>
-                  </div>
+                    </> },
+                    { label: 'Replay', value: formatRuntimeSettingStatusLabel(trueClient2CompatReport.replay_status || 'required'), detail: `${trueClient2CompatReport.frame_window_blockers ?? 0} frame/window blockers` },
+                    { label: 'JavaScript review gate', value: formatRuntimeSettingStatusLabel(trueClient2CompatReport.javascript_review_gate || 'none') },
+                    { label: 'HTTP conversion', value: formatRuntimeSettingStatusLabel(trueClient2CompatReport.http_conversion_readiness || 'not ready'), detail: 'Scale path' },
+                  ]} />
                   {trueClient2CompatReport.supported_step_families?.length ? (
                     <p>Supported steps: {trueClient2CompatReport.supported_step_families.join(', ')}</p>
                   ) : null}
@@ -4720,28 +4667,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                           <strong>Replay Evidence</strong>
                           <span>{browserReplayEvidence.events > 0 ? 'Captured' : 'Pending'}</span>
                         </div>
-                        <div className="lr-compat-grid lr-replay-evidence-grid">
-                          <div>
-                            <span>Actions</span>
-                            <strong>{formatEvidenceCount(browserReplayEvidence.events, 'action')}</strong>
-                            <small>{browserReplayEvidence.passed} passed / {browserReplayEvidence.failed} failed</small>
-                          </div>
-                          <div>
-                            <span>Captures</span>
-                            <strong>{formatEvidenceCount(browserReplayEvidence.screenshots, 'screenshot')}</strong>
-                            <small>{formatEvidenceCount(browserReplayEvidence.domHtmlCaptures, 'DOM/HTML capture')}</small>
-                          </div>
-                          <div>
-                            <span>Telemetry</span>
-                            <strong>{formatEvidenceCount(browserReplayEvidence.consoleEntries, 'console entry', 'console entries')}</strong>
-                            <small>{formatEvidenceCount(browserReplayEvidence.networkEntries, 'network entry', 'network entries')}</small>
-                          </div>
-                          <div>
-                            <span>Source Links</span>
-                            <strong>{formatEvidenceCount(browserReplayEvidence.sourceSteps, 'source step')}</strong>
-                            <small>{formatEvidenceCount(browserReplayEvidence.sourceTransactions, 'transaction')}</small>
-                          </div>
-                        </div>
+                        <ImportEvidenceFacts facts={[
+                          { label: 'Actions', value: formatEvidenceCount(browserReplayEvidence.events, 'action'), detail: `${browserReplayEvidence.passed} passed / ${browserReplayEvidence.failed} failed` },
+                          { label: 'Captures', value: formatEvidenceCount(browserReplayEvidence.screenshots, 'screenshot'), detail: formatEvidenceCount(browserReplayEvidence.domHtmlCaptures, 'DOM/HTML capture') },
+                          { label: 'Telemetry', value: formatEvidenceCount(browserReplayEvidence.consoleEntries, 'console entry', 'console entries'), detail: formatEvidenceCount(browserReplayEvidence.networkEntries, 'network entry', 'network entries') },
+                          { label: 'Source links', value: formatEvidenceCount(browserReplayEvidence.sourceSteps, 'source step'), detail: formatEvidenceCount(browserReplayEvidence.sourceTransactions, 'transaction') },
+                        ]} />
                       </div>
                     </>
                   )}
@@ -4831,20 +4762,22 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </div>
             )}
 
-            {/* Stats */}
-            <div className="lr-stats-grid">
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.logical_actions ?? result.stats.converted_actions}</span><span className="lr-stat-label">Logical Actions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.raw_request_actions ?? result.stats.converted_actions}</span><span className="lr-stat-label">{importedScript.protocol === 'java_vuser' ? 'Lifecycle actions' : 'Raw Requests'}</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.collapsed_requests ?? 0}</span><span className="lr-stat-label">Collapsed</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.extractors}</span><span className="lr-stat-label">Extractors</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.transactions}</span><span className="lr-stat-label">Transactions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.transaction_markers ?? 0}</span><span className="lr-stat-label">LR Markers</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_functions}</span><span className="lr-stat-label">Total LR Functions</span></div>
-            </div>
-
+            <ImportConversionDetails
+              description="Original archive conversion counts and reports. These do not update after draft repairs or verify replay; use the issue queue above for current requirements."
+              facts={[
+                { label: 'Logical actions', value: result.stats.logical_actions ?? result.stats.converted_actions },
+                { label: importedScript.protocol === 'java_vuser' ? 'Lifecycle actions' : 'Raw requests', value: result.stats.raw_request_actions ?? result.stats.converted_actions },
+                { label: 'Collapsed requests', value: result.stats.collapsed_requests ?? 0 },
+                { label: 'Extractors', value: result.stats.extractors },
+                { label: 'Transactions', value: result.stats.transactions },
+                { label: 'Transaction markers', value: result.stats.transaction_markers ?? 0 },
+                { label: 'Source functions', value: result.stats.total_functions },
+              ]}
+            >
+              {(replayPreflight?.checks?.filter(check => check.status === 'pass').length || 0) > 0 && <details className="import-evidence-section"><summary>Passed static checks ({replayPreflight?.checks?.filter(check => check.status === 'pass').length})</summary><ul>{replayPreflight?.checks?.filter(check => check.status === 'pass').map(check => <li key={check.id}><strong>{check.label}</strong>: {check.detail}</li>)}</ul></details>}
             {unsupportedFunctions.length > 0 && (
-              <div className="lr-warnings">
-                <h4>Unsupported Source Functions ({unsupportedFunctions.length})</h4>
+              <details className="import-evidence-section">
+                <summary>Unsupported source functions ({unsupportedFunctions.length})</summary>
                 <ul>
                   {unsupportedFunctions.map((fnName, index) => {
                     const repairSuggestion = findUnsupportedRepairSuggestion(repairSuggestions, fnName)
@@ -4875,14 +4808,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     onClick: () => openImportedScriptInEditor(),
                   },
                 ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-              </div>
+              </details>
             )}
 
             {(reviewSections.length > 0 || repairSuggestions.length > 0) && (
-              <div className="lr-review-row">
+              <div className="import-evidence-reports">
                 {reviewSections.length > 0 && (
-                  <div className="lr-warnings">
-                    <h4>Import Review Sections ({reviewSections.length})</h4>
+                  <details className="import-evidence-section">
+                    <summary>Converter assessments ({reviewSections.length})</summary>
                     {reviewSections.map(section => (
                       <div key={section.key} className="lr-review-section">
                         <div className="lr-review-section-header">
@@ -4896,12 +4829,13 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                         )}
                       </div>
                     ))}
-                  </div>
+                  </details>
                 )}
 
                 {repairSuggestions.length > 0 && (
-                  <div className="lr-warnings">
-                    <h4>Repair Suggestions ({repairSuggestions.length})</h4>
+                  <details className="import-evidence-section">
+                    <summary>Original repair suggestions ({repairSuggestions.length})</summary>
+                    <p>Suggestions recorded during conversion. The issue queue reflects the current draft.</p>
                     {repairSuggestions.map(suggestion => {
                       const suggestionTitle = suggestion.category === 'replay'
                         ? normalizeReplaySuggestionCopy(suggestion.title)
@@ -4978,384 +4912,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                         )}
                       </div>
                     )})}
-                  </div>
+                  </details>
                 )}
               </div>
             )}
 
-            </details>
+            </ImportConversionDetails>
             </div>
 
-            <div
-              className="lr-validation-review-preserved"
-              hidden={validationReviewTab !== 'preserved'}
-            >
-              {importMetadata ? (
-                <div className="lr-preserved">
-                <div className="lr-preserved-header">
-                  <h4>Runtime & source settings</h4>
-                  <span>These values will be saved with the APEX Load script.</span>
-                </div>
-
-                <div className="lr-runtime-intro"><p>Compare imported runtime behavior with the settings mapped for replay. Mapping is not evidence of a successful run.</p><button type="button" className="btn btn-primary btn-sm" onClick={() => selectReviewSection('overview')}>Review required decisions</button> <button type="button" className="btn btn-secondary btn-sm" onClick={() => selectReviewSection('data')}>View parameters & capacity</button><p>{editRequiresCredentialPreservingSave ? 'Opening the editor first saves this protected draft. Replay blockers remain in effect.' : 'Editor actions open the draft for further configuration.'}</p></div>
-                <details className="lr-source-inventory"><summary>Source files & import metadata</summary><div className="lr-preserved-grid">
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Project File</span>
-                    <strong>{reviewSummary?.project_file || importMetadata.source_script_name || importedScript.name}</strong>
-                    <small>{importMetadata.source || 'enterprise_script_archive'}</small>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      {
-                        key: 'summary-project-file-script',
-                        label: 'Open Imported Script In Editor',
-                        onClick: () => openImportedScriptInEditor(),
-                      },
-                    ])}
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Mapped Runtime</span>
-                    <strong>{reviewSummary?.mapped_runtime_file || 'None mapped'}</strong>
-                    <small>{runtimeFiles.join(', ') || 'No runtime files found'}</small>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      {
-                        key: 'summary-runtime-review',
-                        label: 'Open Runtime Settings In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-                      },
-                      firstRuntimeParityArea ? {
-                        key: 'summary-runtime-area',
-                        label: 'Open First Runtime Setting In Editor',
-                        onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)))}
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Parameter Files</span>
-                    <strong>{parameterFiles.length}</strong>
-                    <small>{parameterFiles.join(', ') || 'No parameter files found'}</small>
-                    {importedEditorAvailable && parameterFiles.length > 0 && renderEditorActionButtons([
-                      {
-                        key: 'summary-parameter-files',
-                        label: 'Open Parameter Files In Editor',
-                        onClick: () => openImportedParameterDataInEditor(firstMappedParameterDataSourceName || firstGeneratedDataSourceName),
-                      },
-                      firstMappedParameterDataSourceName ? {
-                        key: 'summary-parameter-source',
-                        label: 'Open First Data Source In Editor',
-                        onClick: () => openImportedDataSourceInEditor(firstMappedParameterDataSourceName),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)))}
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Correlation Suggestions</span>
-                    <strong>{importSummary.correlationSuggestions.length}</strong>
-                    <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from preserved metadata' : 'None detected'}</small>
-                    {importedEditorAvailable && importSummary.correlationSuggestions.length > 0 && renderEditorActionButtons([
-                      firstCorrelationSourceTarget ? {
-                        key: 'summary-correlation-source',
-                        label: 'Open First Correlation Source In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationSourceTarget.actionName }),
-                      } : null,
-                      firstCorrelationUsageTarget ? {
-                        key: 'summary-correlation-usage',
-                        label: 'Open First Correlation Use In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationUsageTarget.actionName }),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)))}
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Project Sections</span>
-                    <strong>{projectSections.length}</strong>
-                    <small>{projectSections.join(', ') || 'None captured'}</small>
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Unrecognized Function Names</span>
-                    <strong>{reviewSummary?.unsupported_function_count ?? unsupportedFunctions.length}</strong>
-                    <small>{unsupportedFunctions.slice(0, 4).join(', ') || 'No unrecognized names. Recognized constructs may still require review.'}</small>
-                    {importedEditorAvailable && firstUnsupportedTargetAction && renderEditorActionButtons([
-                      {
-                        key: 'summary-unsupported-action',
-                        label: 'Open First Unsupported Action In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetAction: firstUnsupportedTargetAction }),
-                      },
-                    ])}
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Constructs Requiring Review</span>
-                    <strong>{sourceReview?.mappings?.filter(mapping => ['review', 'review_only', 'unsupported', 'external_required', 'blocked'].includes(mapping.status)).length || 0}</strong>
-                    <small>Recognized constructs can still need repair; inspect source mappings for details.</small>
-                  </div>
-                  <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Source</span>
-                    <strong>{importMetadata.source || 'enterprise_script_archive'}</strong>
-                    <small>{importedScript.name}</small>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      {
-                        key: 'summary-source-script',
-                        label: 'Open Imported Script In Editor',
-                        onClick: () => openImportedScriptInEditor(),
-                      },
-                    ])}
-                  </div>
-                  {migrationReadiness && (
-                    <div className="lr-preserved-card">
-                      <span className="lr-preserved-label">Runtime Settings Coverage</span>
-                      <strong>{migrationReadiness.score_pct}%</strong>
-                      <small>{migrationReadiness.blocked ? 'Blocked by the Migration Block Policy in Conversion Options' : 'Coverage of runtime settings only; not overall execution readiness.'}</small>
-                      {renderEditorActionButtons([
-                        importedEditorAvailable ? {
-                          key: 'summary-migration-runtime-review',
-                          label: 'Open Runtime Review In Editor',
-                          onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-                        } : null,
-                        importedEditorAvailable && firstRuntimeBlockingArea ? {
-                          key: 'summary-migration-blocking-area',
-                          label: 'Open First Blocking Setting In Editor',
-                          onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
-                        } : null,
-                        ...buildMigrationPolicyRelaxationButtons('summary-migration-relax'),
-                      ].filter((button): button is EditorActionButton => Boolean(button)))}
-                    </div>
-                  )}
-                </div>
-
-                </details><details><summary>Parameter mapping evidence</summary>
-                {importSummary.parameterFileSections.length > 0 && (
-                  <div className="lr-review-section">
-                    <div className="lr-review-section-header">
-                      <strong>Parameter File Mappings</strong>
-                      <span>{importSummary.parameterFileSections.length}</span>
-                    </div>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      {
-                        key: 'parameter-mappings-review',
-                        label: 'Open Parameter Files In Editor',
-                        onClick: () => openImportedParameterDataInEditor(firstMappedParameterDataSourceName || firstGeneratedDataSourceName),
-                      },
-                      firstMappedParameterDataSourceName ? {
-                        key: 'parameter-mappings-source',
-                        label: 'Open First Data Source In Editor',
-                        onClick: () => openImportedDataSourceInEditor(firstMappedParameterDataSourceName),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    <div className="lr-table-wrap">
-                      <table className="lr-parameter-table">
-                        <thead>
-                          <tr>
-                            <th>File</th>
-                            <th>Section</th>
-                            <th>Mapped Data Source</th>
-                            <th>Mapping</th>
-                            <th>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {importSummary.parameterFileSections.map((section) => {
-                            const mappedSourceName = findImportedParameterMappingDataSourceName(generatedDataSources, section.values)
-                            return (
-                              <tr key={`${section.file}:${section.name}`}>
-                                <td><strong>{section.file}</strong></td>
-                                <td>{section.name}</td>
-                                <td>{mappedSourceName || 'Not generated'}</td>
-                                <td>{formatParameterMappingDetails(section.values) || 'No explicit mapping options'}</td>
-                                <td>
-                                  {mappedSourceName && importedEditorAvailable ? (
-                                    <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: mappedSourceName })}>
-                                      Open Mapped Data Source In Editor
-                                    </button>
-                                  ) : (
-                                    <span className="lr-table-muted">None</span>
-                                  )}
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                </details>
-                {importSummary.correlationSuggestions.length > 0 && (
-                  <div className="lr-review-section">
-                    <div className="lr-review-section-header">
-                      <strong>Correlation Suggestions</strong>
-                      <span>{importSummary.correlationSuggestions.length}</span>
-                    </div>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      firstCorrelationSourceTarget ? {
-                        key: 'correlation-review-source',
-                        label: 'Open First Correlation Source In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationSourceTarget.actionName }),
-                      } : null,
-                      firstCorrelationUsageTarget ? {
-                        key: 'correlation-review-usage',
-                        label: 'Open First Correlation Use In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetAction: firstCorrelationUsageTarget.actionName }),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    <ul>
-                      {importSummary.correlationSuggestions.map((correlation) => {
-                        const sourceActionName = findImportedActionName(importedScript, correlation.found_at)
-                        const usedActionTargets = correlation.used_at
-                          .map((location) => ({ location, actionName: findImportedActionName(importedScript, location) }))
-                          .filter((target): target is { location: string; actionName: string } => Boolean(target.actionName))
-                        return (
-                        <li key={`${correlation.name}:${correlation.expression}:${correlation.found_at}`}>
-                          <strong>{correlation.name}</strong>
-                          {`: ${correlation.source} via ${correlation.expression}`}
-                          {correlation.sample_value ? ` • ${correlation.sample_value}` : ''}
-                          {` • Found in ${correlation.found_at}`}
-                          {correlation.used_at.length > 0 ? ` • Used in ${correlation.used_at.join(', ')}` : ''}
-                          {sourceActionName && importedEditorAvailable && (
-                            <>
-                              {' '}
-                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: sourceActionName })}>
-                                Open Source Action In Editor
-                              </button>
-                            </>
-                          )}
-                          {usedActionTargets.map(({ location, actionName }) => (
-                            <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: actionName })}>
-                              {`Open ${location} In Editor`}
-                            </button>
-                          ))}
-                        </li>
-                      )})}
-                    </ul>
-                  </div>
-                )}
-
-                {runtimeBlockingSettings.length > 0 && (
-                  <div className="lr-review-section">
-                    <div className="lr-review-section-header">
-                      <strong>Runtime Settings Requiring Repair</strong>
-                      <span>{runtimeBlockingSettings.length}</span>
-                    </div>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      {
-                        key: 'runtime-blocking-review',
-                        label: 'Open Runtime Review In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-                      },
-                      firstRuntimeBlockingArea ? {
-                        key: 'runtime-blocking-area',
-                        label: 'Open First Blocking Setting In Editor',
-                        onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    <ul>
-                      {runtimeBlockingSettings.map((entry) => (
-                        <li key={`blocking-${entry.id}`}>
-                          <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
-                          {`: ${entry.concept}`}
-                          {entry.runtime_files.length > 0 ? ` • ${entry.runtime_files.join(', ')}` : ''}
-                          {importedEditorAvailable && getImportedRuntimeSectionId(entry.area) && (
-                            <>
-                              {' '}
-                              <button className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>
-                                {`Open ${entry.area} Settings In Editor`}
-                              </button>
-                            </>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {importSummary.runtimeSettingsParity.length > 0 && (
-                  <div className="lr-review-section">
-                    <div className="lr-review-section-header">
-                      <strong>Runtime Settings Parity</strong>
-                      <span>{importSummary.runtimeSettingsParity.length}</span>
-                    </div>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      {
-                        key: 'runtime-parity-review',
-                        label: 'Open Runtime Review In Editor',
-                        onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
-                      },
-                      firstRuntimeParityArea ? {
-                        key: 'runtime-parity-area',
-                        label: 'Open First Runtime Setting In Editor',
-                        onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeParityArea),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    {['Requires decision', 'Mapped for replay', 'Preserved only', 'Not applicable'].map(group => {
-                      const rows = importSummary.runtimeSettingsParity.filter(entry => (entry.status === 'executed' ? 'Mapped for replay' : entry.status === 'compatibility_only' ? 'Preserved only' : entry.status === 'non_applicable' ? 'Not applicable' : 'Requires decision') === group)
-                      if (!rows.length) return null
-                      return <details key={group} open={group === 'Requires decision' || group === 'Mapped for replay'}><summary>{group} ({rows.length})</summary><div className="lr-table-wrap"><table className="lr-parameter-table lr-runtime-table"><thead><tr><th>Setting / source</th><th>APEX behavior</th><th>Review</th></tr></thead><tbody>{rows.map(entry => <tr key={entry.id}><th scope="row">{entry.area}: {entry.concept}<small>{entry.runtime_files?.join(', ')}</small></th><td>{entry.notes || (group === 'Mapped for replay' ? 'Mapped to supported replay settings; target behavior has not been verified.' : group === 'Preserved only' ? 'Retained as evidence without execution.' : group === 'Not applicable' ? 'No runtime behavior applies.' : 'A source or migration decision is required.')}<details><summary>Source fields</summary><p>{entry.fields?.join(', ') || 'Inspect the captured runtime file for original values.'}</p></details></td><td><button type="button" className="btn btn-secondary btn-sm" onClick={() => { if (group === 'Requires decision') { selectReviewSection('overview'); return } setRepairSourceFocus(previous => ({ id: '', file: entry.runtime_files?.[0] || '', revision: previous.revision + 1 })); selectReviewSection('source') }}>{group === 'Requires decision' ? 'Review decision' : 'View source'}</button>{importedEditorAvailable && getImportedRuntimeSectionId(entry.area) && <button type="button" className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>Configure {entry.area}</button>}</td></tr>)}</tbody></table></div></details>
-                    })}
-                  </div>
-                )}
-
-                <details><summary>Data source evidence</summary>{generatedDataSources.length > 0 && (
-                  <div className="lr-review-section">
-                    <div className="lr-review-section-header">
-                      <strong>Generated Data Sources</strong>
-                      <span>{generatedDataSources.length}</span>
-                    </div>
-                    {importedEditorAvailable && renderEditorActionButtons([
-                      {
-                        key: 'generated-sources-review',
-                        label: 'Open Parameter Data In Editor',
-                        onClick: () => openImportedParameterDataInEditor(firstGeneratedDataSourceName),
-                      },
-                      firstGeneratedDataSourceName ? {
-                        key: 'generated-sources-source',
-                        label: 'Open First Data Source In Editor',
-                        onClick: () => openImportedDataSourceInEditor(firstGeneratedDataSourceName),
-                      } : null,
-                    ].filter((button): button is EditorActionButton => Boolean(button)), sectionActionStyle)}
-                    <div className="lr-table-wrap">
-                      <table className="lr-data-source-table">
-                        <thead>
-                          <tr>
-                            <th>Source</th>
-                            <th>Type</th>
-                            <th>Rows</th>
-                            <th>Columns</th>
-                            <th>Action</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {generatedDataSources.map((source) => (
-                            <tr key={source.name}>
-                              <td><strong>{source.name}</strong></td>
-                              <td>{source.type}</td>
-                              <td>{source.rows}</td>
-                              <td>
-                                {typeof source.columns === 'number'
-                                  ? `${source.columns} column${source.columns === 1 ? '' : 's'}`
-                                  : source.columns.join(', ') || 'No columns'}
-                              </td>
-                              <td>
-                                {importedEditorAvailable ? (
-                                  <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: source.name })}>
-                                    Open Source In Editor
-                                  </button>
-                                ) : (
-                                  <span className="lr-table-muted">None</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                </details><details className="lr-preserved-details">
-                  <summary>View preserved metadata JSON</summary>
-                  <pre>{JSON.stringify(importMetadata, null, 2)}</pre>
-                </details>
-                </div>
-              ) : (
-                <div className="lr-review-tab-empty">No preserved source settings were generated for this archive.</div>
-              )}
-            </div>
             </ScriptImportReview>
           </div>
         </div>
@@ -5548,14 +5112,4 @@ function findImportedParameterMappingDataSourceName(
 
   const lowerMatch = dataSources.find(source => source.name.trim().toLowerCase() === sanitizedName)
   return lowerMatch?.name || null
-}
-
-function formatParameterMappingDetails(values: Record<string, string>) {
-  const details: string[] = []
-  if (values.Type) details.push(values.Type)
-  if (values.ColumnName) details.push(`column ${values.ColumnName}`)
-  if (values.Table) details.push(`table ${values.Table}`)
-  if (values.SelectNextRow) details.push(values.SelectNextRow)
-  if (values.UpdateValueOn) details.push(values.UpdateValueOn)
-  return details.join(' • ')
 }

@@ -1,3 +1,5 @@
+import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
+import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import { useId, useState } from 'react'
@@ -357,7 +359,7 @@ export default function RuntimeSettingsGroupEditor({
   // type select (Inherit), which sets the whole section undefined.
   const patchThinkTime = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['think_time']>>) => {
     const edited = editReplacementSection(draft.think_time, next, inheritedThink)
-    patch({ think_time: thinkTimeConfigForType(edited, edited.type || 'fixed') })
+    patch({ think_time: thinkTimeConfigForType({ ...edited, type: effectiveThink.type }, edited.type || 'fixed') })
   }
 
   const patchPacing = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['pacing']>>) => {
@@ -785,10 +787,12 @@ export default function RuntimeSettingsGroupEditor({
                   <option value="none">None</option>
                   <option value="fixed">Fixed</option>
                   <option value="recorded">Replay think time as recorded</option>
+              <option value="random_percentage">Random percentage of recorded think time</option>
                   <option value="gaussian">Gaussian</option>
                   <option value="uniform">Uniform</option>
                 </select>
               </label>
+              {effectiveThink.type === 'random_percentage' && <ThinkTimePercentageInputs value={effectiveThink} disabled={Boolean(effectiveThink.ignore)} onChange={patchThinkTime} />}
               {thinkTimeUsesMean(effectiveThink.type) && (
                 <label>
                   <span>Mean (ms)</span>
@@ -1111,6 +1115,7 @@ export default function RuntimeSettingsGroupEditor({
               )}
 
               {httpSubTab === 'session_cache' && (
+                <>
                 <HttpRequestDefaultsEditor
                   actions={focusGroup.scriptActions}
                   newUserEachIteration={Boolean(effectiveBrowserEmulation.cache?.new_user_each_iteration)}
@@ -1120,10 +1125,13 @@ export default function RuntimeSettingsGroupEditor({
                   section="session"
                   value={httpSettingsValue}
                 />
+                <div className="scenario-browser-grid"><HTTPReplayPolicyFields section="session" value={draft.http} inherited={inheritedHttp} onChange={patchHttp} /></div>
+                </>
               )}
 
               {httpSubTab === 'timeouts' && (
                 <div className="scenario-browser-grid">
+                  <HTTPReplayPolicyFields section="timeouts" value={draft.http} inherited={inheritedHttp} onChange={patchHttp} />
                   <label><span>Connect timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.connect_timeout_ms ?? ''} onChange={event => patchHttp({ connect_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.connect_timeout_ms)} /></label>
                   <label><span>Request timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.request_timeout_ms ?? ''} onChange={event => patchHttp({ request_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.request_timeout_ms)} /></label>
                   <label><span>TLS handshake timeout (ms)</span><input className="settings-input" type="number" min={0} value={draft.http?.tls_timeout_ms ?? ''} onChange={event => patchHttp({ tls_timeout_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.tls_timeout_ms)} /></label>
@@ -1133,6 +1141,7 @@ export default function RuntimeSettingsGroupEditor({
 
               {httpSubTab === 'connection' && (
                 <div className="scenario-browser-grid">
+                  <HTTPReplayPolicyFields section="connection" value={draft.http} inherited={inheritedHttp} onChange={patchHttp} />
                   <label>
                     <span>HTTP version</span>
                     <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>

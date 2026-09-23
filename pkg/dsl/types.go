@@ -699,6 +699,17 @@ type LogConfig struct {
 // HTTPConfig holds all HTTP protocol runtime settings, modeled after
 // the configuration surface exposed by LoadRunner VuGen.
 type HTTPConfig struct {
+	// PageTimeoutMs bounds the complete request plus embedded-resource operation.
+	PageTimeoutMs int `json:"page_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	// IPVersion selects the address family for outgoing TCP connections, including proxy connections.
+	IPVersion string `json:"ip_version,omitempty" jsonschema:"enum=,enum=auto,enum=ipv4,enum=ipv6"`
+	// CacheMaxUnusedIterations evicts entries after this many unreferenced main iterations; zero disables aging.
+	CacheMaxUnusedIterations int      `json:"cache_max_unused_iterations,omitempty" jsonschema:"minimum=0,maximum=1000000"`
+	CacheExcludedMIMETypes   []string `json:"cache_excluded_mime_types,omitempty"`
+	// HTMLParseMode controls resource discovery; empty preserves the native HTML/XHTML default.
+	HTMLParseMode         string   `json:"html_parse_mode,omitempty" jsonschema:"enum=,enum=html,enum=text,enum=any"`
+	HTMLExcludedMIMETypes []string `json:"html_excluded_mime_types,omitempty"`
+
 	// Connection
 	Version         string `json:"version,omitempty" jsonschema:"enum=,enum=1.1,enum=2"` // "1.1" exact, "2" required/no fallback; empty auto-negotiates HTTP/1.1 or HTTP/2
 	MaxConnsPerHost int    `json:"max_conns_per_host,omitempty"`                         // default: 100
@@ -798,6 +809,8 @@ func (c ErrorHandlingConfig) ContinueOnErrorSet() bool {
 func ContinueOnErrorValue(enabled bool) *bool { return &enabled }
 
 type ThinkTimeConfig struct {
+	MinPercent float64 `json:"min_percent,omitempty" jsonschema:"minimum=0,maximum=10000"` // random_percentage: percentage of each recorded delay
+	MaxPercent float64 `json:"max_percent,omitempty" jsonschema:"minimum=0,maximum=10000"`
 	Type       string  `json:"type"`
 	MeanMs     float64 `json:"mean_ms" jsonschema:"minimum=0,maximum=3600000"`
 	StdMs      float64 `json:"std_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`

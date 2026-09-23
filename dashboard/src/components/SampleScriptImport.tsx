@@ -1,3 +1,4 @@
+import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
@@ -451,6 +452,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
   const [assetUploads, setAssetUploads] = useState<AssetUploadState>({})
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const [settingsEditing, setSettingsEditing] = useState(false)
   const [internalReviewBusy, setInternalReviewBusy] = useState(false)
   const desktop = isDesktopSurface()
   const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
@@ -913,6 +915,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     _diffs: unknown[],
     _selectedIds: string[],
     importDraftExpiresAt?: string,
+    refreshedRequirements?: SampleImportResult['secret_binding_requirements'],
   ) => {
     if (!result) return
     advanceReviewGeneration()
@@ -920,6 +923,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     const preflight = buildLocalReplayPreflight(parameterizedScript)
     convertTask.setValue({
       ...replaceImportResultScript(result, attachReplayPreflight(parameterizedScript, preflight), preflight),
+      ...(refreshedRequirements ? { secret_binding_requirements: refreshedRequirements } : {}),
       import_draft_expires_at: importDraftExpiresAt,
     })
   }
@@ -975,7 +979,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   }
 
   const handleAssetUpload = async (source: ScriptDataSource, file: File) => {
-    if (!result || !reviewedScript) return
+    if (!result || !reviewedScript || internalReviewBusy || saving) return
     const sourceGeneration = advanceReviewGeneration()
     const sourceProjectId = reviewProjectIdRef.current
     const targetIndex = (reviewedScript.data_sources || []).indexOf(source)
@@ -1025,7 +1029,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
               : 'Create an APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
+        {onClose && <button type="button" className="btn btn-secondary" disabled={settingsEditing} onClick={() => {
           invalidateSampleSource()
           onClose()
         }}>Back</button>}
@@ -1035,6 +1039,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
 
       <details className="import-source-setup" open={!result}>
         <summary>Source & conversion options — changing these requires a new review</summary>
+      <fieldset disabled={settingsEditing} className="import-source-fields">
       <div className="sample-import-card">
         <div className="sample-import-section-header">
           <div>
@@ -1251,7 +1256,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
         <button className="btn btn-secondary" onClick={() => handleFormatChange(format)}>Reset Template</button>
       </div>
 
-      </details>
+      </fieldset></details>
       {error && <div className="sample-import-error" role="alert">{error}</div>}
       {result && reviewedScript && (
         <div className="sample-import-result">
@@ -1290,7 +1295,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
                               <input
                                 type="file"
                                 aria-label={`Upload asset for ${source.name}`}
-                                disabled={uploadState?.pending}
+                                disabled={uploadState?.pending || internalReviewBusy || saving}
                                 hidden
                                 onChange={event => {
                                   const file = event.target.files?.[0]
@@ -1309,7 +1314,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             )}
 
             </> : undefined}
-            runtimeContent={<p>Timeout, pacing, authentication, and default headers were captured from Script Details. To change conversion options, expand source setup and inspect again. Effective runtime settings can also be edited in the Visual Editor.</p>}
+
             title="3. Review Generated Script"
             reviewGeneration={reviewScope}
             subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
@@ -1319,6 +1324,9 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             reviewSections={result.review_sections}
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            onSettingsBusyChange={setSettingsEditing}
+            onSettingsApplied={updated => handleParameterizationApplied(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])}
+            settingsDisabled={Boolean(savedResult)}
             secretBindingRequirements={result.secret_binding_requirements}
             onSecretBindingsApply={handleSecretBindingsApply}
             sharedValues={result.shared_values}
@@ -1331,6 +1339,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
             importDraftExpiresAt={result.import_draft_expires_at}
             credentialReviewRef={credentialReviewRef}
             saving={saving}
+            reviewBusy={Object.values(assetUploads).some(upload => upload.pending)}
             onReviewBusyChange={setInternalReviewBusy}
             saveDisabled={Boolean(savedResult) || hasMissingFileAssets}
             saveLabel={savedResult ? 'Saved to Script Library' : 'Save draft'}
@@ -1348,13 +1357,13 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
               </div>
             )}
 
-            <div className="sample-import-stats-grid">
-              <div className="sample-stat"><span className="sample-stat-value">{result.stats.converted_actions}</span><span className="sample-stat-label">Actions</span></div>
-              <div className="sample-stat"><span className="sample-stat-value">{result.stats.assertions}</span><span className="sample-stat-label">Assertions</span></div>
-              <div className="sample-stat"><span className="sample-stat-value">{result.stats.extractors}</span><span className="sample-stat-label">Extractors</span></div>
-              <div className="sample-stat"><span className="sample-stat-value">{result.stats.correlations_detected}</span><span className="sample-stat-label">Correlations</span></div>
-              {typeof result.stats.filtered_assets === 'number' && result.stats.filtered_assets > 0 && <div className="sample-stat"><span className="sample-stat-value">{result.stats.filtered_assets}</span><span className="sample-stat-label">Filtered assets</span></div>}
-            </div>
+            <ImportConversionDetails facts={[
+              { label: 'Actions', value: result.stats.converted_actions },
+              { label: 'Assertions', value: result.stats.assertions },
+              { label: 'Extractors', value: result.stats.extractors },
+              { label: 'Correlations', value: result.stats.correlations_detected },
+              ...(typeof result.stats.filtered_assets === 'number' && result.stats.filtered_assets > 0 ? [{ label: 'Filtered assets', value: result.stats.filtered_assets }] : [])
+            ]} />
           </ScriptImportReview>
         </div>
       )}

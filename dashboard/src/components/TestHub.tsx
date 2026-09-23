@@ -124,11 +124,13 @@ export interface ScenarioFormState {
   runtime_pacing_min_interval_ms?: number
   runtime_pacing_max_interval_ms?: number
   runtime_pacing_tps?: number
-  runtime_think_time_type?: '' | 'none' | 'fixed' | 'recorded' | 'gaussian' | 'uniform'
+  runtime_think_time_type?: '' | 'none' | 'fixed' | 'recorded' | 'random_percentage' | 'gaussian' | 'uniform'
   runtime_think_time_ms?: number
   runtime_think_time_std_ms?: number
   runtime_think_time_min_ms?: number
   runtime_think_time_max_ms?: number
+  runtime_think_time_min_percent?: number
+  runtime_think_time_max_percent?: number
   runtime_think_time_multiplier?: number
   runtime_think_time_limit_ms?: number
   runtime_ignore_think_time: boolean
@@ -435,6 +437,8 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
       std_ms: form.runtime_think_time_std_ms,
       min_ms: form.runtime_think_time_min_ms,
       max_ms: form.runtime_think_time_max_ms,
+      min_percent: form.runtime_think_time_min_percent,
+      max_percent: form.runtime_think_time_max_percent,
       multiplier: form.runtime_think_time_multiplier,
       limit_ms: form.runtime_think_time_limit_ms,
       ignore: form.runtime_ignore_think_time,
@@ -2040,6 +2044,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       runtime_think_time_std_ms: seed.think_time ? seed.think_time.std_ms : (replacesRuntime ? undefined : prev.runtime_think_time_std_ms),
       runtime_think_time_min_ms: seed.think_time ? seed.think_time.min_ms : (replacesRuntime ? undefined : prev.runtime_think_time_min_ms),
       runtime_think_time_max_ms: seed.think_time ? seed.think_time.max_ms : (replacesRuntime ? undefined : prev.runtime_think_time_max_ms),
+      runtime_think_time_min_percent: seed.think_time ? seed.think_time.min_percent : (replacesRuntime ? undefined : prev.runtime_think_time_min_percent),
+      runtime_think_time_max_percent: seed.think_time ? seed.think_time.max_percent : (replacesRuntime ? undefined : prev.runtime_think_time_max_percent),
       runtime_think_time_multiplier: seed.think_time ? seed.think_time.multiplier : (replacesRuntime ? undefined : prev.runtime_think_time_multiplier),
       runtime_think_time_limit_ms: seed.think_time ? seed.think_time.limit_ms : (replacesRuntime ? undefined : prev.runtime_think_time_limit_ms),
       runtime_ignore_think_time: seed.think_time ? Boolean(seed.think_time.ignore) : (replacesRuntime ? false : prev.runtime_ignore_think_time),

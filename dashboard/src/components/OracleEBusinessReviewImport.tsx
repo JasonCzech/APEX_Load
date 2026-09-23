@@ -1,3 +1,4 @@
+import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import { useEffect, useRef, useState } from 'react'
@@ -201,24 +202,12 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
                 <p>{(review.package || 'Unknown package').replace(/_/g, ' ')} · {(review.status || 'Review required').replace(/_/g, ' ')}</p>
               </div>
             </div>
-            <div className="sample-import-stats-grid">
-              <div className="sample-stat">
-                <span className="sample-stat-value">{review.source_summary?.files ?? files.length}</span>
-                <span className="sample-stat-label">files</span>
-              </div>
-              <div className="sample-stat">
-                <span className="sample-stat-value">{review.source_summary?.bytes ?? sourceText.length}</span>
-                <span className="sample-stat-label">bytes</span>
-              </div>
-              <div className="sample-stat">
-                <span className="sample-stat-value">{(review.execution_posture?.posture || 'review').replace(/_/g, ' ')}</span>
-                <span className="sample-stat-label">posture</span>
-              </div>
-              <div className="sample-stat">
-                <span className="sample-stat-value">{review.repair_suggestions?.length || 0}</span>
-                <span className="sample-stat-label">suggestions</span>
-              </div>
-            </div>
+            <ImportConversionDetails title="Source details" description="Source inventory from this review. Execution posture and required follow-up are shown separately." facts={[
+              { label: 'files', value: review.source_summary?.files ?? files.length },
+              { label: 'bytes', value: review.source_summary?.bytes ?? sourceText.length },
+              { label: 'posture', value: (review.execution_posture?.posture || 'review').replace(/_/g, ' ') },
+              { label: 'suggestions', value: review.repair_suggestions?.length || 0 }
+            ]} />
             {review.review_sections?.length ? (
               <div className="script-import-review-sections">
                 <h4>Review Sections ({review.review_sections.length})</h4>

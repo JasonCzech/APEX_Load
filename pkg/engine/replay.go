@@ -424,6 +424,8 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	continueOnError := script.Config.ErrorHandling.ContinueOnErrorEnabled()
 	globalThinkCfg := protocol.ThinkTimeConfig{
 		Type:       script.Config.ThinkTime.Type,
+		MinPercent: script.Config.ThinkTime.MinPercent,
+		MaxPercent: script.Config.ThinkTime.MaxPercent,
 		MeanMs:     script.Config.ThinkTime.MeanMs,
 		StdMs:      script.Config.ThinkTime.StdMs,
 		MinMs:      script.Config.ThinkTime.MinMs,
@@ -435,7 +437,16 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 
 	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
 	if shouldContinue {
-		shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+		if controller, ok := vu.Proto.(protocol.IterationController); ok {
+			if err := controller.BeginIteration(ctx); err != nil {
+				report.Success = false
+				report.Error = "prepare replay iteration: " + scrubSensitiveError(err, vu.RedactionConfig).Error()
+				shouldContinue = false
+			}
+		}
+		if shouldContinue {
+			shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+		}
 	}
 	teardownCtx, teardownCancel := teardownContext()
 	runReplayPhase(teardownCtx, vu, script.Teardown, "teardown", true, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
@@ -1440,28 +1451,8 @@ func applyReplayActionThinkTime(
 		// must not be misreported as cancellation during think time.
 		return true
 	}
-	thinkCfg := globalThinkCfg
-	if action.ThinkTime.Type != "" {
-		thinkCfg = protocol.ThinkTimeConfig{
-			Type:       action.ThinkTime.Type,
-			MeanMs:     action.ThinkTime.MeanMs,
-			StdMs:      action.ThinkTime.StdMs,
-			MinMs:      action.ThinkTime.MinMs,
-			MaxMs:      action.ThinkTime.MaxMs,
-			Multiplier: action.ThinkTime.Multiplier,
-			LimitMs:    action.ThinkTime.LimitMs,
-			Ignore:     action.ThinkTime.Ignore,
-		}
-		if thinkCfg.Multiplier == 0 {
-			thinkCfg.Multiplier = globalThinkCfg.Multiplier
-		}
-		if thinkCfg.LimitMs == 0 {
-			thinkCfg.LimitMs = globalThinkCfg.LimitMs
-		}
-		if globalThinkCfg.Ignore {
-			thinkCfg.Ignore = true
-		}
-	}
+	thinkCfg := resolveActionThinkTime(globalThinkCfg, action.ThinkTime)
+
 	delay := computeThinkTime(thinkCfg)
 	elapsed, completed := sleepReplayThinkTime(ctx, delay)
 	vu.noteSourceTransactionThinkTime(elapsed)

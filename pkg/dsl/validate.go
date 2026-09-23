@@ -315,14 +315,16 @@ func validatePacingResourceIssues(pacing PacingConfig) []string {
 
 func validateThinkTimeResourceIssues(label string, think ThinkTimeConfig) []string {
 	var issues []string
-	if think.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Type)), "none", "fixed", "recorded", "gaussian", "normal", "uniform") {
-		issues = append(issues, fmt.Sprintf("%s.type must be none, fixed, recorded, gaussian, normal, or uniform", label))
+	if think.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Type)), "none", "fixed", "recorded", "random_percentage", "gaussian", "normal", "uniform") {
+		issues = append(issues, fmt.Sprintf("%s.type must be none, fixed, recorded, random_percentage, gaussian, normal, or uniform", label))
 	}
 	for _, field := range []struct {
 		name  string
 		value float64
 		max   float64
 	}{
+		{name: "min_percent", value: think.MinPercent, max: 100 * MaxThinkTimeMultiplier},
+		{name: "max_percent", value: think.MaxPercent, max: 100 * MaxThinkTimeMultiplier},
 		{name: "mean_ms", value: think.MeanMs, max: MaxConfiguredProtocolTimeoutMS},
 		{name: "std_ms", value: think.StdMs, max: MaxConfiguredProtocolTimeoutMS},
 		{name: "min_ms", value: think.MinMs, max: MaxConfiguredProtocolTimeoutMS},
@@ -339,6 +341,9 @@ func validateThinkTimeResourceIssues(label string, think ThinkTimeConfig) []stri
 	if math.IsNaN(think.Multiplier) || math.IsInf(think.Multiplier, 0) ||
 		think.Multiplier < 0 || think.Multiplier > MaxThinkTimeMultiplier {
 		issues = append(issues, fmt.Sprintf("%s.multiplier must be omitted (defaults/inherits 1) or finite, greater than 0, and at most %d", label, MaxThinkTimeMultiplier))
+	}
+	if think.MinPercent > think.MaxPercent {
+		issues = append(issues, fmt.Sprintf("%s.min_percent must not exceed max_percent", label))
 	}
 	if think.MaxMs > 0 && think.MinMs > think.MaxMs {
 		issues = append(issues, fmt.Sprintf("%s.min_ms must not exceed max_ms", label))
@@ -1593,10 +1598,19 @@ func validateWebRuntimeIssues(script *Script) []string {
 		{name: "request_timeout_ms", value: httpCfg.RequestTimeoutMs},
 		{name: "tls_timeout_ms", value: httpCfg.TLSTimeoutMs},
 		{name: "idle_timeout_ms", value: httpCfg.IdleTimeoutMs},
+		{name: "page_timeout_ms", value: httpCfg.PageTimeoutMs},
 	} {
 		if err := httpprotocol.ValidateTimeoutMS(timeout.value); err != nil {
 			issues = append(issues, fmt.Sprintf("config.http.%s must be between 0 and %d", timeout.name, maxHTTPTimeoutMillis))
 		}
+	}
+	if err := httpprotocol.ValidateReplayCompatibilityConfig(map[string]any{
+		"ip_version": httpCfg.IPVersion, "html_parse_mode": httpCfg.HTMLParseMode,
+		"cache_max_unused_iterations": httpCfg.CacheMaxUnusedIterations,
+		"cache_excluded_mime_types":   httpCfg.CacheExcludedMIMETypes,
+		"html_excluded_mime_types":    httpCfg.HTMLExcludedMIMETypes,
+	}); err != nil {
+		issues = append(issues, "config.http: "+err.Error())
 	}
 	if err := httpprotocol.ValidateMaxRedirects(httpCfg.MaxRedirects); err != nil {
 		issues = append(issues, fmt.Sprintf("config.http.max_redirects must be between -1 and %d", httpCapabilities.MaxRedirects))

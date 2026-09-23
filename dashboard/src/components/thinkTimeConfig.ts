@@ -29,7 +29,7 @@ export function normalizeThinkTimeMultiplier(value: unknown): number | undefined
 
 export function thinkTimeUsesMean(type?: string): boolean {
   const normalized = normalizedThinkTimeType(type)
-  return normalized !== 'none' && normalized !== 'recorded' && normalized !== 'uniform'
+  return normalized !== 'none' && normalized !== 'recorded' && normalized !== 'uniform' && normalized !== 'random_percentage'
 }
 
 export function thinkTimeUsesStdDeviation(type?: string): boolean {
@@ -57,7 +57,14 @@ export function thinkTimeConfigForType(
     ...(current ?? {}),
     type: normalizedType,
   }
-  if (normalizedType === 'none' || normalizedType === 'recorded') {
+  if (normalizedType === 'random_percentage') {
+    next.min_percent ??= canonicalThinkTimeType(current?.type) === 'random_percentage' ? 0 : 50
+    next.max_percent ??= canonicalThinkTimeType(current?.type) === 'random_percentage' ? 0 : 150
+  } else {
+    delete next.min_percent
+    delete next.max_percent
+  }
+  if (normalizedType === 'none' || normalizedType === 'recorded' || normalizedType === 'random_percentage') {
     delete next.mean_ms
     delete next.std_ms
     delete next.min_ms

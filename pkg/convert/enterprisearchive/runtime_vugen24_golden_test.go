@@ -135,11 +135,11 @@ func TestGoldenVuGen24RealRuntimeSettings(t *testing.T) {
 		return entry
 	}
 
-	blockScheduling := expectStatus("run_logic_block_scheduling", RuntimeSettingStatusCompatibilityOnly)
+	blockScheduling := expectStatus("run_logic_block_scheduling", RuntimeSettingStatusExecuted)
 	if !containsFold(blockScheduling.RuntimeFiles, "default.usp") {
 		t.Fatalf("block scheduling provenance = %#v, want default.usp", blockScheduling.RuntimeFiles)
 	}
-	expectStatus("run_logic_action_sequence", RuntimeSettingStatusCompatibilityOnly)
+	expectStatus("run_logic_action_sequence", RuntimeSettingStatusExecuted)
 	networkEntry := expectStatus("network_simulation", RuntimeSettingStatusExecuted)
 	if !containsFold(networkEntry.RuntimeFiles, "default.cfg") {
 		t.Fatalf("network simulation provenance = %#v, want default.cfg", networkEntry.RuntimeFiles)
@@ -164,10 +164,13 @@ func TestGoldenVuGen24RealRuntimeSettings(t *testing.T) {
 	}
 
 	unmapped := expectStatus("runtime_unmapped", RuntimeSettingStatusCompatibilityOnly)
-	for _, evidence := range []string{"[WEB] HttpErrorsAsWarnings", "[WEB] EnableChecks", "[Streaming] StreamTimeout", "[General] automatic_nested_transactions"} {
+	for _, evidence := range []string{"[WEB] HttpErrorsAsWarnings", "[WEB] EnableChecks", "[General] automatic_nested_transactions"} {
 		if !strings.Contains(unmapped.Notes, evidence) {
 			t.Fatalf("runtime_unmapped notes missing %q: %s", evidence, unmapped.Notes)
 		}
+	}
+	if strings.Contains(unmapped.Notes, "[Streaming] StreamTimeout") {
+		t.Fatal("streaming defaults must be inactive without a source streaming operation")
 	}
 	expectStatus("runtime_non_applicable", RuntimeSettingStatusNonApplicable)
 

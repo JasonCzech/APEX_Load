@@ -4387,6 +4387,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/import/settings",
+      "operationId": "handleImportSettings",
+      "summary": "Import Settings",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/import/shared-values/apply",
       "operationId": "handleApplyImportSharedValues",
       "summary": "Apply Import Shared Values",

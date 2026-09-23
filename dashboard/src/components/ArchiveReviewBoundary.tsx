@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from 'react'
 
 export default class ArchiveReviewBoundary extends Component<{
+  resetKey?: string
   archiveName: string
   retryDisabled?: boolean
   onRetry: () => void
@@ -9,6 +10,10 @@ export default class ArchiveReviewBoundary extends Component<{
   state = { failed: false }
 
   static getDerivedStateFromError() { return { failed: true } }
+
+  componentDidUpdate(previous: Readonly<{ resetKey?: string }>) {
+    if (this.state.failed && previous.resetKey !== this.props.resetKey) this.setState({ failed: false })
+  }
 
   render() {
     if (!this.state.failed) return this.props.children

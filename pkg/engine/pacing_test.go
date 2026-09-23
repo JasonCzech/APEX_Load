@@ -499,3 +499,90 @@ func TestNewTokenBucket_SmallTPS(t *testing.T) {
 		t.Fatalf("tps=%g: bucket buffered %d credits; interval=%v", tinyTPS, got, tb.interval)
 	}
 }
+
+func TestRecordedPercentageThinkTime(t *testing.T) {
+	global := protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 50, MaxPercent: 150}
+	for _, recorded := range []float64{400, 4000} {
+		cfg := resolveActionThinkTime(global, dsl.ThinkTimeConfig{Type: "fixed", MeanMs: recorded})
+		for i := 0; i < 100; i++ {
+			got := computeThinkTime(cfg)
+			if got < time.Duration(recorded/2*float64(time.Millisecond)) || got > time.Duration(recorded*1.5*float64(time.Millisecond)) {
+				t.Fatalf("%g ms base produced %v", recorded, got)
+			}
+		}
+	}
+	for _, tc := range []struct {
+		name                      string
+		min, max, multiplier, cap float64
+		ignore                    bool
+		want                      time.Duration
+	}{
+		{name: "equal", min: 50, max: 50, want: 2 * time.Second},
+		{name: "zero", want: 0},
+		{name: "multiply", min: 50, max: 50, multiplier: 2, want: 4 * time.Second},
+		{name: "cap", min: 150, max: 150, cap: 1000, want: time.Second},
+		{name: "ignore", min: 150, max: 150, ignore: true},
+		{name: "reversed", min: 150, max: 50},
+		{name: "negative", min: -1, max: 100},
+		{name: "oversize", min: 0, max: 10001},
+		{name: "nan", min: math.NaN(), max: 100},
+		{name: "inf", min: 0, max: math.Inf(1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			global.MinPercent, global.MaxPercent, global.Multiplier, global.LimitMs, global.Ignore = tc.min, tc.max, tc.multiplier, tc.cap, tc.ignore
+			got := computeThinkTime(resolveActionThinkTime(global, dsl.ThinkTimeConfig{Type: "recorded", MeanMs: 4000}))
+			if got != tc.want {
+				t.Fatalf("got %v want %v", got, tc.want)
+			}
+		})
+	}
+	if got := computeThinkTime(resolveActionThinkTime(protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 50, MaxPercent: 50}, dsl.ThinkTimeConfig{Type: "uniform", MinMs: 100, MaxMs: 100})); got != 100*time.Millisecond {
+		t.Fatalf("explicit distribution changed: %v", got)
+	}
+}
+
+func TestRandomPercentageLoadAndReplayRespectRecordedAction(t *testing.T) {
+	// A huge recorded delay scaled to zero must complete even with a canceled
+	// context: neither load nor replay may accidentally use the unscaled delay.
+	action := dsl.Action{ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 3600000}}
+	vu := &VUser{Script: &dsl.Script{Config: dsl.ScriptConfig{ThinkTime: dsl.ThinkTimeConfig{Type: "random_percentage"}}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if !vu.applyActionThinkTime(ctx, action) {
+		t.Fatal("load ignored zero percentage")
+	}
+	if !applyReplayActionThinkTime(ctx, vu, action, false, protocol.ThinkTimeConfig{Type: "random_percentage"}) {
+		t.Fatal("replay ignored zero percentage")
+	}
+	// Nonzero percentages really wait and remain interruptible.
+	vu.Script.Config.ThinkTime.MinPercent, vu.Script.Config.ThinkTime.MaxPercent = 50, 150
+	if vu.applyActionThinkTime(ctx, action) {
+		t.Fatal("load lost nonzero percentage wait")
+	}
+	if applyReplayActionThinkTime(ctx, vu, action, false, protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 50, MaxPercent: 150}) {
+		t.Fatal("replay lost nonzero percentage wait")
+	}
+}
+
+func TestEditedPercentagePolicyCapsRecordedCallsIndependently(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		policy protocol.ThinkTimeConfig
+		want   time.Duration
+	}{
+		{"percentage with cap", protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 100, MaxPercent: 100, LimitMs: 3000}, 5 * time.Second},
+		{"percentage with smaller cap", protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 100, MaxPercent: 100, LimitMs: 2000}, 4 * time.Second},
+		{"percentage with multiplier", protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 50, MaxPercent: 50, Multiplier: 2, LimitMs: 3000}, 5 * time.Second},
+		{"ignored", protocol.ThinkTimeConfig{Type: "random_percentage", MinPercent: 100, MaxPercent: 100, Ignore: true}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var total time.Duration
+			for _, recorded := range []float64{2000, 3000} {
+				total += computeThinkTime(resolveActionThinkTime(tc.policy, dsl.ThinkTimeConfig{Type: "fixed", MeanMs: recorded}))
+			}
+			if total != tc.want {
+				t.Fatalf("total=%v, want %v", total, tc.want)
+			}
+		})
+	}
+}

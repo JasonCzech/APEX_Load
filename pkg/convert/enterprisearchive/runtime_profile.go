@@ -329,6 +329,7 @@ func sameRuntimeFile(left, right string) bool {
 }
 
 func applyRuntimeUSP(rc *RuntimeConfig, fileName, content string) {
+	rc.selectedRunLogicFile = normalizeRuntimeArchivePath(fileName)
 	resetRuntimePacing(rc)
 	uspSections := ParseConfigSections(content)
 	section := findSection(uspSections, "RunLogicRunRoot")
@@ -363,7 +364,8 @@ func applyRuntimeUSP(rc *RuntimeConfig, fileName, content string) {
 
 	// RunLogicRunMode is the run-group block scheduling (Sequential/Random).
 	// Preserve recognized source vocabulary in the draft, but keep its support
-	// classification compatibility-only: the current engine does not consume
+	// classification compatibility-only unless the complete flat profile is
+	// separately verified against the native lifecycle. The engine does not consume
 	// BlockScheduling. The selected run-logic profile is authoritative, so a
 	// recognized value still replaces any cfg-derived migration evidence.
 	runMode := strings.TrimSpace(valueOf("RunLogicRunMode"))
@@ -434,7 +436,7 @@ func applyRuntimeUSP(rc *RuntimeConfig, fileName, content string) {
 // ([Profile Actions] plus the run-root RunLogicActionOrder) onto
 // run_logic.action_sequence as migration evidence. The current engine does not
 // consume this field and instead runs its fixed init/action/teardown lifecycle,
-// so the support matrix remains compatibility-only. Only the standard source
+// so only a separately verified flat profile is reported as executed. Only the standard source
 // lifecycle — optional vuser_init, at most one run action, optional vuser_end —
 // is safe to preserve in this coarse vocabulary; custom multi-action orders
 // fail to review instead of collapsing distinct actions into indistinguishable
@@ -877,12 +879,17 @@ func applyRuntimeSemanticStatuses(parity []RuntimeSettingParityEntry, rc *Runtim
 	cacheDisabled := rc.BESimulateCache != nil && !*rc.BESimulateCache
 	for index := range parity {
 		switch parity[index].ID {
+		case "http_idle_timeout":
+			if !rc.KeepAlive {
+				parity[index].Status = RuntimeSettingStatusNonApplicable
+				parity[index].Notes = "The saved idle timeout is inactive because KeepAlive is disabled."
+			}
 		case "browser_selection":
 			if customUserAgentSelected {
 				parity[index].Status = RuntimeSettingStatusNonApplicable
 				parity[index].Notes = "Specific browser type/version/platform values are dormant because the selected custom User-Agent is authoritative."
 			}
-		case "browser_cache_content_urls", "browser_check_newer_versions":
+		case "browser_cache_content_urls", "browser_check_newer_versions", "http_cache_eviction":
 			if cacheDisabled {
 				parity[index].Status = RuntimeSettingStatusNonApplicable
 				parity[index].Notes = "The source child setting is dormant because browser-cache simulation is disabled."

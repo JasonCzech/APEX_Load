@@ -162,6 +162,10 @@ function thinkTimeFromForm(form: ScenarioFormState): RuntimeSettingsOverride['th
       min_ms: form.runtime_think_time_min_ms,
       max_ms: form.runtime_think_time_max_ms,
     } : {}),
+    ...(type === 'random_percentage' ? {
+      min_percent: form.runtime_think_time_min_percent ?? preserved?.min_percent,
+      max_percent: form.runtime_think_time_max_percent ?? preserved?.max_percent,
+    } : {}),
     ...(type === 'uniform' ? {
       min_ms: form.runtime_think_time_min_ms,
       max_ms: form.runtime_think_time_max_ms,
@@ -241,6 +245,8 @@ export function replaceScenarioRuntimeDefaults(
     runtime_think_time_std_ms: thinkTime?.std_ms,
     runtime_think_time_min_ms: thinkTime?.min_ms,
     runtime_think_time_max_ms: thinkTime?.max_ms,
+    runtime_think_time_min_percent: thinkTime?.min_percent,
+    runtime_think_time_max_percent: thinkTime?.max_percent,
     runtime_think_time_multiplier: thinkTime?.multiplier,
     runtime_think_time_limit_ms: thinkTime?.limit_ms,
     runtime_ignore_think_time: thinkTime?.ignore ?? false,
@@ -368,6 +374,8 @@ export function scenarioFormStateFromStoredScenario(
     runtime_think_time_std_ms: thinkTime?.std_ms,
     runtime_think_time_min_ms: thinkTime?.min_ms,
     runtime_think_time_max_ms: thinkTime?.max_ms,
+    runtime_think_time_min_percent: thinkTime?.min_percent,
+    runtime_think_time_max_percent: thinkTime?.max_percent,
     runtime_think_time_multiplier: thinkTime?.multiplier,
     runtime_think_time_limit_ms: thinkTime?.limit_ms,
     runtime_ignore_think_time: Boolean(thinkTime?.ignore),

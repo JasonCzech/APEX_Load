@@ -42,13 +42,14 @@ export function runtimeTimingIssues(config: ScriptConfig): string[] {
   if (pacing?.type === 'random_interval' && (pacing.max_interval_ms ?? 0) < (pacing.min_interval_ms ?? 0)) issues.push('Maximum pacing interval must be at least the minimum interval.')
   const think = config.think_time
   if (!think?.ignore && ['uniform', 'gaussian', 'normal'].includes(think?.type || '') && (think?.max_ms ?? 0) > 0 && (think?.max_ms ?? 0) < (think?.min_ms ?? 0)) issues.push('Maximum think time must be at least the minimum think time.')
+  if (think?.type === 'random_percentage' && ((think.min_percent ?? 0) < 0 || (think.max_percent ?? 0) > 10000 || (think.max_percent ?? 0) < (think.min_percent ?? 0))) issues.push('Think-time percentages must satisfy 0 ≤ minimum ≤ maximum ≤ 10000.')
   return issues
 }
 
 export function effectiveThinkTimeLabel(config: ScriptConfig): string {
   const think = config.think_time
   if (!think || think.ignore || think.type === 'none') return 'No think-time delay'
-  const base = think?.type === 'recorded' ? 'Recorded action delays' : think?.type === 'uniform' ? `${(think.min_ms ?? 0) / 1000}–${(think.max_ms ?? 0) / 1000} seconds` : `${think?.type || 'fixed'} ${((think?.mean_ms ?? 0) / 1000)} seconds`
+  const base = think?.type === 'random_percentage' ? `${think.min_percent ?? 0}–${think.max_percent ?? 0}% of recorded action delays` : think?.type === 'recorded' ? 'Recorded action delays' : think?.type === 'uniform' ? `${(think.min_ms ?? 0) / 1000}–${(think.max_ms ?? 0) / 1000} seconds` : `${think?.type || 'fixed'} ${((think?.mean_ms ?? 0) / 1000)} seconds`
   return `${base} × ${think?.multiplier || 1}${think?.limit_ms ? `, capped at ${think.limit_ms / 1000} seconds` : ''}`
 }
 

@@ -8,7 +8,4 @@
 .import-review-empty { padding:20px; color:var(--text-secondary); }
 .import-review-links { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .import-review-layout .script-import-review-header { scroll-margin-top:100px; }
-.sample-import .sample-import-stats-grid { grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; }
-.sample-import .sample-stat { padding:10px; }
-.sample-import .sample-stat-value { font-size:20px; overflow-wrap:anywhere; }
 .import-source-setup > summary { cursor:pointer; padding:16px; font-weight:600; }

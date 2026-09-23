@@ -13,9 +13,9 @@ it('requires a redacted preview before applying and retains the reviewed operati
   const result = { candidate_id: 'protected:one', revision: 'protected:one', script, before: script, findings: [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:3', detail: 'Restore this body' }], readiness: { replay_ready: false, blocking_codes: ['restored_body_required'] }, expires_at: '2099-09-19', fidelity_report: {} }
   mock.request.mockResolvedValue(result)
   const container = document.createElement('div'); document.body.append(container)
-  const root = createRoot(container); const onApplied = vi.fn()
+  const root = createRoot(container); const onApplied = vi.fn(); const onBusyChange = vi.fn()
   try {
-    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} />))
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} onBusyChange={onBusyChange} />))
     expect(container.textContent).not.toContain('Apply reviewed repair')
     await act(async () => { Array.from(container.querySelectorAll('button')).find(b => b.textContent?.includes('Restore protected request body'))!.click() })
     expect(container.textContent).toContain('Action.c:3')
@@ -26,6 +26,8 @@ it('requires a redacted preview before applying and retains the reviewed operati
     mock.request.mockResolvedValueOnce({ ...result, candidate_id: 'protected:two', revision: 'protected:two' })
     await act(async () => apply.click())
     expect(onApplied).toHaveBeenCalledOnce()
+    expect(onBusyChange).toHaveBeenCalledWith(true)
+    expect(onBusyChange).toHaveBeenLastCalledWith(false)
     const [url, options] = mock.request.mock.calls[mock.request.mock.calls.length - 1]
     expect(url).toBe('/scripts/import/repairs/apply')
     expect(JSON.parse(options.body).revision).toBe('protected:one')

@@ -2258,11 +2258,28 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	}
 	selectedSections := selectedRuntimeSections(runtimeSections, runtimeFileName, runtimeCfg)
 	dispositions := classifyRuntimeSelectedSections(selectedSections, script.Protocol)
+	refineRuntimeSettingDispositions(dispositions, runtimeCfg, files, script.Protocol)
 	if len(dispositions) > 0 {
 		preserved["runtime_setting_dispositions"] = dispositions
 	}
 	parity := applyRuntimeMigrationIssues(buildRTSParityReportForProtocol(selectedSections, script.Protocol), runtimeCfg)
 	parity = appendRuntimeDispositionParityEntries(parity, dispositions)
+	if verifiedNativeSequentialProfile(runtimeCfg, projectConfig, files, script.Protocol) {
+		preserved["native_sequential_run_logic"] = strings.Join(runtimeCfg.ActionSequence, ",")
+		promoteSequentialParity(parity)
+		for _, sections := range dispositions {
+			for _, keys := range sections {
+				for key, disposition := range keys {
+					if disposition.ParityID == "run_logic_action_sequence" || disposition.ParityID == "run_logic_block_scheduling" {
+						disposition.Status = RuntimeSettingDispositionMapped
+						disposition.Note = "Verified flat source lifecycle matches native sequential execution."
+						keys[key] = disposition
+					}
+				}
+			}
+		}
+	}
+
 	if len(parity) > 0 {
 		preserved["runtime_settings_parity"] = parity
 		preserved["runtime_settings_status_counts"] = RuntimeSettingStatusCounts(parity)

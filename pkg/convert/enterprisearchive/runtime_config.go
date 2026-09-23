@@ -23,9 +23,12 @@ import (
 
 // RuntimeConfig holds parsed source runtime settings from a .cfg file.
 type RuntimeConfig struct {
+	httpCompatibility      dsl.HTTPConfig
+	selectedRunLogicFile   string
 	ConnectTimeoutSec      int
 	ReceiveTimeoutSec      int
 	StepTimeoutSec         int
+	IdleTimeoutMs          int
 	HTTPVersion            string // source spelling; native projection supports exact "1.1" and "2"
 	KeepAlive              bool
 	MaxConnsPerHost        int
@@ -66,6 +69,8 @@ type RuntimeConfig struct {
 	MaxIntervalMs           int
 	ThinkTimeIgnore         bool
 	ThinkTimeType           string
+	ThinkTimeMinPercent     float64
+	ThinkTimeMaxPercent     float64
 	ThinkTimeMultiplier     float64
 	ThinkTimeLimitMs        float64
 	RuntimeFiles            []string
@@ -177,6 +182,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 
 	sections := ParseConfigSections(content)
 	parseRuntimeHTTPTransportSettings(rc, sections)
+	parseRuntimeHTTPCompatibility(rc, sections)
 
 	parseRuntimeProxySettings(rc, sections)
 
@@ -257,6 +263,16 @@ func parseRuntimeHTTPTransportSettings(rc *RuntimeConfig, sections map[string]ma
 	}
 	if keepAlive, ok := parseBoolExplicit(runtimeSectionValue(httpSection, "KeepAlive")); ok {
 		rc.KeepAlive = keepAlive
+	}
+	if raw, present := sectionValueCaseInsensitive(httpSection, "KeepAliveTimeout"); present && rc.KeepAlive {
+		if milliseconds, ok := sourceKeepAliveTimeoutMS(raw); ok {
+			rc.IdleTimeoutMs = milliseconds
+		} else {
+			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
+				ID: "http_idle_timeout", Area: "HTTP", sourceKey: "keepalivetimeout",
+				Notes: "KeepAliveTimeout is measured in seconds and must be a positive whole number no greater than 3600. The source value cannot be represented within the current HTTP idle-timeout limit; no value was applied or clamped. Choose a supported timeout before replay.",
+			})
+		}
 	}
 	if redirects := parseInt(runtimeSectionValue(httpSection, "MaxRedirections")); redirects > 0 {
 		rc.MaxRedirects = redirects
@@ -422,12 +438,15 @@ func parseRuntimeThinkTimeSettings(rc *RuntimeConfig, sections map[string]map[st
 		rc.ThinkTimeMultiplier = 1
 	case "RANDOM":
 		rc.ThinkTimeType = "recorded"
-		rc.ThinkTimeIgnore = false
 		rc.ThinkTimeMultiplier = 1
-		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
-			ID: "think_time", Area: "Think Time",
-			Notes: fmt.Sprintf("Unsupported LoadRunner RANDOM percentage think-time mode (low=%q, high=%q); using recorded think time at 100%% and requiring review.", thinkValue("ThinkTimeRandomLow"), thinkValue("ThinkTimeRandomHigh")),
-		})
+		low, lowErr := strconv.ParseFloat(thinkValue("ThinkTimeRandomLow"), 64)
+		high, highErr := strconv.ParseFloat(thinkValue("ThinkTimeRandomHigh"), 64)
+		if lowErr != nil || highErr != nil || math.IsNaN(low) || math.IsNaN(high) || math.IsInf(low, 0) || math.IsInf(high, 0) || low < 0 || high < low || high > 100*dsl.MaxThinkTimeMultiplier {
+			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{ID: "think_time", Area: "Think Time", Notes: "Invalid RANDOM think-time percentage bounds; expected finite 0 <= low <= high <= 10000. Using recorded think time at 100% and requiring review."})
+		} else {
+			rc.ThinkTimeType = "random_percentage"
+			rc.ThinkTimeMinPercent, rc.ThinkTimeMaxPercent = low, high
+		}
 	default:
 		if thinkMode != "" {
 			rc.ThinkTimeType = "recorded"
@@ -876,6 +895,8 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 	if rc.ThinkTimeType != "" || rc.ThinkTimeIgnore || rc.ThinkTimeMultiplier != 0 || rc.ThinkTimeLimitMs != 0 {
 		config.ThinkTime = dsl.ThinkTimeConfig{
 			Type:       rc.ThinkTimeType,
+			MinPercent: rc.ThinkTimeMinPercent,
+			MaxPercent: rc.ThinkTimeMaxPercent,
 			Ignore:     rc.ThinkTimeIgnore,
 			Multiplier: rc.ThinkTimeMultiplier,
 			LimitMs:    rc.ThinkTimeLimitMs,
@@ -983,7 +1004,9 @@ func resolveImportedBrowserProfile(profile string) (string, string) {
 
 // ToHTTPConfig converts parsed source runtime settings into an APEX Load HTTPConfig.
 func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
-	cfg := &dsl.HTTPConfig{}
+	cfg := new(dsl.HTTPConfig)
+	*cfg = rc.httpCompatibility
+	cfg.IdleTimeoutMs = rc.IdleTimeoutMs
 
 	if rc.ConnectTimeoutSec > 0 {
 		cfg.ConnectTimeoutMs = rc.ConnectTimeoutSec * 1000
@@ -2045,7 +2068,7 @@ func runtimeConfigNumericField(section, key string) string {
 		}
 	case "http":
 		switch key {
-		case "connecttimeout", "receivetimeout", "stepdownloadtimeout",
+		case "connecttimeout", "receivetimeout", "stepdownloadtimeout", "keepalivetimeout", "pagedownloadtimeout", "deletecacheunreferencediterations",
 			"maxredirects", "maxconnectionsperhost", "slowmoms",
 			"viewportwidth", "viewportheight":
 			return "int"
@@ -2239,6 +2262,7 @@ func applyRuntimeCfgCaseFoldConflicts(rc *RuntimeConfig, content string) {
 	}
 	selectedPacingType := rc.PacingType
 	activeState := runtimeCfgConflictActivation{
+		keepAliveDisabled:       runtimeHTTPFeatureExplicitlyDisabled(sections, "KeepAlive"),
 		proxyMode:               rc.ProxyMode,
 		proxyExplicitlyDisabled: runtimeCfgProxyExplicitlyDisabled(sections),
 		cacheDisabled:           rc.BESimulateCache != nil && !*rc.BESimulateCache,
@@ -2323,6 +2347,13 @@ func applyRuntimeCfgCaseFoldConflicts(rc *RuntimeConfig, content string) {
 			resetRuntimeSupportedConflict(rc, entry.ID, conflict)
 			conflictSection := runtimeConfigCanonicalSection(conflict.section)
 			conflictKey := runtimeConfigCanonicalKey(conflictSection, conflict.key)
+			if entry.ID == "http_transport" && conflictKey == "keepalive" {
+				rc.IdleTimeoutMs = 0
+				httpSection := findMergedSection(sections, "HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web")
+				if _, present := sectionValueCaseInsensitive(httpSection, "KeepAliveTimeout"); present {
+					rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{ID: "http_idle_timeout", Area: "HTTP", Notes: "Conflicting KeepAlive selectors prevent applying the saved idle timeout; review the connection-reuse policy before replay."})
+				}
+			}
 			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{
 				ID: entry.ID, Area: entry.Area,
 				sourceKey: conflictKey,
@@ -2336,6 +2367,7 @@ func applyRuntimeCfgCaseFoldConflicts(rc *RuntimeConfig, content string) {
 }
 
 type runtimeCfgConflictActivation struct {
+	keepAliveDisabled       bool
 	proxyMode               string
 	proxyExplicitlyDisabled bool
 	cacheDisabled           bool
@@ -2391,6 +2423,8 @@ func runtimeSupportedConflictIsActive(
 	section := runtimeConfigCanonicalSection(conflict.section)
 	key := runtimeConfigCanonicalKey(section, conflict.key)
 	switch entry.ID {
+	case "http_idle_timeout":
+		return !state.keepAliveDisabled
 	case "proxy":
 		// The enable/mode selector is always meaningful. Endpoint, credential,
 		// and bypass rows are dormant when proxying is explicitly disabled.
@@ -2475,6 +2509,7 @@ func resetRuntimeThinkTime(rc *RuntimeConfig) {
 	rc.ThinkTimeIgnore = false
 	rc.ThinkTimeMultiplier = 1
 	rc.ThinkTimeLimitMs = 0
+	rc.ThinkTimeMinPercent, rc.ThinkTimeMaxPercent = 0, 0
 }
 
 func runtimeSupportedConflictEntry(conflict runtimeConfigCaseFoldConflict) (RuntimeSettingSupportEntry, bool) {
@@ -2528,6 +2563,17 @@ func resetRuntimeSupportedConflict(rc *RuntimeConfig, id string, conflict runtim
 	section := runtimeConfigCanonicalSection(conflict.section)
 	key := runtimeConfigCanonicalKey(section, conflict.key)
 	switch id {
+	case "http_page_timeout":
+		rc.httpCompatibility.PageTimeoutMs = 0
+	case "http_ip_version":
+		rc.httpCompatibility.IPVersion = ""
+	case "http_cache_eviction":
+		rc.httpCompatibility.CacheMaxUnusedIterations = 0
+	case "http_html_parse":
+		rc.httpCompatibility.HTMLParseMode = ""
+
+	case "http_idle_timeout":
+		rc.IdleTimeoutMs = 0
 	case "http_transport":
 		switch key {
 		case "connecttimeout":

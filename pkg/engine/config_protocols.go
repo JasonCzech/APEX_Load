@@ -37,6 +37,12 @@ func appendBrunoConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	httpCfg := script.Config.HTTP
+	cfg["page_timeout_ms"] = float64(httpCfg.PageTimeoutMs)
+	cfg["ip_version"] = httpCfg.IPVersion
+	cfg["cache_max_unused_iterations"] = float64(httpCfg.CacheMaxUnusedIterations)
+	cfg["cache_excluded_mime_types"] = httpCfg.CacheExcludedMIMETypes
+	cfg["html_parse_mode"] = httpCfg.HTMLParseMode
+	cfg["html_excluded_mime_types"] = httpCfg.HTMLExcludedMIMETypes
 	// Timeouts
 	if httpCfg.ConnectTimeoutMs > 0 {
 		cfg["connect_timeout_ms"] = float64(httpCfg.ConnectTimeoutMs)

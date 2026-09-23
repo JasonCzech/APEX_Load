@@ -81,7 +81,7 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 	if cfg.Ignore {
 		return 0
 	}
-	for _, value := range []float64{cfg.MeanMs, cfg.StdMs, cfg.MinMs, cfg.MaxMs, cfg.Multiplier, cfg.LimitMs} {
+	for _, value := range []float64{cfg.MeanMs, cfg.StdMs, cfg.MinMs, cfg.MaxMs, cfg.Multiplier, cfg.LimitMs, cfg.MinPercent, cfg.MaxPercent} {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			return 0
 		}
@@ -92,6 +92,12 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 	switch strings.ToLower(strings.TrimSpace(cfg.Type)) {
 	case "fixed", "recorded":
 		ms = cfg.MeanMs
+
+	case "random_percentage":
+		if cfg.MinPercent < 0 || cfg.MaxPercent < cfg.MinPercent || cfg.MaxPercent > 100*dsl.MaxThinkTimeMultiplier {
+			return 0
+		}
+		ms = cfg.MeanMs * (cfg.MinPercent + rand.Float64()*(cfg.MaxPercent-cfg.MinPercent)) / 100
 
 	case "gaussian", "normal":
 		ms = rand.NormFloat64()*cfg.StdMs + cfg.MeanMs
@@ -503,4 +509,25 @@ func tokenBucketTokensForElapsed(elapsed time.Duration, interval time.Duration) 
 		return 1
 	}
 	return due
+}
+
+// resolveActionThinkTime applies a global recorded-percentage policy to each
+// recorded action delay. Explicit action distributions retain their own mode.
+func resolveActionThinkTime(global protocol.ThinkTimeConfig, action dsl.ThinkTimeConfig) protocol.ThinkTimeConfig {
+	if action.Type == "" {
+		return global
+	}
+	cfg := protocol.ThinkTimeConfig{Type: action.Type, MeanMs: action.MeanMs, StdMs: action.StdMs, MinMs: action.MinMs, MaxMs: action.MaxMs, MinPercent: action.MinPercent, MaxPercent: action.MaxPercent, Multiplier: action.Multiplier, LimitMs: action.LimitMs, Ignore: action.Ignore}
+	if strings.EqualFold(strings.TrimSpace(global.Type), "random_percentage") && (strings.EqualFold(strings.TrimSpace(action.Type), "fixed") || strings.EqualFold(strings.TrimSpace(action.Type), "recorded")) {
+		cfg.Type = "random_percentage"
+		cfg.MinPercent, cfg.MaxPercent = global.MinPercent, global.MaxPercent
+	}
+	if cfg.Multiplier == 0 {
+		cfg.Multiplier = global.Multiplier
+	}
+	if cfg.LimitMs == 0 {
+		cfg.LimitMs = global.LimitMs
+	}
+	cfg.Ignore = cfg.Ignore || global.Ignore
+	return cfg
 }

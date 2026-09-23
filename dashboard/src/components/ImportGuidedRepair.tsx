@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import ImportParameterInventory from './ImportParameterInventory'
+import { useImportSettings } from './ImportSettingsContext'
 import { request } from '../hooks/apiClient'
 import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '../types/scriptImports'
 import type { ScriptDefinition } from '../types/scripts'
@@ -10,12 +10,13 @@ type Operation = { type: string; [key: string]: unknown }
 type Props = {
   script: ScriptDefinition; projectId: string; disabled?: boolean; onApplied: (result: RepairResult) => void; onViewSource?: (path: string) => void
   onSection?: (section: 'credentials' | 'data' | 'preserved' | 'source') => void
-  focusPath?: string; focusRequest?: number
+  focusPath?: string; focusRequest?: number; onBusyChange?: (busy: boolean) => void
   view?: 'overview' | 'data' | 'hidden'; additionalFindings?: ImportFinding[]; onReview?: (result: RepairResult) => void
 }
 const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name' }
 
-export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onViewSource, onSection, view = 'overview', additionalFindings = [], onReview, focusPath, focusRequest }: Props) {
+export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onViewSource, onSection, view = 'overview', additionalFindings = [], onReview, focusPath, focusRequest, onBusyChange }: Props) {
+  const settings = useImportSettings()
   const candidate = String(script.metadata?.import?.preserved?.server_import_attestation_v1 || '')
   const scope = `${candidate}:${projectId}`
   const currentScope = useRef(scope)
@@ -39,6 +40,9 @@ export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onV
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
+  const notifyBusy = useRef(onBusyChange); notifyBusy.current = onBusyChange
+  useEffect(() => { notifyBusy.current?.(busy || loading) }, [busy, loading])
+  useEffect(() => () => notifyBusy.current?.(false), [])
   const [pending, setPending] = useState<{ operation: Operation; finding: ImportFinding } | null>(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -95,6 +99,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onV
     requestAnimationFrame(() => detailRef.current?.focus())
   }
   async function run(operation: Operation, apply = false) {
+    if (locked) return
     const requestScope = currentScope.current
     const target = apply ? pending?.finding : finding
     setBusy(true); setError('')
@@ -129,7 +134,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onV
     <details><summary>Redacted before / after</summary><pre>{JSON.stringify({ before: preview.before, after: preview.script }, null, 2)}</pre></details>
     {pending && pending.operation.type !== 'preview_allocation' && <button className="btn btn-primary" type="button" disabled={locked} onClick={() => run(pending.operation, true)}>Apply reviewed repair</button>}
   </section>
-  return <section className="lr-issue-workspace" aria-label={view === 'data' ? 'Unique parameter allocation' : 'Guided import repair'} hidden={view === 'hidden'}>
+  return <section className="lr-issue-workspace" aria-label={view === 'data' ? 'Unique parameter allocation' : 'Guided import repair'} hidden={view === 'hidden' || (view === 'data' && !!settings && settings.dataView !== 'allocation')}>
     <p className="lr-repair-announcement" role="status">{announcement || (loading ? 'Checking current repair requirements…' : '')}</p>
     {view !== 'data' ? <>
       <div className="lr-issue-workspace-heading"><div><h3>Resolve import issues</h3><p>{blocked} grouped issues block replay · {reviewCount} need review · {resolved.length} resolved in this session</p></div>
@@ -169,7 +174,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, onApplied, onV
         </>}
       </section></div>
     </> : <>
-      <ImportParameterInventory script={script} /><h3>Unique parameter allocation</h3><p>Preview reserved rows for your planned VUsers and run mode. This does not change or launch a run.</p>
+      <h3>Unique parameter allocation</h3><p>Preview reserved rows for your planned VUsers and run mode. This does not change or launch a run.</p>
       <fieldset className="lr-repair-form lr-allocation-form" disabled={locked || !candidate.startsWith('protected:')}><legend>Planned run</legend><label>Planned VUsers<input type="number" min={1} value={users} onChange={e => { setUsers(Number(e.target.value)); setAllocationPreview(null); setAllocationUser(1) }} /></label><label>Run mode<select value={runMode} onChange={e => { setRunMode(e.target.value); setAllocationPreview(null) }}><option value="duration">Duration</option><option value="iterations">Iterations</option></select></label>{runMode === 'iterations' && <label>Iterations per VUser<input type="number" min={1} value={iterations} onChange={e => { setIterations(Number(e.target.value)); setAllocationPreview(null) }} /></label>}<button className="btn btn-secondary" type="button" disabled={!Number.isInteger(users) || users < 1 || (runMode === 'iterations' && (!Number.isInteger(iterations) || iterations < 1))} onClick={() => run({ type: 'preview_allocation', vusers: users, iterations: runMode === 'duration' ? 0 : iterations })}>{busy ? 'Calculating allocation…' : 'Preview allocation'}</button></fieldset>
       {allocationPreview && <section aria-label="Allocation result" className="lr-repair-preview"><h4>Capacity preview: {users} VUsers · {runMode === 'duration' ? 'duration run' : `${iterations} iterations per VUser`}</h4>
         <p role="status">{allocationPreview.allocation?.length ? 'Capacity available for the planned population. This does not clear other replay blockers.' : 'No uniquely allocated parameters in this draft.'}</p>

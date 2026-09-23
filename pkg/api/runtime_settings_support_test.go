@@ -262,3 +262,19 @@ func runtimeSettingsReportHasEntry(report RuntimeSettingsReport, id string) bool
 	}
 	return false
 }
+
+func TestNativeHTTPCompatibilitySupportScope(t *testing.T) {
+	count := 0
+	for _, entry := range runtimeSettingsSupportMatrix() {
+		switch entry.ID {
+		case "source_web_http_page_timeout", "source_web_http_ip_version", "source_web_http_cache_eviction", "source_web_http_html_parse":
+			count++
+			if containsString(entry.Protocols, "browser") || !containsString(entry.Protocols, "soap") || !containsString(entry.Protocols, "java_http") {
+				t.Fatalf("wrong execution scope: %+v", entry)
+			}
+		}
+	}
+	if count != 4 {
+		t.Fatal(count)
+	}
+}

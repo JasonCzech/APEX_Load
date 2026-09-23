@@ -85,6 +85,11 @@ describe('settings workspace review regressions', () => {
     expect(rows[2].textContent).toContain('30000Engine defaultexecuted')
     expect(formatRuntimeEvidenceValue('secret value', 'config.http.proxy_password')).toBe('Protected value')
   })
+  it('shows the global percentage policy on recorded action waits', () => {
+    const percentageScript = { ...script, config: { ...script.config, think_time: { type: 'random_percentage', min_percent: 25, max_percent: 75 } }, actions: [{ name: 'wait', type: 'source_runtime', target: '', think_time_after: true, think_time: { type: 'fixed', mean_ms: 4000 } }] }
+    act(() => root.render(<RuntimeContextSummary script={percentageScript} />))
+    expect(container.querySelector('li')?.textContent).toContain('25–75% of recorded action delays')
+  })
   it('separates Debug scope from the editable script and applies the selected ignore flag', () => {
     act(() => root.render(<RuntimeContextSummary script={script} debug={{ ignoreThinkTime: true, logLevel: 'debug', breakOnFailure: false }} />))
     const details = container.querySelector<HTMLDetailsElement>('.runtime-context-details')!

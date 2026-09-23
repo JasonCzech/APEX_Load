@@ -1,3 +1,4 @@
+import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { suggestedApplication, suggestedReleases } from './libraryLaunchAssignments'
 import CaptureSelectionHelp from './CaptureSelectionHelp'
 import { captureSelectionNeedsReview, dynatraceCapabilities } from './captureConnectionModel'
@@ -2104,11 +2105,13 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
               <option value="">Script default</option>
               <option value="none">None</option>
               <option value="recorded">Replay think time as recorded</option>
+              <option value="random_percentage">Random percentage of recorded think time</option>
               <option value="fixed">Fixed</option>
               <option value="gaussian">Gaussian</option>
               <option value="uniform">Uniform</option>
             </select>
           </label>
+          {thinkType === 'random_percentage' && <ThinkTimePercentageInputs value={defaultEditDraft.thinkTimeConfig ?? undefined} disabled={defaultEditDraft.thinkIgnore} onChange={updateThinkConfig} />}
           {Boolean(thinkType) && thinkTimeUsesMean(thinkType) && (
             <label>
               <span>Think time mean (ms)</span>
@@ -3933,6 +3936,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                         <option value="">Script think time</option>
                         <option value="none">None</option>
                         <option value="recorded">Replay think time as recorded</option>
+                        <option value="random_percentage">Random percentage of recorded think time</option>
                         <option value="fixed">Fixed</option>
                         <option value="gaussian">Gaussian</option>
                         <option value="uniform">Uniform</option>
@@ -3940,6 +3944,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </label>
                     {/* No mode selected is the inherit option, which carries no mean: showing the
                         field there invites a value thinkTimeFromEdit now deliberately ignores. */}
+                    {groupEditDraft.thinkTimeConfig?.type === 'random_percentage' && <ThinkTimePercentageInputs value={groupEditDraft.thinkTimeConfig} disabled={groupEditDraft.thinkIgnore} onChange={change => setGroupEditDraft(prev => ({ ...prev, thinkTimeConfig: { ...prev.thinkTimeConfig!, ...change } }))} />}
                     {Boolean(canonicalThinkTimeType(groupEditDraft.thinkTimeConfig?.type)) && thinkTimeUsesMean(groupEditDraft.thinkTimeConfig?.type) && (
                       <label className={changedFieldClass(groupEditChanges.think_time)}>
                         <span>Think time mean (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>

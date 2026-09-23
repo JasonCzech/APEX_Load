@@ -29,20 +29,23 @@ const (
 var processHTTPCacheBudget = responseCaptureBudget{limit: httpCacheMaxProcessBytes}
 
 type httpResponseCache struct {
-	mu         sync.Mutex
-	entries    map[string]httpCacheEntry
-	totalBytes int64
-	memory     *responseCaptureLease
+	mu                sync.Mutex
+	entries           map[string]httpCacheEntry
+	totalBytes        int64
+	memory            *responseCaptureLease
+	iteration         uint64
+	excludedMIMETypes []string
 }
 
 type httpCacheEntry struct {
-	statusCode   int
-	header       http.Header
-	body         []byte
-	expiresAt    time.Time
-	etag         string
-	lastModified string
-	storedAt     time.Time
+	statusCode        int
+	header            http.Header
+	body              []byte
+	expiresAt         time.Time
+	etag              string
+	lastModified      string
+	storedAt          time.Time
+	lastUsedIteration uint64
 }
 
 func newHTTPResponseCache() *httpResponseCache {
@@ -68,7 +71,9 @@ func (c *httpResponseCache) lookup(req *http.Request, now time.Time) (*httpCache
 	if !ok {
 		return nil, false
 	}
-	// Cache entries are immutable after insertion. Return a shallow snapshot so
+	entry.lastUsedIteration = c.iteration
+	c.entries[httpCacheKey(req)] = entry
+	// Cache entry bodies are immutable after insertion. Return a shallow snapshot so
 	// a hit does not clone a multi-MiB body; response() clones the header map and
 	// bytes.Reader never mutates the shared body.
 	snapshot := entry
@@ -77,6 +82,10 @@ func (c *httpResponseCache) lookup(req *http.Request, now time.Time) (*httpCache
 
 func (c *httpResponseCache) store(req *http.Request, resp *http.Response, body []byte, now time.Time) {
 	if c == nil || req == nil || req.URL == nil || resp == nil || req.Method != http.MethodGet || resp.StatusCode != http.StatusOK {
+		return
+	}
+	if matchesCompatibilityMIME(resp.Header, c.excludedMIMETypes) {
+		c.remove(httpCacheKey(req))
 		return
 	}
 	if len(body) > httpCacheMaxBodyBytes || requestHasAuthorization(req) && !responseAllowsAuthenticatedCache(resp.Header) {
@@ -100,6 +109,7 @@ func (c *httpResponseCache) put(key string, entry httpCacheEntry, cloneBody bool
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	old, replacing := c.entries[key]
+	entry.lastUsedIteration = c.iteration
 	oldSize := int64(0)
 	if replacing {
 		oldSize = old.size()
@@ -198,9 +208,16 @@ func (c *httpResponseCache) refresh(req *http.Request, stale *httpCacheEntry, re
 			header.Add(key, value)
 		}
 	}
+	// The caller consumes this private snapshot for the current 304 response,
+	// even when the refreshed representation must no longer stay cached.
+	stale.header = header
 	synthetic := &http.Response{
 		StatusCode: stale.statusCode,
 		Header:     header,
+	}
+	if matchesCompatibilityMIME(header, c.excludedMIMETypes) {
+		c.remove(httpCacheKey(req))
+		return
 	}
 	entry, ok := cacheEntryFromResponseView(synthetic, stale.body, now)
 	if !ok {
@@ -308,4 +325,14 @@ func responseAllowsAuthenticatedCache(headers http.Header) bool {
 
 func httpCacheKey(req *http.Request) string {
 	return req.Method + " " + req.URL.String()
+}
+
+func (c *httpResponseCache) remove(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if old, exists := c.entries[key]; exists {
+		delete(c.entries, key)
+		c.totalBytes -= old.size()
+		c.memory.releaseBytes(old.size())
+	}
 }

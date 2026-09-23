@@ -249,7 +249,7 @@ func TestParseRuntimeCfgMapsLoadRunnerThinkTimeModes(t *testing.T) {
 		{name: "recorded", body: "Options=RECORDED\nFactor=7\nLimitFlag=0\nLimit=9", multiplier: 1},
 		{name: "multiply and limit", body: "Options=MULTIPLY\nFactor=2.5\nLimitFlag=1\nLimit=3", multiplier: 2.5, limit: 3000},
 		{name: "no think", body: "Options=NOTHINK", multiplier: 1, ignore: true},
-		{name: "random review", body: "Options=RANDOM\nThinkTimeRandomLow=50\nThinkTimeRandomHigh=150", multiplier: 1, partial: true},
+		{name: "random invalid review", body: "Options=RANDOM\nThinkTimeRandomLow=150\nThinkTimeRandomHigh=50", multiplier: 1, partial: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

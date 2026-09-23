@@ -479,23 +479,20 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				stringSlicesEqual(fn.ConditionIDs, lastExecutableConditionIDs) &&
 				stringSlicesEqual(fn.LoopIDs, lastExecutableLoopIDs)
 			waitMs := sec * 1000
+			// Preserve each call independently even when percentage mode or a cap
+			// is selected only after import. A single adjacent wait can stay on its
+			// predecessor; leading and consecutive waits need their own markers.
+			if ok && sec >= 0 && !math.IsNaN(waitMs) && !math.IsInf(waitMs, 0) && waitMs <= dsl.MaxConfiguredProtocolTimeoutMS &&
+				(!adjacent || prev.ThinkTimeAfter || (opts.RuntimeSettings != nil && opts.RuntimeSettings.ThinkTime.Type == "random_percentage")) {
+				action, mode, _ := convertSourceFunctionAction(fn)
+				action.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: waitMs}
+				action.ThinkTimeAfter = true
+				appendTrackedSourceAction(fn, action, mode, "Preserved this recorded delay separately so percentage sampling and caps remain independent after runtime settings change.")
+				result.Stats.ThinkTimes++
+				break
+			}
 			if ok && sec >= 0 && !math.IsNaN(waitMs) && !math.IsInf(waitMs, 0) &&
 				waitMs <= dsl.MaxConfiguredProtocolTimeoutMS && adjacent {
-				if prev.ThinkTimeAfter && strings.EqualFold(prev.ThinkTime.Type, "fixed") {
-					if opts.RuntimeSettings != nil && opts.RuntimeSettings.ThinkTime.LimitMs > 0 {
-						result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d consecutive lr_think_time calls cannot be combined exactly when the source think-time cap is enabled; preserving the preceding wait and requiring review", fn.Filename, fn.LineNumber))
-						appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unplaced_think_times", "Think Time", "config", "review_only", "Consecutive literal wait cannot be combined without changing per-call cap semantics; the preceding wait is preserved and this wait uses the zero-delay fallback.", SourceFunctionSupportReviewOnly))
-						recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
-						break
-					}
-					waitMs += prev.ThinkTime.MeanMs
-				}
-				if waitMs > dsl.MaxConfiguredProtocolTimeoutMS {
-					result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d consecutive lr_think_time calls exceed the destination wait limit; preserving the preceding wait and requiring review", fn.Filename, fn.LineNumber))
-					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unplaced_think_times", "Think Time", "config", "review_only", "Combined literal think time exceeds the destination limit; the preceding wait is preserved and this wait uses the zero-delay fallback.", SourceFunctionSupportReviewOnly))
-					recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
-					break
-				}
 				prev.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: waitMs}
 				prev.ThinkTimeAfter = true
 				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(lastExecutablePhase, lastExecutableIndex)+".think_time", "Think Time", "config", "converted", "Preserved as the preceding executable action's exact recorded wait.", SourceFunctionSupportExecutable))

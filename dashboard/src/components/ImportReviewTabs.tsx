@@ -6,7 +6,7 @@ const IMPORT_REVIEW_TABS = [
   { id: 'review', label: 'Review' },
   { id: 'credentials', label: 'Credentials' },
   { id: 'data', label: 'Data & parameters' },
-  { id: 'runtime', label: 'Runtime & source settings' },
+  { id: 'runtime', label: 'Runtime settings' },
   { id: 'dsl', label: 'DSL Preview' },
   { id: 'source', label: 'Source Mapping' },
 ] as const

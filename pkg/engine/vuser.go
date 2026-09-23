@@ -489,6 +489,12 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 			}
 		}
+		if controller, ok := vu.Proto.(protocol.IterationController); ok {
+			if err := controller.BeginIteration(iterationBoundaryCtx); err != nil {
+				logger.Error("iteration setup failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
+				goto teardown
+			}
+		}
 		// Protocol/session reset is iteration setup, not a started iteration or
 		// transaction. Keep reservations pending until every fallible setup step
 		// succeeds so another VUser can inherit their capacity after a failure.
@@ -1552,24 +1558,10 @@ func (vu *VUser) applyActionThinkTime(ctx context.Context, action dsl.Action) bo
 	thinkCfg := protocol.ThinkTimeConfig{
 		Type: global.Type, MeanMs: global.MeanMs, StdMs: global.StdMs,
 		MinMs: global.MinMs, MaxMs: global.MaxMs, Multiplier: global.Multiplier,
-		LimitMs: global.LimitMs, Ignore: global.Ignore,
+		LimitMs: global.LimitMs, Ignore: global.Ignore, MinPercent: global.MinPercent, MaxPercent: global.MaxPercent,
 	}
-	if action.ThinkTime.Type != "" {
-		thinkCfg = protocol.ThinkTimeConfig{
-			Type: action.ThinkTime.Type, MeanMs: action.ThinkTime.MeanMs,
-			StdMs: action.ThinkTime.StdMs, MinMs: action.ThinkTime.MinMs, MaxMs: action.ThinkTime.MaxMs,
-			Multiplier: action.ThinkTime.Multiplier, LimitMs: action.ThinkTime.LimitMs, Ignore: action.ThinkTime.Ignore,
-		}
-		if thinkCfg.Multiplier == 0 {
-			thinkCfg.Multiplier = global.Multiplier
-		}
-		if thinkCfg.LimitMs == 0 {
-			thinkCfg.LimitMs = global.LimitMs
-		}
-		if global.Ignore {
-			thinkCfg.Ignore = true
-		}
-	}
+	thinkCfg = resolveActionThinkTime(thinkCfg, action.ThinkTime)
+
 	delay := computeThinkTime(thinkCfg)
 	elapsed, completed := vu.sleepActive(ctx, delay)
 	vu.noteSourceTransactionThinkTime(elapsed)

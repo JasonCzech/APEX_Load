@@ -782,6 +782,12 @@ describe('SampleScriptImport', () => {
     const uploadInput = container.querySelector('input[aria-label="Upload asset for upload_bin"]') as HTMLInputElement | null
     expect(uploadInput).not.toBeNull()
     if (!uploadInput) return
+    const runtimeTab = container.querySelector<HTMLButtonElement>('[role="tab"][id$="-runtime"]') || Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(tab => tab.textContent?.includes('Runtime settings'))!
+    await act(async () => runtimeTab.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit HTTP')!.click())
+    expect(uploadInput.disabled).toBe(true)
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Cancel')!.click())
+    expect(uploadInput.disabled).toBe(false)
 
     const file = new File(['abc'], 'upload.bin', { type: 'application/octet-stream' })
     Object.defineProperty(uploadInput, 'files', {

@@ -1,3 +1,7 @@
+import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
+import ImportParameterInventory from './ImportParameterInventory'
+import ImportSourceInventory from './ImportSourceInventory'
+import { ImportSettingsProvider, ImportDataExtras, type SettingsResult } from './ImportSettingsContext'
 import { type MutableRefObject, type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import {
@@ -410,6 +414,9 @@ interface Props {
   subtitle?: ReactNode
   readinessMessage?: string
   tabbed?: boolean
+  onSettingsApplied?: (result: SettingsResult) => void
+  settingsDisabled?: boolean
+  onSettingsBusyChange?: (busy: boolean) => void
   runtimeContent?: ReactNode
   dataContent?: ReactNode
   batchControls?: ReactNode
@@ -486,6 +493,9 @@ export default function ScriptImportReview({
   compactReview = false,
   tabbed = false,
   runtimeContent,
+  onSettingsApplied,
+  settingsDisabled = false,
+  onSettingsBusyChange,
   dataContent,
   batchControls,
   credentialIntroduction,
@@ -531,6 +541,8 @@ export default function ScriptImportReview({
   onEdit,
   children,
 }: Props) {
+  const [settingsBusy, setSettingsBusy] = useState(false)
+  const settingsBusyRef = useRef(false)
   const [activeReviewTab, setActiveReviewTab] = useState<ImportReviewTab>('review')
   const showCredentials = requestedCredentials && (!tabbed || activeReviewTab === 'credentials')
   const showDataReview = requestedData && (!tabbed || activeReviewTab === 'data')
@@ -546,6 +558,8 @@ export default function ScriptImportReview({
   const internalBindingReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const bindingReviewRef = credentialReviewRef || internalBindingReviewRef
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
+  const [credentialEditing, setCredentialEditing] = useState(false)
+  const credentialEditingRef = useRef(false)
   const [credentialAction, setCredentialAction] = useState<CredentialAction | null>(null)
   const [parameterizationApplying, setParameterizationApplying] = useState(false)
   const [sharedValuesApplying, setSharedValuesApplying] = useState(false)
@@ -603,8 +617,17 @@ export default function ScriptImportReview({
     const parameterizationBusy = options?.parameterization ?? parameterizationApplyingRef.current
     const credentialsBusy = options?.credentials ?? credentialActionRequestRef.current !== null
     const sharedValuesBusy = options?.sharedValues ?? sharedValuesApplyingRef.current
-    onReviewBusyChange?.(parameterizationBusy || credentialsBusy || sharedValuesBusy)
+    onReviewBusyChange?.(parameterizationBusy || credentialsBusy || sharedValuesBusy || settingsBusyRef.current || credentialEditingRef.current)
   }, [onReviewBusyChange])
+
+  const handleSettingsBusyChange = useCallback((busy: boolean) => { settingsBusyRef.current = busy; setSettingsBusy(busy); onSettingsBusyChange?.(busy || credentialEditingRef.current); reportInternalReviewBusy() }, [reportInternalReviewBusy, onSettingsBusyChange])
+
+  const handleCredentialEditingChange = useCallback((editing: boolean) => {
+    credentialEditingRef.current = editing
+    setCredentialEditing(editing)
+    onSettingsBusyChange?.(editing || settingsBusyRef.current)
+    reportInternalReviewBusy()
+  }, [onSettingsBusyChange, reportInternalReviewBusy])
 
   const clearCredentialAction = useCallback(() => {
     credentialActionRequestRef.current = null
@@ -714,7 +737,7 @@ export default function ScriptImportReview({
   }, [onSecretBindingsApply, reportInternalReviewBusy, reviewIdentity])
 
   const runAction = async (action: CredentialAction) => {
-    if (importDraftExpired || parameterizationApplyingRef.current || sharedValuesApplyingRef.current || reviewBusy) return
+    if (credentialEditingRef.current || settingsBusyRef.current || importDraftExpired || parameterizationApplyingRef.current || sharedValuesApplyingRef.current || reviewBusy) return
     if (!hasUnresolvedSecretBindings) {
       if (action === 'save') onSave?.()
       if (action === 'edit') onEdit?.()
@@ -917,7 +940,7 @@ export default function ScriptImportReview({
             <button
               className="btn btn-secondary"
               onClick={() => { void runAction('edit') }}
-              disabled={importDraftExpired || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              disabled={credentialEditing || settingsBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               title={importDraftExpired
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before editing.'
                 : !credentialsValid
@@ -931,7 +954,7 @@ export default function ScriptImportReview({
             <button
               className={compactReview ? "btn btn-secondary" : "btn btn-primary"}
               onClick={() => { void runAction('save') }}
-              disabled={importDraftExpired || saving || saveDisabled || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
+              disabled={credentialEditing || settingsBusy || importDraftExpired || saving || saveDisabled || parameterizationApplying || sharedValuesApplying || reviewBusy || !credentialsValid || credentialHandlerUnavailable || credentialAction !== null}
               aria-describedby={visibleSaveDisabledReason ? saveDisabledReasonId : undefined}
               title={importDraftExpired
                 ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
@@ -974,8 +997,9 @@ export default function ScriptImportReview({
         <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('credentials')}>Configure credentials</button>
         <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('data')}>Configure data & parameters</button>
       </nav>}
+      {!tabbed && onSettingsApplied && <div hidden={!showDataReview}><ImportParameterInventory script={script} /></div>}
       <div hidden={tabbed && activeReviewTab !== 'review'}>{children}</div>
-      {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{runtimeContent || <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>}</div>}
+      {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{onSettingsApplied && <ImportRuntimeSettingsTable script={script} />}{runtimeContent || (!onSettingsApplied && <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>)}</div>}
       {!tabbed && runtimeContent}
 
       <div hidden={!showCredentials}>
@@ -983,6 +1007,8 @@ export default function ScriptImportReview({
       {credentialIntroduction}
       {hasUnresolvedSecretBindings && onSecretBindingsApply && (
         <SecretBindingReview
+          inlineEditing
+          onEditingChange={handleCredentialEditingChange}
           ref={bindingReviewRef}
           requirements={secretBindingRequirements}
           sourceMigrationRequirements={sourceMigrationRequirements}
@@ -996,7 +1022,7 @@ export default function ScriptImportReview({
           onApply={applySecretBindings}
           onPreparedChange={setPreparedSecrets}
           onProjectSecretsConfigured={handleProjectSecretsConfigured}
-          disabled={importDraftExpired || parameterizationApplying || sharedValuesApplying || reviewBusy}
+          disabled={settingsBusy || importDraftExpired || saving || parameterizationApplying || sharedValuesApplying || reviewBusy}
         />
       )}
 
@@ -1058,8 +1084,10 @@ export default function ScriptImportReview({
       </details>}
 
       <div hidden={!showDataReview}>
+      {tabbed && onSettingsApplied && <ImportParameterInventory script={script} />}
+      <ImportDataExtras>
       {dataContent}
-      {tabbed && !dataContent && !sharedValues?.candidates?.length && !parameterization?.suggestions?.length && <p className="import-review-empty">No editable data substitutions were reported. Review unresolved variables in Review and configure their producers in the Visual Editor.</p>}
+      {tabbed && !onSettingsApplied && !dataContent && !sharedValues?.candidates?.length && !parameterization?.suggestions?.length && <p className="import-review-empty">No editable data substitutions were reported. Review unresolved variables in Review and configure their producers in the Visual Editor.</p>}
       {sharedValues && onSharedValuesApplied && (sharedValues.candidates?.length ?? 0) > 0 && (
         <SharedImportValues
           guided={compactReview}
@@ -1067,7 +1095,7 @@ export default function ScriptImportReview({
           sharedValues={sharedValues}
           scripts={sharedValueScripts && sharedValueScripts.length > 0 ? sharedValueScripts : [script]}
           reviewGeneration={reviewGeneration}
-          disabled={importDraftExpired || saving || reviewBusy || credentialAction !== null}
+          disabled={credentialEditing || settingsBusy || importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleSharedValuesApplyingChange}
           onApplied={onSharedValuesApplied}
         />
@@ -1079,7 +1107,7 @@ export default function ScriptImportReview({
           script={script}
           scriptName={script.name}
           reviewGeneration={reviewGeneration}
-          disabled={importDraftExpired || saving || reviewBusy || credentialAction !== null}
+          disabled={credentialEditing || settingsBusy || importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleParameterizationApplyingChange}
           onApplied={(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt) => {
             onParameterizationApplied(parameterizedScript, diffs, selectedIds, nextImportDraftExpiresAt)
@@ -1087,10 +1115,12 @@ export default function ScriptImportReview({
         />
       )}
 
+      </ImportDataExtras>
       </div>
 
       {showPreview && previewPane}
       {tabbed && activeReviewTab === 'source' && !previewAside && <p className="import-review-empty">This importer did not provide source mappings. Conversion does not establish source parity; retain the original source for manual comparison.</p>}
+      {showPreviewAside && onSettingsApplied && <ImportSourceInventory script={script} />}
       {sourceVisited.current && previewAside && (
         <div className="script-import-review-preview-aside" hidden={!showPreviewAside}>
           {previewAside}
@@ -1105,5 +1135,6 @@ export default function ScriptImportReview({
       )}
     </div>
   )
-  return tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: blockerDetails.length + warningDetails.length + unsupportedDetails.length, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
+  const reviewContent = tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: blockerDetails.length + warningDetails.length + unsupportedDetails.length, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
+  return <ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider>
 }

@@ -58,6 +58,17 @@ describe('ImportRuntimeOptions', () => {
     return input as HTMLInputElement
   }
 
+  it('edits random recorded percentages without treating them as milliseconds', () => {
+    const script = buildScript()
+    script.config.think_time = { type: 'random_percentage', min_percent: 50, max_percent: 150 }
+    const onChange = render(script)
+    expect(inputByLabel('Minimum recorded think time (%)').value).toBe('50')
+    expect(inputByLabel('Maximum recorded think time (%)').value).toBe('150')
+    act(() => setNativeValue(inputByLabel('Minimum recorded think time (%)'), '25'))
+    expect(onChange.mock.calls[0][0].config.think_time).toEqual({ type: 'random_percentage', min_percent: 25, max_percent: 150 })
+    expect(container.textContent).not.toContain('Mean Think Time (ms)')
+  })
+
   it('shows current config values', () => {
     render(buildScript())
     expect(inputByLabel('Think Time (ms)').value).toBe('1000')

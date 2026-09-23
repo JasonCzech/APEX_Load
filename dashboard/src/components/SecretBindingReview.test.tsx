@@ -90,6 +90,67 @@ describe('SecretBindingReview', () => {
     return onApply
   }
 
+  it('edits credentials inline, retains edits across review tabs, and cancels without writing secrets', async () => {
+    const onApply = vi.fn()
+    const onEditingChange = vi.fn()
+    const button = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === label)!
+    const renderInline = (generation: string) => root.render(<SecretBindingReview inlineEditing onEditingChange={onEditingChange} reviewGeneration={generation} requirements={requirements} projectId="project-1" onApply={onApply} />)
+    await act(async () => renderInline('one'))
+    expect(container.querySelector<HTMLElement>('.secret-binding-review-control')?.hidden).toBe(true)
+    expect(container.querySelector('.credential-inline-current')?.textContent).toContain('Not configured')
+    await act(async () => button('Edit credentials').click())
+    expect(onEditingChange).toHaveBeenLastCalledWith(true)
+    const name = container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="text"]')!
+    const value = container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="password"]')!
+    await act(async () => { setInput(name, 'NEW_TOKEN'); setInput(value, 'synthetic-write-only-value') })
+    await act(async () => renderInline('two'))
+    expect(name.value).toBe('NEW_TOKEN')
+    expect(value.value).toBe('synthetic-write-only-value')
+    await act(async () => button('Cancel credentials').click())
+    expect(name.value).toBe('ORDER_API_TOKEN')
+    expect(value.value).toBe('')
+    expect(onEditingChange).toHaveBeenLastCalledWith(false)
+    expect(onApply).not.toHaveBeenCalled()
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+  })
+
+  it('retains inline binding edits after failure and applies them without navigating or saving the script', async () => {
+    const onApply = vi.fn().mockRejectedValueOnce(new Error('Draft changed; retry')).mockResolvedValueOnce(undefined)
+    const button = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === label)!
+    await act(async () => root.render(<SecretBindingReview inlineEditing requirements={requirements} projectId="project-1" onApply={onApply} />))
+    await act(async () => button('Edit credentials').click())
+    const name = container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="text"]')!
+    await act(async () => setInput(name, 'NEW_TOKEN'))
+    await act(async () => button('Apply credentials').click())
+    expect(container.textContent).toContain('Draft changed; retry')
+    expect(name.value).toBe('NEW_TOKEN')
+    expect(container.querySelector<HTMLElement>('.secret-binding-review-control')?.hidden).toBe(false)
+    await act(async () => button('Apply credentials').click())
+    expect(onApply).toHaveBeenLastCalledWith(expect.arrayContaining([{ requirement_id: requirements[0].id, secret_name: 'NEW_TOKEN' }]))
+    expect(container.querySelector<HTMLElement>('.secret-binding-review-control')?.hidden).toBe(true)
+    expect(container.querySelector('.credential-inline-current')?.textContent).toContain('{{secret.NEW_TOKEN}}')
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+  })
+
+  it('does not close a new credential edit session when an older apply finishes', async () => {
+    let finishApply!: () => void
+    const onApply = vi.fn(() => new Promise<void>(resolve => { finishApply = resolve }))
+    const button = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent === label)!
+    const renderInline = (projectId: string) => root.render(<SecretBindingReview inlineEditing requirements={requirements} projectId={projectId} onApply={onApply} />)
+    await act(async () => renderInline('project-1'))
+    await act(async () => button('Edit credentials').click())
+    await act(async () => button('Apply credentials').click())
+    expect(onApply).toHaveBeenCalledOnce()
+    await act(async () => renderInline('project-2'))
+    await act(async () => button('Edit credentials').click())
+    const name = container.querySelector<HTMLInputElement>('.secret-binding-review-control input[type="text"]')!
+    await act(async () => setInput(name, 'SECOND_PROJECT_TOKEN'))
+    await act(async () => finishApply())
+    expect(name.value).toBe('SECOND_PROJECT_TOKEN')
+    expect(container.querySelector<HTMLElement>('.secret-binding-review-control')?.hidden).toBe(false)
+    expect(button('Cancel credentials')).toBeDefined()
+  })
+
   it('filters preserved and setup groups without changing their binding choices', () => {
     act(() => root.render(<SecretBindingReview requirements={[
       { ...requirements[0], destination_value_preserved: true, value_group_id: 'preserved' },

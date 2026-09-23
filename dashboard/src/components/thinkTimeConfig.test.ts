@@ -137,3 +137,16 @@ describe('thinkTimeConfigForType', () => {
     })
   })
 })
+
+it('edits percentage bounds independently of millisecond distributions', () => {
+ const percentage = thinkTimeConfigForType({ type: 'fixed', mean_ms: 4000, std_ms: 20, min_ms: 10, max_ms: 30 }, 'random_percentage')
+ expect(percentage).toEqual({ type: 'random_percentage', min_percent: 50, max_percent: 150 })
+ expect(thinkTimeUsesMean('random_percentage')).toBe(false)
+ expect(thinkTimeUsesBounds('random_percentage')).toBe(false)
+ expect(thinkTimeConfigForType({ ...percentage, min_percent: 0, max_percent: 0 }, 'random_percentage')).toEqual({ type: 'random_percentage', min_percent: 0, max_percent: 0 })
+ expect(thinkTimeConfigForType(percentage, 'recorded')).toEqual({ type: 'recorded' })
+})
+
+it('preserves zero percentage bounds omitted by Go JSON serialization', () => {
+ expect(thinkTimeConfigForType({ type: 'random_percentage' }, 'random_percentage')).toEqual({ type: 'random_percentage', min_percent: 0, max_percent: 0 })
+})

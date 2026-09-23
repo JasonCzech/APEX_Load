@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { reseedScenarioGroups } from './scenarioFormModel'
+import type { ScenarioFormState } from './TestHub'
+import { runtimeSettingsFromForm, replaceScenarioRuntimeDefaults, reseedScenarioGroups } from './scenarioFormModel'
 
 describe('reseedScenarioGroups', () => {
   it('preserves groups beyond the selected shape and does not invent script mappings', () => {
@@ -22,4 +23,10 @@ describe('reseedScenarioGroups', () => {
     expect(narrowed[1]).toMatchObject({ name: 'Search', script_id: 'script-b' })
     expect(narrowed[2]).toMatchObject({ name: 'Observe', script_id: 'script-c', role: 'observer' })
   })
+})
+
+it('retains percentage bounds through scenario runtime replacement and form serialization', () => {
+ const form = { runtime_settings: {}, groups: [] } as unknown as ScenarioFormState
+ const next = replaceScenarioRuntimeDefaults(form, { log_level: '', auto_transactions: '', think_time: { type: 'random_percentage', min_percent: 0, max_percent: 125 } })
+ expect(runtimeSettingsFromForm(next, false)?.think_time).toMatchObject({ type: 'random_percentage', min_percent: 0, max_percent: 125 })
 })

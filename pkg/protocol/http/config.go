@@ -21,6 +21,7 @@ import (
 )
 
 type transportConfig struct {
+	ipVersion        string
 	maxConnsPerHost  int
 	maxIdleConns     int
 	connectTimeout   time.Duration
@@ -56,6 +57,9 @@ const (
 )
 
 func validateHTTPRuntimeConfigBounds(config map[string]any) error {
+	if err := ValidateReplayCompatibilityConfig(config); err != nil {
+		return err
+	}
 	for _, field := range []string{"web_network_simulation_latency_ms", "web_network_simulation_jitter_ms"} {
 		if _, err := protocol.BoundedMilliseconds(config[field], 0, MaxConfiguredTimeout); err != nil {
 			return fmt.Errorf("%s %w", field, err)
@@ -148,6 +152,7 @@ func exactHTTPConfigFloat(value any) (float64, error) {
 
 func parseTransportConfig(config map[string]any) transportConfig {
 	settings := transportConfig{
+		ipVersion:       strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "ip_version"))),
 		maxConnsPerHost: defaultHTTPMaxConnsPerHost,
 		maxIdleConns:    defaultHTTPMaxIdleConns,
 		connectTimeout:  30 * time.Second,
@@ -277,7 +282,7 @@ func newTransport(settings transportConfig, tlsCfg *tls.Config) *http.Transport 
 	}
 	maxIdlePerHost := min(settings.maxConnsPerHost, settings.maxIdleConns)
 	return &http.Transport{
-		DialContext:           dialer.DialContext,
+		DialContext:           familyDialContext(dialer.DialContext, settings.ipVersion),
 		MaxIdleConns:          settings.maxIdleConns,
 		MaxIdleConnsPerHost:   maxIdlePerHost,
 		MaxConnsPerHost:       settings.maxConnsPerHost,

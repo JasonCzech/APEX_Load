@@ -165,14 +165,10 @@ var compatibilityRuntimeKeys = map[string]map[string]runtimeKeyClassification{
 		"proxyusebrowser":                    {note: "Browser-proxy inheritance is not supported; only none/system/custom proxy modes execute."},
 		"proxypasswordisencrypted":           {note: "VuGen credential-encoding marker; APEX manages proxy credentials as secrets."},
 		"usedataformatextensions":            {note: "Enables the LoadRunner Data Format Extension chain; APEX executes only its own configured DFE chain, and no source chain configuration was imported."},
-		"ipversionpolicy":                    {note: "IPv4/IPv6 selection policy is not configurable per script."},
-		"keepalivetimeout":                   {note: "Keep-alive idle timeout tuning is not configurable per script."},
 		"keepnontextmimetype":                {note: "MIME types forced into text handling; APEX decodes by response headers."},
 		"maxselfmetarefreshcount":            {note: "HTML meta-refresh follow limit is not configurable."},
 		"maxerrormatchesaserrors":            {note: "Caps how many content-check mismatches count as errors; APEX reports every assertion result."},
 		"netbufsize":                         {note: "Socket buffer sizing is managed by the Go runtime."},
-		"pagedownloadtimeout":                {note: "Whole-page download deadline; APEX applies per-request timeouts instead."},
-		"parsehtmlcontenttype":               {note: "Content types parsed as HTML; APEX parses by response content type."},
 		"resetcontext":                       {note: "Resets the HTML replay context between iterations; APEX rebuilds context per request."},
 		"sslversionkey":                      {note: "Legacy numeric SSL version selector; the executable TLS version comes from web_set_sockets_option/SSLVersion."},
 		"zlibheadersincompressedrequestbody": {note: "zlib header emission for compressed request bodies is not reproduced."},
@@ -184,7 +180,6 @@ var compatibilityRuntimeKeys = map[string]map[string]runtimeKeyClassification{
 		"usebrowseragent":                          {note: "Recorded-browser User-Agent inheritance; the imported browser selection or custom User-Agent is authoritative."},
 		"aedutf8values":                            {note: "Auto encode/decode of UTF-8 values is not reproduced."},
 		"disableaed":                               {note: "Auto encode/decode engine toggle; the feature is not reproduced.", activeWhen: activeWhenExplicitTrue},
-		"deletecacheunreferencediterations":        {note: "Simulated-cache eviction interval is not configurable; APEX manages its cache with its own bounds."},
 		"enablejsfortransport":                     {note: "LoadRunner's JavaScript-for-transport replay path is not reproduced by the APEX HTTP client."},
 		"jsfortransportruntimesize":                {note: "JavaScript-for-transport runtime-size tuning is not reproduced.", activeWhen: activeWhenJavaScriptTransportEnabled},
 		"jsfortransportstacksize":                  {note: "JavaScript-for-transport stack-size tuning is not reproduced.", activeWhen: activeWhenJavaScriptTransportEnabled},
@@ -264,7 +259,7 @@ func activeWhenResponseLogLimitEnabled(section map[string]string, value string) 
 
 func activeWhenNotUTF8Charset(_ map[string]string, value string) bool {
 	switch normalizeEnum(value) {
-	case "", "utf_8", "utf8":
+	case "", "none", "utf_8", "utf8":
 		return false
 	default:
 		return true
@@ -344,6 +339,37 @@ func classifyRuntimeSettingKey(definitions []runtimeSettingSupportDefinition, pr
 		}
 	}
 
+	if canonicalSection == "thinktime" {
+		mode := strings.ToUpper(strings.TrimSpace(runtimeSectionValue(section, "Options")))
+		inactive := (compactKey == "thinktimerandomlow" || compactKey == "thinktimerandomhigh") && mode != "" && mode != "RANDOM"
+		inactive = inactive || (compactKey == "factor" && mode != "" && mode != "MULTIPLY")
+		inactive = inactive || (compactKey == "limit" && (mode == "NOTHINK" || strings.TrimSpace(runtimeSectionValue(section, "LimitFlag")) == "0"))
+		if inactive {
+			return RuntimeSettingDisposition{Status: RuntimeSettingDispositionNonApplicable, Note: "Saved source value is inactive under the selected think-time mode or disabled cap."}
+		}
+	}
+	if canonicalSection == "http" {
+		switch compactKey {
+		case "usenativentlm", "disablentlm2ss", "overridentlmcreds", "heavykdcload", "spnaddnonedefport", "spncnamelookup":
+			if runtimeHTTPFeatureExplicitlyDisabled(fileSections, "IntegratedAuthentication") {
+				return RuntimeSettingDisposition{Status: RuntimeSettingDispositionNonApplicable, Note: "Saved authentication option is inactive because IntegratedAuthentication is disabled."}
+			}
+		case "keepalivetimeout":
+			if runtimeHTTPFeatureExplicitlyDisabled(fileSections, "KeepAlive") {
+				return RuntimeSettingDisposition{Status: RuntimeSettingDispositionNonApplicable, ParityID: "http_idle_timeout", Note: "Saved idle timeout is inactive because KeepAlive is disabled."}
+			}
+		}
+	}
+	if canonicalSection == "runlogicrunroot" {
+		activeModes := map[string]string{
+			"runlogicpaceconsttime": "CONST", "runlogicrandompacemin": "RANDOM", "runlogicrandompacemax": "RANDOM",
+			"runlogicpaceconstaftertime": "CONSTAFTER", "runlogicafterpacemin": "AFTER", "runlogicafterpacemax": "AFTER",
+		}
+		mode := strings.ToUpper(strings.TrimSpace(runtimeSectionValue(section, "RunLogicPaceType")))
+		if required, ok := activeModes[compactKey]; ok && (mode == "ASAP" || mode == "CONST" || mode == "RANDOM" || mode == "CONSTAFTER" || mode == "AFTER") && mode != required {
+			return RuntimeSettingDisposition{Status: RuntimeSettingDispositionNonApplicable, Note: "Saved pacing bound is inactive under the selected RunLogicPaceType."}
+		}
+	}
 	if disposition, ok := classifyConditionalSourceRuntimeKey(sectionName, section, key, value); ok {
 		return disposition
 	}
@@ -354,6 +380,9 @@ func classifyRuntimeSettingKey(definitions []runtimeSettingSupportDefinition, pr
 		for _, matcher := range definition.matchers {
 			if !matcher.matchesSection(sectionName) || !matcher.matchesKey(key) || !matcher.matchesValue(value) {
 				continue
+			}
+			if nativeHTTPCompatibilityID(definition.entry.ID) && !nativeHTTPCompatibilityProtocol(protocol) {
+				return RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, ParityID: definition.entry.ID, Fields: cloneStrings(definition.entry.Fields), Note: "Native HTTP policy is not executed by this protocol."}
 			}
 			status := RuntimeSettingDispositionMapped
 			if definition.entry.Status == RuntimeSettingStatusCompatibilityOnly {

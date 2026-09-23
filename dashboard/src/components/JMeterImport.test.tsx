@@ -434,10 +434,10 @@ describe('JMeterImport', () => {
     expect(container.textContent).toContain('HTTPSamplerProxy')
     expect(container.textContent).toContain('actions[0]')
     expect(container.textContent).toContain('Save 1 draft')
-    const stats = Array.from(container.querySelectorAll('.lr-stat')).map(item => item.textContent)
-    expect(stats).toContain('1HTTP Samplers')
-    expect(stats).toContain('2Total Samplers')
-    expect(stats).toContain('1Skipped Samplers')
+    const stats = Array.from(container.querySelectorAll('.import-evidence-facts > div')).map(item => item.textContent)
+    expect(stats).toContain('HTTP Samplers1')
+    expect(stats).toContain('Total Samplers2')
+    expect(stats).toContain('Skipped Samplers1')
   })
 
   it('renders structured coverage categories including adapter_required', async () => {

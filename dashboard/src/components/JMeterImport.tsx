@@ -1,3 +1,4 @@
+import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
@@ -103,10 +104,11 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const [assetPage, setAssetPage] = useState(0)
   const [extractorPage, setExtractorPage] = useState(0)
   const parameterizationApplying = Object.values(parameterizationApplyingByScript).some(Boolean)
+  const [settingsEditing, setSettingsEditing] = useState(false)
   const [credentialActionInProgress, setCredentialActionInProgress] = useState(false)
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const operationBusy = workingMode !== null || saving || parameterizationApplying || credentialActionInProgress
-  const sourceMutationLocked = saving
+  const sourceMutationLocked = settingsEditing || saving
   const sourceMutationLockedRef = useRef(sourceMutationLocked)
   sourceMutationLockedRef.current = sourceMutationLocked
   useEffect(() => {
@@ -357,6 +359,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     _diffs: unknown[],
     _selectedIds: string[],
     importDraftExpiresAt?: string,
+    refreshedRequirements?: ImportResult['secret_binding_requirements'],
   ) => {
     advanceReviewGeneration()
     setResult(prev => {
@@ -365,6 +368,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       const primary = scriptIndex === 0 ? parameterizedScript : prev.script
       return {
         ...prev,
+        ...(refreshedRequirements ? { secret_binding_requirements: replaceSecretBindingRequirementsForScript(prev.secret_binding_requirements, scriptIndex, parameterizedScript, refreshedRequirements.map(requirement => ({ ...requirement, script_index: scriptIndex }))) } : {}),
         scripts,
         script: primary,
         ...(scripts.length === 1 ? { import_draft_expires_at: importDraftExpiresAt } : {}),
@@ -703,6 +707,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         <div className="lr-result">
           <ScriptImportReview
             tabbed
+            onSettingsBusyChange={setSettingsEditing}
+            onSettingsApplied={updated => handleParameterizationApplied(0)(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])}
+            settingsDisabled={Boolean(savedResult)}
             dataContent={(parameterization?.suggestions.length || extractorSummary.length) ? <>
             {parameterization && parameterization.suggestions.length > 0 && parameterizationScript && (
               <>
@@ -800,17 +807,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             previewTitle="Import Preview"
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
           >
-            <div className="lr-stats-grid">
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.converted_actions}</span><span className="lr-stat-label">Actions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.samplers}</span><span className="lr-stat-label">HTTP Samplers</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.total_samplers ?? result.stats.samplers}</span><span className="lr-stat-label">Total Samplers</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.skipped_samplers ?? 0}</span><span className="lr-stat-label">Skipped Samplers</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.thread_groups}</span><span className="lr-stat-label">Thread Groups</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.csv_sources}</span><span className="lr-stat-label">CSV Sources</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.variables}</span><span className="lr-stat-label">Variables</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.assertions}</span><span className="lr-stat-label">Assertions</span></div>
-              <div className="lr-stat"><span className="lr-stat-val">{result.stats.unsupported}</span><span className="lr-stat-label">Unsupported</span></div>
-            </div>
+
 
             {result.assumptions.length > 0 && (
               <div className="lr-warnings">
@@ -848,6 +845,17 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
                 )}
               </div>
             </div>
+            <ImportConversionDetails facts={[
+              { label: 'Actions', value: result.stats.converted_actions },
+              { label: 'HTTP Samplers', value: result.stats.samplers },
+              { label: 'Total Samplers', value: result.stats.total_samplers ?? result.stats.samplers },
+              { label: 'Skipped Samplers', value: result.stats.skipped_samplers ?? 0 },
+              { label: 'Thread Groups', value: result.stats.thread_groups },
+              { label: 'CSV Sources', value: result.stats.csv_sources },
+              { label: 'Variables', value: result.stats.variables },
+              { label: 'Assertions', value: result.stats.assertions },
+              { label: 'Unsupported', value: result.stats.unsupported }
+            ]} />
           </ScriptImportReview>
         </div>
       )}

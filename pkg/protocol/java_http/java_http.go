@@ -379,3 +379,11 @@ func durationToMilliseconds(duration time.Duration) float64 {
 	}
 	return float64(duration) / float64(time.Millisecond)
 }
+
+// BeginIteration delegates cache aging to the shared HTTP runtime.
+func (j *JavaHTTP) BeginIteration(ctx context.Context) error {
+	if j.http == nil {
+		return nil
+	}
+	return j.http.BeginIteration(ctx)
+}

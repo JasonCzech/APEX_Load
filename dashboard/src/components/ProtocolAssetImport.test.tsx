@@ -51,6 +51,9 @@ const apiMock = {
   discardImportSecretSession: vi.fn(),
 }
 
+const settingsRequest = vi.hoisted(() => vi.fn())
+vi.mock('../hooks/apiClient', async importOriginal => ({ ...await importOriginal<typeof import('../hooks/apiClient')>(), request: settingsRequest }))
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -95,6 +98,17 @@ describe('ProtocolAssetImport', () => {
   let root: Root
 
   beforeEach(() => {
+    settingsRequest.mockImplementation(async (_url, options) => {
+      const { script, changes } = JSON.parse(options.body)
+      const updated = structuredClone(script)
+      for (const change of changes) {
+        const keys = change.path.split('.')
+        let target = updated
+        for (const key of keys.slice(0, -1)) target = target[key] ||= {}
+        target[keys.at(-1)] = change.value
+      }
+      return { script: updated, findings: [], readiness: {}, secret_binding_requirements: [] }
+    })
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -1582,13 +1596,15 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
-    const thinkTimeInput = Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
-      .find(label => label.textContent?.includes('Think Time (ms)'))
-      ?.querySelector<HTMLInputElement>('input')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('.import-category-nav button')).find(button => button.textContent?.startsWith('Think time'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit Think time')!.click())
+    const thinkTimeInput = container.querySelector<HTMLInputElement>('[aria-label="Think time: Mean delay (ms)"]')!
     expect(thinkTimeInput).toBeDefined()
     await act(async () => {
       if (thinkTimeInput) setInputValue(thinkTimeInput, '1750')
     })
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Apply Think time')!.click())
+    await flushPromises()
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Save draft'))
     await act(async () => save?.click())
@@ -2128,8 +2144,8 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('Generated Scripts')
     expect(container.textContent).toContain('kafka · Orders Kafka')
     expect(container.textContent).toContain('jms-solace · Orders JMS')
-    expect(container.textContent).toContain('Kafka brokers · serde · replay')
-    expect(container.textContent).toContain('SASL Secret')
+    expect(container.textContent).toContain('Brokers (one per line)')
+    expect(container.textContent).toContain('Kafka')
   })
 
   it('auto-applies redacted AsyncAPI bindings by script_index before saving all scripts', async () => {
@@ -2222,7 +2238,7 @@ describe('ProtocolAssetImport', () => {
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save All 2 Scripts with 1 secret to configure'))
     expect(primarySave?.disabled).toBe(false)
     expect(saveAll?.disabled).toBe(false)
-    const runtimeControls = Array.from(container.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.import-runtime-options input, .import-runtime-options select'))
+    const runtimeControls = Array.from(container.querySelectorAll<HTMLInputElement | HTMLSelectElement>('.import-category-actions button'))
     expect(runtimeControls.length).toBeGreaterThan(0)
     expect(runtimeControls.some(control => control.disabled)).toBe(false)
     const secretValue = container.querySelector<HTMLInputElement>('input[aria-label="Secret value for JMS_PASSWORD"]')!
@@ -2444,9 +2460,10 @@ describe('ProtocolAssetImport', () => {
     await act(async () => convert.click())
     await flushPromises()
 
+    await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit credentials')!.click() })
     const migrate = container.querySelector<HTMLInputElement>('.credentials-source-migration input')!
     await act(async () => migrate.click())
-    const prepare = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Prepare Selected Credentials'))!
+    const prepare = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Apply credentials')!
     await act(async () => prepare.click())
     await flushPromises()
 
@@ -2459,6 +2476,7 @@ describe('ProtocolAssetImport', () => {
       ],
     })
     expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+    await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('.sample-import-script-tab')).find(button => button.textContent?.includes(second.name))!.click() })
     expect(container.querySelector('.secret-binding-review-script')?.textContent).toContain(second.name)
     expect(container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')?.value).toBe('KAFKA_PASSWORD_2')
 
@@ -2687,10 +2705,10 @@ describe('ProtocolAssetImport', () => {
     expect(saveAll.disabled).toBe(true)
     expect(applyParameterization.disabled).toBe(true)
     expect(Array.from(container.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
-      '.secret-binding-review input, .secret-binding-review select, .secret-binding-review button',
+      '.secret-binding-review input, .secret-binding-review select, .secret-binding-review button:not(.import-category-toggle)',
     )).every(control => control.disabled)).toBe(true)
     expect(Array.from(container.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
-      '.import-runtime-options input, .import-runtime-options select',
+      '.import-category-actions button',
     )).every(control => control.disabled)).toBe(true)
 
     await act(async () => {
@@ -2757,8 +2775,8 @@ describe('ProtocolAssetImport', () => {
       jmsTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.textContent).toContain('JMS replay readiness')
-    expect(container.textContent).toContain('JMS broker · destination · replay')
-    expect(container.textContent).toContain('Destination Type')
+    expect(container.textContent).toContain('Broker URL')
+    expect(container.textContent).toContain('Destination type')
 
     const saveAll = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save All 2 Scripts'))
     expect(saveAll).toBeDefined()
@@ -3724,14 +3742,16 @@ describe('ProtocolAssetImport', () => {
     }
 
     await completeReplay()
-    const thinkTimeInput = Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
-      .find(label => label.textContent?.includes('Think Time (ms)'))
-      ?.querySelector<HTMLInputElement>('input')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('.import-category-nav button')).find(button => button.textContent?.startsWith('Think time'))!.click())
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit Think time')!.click())
+    const thinkTimeInput = container.querySelector<HTMLInputElement>('[aria-label="Think time: Mean delay (ms)"]')!
     expect(thinkTimeInput).toBeDefined()
     await act(async () => {
       if (thinkTimeInput) setInputValue(thinkTimeInput, '2500')
     })
-    expect(container.textContent).toContain('Runtime settings updated the draft')
+    await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Apply Think time')!.click())
+    await flushPromises()
+    expect(container.textContent).toContain('Settings applied')
     expect(container.textContent).not.toContain('Replay validation passed')
 
     await completeReplay()
@@ -4133,7 +4153,7 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('1 action(s) generated from CloudTest export elements.')
     expect(container.textContent).not.toContain('0 action(s) generated from CloudTest export elements.')
     expect(container.textContent).toContain('CloudTest Fixture-Gated Review')
-    expect(container.textContent).toContain('2Clip drafts')
+    expect(container.textContent).toContain('Clip drafts2')
     expect(container.textContent).toContain('Holiday sale')
 
     const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
@@ -4296,6 +4316,12 @@ describe('ProtocolAssetImport', () => {
       convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
+
+    const evidence = Array.from(container.querySelectorAll('.import-evidence-facts > div'))
+    expect(evidence.find(row => row.querySelector('dt')?.textContent === 'HAR coverage')?.querySelector('dd')?.textContent).toBe('100%')
+    expect(evidence.find(row => row.querySelector('dt')?.textContent === 'matched requests')?.querySelector('dd')?.textContent).toBe('2 / 2')
+    expect(container.querySelector<HTMLDetailsElement>('.import-conversion-details')?.open).toBe(false)
+    expect(container.querySelectorAll('.sample-stat')).toHaveLength(0)
 
     // Auto-detect path sends salesforce_native: true.
     expect(apiMock.importHAR).toHaveBeenLastCalledWith(file, expect.objectContaining({ salesforce_native: true }))

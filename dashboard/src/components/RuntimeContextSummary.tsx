@@ -9,7 +9,7 @@ function actionTiming(actions: ScriptActionDefinition[], prefix: string, config:
   return actions.flatMap((action, index) => {
     const path = `${prefix}[${index}]`
     return [
-      ...(action.think_time && Object.keys(action.think_time).length ? [{ path, label: !action.think_time_after ? 'Inactive: this action does not wait after completion' : effectiveThinkTimeLabel({ base_url: '', think_time: action.think_time.type ? { ...action.think_time, multiplier: action.think_time.multiplier || config.think_time?.multiplier, limit_ms: action.think_time.limit_ms || config.think_time?.limit_ms, ignore: action.think_time.ignore || config.think_time?.ignore } : config.think_time }) }] : []),
+      ...(action.think_time && Object.keys(action.think_time).length ? [{ path, label: !action.think_time_after ? 'Inactive: this action does not wait after completion' : effectiveThinkTimeLabel({ base_url: '', think_time: action.think_time.type ? { ...action.think_time, ...(config.think_time?.type === 'random_percentage' && ['fixed', 'recorded'].includes(action.think_time.type) ? { type: 'random_percentage', min_percent: config.think_time.min_percent, max_percent: config.think_time.max_percent } : {}), multiplier: action.think_time.multiplier || config.think_time?.multiplier, limit_ms: action.think_time.limit_ms || config.think_time?.limit_ms, ignore: action.think_time.ignore || config.think_time?.ignore } : config.think_time }) }] : []),
       ...actionTiming(action.control?.steps || [], `${path}.control.steps`, config),
       ...actionTiming(action.control?.else || [], `${path}.control.else`, config),
       ...actionTiming(action.control?.default || [], `${path}.control.default`, config),

@@ -1,3 +1,4 @@
+import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
@@ -13,7 +14,6 @@ import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportCoverageButton from './ImportCoverageButton'
 import ImportDropzone from './ImportDropzone'
-import ImportRuntimeOptions from './ImportRuntimeOptions'
 import BrowserReplayProgress from './BrowserReplayProgress'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { type PreparedSecretBindings, type SecretBindingReviewHandle } from './SecretBindingReview'
@@ -797,6 +797,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [saveAllPreparing, setSaveAllPreparing] = useState(false)
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const internalReviewBusyRef = useRef(false)
+  const [settingsEditing, setSettingsEditing] = useState(false)
   const [internalReviewBusy, setInternalReviewBusy] = useState(false)
   const handleInternalReviewBusyChange = useCallback((busy: boolean) => {
     internalReviewBusyRef.current = busy
@@ -827,7 +828,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     asyncAPISavedScriptsRef.current = {}
     setAsyncAPISavedScripts({})
   }, [])
-  const [conversionScope, setConversionScope] = useState(0)
+  const [, setConversionScope] = useState(0)
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
@@ -914,7 +915,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     || saveAllPreparing
     || internalReviewBusy
     || replayTask.pending
-  const sourceMutationLocked = persistenceInProgress || saveTask.pending || saveAllPreparing
+  const sourceMutationLocked = settingsEditing || persistenceInProgress || saveTask.pending || saveAllPreparing
   const saveTargetLocked = sourceMutationLocked || internalReviewBusy
   // A credential action can await several API calls before onSave runs. Freeze
   // the replace target at the moment that action becomes busy so the eventual
@@ -2095,19 +2096,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     }
   }
 
-  const handleRuntimeOptionsChanged = (updatedScript: ScriptDefinition) => {
-    if (!result) return
-    if (importDraftHasExpired(result)) {
-      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
-      return
-    }
-    if (asyncAPISelectedScriptSaved) return
-    advanceReviewGeneration()
-    const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? updatedScript : script) : [updatedScript]
-    const nextResult = { ...result, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
-    commitReviewMutation(nextResult, 'Runtime settings updated the draft. Run replay validation again before saving normally.')
-  }
-
   const selectAsyncAPIReviewScript = (index: number, focusButton = false) => {
     if (saveAllPreparing || saveTask.pending || internalReviewBusy || generatedScripts.length === 0) return
     const nextIndex = Math.max(0, Math.min(generatedScripts.length - 1, index))
@@ -2388,12 +2376,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 )}
               </div>
             )} </>}
-            runtimeContent={<ImportRuntimeOptions
-              draftScope={`${projectId || ''}:${kind}:${conversionScope}:${selectedScriptIndex}`}
-              script={reviewedScript}
-              onChange={handleRuntimeOptionsChanged}
-              disabled={importDraftExpired || asyncAPISelectedScriptSaved || saveTask.pending || persistenceInProgress}
-            />}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
             subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the Script Library. Open a saved script above or import more files.' : `${actionCount} action(s) generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
@@ -2405,6 +2387,14 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             reviewSections={result.review_sections}
             parameterization={asyncAPISelectedScriptSaved ? undefined : result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
+            onSettingsBusyChange={setSettingsEditing}
+            onSettingsApplied={updated => {
+              if (!result) return
+              advanceReviewGeneration()
+              const scripts = generatedScripts.length ? generatedScripts.map((entry, index) => index === selectedScriptIndex ? updated.script : entry) : [updated.script]
+              commitReviewMutation({ ...result, script: scripts[0], scripts, secret_binding_requirements: replaceSecretBindingRequirementsForScript(result.secret_binding_requirements, selectedScriptIndex, updated.script, (updated.secret_binding_requirements || []).map(requirement => ({ ...requirement, script_index: selectedScriptIndex }))), import_draft_expires_at: updated.import_draft_expires_at } as ProtocolImportResult, 'Settings applied. Run replay validation again before saving normally.')
+            }}
+            settingsDisabled={asyncAPISelectedScriptSaved || Boolean(savedResult && !asyncAPIMultiScript)}
             sharedValues={asyncAPISelectedScriptSaved ? undefined : result.shared_values}
             sharedValueScripts={generatedScripts}
             onSharedValuesApplied={handleSharedValuesApplied}
@@ -2441,14 +2431,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             {kind === 'recorder-export' && (
               <RecorderStepMappingReview summary={result.summary as Record<string, unknown> | undefined} />
             )}
-            <div className="sample-import-stats-grid">
-              {stats && Object.entries(stats).filter(([, value]) => typeof value === 'number').map(([key, value]) => (
-                <div className="sample-stat" key={key}>
-                  <span className="sample-stat-value">{Number(value)}</span>
-                  <span className="sample-stat-label">{key.replace(/_/g, ' ')}</span>
-                </div>
-              ))}
-            </div>
+
             {replayPreflight && (
               <div className="sample-import-preflight">
                 <ReplayPreflightCard preflight={replayPreflight} />
@@ -2485,28 +2468,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             {kind === 'asyncapi' && (
               <div className="sample-import-review-block">
                 <h4>AsyncAPI Replay Review</h4>
-                <div className="sample-import-stats-grid">
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{reviewedScript.protocol}</span>
-                    <span className="sample-stat-label">protocol</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{reviewedScript.protocol === 'kafka' ? (reviewedScript.config.kafka?.mock === false ? 'Live' : 'Mock') : (reviewedScript.config.jms?.mock === false ? 'Live' : 'Mock')}</span>
-                    <span className="sample-stat-label">adapter</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{(stats?.request_reply_actions as number | undefined) ?? 0}</span>
-                    <span className="sample-stat-label">request reply</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{(stats?.messages_with_correlation as number | undefined) ?? 0}</span>
-                    <span className="sample-stat-label">correlations</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{(stats?.skipped_operations as string[] | undefined)?.length ?? 0}</span>
-                    <span className="sample-stat-label">skipped operations</span>
-                  </div>
-                </div>
+                <ImportEvidenceFacts facts={[
+                  { label: 'protocol', value: reviewedScript.protocol },
+                  { label: 'adapter', value: reviewedScript.protocol === 'kafka' ? (reviewedScript.config.kafka?.mock === false ? 'Live' : 'Mock') : (reviewedScript.config.jms?.mock === false ? 'Live' : 'Mock') },
+                  { label: 'request reply', value: (stats?.request_reply_actions as number | undefined) ?? 0 },
+                  { label: 'correlations', value: (stats?.messages_with_correlation as number | undefined) ?? 0 },
+                  { label: 'skipped operations', value: (stats?.skipped_operations as string[] | undefined)?.length ?? 0 }
+                ]} />
                 {(stats?.brokers as string[] | undefined)?.length ? (
                   <ul className="sample-import-findings">
                     {(stats!.brokers as string[]).map(broker => <li key={broker}><strong>Broker</strong> {broker}</li>)}
@@ -2688,32 +2656,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             {kind === 'har' && harSummary && (
               <div className="sample-import-review-block">
                 <h4>HAR Artifact Review</h4>
-                <div className="sample-import-stats-grid">
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{harSummary.artifact_mode}</span>
-                    <span className="sample-stat-label">artifact mode</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{harSummary.artifact_sensitivity || harSummary.governance?.sensitivity || 'unknown'}</span>
-                    <span className="sample-stat-label">sensitivity</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{harSummary.retention_days ?? harSummary.governance?.retention_days ?? 0}</span>
-                    <span className="sample-stat-label">retention days</span>
-                  </div>
-                  {harDiff && (
-                    <>
-                      <div className="sample-stat">
-                        <span className="sample-stat-value">{harDiff.dynamic_candidates}</span>
-                        <span className="sample-stat-label">dynamic candidates</span>
-                      </div>
-                      <div className="sample-stat">
-                        <span className="sample-stat-value">{harDiff.static_candidates}</span>
-                        <span className="sample-stat-label">static candidates</span>
-                      </div>
-                    </>
-                  )}
-                </div>
+                <ImportEvidenceFacts facts={[
+                  { label: 'artifact mode', value: harSummary.artifact_mode },
+                  { label: 'sensitivity', value: harSummary.artifact_sensitivity || harSummary.governance?.sensitivity || 'unknown' },
+                  { label: 'retention days', value: harSummary.retention_days ?? harSummary.governance?.retention_days ?? 0 },
+                  ...(harDiff ? [{ label: 'dynamic candidates', value: harDiff.dynamic_candidates }, { label: 'static candidates', value: harDiff.static_candidates }] : [])
+                ]} />
                 {harDiff?.classifications?.length ? (
                   <ul className="sample-import-findings">
                     {harDiff.classifications.slice(0, 5).map(item => (
@@ -2748,32 +2696,14 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     </button>
                   </div>
                 )}
-                <div className="sample-import-stats-grid">
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{salesforceReview.detected ? 'Detected' : 'Needs review'}</span>
-                    <span className="sample-stat-label">traffic match</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%</span>
-                    <span className="sample-stat-label">HAR coverage</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{salesforceReview.har_match_coverage?.matched_requests || 0} / {salesforceReview.har_match_coverage?.imported_requests || 0}</span>
-                    <span className="sample-stat-label">matched requests</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{salesforceReview.domains?.length || 0}</span>
-                    <span className="sample-stat-label">domains</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{endpointTotal(salesforceReview, 'aura_endpoints')}</span>
-                    <span className="sample-stat-label">Aura calls</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{endpointTotal(salesforceReview, 'lightning_endpoints')}</span>
-                    <span className="sample-stat-label">Lightning calls</span>
-                  </div>
-                </div>
+                <ImportEvidenceFacts facts={[
+                  { label: 'traffic match', value: salesforceReview.detected ? 'Detected' : 'Needs review' },
+                  { label: 'HAR coverage', value: `${Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%` },
+                  { label: 'matched requests', value: `${salesforceReview.har_match_coverage?.matched_requests || 0} / ${salesforceReview.har_match_coverage?.imported_requests || 0}` },
+                  { label: 'domains', value: salesforceReview.domains?.length || 0 },
+                  { label: 'Aura calls', value: endpointTotal(salesforceReview, 'aura_endpoints') },
+                  { label: 'Lightning calls', value: endpointTotal(salesforceReview, 'lightning_endpoints') }
+                ]} />
                 {(salesforceReview.domains?.length || 0) > 0 && (
                   <ul className="sample-import-findings">
                     {salesforceReview.domains!.slice(0, 5).map(domain => (
@@ -2827,30 +2757,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             {kind === 'raml' && (ramlSummary || stats) && (
               <div className="sample-import-review-block">
                 <h4>RAML Import Review</h4>
-                <div className="sample-import-stats-grid">
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{(stats?.total_resources as number | undefined) ?? ramlSummary?.resources?.length ?? 0}</span>
-                    <span className="sample-stat-label">resources</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{(stats?.total_methods as number | undefined) ?? 0}</span>
-                    <span className="sample-stat-label">methods</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{(stats?.request_bodies as number | undefined) ?? 0}</span>
-                    <span className="sample-stat-label">request bodies</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{ramlSummary?.auth_schemes?.length || 0}</span>
-                    <span className="sample-stat-label">auth schemes</span>
-                  </div>
-                  {ramlSummary?.base_url && (
-                    <div className="sample-stat">
-                      <span className="sample-stat-value">{ramlSummary.base_url}</span>
-                      <span className="sample-stat-label">base URL</span>
-                    </div>
-                  )}
-                </div>
+                <ImportEvidenceFacts facts={[
+                  { label: 'resources', value: (stats?.total_resources as number | undefined) ?? ramlSummary?.resources?.length ?? 0 },
+                  { label: 'methods', value: (stats?.total_methods as number | undefined) ?? 0 },
+                  { label: 'request bodies', value: (stats?.request_bodies as number | undefined) ?? 0 },
+                  { label: 'auth schemes', value: ramlSummary?.auth_schemes?.length || 0 },
+                  ...(ramlSummary?.base_url ? [{ label: 'Base URL', value: ramlSummary.base_url }] : [])
+                ]} />
                 {(ramlSummary?.resources?.length || 0) > 0 && (
                   <ul className="sample-import-findings">
                     {ramlSummary!.resources!.slice(0, 6).map(resource => (
@@ -2880,24 +2793,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 <p className="sample-import-subtitle">
                   Every imported element is preserved, but all Clip actions remain execution-blocked until sanitized golden fixtures prove the CloudTest wire shape.
                 </p>
-                <div className="sample-import-stats-grid">
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{cloudTestResult.stats?.clips ?? 0}</span>
-                    <span className="sample-stat-label">Clip drafts</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{cloudTestResult.stats?.compositions ?? 0}</span>
-                    <span className="sample-stat-label">Composition drafts</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{cloudTestResult.stats?.recognized_elements ?? 0}</span>
-                    <span className="sample-stat-label">recognized elements</span>
-                  </div>
-                  <div className="sample-stat">
-                    <span className="sample-stat-value">{cloudTestResult.stats?.unknown_elements ?? 0}</span>
-                    <span className="sample-stat-label">unknown elements</span>
-                  </div>
-                </div>
+                <ImportEvidenceFacts facts={[
+                  { label: 'Clip drafts', value: cloudTestResult.stats?.clips ?? 0 },
+                  { label: 'Composition drafts', value: cloudTestResult.stats?.compositions ?? 0 },
+                  { label: 'recognized elements', value: cloudTestResult.stats?.recognized_elements ?? 0 },
+                  { label: 'unknown elements', value: cloudTestResult.stats?.unknown_elements ?? 0 }
+                ]} />
                 {(cloudTestResult.scenario_drafts?.length || 0) > 0 && (
                   <ul className="sample-import-findings">
                     {cloudTestResult.scenario_drafts!.slice(0, 8).map(scenario => (
@@ -2989,6 +2890,9 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 ) : null}
               </div>
             )}
+            <ImportConversionDetails facts={stats ? Object.entries(stats)
+              .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+              .map(([key, value]) => ({ label: key.replace(/_/g, ' '), value })) : []} />
           </ScriptImportReview>
         </div>
       )}

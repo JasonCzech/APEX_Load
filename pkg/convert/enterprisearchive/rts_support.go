@@ -73,6 +73,18 @@ type runtimeSettingSupportDefinition struct {
 }
 
 var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
+	{entry: RuntimeSettingSupportEntry{ID: "http_page_timeout", Area: "HTTP", Concept: "Complete page deadline", Fields: []string{"config.http.page_timeout_ms"}, Status: RuntimeSettingStatusExecuted, Notes: "Applies one deadline to the main response and all embedded-resource waves; seconds are converted to milliseconds."}, matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"PageDownloadTimeout"})}},
+	{entry: RuntimeSettingSupportEntry{ID: "http_ip_version", Area: "HTTP", Concept: "Outgoing IP family", Fields: []string{"config.http.ip_version"}, Status: RuntimeSettingStatusExecuted, Notes: "IPv4, IPv6, or automatic selection applies to outgoing TCP connections, including proxy connections; unverified source encodings require an explicit choice."}, matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"IPVersionPolicy"})}},
+	{entry: RuntimeSettingSupportEntry{ID: "http_cache_eviction", Area: "HTTP", Concept: "Unused cache entry lifetime", Fields: []string{"config.http.cache_max_unused_iterations"}, Status: RuntimeSettingStatusExecuted, Notes: "Evicts entries after the configured number of unreferenced main iterations; zero disables aging. Memory bounds remain enforced."}, matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"DeleteCacheUnreferencedIterations"})}},
+	{entry: RuntimeSettingSupportEntry{ID: "http_html_parse", Area: "HTTP", Concept: "HTML response parsing policy", Fields: []string{"config.http.html_parse_mode"}, Status: RuntimeSettingStatusExecuted, Notes: "Controls HTML resource discovery: HTML, text except text/xml, or any content type."}, matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"ParseHtmlContentType"})}},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID: "http_idle_timeout", Area: "HTTP", Concept: "Keep-alive idle timeout",
+			Fields: []string{"config.http.idle_timeout_ms"}, Status: RuntimeSettingStatusExecuted,
+			Notes: "KeepAliveTimeout seconds map to HTTP idle_timeout_ms for positive whole values up to 3600 seconds. Inactive values are preserved; unsupported values require review without clamping.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"KeepAliveTimeout"})},
+	},
 	{
 		entry: RuntimeSettingSupportEntry{
 			ID:      "http_transport",
@@ -253,10 +265,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 		entry: RuntimeSettingSupportEntry{
 			ID:      "think_time",
 			Area:    "Think Time",
-			Concept: "Ignore, multiplier, and limit",
+			Concept: "Ignore, recorded percentage range, multiplier, and limit",
 			Fields:  []string{"config.think_time"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Applied by the engine after action execution.",
+			Notes:   "Recorded delays, random percentages of each recorded delay, multiplier, cap, and ignore execute after actions.",
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"Think Time", "ThinkTime"}, []string{"Options", "Factor", "Limit", "LimitFlag", "ThinkTimeRandomLow", "ThinkTimeRandomHigh", "Ignore", "IgnoreThinkTime", "Multiplier", "MultiplyRecordedThinkTimeBy", "LimitMs", "LimitThinkTimeMs"})},
 	},
@@ -732,7 +744,16 @@ func buildRTSParityReportForProtocol(runtimeSections map[string]map[string]map[s
 	if strings.EqualFold(strings.TrimSpace(protocol), "java_vuser") {
 		definitions = allImportedRuntimeSettingSupportDefinitions()
 	}
-	return buildRTSParityReport(runtimeSections, definitions)
+	entries := scopeHTTPCompatibilityParity(buildRTSParityReport(runtimeSections, definitions), protocol)
+	if strings.EqualFold(strings.TrimSpace(protocol), "java_vuser") {
+		for _, sections := range runtimeSections {
+			think := findMergedSection(sections, "Think Time", "ThinkTime")
+			if strings.EqualFold(strings.TrimSpace(runtimeSectionValue(think, "Options")), "RANDOM") {
+				entries = externalRunnerPercentageParity(entries)
+			}
+		}
+	}
+	return entries
 }
 
 func buildRTSParityReport(runtimeSections map[string]map[string]map[string]string, definitions []runtimeSettingSupportDefinition) []RuntimeSettingParityEntry {
@@ -784,6 +805,25 @@ func BuildRTSParityReportFromScript(script *dsl.Script) []RuntimeSettingParityEn
 		})
 	}
 
+	entries = scopeHTTPCompatibilityParity(entries, script.Protocol)
+	if currentSequentialProof(script) {
+		promoteSequentialParity(entries)
+	}
+	if strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") && strings.EqualFold(strings.TrimSpace(script.Config.ThinkTime.Type), "random_percentage") {
+		return externalRunnerPercentageParity(entries)
+	}
+	return entries
+}
+
+// The external JVM owns its internal lr.think_time calls. Native DSL wait
+// support must not claim that the runner applies this new percentage policy.
+func externalRunnerPercentageParity(entries []RuntimeSettingParityEntry) []RuntimeSettingParityEntry {
+	for i := range entries {
+		if entries[i].ID == "think_time" {
+			entries[i].Status = RuntimeSettingStatusCompatibilityOnly
+			entries[i].Notes = "Random percentages execute for native DSL waits; the external Java Vuser runner does not apply percentage bounds to its internal think-time calls. Review or replace those waits before replay."
+		}
+	}
 	return entries
 }
 
@@ -980,7 +1020,7 @@ func scriptConfigMatchesRuntimeSettingDefinition(config dsl.ScriptConfig, defini
 	case "proxy":
 		return (config.HTTP.ProxyMode != "" && !strings.EqualFold(config.HTTP.ProxyMode, "none")) || hasConfiguredValue(reflect.ValueOf(config.HTTP.Proxy))
 	case "think_time":
-		return config.ThinkTime.Ignore || config.ThinkTime.Multiplier != 0 || config.ThinkTime.LimitMs != 0
+		return config.ThinkTime.Ignore || config.ThinkTime.Multiplier != 0 || config.ThinkTime.LimitMs != 0 || strings.EqualFold(config.ThinkTime.Type, "random_percentage")
 	case "pacing":
 		return (config.Pacing.Type != "" && !strings.EqualFold(config.Pacing.Type, "none")) ||
 			config.Pacing.DelayMs != 0 ||

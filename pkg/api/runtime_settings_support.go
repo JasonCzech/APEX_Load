@@ -126,15 +126,23 @@ func buildRuntimeSettingsSupportResponse(now time.Time) RuntimeSettingsSupportRe
 func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 	matrix := make([]RuntimeSettingsSupportEntry, 0, 64)
 	for _, entry := range enterprisearchive.GetRTSSupportMatrix() {
+		protocols := []string{"http", "browser", "source_web_http_html"}
+		scope := "imported Web HTTP/HTML and TruClient Mobile Web runtime settings mapped into APEX Load DSL/runtime fields"
+		switch entry.ID {
+		case "http_page_timeout", "http_ip_version", "http_cache_eviction", "http_html_parse":
+			protocols = []string{"http", "soap", "java_http", "source_web_http_html"}
+			scope = "native HTTP transport, including SOAP and Java-over-HTTP wrappers"
+		}
+
 		matrix = append(matrix, RuntimeSettingsSupportEntry{
 			ID:                  "source_web_" + entry.ID,
-			Protocols:           []string{"http", "browser", "source_web_http_html"},
+			Protocols:           protocols,
 			Source:              "source_web_http_html",
 			Area:                entry.Area,
 			Concept:             entry.Concept,
 			Fields:              cloneStringSlice(entry.Fields),
 			Status:              string(entry.Status),
-			ExecutionScope:      "imported Web HTTP/HTML and TruClient Mobile Web runtime settings mapped into APEX Load DSL/runtime fields",
+			ExecutionScope:      scope,
 			ImportSources:       []string{"Enterprise Script Archive Web HTTP/HTML", "TruClient Mobile Web"},
 			Evidence:            []string{"pkg/convert/enterprisearchive/rts_support.go", "docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference"},
 			RecommendedWorkflow: "Import, validate runtime parity, replay, then approve or export the RTS report.",

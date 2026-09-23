@@ -202,6 +202,8 @@ export interface ScriptResultsConfig {
 }
 
 export interface ThinkTimeConfig {
+  min_percent?: number
+  max_percent?: number
   type: string
   mean_ms?: number
   std_ms?: number
@@ -257,6 +259,12 @@ export interface LogConfig {
 }
 
 export interface HTTPConfig {
+  page_timeout_ms?: number
+  ip_version?: 'auto' | 'ipv4' | 'ipv6'
+  cache_max_unused_iterations?: number
+  cache_excluded_mime_types?: string[]
+  html_parse_mode?: 'html' | 'text' | 'any'
+  html_excluded_mime_types?: string[]
   connect_timeout_ms?: number
   request_timeout_ms?: number
   tls_timeout_ms?: number

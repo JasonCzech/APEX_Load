@@ -829,3 +829,11 @@ func defaultSOAPContentType(version, charset, soapAction string) string {
 	}
 	return contentType
 }
+
+// BeginIteration delegates cache aging to the shared HTTP runtime.
+func (s *SOAP) BeginIteration(ctx context.Context) error {
+	if s.http == nil {
+		return nil
+	}
+	return s.http.BeginIteration(ctx)
+}

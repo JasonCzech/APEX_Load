@@ -1,3 +1,4 @@
+import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { type ScriptConfig, type ScriptDefinition } from '../types/scripts'
 import { jmsConfigForProtocol, jmsProtocolForProvider } from './scriptEditorHelpers'
 import {
@@ -72,10 +73,12 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
             <option value="none">None</option>
             <option value="fixed">Fixed</option>
             <option value="recorded">Replay think time as recorded</option>
+              <option value="random_percentage">Random percentage of recorded think time</option>
             <option value="gaussian">Gaussian</option>
             <option value="uniform">Uniform</option>
           </select>
         </label>
+        {thinkTimeType === 'random_percentage' && <ThinkTimePercentageInputs value={config.think_time} disabled={disabled || config.think_time?.ignore} onChange={change => updateConfig(next => ({ ...next, think_time: { ...thinkTimeConfigForType(next.think_time, 'random_percentage'), ...change } }))} />}
         {thinkTimeUsesMean(thinkTimeType) && (
         <label>
           <span>{thinkTimeType === 'gaussian' ? 'Mean Think Time (ms)' : 'Think Time (ms)'}</span>

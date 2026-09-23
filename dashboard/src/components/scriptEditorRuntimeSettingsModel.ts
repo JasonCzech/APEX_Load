@@ -237,6 +237,8 @@ export function buildScriptRuntimeSummary(script: Pick<ScriptDefinition, 'config
       : 'Default'
   const thinkTimeLabel = script.config.think_time?.ignore
     ? 'Disabled'
+    : script.config.think_time?.type === 'random_percentage'
+      ? `${script.config.think_time.min_percent ?? 0}–${script.config.think_time.max_percent ?? 0}% of recorded think time`
     : script.config.think_time?.type === 'recorded'
       ? 'Replay recorded think time'
       : `${script.config.think_time?.type || 'fixed'} / ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`

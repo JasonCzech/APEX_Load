@@ -82,6 +82,7 @@ export function formatThinkTime(thinkTime?: RuntimeSettingsOverride['think_time'
   if (!thinkTime) return null
   if (thinkTime.ignore) return 'Disabled'
   if (thinkTime.type === 'none' || (!thinkTime.type && !thinkTime.mean_ms)) return 'None'
+  if (thinkTime.type === 'random_percentage') return `${thinkTime.min_percent ?? 0}–${thinkTime.max_percent ?? 0}% of recorded think time`
   if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }

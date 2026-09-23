@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 589,
+    "routes": 590,
     "public": 22,
-    "protected": 567,
-    "rbac": 565,
+    "protected": 568,
+    "rbac": 566,
     "handler_authenticated": 2,
     "role_metadata_missing": 0,
-    "green": 589,
+    "green": 590,
     "partial": 0,
     "missing": 0
   },
@@ -10260,6 +10260,31 @@
           "system_admin"
         ],
         "project": [
+          "project_admin"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "scripts:write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/settings",
+      "operation_id": "handleImportSettings",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin"
+        ],
+        "project": [
+          "editor",
           "project_admin"
         ]
       },

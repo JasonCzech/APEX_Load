@@ -869,7 +869,7 @@ describe('EnterpriseArchiveImport', () => {
       'Review',
       'Credentials',
       'Data & parameters',
-      'Runtime & source settings',
+      'Runtime settings',
       'DSL Preview',
       'Source Mapping',
     ])
@@ -881,52 +881,33 @@ describe('EnterpriseArchiveImport', () => {
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('manual review recommended')
     await clickButton(Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
       .find(button => button.textContent?.trim() === 'Close')!)
-    expect(container.textContent).toContain('Unsupported Source Functions (1)')
-    expect(container.textContent).toContain('Import Review Sections (2)')
-    expect(container.textContent).toContain('Repair Suggestions (2)')
-    expect(container.querySelectorAll('.lr-review-row .lr-warnings')).toHaveLength(2)
+    expect(container.textContent).toContain('Unsupported source functions (1)')
+    expect(container.textContent).toContain('Converter assessments (2)')
+    expect(container.textContent).toContain('Original repair suggestions (2)')
+    expect(container.querySelectorAll('.import-evidence-reports > details')).toHaveLength(2)
+    expect(container.querySelector<HTMLDetailsElement>('.import-conversion-details')?.open).toBe(false)
+    expect(container.querySelectorAll('.lr-stat')).toHaveLength(0)
+    const transactionFact = Array.from(container.querySelectorAll('.import-evidence-facts > div')).find(row => row.querySelector('dt')?.textContent === 'Transactions')
+    expect(transactionFact?.querySelector('dd')?.textContent).toBe('1')
     expect(container.textContent).toContain('Replace unsupported web_set_max_html_param_len')
     expect(container.textContent).toContain('Review preserved runtime settings')
     expect(container.textContent).toContain('Unsupported Source Elements')
     expect(container.textContent).toContain('blocker')
     expect(container.textContent).toContain('web_set_max_html_param_len')
     expect(container.textContent).toContain('Demo.usr')
-    expect(container.textContent).toContain('default.cfg')
-    expect(container.textContent).toContain('Runtime Settings Coverage')
-    expect(container.textContent).toContain('100%')
-    expect(container.textContent).toContain('Runtime Settings Requiring Repair')
-    expect(container.textContent).toContain('Partial: Logging')
-    expect(container.textContent).toContain('Runtime Settings Parity')
-    expect(container.textContent).toContain('Run Logic: Iterations')
-    expect(container.textContent).toContain('Correlation Suggestions')
+    expect(container.textContent).toContain('Requires decision')
+    expect(container.textContent).toContain('Mapped for replay')
+    expect(container.textContent).toContain('Correlation suggestions')
     expect(container.textContent).toContain('SessionId')
     expect(container.textContent).toContain('Found in Step 1')
     expect(container.textContent).toContain('Used in Step 2, Step 3')
-    expect(container.textContent).toContain('Parameter File Mappings')
-    expect(container.querySelector('.lr-parameter-table')).not.toBeNull()
-    expect(Array.from(container.querySelectorAll('.lr-parameter-table:not(.lr-runtime-table) th')).map(header => header.textContent)).toEqual([
-      'File',
-      'Section',
-      'Mapped Data Source',
-      'Mapping',
-      'Action',
-    ])
+    expect(container.textContent).toContain('Unmapped parameter source sections')
     expect(container.textContent).toContain('LoginUsers.prm')
-    expect(container.textContent).toContain('LoginUser')
-    expect(container.textContent).toContain('column username')
-    expect(container.textContent).toContain('table Users.dat')
-    expect(container.textContent).toContain('Generated Data Sources')
-    expect(container.querySelector('.lr-data-source-table')).not.toBeNull()
-    expect(Array.from(container.querySelectorAll('.lr-data-source-table th')).map(header => header.textContent)).toEqual([
-      'Source',
-      'Type',
-      'Rows',
-      'Columns',
-      'Action',
-    ])
-    expect(container.textContent).toContain('users')
-    expect(container.textContent).toContain('csv')
-    expect(container.textContent).toContain('username')
+    expect(container.textContent).toContain('ColumnName: username')
+    expect(container.textContent).toContain('Table: Users.dat')
+    expect(container.textContent).toContain('Data sources')
+    expect(container.querySelector('.import-settings-table')).not.toBeNull()
+    expect(container.querySelector('.lr-source-inventory')).toBeNull()
 
     await clickButton(findButton(container, 'Source Mapping')!)
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
@@ -1049,6 +1030,30 @@ describe('EnterpriseArchiveImport', () => {
       name: 'Parameterized Enterprise Script',
       actions: [expect.objectContaining({ target: '/orders?customer_id={{var.customer_id}}' })],
     }), 'project-1', undefined)
+  })
+
+  it('saves an inline credential edit from validation without reconverting the source archive', async () => {
+    const script = { name: 'Inline credentials', version: '1.0.0', protocol: 'http', config: {}, actions: [{ name: 'Request', type: 'GET', target: 'https://example.test', headers: { Authorization: '[REDACTED]' } }] }
+    const resolved = { ...script, actions: [{ ...script.actions[0], headers: { Authorization: '{{secret.INLINE_TOKEN}}' } }] }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce(executableEnterpriseResult(script, { secret_binding_requirements: [{ id: 'token', path: '/actions/0/headers/Authorization', label: 'Token', suggested_name: 'INLINE_TOKEN', script_index: 0 }] }))
+    apiMock.applySecretBindings.mockResolvedValueOnce({ script: resolved, secret_binding_requirements: [] })
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const input = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(input, 'files', { configurable: true, value: [new File(['test'], 'inline.zip', { type: 'application/zip' })] })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Credentials')!)
+    await clickButton(findButton(container, 'Edit credentials')!)
+    await clickButton(findButton(container, 'Apply credentials')!)
+    await flushPromises()
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    await clickButton(findButton(container, 'Save to Script Library')!)
+    await flushPromises()
+    expect(apiMock.importEnterpriseArchive).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ actions: resolved.actions }), 'project-1', undefined)
   })
 
   it('stages a conversion with redacted credentials until its secret binding is applied', async () => {
@@ -1806,10 +1811,11 @@ describe('EnterpriseArchiveImport', () => {
     expect(Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)).toEqual([
       'CREDENTIAL',
     ])
+    await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit credentials')!.click() })
     const migrate = container.querySelector<HTMLInputElement>('.credentials-source-migration input')!
     await act(async () => migrate.click())
     const prepareFirstCredentialLane = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => (
-      button.textContent?.includes('Prepare Credentials') || button.textContent?.includes('Save Remaining 2 Scripts Atomically')
+      button.textContent === 'Apply credentials'
     ))
     expect(prepareFirstCredentialLane).toBeDefined()
     await clickButton(prepareFirstCredentialLane!)
@@ -4375,7 +4381,9 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('external_runner_required')
     expect(container.textContent).toContain('Runner: windows_sap_gui_runner')
     expect(container.textContent).toContain('SAP GUI review artifact')
+    await clickButton(findButton(container, 'DSL Preview')!)
     expect(container.textContent).toContain('sapgui_set')
+    await clickButton(findButton(container, 'Review')!)
     await clickButton(findButton(container, 'Source Mapping')!)
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     expect(container.textContent).toContain('external required')
@@ -4470,7 +4478,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('validation review')
     await clickButton(Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
       .find(button => button.textContent?.trim() === 'Close')!)
-    expect(container.textContent).toContain('Unsupported Source Functions (1)')
+    expect(container.textContent).toContain('Unsupported source functions (1)')
     expect(container.querySelector('[aria-label="enterprise protocol import coverage"]')).toBeNull()
 
     const reviewTabs = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Script archive review sections"] [role="tab"]'))
@@ -4478,7 +4486,7 @@ describe('EnterpriseArchiveImport', () => {
       'Review',
       'Credentials',
       'Data & parameters',
-      'Runtime & source settings',
+      'Runtime settings',
       'DSL Preview',
       'Source Mapping',
     ])
@@ -4488,11 +4496,11 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.querySelector('.script-import-review-preview')).toBeNull()
     expect(container.querySelector('.script-import-review-preview-aside')).toBeNull()
 
-    await clickButton(findButton(container, 'Runtime & source settings')!)
-    expect(reviewTabs.find(tab => tab.textContent === 'Runtime & source settings')?.getAttribute('aria-selected')).toBe('true')
+    await clickButton(findButton(container, 'Runtime settings')!)
+    expect(reviewTabs.find(tab => tab.textContent === 'Runtime settings')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector<HTMLElement>('.lr-validation-review-overview')?.hidden).toBe(true)
     expect(container.querySelector<HTMLElement>('.lr-validation-review-preserved')?.hidden).toBe(false)
-    expect(container.textContent).toContain('Runtime & source settings')
+    expect(container.textContent).toContain('Runtime settings')
 
     await clickButton(findButton(container, 'DSL Preview')!)
     expect(reviewTabs.find(tab => tab.textContent === 'DSL Preview')?.getAttribute('aria-selected')).toBe('true')
@@ -4669,10 +4677,10 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('2/2 matched (100.0%)')
     expect(container.textContent).toContain('Review Only')
     expect(container.textContent).toContain('Salesforce Review')
-    expect(container.textContent).toContain('Logical Actions')
-    expect(container.textContent).toContain('Raw Requests')
+    expect(container.textContent).toContain('Logical actions')
+    expect(container.textContent).toContain('Raw requests')
     expect(container.textContent).toContain('Collapsed')
-    expect(container.textContent).toContain('LR Markers')
+    expect(container.textContent).toContain('Transaction markers')
 
     const openNativePreview = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Review Native Preview Limitation'))
     expect(openNativePreview).toBeDefined()
@@ -4848,7 +4856,7 @@ describe('EnterpriseArchiveImport', () => {
     }), { targetAction: 'Homepage' })
   })
 
-  it('opens the imported script in the visual editor without an additional focus hint', async () => {
+  it('locks inline runtime settings after saving the reviewed draft', async () => {
     const onEdit = vi.fn()
 
     await act(async () => {
@@ -4886,21 +4894,11 @@ describe('EnterpriseArchiveImport', () => {
 
     await flushPromises()
 
-    const openImportedScriptButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Imported Script In Editor'))
-    expect(openImportedScriptButton).toBeDefined()
-    if (!openImportedScriptButton) {
-      return
-    }
-
-    await act(async () => {
-      openImportedScriptButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), undefined)
+    const editHTTP = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit HTTP')
+    expect(editHTTP?.disabled).toBe(true)
+    expect(onEdit).not.toHaveBeenCalled()
   })
+
 
   it('opens an unsupported function repair directly in the visual editor with an action focus hint', async () => {
     const onEdit = vi.fn()
@@ -5064,329 +5062,11 @@ describe('EnterpriseArchiveImport', () => {
     }), { targetSection: 'runtime' })
   })
 
-  it('opens a specific runtime area in the visual editor with a runtime area focus hint', async () => {
-    const onEdit = vi.fn()
 
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
 
-    await flushPromises()
 
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
 
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
 
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openLoggingButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Logging Settings In Editor'))
-    expect(openLoggingButton).toBeDefined()
-    if (!openLoggingButton) {
-      return
-    }
-
-    await act(async () => {
-      openLoggingButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetSection: 'runtime', targetRuntimeArea: 'Logging' })
-  })
-
-  it('opens a correlation source action in the visual editor with an action focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Source Action In Editor'))
-    expect(openSourceButton).toBeDefined()
-    if (!openSourceButton) {
-      return
-    }
-
-    await act(async () => {
-      openSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetAction: 'Homepage' })
-  })
-
-  it('opens a correlation usage action in the visual editor with an action focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openUsageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Step 2 In Editor'))
-    expect(openUsageButton).toBeDefined()
-    if (!openUsageButton) {
-      return
-    }
-
-    await act(async () => {
-      openUsageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetAction: 'Submit Order' })
-  })
-
-  it('opens the first correlation source summary jump in the visual editor with an action focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openSummarySourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open First Correlation Source In Editor'))
-    expect(openSummarySourceButton).toBeDefined()
-    if (!openSummarySourceButton) {
-      return
-    }
-
-    await act(async () => {
-      openSummarySourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetAction: 'Homepage' })
-  })
-
-  it('opens the first correlation usage summary jump in the visual editor with an action focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openSummaryUsageButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open First Correlation Use In Editor'))
-    expect(openSummaryUsageButton).toBeDefined()
-    if (!openSummaryUsageButton) {
-      return
-    }
-
-    await act(async () => {
-      openSummaryUsageButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetAction: 'Submit Order' })
-  })
-
-  it('opens imported parameter data review in the visual editor with a parameter-data focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openParameterDataButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Parameter Data In Editor'))
-    expect(openParameterDataButton).toBeDefined()
-    if (!openParameterDataButton) {
-      return
-    }
-
-    await act(async () => {
-      openParameterDataButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
-  })
 
   it('opens parameter files from the summary card in the visual editor with a parameter-data focus hint', async () => {
     const onEdit = vi.fn()
@@ -5496,167 +5176,8 @@ describe('EnterpriseArchiveImport', () => {
     }), { targetSection: 'parameter-data', targetDataSource: 'users' })
   })
 
-  it('opens a generated source in the visual editor with a data source focus hint', async () => {
-    const onEdit = vi.fn()
 
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
 
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openDataSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Source In Editor'))
-    expect(openDataSourceButton).toBeDefined()
-    if (!openDataSourceButton) {
-      return
-    }
-
-    await act(async () => {
-      openDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
-  })
-
-  it('opens the first runtime setting summary jump in the visual editor with a runtime area focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openFirstRuntimeButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open First Runtime Setting In Editor'))
-    expect(openFirstRuntimeButton).toBeDefined()
-    if (!openFirstRuntimeButton) {
-      return
-    }
-
-    await act(async () => {
-      openFirstRuntimeButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetSection: 'runtime', targetRuntimeArea: 'Run Logic' })
-  })
-
-  it('opens the first blocking runtime setting summary jump in the visual editor with a runtime area focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openBlockingSettingButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open First Blocking Setting In Editor'))
-    expect(openBlockingSettingButton).toBeDefined()
-    if (!openBlockingSettingButton) {
-      return
-    }
-
-    await act(async () => {
-      openBlockingSettingButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetSection: 'runtime', targetRuntimeArea: 'Logging' })
-  })
 
   it('relaxes a blocked runtime migration policy and reruns the current review', async () => {
     apiMock.importEnterpriseArchive.mockResolvedValueOnce({
@@ -5965,59 +5486,6 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Refresh review to apply the selected migration block policy.')
   })
 
-  it('opens a mapped parameter source in the visual editor with a mapping focus hint', async () => {
-    const onEdit = vi.fn()
-
-    await act(async () => {
-      root.render(<EnterpriseArchiveImport onEdit={onEdit} />)
-    })
-
-    await flushPromises()
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
-    expect(fileInput).not.toBeNull()
-    if (!fileInput) {
-      return
-    }
-
-    const file = new File(['zip-content'], 'demo.zip', { type: 'application/zip' })
-    await act(async () => {
-      Object.defineProperty(fileInput, 'files', {
-        configurable: true,
-        value: [file],
-      })
-      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-
-    await clickImportAction(container, 'Validate Only')
-
-    const convertButton = Array.from(container.querySelectorAll('button')).find(button => (button.textContent?.includes('Save to Script Library') || button.textContent?.includes('Save draft') || button.textContent?.includes('Save draft — execution blocked')))
-    expect(convertButton).toBeDefined()
-    if (!convertButton) {
-      return
-    }
-
-    await act(async () => {
-      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    await flushPromises()
-
-    const openMappedDataSourceButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Mapped Data Source In Editor'))
-    expect(openMappedDataSourceButton).toBeDefined()
-    if (!openMappedDataSourceButton) {
-      return
-    }
-
-    await act(async () => {
-      openMappedDataSourceButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'Demo Enterprise Script Archive',
-      protocol: 'http',
-    }), { targetSection: 'parameter-data', targetDataSource: 'users' })
-  })
 
   it('never reaches the batch save loop with a browser import', async () => {
     apiMock.importEnterpriseArchive.mockResolvedValueOnce(executableEnterpriseResult({
@@ -7436,7 +6904,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Run draft browser replay before saving it to the library')
     expect(container.textContent).toContain('Open the imported draft in the visual editor and run draft browser replay. Update selectors or waits for any failed action.')
 
-    const openImportedScriptButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Imported Script In Editor'))
+    const openImportedScriptButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Draft in Visual Editor'))
     expect(openImportedScriptButton).toBeDefined()
     if (!openImportedScriptButton) {
       return

@@ -104,6 +104,7 @@ func TestRuntimeParityReportsKnownActiveUnsupportedSettingsWithCfgProvenance(t *
 HTTPVer=1.1
 EnableHTTP2=1
 KeepAliveTimeout=6000
+NetBufSize=120
 EnableSnapshotsInReplay=1
 
 [Log]
@@ -133,10 +134,14 @@ LogOptions=LogBrief
 	if len(unmapped.RuntimeFiles) != 1 || unmapped.RuntimeFiles[0] != "default.cfg" {
 		t.Fatalf("runtime_unmapped files = %#v, want exact default.cfg provenance", unmapped.RuntimeFiles)
 	}
-	for _, evidence := range []string{`[WEB] KeepAliveTimeout`} {
+	for _, evidence := range []string{`[WEB] NetBufSize`} {
 		if !strings.Contains(unmapped.Notes, evidence) {
 			t.Fatalf("runtime_unmapped notes = %q, want %s", unmapped.Notes, evidence)
 		}
+	}
+	idle := runtimeParityEntryByID(t, parity, "http_idle_timeout")
+	if idle.Status != RuntimeSettingStatusPartial || !strings.Contains(idle.Notes, "3600") || rc.IdleTimeoutMs != 0 {
+		t.Fatalf("oversized keep-alive timeout must remain an explicit review decision: %#v", idle)
 	}
 	// EnableSnapshotsInReplay is a VuGen authoring aid: it is accounted for as
 	// non-applicable rather than surfaced as a behavior gap.

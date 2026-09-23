@@ -1,3 +1,5 @@
+import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
+import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { RuntimeCountLimit } from './RuntimeCountLimit'
 import { RuntimeContextSummary, type DebugRuntimeContext } from './RuntimeContextSummary'
 import { RuntimeFieldEvidence } from './RuntimeFieldEvidence'
@@ -37,7 +39,6 @@ import {
   buildScriptRuntimeSummary,
   formatBrowserEmulationSummary,
   formatLineList,
-  formatMillisecondsAsSecondsLabel,
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getRuntimeProtocolCapabilities,
@@ -490,7 +491,7 @@ export function ScriptRuntimeSettingsView({
       <RuntimeSectionIcon section="think" />
       <span className="section-label">Think Time</span>
       <span className="section-summary">
-        {script.config.think_time?.ignore ? 'Disabled' : script.config.think_time?.type === 'recorded' ? 'Replay recorded think time' : `${script.config.think_time?.type || 'fixed'} — ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}
+        {effectiveThinkTimeLabel(script.config)}
       </span>
       <span className="chevron">{runtimeSectionIsActive('think') ? '▾' : '▸'}</span>
     </button>
@@ -508,10 +509,12 @@ export function ScriptRuntimeSettingsView({
               )}>
               <option value="fixed">Fixed</option>
               <option value="recorded">Replay think time as recorded</option>
+              <option value="random_percentage">Random percentage of recorded think time</option>
               <option value="gaussian">Gaussian (Normal)</option>
               <option value="uniform">Uniform (Random)</option>
             </select>
           </label>
+          {thinkTimeType === 'random_percentage' && <ThinkTimePercentageInputs value={script.config.think_time} onChange={updateThinkTime} />}
           {thinkTimeUsesMean(thinkTimeType) && (
             <label>
               <span>Mean (s)</span>
@@ -1139,6 +1142,7 @@ export function ScriptRuntimeSettingsView({
             section="session"
             value={httpSettingsValue}
           />
+          <div className="form-grid"><HTTPReplayPolicyFields section="session" value={script.config.http} onChange={patch => updateField('config.http', { ...script.config.http, ...patch })} /></div>
         </div>}
         {effectiveHTTPTransportTab === 'timeouts' && <div
           id="http-transport-panel-timeouts"
@@ -1148,6 +1152,7 @@ export function ScriptRuntimeSettingsView({
         >
           <h5>Timeouts</h5>
           <div className="form-grid">
+            <HTTPReplayPolicyFields section="timeouts" value={script.config.http} onChange={patch => updateField('config.http', { ...script.config.http, ...patch })} />
             <label><span>Connect (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.http?.connect_timeout_ms} fallbackMs={30000}
                 onChangeMs={value => updateField('config.http', { ...script.config.http, connect_timeout_ms: value ?? 0 })} /></label>
@@ -1170,6 +1175,7 @@ export function ScriptRuntimeSettingsView({
         >
           <h5>Connection</h5>
           <div className="form-grid">
+            <HTTPReplayPolicyFields section="connection" value={script.config.http} onChange={patch => updateField('config.http', { ...script.config.http, ...patch })} />
             <label><span>HTTP Version</span>
               <select value={script.config.http?.version || ''}
                 onChange={e => updateField('config.http', { ...script.config.http, version: e.target.value })}>

@@ -57,6 +57,10 @@ type HTTP struct {
 	httpVersion                string // empty = automatic; "1.1"/"2" = exact
 	maxRedirects               int    // <=0 = no follow, unset/default = 10
 	requestTimeout             time.Duration
+	pageTimeout                time.Duration
+	htmlParseMode              string
+	htmlExcludedMIMETypes      []string
+	cacheMaxUnusedIterations   int
 	networkProfile             string // assigned network-profile label (population mix)
 	traceparentEnabled         bool
 	traceparentSampled         bool
@@ -137,6 +141,11 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.traceparentSampled = parseTraceparentSampled(config)
 	transportSettings := parseTransportConfig(config)
 	h.requestTimeout = transportSettings.requestTimeout
+	h.pageTimeout = boundedHTTPTimeout(config, "page_timeout_ms")
+	h.htmlParseMode = strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "html_parse_mode")))
+	h.htmlExcludedMIMETypes, _ = compatibilityMIMETypes(config["html_excluded_mime_types"])
+	cacheMaxUnusedIterations, _ := exactHTTPConfigInteger(config["cache_max_unused_iterations"])
+	h.cacheMaxUnusedIterations = int(cacheMaxUnusedIterations)
 
 	tlsCfg, err := buildTLSConfig(config)
 	if err != nil {
@@ -189,6 +198,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.streaming = parseStreamingProfile(config)
 	if parseHTTPCacheEnabled(config) {
 		h.cache = newHTTPResponseCache()
+		h.cache.excludedMIMETypes, _ = compatibilityMIMETypes(config["cache_excluded_mime_types"])
 	} else {
 		h.cache = nil
 	}
@@ -220,6 +230,19 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		Extractions:    make(map[string]string),
 		DependencyType: "http",
 		NetworkProfile: h.networkProfile,
+	}
+	if h.pageTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, h.pageTimeout, errPageDeadline)
+		defer cancel()
+		defer func() {
+			if context.Cause(ctx) == errPageDeadline {
+				result.Success = false
+				result.ErrorMessage = errPageDeadline.Error()
+				result.Duration = time.Since(result.StartTime)
+				result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+			}
+		}()
 	}
 	if action == nil {
 		result.StatusCode = http.StatusBadRequest
@@ -775,7 +798,7 @@ extractors:
 			finalURL = resp.Request.URL
 		}
 		var pageBody []byte
-		if isContentBearingResponse(resp.Header) {
+		if h.shouldParseHTML(resp.Header) {
 			pageBody = respBody
 		}
 		if len(explicit) > 0 || len(pageBody) > 0 {

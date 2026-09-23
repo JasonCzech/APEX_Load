@@ -7469,6 +7469,17 @@
         "cache_enabled": {
           "type": "boolean"
         },
+        "cache_excluded_mime_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "cache_max_unused_iterations": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "type": "integer"
+        },
         "clear_cookies_per_iteration": {
           "type": "boolean"
         },
@@ -7487,8 +7498,32 @@
           },
           "type": "object"
         },
+        "html_excluded_mime_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "html_parse_mode": {
+          "enum": [
+            "",
+            "html",
+            "text",
+            "any"
+          ],
+          "type": "string"
+        },
         "idle_timeout_ms": {
           "type": "integer"
+        },
+        "ip_version": {
+          "enum": [
+            "",
+            "auto",
+            "ipv4",
+            "ipv6"
+          ],
+          "type": "string"
         },
         "keep_alive": {
           "type": "boolean"
@@ -7500,6 +7535,11 @@
           "type": "integer"
         },
         "max_redirects": {
+          "type": "integer"
+        },
+        "page_timeout_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
           "type": "integer"
         },
         "proxy": {
@@ -8681,6 +8721,11 @@
           "minimum": 0,
           "type": "number"
         },
+        "max_percent": {
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "number"
+        },
         "mean_ms": {
           "maximum": 3600000,
           "minimum": 0,
@@ -8688,6 +8733,11 @@
         },
         "min_ms": {
           "maximum": 3600000,
+          "minimum": 0,
+          "type": "number"
+        },
+        "min_percent": {
+          "maximum": 10000,
           "minimum": 0,
           "type": "number"
         },

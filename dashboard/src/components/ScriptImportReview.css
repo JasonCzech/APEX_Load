@@ -712,6 +712,11 @@
 .secret-binding-review-control[open] > :not(summary) { margin-top: 8px; }
 .secret-binding-review-list { overflow-wrap: anywhere; }
 .script-import-review [hidden] { display: none !important; }
+.credential-inline-current { display: grid; align-content: start; gap: .35rem; min-width: 0; font-size: .875rem; }
+.credential-inline-current > span { color: var(--text-secondary); font-size: .75rem; }
+.credential-inline-current code { overflow-wrap: anywhere; }
+.secret-binding-review-control[hidden] { display: none !important; }
+.secret-binding-review-control select { max-width: 100%; width: 100%; padding: .5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); }
 
 .script-import-review-header > p[role="status"] {
   flex: 0 0 100%;

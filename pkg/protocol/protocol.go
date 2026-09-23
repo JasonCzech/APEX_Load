@@ -297,6 +297,12 @@ type CacheController interface {
 	ClearCache(ctx context.Context) error
 }
 
+// IterationController receives main-iteration boundaries, after session resets.
+// Calls are sequential and occur before that iteration's actions start.
+type IterationController interface {
+	BeginIteration(ctx context.Context) error
+}
+
 // ConnectionController is an optional capability for protocols that pool
 // reusable network connections. The engine invokes CloseIdleConnections for
 // an http_connections_close action. Active requests are never interrupted.
@@ -599,6 +605,8 @@ type Assertion struct {
 // Think time simulates user reading time and is applied after each action
 // to create more realistic traffic patterns. Supports fixed, random, and gaussian distributions.
 type ThinkTimeConfig struct {
+	MinPercent float64 `json:"min_percent,omitempty" jsonschema:"minimum=0,maximum=10000"` // random_percentage: percentage of each recorded delay
+	MaxPercent float64 `json:"max_percent,omitempty" jsonschema:"minimum=0,maximum=10000"`
 	Type       string  `json:"type"`                 // "fixed", "random", "gaussian"
 	MeanMs     float64 `json:"mean_ms"`              // Mean value in milliseconds
 	StdMs      float64 `json:"std_ms,omitempty"`     // Standard deviation for gaussian

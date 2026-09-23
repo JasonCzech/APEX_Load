@@ -28,10 +28,13 @@ import {
 } from './sourceSecretSession'
 import { createProjectSecretsInBatches } from './secretBindingBatches'
 import SecretReferenceValueControl from './SecretReferenceValueControl'
+import ImportCategoryHeading from './ImportCategoryHeading'
 import { credentialNoun } from './secretBindingNoun'
 import './ScriptImportReview.css'
 
 interface Props {
+  inlineEditing?: boolean
+  onEditingChange?: (editing: boolean) => void
   requirements: SecretBindingRequirement[]
   sourceMigrationRequirements?: SecretBindingRequirement[]
   preserveSourceSessionAfterApply?: boolean
@@ -483,6 +486,8 @@ const AffectedPathsDisclosure = memo(function AffectedPathsDisclosure({
 
 const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(function SecretBindingReview({
   requirements,
+  inlineEditing = false,
+  onEditingChange,
   sourceMigrationRequirements = requirements,
   preserveSourceSessionAfterApply = false,
   reviewGeneration,
@@ -547,6 +552,18 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     activeReviewIdentityRef.current = reviewIdentity
     reviewGenerationRef.current += 1
   }
+  const [editing, setEditing] = useState(false)
+  const editSnapshot = useRef<{ names: Record<string, string>; choices: Record<string, DestinationChoice>; migration: boolean } | null>(null)
+  const editingCallbackRef = useRef(onEditingChange)
+  editingCallbackRef.current = onEditingChange
+  useEffect(() => { editingCallbackRef.current?.(inlineEditing && editing) }, [inlineEditing, editing])
+  useEffect(() => () => editingCallbackRef.current?.(false), [])
+  useEffect(() => {
+    if (!inlineEditing || !editing) return
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [inlineEditing, editing])
   const [names, setNames] = useState<Record<string, string>>(() => initialGroupValues(groups))
   const [destinationChoices, setDestinationChoices] = useState<Record<string, DestinationChoice>>(
     () => initialDestinationChoices(groups),
@@ -609,6 +626,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       const preserveEdits = credentialScopeIdentityRef.current === credentialScopeIdentity
       resetReviewIdentityRef.current = reviewIdentity
       if (!preserveEdits) {
+        setEditing(false)
+        editSnapshot.current = null
         setNames(initialGroupValues(groups))
         setDestinationChoices(initialDestinationChoices(groups))
         valuesRef.current = {}
@@ -657,6 +676,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     const collisionResolvedNamesForThisMount = collisionResolvedNamesRef.current
     return () => {
       mountedRef.current = false
+      editSnapshot.current = null
       // Write-only values never leave this card. Credential-scope changes clear
       // the ref above; unmount always drops the final retained object.
       valuesRef.current = {}
@@ -954,6 +974,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
 
   const commit = async (): Promise<boolean> => {
     if (!prepared.valid || applying || disabled) return false
+    const editingSession = editSnapshot.current
     if (committedValueNamesScopeRef.current !== credentialScopeIdentity) {
       committedValueNamesScopeRef.current = credentialScopeIdentity
       committedValueNamesRef.current.clear()
@@ -1273,6 +1294,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         valuesRef.current = {}
         setValues({})
       }
+      if (mountedRef.current && editSnapshot.current === editingSession) {
+        setEditing(false)
+        editSnapshot.current = null
+      }
       return true
     } catch (err: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(err, 'Failed to configure credentials'))
@@ -1413,25 +1438,55 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     credentialPageStart + CREDENTIAL_GROUP_PAGE_SIZE,
   )
 
+  const beginEditing = () => {
+    editSnapshot.current = { names: { ...names }, choices: { ...destinationChoices }, migration: effectiveSourceMigrationSelected }
+    setEditing(true)
+    setError('')
+  }
+  const cancelEditing = () => {
+    const snapshot = editSnapshot.current
+    if (snapshot) {
+      setNames(snapshot.names)
+      setDestinationChoices(snapshot.choices)
+      setMigrateSourceValues(snapshot.migration)
+      if (sourceMigrationControlled) onExternalSourceMigrationChange?.(snapshot.migration)
+    }
+    valuesRef.current = {}
+    setValues({})
+    setPendingReuse(null)
+    setError('')
+    setEditing(false)
+    editSnapshot.current = null
+  }
+  const ControlContainer = inlineEditing ? 'div' : 'details'
+
   return (
     <section className="secret-binding-review credentials-card" aria-labelledby={titleId}>
       <div className="secret-binding-review-header">
         <div>
           <h4 id={titleId}>Credential groups ({filteredGroups.length === groups.length ? groups.length : `${filteredGroups.length} of ${groups.length}`})</h4>
-          <p>{groups.length} unique credential groups across {requirements.length} credential requirements. Expand affected locations within each group to inspect their scope. Preserved imported values are grouped only when verified equal by the server. Unresolved bindings are grouped by their proposed reference name.</p>
+          <div hidden={inlineEditing}><p>{groups.length} unique credential groups across {requirements.length} credential requirements. Expand affected locations within each group to inspect their scope. Preserved imported values are grouped only when verified equal by the server. Unresolved bindings are grouped by their proposed reference name.</p>
           <p>
             Choose how each imported credential is stored in the destination. A server-confirmed imported value can remain
             runnable as-is, or you can replace it with a <code>{'{{secret.NAME}}'}</code> project-secret reference and
             configure it now or configure it later in Project Secrets.
-          </p>
+          </p></div>
         </div>
-        {!onPreparedChange && (
+        {inlineEditing && <span className="import-category-actions">
+          {editing ? <>
+            <button type="button" className="btn btn-primary btn-sm" disabled={!prepared.valid || applying || disabled} onClick={() => { void commit() }}>{applying ? 'Applying…' : 'Apply credentials'}</button>
+            <button type="button" className="btn btn-secondary btn-sm" disabled={applying} onClick={cancelEditing}>Cancel credentials</button>
+          </> : <button type="button" className="btn btn-secondary btn-sm" disabled={disabled || applying} onClick={beginEditing}>Edit credentials</button>}
+        </span>}
+        {!inlineEditing && !onPreparedChange && (
           <button className="btn btn-primary" type="button" onClick={() => { void commit() }} disabled={!prepared.valid || applying || disabled}>
             {applying ? 'Applying...' : 'Continue with credentials'}
           </button>
         )}
       </div>
 
+      {inlineEditing && <ImportCategoryHeading label="Credential handling" details={<p>Preserve a server-confirmed imported value or use a project-secret reference. Entered values are write-only; existing secret values are never revealed or overwritten here. Apply updates this draft in place. You can also leave a reference to configure later in Project Secrets.</p>} />}
+      {inlineEditing && editing && <p role="status">Apply or cancel credential edits before saving or changing this import. New secret values stay private in this editor.</p>}
       <div className="credentials-card-summary" role="status">
         <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
         <span>{prepared.configureLaterCount} bindings need setup</span>
@@ -1445,7 +1500,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         </span>
       </div>
 
-      {hasSourceValues && sourceMigrationOffered && (
+      {hasSourceValues && sourceMigrationOffered && (!inlineEditing || editing) && (
         <label className="credentials-source-migration">
           <input
             type="checkbox"
@@ -1593,9 +1648,21 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                   hasAffectedSourcePaths={hasAffectedSourcePaths}
                 />
               </div>
-              <details className="secret-binding-review-control" open={bindingSelected ? true : undefined}>
-                <summary>{bindingSelected ? 'Configure binding' : 'Preserved — review or change binding'}</summary>
-                <fieldset className="secret-binding-review-choice">
+              {inlineEditing && !editing && <div className="credential-inline-current">
+                <span>Destination</span><strong>{bindingSelected ? 'Project secret' : 'Preserve imported value'}</strong>
+                {bindingSelected && <code>{`{{secret.${name}}}`}</code>}
+                <span>Current value</span><strong>{!bindingSelected ? 'Preserved · hidden' : configured ? 'Configured · hidden' : 'Not configured'}</strong>
+              </div>}
+              <ControlContainer className="secret-binding-review-control" {...(!inlineEditing ? { open: bindingSelected ? true : undefined } : { hidden: !editing })}>
+                {!inlineEditing && <summary>{bindingSelected ? 'Configure binding' : 'Preserved — review or change binding'}</summary>}
+                {inlineEditing ? <div className="secret-binding-review-choice">
+                  <label htmlFor={`${inputId}-destination`}>Destination handling</label>
+                  <select id={`${inputId}-destination`} aria-label={`Destination for ${group.requirements[0]?.label || name}`} value={bindingSelected ? 'project-secret' : 'preserve'} disabled={applying || disabled} onChange={event => updateDestinationChoice(group, event.target.value as DestinationChoice)}>
+                    <option value="preserve" disabled={!canPreserveDestinationValue}>Preserve imported value</option>
+                    <option value="project-secret">Use project secret</option>
+                  </select>
+                  {preserveUnavailableMessages.length > 0 && <details><summary>Why preservation is unavailable</summary>{preserveUnavailableMessages.map(message => <small key={message}>{message}</small>)}</details>}
+                </div> : <fieldset className="secret-binding-review-choice">
                   <legend>Destination handling</legend>
                   <label htmlFor={preserveId}>
                     <input
@@ -1625,7 +1692,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                       {preserveUnavailableMessages.map(message => <small key={message}>{message}</small>)}
                     </div>
                   )}
-                </fieldset>
+                </fieldset>}
                 <SecretReferenceValueControl
                   id={inputId}
                   name={name}
@@ -1673,7 +1740,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                 )}
                 {nameError && <span id={nameErrorId} className="secret-binding-review-field-error">{nameError}</span>}
                 {valueConflict && <span id={valueConflictErrorId} className="secret-binding-review-field-error">Reused names must use the same optional value.</span>}
-              </details>
+              </ControlContainer>
             </li>
           )
         })}

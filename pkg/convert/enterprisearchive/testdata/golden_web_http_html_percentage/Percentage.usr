@@ -1,0 +1,4 @@
+[General]
+Type=Web
+[Actions]
+Action=Action.c

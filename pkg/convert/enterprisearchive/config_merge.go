@@ -15,6 +15,8 @@ func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
 	if src.ThinkTime.Type != "" || src.ThinkTime.MeanMs != 0 || src.ThinkTime.StdMs != 0 || src.ThinkTime.MinMs != 0 || src.ThinkTime.MaxMs != 0 || src.ThinkTime.Multiplier != 0 || src.ThinkTime.LimitMs != 0 || src.ThinkTime.Ignore {
 		if src.ThinkTime.Type != "" {
 			dst.ThinkTime.Type = src.ThinkTime.Type
+			dst.ThinkTime.MinPercent = src.ThinkTime.MinPercent
+			dst.ThinkTime.MaxPercent = src.ThinkTime.MaxPercent
 		}
 		if src.ThinkTime.MeanMs != 0 {
 			dst.ThinkTime.MeanMs = src.ThinkTime.MeanMs
@@ -180,7 +182,7 @@ func isEmptyLogConfig(cfg dsl.LogConfig) bool {
 }
 
 func isEmptyHTTPConfig(cfg dsl.HTTPConfig) bool {
-	return cfg.ConnectTimeoutMs == 0 && cfg.RequestTimeoutMs == 0 && cfg.TLSTimeoutMs == 0 && cfg.IdleTimeoutMs == 0 && cfg.Version == "" && cfg.MaxConnsPerHost == 0 && cfg.MaxIdleConns == 0 && cfg.KeepAlive == nil && cfg.ProxyMode == "" && cfg.UserAgent == "" && cfg.AcceptEncoding == "" && cfg.AcceptLanguage == "" && cfg.MaxRedirects == nil && len(cfg.DefaultHeaders) == 0 && cfg.Proxy.URL == "" && cfg.Proxy.Username == "" && cfg.Proxy.Password == "" && len(cfg.Proxy.NoProxy) == 0 && cfg.Auth.Type == "" && cfg.Auth.Username == "" && cfg.Auth.Password == "" && cfg.Auth.Token == "" && cfg.Auth.Domain == "" && cfg.TLS.MinVersion == "" && cfg.TLS.MaxVersion == "" && !cfg.TLS.InsecureSkipVerify && cfg.TLS.ClientCertFile == "" && cfg.TLS.ClientKeyFile == "" && cfg.TLS.CACertFile == ""
+	return cfg.PageTimeoutMs == 0 && cfg.IPVersion == "" && cfg.CacheMaxUnusedIterations == 0 && len(cfg.CacheExcludedMIMETypes) == 0 && cfg.HTMLParseMode == "" && len(cfg.HTMLExcludedMIMETypes) == 0 && cfg.ConnectTimeoutMs == 0 && cfg.RequestTimeoutMs == 0 && cfg.TLSTimeoutMs == 0 && cfg.IdleTimeoutMs == 0 && cfg.Version == "" && cfg.MaxConnsPerHost == 0 && cfg.MaxIdleConns == 0 && cfg.KeepAlive == nil && cfg.ProxyMode == "" && cfg.UserAgent == "" && cfg.AcceptEncoding == "" && cfg.AcceptLanguage == "" && cfg.MaxRedirects == nil && len(cfg.DefaultHeaders) == 0 && cfg.Proxy.URL == "" && cfg.Proxy.Username == "" && cfg.Proxy.Password == "" && len(cfg.Proxy.NoProxy) == 0 && cfg.Auth.Type == "" && cfg.Auth.Username == "" && cfg.Auth.Password == "" && cfg.Auth.Token == "" && cfg.Auth.Domain == "" && cfg.TLS.MinVersion == "" && cfg.TLS.MaxVersion == "" && !cfg.TLS.InsecureSkipVerify && cfg.TLS.ClientCertFile == "" && cfg.TLS.ClientKeyFile == "" && cfg.TLS.CACertFile == ""
 }
 
 func isEmptyBrowserConfig(cfg dsl.BrowserConfig) bool {

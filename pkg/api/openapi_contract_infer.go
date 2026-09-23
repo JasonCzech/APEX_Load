@@ -315,6 +315,7 @@ var explicitRouteContractTypes = map[string]struct {
 	"POST /api/v1/scripts/import/github": {
 		requestType: "githubImportRequest",
 	},
+	"POST /api/v1/scripts/import/settings":        {requestType: "ImportSettingsRequest", responseTypes: map[int]string{http.StatusOK: "ImportSettingsResponse"}},
 	"POST /api/v1/scripts/import/repairs/preview": {requestType: "ImportRepairRequest", responseTypes: map[int]string{http.StatusOK: "ImportRepairResponse"}},
 	"POST /api/v1/scripts/import/repairs/apply":   {requestType: "ImportRepairRequest", responseTypes: map[int]string{http.StatusOK: "ImportRepairResponse"}},
 	"POST /api/v1/scripts/secret-bindings/apply": {

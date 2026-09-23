@@ -1,0 +1,440 @@
+[
+  {
+    "category": "Think time",
+    "path": "config.think_time.type",
+    "label": "Mode",
+    "type": "select",
+    "options": [
+      "none",
+      "fixed",
+      "recorded",
+      "random_percentage",
+      "gaussian",
+      "uniform"
+    ]
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.min_percent",
+    "label": "Minimum recorded delay (%)",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.max_percent",
+    "label": "Maximum recorded delay (%)",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.mean_ms",
+    "label": "Mean delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.std_ms",
+    "label": "Standard deviation (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.min_ms",
+    "label": "Minimum delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.max_ms",
+    "label": "Maximum delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.multiplier",
+    "label": "Multiplier",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.limit_ms",
+    "label": "Delay cap (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Think time",
+    "path": "config.think_time.ignore",
+    "label": "Ignore think time",
+    "type": "boolean"
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.type",
+    "label": "Mode",
+    "type": "select",
+    "options": [
+      "none",
+      "fixed_delay",
+      "random_delay",
+      "fixed_interval",
+      "random_interval",
+      "tps"
+    ]
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.delay_ms",
+    "label": "Delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.interval_ms",
+    "label": "Interval (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.min_delay_ms",
+    "label": "Minimum delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.max_delay_ms",
+    "label": "Maximum delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.min_interval_ms",
+    "label": "Minimum interval (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.max_interval_ms",
+    "label": "Maximum interval (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Pacing",
+    "path": "config.pacing.tps",
+    "label": "Target TPS",
+    "type": "number"
+  },
+  {
+    "category": "Run logic",
+    "path": "config.run_logic.iterations",
+    "label": "Iterations per VUser",
+    "type": "number"
+  },
+  {
+    "category": "Run logic",
+    "path": "config.run_logic.global_iterations",
+    "label": "Shared iterations",
+    "type": "number"
+  },
+  {
+    "category": "Run logic",
+    "path": "config.run_logic.max_transactions",
+    "label": "Transaction limit",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.version",
+    "label": "HTTP version",
+    "type": "select",
+    "options": [
+      "1.1",
+      "2"
+    ]
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.connect_timeout_ms",
+    "label": "Connect timeout (ms)",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.request_timeout_ms",
+    "label": "Request timeout (ms)",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.idle_timeout_ms",
+    "label": "Keep-alive idle timeout (ms)",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.page_timeout_ms",
+    "label": "Whole-page timeout (ms)",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.ip_version",
+    "label": "IP family",
+    "type": "select",
+    "options": [
+      "auto",
+      "ipv4",
+      "ipv6"
+    ]
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.cache_max_unused_iterations",
+    "label": "Unused iterations before cache eviction",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.cache_excluded_mime_types",
+    "label": "Do not cache MIME types",
+    "type": "lines"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.html_parse_mode",
+    "label": "Discover HTML resources in",
+    "type": "select",
+    "options": [
+      "html",
+      "text",
+      "any"
+    ]
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.html_excluded_mime_types",
+    "label": "Do not discover resources in MIME types",
+    "type": "lines"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.max_redirects",
+    "label": "Maximum redirects",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.keep_alive",
+    "label": "Keep connections alive",
+    "type": "boolean"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.max_conns_per_host",
+    "label": "Connections per host",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.accept_language",
+    "label": "Accept language",
+    "type": "text"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.accept_encoding",
+    "label": "Accept encoding",
+    "type": "text"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.proxy_mode",
+    "label": "Proxy mode",
+    "type": "select",
+    "options": [
+      "none",
+      "system",
+      "custom"
+    ]
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.proxy.url",
+    "label": "Proxy URL",
+    "type": "text"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.tls.min_version",
+    "label": "Minimum TLS version",
+    "type": "select",
+    "options": [
+      "1.2",
+      "1.3"
+    ]
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.tls.max_version",
+    "label": "Maximum TLS version",
+    "type": "select",
+    "options": [
+      "1.2",
+      "1.3"
+    ]
+  },
+  {
+    "category": "Browser emulation",
+    "path": "config.browser_emulation.custom_user_agent",
+    "label": "User agent",
+    "type": "text"
+  },
+  {
+    "category": "Browser emulation",
+    "path": "config.browser_emulation.language",
+    "label": "Language",
+    "type": "text"
+  },
+  {
+    "category": "Browser emulation",
+    "path": "config.browser_emulation.browser_type",
+    "label": "Browser type",
+    "type": "text"
+  },
+  {
+    "category": "Browser emulation",
+    "path": "config.browser_emulation.browser_version",
+    "label": "Browser version",
+    "type": "text"
+  },
+  {
+    "category": "Browser emulation",
+    "path": "config.browser_emulation.platform",
+    "label": "Platform",
+    "type": "text"
+  },
+  {
+    "category": "Error handling",
+    "path": "config.error_handling.max_retries",
+    "label": "Maximum retries",
+    "type": "number"
+  },
+  {
+    "category": "Error handling",
+    "path": "config.error_handling.continue_on_error",
+    "label": "Continue on error",
+    "type": "boolean"
+  },
+  {
+    "category": "Error handling",
+    "path": "config.error_handling.retry_delay_ms",
+    "label": "Retry delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Logging",
+    "path": "config.log.level",
+    "label": "Log level",
+    "type": "select",
+    "options": [
+      "disabled",
+      "standard",
+      "extended"
+    ]
+  },
+  {
+    "category": "Kafka",
+    "path": "config.kafka.brokers",
+    "label": "Brokers (one per line)",
+    "type": "lines"
+  },
+  {
+    "category": "Kafka",
+    "path": "config.kafka.mock",
+    "label": "Mock broker",
+    "type": "boolean"
+  },
+  {
+    "category": "Kafka",
+    "path": "config.kafka.auto_offset_reset",
+    "label": "Offset reset",
+    "type": "select",
+    "options": [
+      "earliest",
+      "latest"
+    ]
+  },
+  {
+    "category": "Kafka",
+    "path": "config.kafka.serialization",
+    "label": "Serialization",
+    "type": "select",
+    "options": [
+      "json_schema",
+      "avro"
+    ]
+  },
+  {
+    "category": "Kafka",
+    "path": "config.kafka.schema_registry_url",
+    "label": "Schema registry URL",
+    "type": "text"
+  },
+  {
+    "category": "Kafka",
+    "path": "config.kafka.schema_id",
+    "label": "Schema ID",
+    "type": "number"
+  },
+  {
+    "category": "Kafka",
+    "path": "config.kafka.subject",
+    "label": "Subject",
+    "type": "text"
+  },
+  {
+    "category": "JMS",
+    "path": "config.jms.broker_url",
+    "label": "Broker URL",
+    "type": "text"
+  },
+  {
+    "category": "JMS",
+    "path": "config.jms.destination_type",
+    "label": "Destination type",
+    "type": "select",
+    "options": [
+      "queue",
+      "topic"
+    ]
+  },
+  {
+    "category": "JMS",
+    "path": "config.jms.subscription",
+    "label": "Subscription",
+    "type": "text"
+  },
+  {
+    "category": "JMS",
+    "path": "config.jms.timeout_ms",
+    "label": "Timeout (ms)",
+    "type": "number"
+  },
+  {
+    "category": "JMS",
+    "path": "config.jms.mock",
+    "label": "Mock broker",
+    "type": "boolean"
+  },
+  {
+    "category": "Logging",
+    "path": "config.log.on_error_only",
+    "label": "Log on error only",
+    "type": "boolean"
+  },
+  {
+    "category": "Logging",
+    "path": "config.log.extended_options",
+    "label": "Extended log options",
+    "type": "lines"
+  }
+]

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type Parameterization } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import ScriptImportReview from './ScriptImportReview'
+import { CategoryActions } from './ImportSettingsContext'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -873,14 +874,23 @@ describe('ScriptImportReview', () => {
       await Promise.resolve()
     })
     await act(async () => {
-      container.querySelector<HTMLInputElement>('input[id$="-project-secret"]')?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit credentials')!.click()
       await Promise.resolve()
+    })
+    await act(async () => {
+      const destination = container.querySelector<HTMLSelectElement>('.secret-binding-review select[id$="-destination"]')!
+      destination.value = 'project-secret'
+      destination.dispatchEvent(new Event('change', { bubbles: true }))
     })
     const nameInput = container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')!
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
       setter?.call(nameInput, 'EXISTING_ORDER_TOKEN')
       nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Apply credentials')!.click()
+      await Promise.resolve()
     })
     const saveButton = container.querySelector<HTMLButtonElement>('.script-import-review-actions .btn-primary')!
     await act(async () => {
@@ -916,6 +926,8 @@ describe('ScriptImportReview', () => {
       root.render(
         <ScriptImportReview
           reviewGeneration="parameterization-pending"
+          onSettingsApplied={() => {}}
+          runtimeContent={<CategoryActions category="HTTP" />}
           title="Review Generated Script"
           script={script}
           parameterization={parameterization}
@@ -949,6 +961,7 @@ describe('ScriptImportReview', () => {
     expect(save?.disabled).toBe(true)
     expect(edit?.disabled).toBe(true)
     expect(container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')?.disabled).toBe(true)
+    expect(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit HTTP')?.disabled).toBe(true)
   })
 
   it('disables parameterization while a credential-backed Save is in progress', async () => {

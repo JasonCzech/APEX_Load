@@ -87,3 +87,21 @@ func TestHTTPPublicValidationIncludesRuntimeAndSequenceChildTiming(t *testing.T)
 	assertIssue(t, issues, `actions[0] "sequence".params.requests[0] "child".think_time_after must be a boolean`)
 	assertIssue(t, issues, fmt.Sprintf(`actions[0] "sequence".params.requests[0] "child".think_time.mean_ms must be finite and between 0 and %d`, MaxConfiguredProtocolTimeoutMS))
 }
+
+func TestValidateRandomPercentageThinkTime(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		min, max float64
+		valid    bool
+	}{
+		{"normal", 50, 150, true}, {"zero", 0, 0, true}, {"fractional", 12.5, 10000, true},
+		{"negative", -1, 100, false}, {"reversed", 150, 50, false}, {"unbounded", 0, 10001, false}, {"nan", math.NaN(), 100, false}, {"infinite", 0, math.Inf(1), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			think := ThinkTimeConfig{Type: "random_percentage", MinPercent: tc.min, MaxPercent: tc.max}
+			if got := validateThinkTimeResourceIssues("config.think_time", think); (len(got) == 0) != tc.valid {
+				t.Fatalf("issues=%v valid=%v", got, tc.valid)
+			}
+		})
+	}
+}

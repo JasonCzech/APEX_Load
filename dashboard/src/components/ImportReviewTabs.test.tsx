@@ -18,7 +18,7 @@ it('keeps edits while keyboard navigation selects the labelled review panel', ()
   try {
     act(() => root.render(<Review />))
     const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
-    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual(['Review', 'Credentials', 'Data & parameters', 'Runtime & source settings', 'DSL Preview', 'Source Mapping'])
+    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual(['Review', 'Credentials', 'Data & parameters', 'Runtime settings', 'DSL Preview', 'Source Mapping'])
     const input = container.querySelector('input')!
     input.value = 'Edited draft'
     act(() => {
