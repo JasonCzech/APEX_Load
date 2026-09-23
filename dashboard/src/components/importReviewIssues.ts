@@ -1,6 +1,7 @@
-import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import type { ImportReviewSection } from '../types/scriptImports'
+import type { ScriptActionDefinition, ScriptDefinition, SourceReview } from '../types/scripts'
 
-export type ImportFinding = { code: string; action_path?: string; source_ref?: string; detail: string; gate?: string; severity?: string }
+export type ImportFinding = { code: string; action_path?: string; source_ref?: string; detail: string; gate?: string; severity?: string; title?: string; evidence?: string[]; source_mapping_id?: string; source_file?: string }
 export type IssueCategory = 'values' | 'bodies' | 'credentials' | 'runtime' | 'review'
 export const issueCategories: Record<IssueCategory, string> = {
   values: 'Missing values & correlations', bodies: 'Protected request bodies', credentials: 'Credentials', runtime: 'Transport & runtime', review: 'Review decisions',
@@ -46,7 +47,7 @@ export function findingCategory(code: string): IssueCategory {
 export function issueTitle(code: string): string {
   if (code.startsWith('missing_producer:')) return `Missing value: ${code.slice(17)}`
   if (code.startsWith('conditional_producer:')) return `Check producer order: ${code.slice(21)}`
-  return ({ 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior' } as Record<string, string>)[code] || code.replace(/_/g, ' ')
+  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior' } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
 }
 export function groupImportFindings(findings: ImportFinding[], script: ScriptDefinition): ImportIssue[] {
   const actions = new Map(importActionEntries(script).map(entry => [entry.path, entry.action]))
@@ -66,7 +67,7 @@ export function groupImportFindings(findings: ImportFinding[], script: ScriptDef
     const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const namespace = variable && new RegExp(`\\{\\{\\s*param\\.${escaped}\\s*\\}\\}`).test(executable) ? 'param' : 'var'
     const id = category === 'values' ? `${finding.code}:${scope}:${namespace}` : `${finding.code}:${path}`
-    const issue = grouped.get(id) || { id, title: issueTitle(finding.code), category, blocking, findings: [] }
+    const issue = grouped.get(id) || { id, title: finding.title || issueTitle(finding.code), category, blocking, findings: [] }
     issue.blocking ||= blocking
     if (!issue.findings.some(f => f.code === finding.code && f.action_path === path)) issue.findings.push(finding)
     grouped.set(id, issue)
@@ -81,4 +82,60 @@ export function issueRepairOptions(code: string): { value: string; label: string
   if (code === 'encrypted_proxy_password') return [{ value: 'replace_proxy_secret', label: 'Choose proxy secret binding' }]
   if (code === 'legacy_tls_replacement') return [{ value: 'select_tls', label: 'Select supported TLS' }]
   return []
+}
+
+// Keep concrete diagnostics and location identities intact when moving them into the queue.
+export function reviewSectionFindings(sections: ImportReviewSection[], source?: SourceReview): ImportFinding[] {
+  const parity = sections.find(section => section.key === 'runtime_settings_parity' && section.severity !== 'info')
+  const coverage = sections.find(section => section.key === 'runtime_settings_migration_readiness' && section.severity !== 'blocker')
+  const seenWarnings = new Set<string>()
+  return sections.flatMap(section => {
+    if (parity && coverage === section) return []
+    if (section.severity === 'info' || section.key === 'import_fidelity') return []
+    const warning = ['warnings', 'conversion_warnings'].includes(section.key)
+    const items = warning && section.items?.length ? section.items : [section.summary]
+    return items.filter(detail => {
+      if (!warning) return true
+      if (seenWarnings.has(detail)) return false
+      seenWarnings.add(detail); return true
+    }).map(detail => {
+      const line = /(?:^|\s)line\s+(\d+)\s*:/i.exec(detail)
+      const lineCandidates = line ? (source?.mappings || []).filter(mapping => mapping.start_line <= Number(line[1]) && (mapping.end_line || mapping.start_line) >= Number(line[1])) : []
+      const functionCandidates = lineCandidates.filter(mapping => mapping.function && detail.includes(mapping.function))
+      const candidates = functionCandidates.length ? functionCandidates : lineCandidates
+      // A bare line number is ambiguous across files. Never navigate to an arbitrary first match.
+      const files = new Set(candidates.map(mapping => mapping.source_file))
+      const mapping = files.size === 1 ? [...candidates].sort((a, b) => ((a.end_line || a.start_line) - a.start_line) - ((b.end_line || b.start_line) - b.start_line))[0] : undefined
+      const narrowerAssertion = /web_reg_find.*Search=ALL/i.test(detail)
+      return {
+        code: warning ? `diagnostic:warnings:${detail}` : `diagnostic:${section.key}`,
+        title: narrowerAssertion ? 'Text check searches a narrower response scope' : warning ? detail.replace(/^line\s+\d+:\s*/i, '').slice(0, 120) : section.key.startsWith('runtime_') ? issueTitle(`diagnostic:${section.key}`) : section.title || issueTitle(`diagnostic:${section.key}`),
+        detail, evidence: warning ? [] : [...(section.items || []), ...(section === parity && coverage ? [coverage.summary, ...(coverage.items || [])] : [])],
+        gate: section.severity === 'blocker' ? 'execution' : 'promotion',
+        source_ref: mapping ? `${mapping.source_file}:${line![1]}` : line ? `Line ${line[1]} · source file not identified` : undefined,
+        source_file: mapping?.source_file, source_mapping_id: mapping?.id, action_path: mapping?.target_path,
+      }
+    })
+  })
+}
+
+export function issueScope(issue: ImportIssue): string {
+  const locations = issue.findings.filter(finding => finding.action_path || finding.source_ref)
+  return locations.length ? `${locations.length} affected ${locations.length === 1 ? 'location' : 'locations'}` : 'Script-wide'
+}
+
+// Report field paths only: repair values may contain protected payloads or credentials.
+export function changedRepairPaths(before: unknown, after: unknown): string[] {
+  const paths: string[] = []
+  const walk = (a: unknown, b: unknown, path: string, depth: number) => {
+    if (Object.is(a, b) || paths.length >= 100) return
+    if (depth >= 16 || a == null || b == null || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) { paths.push(path || 'Script'); return }
+    const left = a as Record<string, unknown>; const right = b as Record<string, unknown>
+    for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+      if (key === 'server_import_attestation_v1') continue
+      walk(left[key], right[key], Array.isArray(a) ? `${path}[${key}]` : path ? `${path}.${key}` : key, depth + 1)
+    }
+  }
+  walk(before, after, '', 0)
+  return paths
 }

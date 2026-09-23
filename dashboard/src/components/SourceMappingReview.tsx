@@ -1,3 +1,4 @@
+import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { MappingReviewDetails } from './MappingReviewDetails'
 import { useMappingReviewState } from './useMappingReviewState'
 import { decisionMatches, type MappingReviewState } from './sourceMappingReviewState'
@@ -308,7 +309,7 @@ export default function SourceMappingReview({
     const selectedStillExists = selectedMappingId && mappings.some(mapping => mapping.id === selectedMappingId)
     const nextMapping = inspectedFileMapping || (selectedStillExists
       ? mappings.find(mapping => mapping.id === selectedMappingId) || null
-      : mappings[0] || null)
+      : mappings.find(mapping => mapping.id === focusedMappingId) || mappings[0] || null)
 
     if ((nextMapping?.id || '') !== selectedMappingId) {
       setSelectedMappingId(nextMapping?.id || '')
@@ -331,6 +332,7 @@ export default function SourceMappingReview({
     }
   }, [
     inspectedUnmappedFilePath,
+    focusedMappingId,
     mappings,
     selectedFilePath,
     selectedMappingId,
@@ -604,10 +606,7 @@ export default function SourceMappingReview({
     <section ref={reviewRootRef} id={id} className="source-map-review">
       <div className={`source-map-header ${showTitle ? '' : 'title-hidden'}`}>
         {showTitle && (
-          <div>
-            <h4>{title}</h4>
-            <p>Validate the conversion line by line — select on either side and the match is highlighted on the other.</p>
-          </div>
+          <ImportReviewSectionHeader title={title} description="Compare source and draft code. Select either side to highlight the corresponding mapping." />
         )}
         <div className="source-map-header-controls">
           <div className="source-map-coverage" role="group" aria-label="Conversion coverage">
@@ -658,8 +657,7 @@ export default function SourceMappingReview({
       {(omittedFiles.length > 0 || truncatedFiles.length > 0 || unaccountedFiles > 0) && (
         <aside className="source-map-incomplete" role="note" aria-label="Source preview limits">
           <strong>Preview limits only — not an import issue</strong>
-          <p>Some source content is shortened or not shown in this review pane. These preview limits do not truncate the imported script or remove data from the import. Any conversion issues are reported separately.</p>
-          <p>Use the original archive to inspect the complete source files.</p>
+          <p>Preview limits do not truncate the imported script or remove data from the import. Any conversion issues are reported separately.</p>
           {unaccountedFiles > 0 && (
             <p className="source-map-preview-integrity" role="alert">{unaccountedFiles} source file{unaccountedFiles === 1 ? ' is' : 's are'} not accounted for by the review payload. Review file counts are inconsistent; re-import before approval.</p>
           )}
@@ -703,7 +701,7 @@ export default function SourceMappingReview({
         </div>
       )}
 
-      <div className="source-map-toolbar">
+      <div className="source-map-toolbar import-review-toolbar">
         <label>
           <span>Captured source file ({files.length})</span>
           <select value={selectedFile?.path || ''} onChange={event => selectSourceFile(event.target.value)}>
@@ -731,11 +729,11 @@ export default function SourceMappingReview({
         </div>
       </div>
       <div className="source-map-filter-summary">
+        <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
         <span>{filteredMappings.length} of {mappings.length} mappings</span>
         {(filter || categoryFilter !== '') && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setFilter(''); setCategoryFilter('') }}>Clear filters</button>}
       <details className="source-map-view-options"><summary>View options & export</summary>
-      <div className="source-map-review-controls">
-          <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
+      <div className="source-map-review-controls import-review-toolbar">
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -843,7 +841,7 @@ export default function SourceMappingReview({
               </button>
               <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !selectedFile} onClick={() => void copyValue('source', selectedFile?.content || '')}>Copy whole source file</button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'source' ? null : 'source')}>
-                {maximizedPane === 'source' ? 'Return to comparison' : 'Focus source'}
+                {maximizedPane === 'source' ? 'Return to comparison' : 'Expand source'}
               </button>
             </div>
           </div>
@@ -878,7 +876,7 @@ export default function SourceMappingReview({
               </button>
               <button type="button" className="btn btn-sm btn-ghost" disabled={!copySupported || !dslDocument} onClick={() => void copyValue('dsl', dslDocument?.text || '')}>Copy whole destination</button>
               <button type="button" className="btn btn-sm btn-ghost" onClick={() => setMaximizedPane(maximizedPane === 'dsl' ? null : 'dsl')}>
-                {maximizedPane === 'dsl' ? 'Return to comparison' : 'Focus destination'}
+                {maximizedPane === 'dsl' ? 'Return to comparison' : 'Expand destination'}
               </button>
             </div>
           </div>

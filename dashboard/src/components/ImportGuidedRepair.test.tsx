@@ -165,7 +165,86 @@ it.each(['missing', 'expired', 'locked', 'available'])('explains allocation prev
     await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" view="data" disabled={state === 'locked'} disabledReason="This draft has already been saved." onApplied={vi.fn()} />))
     expect(container.querySelector<HTMLElement>('[aria-label="Preview unique data allocation"]')?.hidden).toBe(false)
     expect(container.querySelector<HTMLFieldSetElement>('.lr-allocation-form')?.disabled).toBe(state !== 'available')
-    const reasons = { missing: 'requires a protected import draft', expired: 'has expired', locked: 'already been saved', available: 'Edit allocation rules in Parameters' }
+    const reasons = { missing: 'requires a protected import draft', expired: 'has expired', locked: 'already been saved', available: 'Edit rules in Parameters' }
     expect(container.textContent).toContain(reasons[state as keyof typeof reasons])
   } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+
+it('opens a scoped issue queue, clears its selection on navigation, and lets source links override the category', async () => {
+  const script = { name: 'Scoped draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [{ name: 'Request', type: 'request', target: '/' }], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:scoped' } } } } as ScriptDefinition
+  mock.request.mockResolvedValue({ candidate_id: 'protected:scoped', script, findings: [
+    { code: 'missing_producer:customer', action_path: 'actions[0]', detail: '', gate: 'execution' },
+    { code: 'legacy_tls_replacement', action_path: 'config.http.tls', detail: '', gate: 'execution' },
+  ], readiness: { replay_ready: false }, expires_at: '2099-01-01' })
+  const container = document.createElement('div'); const root = createRoot(container)
+  const onApplied = vi.fn()
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} categoryFocus={{ category: 'values', revision: 1 }} />))
+    expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(1)
+    expect(container.querySelector('.lr-issue-row')?.textContent).toContain('customer')
+    await act(async () => container.querySelector<HTMLButtonElement>('.lr-issue-row')!.click())
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} categoryFocus={{ category: 'runtime', revision: 2 }} />))
+    expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(1)
+    expect(container.querySelector('[aria-label="Selected issue"]')?.textContent).toContain('Select an issue')
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} focusPath="actions[0]" focusRequest={1} />))
+    expect(container.querySelectorAll('.lr-issue-row')).toHaveLength(2)
+    expect(container.querySelector('[aria-label="Selected issue"]')?.textContent).toContain('customer')
+  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+
+it('discards an in-flight preview when a category handoff changes the selected issue', async () => {
+ const script = { name: 'Draft', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:race' } } } } as ScriptDefinition
+ const result = { candidate_id: 'protected:race', script, findings: [{ code: 'restored_body_required', action_path: 'actions[0]', detail: '', gate: 'execution' }], readiness: { replay_ready: false }, expires_at: '2099-01-01' }
+ mock.request.mockResolvedValueOnce(result)
+ const container = document.createElement('div'); const root = createRoot(container); const onApplied = vi.fn()
+ try {
+  await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} />))
+  await act(async () => container.querySelector<HTMLButtonElement>('.lr-issue-row')!.click())
+  let finish!: (result: unknown) => void
+  mock.request.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview repair')!.click())
+  await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={onApplied} categoryFocus={{ category: 'runtime', revision: 1 }} />))
+  await act(async () => finish(result))
+  expect(container.querySelector('[aria-label="Redacted repair preview"]')).toBeNull()
+  expect(container.textContent).not.toContain('Apply reviewed repair')
+  expect(onApplied).not.toHaveBeenCalled()
+ } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+
+it('retains pending repair values while navigating and never treats a reviewed limitation as a repair', async () => {
+ const script = { name: 'Draft', protocol: 'http', actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:draft' } } } } as unknown as ScriptDefinition
+ const findings = [{ code: 'missing_producer:token', action_path: 'actions[0]', detail: '', gate: 'execution' }, { code: 'diagnostic:warnings:0', title: 'Review assertion scope', detail: 'Only the main body is checked', gate: 'promotion' }]
+ mock.request.mockResolvedValue({ script, findings, readiness: { replay_ready: false }, expires_at: '2099-01-01' })
+ const container = document.createElement('div'); document.body.append(container); const root = createRoot(container)
+ const button = (text: string) => [...container.querySelectorAll('button')].find(b => b.textContent?.includes(text))!
+ try {
+  await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} />))
+  await act(async () => button('Missing value: token').click())
+  expect(button('Mark reviewed with limitation')).toBeUndefined()
+  const input = container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'retained-value'); input.dispatchEvent(new Event('input', { bubbles: true })) })
+  await act(async () => button('Review assertion scope').click())
+  expect(container.querySelector('.lr-issue-detail')?.textContent).toContain('Script-wide')
+  await act(async () => button('Mark reviewed with limitation').click())
+  expect(container.textContent).toContain('Replay requirements are unchanged')
+  expect(container.querySelector('.lr-issue-detail')?.textContent).toContain('Reviewed with limitation · this session')
+  await act(async () => button('Missing value: token').click())
+  expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!.value).toBe('retained-value')
+  await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} focusPath="actions[0]" focusRequest={2} />))
+  expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!.value).toBe('retained-value')
+  const rows = [...container.querySelectorAll<HTMLButtonElement>('.lr-issue-row')]
+  rows[0].focus()
+  await act(async () => rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+  expect(document.activeElement).toBe(rows[1])
+  rows[1].closest('details')!.open = false
+  rows[0].focus()
+  await act(async () => rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })))
+  expect(document.activeElement).toBe(rows[0])
+  const heading = container.querySelector<HTMLHeadingElement>('.lr-issue-detail h4')!
+  heading.focus()
+  await act(async () => heading.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+  expect(document.activeElement).toBe(rows[0])
+  expect(button('Back to issue list')).toBeUndefined()
+  expect(mock.request).toHaveBeenCalledTimes(1) // inspection only; the review note is not a repair
+ } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
 })

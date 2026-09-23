@@ -1,3 +1,7 @@
+import ImportCredentialPlacement from './ImportCredentialPlacement'
+import CodeLineWrapToggle from './CodeLineWrapToggle'
+import { useCodeLineWrapPreference } from './codeLineWrapPreference'
+import './ImportReviewWorkspace.css'
 import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
 import ImportParameterInventory from './ImportParameterInventory'
 import ImportSourceInventory from './ImportSourceInventory'
@@ -424,6 +428,8 @@ interface Props {
   showOriginalDiagnostics?: boolean
   showCredentials?: boolean
   showDataReview?: boolean
+  reviewNavigation?: ReactNode
+  credentialTarget?: HTMLElement | null
   credentialIntroduction?: ReactNode
   script: ScriptDefinition
   previewData?: unknown
@@ -501,6 +507,7 @@ export default function ScriptImportReview({
   dataContent,
   batchControls,
   credentialIntroduction,
+  reviewNavigation,
   script,
   previewData,
   warnings = [],
@@ -525,6 +532,7 @@ export default function ScriptImportReview({
   importDraftExpiresAt,
   onSourceSecretSessionSettled,
   credentialReviewRef,
+  credentialTarget,
   onCredentialsPreparedChange,
   saving = false,
   saveDisabled = false,
@@ -790,7 +798,7 @@ export default function ScriptImportReview({
   const [previewSection, setPreviewSection] = useState('all')
   const [previewSearch, setPreviewSearch] = useState('')
   const [previewAction, setPreviewAction] = useState('')
-  const [previewWrap, setPreviewWrap] = useState(true)
+  const [previewWrap, setPreviewWrap] = useCodeLineWrapPreference()
   const [previewFocus, setPreviewFocus] = useState(false)
   const previewEntries = useMemo(() => importActionEntries(script), [script])
   const selectedPreviewAction = previewEntries.find(entry => entry.path === previewAction)
@@ -810,7 +818,7 @@ export default function ScriptImportReview({
       <summary>
         <h4>{previewTitle}{compactReview || tabbed ? ' — redacted, read-only' : ''}</h4>
       </summary>
-      {(compactReview || (tabbed && !previewData)) && <div className="lr-preview-toolbar"><label>Section<select value={previewSection} onChange={e => { setPreviewSection(e.target.value); setPreviewAction('') }}>{['all', 'config', 'parameters', 'data_sources', 'init', 'actions', 'teardown'].map(section => <option key={section} value={section}>{section}</option>)}</select></label><label>Find action<input type="search" value={previewSearch} onChange={e => { setPreviewSearch(e.target.value); setPreviewAction('') }} /></label><label>Jump to action<select value={previewAction} onChange={e => { setPreviewAction(e.target.value); if (e.target.value) setPreviewSection(e.target.value.split('[')[0]) }}><option value="">Section overview</option>{filteredPreviewEntries.slice(0, 200).map(entry => <option key={entry.path} value={entry.path}>{entry.path} · {entry.action.name || entry.action.type}</option>)}</select></label><span>{filteredPreviewEntries.length} matching actions{filteredPreviewEntries.length > 200 ? ' · refine search to see more' : ''}</span><button type="button" className="btn btn-secondary btn-sm" aria-pressed={previewWrap} onClick={() => setPreviewWrap(v => !v)}>Word wrap: {previewWrap ? 'On' : 'Off'}</button><button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreviewFocus(v => !v)}>{previewFocus ? 'Exit focus mode' : 'Focus preview'}</button></div>}
+      {(compactReview || (tabbed && !previewData)) && <div className="lr-preview-toolbar import-review-toolbar"><label>Section<select value={previewSection} onChange={e => { setPreviewSection(e.target.value); setPreviewAction('') }}>{['all', 'config', 'parameters', 'data_sources', 'init', 'actions', 'teardown'].map(section => <option key={section} value={section}>{section}</option>)}</select></label><label>Find action<input type="search" value={previewSearch} onChange={e => { setPreviewSearch(e.target.value); setPreviewAction('') }} /></label><label>Jump to action<select value={previewAction} onChange={e => { setPreviewAction(e.target.value); if (e.target.value) setPreviewSection(e.target.value.split('[')[0]) }}><option value="">Section overview</option>{filteredPreviewEntries.slice(0, 200).map(entry => <option key={entry.path} value={entry.path}>{entry.path} · {entry.action.name || entry.action.type}</option>)}</select></label><span>{filteredPreviewEntries.length} matching actions{filteredPreviewEntries.length > 200 ? ' · refine search to see more' : ''}</span><CodeLineWrapToggle wrapLines={previewWrap} onChange={setPreviewWrap} /><button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreviewFocus(v => !v)}>{previewFocus ? 'Restore preview' : 'Expand preview'}</button></div>}
       {preview.truncated && (
         <div className="script-import-review-preview-note" role="status">
           Preview truncated for browser performance. The on-screen view is partial. Select an individual action or download the complete protected review JSON. You can save a blocked draft without reviewing every action.
@@ -999,12 +1007,13 @@ export default function ScriptImportReview({
         <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('credentials')}>Configure credentials</button>
         <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('data')}>Configure data & parameters</button>
       </nav>}
+      {reviewNavigation}
       {!tabbed && onSettingsApplied && <div hidden={!showDataReview}><ImportParameterInventory script={script} /></div>}
       <div hidden={tabbed && activeReviewTab !== 'review'}>{children}</div>
       {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{onSettingsApplied && <ImportRuntimeSettingsTable script={script} />}{runtimeContent || (!onSettingsApplied && <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>)}</div>}
       {!tabbed && runtimeContent}
 
-      <div hidden={!showCredentials}>
+      <ImportCredentialPlacement target={credentialTarget} visible={showCredentials}>
       {tabbed && !hasUnresolvedSecretBindings && <p className="import-review-empty">No unresolved credential bindings were reported for this draft. Runtime credentials are verified when debugging starts.</p>}
       {credentialIntroduction}
       {hasUnresolvedSecretBindings && onSecretBindingsApply && (
@@ -1034,9 +1043,9 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      </div>
+      </ImportCredentialPlacement>
 
-      {(conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics" hidden={!showOriginalDiagnostics || (tabbed ? activeReviewTab !== 'review' : compactReview && (showDataReview || showCredentials || showPreview || showPreviewAside))}><summary hidden={!compactReview}>Original import diagnostics</summary>
+      {showOriginalDiagnostics && (conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics" hidden={(tabbed ? activeReviewTab !== 'review' : compactReview && (showDataReview || showCredentials || showPreview || showPreviewAside))}><summary hidden={!compactReview}>Original import diagnostics</summary>
       {conversionNotes.length > 0 && <button type="button" className="script-health-token issue-pill-button" onClick={() => setIssueDialog({ title: 'Conversion notes', issues: conversionNotes })}>{conversionNotes.length} conversion note{conversionNotes.length === 1 ? '' : 's'}</button>}
       {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
         <div className="script-import-review-issue-summary" aria-label="Import issue summary">
@@ -1090,6 +1099,7 @@ export default function ScriptImportReview({
       <ImportDataExtras>
       {dataContent}
       {tabbed && !onSettingsApplied && !dataContent && !sharedValues?.candidates?.length && !parameterization?.suggestions?.length && <p className="import-review-empty">No editable data substitutions were reported. Review unresolved variables in Review and configure their producers in the Visual Editor.</p>}
+      {((onSharedValuesApplied && !!sharedValues?.candidates?.length) || (onParameterizationApplied && !!parameterization?.suggestions?.length)) && <details className="import-review-suggestions" open={!compactReview}><summary>Suggested changes</summary>
       {sharedValues && onSharedValuesApplied && (sharedValues.candidates?.length ?? 0) > 0 && (
         <SharedImportValues
           guided={compactReview}
@@ -1105,6 +1115,7 @@ export default function ScriptImportReview({
 
       {parameterization && onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0 && (
         <ParameterizationReview
+          guided={compactReview}
           parameterization={parameterization}
           script={script}
           scriptName={script.name}
@@ -1117,6 +1128,7 @@ export default function ScriptImportReview({
         />
       )}
 
+      </details>}
       </ImportDataExtras>
       </div>
 

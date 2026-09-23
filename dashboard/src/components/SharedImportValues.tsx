@@ -199,7 +199,7 @@ export default function SharedImportValues({
         <p className="shared-values-warning" key={warning} role="status">{warning}</p>
       ))}
 
-      {(guided || groupRequirements) && <label>{guided ? 'Find optional value' : 'Find value'}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label>}
+      {(guided || groupRequirements) && <div className="import-review-toolbar"><label>{guided ? 'Find optional value' : 'Find value'}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label></div>}
       {(groupRequirements ? ['Required runtime inputs', 'Optional substitutions'] : guided ? ['Environment overrides', 'Advanced repeated values'] : ['Values']).map(group => <details key={group} open={groupRequirements ? group === 'Required runtime inputs' || !!search : !guided || group === 'Environment overrides' || !!search}><summary>{group}</summary><ul className="shared-values-list">
         {candidates.filter(candidate => (!groupRequirements || (group === 'Required runtime inputs') === (candidate.kind === 'source_variable')) && (!guided || (group === 'Environment overrides') === (candidate.targets_base_url || candidate.name === 'base_url' || candidate.name.toLowerCase() === 'origin')) && (!search || candidate.name.toLowerCase().includes(search.toLowerCase()))).map(candidate => {
           const inputId = `shared-value-${candidate.id}`
@@ -213,7 +213,7 @@ export default function SharedImportValues({
                 </span>
                 <span className="shared-values-reach">{reachLabel(candidate)}</span>
               </div>
-              {candidate.rationale && <p className="shared-values-rationale">{guided ? `${reachLabel(candidate)}. Only detected occurrences are eligible for this substitution.` : candidate.rationale}</p>}{guided && <details><summary>Affected scripts</summary><ul>{(candidate.script_names || []).map(name => <li key={name}>{name}</li>)}</ul><p>Exact request changes are returned after applying. The import does not expose individual request paths for these suggestions.</p></details>}
+              {candidate.rationale && <p className="shared-values-rationale">{guided ? 'Only detected occurrences are eligible for this substitution.' : candidate.rationale}</p>}{guided && <details><summary>Affected scripts</summary><ul>{(candidate.script_names || []).map(name => <li key={name}>{name}</li>)}</ul><p>Exact request changes are returned after applying. The import does not expose individual request paths for these suggestions.</p></details>}
               {candidate.credential_shaped ? (
                 <p className="shared-values-credential">
                   This looks like a credential. Set it in the Credentials tab — a script

@@ -1,21 +1,25 @@
+import ImportIssueRuntimeEditor from './ImportIssueRuntimeEditor'
+import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useImportSettings } from './ImportSettingsContext'
 import { request } from '../hooks/apiClient'
 import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '../types/scriptImports'
 import type { ScriptDefinition } from '../types/scripts'
-import { draftImportFindings, groupImportFindings, importActionEntries, issueCategories, issueRepairOptions, type ImportFinding, type ImportIssue, type IssueCategory } from './importReviewIssues'
+import { draftImportFindings, groupImportFindings, importActionEntries, issueCategories, issueRepairOptions, issueScope, changedRepairPaths, type ImportFinding, type ImportIssue, type IssueCategory } from './importReviewIssues'
 
 export type RepairResult = { secret_binding_requirements: SecretBindingRequirement[]; fidelity_report: EnterpriseArchiveFidelityReport; candidate_id: string; revision: string; script: ScriptDefinition; before: ScriptDefinition; findings: ImportFinding[]; readiness: { replay_ready: boolean; promotion_ready: boolean; blocking_codes?: string[]; validation_issues?: string[]; unresolved_bindings?: number }; allocation?: { name: string; rows: number; block_size: number; population: number }[]; expires_at: string }
 type Operation = { type: string; [key: string]: unknown }
 type Props = {
-  script: ScriptDefinition; projectId: string; disabled?: boolean; disabledReason?: string; onApplied: (result: RepairResult) => void; onViewSource?: (path: string) => void
+  script: ScriptDefinition; projectId: string; disabled?: boolean; disabledReason?: string; onApplied: (result: RepairResult) => void; onViewSource?: (path: string, finding?: ImportFinding) => void
+  onCredentialTarget?: (target: HTMLDivElement | null) => void; onReimport?: () => void
   onSection?: (section: 'credentials' | 'data' | 'preserved' | 'source') => void
+  categoryFocus?: { category: IssueCategory | 'all'; revision: number };
   focusPath?: string; focusRequest?: number; onBusyChange?: (busy: boolean) => void
   view?: 'overview' | 'data' | 'hidden'; additionalFindings?: ImportFinding[]; onReview?: (result: RepairResult) => void
 }
 const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name' }
 
-export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, view = 'overview', additionalFindings = [], onReview, focusPath, focusRequest, onBusyChange }: Props) {
+export function ImportGuidedRepair({ script, projectId, disabled, disabledReason, onApplied, onViewSource, onSection, onCredentialTarget, onReimport, view = 'overview', additionalFindings = [], onReview, categoryFocus, focusPath, focusRequest, onBusyChange }: Props) {
   const settings = useImportSettings()
   const candidate = String(script.metadata?.import?.preserved?.server_import_attestation_v1 || '')
   const scope = `${candidate}:${projectId}`
@@ -46,10 +50,21 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const [pending, setPending] = useState<{ operation: Operation; finding: ImportFinding } | null>(null)
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
+  const previewVersion = useRef(0)
+  const [category, setCategory] = useState<IssueCategory | 'all'>('all')
+  useEffect(() => {
+    if (!categoryFocus) return
+    setCategory(categoryFocus.category); setFilter('all'); setSearch(''); setSelection(''); resetPreview()
+  }, [categoryFocus])
   const [resolved, setResolved] = useState<ImportIssue[]>([])
   const [announcement, setAnnouncement] = useState('')
+  const [reviewed, setReviewed] = useState<Set<string>>(new Set())
+  const formDrafts = useRef(new Map<string, { kind: string; value: string; responsePath: string; extractorType: string; occurrence: string }>())
+  useEffect(() => { if (selection) formDrafts.current.set(selection, { kind, value, responsePath, extractorType, occurrence }) }, [selection, kind, value, responsePath, extractorType, occurrence])
+  useEffect(() => { formDrafts.current.clear(); setReviewed(new Set()) }, [scope])
   const [now, setNow] = useState(Date.now())
   const detailRef = useRef<HTMLHeadingElement>(null)
+  useEffect(() => { if (view === 'overview') detailRef.current?.focus() }, [selection, view])
   const entries = useMemo(() => importActionEntries(script), [script])
   const issues = useMemo(() => groupImportFindings([...(review?.findings || draftImportFindings(script)), ...additionalFindings], script), [review, script, additionalFindings])
   const selected = issues.find(i => i.id === selection) || resolved.find(i => i.id === selection)
@@ -58,7 +73,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const selectedResolved = !!selected && !issues.some(i => i.id === selected.id)
   const blocked = issues.filter(i => i.blocking).length
   const reviewCount = issues.length - blocked
-  const shown = (filter === 'resolved' ? resolved : issues).filter(i => (filter !== 'blockers' || i.blocking) && (filter !== 'review' || !i.blocking) && `${i.title} ${i.findings.map(f => `${f.source_ref} ${f.action_path}`).join(' ')}`.toLowerCase().includes(search.toLowerCase()))
+  const shown = (filter === 'resolved' ? resolved : issues).filter(i => (category === 'all' || i.category === category) && (filter !== 'blockers' || i.blocking) && (filter !== 'review' || !i.blocking) && (filter !== 'reviewed' || reviewed.has(i.id)) && `${i.title} ${i.findings.map(f => `${f.source_ref} ${f.action_path} ${f.detail}`).join(' ')}`.toLowerCase().includes(search.toLowerCase()))
   const expiry = review?.expires_at ? new Date(review.expires_at).getTime() : NaN
   const expired = Number.isFinite(expiry) && expiry <= now
   const locked = !!disabled || busy || loading || expired
@@ -74,7 +89,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const canRepair = candidate.startsWith('protected:') && !!review && !selectedResolved && !finding?.code.startsWith('diagnostic:')
   const preceding = entries.slice(0, entries.findIndex(e => e.path === finding?.action_path)).filter(e => !!e.action.target && e.action.type !== 'http_sequence')
   const requestPayload = (operation: Operation, target = finding) => ({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: target?.code || '', action_path: target?.action_path || '', operation })
-  const resetPreview = () => { setPreview(null); setPending(null) }
+  function resetPreview() { previewVersion.current++; setPreview(null); setPending(null) }
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000)
     return () => clearInterval(timer)
@@ -98,18 +113,21 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
     const issue = issues.find(i => i.findings.some(f => f.action_path === focusPath))
     if (!issue) return
     lastFocus.current = focusRequest
+    setCategory('all'); setFilter('all'); setSearch('')
+    const saved = formDrafts.current.get(issue.id)
     setSelection(issue.id); setOccurrence(focusPath)
-    setKind(issueRepairOptions(issue.findings.find(f => f.action_path === focusPath)?.code || '')[0]?.value || '')
-    setValue(''); setResponsePath(''); setPreview(null); setPending(null)
+    setKind(saved?.kind || issueRepairOptions(issue.findings.find(f => f.action_path === focusPath)?.code || '')[0]?.value || '')
+    setValue(saved?.value || ''); setResponsePath(saved?.responsePath || ''); setExtractorType(saved?.extractorType || 'jsonpath'); resetPreview()
   }, [focusPath, focusRequest, issues])
   function choose(issue: ImportIssue) {
-    setSelection(issue.id); setOccurrence(issue.findings[0]?.action_path || ''); setKind(issueRepairOptions(issue.findings[0]?.code || '')[0]?.value || '')
-    setValue(''); setResponsePath(''); setError(''); resetPreview()
-    requestAnimationFrame(() => detailRef.current?.focus())
+    const saved = formDrafts.current.get(issue.id)
+    setSelection(issue.id); setOccurrence(saved?.occurrence || issue.findings[0]?.action_path || ''); setKind(saved?.kind || issueRepairOptions(issue.findings[0]?.code || '')[0]?.value || '')
+    setValue(saved?.value || ''); setResponsePath(saved?.responsePath || ''); setExtractorType(saved?.extractorType || 'jsonpath'); setError(''); resetPreview()
   }
   async function run(operation: Operation, apply = false) {
     if (locked || (operation.type === 'preview_allocation' && allocationUnavailable)) return
     const requestScope = currentScope.current
+    const requestPreviewVersion = previewVersion.current
     const target = apply ? pending?.finding : finding
     setBusy(true); setError('')
     try {
@@ -119,7 +137,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
         const remaining = groupImportFindings(result.findings, result.script)
         setResolved(previous => [...previous.filter(i => !remaining.some(next => next.id === i.id)), ...issues.filter(i => !i.findings[0]?.code.startsWith('diagnostic:') && !remaining.some(next => next.id === i.id) && !previous.some(p => p.id === i.id))])
         setValue(''); resetPreview(); setReview(result); setAnnouncement(`Repair applied. ${remaining.filter(i => i.blocking).length} grouped issues block replay.`); onApplied(result)
-      } else if (operation.type === 'preview_allocation') { setAllocationPreview(result) } else { setPreview(result); setPending(target ? { operation, finding: target } : null) }
+      } else if (operation.type === 'preview_allocation') { setAllocationPreview(result) } else if (requestPreviewVersion === previewVersion.current) { setPreview(result); setPending(target ? { operation, finding: target } : null) }
     } catch (e) { if (requestScope === currentScope.current) setError(e instanceof Error ? e.message : 'Repair failed') }
     finally { if (requestScope === currentScope.current) setBusy(false) }
   }
@@ -134,56 +152,82 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
       default: return { type: 'select_tls', tls_min: value || '1.2', tls_max: '1.3' }
     }
   }
+  const nextIssues = shown.filter(issue => !reviewed.has(issue.id))
+  const nextIssue = nextIssues[(nextIssues.findIndex(issue => issue.id === selection) + 1) % nextIssues.length]
+  const issueLocation = finding?.source_ref || finding?.action_path
+  const canViewSource = !!finding && !!onViewSource && !!(finding.action_path || finding.source_mapping_id || finding.source_file)
+  const narrowerAssertion = /web_reg_find.*Search=ALL/i.test(finding?.detail || '')
+  const runtimeDiagnostic = selected?.category === 'runtime' && !!finding?.code.startsWith('diagnostic:')
+  const issueImpact = selected?.category === 'values' ? finding?.code.startsWith('conditional_') ? 'A possible producer exists, but its order or execution path needs review. It must run before the selected request.' : 'This value has no reachable producer. Bind an existing value, add test data, or extract it from a preceding response.' : selected?.category === 'bodies' ? 'The original payload could not be restored. Supply the body below; previews keep its contents protected.' : finding?.code === 'legacy_tls_replacement' ? 'The source uses legacy TLS behavior. Choose a supported replacement and preview the migration.' : narrowerAssertion ? 'The converted check can miss text outside the main response body. Verify the intended assertion before replay.' : runtimeDiagnostic ? 'Some imported settings need an explicit choice or have no editable equivalent. Review their source values and replay consequences below.' : finding?.detail || 'Inspect the evidence and choose an available resolution below.'
   const previewCounts = preview ? groupImportFindings(preview.findings, preview.script) : []
   const previewContent = preview && <section className="lr-repair-preview" aria-label="Redacted repair preview">
     <h4>Review this change</h4>
     <p>{previewCounts.filter(i => i.blocking).length} grouped issues block replay after this change. {preview.readiness.replay_ready ? 'Static replay checks passed; target replay is not verified.' : 'Execution remains blocked.'}</p>
+    <h5>Fields changed</h5><ul>{changedRepairPaths(preview.before, preview.script).map(path => <li key={path}><code>{path}</code></li>)}</ul><p>Only field paths are summarized here; protected values remain hidden. Up to 100 changed fields are listed.</p>
     {!!preview.readiness.unresolved_bindings && <p>{preview.readiness.unresolved_bindings} unresolved credential requirements remain.</p>}
     {preview.allocation && <div className="lr-issue-table"><table><thead><tr><th>Parameter</th><th>Usable rows</th><th>Block per VUser</th><th>VUsers</th></tr></thead><tbody>{preview.allocation.map(p => <tr key={p.name}><td>{p.name}</td><td>{p.rows}</td><td>{p.block_size}</td><td>{p.population}</td></tr>)}</tbody></table></div>}
     <details><summary>Redacted before / after</summary><pre>{JSON.stringify({ before: preview.before, after: preview.script }, null, 2)}</pre></details>
-    {pending && pending.operation.type !== 'preview_allocation' && <button className="btn btn-primary" type="button" disabled={locked} onClick={() => run(pending.operation, true)}>Apply reviewed repair</button>}
+    {pending && pending.operation.type !== 'preview_allocation' && <div className="lr-issue-action-row"><button className="btn btn-primary" type="button" disabled={locked} onClick={() => run(pending.operation, true)}>Apply reviewed repair</button></div>}
   </section>
   return <section className="lr-issue-workspace" aria-label={view === 'data' ? 'Preview unique data allocation' : 'Guided import repair'} hidden={view === 'hidden' || (view === 'data' && (!hasUniqueParameters || (!!settings && settings.dataView !== 'allocation')))}>
     <p className="lr-repair-announcement" role="status">{announcement || (loading ? 'Checking current repair requirements…' : '')}</p>
     {view !== 'data' ? <>
-      <div className="lr-issue-workspace-heading"><div><h3>Resolve import issues</h3><p>{blocked} grouped issues block replay · {reviewCount} need review · {resolved.length} resolved in this session</p></div>
-        <button type="button" className="btn btn-primary" disabled={locked || !issues.length} onClick={() => { setFilter('all'); setSearch(''); choose(issues.find(i => i.id !== selection) || issues[0]) }}>Resolve next issue</button>
-      </div>
-      <p className="lr-subtitle">Repeated findings are grouped by value and execution scope. Request locations remain available inside each issue.</p>
-      {!candidate.startsWith('protected:') && <p className="lr-warnings">Guided repair requires a protected import candidate. Re-import with encrypted import storage configured. You can still inspect the findings and source.</p>}
-      {expired && <p className="lr-warnings">This protected draft has expired. Re-import the archive to make changes; the findings remain available for inspection.</p>}
-      <div className="lr-issue-toolbar"><label>Find an issue<input type="search" value={search} placeholder="Search values or source locations" onChange={e => setSearch(e.target.value)} /></label>
-        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All unresolved ({issues.length})</option><option value="blockers">Needs repair ({blocked})</option><option value="review">Needs review ({reviewCount})</option><option value="resolved">Resolved ({resolved.length})</option></select></label>
+      <ImportReviewSectionHeader title="Resolve import issues" description={`${resolved.length} resolved in this session. Repeated findings are grouped; request locations are available within each issue.`} actions={
+        <button type="button" className="btn btn-primary" disabled={busy || loading || filter === 'resolved' || !nextIssue || nextIssue.id === selection} onClick={() => nextIssue && choose(nextIssue)}>Next unresolved issue</button>
+      } />
+      {(expired || (!candidate.startsWith('protected:') && issues.some(issue => issue.findings.some(item => issueRepairOptions(item.code).length > 0)))) && <div className="lr-issue-unavailable" role="status"><strong>{expired ? 'This protected draft has expired' : 'Protected repairs unavailable for this draft'}</strong><p>{expired ? 'Revalidate the archive to renew its repair session.' : 'Body, correlation, and TLS repairs require encrypted import storage. Existing settings and credential editors remain available when supported.'}</p>{onReimport && <button type="button" className="btn btn-secondary btn-sm" onClick={onReimport}>Open archive setup to revalidate</button>}</div>}
+      <div className="import-review-toolbar"><label>Find an issue<input type="search" value={search} placeholder="Search values or source locations" onChange={e => setSearch(e.target.value)} /></label>
+        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All unresolved ({issues.length})</option><option value="blockers">Needs repair ({blocked})</option><option value="review">Needs review ({reviewCount})</option><option value="resolved">Resolved ({resolved.length})</option><option value="reviewed">Reviewed with limitation ({issues.filter(issue => reviewed.has(issue.id)).length})</option></select></label>
+        <label>Issue category<select value={category} onChange={e => { setCategory(e.target.value as IssueCategory | 'all'); setSelection(''); resetPreview() }}><option value="all">All categories</option>{(Object.keys(issueCategories) as IssueCategory[]).map(key => <option value={key} key={key}>{issueCategories[key]}</option>)}</select></label>
+        <span role="status">{shown.length} matching issues</span>
       </div>
       <div className="lr-issue-layout"><div className="lr-issue-queue" aria-label="Import issue queue">
         {(Object.keys(issueCategories) as IssueCategory[]).map(category => {
           const rows = shown.filter(i => i.category === category)
           if (!rows.length) return null
-          return <details key={category} open><summary>{issueCategories[category]} <span>{rows.length} issues</span></summary><ul>{rows.map(issue => <li key={issue.id}><button type="button" className="lr-issue-row" aria-pressed={selection === issue.id} onClick={() => choose(issue)} disabled={busy}>
-            <span className="lr-issue-row-title">{issue.title}</span><span className="lr-issue-row-meta">{filter === 'resolved' ? 'Resolved' : issue.blocking ? 'Blocks replay' : 'Needs review'} · {issue.findings.length} affected {issue.findings.length === 1 ? 'location' : 'locations'}</span>
+          return <details key={category} open><summary>{issueCategories[category]} <span>{rows.length} issues</span></summary><ul>{rows.map(issue => <li key={issue.id}><button type="button" className="lr-issue-row" aria-pressed={selection === issue.id} onClick={() => choose(issue)} disabled={busy} onKeyDown={event => {
+              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+              event.preventDefault()
+              const buttons = Array.from(event.currentTarget.closest('.lr-issue-queue')?.querySelectorAll<HTMLButtonElement>('.lr-issue-row:not(:disabled)') || []).filter(button => button.closest('details')?.open !== false)
+              const index = buttons.indexOf(event.currentTarget)
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+              buttons[next]?.focus()
+            }}>
+            <span className="lr-issue-row-title">{issue.title}</span><span className="lr-issue-row-meta">{filter === 'resolved' ? 'Resolved' : reviewed.has(issue.id) ? 'Reviewed with limitation' : issue.blocking ? 'Blocks replay' : 'Needs review'} · {issueScope(issue)}</span>
           </button></li>)}</ul></details>
         })}
         {!shown.length && <p>{search ? 'No issues match this search.' : filter === 'resolved' ? 'Applied repairs will appear here when their issues are resolved.' : 'No issues in this view.'}</p>}
       </div><section className="lr-issue-detail" aria-label="Selected issue">
         {!selected || !finding ? <><h4>Select an issue to get started</h4><p>See its impact, inspect the source, and preview the repair before applying it.</p></> : <>
-          <h4 tabIndex={-1} ref={detailRef}>{selected.title}</h4>
-          <p><strong>{selectedResolved ? 'Resolved' : selected.blocking ? 'Blocks replay' : 'Review decision required'}</strong> · {selected.findings.length} affected locations</p>
-          <p>{selected.category === 'values' ? finding.code.startsWith('conditional_') ? 'A possible producer exists, but its order or execution path needs review. Check that it runs before the selected consumer.' : 'This value has no reachable producer in the imported draft. Bind a value, add a parameter, or extract it from a preceding response.' : selected.category === 'bodies' ? 'The original payload could not be restored during import. Supply the restored body; previews will keep its contents protected.' : selected.category === 'runtime' ? 'The source behavior needs a supported replacement. Review the migration before applying it.' : finding.detail || 'Inspect the source evidence and resolve this requirement in the relevant review section.'}</p>
-          {finding.detail && !finding.detail.includes('imported behavior has an unresolved') && <details><summary>Diagnostic evidence</summary><p>{finding.detail}</p></details>}
-          <details className="lr-issue-occurrences"><summary>Affected requests and source evidence ({selected.findings.length})</summary><ul>{selected.findings.map(f => <li key={`${f.action_path}:${f.code}`}><strong>{entries.find(e => e.path === f.action_path)?.action.name || f.action_path || 'Script requirement'}</strong><span>{f.source_ref || 'Source location unavailable'}</span>{f.action_path && onViewSource && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onViewSource(f.action_path!)}>View source</button>}<code>{f.action_path}</code></li>)}</ul></details>
-          {selectedResolved ? <p>This issue was removed by an applied repair. Remaining requirements are evaluated independently.</p> : canRepair && options.length ? <div className="lr-repair-form">
+          <header className="lr-issue-detail-heading"><h4 tabIndex={-1} ref={detailRef} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.currentTarget.closest('.lr-issue-layout')?.querySelector<HTMLButtonElement>('.lr-issue-row[aria-pressed="true"]')?.focus() } }}>{selected.title}</h4>
+          <p><strong>{selectedResolved ? 'Resolved' : reviewed.has(selected.id) ? 'Reviewed with limitation · this session' : selected.blocking ? 'Blocks replay' : 'Needs review'}</strong><span>{issueScope(selected)}</span></p></header>
+          <section aria-label="Problem and impact"><h5>Why this matters</h5><p>{issueImpact}</p></section>
+          {narrowerAssertion && <dl className="lr-issue-comparison"><div><dt>Source behavior</dt><dd>Search all response content</dd></div><div><dt>Current replay behavior</dt><dd>Search the main response body only</dd></div></dl>}
+          {issueLocation && <p className="lr-issue-location"><strong>Location</strong> {issueLocation} {canViewSource && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onViewSource?.(finding.action_path || '', finding)}>Inspect {finding.source_ref || 'selected request'}</button>}</p>}
+          {runtimeDiagnostic && <ImportIssueRuntimeEditor script={script} migrationPending={issues.some(issue => issue.findings.some(item => item.code === 'legacy_tls_replacement'))} />}
+          {selected.category === 'credentials' && onCredentialTarget && view === 'overview' && <section aria-label="Fix credential bindings here"><h5>Configure credentials</h5><div ref={onCredentialTarget} /></section>}
+          {selectedResolved ? <p>This issue was removed by an applied repair. Remaining requirements are evaluated independently.</p> : canRepair && options.length ? <div className="lr-repair-form"><h5>Fix this issue</h5>
             <label>Repair operation<select aria-label="Repair operation" value={kind} disabled={locked} onChange={e => { setKind(e.target.value); setValue(''); resetPreview() }}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
             {selected.findings.length > 1 && <label>Consumer to repair<select aria-label="Repair finding" value={finding.action_path || ''} disabled={locked} onChange={e => { setOccurrence(e.target.value); setResponsePath(''); resetPreview() }}>{selected.findings.map(f => <option key={f.action_path} value={f.action_path}>{f.source_ref || f.action_path} — {entries.find(e => e.path === f.action_path)?.action.name || f.action_path}</option>)}</select></label>}
             <p className="lr-subtitle">{kind === 'add_parameter' ? 'Adds a script-wide parameter. Preview checks which occurrences it satisfies.' : 'Repairs the selected consumer or setting. Other occurrences stay unresolved until the updated checks prove they are satisfied.'}</p>
             {kind === 'add_extractor' && <><label>Preceding response<select aria-label="Preceding response path" value={responsePath} disabled={locked} onChange={e => { setResponsePath(e.target.value); resetPreview() }}><option value="">Choose a preceding response</option>{preceding.map(e => <option key={e.path} value={e.path}>{e.action.name || e.path} · {e.path}</option>)}</select></label><label>Extractor type<select value={extractorType} disabled={locked} onChange={e => { setExtractorType(e.target.value); resetPreview() }}><option value="jsonpath">JSONPath</option><option value="regex">Regular expression</option></select></label></>}
             {kind === 'select_tls' ? <label>Minimum TLS<select value={value || '1.2'} disabled={locked} onChange={e => { setValue(e.target.value); resetPreview() }}><option value="1.2">TLS 1.2 (up to 1.3)</option><option value="1.3">TLS 1.3 only</option></select><span>This records an intentional migration change, not exact SSL 2/3 parity.</span></label> : <label>{labels[kind]}<textarea aria-label="Repair value" autoComplete="off" value={value} onChange={e => { setValue(e.target.value); resetPreview() }} disabled={locked} rows={kind === 'restore_body' ? 6 : 3} /></label>}
-            <button className="btn btn-primary" type="button" disabled={locked || (kind !== 'restore_body' && kind !== 'select_tls' && !value.trim()) || (kind === 'add_extractor' && !responsePath)} onClick={() => run(operation())}>{busy ? 'Checking repair…' : 'Preview repair'}</button>
+            <div className="lr-issue-action-row"><button className="btn btn-primary" type="button" disabled={locked || (kind !== 'restore_body' && kind !== 'select_tls' && !value.trim()) || (kind === 'add_extractor' && !responsePath)} onClick={() => run(operation())}>{busy ? 'Checking repair…' : 'Preview repair'}</button><span>Preview first. Nothing changes until you apply.</span></div>
             {previewContent}
-          </div> : <div className="lr-repair-actions"><p>{options.length ? 'Inspect the source or re-import to obtain a current protected repair candidate.' : 'This finding needs a source or configuration change. Acknowledging it alone cannot remove an execution blocker.'}</p>{onSection && <button className="btn btn-secondary" type="button" onClick={() => onSection(selected.category === 'credentials' ? 'credentials' : selected.category === 'values' ? 'data' : selected.category === 'runtime' ? 'preserved' : 'source')}>Open related review</button>}{finding.action_path && onViewSource && <button className="btn btn-secondary" type="button" onClick={() => onViewSource(finding.action_path!)}>Open source location</button>}</div>}
+          </div> : <div className="lr-repair-actions"><h5>{options.length ? 'Repair availability' : 'Available resolution'}</h5><p>{options.length ? 'Protected repairs are unavailable until this archive has a current protected draft. Use archive setup to revalidate after encrypted import storage is configured.' : selected.blocking ? 'This requires a supported source or configuration change. Reviewing the limitation cannot clear this blocker.' : 'Review the specific behavior above. A review decision records your assessment; it does not change replay behavior or prove compatibility.'}</p>
+            {onSection && selected.category !== 'review' && !(selected.category === 'credentials' && onCredentialTarget) && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onSection(selected.category === 'credentials' ? 'credentials' : selected.category === 'values' ? 'data' : selected.category === 'runtime' ? 'preserved' : 'source')}>{selected.category === 'credentials' ? 'Configure credential bindings' : selected.category === 'values' ? 'Edit data and parameters' : selected.category === 'runtime' ? 'Open all runtime settings' : 'Inspect source files'}</button>}
+            {!options.length && selected.category === 'review' && !canViewSource && <p>No unique source mapping is available. Use the diagnostic location below to find the relevant source; no unrelated mapping will be selected automatically.</p>}
+          </div>}
+          {!selectedResolved && !selected.blocking && <div className="lr-issue-review-decision"><button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { setReviewed(previous => { const next = new Set(previous); if (next.has(selected.id)) next.delete(selected.id); else next.add(selected.id); return next }); setAnnouncement('Review decision updated for this session. Replay requirements are unchanged.') }}>{reviewed.has(selected.id) ? 'Reopen review decision' : 'Mark reviewed with limitation'}</button><small>Session note only. Does not clear replay requirements or modify the script.</small></div>}
+          <details className="lr-issue-occurrences"><summary>Technical evidence and affected locations</summary>
+            {finding.detail && <p>{finding.detail}</p>}{finding.evidence?.length ? <ul>{finding.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul> : null}
+            <ul>{selected.findings.map(f => <li key={`${f.action_path}:${f.code}`}><strong>{entries.find(e => e.path === f.action_path)?.action.name || f.action_path || 'Script-wide requirement'}</strong>{f.source_ref && <span>{f.source_ref}</span>}{f.action_path && onViewSource && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onViewSource(f.action_path!, f)}>View source</button>}</li>)}</ul>
+          </details>
+
         </>}
       </section></div>
     </> : <>
-      <h3>Preview unique data allocation</h3><p>Check which data rows each VUser would receive and whether enough rows are available. This preview does not change settings or launch a run. Edit allocation rules in Parameters → Edit.</p>
+      <ImportReviewSectionHeader title="Preview unique data allocation" description="Check row capacity for the planned run without changing settings or launching a test. Edit rules in Parameters." />
       {allocationUnavailable && <p role="status">{allocationUnavailable}</p>}
       <fieldset className="lr-repair-form lr-allocation-form" disabled={!!allocationUnavailable}><legend>Planned run</legend><label>Planned VUsers<input type="number" min={1} value={users} onChange={e => { setUsers(Number(e.target.value)); setAllocationPreview(null); setAllocationUser(1) }} /></label><label>Run mode<select value={runMode} onChange={e => { setRunMode(e.target.value); setAllocationPreview(null) }}><option value="duration">Duration</option><option value="iterations">Iterations</option></select></label>{runMode === 'iterations' && <label>Iterations per VUser<input type="number" min={1} value={iterations} onChange={e => { setIterations(Number(e.target.value)); setAllocationPreview(null) }} /></label>}<button className="btn btn-secondary" type="button" disabled={!Number.isInteger(users) || users < 1 || (runMode === 'iterations' && (!Number.isInteger(iterations) || iterations < 1))} onClick={() => run({ type: 'preview_allocation', vusers: users, iterations: runMode === 'duration' ? 0 : iterations })}>{busy ? 'Calculating allocation…' : 'Preview allocation'}</button></fieldset>
       {allocationPreview && <section aria-label="Allocation result" className="lr-repair-preview"><h4>Capacity preview: {users} VUsers · {runMode === 'duration' ? 'duration run' : `${iterations} iterations per VUser`}</h4>

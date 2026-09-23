@@ -333,7 +333,7 @@ it('includes source-only categories in navigation and filters every status consi
    search.dispatchEvent(new Event('input', { bubbles: true }))
   })
   expect(container.querySelectorAll('.import-runtime-content > section')).toHaveLength(0)
-  expect(container.querySelector('[role="status"]')?.textContent).toContain('No settings match these filters')
+  expect(container.querySelector('.import-review-empty[role="status"]')?.textContent).toContain('No settings match these filters')
   expect(summary.textContent).toBe(overall)
  } finally { act(() => root.unmount()) }
 })
@@ -413,7 +413,7 @@ it('keeps only one parameter editor open and retains edits across filters and da
   await click('Data sources (0)')
   expect(container.querySelectorAll('.import-parameters-table')).toHaveLength(0)
   expect(container.textContent).toContain('Apply list')
-  await click('Allocation')
+  await click('Allocation preview')
   expect(container.textContent).toContain('Row 1')
   await click('Parameters (2)')
   await click('Edit region')
@@ -469,7 +469,7 @@ it.each([
  try {
   await act(async () => root.render(<ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportParameterInventory script={draft} /></ImportSettingsProvider>))
   expect(container.textContent).toContain(`Sample: ${sample}`)
-  expect(container.textContent).toContain('Needs attention (0)')
+  expect(container.textContent).toContain('Definition issues (0)')
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit region"]')!.click())
   expect(container.textContent).toContain('2 available rows')
   expect([...container.querySelectorAll('[aria-label="region: column"] option')].map(option => option.textContent)).toContain(column.replace(/_/g, ' '))
@@ -483,7 +483,7 @@ it('does not mark a valid remote mapping broken merely because columns are not l
  const container = document.createElement('div'); const root = createRoot(container)
  try {
   act(() => root.render(<ImportParameterInventory script={draft} />))
-  expect(container.textContent).toContain('Needs attention (0)')
+  expect(container.textContent).toContain('Definition issues (0)')
  } finally { act(() => root.unmount()) }
 })
 
@@ -516,7 +516,7 @@ it('preserves other parameter errors when one field is corrected', async () => {
   await click('Edit market'); await change('market: values', 'invalid')
   mocks.request.mockRejectedValueOnce(new ApiError('Invalid', 422, { field_errors: { 'region.values': 'Invalid region', 'market.values': 'Invalid market' } }))
   await click('Apply list'); await click('Edit region'); await change('region: values', 'valid')
-  expect(container.textContent).toContain('Needs attention (1)')
+  expect(container.textContent).toContain('Definition issues (1)')
   await click('Review list edits')
   expect(container.textContent).toContain('Invalid market')
   expect(container.querySelector('[aria-label="market: values"]')).not.toBeNull()
@@ -553,7 +553,7 @@ it('shows edit actions only for categories in the selected runtime status', asyn
   await act(async () => container.querySelector<HTMLInputElement>('.import-runtime-summary input')!.click())
   expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Edit HTTP')).toBe(false)
   expect(container.querySelectorAll('.import-runtime-content > section')).toHaveLength(0)
-  expect(container.querySelector('[role="status"]')?.textContent).toContain('Enable a mapping status')
+  expect(container.querySelector('.import-review-empty[role="status"]')?.textContent).toContain('Enable a mapping status')
   for (const count of container.querySelectorAll('.import-category-nav small')) expect(count.textContent).toBe('0')
   await act(async () => container.querySelector<HTMLInputElement>('.import-runtime-summary input')!.click())
   const edit = [...container.querySelectorAll('button')].find(button => button.textContent === 'Edit HTTP')!
@@ -575,10 +575,10 @@ it('keeps allocation controls available when changing an auto-allocated paramete
   await act(async () => root.render(<ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportParameterInventory script={draft} /></ImportSettingsProvider>))
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit region"]')!.click())
   await act(async () => { const select = container.querySelector<HTMLSelectElement>('[aria-label="region: selection"]')!; select.value = 'random'; select.dispatchEvent(new Event('change', { bubbles: true })) })
-  expect(container.textContent).toContain('Needs attention (1)')
+  expect(container.textContent).toContain('Definition issues (1)')
   expect(container.querySelector('[aria-label="region: auto allocate"]')).not.toBeNull()
   await act(async () => { const select = container.querySelector<HTMLSelectElement>('[aria-label="region: auto allocate"]')!; select.value = 'false'; select.dispatchEvent(new Event('change', { bubbles: true })) })
-  expect(container.textContent).toContain('Needs attention (0)')
+  expect(container.textContent).toContain('Definition issues (0)')
  } finally { await act(async () => root.unmount()) }
 })
 
@@ -596,4 +596,24 @@ it('exposes replay policies once, with explicit false values and source evidence
  expect(rows[0].importedSummary).toBe('Disabled')
  expect(rows[0].field?.type).toBe('boolean')
  expect(groups['Additional APEX settings'].some(row => row.path === 'config.http.dns_cache')).toBe(true)
+})
+
+it('routes unresolved TLS migration to guided repair and re-enables settings after resolution', async () => {
+ const draft = script(); draft.config.http = { ...draft.config.http, tls: { min_version: '1.2', max_version: '1.3' } }
+ const container = document.createElement('div'); const root = createRoot(container); const onReview = vi.fn()
+ const render = (migration?: () => void) => root.render(<ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportRuntimeSettingsTable script={draft} onReviewTLSMigration={migration} /></ImportSettingsProvider>)
+ const click = async (name: string) => act(async () => Array.from(container.querySelectorAll('button')).find(button => button.textContent === name)!.click())
+ try {
+  await act(async () => render(onReview))
+  await click('Edit HTTP')
+  expect(container.querySelector('[aria-label="HTTP: Minimum TLS version"]')).toBeNull()
+  await click('Review TLS migration')
+  expect(onReview).toHaveBeenCalledOnce()
+  const count = container.querySelector<HTMLInputElement>('.import-runtime-summary input')!
+  const description = container.querySelector(`[id="${count.getAttribute('aria-describedby')}"]`)
+  expect(description?.textContent).toContain('settings across all categories')
+  await act(async () => render())
+  expect(container.querySelector('[aria-label="HTTP: Minimum TLS version"]')).not.toBeNull()
+  expect(container.textContent).not.toContain('Review TLS migration')
+ } finally { await act(async () => root.unmount()) }
 })

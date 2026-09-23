@@ -1489,7 +1489,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       {inlineEditing && editing && <p role="status">Apply or cancel credential edits before saving or changing this import. New secret values stay private in this editor.</p>}
       <div className="credentials-card-summary" role="status">
         <span>{preservedGroupCount} imported value{preservedGroupCount === 1 ? '' : 's'} preserved</span>
-        <span>{prepared.configureLaterCount} bindings need setup</span>
+        <span>{prepared.configureLaterCount} {prepared.configureLaterCount === 1 ? 'binding needs' : 'bindings need'} setup</span>
         <span>{prepared.secrets.length} value{prepared.secrets.length === 1 ? '' : 's'} entered, not yet saved</span>
         <span>
           {scopedProbeState === 'loading'
@@ -1540,7 +1540,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       {sourceSessionNotice && <div className="secret-binding-review-error" role="alert">{sourceSessionNotice}</div>}
       {error && <div className="secret-binding-review-error" role="alert">{error}</div>}
 
-      <div className="credentials-review-filters">
+      <div className="import-review-toolbar">
         <label>Search credential locations<input type="search" disabled={applying || disabled} value={credentialSearch} onChange={event => { setCredentialSearch(event.target.value); setCredentialPage(0) }} /></label>
         <label>Credential state<select disabled={applying || disabled} value={credentialState} onChange={event => { setCredentialState(event.target.value); setCredentialPage(0) }}><option value="all">All groups</option><option value="setup">Needs setup</option><option value="preserved">Preserved</option><option value="ready">Configured or value entered</option></select></label>
         <label><input type="checkbox" disabled={applying || disabled} checked={attentionOnly} onChange={event => { setAttentionOnly(event.target.checked); setCredentialPage(0) }} /> Show bindings needing review</label>

@@ -43,3 +43,41 @@ describe('import issue queue', () => {
     expect(issueRepairOptions('unknown_unsupported')).toEqual([])
   })
 })
+
+it('preserves warning details and only focuses an unambiguous source mapping', async () => {
+  const { reviewSectionFindings, issueScope } = await import('./importReviewIssues')
+  const sections = [{ key: 'warnings', title: 'Conversion warnings', severity: 'warning', summary: 'Review warnings', items: ['line 28: web_reg_find Search=ALL checks the main response body only', 'Unknown source construct'] }]
+  const mapping = { id: 'assertion', source_file: 'Action.c', start_line: 28, end_line: 30, target_path: 'actions[1]', status: 'converted' }
+  const findings = reviewSectionFindings(sections, { mappings: [mapping] })
+  expect(findings[0]).toMatchObject({ title: 'Text check searches a narrower response scope', source_mapping_id: 'assertion', source_ref: 'Action.c:28', action_path: 'actions[1]' })
+  expect(findings[1].detail).toBe('Unknown source construct')
+  expect(reviewSectionFindings([{ ...sections[0], items: [...sections[0].items].reverse() }])[0].code).toBe(findings[1].code)
+  expect(groupImportFindings(findings, script)).toHaveLength(2)
+  expect(issueScope(groupImportFindings([findings[1]], script)[0])).toBe('Script-wide')
+  const ambiguous = reviewSectionFindings(sections, { mappings: [mapping, { ...mapping, id: 'other', source_file: 'Other.c' }] })
+  expect(ambiguous[0].source_mapping_id).toBeUndefined()
+  expect(ambiguous[0].action_path).toBeUndefined()
+  expect(reviewSectionFindings([])).toEqual([])
+})
+
+it('retains runtime evidence and summarizes changed paths without exposing values', async () => {
+  const { reviewSectionFindings, changedRepairPaths } = await import('./importReviewIssues')
+  const findings = reviewSectionFindings([{ key: 'runtime_settings_parity', title: 'Runtime differences', summary: 'One setting differs', severity: 'warning', items: ['Partial: HTTP / buffer size'] }])
+  expect(findings[0].evidence).toEqual(['Partial: HTTP / buffer size'])
+  expect(changedRepairPaths({ actions: [{ body: 'secret-before' }], config: { n: 0 } }, { actions: [{ body: 'secret-after' }], config: { n: 1 } })).toEqual(['actions[0].body', 'config.n'])
+  expect(changedRepairPaths({}, {})).toEqual([])
+  expect(changedRepairPaths(null, { body: 'secret' })).toEqual(['Script'])
+})
+
+ it('consolidates runtime evidence and duplicate warnings without hiding blocking coverage', async () => {
+  const { reviewSectionFindings } = await import('./importReviewIssues')
+  const parity = { title: 'Runtime parity', key: 'runtime_settings_parity', severity: 'warning', summary: 'Partial parity', items: ['Buffer'] }
+  const coverage = { title: 'Runtime coverage', key: 'runtime_settings_migration_readiness', severity: 'warning', summary: 'Preserved settings', items: ['Timeout'] }
+  const warnings = { title: 'Warnings', key: 'warnings', severity: 'warning', summary: '', items: ['line 2: web_reg_find Search=ALL', 'line 2: web_reg_find Search=ALL'] }
+  const findings = reviewSectionFindings([parity, coverage, warnings])
+  expect(findings).toHaveLength(2)
+  expect(findings[0].evidence).toEqual(['Buffer', 'Preserved settings', 'Timeout'])
+  expect(reviewSectionFindings([parity, { ...coverage, severity: 'blocker' }])).toHaveLength(2)
+  const mapping = { id: 'assertion', function: 'web_reg_find', source_file: 'Action.c', start_line: 2, end_line: 2, status: 'contributor' }
+  expect(reviewSectionFindings([warnings], { mappings: [mapping, { ...mapping, id: 'request', function: 'web_url', source_file: 'Other.c' }] })[0].source_mapping_id).toBe('assertion')
+ })

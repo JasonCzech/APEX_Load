@@ -1,6 +1,7 @@
 import { type ReactNode, useId } from 'react'
 import TabList from './ux/TabList'
 import './ImportReviewTabs.css'
+import './ImportReviewWorkspace.css'
 
 const IMPORT_REVIEW_TABS = [
   { id: 'review', label: 'Review' },
@@ -23,9 +24,10 @@ export default function ImportReviewTabs({ active, onChange, counts = {}, childr
     <TabList className="import-review-tabs" aria-label="Import review sections">
       {IMPORT_REVIEW_TABS.map(tab => <button type="button" key={tab.id}
         id={`${id}-${tab.id}`} role="tab" aria-label={tab.label}
+        aria-describedby={(counts[tab.id] || 0) > 0 ? `${id}-${tab.id}-count` : undefined}
         aria-selected={active === tab.id} aria-controls={`${id}-panel`}
         tabIndex={active === tab.id ? 0 : -1} onClick={() => onChange(tab.id)}>
-        {tab.label}{(counts[tab.id] || 0) > 0 && <span aria-hidden="true">{counts[tab.id]}</span>}
+        {tab.label}{(counts[tab.id] || 0) > 0 && <><span aria-hidden="true">{counts[tab.id]}</span><small id={`${id}-${tab.id}-count`} className="import-review-count-description">{counts[tab.id]} review items</small></>}
       </button>)}
     </TabList>
     <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${active}`} className="import-review-panel">{children}</div>

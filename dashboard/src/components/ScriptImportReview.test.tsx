@@ -82,12 +82,12 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector('pre')!.textContent).not.toContain('Create Order')
   })
 
-  it('lets an external review tab keep original diagnostics out of runtime settings', () => {
+  it('omits original diagnostics when the importer supplies its own issue workspace', () => {
     const render = (show: boolean) => act(() => root.render(<ScriptImportReview compactReview title="Archive review" script={script}
       showCredentials={false} showDataReview={false} showPreview={false} showPreviewAside={false} showOriginalDiagnostics={show}
       warnings={['Original runtime warning']} />))
     render(false)
-    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(true)
+    expect(container.querySelector('.script-import-review-original-diagnostics')).toBeNull()
     render(true)
     const diagnostics = container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')!
     expect(diagnostics.hidden).toBe(false)

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -929,7 +929,7 @@ describe('SourceMappingReview', () => {
     })
     await flushPromises()
 
-    const sourceMaximize = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Focus source') as HTMLButtonElement | undefined
+    const sourceMaximize = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Expand source') as HTMLButtonElement | undefined
     expect(sourceMaximize).toBeDefined()
     if (!sourceMaximize) return
 
@@ -1007,6 +1007,14 @@ describe('SourceMappingReview', () => {
     await act(async () => { select.value = sourceReview.source_files[0].path; select.dispatchEvent(new Event('change', { bubbles: true })) })
     await act(async () => { root.render(<SourceMappingReview sourceReview={{ ...withRuntime }} script={script} focusedSourceFile="default.cfg" focusRequestId={1} />) })
     expect(select.value).toBe(sourceReview.source_files[0].path)
+  })
+
+  it('retains the requested mapping when StrictMode replays mount effects', async () => {
+    await act(async () => {
+      root.render(<StrictMode><SourceMappingReview focusedMappingId="logout" focusRequestId={1} sourceReview={sourceReview} script={script} /></StrictMode>)
+    })
+    await flushPromises()
+    expect(container.querySelector('tr.active')?.getAttribute('data-mapping-id')).toBe('logout')
   })
 
   it('keeps a clicked table row from snapping back to an earlier external focus target', async () => {

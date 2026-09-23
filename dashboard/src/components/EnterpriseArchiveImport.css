@@ -948,3 +948,77 @@
 .lr-import-reviewed .lr-file-list { max-height: 140px; overflow: auto; }
 .lr-import-reviewed .lr-file-queue { gap: 8px; }
 .lr-validation-review-panel .script-import-review-preview-aside[hidden] { display: none; }
+
+/* Consistent tab interiors; task-specific tables and comparison panes remain distinct. */
+.lr-validation-review-panel .lr-issue-workspace { border: 0; border-radius: 0; background: transparent; }
+.lr-validation-review-panel .import-credentials-introduction { padding: 20px 20px 0; }
+.lr-validation-review-panel .script-import-review-preview { padding: 20px; }
+.lr-validation-review-panel .script-import-review-preview > summary { padding: 0; margin-bottom: 16px; }
+.lr-validation-review-panel .script-import-review-preview h4 { font-size: 18px; text-transform: none; letter-spacing: normal; color: var(--text-primary); }
+.lr-validation-review-panel .script-import-review-preview > p { max-width: 80ch; color: var(--text-secondary); font-size: 14px; margin: 12px 0; }
+.lr-validation-review-panel .script-import-review-preview .lr-preview-toolbar { padding: 0; }
+.lr-validation-review-panel .script-import-review-preview-note { padding: 12px 16px; border: 1px solid var(--border); border-radius: 6px; margin: 12px 0; font-size: 14px; color: var(--text-secondary); }
+.lr-validation-review-panel .source-map-header { flex-direction: column; align-items: stretch; gap: 0; }
+.lr-validation-review-panel .source-map-incomplete { padding: 12px 16px; }
+.lr-validation-review-panel .source-map-incomplete p { margin: 6px 0; }
+.lr-validation-review-panel .source-map-coverage { gap: 8px; margin-bottom: 12px; }
+.lr-validation-review-panel .source-map-status-filter { border-radius: 5px; min-height: 36px; padding: 6px 10px; font-size: 13px; }
+.lr-validation-review-panel .secret-binding-review h4 { text-transform: none; letter-spacing: normal; font-size: 15px; }
+.lr-validation-review-panel .credentials-card-summary span { border: 0; border-radius: 0; background: transparent; padding: 0 12px 0 0; font-size: 13px; }
+.lr-validation-review-panel .import-review-suggestions > summary { padding: 16px; }
+.lr-validation-review-panel .import-review-toolbar :is(input[type=search], select) { min-height: 40px; }
+.lr-validation-review-tabs { position: sticky; top: 64px; z-index: 5; background: var(--bg-card, var(--bg-primary)); }
+
+.lr-validation-review-panel .lr-parameter-inventory { margin: 0; }
+.lr-validation-review-panel .source-map-review { padding: 20px; }
+.lr-validation-review-panel .import-review-section-heading h3 { margin: 0; }
+.lr-validation-review-panel .source-map-header .import-review-section-heading p { margin: 8px 0 0; font-size: 14px; color: var(--text-secondary); }
+
+.lr-validation-review-panel .source-map-toolbar { align-items: end; justify-content: flex-start; margin: 0; }
+.lr-validation-review-panel .source-map-toolbar label { flex: 1 1 260px; max-width: 600px; }
+.lr-validation-review-panel .source-map-toolbar label > span { font-size: 13px; color: var(--text-primary); text-transform: none; letter-spacing: normal; }
+.lr-validation-review-panel .source-map-toolbar :is(input, select) { min-height: 40px; font-size: 13px; }
+.lr-validation-review-panel .source-map-panel-header { grid-template-rows: auto auto; }
+.lr-validation-review-panel .source-map-panel-header > div { flex-wrap: wrap; overflow-x: visible; }
+/* Clip rounded result edges without creating a scroll container that disables sticky tabs. */
+.lr-result:has(.lr-validation-review-tabs) { overflow: clip; }
+@media (max-width: 1000px) {
+  /* Keep the review tabs available without stacking them under a wrapping page header. */
+  .main-content:has(.lr-import-reviewed) > .main-topbar { position: static; }
+  .lr-validation-review-tabs { top: 0; }
+}
+.lr-validation-review-tabs { background: var(--bg-primary); }
+.lr-validation-review-panel .import-review-suggestions h4 { font-size: 15px; text-transform: none; letter-spacing: normal; color: var(--text-primary); }
+@media (min-width: 1001px) {
+  .lr-validation-review-tabs { flex-wrap: nowrap; }
+  .lr-validation-review-panel .import-category-nav { top: 7.5rem; max-height: calc(100vh - 9rem); }
+  .lr-validation-review-panel .import-category-editbar { top: 7.5rem; }
+  .lr-validation-review-panel .import-runtime-table thead th { top: 10.5rem; }
+}
+
+/* Issue resolution keeps the queue stable while the detail pane does the work. */
+.lr-issue-detail-heading { border-bottom: 1px solid var(--border); margin-bottom: 20px; padding-bottom: 12px; }
+.lr-issue-detail-heading h4 { font-size: 18px; line-height: 1.4; }
+.lr-issue-detail-heading p { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 0; }
+.lr-issue-detail h5 { margin: 20px 0 8px; font-size: 14px; color: var(--text-primary); }
+.lr-issue-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.lr-issue-comparison > div { padding: 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); }
+.lr-issue-comparison dt { font-size: 12px; color: var(--text-secondary); }
+.lr-issue-comparison dd { margin: 8px 0 0; color: var(--text-primary); }
+.lr-issue-location { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; overflow-wrap: anywhere; }
+.lr-issue-unavailable { border-left: 3px solid var(--border); padding: 12px 16px; margin: 16px 0; background: var(--bg-secondary); }
+.lr-issue-unavailable p { margin: 4px 0 10px; font-size: 13px; }
+.lr-issue-action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 0; position: sticky; bottom: 0; background: var(--bg-primary); z-index: 2; }
+.lr-issue-action-row span, .lr-issue-review-decision small { font-size: 13px; color: var(--text-secondary); }
+.lr-issue-review-decision { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 16px 0; border-top: 1px solid var(--border); margin-top: 20px; }
+.lr-issue-detail .lr-repair-actions { display: block; }
+.lr-issue-runtime-editor .import-settings-table { width: 100%; min-width: 0; table-layout: fixed; }
+.lr-issue-runtime-editor .import-settings-table :is(th, td) { white-space: normal; overflow-wrap: anywhere; }
+.lr-issue-runtime-editor .import-settings-table :is(input, select) { width: 100%; min-width: 0; }
+.lr-issue-runtime-editor th small { display: block; font-weight: 400; white-space: pre-wrap; color: var(--text-secondary); margin-top: 6px; }
+.lr-issue-edit-controls { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 12px 0; }
+.lr-issue-setting-actions:has(.lr-issue-action-row) { flex-basis: 100%; }
+.lr-issue-setting-actions li { overflow-wrap: anywhere; }
+.lr-issue-detail .import-credentials-introduction { padding: 0; }
+.lr-issue-detail .secret-binding-review { padding: 0; border: 0; }
+@media (max-width: 760px) { .lr-issue-comparison { grid-template-columns: 1fr; } .lr-issue-action-row { position: static; } }
