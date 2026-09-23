@@ -73,6 +73,11 @@ func (h *HTTP) ConfigureVerification(v protocol.Verification) error {
 	return nil
 }
 func (h *HTTP) verificationContext(ctx context.Context) (context.Context, *verificationObservation) {
+	if ctx.Value(metaRefreshContextKey{}) != nil {
+		o, _ := ctx.Value(verificationContextKey{}).(*verificationObservation)
+		return ctx, o
+	}
+
 	h.verificationMu.RLock()
 	defer h.verificationMu.RUnlock()
 	o := &verificationObservation{}

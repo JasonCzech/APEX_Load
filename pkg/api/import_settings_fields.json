@@ -1,4 +1,10 @@
 [
+  {"category": "Diagnostics", "path": "config.results.message_detail.mode", "label": "Exchange capture", "type": "select", "options": ["off", "errors", "sampled", "adaptive"]},
+  {"category": "Diagnostics", "path": "config.results.message_detail.sample_rate", "label": "Capture sample rate", "type": "number"},
+  {"category": "Diagnostics", "path": "config.results.message_detail.include_resources", "label": "Include fetched resources", "type": "boolean"},
+  {"category": "Diagnostics", "path": "config.results.message_detail.max_items", "label": "Retained exchange limit", "type": "number"},
+  {"category": "Diagnostics", "path": "config.results.message_detail.max_item_bytes", "label": "Bytes per exchange", "type": "number"},
+  {"category": "Diagnostics", "path": "config.results.message_detail.max_total_bytes", "label": "Total capture bytes", "type": "number"},
   {
     "category": "Think time",
     "path": "config.think_time.type",
@@ -253,7 +259,8 @@
     "options": [
       "none",
       "system",
-      "custom"
+      "custom",
+      "pac"
     ]
   },
   {
@@ -436,5 +443,113 @@
     "path": "config.log.extended_options",
     "label": "Extended log options",
     "type": "lines"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.http_errors_as_warnings",
+    "label": "HTTP errors as warnings",
+    "type": "boolean"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.fail_noncritical_resources",
+    "label": "Fail on non-critical resource errors",
+    "type": "boolean"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.resource_timeout_as_warning",
+    "label": "Resource timeouts as warnings",
+    "type": "boolean"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.legacy_html_checks",
+    "label": "Legacy HTML checks",
+    "type": "boolean"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.dns_cache",
+    "label": "Per-VUser DNS cache",
+    "type": "boolean"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.challenge_delay_ms",
+    "label": "Digest authentication delay (ms)",
+    "type": "number"
+  },
+  {
+    "category": "Error handling",
+    "path": "config.error_handling.fail_transaction_on_error_message",
+    "label": "Fail open transactions on error message",
+    "type": "boolean"
+  },
+  {
+    "category": "Browser emulation",
+    "path": "config.browser_emulation.cache.clear_cache_for_new_user",
+    "label": "Clear cache for a new user",
+    "type": "boolean"
+  },
+  {
+    "category": "Logging",
+    "path": "config.log.max_response_bytes",
+    "label": "Response-log limit (bytes; 0 uses engine bound)",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.receive_buffer_bytes",
+    "label": "Response read buffer (bytes)",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.max_meta_refresh",
+    "label": "Meta-refresh limit per URL",
+    "type": "number"
+  },
+  {
+    "category": "HTTP",
+    "path": "config.http.content_check_error_limit",
+    "label": "Content-check error match limit",
+    "type": "number"
+  },
+  {
+    "category": "Logging",
+    "path": "config.log.error_buffer_bytes",
+    "label": "Error history buffer (bytes)",
+    "type": "number"
+  },
+  {
+    "category": "Browser",
+    "path": "config.browser.system_language",
+    "label": "Emulated system language",
+    "type": "text"
+  },
+  {
+    "category": "Browser",
+    "path": "config.browser.available_screen_width",
+    "label": "Available screen width",
+    "type": "number"
+  },
+  {
+    "category": "Browser",
+    "path": "config.browser.available_screen_height",
+    "label": "Available screen height",
+    "type": "number"
+  },
+  {
+    "category": "Proxy",
+    "path": "config.http.proxy.pac_url",
+    "label": "PAC URL (bounded evaluator)",
+    "type": "text"
+  },
+  {
+    "category": "WebSocket",
+    "path": "config.websocket.callback_interval_ms",
+    "label": "Callback dispatch interval (ms)",
+    "type": "number"
   }
 ]

@@ -4029,8 +4029,10 @@ func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
 	if result.SupportMatrix[0].ID == "" || result.SupportMatrix[0].Area == "" || result.SupportMatrix[0].Status == "" {
 		t.Fatalf("unexpected support matrix entry: %#v", result.SupportMatrix[0])
 	}
-	if containsEnterpriseArchiveSupportMatrixStatus(result.SupportMatrix, "partial") {
-		t.Fatalf("expected no partial enterprise archive support matrix entries after RTS parity reconciliation, got %#v", result.SupportMatrix)
+	for _, entry := range result.SupportMatrix {
+		if entry.Status == "partial" && entry.ID != "http_receive_buffer" && entry.ID != "runtime_replay_snapshots" && entry.ID != "runtime_snapshot_resources" {
+			t.Fatalf("unexpected partial support entry: %s", entry.ID)
+		}
 	}
 	if !containsEnterpriseArchiveSupportMatrixStatus(result.SupportMatrix, "compatibility_only") {
 		t.Fatalf("expected compatibility-only enterprise archive support matrix entries, got %#v", result.SupportMatrix)

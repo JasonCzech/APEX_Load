@@ -82,6 +82,30 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector('pre')!.textContent).not.toContain('Create Order')
   })
 
+  it('lets an external review tab keep original diagnostics out of runtime settings', () => {
+    const render = (show: boolean) => act(() => root.render(<ScriptImportReview compactReview title="Archive review" script={script}
+      showCredentials={false} showDataReview={false} showPreview={false} showPreviewAside={false} showOriginalDiagnostics={show}
+      warnings={['Original runtime warning']} />))
+    render(false)
+    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(true)
+    render(true)
+    const diagnostics = container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')!
+    expect(diagnostics.hidden).toBe(false)
+    expect(diagnostics.open).toBe(false)
+    expect(diagnostics.querySelector('summary')?.textContent).toBe('Original import diagnostics')
+    act(() => diagnostics.querySelector<HTMLButtonElement>('button')!.click())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Original runtime warning')
+  })
+
+  it('keeps original diagnostics on Review in the shared tabbed importer', () => {
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="Import review" script={script} warnings={['Original runtime warning']} />))
+    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(false)
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Runtime settings"]')!.click())
+    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(true)
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Review"]')!.click())
+    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(false)
+  })
+
   it('redacts arbitrary credential paths in the correct multi-script preview', () => {
     act(() => root.render(<ScriptImportReview tabbed title="Batch review" script={script}
       previewData={{ scripts: [script, { ...script, config: { base_url: '', custom: 'batch-secret-canary' } }] }}

@@ -24,7 +24,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
                 "type": "string"
               },
               "body_file": {
@@ -87,7 +87,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
                 "type": "string"
               },
               "body_file": {
@@ -150,7 +150,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
                 "type": "string"
               },
               "body_file": {
@@ -213,7 +213,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
                 "type": "string"
               },
               "body_file": {
@@ -276,7 +276,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
                 "type": "string"
               },
               "body_file": {
@@ -339,7 +339,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
                 "type": "string"
               },
               "body_file": {
@@ -402,7 +402,7 @@
                 "type": "string"
               },
               "body_encoding": {
-                "description": "Body encoding hint, e.g. base64 for binary payloads.",
+                "description": "Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail.",
                 "type": "string"
               },
               "body_file": {
@@ -6204,6 +6204,49 @@
             "properties": {
               "type": {
                 "enum": [
+                  "ws_dispatch"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Waits until the next callback interval and dispatches queued messages serially."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "ws_on_message"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.",
+            "properties": {
+              "control": {
+                "description": "control.steps executes for each queued message; var.ws_message and var.ws_message_type contain the event.",
+                "type": "object"
+              }
+            },
+            "required": [
+              "control"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "ws_ping"
                 ]
               }
@@ -6551,6 +6594,8 @@
             "winsock_udp",
             "ws_close",
             "ws_connect",
+            "ws_dispatch",
+            "ws_on_message",
             "ws_ping",
             "ws_receive",
             "ws_send"
@@ -6586,6 +6631,9 @@
       "additionalProperties": false,
       "properties": {
         "expected": true,
+        "legacy_html_check": {
+          "type": "boolean"
+        },
         "max": {
           "type": "integer"
         },
@@ -6629,6 +6677,9 @@
           "type": "boolean"
         },
         "check_newer_versions": {
+          "type": "boolean"
+        },
+        "clear_cache_for_new_user": {
           "type": "boolean"
         },
         "download_non_html_resources": {
@@ -6685,6 +6736,16 @@
     "BrowserConfig": {
       "additionalProperties": false,
       "properties": {
+        "available_screen_height": {
+          "maximum": 8192,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "available_screen_width": {
+          "maximum": 8192,
+          "minimum": 0,
+          "type": "integer"
+        },
         "cache_content_urls": {
           "type": "boolean"
         },
@@ -6760,6 +6821,9 @@
           "maximum": 3600000,
           "minimum": 0,
           "type": "integer"
+        },
+        "system_language": {
+          "type": "string"
         },
         "timezone": {
           "type": "string"
@@ -7037,6 +7101,12 @@
         "fail_if_found": {
           "type": "boolean"
         },
+        "left_boundary": {
+          "type": "string"
+        },
+        "right_boundary": {
+          "type": "string"
+        },
         "scope": {
           "type": "string"
         },
@@ -7238,6 +7308,9 @@
       "additionalProperties": false,
       "properties": {
         "continue_on_error": {
+          "type": "boolean"
+        },
+        "fail_transaction_on_error_message": {
           "type": "boolean"
         },
         "max_retries": {
@@ -7480,10 +7553,20 @@
           "minimum": 0,
           "type": "integer"
         },
+        "challenge_delay_ms": {
+          "maximum": 3600000,
+          "minimum": 0,
+          "type": "integer"
+        },
         "clear_cookies_per_iteration": {
           "type": "boolean"
         },
         "connect_timeout_ms": {
+          "type": "integer"
+        },
+        "content_check_error_limit": {
+          "maximum": 1000,
+          "minimum": 0,
           "type": "integer"
         },
         "cookies_enabled": {
@@ -7497,6 +7580,12 @@
             "type": "string"
           },
           "type": "object"
+        },
+        "dns_cache": {
+          "type": "boolean"
+        },
+        "fail_noncritical_resources": {
+          "type": "boolean"
         },
         "html_excluded_mime_types": {
           "items": {
@@ -7513,6 +7602,9 @@
           ],
           "type": "string"
         },
+        "http_errors_as_warnings": {
+          "type": "boolean"
+        },
         "idle_timeout_ms": {
           "type": "integer"
         },
@@ -7528,10 +7620,18 @@
         "keep_alive": {
           "type": "boolean"
         },
+        "legacy_html_checks": {
+          "type": "boolean"
+        },
         "max_conns_per_host": {
           "type": "integer"
         },
         "max_idle_conns": {
+          "type": "integer"
+        },
+        "max_meta_refresh": {
+          "maximum": 50,
+          "minimum": 0,
           "type": "integer"
         },
         "max_redirects": {
@@ -7548,8 +7648,16 @@
         "proxy_mode": {
           "type": "string"
         },
+        "receive_buffer_bytes": {
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
+        },
         "request_timeout_ms": {
           "type": "integer"
+        },
+        "resource_timeout_as_warning": {
+          "type": "boolean"
         },
         "tls": {
           "$ref": "#/$defs/TLSConfig"
@@ -7956,6 +8064,11 @@
     "LogConfig": {
       "additionalProperties": false,
       "properties": {
+        "error_buffer_bytes": {
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
+        },
         "extended_options": {
           "items": {
             "type": "string"
@@ -7964,6 +8077,11 @@
         },
         "level": {
           "type": "string"
+        },
+        "max_response_bytes": {
+          "maximum": 1048576,
+          "minimum": 0,
+          "type": "integer"
         },
         "on_error_only": {
           "type": "boolean"
@@ -7977,6 +8095,9 @@
     "MessageDetailConfig": {
       "additionalProperties": false,
       "properties": {
+        "include_resources": {
+          "type": "boolean"
+        },
         "max_item_bytes": {
           "maximum": 16777216,
           "minimum": 0,
@@ -8285,6 +8406,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "pac_url": {
+          "type": "string"
         },
         "password": {
           "type": "string"
@@ -8840,6 +8964,11 @@
     "WebSocketConfig": {
       "additionalProperties": false,
       "properties": {
+        "callback_interval_ms": {
+          "maximum": 60000,
+          "minimum": 0,
+          "type": "integer"
+        },
         "compression": {
           "type": "boolean"
         },

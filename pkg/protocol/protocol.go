@@ -387,6 +387,7 @@ type Action struct {
 	// CaptureMessageDetail is an engine-only execution hint. Protocols that can
 	// produce bounded request/response evidence may retain it for this one
 	// successful result; archive sinks still enforce the run-wide budget.
+	CaptureResourceDetails     bool   `json:"-"`
 	CaptureMessageDetail       bool   `json:"-"`
 	MessageDetailMode          string `json:"-"`
 	MessageDetailMaxItems      int    `json:"-"`
@@ -435,6 +436,8 @@ type ConsoleEntry struct {
 }
 
 type NetworkEntry struct {
+	FailureKind string `json:"failure_kind,omitempty"` // http, transport, timeout, canceled
+
 	URL                  string            `json:"url,omitempty"`
 	Method               string            `json:"method,omitempty"`
 	StatusCode           int               `json:"status_code,omitempty"`
@@ -593,6 +596,8 @@ type Extractor struct {
 //
 // Example: Assert response status is 200 and body contains "success".
 type Assertion struct {
+	LegacyHTMLCheck bool `json:"legacy_html_check,omitempty"` // imported web_find only
+
 	Type     string `json:"type"`               // "status", "header", "body", "json", etc.
 	Expected any    `json:"expected,omitempty"` // Expected value
 	Value    string `json:"value,omitempty"`    // Field to check (JSONPath, header name, etc.)
@@ -630,6 +635,10 @@ type ThinkTimeConfig struct {
 // This says nothing about Extractions below, which IS carried to the engine and
 // whose sensitively-named entries are still registered for redaction.
 type Result struct {
+	ContentCheckErrorMatches int      `json:"content_check_error_matches,omitempty"`
+	ContentCheckInfoMatches  int      `json:"content_check_info_matches,omitempty"`
+	WarningCodes             []string `json:"warning_codes,omitempty"` // bounded protocol policy warnings
+
 	ActionName          string        // Name of the executed action
 	BusinessTransaction bool          // True when this sample represents a completed business transaction
 	SampleKind          string        // "child" or "aggregate" for StreamingProtocol results
@@ -753,22 +762,60 @@ func UnavailableCorrelationEvidence(reason string) *CorrelationEvidence {
 }
 
 // ErrorSnapshot captures full request/response data for post-test debugging.
-type ErrorSnapshot struct {
-	ResponseBodyState string            `json:"response_body_state,omitempty"`
-	RequestMethod     string            `json:"request_method"`
+// ResourceSnapshot is a bounded, redacted exchange already performed by a parent
+// HTTP action. It cannot recursively contain other snapshots.
+type ResourceSnapshot struct {
 	RequestURL        string            `json:"request_url"`
 	RequestHeaders    map[string]string `json:"request_headers,omitempty"`
-	RequestBody       string            `json:"request_body,omitempty"`
 	ResponseStatus    int               `json:"response_status"`
 	ResponseHeaders   map[string]string `json:"response_headers,omitempty"`
 	ResponseBody      string            `json:"response_body,omitempty"`
-	PageURL           string            `json:"page_url,omitempty"`
-	PageTitle         string            `json:"page_title,omitempty"`
-	HTML              string            `json:"html,omitempty"`
-	ScreenshotBase64  string            `json:"screenshot_base64,omitempty"`
-	ConsoleEntries    []ConsoleEntry    `json:"console_entries,omitempty"`
-	NetworkEntries    []NetworkEntry    `json:"network_entries,omitempty"`
-	DOMSummary        *DOMSummary       `json:"dom_summary,omitempty"`
+	ResponseBodyState string            `json:"response_body_state"`
+	CacheHit          bool              `json:"cache_hit,omitempty"`
+	FailureKind       string            `json:"failure_kind,omitempty"`
+	Truncated         bool              `json:"truncated,omitempty"`
+}
+
+func CloneResourceSnapshots(entries []ResourceSnapshot) []ResourceSnapshot {
+	if entries == nil {
+		return nil
+	}
+	out := append([]ResourceSnapshot(nil), entries...)
+	for i := range out {
+		out[i].RequestHeaders = cloneResourceHeaders(out[i].RequestHeaders)
+		out[i].ResponseHeaders = cloneResourceHeaders(out[i].ResponseHeaders)
+	}
+	return out
+}
+func cloneResourceHeaders(headers map[string]string) map[string]string {
+	if headers == nil {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for k, v := range headers {
+		out[k] = v
+	}
+	return out
+}
+
+type ErrorSnapshot struct {
+	Resources         []ResourceSnapshot `json:"resources,omitempty"`
+	OmittedResources  int                `json:"omitted_resources,omitempty"`
+	ResponseBodyState string             `json:"response_body_state,omitempty"`
+	RequestMethod     string             `json:"request_method"`
+	RequestURL        string             `json:"request_url"`
+	RequestHeaders    map[string]string  `json:"request_headers,omitempty"`
+	RequestBody       string             `json:"request_body,omitempty"`
+	ResponseStatus    int                `json:"response_status"`
+	ResponseHeaders   map[string]string  `json:"response_headers,omitempty"`
+	ResponseBody      string             `json:"response_body,omitempty"`
+	PageURL           string             `json:"page_url,omitempty"`
+	PageTitle         string             `json:"page_title,omitempty"`
+	HTML              string             `json:"html,omitempty"`
+	ScreenshotBase64  string             `json:"screenshot_base64,omitempty"`
+	ConsoleEntries    []ConsoleEntry     `json:"console_entries,omitempty"`
+	NetworkEntries    []NetworkEntry     `json:"network_entries,omitempty"`
+	DOMSummary        *DOMSummary        `json:"dom_summary,omitempty"`
 }
 
 func ClassifyPayloadSize(value int64) string {
@@ -782,4 +829,17 @@ func ClassifyPayloadSize(value int64) string {
 	default:
 		return "large"
 	}
+}
+
+// MessageCallbackSource exposes queued connection events without running user
+// code on a protocol I/O goroutine. Generation invalidates events after close.
+type CallbackMessage struct {
+	Generation    uint64
+	Body          string
+	MessageType   int
+	BytesReceived int64
+}
+type MessageCallbackSource interface {
+	DrainMessageCallbacks(context.Context, bool) ([]CallbackMessage, error)
+	CallbackGeneration() uint64
 }

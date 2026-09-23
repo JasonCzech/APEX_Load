@@ -133,7 +133,7 @@ test('JMeter review uses the shared six tabs and retains project scope during up
   const settingsApply = mutation(page, 'POST', '/api/v1/scripts/import/settings')
   await controls.getByRole('button', { name: 'Apply HTTP', exact: true }).click()
   expect((await settingsApply).ok()).toBeTruthy()
-  await expect(controls.getByRole('region', { name: 'Current runtime settings', exact: true })).toContainText('6500')
+  await expect(controls.getByRole('region', { name: 'Additional APEX settings', exact: true })).toContainText('6500')
   await expect(controls.getByRole('tabpanel')).toContainText('Orders')
   await tabs.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
   await expect(controls.getByRole('tabpanel')).toContainText('Get orders')

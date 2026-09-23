@@ -131,6 +131,7 @@ func TestActionUnresolvedParameterScanCoversEveryStringField(t *testing.T) {
 		"TimeoutMs": true, "MaxRedirects": true, "DiscardResponseBodyOnSuccess": true,
 		"Capture":                    true, // BrowserCaptureOptions is all bools
 		"CaptureMessageDetail":       true,
+		"CaptureResourceDetails":     true,
 		"MessageDetailMaxItems":      true,
 		"MessageDetailMaxItemBytes":  true,
 		"MessageDetailMaxTotalBytes": true,

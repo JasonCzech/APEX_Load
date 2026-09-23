@@ -1,3 +1,4 @@
+import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import CaptureArchiveSummary from './CaptureArchiveSummary'
 import { handleTabKey } from './tabKeyboard'
@@ -2225,6 +2226,7 @@ export default function TestExecutionArchive({
                                           expanded={expandedSnapshotSections[snapshotSectionKey('response-headers')]}
                                           onExpandedChange={(expanded) => toggleSnapshotSection(snapshotSectionKey('response-headers'), expanded)}
                                         />
+                                        <ResourceSnapshotList snapshot={event.snapshot} />
                                         <span className="scenario-script-detail-label">Response body</span>
                                         <SnapshotBodyPreview
                                           body={event.snapshot?.response_body}

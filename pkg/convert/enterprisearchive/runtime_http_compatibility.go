@@ -14,6 +14,33 @@ func parseRuntimeHTTPCompatibility(rc *RuntimeConfig, sections map[string]map[st
 	issue := func(id, key, note string) {
 		rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{ID: id, Area: "HTTP", sourceKey: strings.ToLower(key), Notes: note})
 	}
+	for _, setting := range []struct {
+		key, id string
+		target  *int
+		max     int
+	}{
+		{"NetBufSize", "http_receive_buffer", &rc.httpCompatibility.ReceiveBufferBytes, 1048576},
+		{"MaxSelfMetaRefreshCount", "http_meta_refresh", &rc.httpCompatibility.MaxMetaRefresh, 50},
+		{"MaxErrorMatchesAsERRORS", "http_content_check_limit", &rc.httpCompatibility.ContentCheckErrorLimit, 1000},
+	} {
+		if raw, ok := sectionValueCaseInsensitive(section, setting.key); ok {
+			n, err := strconv.Atoi(strings.TrimSpace(raw))
+			if err != nil || n < 1 || n > setting.max {
+				issue(setting.id, setting.key, "Source value is outside the supported positive integer range; choose an explicit native replacement.")
+			} else {
+				*setting.target = n
+			}
+		}
+	}
+	log := findSection(sections, "Log", "Logging")
+	if raw, ok := sectionValueCaseInsensitive(log, "AutoLogBufferSize"); ok && parseBool(runtimeSectionValue(log, "AutoLog")) {
+		n, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || n < 1 || n > 1024 {
+			issue("runtime_error_log_buffer", "AutoLogBufferSize", "Error log history requires 1..1024 KiB; source value was not clamped.")
+		} else {
+			rc.runtimePolicies.Log.ErrorBufferBytes = n * 1024
+		}
+	}
 	if raw, present := sectionValueCaseInsensitive(section, "PageDownloadTimeout"); present {
 		if ms, ok := sourceKeepAliveTimeoutMS(raw); ok {
 			rc.httpCompatibility.PageTimeoutMs = ms
@@ -65,7 +92,7 @@ func nativeHTTPCompatibilityProtocol(name string) bool {
 
 func nativeHTTPCompatibilityID(id string) bool {
 	switch id {
-	case "http_page_timeout", "http_ip_version", "http_cache_eviction", "http_html_parse":
+	case "runtime_replay_snapshots", "runtime_snapshot_resources", "http_receive_buffer", "http_meta_refresh", "http_content_check_limit", "http_status_policy", "http_resource_policy", "http_resource_timeout_policy", "http_legacy_checks", "http_dns_cache", "http_auth_delay", "http_new_user_cache", "runtime_fail_error_message", "runtime_response_log_limit", "http_page_timeout", "http_ip_version", "http_cache_eviction", "http_html_parse":
 		return true
 	}
 	return false

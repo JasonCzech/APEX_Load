@@ -288,6 +288,18 @@ func sanitizeArchivedSnapshot(snapshot *protocol.ErrorSnapshot, policy scrub.Pol
 	if previousResponseBody != out.ResponseBody {
 		out.ResponseBodyState = "redacted"
 	}
+	out.Resources = protocol.CloneResourceSnapshots(snapshot.Resources)
+	for i := range out.Resources {
+		r := &out.Resources[i]
+		r.RequestURL = scrub.ValueURL(r.RequestURL, policy)
+		r.RequestHeaders = sanitizeArchivedHeaders(r.RequestHeaders, policy)
+		r.ResponseHeaders = sanitizeArchivedHeaders(r.ResponseHeaders, policy)
+		previous := r.ResponseBody
+		r.ResponseBody = scrub.ValueLabel(r.ResponseBody, policy)
+		if previous != r.ResponseBody {
+			r.ResponseBodyState = "redacted"
+		}
+	}
 	out.PageURL = scrub.ValueURL(out.PageURL, policy)
 	out.PageTitle = scrub.ValueLabel(out.PageTitle, policy)
 	out.HTML = scrub.ValueLabel(out.HTML, policy)

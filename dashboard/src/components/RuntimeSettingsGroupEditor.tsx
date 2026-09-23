@@ -1,3 +1,4 @@
+import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import TabList from './ux/TabList'
@@ -87,6 +88,7 @@ export interface RuntimeSettingsGroupEditorProps {
 }
 
 const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
+  results: 'Diagnostics',
   iterations: 'Iterations',
   pacing: 'Pacing',
   think_time: 'Think time',
@@ -97,6 +99,7 @@ const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
   log: 'Logging',
   run_logic: 'Run logic',
   http: 'HTTP transport',
+  websocket: 'WebSocket',
   web_runtime: 'Web runtime',
   browser_config: 'Browser config',
   browser_emulation: 'Browser emulation',
@@ -104,6 +107,7 @@ const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
 }
 
 const SUMMARY_FIELDS: RuntimeFieldKey[] = [
+  'results',
   'iterations',
   'pacing',
   'think_time',
@@ -114,6 +118,7 @@ const SUMMARY_FIELDS: RuntimeFieldKey[] = [
   'log',
   'run_logic',
   'http',
+  'websocket',
   'web_runtime',
   'browser_config',
   'browser_emulation',
@@ -541,6 +546,9 @@ export default function RuntimeSettingsGroupEditor({
       case 'error_handling':
         patch({ continue_on_error: undefined, snapshot_on_error: undefined, max_retries: undefined, retry_delay_ms: undefined, retry_backoff: undefined })
         break
+      case 'results':
+        patch({ results: undefined })
+        break
       case 'log':
         patch({ log: undefined, log_level: '' })
         break
@@ -549,6 +557,9 @@ export default function RuntimeSettingsGroupEditor({
         break
       case 'http':
         patch({ http: undefined })
+        break
+      case 'websocket':
+        patch({websocket: undefined})
         break
       case 'web_runtime':
         patch({ web_runtime: undefined })
@@ -586,12 +597,16 @@ export default function RuntimeSettingsGroupEditor({
         return Boolean(o.auto_transactions) || Boolean(o.run_logic?.auto_transactions)
       case 'error_handling':
         return Boolean(o.error_handling)
+      case 'results':
+        return Boolean(o.results)
       case 'log':
         return Boolean(o.log)
       case 'run_logic':
         return Boolean(o.run_logic)
       case 'http':
         return Boolean(o.http)
+      case 'websocket':
+        return Boolean(o.websocket)
       case 'web_runtime':
         return Boolean(o.web_runtime)
       case 'browser_config':
@@ -976,6 +991,7 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'error_handling' && (
           <>
+            {isRuntimeFieldApplicable('results', focusGroup.protocol) && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => patch({ results: value ? { message_detail: value } : undefined })} />}
             <div className="scenario-option-grid">
               <label className={`scenario-option-card ${effectiveError.continue_on_error ? 'selected' : ''}`}>
                 <input type="checkbox" checked={effectiveError.continue_on_error ?? false} onChange={event => patchErrorHandling({ continue_on_error: event.target.checked })} />
@@ -1032,6 +1048,7 @@ export default function RuntimeSettingsGroupEditor({
               </label>
             </div>
             <div className="scenario-option-grid">
+              <label><span>Error history buffer (bytes)</span><input type="number" min={0} max={1048576} value={effectiveLog.error_buffer_bytes ?? ''} placeholder="102400 by default" onChange={event => patchLog({ error_buffer_bytes: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>
               <label className={`scenario-option-card ${effectiveLog.on_error_only ? 'selected' : ''}`}>
                 <input type="checkbox" checked={Boolean(effectiveLog.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked })} />
                 <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
@@ -1210,9 +1227,11 @@ export default function RuntimeSettingsGroupEditor({
                       <option value="">Inherit</option>
                       <option value="none">None</option>
                       <option value="system">System</option>
+<option value="pac">PAC script</option>
                       <option value="custom">Custom</option>
                     </select>
                   </label>
+                  <label><span>PAC URL</span><input className="settings-input" value={draft.http?.proxy?.pac_url || ''} onChange={event => patchProxy({ pac_url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.pac_url)} /></label>
                   <label><span>Proxy URL</span><input className="settings-input" type="text" value={draft.http?.proxy?.url || ''} onChange={event => patchProxy({ url: event.target.value || undefined })} placeholder={inh(inheritedHttp.proxy?.url, 'http://proxy:8080')} /></label>
                   <label><span>Proxy username</span><input className="settings-input" type="text" autoComplete="off" value={draft.http?.proxy?.username || ''} onChange={event => patchProxy({ username: event.target.value || undefined })} placeholder="Inherit" /></label>
                   <label><span>Proxy password</span><input className="settings-input" type="password" autoComplete="off" value={draft.http?.proxy?.password || ''} onChange={event => patchProxy({ password: event.target.value || undefined })} placeholder="Inherit" /></label>
@@ -1294,6 +1313,8 @@ export default function RuntimeSettingsGroupEditor({
                     </label>
                     <label><span>Browser user agent</span><input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedBrowser.user_agent)} /></label>
                     <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedBrowser.slow_mo_ms)} /></label>
+                    <label><span>Emulated system language</span><input className="settings-input" value={draft.browser_config?.system_language || ''} onChange={event => patchBrowserConfig({system_language: event.target.value || undefined})} placeholder={inh(inheritedBrowser.system_language)} /></label>
+ {(['available_screen_width','available_screen_height'] as const).map(field => <label key={field}><span>{field === 'available_screen_width' ? 'Available screen width' : 'Available screen height'}</span><input className="settings-input" type="number" min={0} max={8192} value={draft.browser_config?.[field] ?? ''} onChange={event => patchBrowserConfig({[field]: event.target.value === '' ? undefined : Number(event.target.value)})} placeholder={inh(inheritedBrowser[field])} /></label>)}
                     <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.width)} /></label>
                     <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.height)} /></label>
                     <label>
@@ -1541,6 +1562,7 @@ export default function RuntimeSettingsGroupEditor({
         )}
       </div>
 
+      {fieldApplicable('websocket') && <label className="runtime-apply-row"><span>WebSocket callback interval (ms)</span><input className="settings-input" type="number" min={1} max={60000} value={draft.websocket?.callback_interval_ms ?? ''} placeholder={String(inheritedOverride?.websocket?.callback_interval_ms || 500)} onChange={event => patch({websocket: {...(draft.websocket ?? inheritedOverride?.websocket), callback_interval_ms: event.target.value === '' ? undefined : Number(event.target.value)}})} /></label>}
       {applyPanelAvailable && (
       <div className="runtime-apply-row">
         <button type="button" className="secondary-button" onClick={() => setApplyOpen(open => !open)} disabled={groups.length < 2}>

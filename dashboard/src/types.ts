@@ -1158,6 +1158,7 @@ export interface TestGroupRuntimeSettingsView {
     dispositions?: Record<string, Record<string, Record<string, {
       status?: string
       parity_id?: string
+      reason?: string
       fields?: string[]
       note?: string
     }>>>
@@ -1246,6 +1247,8 @@ export interface TransactionEvent {
     request_body?: string
     response_status: number
     response_headers?: Record<string, string>
+    resources?: import('./types/scripts').ScriptResourceSnapshot[]
+    omitted_resources?: number
     response_body?: string
   }
 }

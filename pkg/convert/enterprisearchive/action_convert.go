@@ -119,6 +119,14 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		// Known .prm-backed parameters are rewritten from var to param after all archive files are parsed.
 		action.Body = convertParamReferences(action.Body)
 	}
+	if err := encodeImportedBody(action, fn, opts.sourceEncoding); err != nil {
+		action.Metadata["review_required"] = true
+		action.Metadata["source_encoding_error"] = err.Error()
+		warnings = append(warnings, fmt.Sprintf("line %d: source body encoding requires review: %s", fn.LineNumber, err))
+		// Fail closed rather than sending a lossy replacement payload.
+		action.Type = "unsupported"
+		action.Body = ""
+	}
 	if fn.itemDataURLForm {
 		// Literal form spans are encoded during import. Runtime templates must be
 		// encoded after their values are resolved so delimiters in parameter data

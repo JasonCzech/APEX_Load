@@ -3,6 +3,7 @@ package engine
 import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"maps"
 )
 
 const (
@@ -63,6 +64,33 @@ func boundedErrorSnapshot(snapshot *protocol.ErrorSnapshot, maxBytes int) (*prot
 	out.ConsoleEntries = takeSnapshotConsoleEntries(snapshot.ConsoleEntries, &remaining)
 	out.NetworkEntries = takeSnapshotNetworkEntries(snapshot.NetworkEntries, &remaining)
 	out.DOMSummary = takeSnapshotDOMSummary(snapshot.DOMSummary, &remaining)
+	out.OmittedResources = max(0, snapshot.OmittedResources)
+	for i, resource := range snapshot.Resources {
+		// Reserve body-state metadata even when variable fields exhaust the envelope.
+		const resourceOverhead = snapshotNetworkEntryOverhead + 32
+		if i >= 80 || remaining < resourceOverhead {
+			out.OmittedResources += len(snapshot.Resources) - i
+			break
+		}
+		remaining -= resourceOverhead
+		r := protocol.ResourceSnapshot{ResponseStatus: resource.ResponseStatus, CacheHit: resource.CacheHit, Truncated: resource.Truncated}
+		r.RequestURL = takeSnapshotString(resource.RequestURL, &remaining, 8<<10)
+		r.FailureKind = takeSnapshotString(resource.FailureKind, &remaining, 64)
+		switch resource.ResponseBodyState {
+		case "captured", "empty", "redacted", "not_captured", "expired":
+			r.ResponseBodyState = resource.ResponseBodyState
+		default:
+			r.ResponseBodyState = "not_captured"
+		}
+		r.RequestHeaders = takeSnapshotStringMap(resource.RequestHeaders, &remaining)
+		r.ResponseHeaders = takeSnapshotStringMap(resource.ResponseHeaders, &remaining)
+		r.ResponseBody = takeSnapshotString(resource.ResponseBody, &remaining, 32<<10)
+		r.Truncated = r.Truncated || r.ResponseBody != resource.ResponseBody || r.RequestURL != resource.RequestURL || r.FailureKind != resource.FailureKind || !maps.Equal(r.RequestHeaders, resource.RequestHeaders) || !maps.Equal(r.ResponseHeaders, resource.ResponseHeaders)
+		if resource.ResponseBody != "" && r.ResponseBody == "" {
+			r.ResponseBodyState = "not_captured"
+		}
+		out.Resources = append(out.Resources, r)
+	}
 	return out, maxBytes - remaining
 }
 

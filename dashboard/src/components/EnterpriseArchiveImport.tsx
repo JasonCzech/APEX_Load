@@ -4444,6 +4444,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             <ScriptImportReview
             title="Review and resolve"
             compactReview
+            showOriginalDiagnostics={validationReviewTab === 'overview'}
             reviewGeneration={reviewScope}
             subtitle={needsExecutionRepair && !saveBlockedByMigrationPolicy && !saveBlockedByProtocolGate && !browserImport ? 'Save a draft to continue later. Resolve execution blockers before debugging one iteration.' : reviewSubtitle}
             readinessMessage={readinessMessage}
@@ -4512,7 +4513,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             showPreview={validationReviewTab === 'dsl'}
             showPreviewAside={validationReviewTab === 'source'}
           >
-            {importedScript && <ImportGuidedRepair onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={`${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={selectReviewSection} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} onViewSource={path => {
+            {importedScript && <ImportGuidedRepair onBusyChange={setGuidedRepairBusy} focusPath={issueFocus.path} focusRequest={issueFocus.revision} key={`${selectedItem?.id}:${selectedResultScriptIndex}:${projectId}`} view={validationReviewTab === 'overview' ? 'overview' : validationReviewTab === 'data' ? 'data' : 'hidden'} additionalFindings={additionalRepairFindings} onSection={selectReviewSection} onReview={review => setProtectedReview({ project: projectId || '', result: review })} script={importedScript} projectId={projectId || ''} disabled={internalReviewBusy || scriptSaveInProgress || selectedResultScriptSaved || !reviewMatchesCurrentOptions} disabledReason={selectedResultScriptSaved ? 'This draft has already been saved. Re-import the archive to preview allocation for a new draft.' : !reviewMatchesCurrentOptions ? 'Import options have changed. Validate the archive again before previewing allocation.' : 'Finish pending edits or wait for the current import operation to complete before previewing allocation.'} onViewSource={path => {
               const mapping = sourceReview?.mappings?.find(entry => entry.target_path === path)
               setRepairSourceFocus(previous => ({ id: mapping?.id || '', file: '', revision: previous.revision + 1 }))
               setValidationReviewTab('source')

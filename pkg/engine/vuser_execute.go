@@ -932,7 +932,8 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 			aggregate.Success = false
 			aggregate.ErrorMessage = execErr.Error()
 			if result != nil {
-				vu.recordResult(result, errCfg, dsl.LogConfig{})
+				vu.logDiagnosticResult("sequence action", child.Name, resolved, result)
+				vu.recordResult(result, errCfg, vu.Script.Config.Log)
 				measuredDuration += result.Duration
 				copySequenceSourceResult(aggregate, result)
 			}
@@ -952,7 +953,8 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 		if result == nil {
 			continue
 		}
-		vu.recordResult(result, errCfg, dsl.LogConfig{})
+		vu.logDiagnosticResult("sequence action", child.Name, resolved, result)
+		vu.recordResult(result, errCfg, vu.Script.Config.Log)
 		measuredDuration += result.Duration
 		copySequenceSourceResult(aggregate, result)
 		for key, value := range result.Extractions {

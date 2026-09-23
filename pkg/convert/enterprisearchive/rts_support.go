@@ -72,7 +72,7 @@ type runtimeSettingSupportDefinition struct {
 	matchers []runtimeSettingMatcher
 }
 
-var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
+var sourceRTSSupportDefinitions = append(append(nativeArchiveRuntimeDefinitions(), replayPolicyDefinitions()...), []runtimeSettingSupportDefinition{
 	{entry: RuntimeSettingSupportEntry{ID: "http_page_timeout", Area: "HTTP", Concept: "Complete page deadline", Fields: []string{"config.http.page_timeout_ms"}, Status: RuntimeSettingStatusExecuted, Notes: "Applies one deadline to the main response and all embedded-resource waves; seconds are converted to milliseconds."}, matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"PageDownloadTimeout"})}},
 	{entry: RuntimeSettingSupportEntry{ID: "http_ip_version", Area: "HTTP", Concept: "Outgoing IP family", Fields: []string{"config.http.ip_version"}, Status: RuntimeSettingStatusExecuted, Notes: "IPv4, IPv6, or automatic selection applies to outgoing TCP connections, including proxy connections; unverified source encodings require an explicit choice."}, matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"IPVersionPolicy"})}},
 	{entry: RuntimeSettingSupportEntry{ID: "http_cache_eviction", Area: "HTTP", Concept: "Unused cache entry lifetime", Fields: []string{"config.http.cache_max_unused_iterations"}, Status: RuntimeSettingStatusExecuted, Notes: "Evicts entries after the configured number of unreferenced main iterations; zero disables aging. Memory bounds remain enforced."}, matchers: []runtimeSettingMatcher{matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"DeleteCacheUnreferencedIterations"})}},
@@ -105,10 +105,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Proxy mode and custom proxy",
 			Fields:  []string{"config.http.proxy_mode", "config.http.proxy"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Supports none, system, and custom proxy execution paths.",
+			Notes:   "Supports none, environment-system, custom and bounded PAC proxy modes. Desktop browser inheritance requires an explicit portable export.",
 		},
 		matchers: []runtimeSettingMatcher{
-			matcher([]string{"Proxy", "WEB", "Web"}, []string{"Mode", "ProxyMode", "Type", "ProxyServer", "ProxyURL", "Server", "ProxyHTTPHost", "ProxyHTTPPort", "ProxyHTTPSHost", "ProxyHTTPSPort", "ProxyUseProxy", "ProxyUseProxyServer", "ProxyUseSame", "ProxyBypass", "ProxyNoLocal", "ProxyUserName", "UserName", "ProxyUser", "ProxyPassword", "Password"}),
+			matcher([]string{"Proxy", "WEB", "Web"}, []string{"Mode", "ProxyMode", "Type", "ProxyServer", "ProxyURL", "Server", "ProxyHTTPHost", "ProxyHTTPPort", "ProxyHTTPSHost", "ProxyHTTPSPort", "ProxyUseBrowser", "ProxyUseAutoConfigScript", "ProxyAutoConfigScriptURL", "ProxyPasswordIsEncrypted", "ProxyUseProxy", "ProxyUseProxyServer", "ProxyUseSame", "ProxyBypass", "ProxyNoLocal", "ProxyUserName", "UserName", "ProxyUser", "ProxyPassword", "Password"}),
 		},
 	},
 	{
@@ -436,7 +436,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "HTTP runtime enforces content checks against main-document responses.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Content Check", "ContentCheck"}, []string{"Text", "SearchText", "Scope", "FailIfFound"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Content Check", "ContentCheck"}, []string{"Text", "SearchText", "LeftBoundary", "RightBoundary", "Scope", "FailIfFound"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -507,7 +507,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"SAPGUI", "SAP GUI", "AutoLogon"}, []string{"AutoLogon", "User", "Username", "Password", "Client", "Language"})},
 	},
-}
+}...)
 
 var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 	{

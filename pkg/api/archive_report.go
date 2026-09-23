@@ -984,6 +984,9 @@ func runtimeOverrideFieldNames(settings *RuntimeSettingsOverride) []string {
 		return nil
 	}
 	fields := make([]string, 0, 6)
+	if settings.Results != nil {
+		fields = append(fields, "results")
+	}
 	if settings.Iterations != nil {
 		fields = append(fields, "iterations")
 	}

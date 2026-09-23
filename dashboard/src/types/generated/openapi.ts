@@ -630,6 +630,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -653,6 +655,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -698,6 +701,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -732,23 +736,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -835,8 +848,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -918,6 +933,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -2090,6 +2106,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -2136,6 +2154,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -2151,6 +2170,7 @@ export interface operations {
               "cache"?: ({
                 "cache_content_urls"?: (boolean) | null;
                 "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
                 "download_non_html_resources"?: (boolean) | null;
                 "new_user_each_iteration"?: (boolean) | null;
                 "simulate_cache"?: (boolean) | null;
@@ -2164,6 +2184,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -2182,28 +2203,38 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: {
                 "no_proxy"?: Array<string>;
+                "pac_url"?: string;
                 "password"?: string;
                 "url"?: string;
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: {
                 "ca_cert_file"?: string;
                 "client_cert_file"?: string;
@@ -2229,8 +2260,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -2250,6 +2283,16 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -2277,6 +2320,8 @@ export interface operations {
               "content_checks"?: Array<{
                 "case_insensitive"?: boolean;
                 "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
                 "scope"?: string;
                 "text"?: string;
               }>;
@@ -2307,6 +2352,16 @@ export interface operations {
                 "fixed_bitrate_kbps"?: number;
                 "mode"?: string;
               };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario"?: ({
@@ -2407,9 +2462,11 @@ export interface operations {
                 "log_level"?: string;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
+                "websocket"?: (Record<string, unknown>) | null;
               }) | null;
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
@@ -2430,6 +2487,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -2453,6 +2512,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -2471,6 +2531,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -2483,23 +2544,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -2518,8 +2588,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -2539,6 +2611,9 @@ export interface operations {
                 "pattern"?: string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -2570,6 +2645,16 @@ export interface operations {
                 "network_simulation"?: Record<string, unknown>;
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "scenario_mode"?: string;
@@ -2713,6 +2798,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -2736,6 +2823,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -2781,6 +2869,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -2815,23 +2904,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -2918,8 +3016,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -3001,6 +3101,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -3463,6 +3564,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -3486,6 +3589,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -3531,6 +3635,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -3565,23 +3670,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -3668,8 +3782,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -3751,6 +3867,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -4115,6 +4232,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -4138,6 +4257,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -4183,6 +4303,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -4217,23 +4338,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -4320,8 +4450,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -4403,6 +4535,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -5768,6 +5901,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -5791,6 +5926,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -5836,6 +5972,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -5870,23 +6007,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -5973,8 +6119,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -6056,6 +6204,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -6516,6 +6665,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -6539,6 +6690,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -6584,6 +6736,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -6618,23 +6771,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -6721,8 +6883,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -6804,6 +6968,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -7145,6 +7310,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -7168,6 +7335,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -7213,6 +7381,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -7247,23 +7416,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -7350,8 +7528,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -7433,6 +7613,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -7816,6 +7997,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -7839,6 +8022,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -7884,6 +8068,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -7918,23 +8103,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -8021,8 +8215,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -8104,6 +8300,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -8389,6 +8586,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -8412,6 +8611,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -8457,6 +8657,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -8491,23 +8692,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -8594,8 +8804,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -8677,6 +8889,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -9089,6 +9302,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -9112,6 +9327,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -9130,6 +9346,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -9142,23 +9359,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -9177,8 +9403,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -9198,6 +9426,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -9229,6 +9460,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "scenario_mode"?: string;
@@ -9322,9 +9563,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "script_id": string;
                 "script_name"?: string;
@@ -9520,6 +9763,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -9543,6 +9788,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -9588,6 +9834,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -9622,23 +9869,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -9725,8 +9981,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -9808,6 +10066,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -10842,6 +11101,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -10865,6 +11126,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -10910,6 +11172,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -10944,23 +11207,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -11047,8 +11319,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -11130,6 +11404,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -12396,6 +12671,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -12419,6 +12696,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -12464,6 +12742,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -12498,23 +12777,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -12601,8 +12889,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -12684,6 +12974,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -13016,6 +13307,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -13039,6 +13332,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -13084,6 +13378,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -13118,23 +13413,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -13221,8 +13525,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -13304,6 +13610,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -13835,6 +14142,8 @@ export interface operations {
             "config": {
               "base_url": string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -13881,6 +14190,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -13896,6 +14206,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -13942,6 +14253,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -13982,28 +14294,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -14114,8 +14436,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -14153,6 +14477,7 @@ export interface operations {
               };
               "results"?: {
                 "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
                   "max_items"?: number;
                   "max_total_bytes"?: number;
@@ -14208,6 +14533,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -14240,6 +14567,7 @@ export interface operations {
                 };
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -14645,6 +14973,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -14668,6 +14998,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -14713,6 +15044,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -14747,23 +15079,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -14850,8 +15191,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -14933,6 +15276,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -15286,6 +15630,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -15309,6 +15655,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -15354,6 +15701,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -15388,23 +15736,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -15491,8 +15848,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -15574,6 +15933,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -18250,9 +18610,11 @@ export interface operations {
               "log_level"?: string;
               "pacing"?: (Record<string, unknown>) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
+              "results"?: (Record<string, unknown>) | null;
               "run_logic"?: (Record<string, unknown>) | null;
               "think_time"?: (Record<string, unknown>) | null;
               "web_runtime"?: (Record<string, unknown>) | null;
+              "websocket"?: (Record<string, unknown>) | null;
             }) | null;
             "script_id"?: string;
             "stages"?: Array<Record<string, unknown>>;
@@ -18279,6 +18641,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -18302,6 +18666,7 @@ export interface operations {
               "proxy"?: Record<string, unknown>;
               "review_policy"?: Record<string, unknown>;
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -18320,6 +18685,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -18332,23 +18698,32 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: Record<string, unknown>;
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: Record<string, unknown>;
               "tls_timeout_ms"?: number;
               "traceparent"?: (boolean) | null;
@@ -18367,8 +18742,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -18388,6 +18765,9 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: (Record<string, unknown>) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -18419,6 +18799,16 @@ export interface operations {
               "network_simulation"?: Record<string, unknown>;
               "source_ips"?: Array<string>;
               "streaming"?: Record<string, unknown>;
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario_id"?: string;
@@ -18540,9 +18930,11 @@ export interface operations {
                 "log_level"?: string;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
+                "websocket"?: (Record<string, unknown>) | null;
               }) | null;
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
@@ -18568,6 +18960,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -18591,6 +18985,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -18609,6 +19004,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -18621,23 +19017,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -18656,8 +19061,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -18677,6 +19084,9 @@ export interface operations {
                 "pattern"?: string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -18708,6 +19118,16 @@ export interface operations {
                 "network_simulation"?: Record<string, unknown>;
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "scenario_id"?: string;
@@ -19182,9 +19602,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -19789,6 +20211,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -19812,6 +20236,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -19830,6 +20255,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -19842,23 +20268,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -19877,8 +20312,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -19898,6 +20335,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -19929,6 +20369,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -20628,6 +21078,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -20651,6 +21103,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -20669,6 +21122,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -20681,23 +21135,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -20716,8 +21179,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -20733,6 +21198,9 @@ export interface operations {
                 "type"?: string;
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -20765,6 +21233,16 @@ export interface operations {
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
               }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
+              }) | null;
             }) | null;
             "script_id"?: string;
             "stages"?: Array<{
@@ -20791,6 +21269,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -20837,6 +21317,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -20852,6 +21333,7 @@ export interface operations {
               "cache"?: ({
                 "cache_content_urls"?: (boolean) | null;
                 "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
                 "download_non_html_resources"?: (boolean) | null;
                 "new_user_each_iteration"?: (boolean) | null;
                 "simulate_cache"?: (boolean) | null;
@@ -20865,6 +21347,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -20883,28 +21366,38 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: {
                 "no_proxy"?: Array<string>;
+                "pac_url"?: string;
                 "password"?: string;
                 "url"?: string;
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: {
                 "ca_cert_file"?: string;
                 "client_cert_file"?: string;
@@ -20930,8 +21423,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -20951,6 +21446,16 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -20978,6 +21483,8 @@ export interface operations {
               "content_checks"?: Array<{
                 "case_insensitive"?: boolean;
                 "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
                 "scope"?: string;
                 "text"?: string;
               }>;
@@ -21008,6 +21515,16 @@ export interface operations {
                 "fixed_bitrate_kbps"?: number;
                 "mode"?: string;
               };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario_mode"?: string;
@@ -21229,6 +21746,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -21275,6 +21794,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -21290,6 +21810,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -21303,6 +21824,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -21321,28 +21843,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -21368,8 +21900,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -21389,6 +21923,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -21416,6 +21960,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -21446,6 +21992,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "scenario_mode"?: string;
@@ -21564,6 +22120,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -21587,6 +22145,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -21605,6 +22164,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -21617,23 +22177,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -21652,8 +22221,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -21669,6 +22240,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -21700,6 +22274,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "script_id": string;
@@ -22018,6 +22602,7 @@ export interface operations {
             "actions"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -22113,6 +22698,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -22153,6 +22740,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -22168,6 +22756,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -22214,6 +22803,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -22254,28 +22844,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -22378,8 +22978,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -22411,6 +23013,7 @@ export interface operations {
               };
               "results"?: {
                 "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
                   "max_items"?: number;
                   "max_total_bytes"?: number;
@@ -22490,6 +23093,7 @@ export interface operations {
                 };
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -22542,6 +23146,7 @@ export interface operations {
             "init"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -22679,6 +23284,7 @@ export interface operations {
             "teardown"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -22911,6 +23517,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -22934,6 +23542,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -22979,6 +23588,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -23013,23 +23623,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -23116,8 +23735,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -23199,6 +23820,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -23694,6 +24316,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -23717,6 +24341,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -23735,6 +24360,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -23747,23 +24373,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -23782,8 +24417,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -23799,6 +24436,9 @@ export interface operations {
                 "type"?: string;
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -23831,6 +24471,16 @@ export interface operations {
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
               }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
+              }) | null;
             }) | null;
             "script_id"?: string;
             "stages"?: Array<{
@@ -23862,6 +24512,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -23908,6 +24560,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -23923,6 +24576,7 @@ export interface operations {
               "cache"?: ({
                 "cache_content_urls"?: (boolean) | null;
                 "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
                 "download_non_html_resources"?: (boolean) | null;
                 "new_user_each_iteration"?: (boolean) | null;
                 "simulate_cache"?: (boolean) | null;
@@ -23936,6 +24590,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -23954,28 +24609,38 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: {
                 "no_proxy"?: Array<string>;
+                "pac_url"?: string;
                 "password"?: string;
                 "url"?: string;
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: {
                 "ca_cert_file"?: string;
                 "client_cert_file"?: string;
@@ -24001,8 +24666,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -24022,6 +24689,16 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -24049,6 +24726,8 @@ export interface operations {
               "content_checks"?: Array<{
                 "case_insensitive"?: boolean;
                 "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
                 "scope"?: string;
                 "text"?: string;
               }>;
@@ -24079,6 +24758,16 @@ export interface operations {
                 "fixed_bitrate_kbps"?: number;
                 "mode"?: string;
               };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario_id"?: string;
@@ -24587,6 +25276,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -24610,6 +25301,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -24628,6 +25320,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -24640,23 +25333,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -24675,8 +25377,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -24692,6 +25396,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -24723,6 +25430,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_state"?: string;
@@ -25853,6 +26570,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -25899,6 +26618,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -25914,6 +26634,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -25927,6 +26648,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -25945,28 +26667,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -25992,8 +26724,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -26013,6 +26747,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -26040,6 +26784,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -26070,6 +26816,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "runtime_settings_review"?: ({
@@ -28272,9 +29028,11 @@ export interface operations {
                 "log_level"?: string;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
+                "websocket"?: (Record<string, unknown>) | null;
               }) | null;
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
@@ -28295,6 +29053,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -28318,6 +29078,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -28336,6 +29097,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -28348,23 +29110,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -28383,8 +29154,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -28404,6 +29177,9 @@ export interface operations {
                 "pattern"?: string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -28435,6 +29211,16 @@ export interface operations {
                 "network_simulation"?: Record<string, unknown>;
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "scenario_mode"?: string;
@@ -28859,9 +29645,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
@@ -28882,6 +29670,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -28905,6 +29695,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -28923,6 +29714,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -28935,23 +29727,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -28970,8 +29771,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -28991,6 +29794,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -29022,6 +29828,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "scenario_mode"?: string;
@@ -29368,9 +30184,11 @@ export interface operations {
                 "log_level"?: string;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
+                "websocket"?: (Record<string, unknown>) | null;
               }) | null;
               "script_id"?: string;
               "stages"?: Array<Record<string, unknown>>;
@@ -29391,6 +30209,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -29414,6 +30234,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -29432,6 +30253,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -29444,23 +30266,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -29479,8 +30310,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -29500,6 +30333,9 @@ export interface operations {
                 "pattern"?: string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -29531,6 +30367,16 @@ export interface operations {
                 "network_simulation"?: Record<string, unknown>;
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "scenario_mode"?: string;
@@ -29955,9 +30801,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
@@ -29978,6 +30826,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -30001,6 +30851,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -30019,6 +30870,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -30031,23 +30883,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -30066,8 +30927,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -30087,6 +30950,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -30118,6 +30984,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "scenario_mode"?: string;
@@ -31524,6 +32400,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -31547,6 +32425,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -31565,6 +32444,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -31577,23 +32457,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -31612,8 +32501,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -31629,6 +32520,9 @@ export interface operations {
                 "type"?: string;
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -31661,6 +32555,16 @@ export interface operations {
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
               }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
+              }) | null;
             }) | null;
             "script_id"?: string;
             "stages"?: Array<{
@@ -31692,6 +32596,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -31738,6 +32644,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -31753,6 +32660,7 @@ export interface operations {
               "cache"?: ({
                 "cache_content_urls"?: (boolean) | null;
                 "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
                 "download_non_html_resources"?: (boolean) | null;
                 "new_user_each_iteration"?: (boolean) | null;
                 "simulate_cache"?: (boolean) | null;
@@ -31766,6 +32674,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -31784,28 +32693,38 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: {
                 "no_proxy"?: Array<string>;
+                "pac_url"?: string;
                 "password"?: string;
                 "url"?: string;
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: {
                 "ca_cert_file"?: string;
                 "client_cert_file"?: string;
@@ -31831,8 +32750,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -31852,6 +32773,16 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -31879,6 +32810,8 @@ export interface operations {
               "content_checks"?: Array<{
                 "case_insensitive"?: boolean;
                 "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
                 "scope"?: string;
                 "text"?: string;
               }>;
@@ -31909,6 +32842,16 @@ export interface operations {
                 "fixed_bitrate_kbps"?: number;
                 "mode"?: string;
               };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario_id"?: string;
@@ -32170,6 +33113,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -32193,6 +33138,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -32211,6 +33157,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -32223,23 +33170,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -32258,8 +33214,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -32275,6 +33233,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -32306,6 +33267,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_state"?: string;
@@ -32828,6 +33799,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -32851,6 +33824,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -32896,6 +33870,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -32930,23 +33905,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -33033,8 +34017,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -33116,6 +34102,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -34513,6 +35500,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -34536,6 +35525,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -34581,6 +35571,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -34615,23 +35606,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -34718,8 +35718,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -34801,6 +35803,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -38382,9 +39385,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -38989,6 +39994,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -39012,6 +40019,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -39030,6 +40038,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -39042,23 +40051,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -39077,8 +40095,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -39098,6 +40118,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -39129,6 +40152,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -39920,9 +40953,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -39947,6 +40982,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -39970,6 +41007,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -39988,6 +41026,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -40000,23 +41039,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -40035,8 +41083,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -40056,6 +41106,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -40087,6 +41140,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -40466,9 +41529,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -40493,6 +41558,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -40516,6 +41583,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -40534,6 +41602,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -40546,23 +41615,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -40581,8 +41659,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -40602,6 +41682,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -40633,6 +41716,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -41314,9 +42407,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_settings_review"?: ({
                   "blocking_findings"?: Array<Record<string, unknown>>;
@@ -41548,9 +42643,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_settings_review"?: ({
                   "blocking_findings"?: Array<Record<string, unknown>>;
@@ -42509,6 +43606,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -42555,6 +43654,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -42570,6 +43670,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -42583,6 +43684,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -42601,28 +43703,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -42648,8 +43760,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -42669,6 +43783,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -42696,6 +43820,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -42726,6 +43852,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "scenario_mode"?: string;
@@ -42844,6 +43980,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -42867,6 +44005,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -42885,6 +44024,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -42897,23 +44037,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -42932,8 +44081,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -42949,6 +44100,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -42980,6 +44134,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "script_id": string;
@@ -43306,6 +44470,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -43329,6 +44495,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -43374,6 +44541,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -43408,23 +44576,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -43511,8 +44688,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -43594,6 +44773,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -45473,6 +46653,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -45496,6 +46678,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -45514,6 +46697,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -45526,23 +46710,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -45561,8 +46754,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -45578,6 +46773,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -45609,6 +46807,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_state"?: string;
@@ -46739,6 +47947,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -46785,6 +47995,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -46800,6 +48011,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -46813,6 +48025,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -46831,28 +48044,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -46878,8 +48101,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -46899,6 +48124,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -46926,6 +48161,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -46956,6 +48193,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "runtime_settings_review"?: ({
@@ -47287,6 +48534,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -47333,6 +48582,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -47348,6 +48598,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -47361,6 +48612,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -47379,28 +48631,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -47426,8 +48688,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -47447,6 +48711,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -47474,6 +48748,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -47505,6 +48781,16 @@ export interface operations {
                   "mode"?: string;
                 };
               }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
+              }) | null;
             }) | null;
             "group": string;
             "group_index": number;
@@ -47513,6 +48799,7 @@ export interface operations {
                 "fields"?: Array<string>;
                 "note"?: string;
                 "parity_id"?: string;
+                "reason"?: string;
                 "status"?: string;
               }>>>;
               "files"?: Record<string, Record<string, Record<string, string>>>;
@@ -47531,6 +48818,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -47577,6 +48866,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -47592,6 +48882,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -47605,6 +48896,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -47623,28 +48915,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -47670,8 +48972,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -47691,6 +48995,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -47718,6 +49032,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -47748,6 +49064,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "script_id"?: string;
@@ -47762,6 +49088,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -47808,6 +49136,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -47823,6 +49152,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -47836,6 +49166,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -47854,28 +49185,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -47901,8 +49242,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -47922,6 +49265,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -47949,6 +49302,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -47979,6 +49334,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "status": string;
@@ -47993,6 +49358,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -48039,6 +49406,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -48054,6 +49422,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -48067,6 +49436,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -48085,28 +49455,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -48132,8 +49512,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -48153,6 +49535,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -48180,6 +49572,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -48210,6 +49604,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
           }) | null;
@@ -48453,9 +49857,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -48477,6 +49883,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -48500,6 +49908,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -48518,6 +49927,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -48530,23 +49940,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -48565,8 +49984,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -48586,6 +50007,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -48617,6 +50041,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -48871,9 +50305,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -48895,6 +50331,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -48918,6 +50356,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -48936,6 +50375,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -48948,23 +50388,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -48983,8 +50432,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -49004,6 +50455,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -49035,6 +50489,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -49323,6 +50787,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -49346,6 +50812,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -49364,6 +50831,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -49376,23 +50844,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -49411,8 +50888,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -49428,6 +50907,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -49459,6 +50941,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "script_id"?: string;
@@ -51568,6 +53060,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -51591,6 +53085,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -51636,6 +53131,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -51670,23 +53166,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -51773,8 +53278,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -51856,6 +53363,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -52201,6 +53709,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -52224,6 +53734,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -52269,6 +53780,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -52303,23 +53815,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -52406,8 +53927,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -52489,6 +54012,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -59664,6 +61188,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -59687,6 +61213,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -59705,6 +61232,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -59717,23 +61245,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -59752,8 +61289,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -59769,6 +61308,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -59800,6 +61342,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_state"?: string;
@@ -60930,6 +62482,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -60976,6 +62530,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -60991,6 +62546,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -61004,6 +62560,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -61022,28 +62579,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -61069,8 +62636,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -61090,6 +62659,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -61117,6 +62696,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -61147,6 +62728,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "runtime_settings_review"?: ({
@@ -61584,9 +63175,11 @@ export interface operations {
               "log_level"?: string;
               "pacing"?: (Record<string, unknown>) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
+              "results"?: (Record<string, unknown>) | null;
               "run_logic"?: (Record<string, unknown>) | null;
               "think_time"?: (Record<string, unknown>) | null;
               "web_runtime"?: (Record<string, unknown>) | null;
+              "websocket"?: (Record<string, unknown>) | null;
             }) | null;
             "script_id"?: string;
             "stages"?: Array<Record<string, unknown>>;
@@ -61613,6 +63206,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -61636,6 +63231,7 @@ export interface operations {
               "proxy"?: Record<string, unknown>;
               "review_policy"?: Record<string, unknown>;
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -61654,6 +63250,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -61666,23 +63263,32 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: Record<string, unknown>;
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: Record<string, unknown>;
               "tls_timeout_ms"?: number;
               "traceparent"?: (boolean) | null;
@@ -61701,8 +63307,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -61722,6 +63330,9 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: (Record<string, unknown>) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -61753,6 +63364,16 @@ export interface operations {
               "network_simulation"?: Record<string, unknown>;
               "source_ips"?: Array<string>;
               "streaming"?: Record<string, unknown>;
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario_id"?: string;
@@ -62097,6 +63718,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -62120,6 +63743,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -62165,6 +63789,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -62199,23 +63824,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -62302,8 +63936,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -62385,6 +64021,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -62881,6 +64518,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -62904,6 +64543,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -62949,6 +64589,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -62983,23 +64624,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -63086,8 +64736,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -63169,6 +64821,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -63523,6 +65176,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -63546,6 +65201,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -63591,6 +65247,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -63625,23 +65282,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -63728,8 +65394,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -63811,6 +65479,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -64234,6 +65903,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -64257,6 +65928,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -64302,6 +65974,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -64336,23 +66009,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -64439,8 +66121,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -64522,6 +66206,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -65097,6 +66782,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -65120,6 +66807,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -65165,6 +66853,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -65199,23 +66888,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -65302,8 +67000,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -65385,6 +67085,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -65726,6 +67427,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -65749,6 +67452,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -65794,6 +67498,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -65828,23 +67533,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -65931,8 +67645,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -66014,6 +67730,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -67166,6 +68883,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -67189,6 +68908,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -67234,6 +68954,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -67268,23 +68989,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -67371,8 +69101,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -67454,6 +69186,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -68432,9 +70165,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -69039,6 +70774,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -69062,6 +70799,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -69080,6 +70818,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -69092,23 +70831,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -69127,8 +70875,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -69148,6 +70898,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -69179,6 +70932,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -69738,9 +71501,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -70345,6 +72110,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -70368,6 +72135,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -70386,6 +72154,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -70398,23 +72167,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -70433,8 +72211,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -70454,6 +72234,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -70485,6 +72268,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -71044,9 +72837,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -71651,6 +73446,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -71674,6 +73471,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -71692,6 +73490,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -71704,23 +73503,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -71739,8 +73547,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -71760,6 +73570,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -71791,6 +73604,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -72350,9 +74173,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -72957,6 +74782,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -72980,6 +74807,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -72998,6 +74826,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -73010,23 +74839,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -73045,8 +74883,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -73066,6 +74906,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -73097,6 +74940,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -73656,9 +75509,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "runtime_state"?: string;
                 "script_id": string;
@@ -74263,6 +76118,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -74286,6 +76143,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -74304,6 +76162,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -74316,23 +76175,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -74351,8 +76219,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -74372,6 +76242,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -74403,6 +76276,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_settings_review"?: ({
@@ -74766,6 +76649,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -74789,6 +76674,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -74834,6 +76720,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -74868,23 +76755,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -74971,8 +76867,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -75054,6 +76952,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -75493,6 +77392,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -75516,6 +77417,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -75561,6 +77463,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -75595,23 +77498,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -75698,8 +77610,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -75781,6 +77695,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -77520,6 +79435,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -77543,6 +79460,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -77588,6 +79506,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -77622,23 +79541,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -77725,8 +79653,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -77808,6 +79738,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -78594,6 +80525,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -78617,6 +80550,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -78635,6 +80569,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -78647,23 +80582,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -78682,8 +80626,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -78699,6 +80645,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -78730,6 +80679,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "scenario_hints"?: Record<string, unknown>;
@@ -78823,6 +80782,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -78846,6 +80807,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -78891,6 +80853,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -78925,23 +80888,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -79028,8 +81000,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -79111,6 +81085,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -79394,6 +81369,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -79417,6 +81394,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -79462,6 +81440,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -79496,23 +81475,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -79599,8 +81587,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -79682,6 +81672,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -81159,9 +83150,11 @@ export interface operations {
                   "log_level"?: string;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
+                  "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
+                  "websocket"?: (Record<string, unknown>) | null;
                 }) | null;
                 "script_id": string;
                 "stages"?: Array<Record<string, unknown>>;
@@ -81182,6 +83175,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -81205,6 +83200,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -81223,6 +83219,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -81235,23 +83232,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -81270,8 +83276,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -81291,6 +83299,9 @@ export interface operations {
                   "pattern": string;
                   "replacement"?: string;
                 }>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -81322,6 +83333,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "scenario_mode"?: string;
@@ -81551,6 +83572,8 @@ export interface operations {
         "application/json": {
           "breakpoints"?: Array<number>;
           "browser"?: ({
+            "available_screen_height"?: number;
+            "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_screenshots"?: string;
@@ -81597,6 +83620,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
             "traceparent"?: (boolean) | null;
@@ -81698,6 +83722,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -81721,6 +83747,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -81766,6 +83793,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -81800,23 +83828,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -81903,8 +83940,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -81986,6 +84025,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -82599,6 +84639,8 @@ export interface operations {
         "application/json": {
           "breakpoints"?: Array<number>;
           "browser"?: ({
+            "available_screen_height"?: number;
+            "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_screenshots"?: string;
@@ -82645,6 +84687,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
             "traceparent"?: (boolean) | null;
@@ -82746,6 +84789,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -82769,6 +84814,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -82814,6 +84860,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -82848,23 +84895,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -82951,8 +85007,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -83034,6 +85092,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -83710,6 +85769,8 @@ export interface operations {
             "step_path"?: Array<string>;
           }>;
           "browser"?: ({
+            "available_screen_height"?: number;
+            "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_screenshots"?: string;
@@ -83756,6 +85817,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
             "traceparent"?: (boolean) | null;
@@ -83871,6 +85933,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -83894,6 +85958,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -83939,6 +86004,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -83973,23 +86039,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -84076,8 +86151,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -84159,6 +86236,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -84834,6 +86912,8 @@ export interface operations {
             "step_path"?: Array<string>;
           }>;
           "browser"?: ({
+            "available_screen_height"?: number;
+            "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_screenshots"?: string;
@@ -84880,6 +86960,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
             "traceparent"?: (boolean) | null;
@@ -84995,6 +87076,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -85018,6 +87101,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -85063,6 +87147,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -85097,23 +87182,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -85200,8 +87294,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -85283,6 +87379,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -85959,6 +88056,8 @@ export interface operations {
             "step_path"?: Array<string>;
           }>;
           "browser"?: ({
+            "available_screen_height"?: number;
+            "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_screenshots"?: string;
@@ -86005,6 +88104,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
             "traceparent"?: (boolean) | null;
@@ -86120,6 +88220,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -86143,6 +88245,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -86188,6 +88291,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -86222,23 +88326,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -86325,8 +88438,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -86408,6 +88523,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -87083,6 +89199,8 @@ export interface operations {
             "step_path"?: Array<string>;
           }>;
           "browser"?: ({
+            "available_screen_height"?: number;
+            "available_screen_width"?: number;
             "cache_content_urls"?: (boolean) | null;
             "cache_enabled"?: (boolean) | null;
             "capture_screenshots"?: string;
@@ -87129,6 +89247,7 @@ export interface operations {
               "allow_reviewed_javascript"?: boolean;
             };
             "slow_mo_ms"?: number;
+            "system_language"?: string;
             "timezone"?: string;
             "touch_mode"?: (boolean) | null;
             "traceparent"?: (boolean) | null;
@@ -87244,6 +89363,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -87267,6 +89388,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -87312,6 +89434,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -87346,23 +89469,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -87449,8 +89581,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -87532,6 +89666,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -91156,6 +93291,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -91179,6 +93316,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -91197,6 +93335,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -91209,23 +93348,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -91244,8 +93392,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -91261,6 +93411,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -91292,6 +93445,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "runtime_state"?: string;
@@ -92422,6 +94585,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -92468,6 +94633,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -92483,6 +94649,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -92496,6 +94663,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -92514,28 +94682,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -92561,8 +94739,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -92582,6 +94762,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -92609,6 +94799,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -92639,6 +94831,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "runtime_settings_review"?: ({
@@ -93087,6 +95289,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -93110,6 +95314,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -93155,6 +95360,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -93189,23 +95395,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -93292,8 +95507,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -93375,6 +95592,7 @@ export interface operations {
                 "streaming"?: Record<string, unknown>;
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -93727,6 +95945,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -93750,6 +95970,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -93795,6 +96016,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -93829,23 +96051,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -93932,8 +96163,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -94015,6 +96248,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -96791,6 +99025,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -96814,6 +99050,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -96832,6 +99069,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -96844,23 +99082,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -96879,8 +99126,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -96896,6 +99145,9 @@ export interface operations {
                 "type"?: string;
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -96928,6 +99180,16 @@ export interface operations {
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
               }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
+              }) | null;
             }) | null;
             "script_id"?: string;
             "stages"?: Array<{
@@ -96954,6 +99216,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -97000,6 +99264,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -97015,6 +99280,7 @@ export interface operations {
               "cache"?: ({
                 "cache_content_urls"?: (boolean) | null;
                 "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
                 "download_non_html_resources"?: (boolean) | null;
                 "new_user_each_iteration"?: (boolean) | null;
                 "simulate_cache"?: (boolean) | null;
@@ -97028,6 +99294,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -97046,28 +99313,38 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: {
                 "no_proxy"?: Array<string>;
+                "pac_url"?: string;
                 "password"?: string;
                 "url"?: string;
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: {
                 "ca_cert_file"?: string;
                 "client_cert_file"?: string;
@@ -97093,8 +99370,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -97114,6 +99393,16 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -97141,6 +99430,8 @@ export interface operations {
               "content_checks"?: Array<{
                 "case_insensitive"?: boolean;
                 "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
                 "scope"?: string;
                 "text"?: string;
               }>;
@@ -97171,6 +99462,16 @@ export interface operations {
                 "fixed_bitrate_kbps"?: number;
                 "mode"?: string;
               };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario_mode"?: string;
@@ -97392,6 +99693,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -97438,6 +99741,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -97453,6 +99757,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -97466,6 +99771,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -97484,28 +99790,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -97531,8 +99847,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -97552,6 +99870,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -97579,6 +99907,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -97609,6 +99939,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "scenario_mode"?: string;
@@ -97727,6 +100067,8 @@ export interface operations {
                   "touch_mode"?: (boolean) | null;
                 }) | null;
                 "browser_config"?: ({
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -97750,6 +100092,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -97768,6 +100111,7 @@ export interface operations {
                 "env"?: Record<string, string>;
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -97780,23 +100124,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Record<string, unknown>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -97815,8 +100168,10 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                 }) | null;
                 "log"?: ({
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
@@ -97832,6 +100187,9 @@ export interface operations {
                   "type": string;
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
+                "results"?: ({
+                  "message_detail"?: (Record<string, unknown>) | null;
+                }) | null;
                 "run_logic"?: ({
                   "action_sequence"?: Array<string>;
                   "auto_transactions"?: string;
@@ -97863,6 +100221,16 @@ export interface operations {
                   "network_simulation"?: Record<string, unknown>;
                   "source_ips"?: Array<string>;
                   "streaming"?: Record<string, unknown>;
+                }) | null;
+                "websocket"?: ({
+                  "callback_interval_ms"?: number;
+                  "compression"?: boolean;
+                  "max_message_size"?: number;
+                  "origin"?: string;
+                  "read_timeout_ms"?: number;
+                  "reconnect"?: boolean;
+                  "subprotocol"?: string;
+                  "write_timeout_ms"?: number;
                 }) | null;
               }) | null;
               "script_id": string;
@@ -98281,6 +100649,7 @@ export interface operations {
             "actions"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -98376,6 +100745,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -98416,6 +100787,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -98431,6 +100803,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -98477,6 +100850,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -98517,28 +100891,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -98641,8 +101025,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -98674,6 +101060,7 @@ export interface operations {
               };
               "results"?: {
                 "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
                   "max_items"?: number;
                   "max_total_bytes"?: number;
@@ -98753,6 +101140,7 @@ export interface operations {
                 };
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -98805,6 +101193,7 @@ export interface operations {
             "init"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -98942,6 +101331,7 @@ export interface operations {
             "teardown"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -99173,6 +101563,8 @@ export interface operations {
               "config": {
                 "base_url": string;
                 "browser"?: {
+                  "available_screen_height"?: number;
+                  "available_screen_width"?: number;
                   "cache_content_urls"?: (boolean) | null;
                   "cache_enabled"?: (boolean) | null;
                   "capture_screenshots"?: string;
@@ -99196,6 +101588,7 @@ export interface operations {
                   "proxy"?: Record<string, unknown>;
                   "review_policy"?: Record<string, unknown>;
                   "slow_mo_ms"?: number;
+                  "system_language"?: string;
                   "timezone"?: string;
                   "touch_mode"?: (boolean) | null;
                   "traceparent"?: (boolean) | null;
@@ -99241,6 +101634,7 @@ export interface operations {
                 };
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
+                  "fail_transaction_on_error_message"?: (boolean) | null;
                   "max_retries"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
@@ -99275,23 +101669,32 @@ export interface operations {
                   "cache_enabled"?: (boolean) | null;
                   "cache_excluded_mime_types"?: Array<string>;
                   "cache_max_unused_iterations"?: number;
+                  "challenge_delay_ms"?: number;
                   "clear_cookies_per_iteration"?: (boolean) | null;
                   "connect_timeout_ms"?: number;
+                  "content_check_error_limit"?: number;
                   "cookies_enabled"?: (boolean) | null;
                   "default_header_list"?: Array<Record<string, unknown>>;
                   "default_headers"?: Record<string, string>;
+                  "dns_cache"?: (boolean) | null;
+                  "fail_noncritical_resources"?: (boolean) | null;
                   "html_excluded_mime_types"?: Array<string>;
                   "html_parse_mode"?: string;
+                  "http_errors_as_warnings"?: (boolean) | null;
                   "idle_timeout_ms"?: number;
                   "ip_version"?: string;
                   "keep_alive"?: (boolean) | null;
+                  "legacy_html_checks"?: (boolean) | null;
                   "max_conns_per_host"?: number;
                   "max_idle_conns"?: number;
+                  "max_meta_refresh"?: number;
                   "max_redirects"?: (number) | null;
                   "page_timeout_ms"?: number;
                   "proxy"?: Record<string, unknown>;
                   "proxy_mode"?: string;
+                  "receive_buffer_bytes"?: number;
                   "request_timeout_ms"?: number;
+                  "resource_timeout_as_warning"?: (boolean) | null;
                   "tls"?: Record<string, unknown>;
                   "tls_timeout_ms"?: number;
                   "traceparent"?: (boolean) | null;
@@ -99378,8 +101781,10 @@ export interface operations {
                   "transactional_id"?: string;
                 };
                 "log"?: {
+                  "error_buffer_bytes"?: number;
                   "extended_options"?: Array<string>;
                   "level"?: string;
+                  "max_response_bytes"?: number;
                   "on_error_only"?: boolean;
                   "redact_run_evidence"?: (boolean) | null;
                 };
@@ -99461,6 +101866,7 @@ export interface operations {
                   "streaming"?: Record<string, unknown>;
                 };
                 "websocket"?: {
+                  "callback_interval_ms"?: number;
                   "compression"?: boolean;
                   "max_message_size"?: number;
                   "origin"?: string;
@@ -101879,6 +104285,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -101925,6 +104333,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -101940,6 +104349,7 @@ export interface operations {
               "cache"?: ({
                 "cache_content_urls"?: (boolean) | null;
                 "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
                 "download_non_html_resources"?: (boolean) | null;
                 "new_user_each_iteration"?: (boolean) | null;
                 "simulate_cache"?: (boolean) | null;
@@ -101952,6 +104362,7 @@ export interface operations {
             }) | null;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -101970,8 +104381,10 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<{
                 "enabled"?: (boolean) | null;
@@ -101979,23 +104392,31 @@ export interface operations {
                 "value"?: string;
               }>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: {
                 "no_proxy"?: Array<string>;
+                "pac_url"?: string;
                 "password"?: string;
                 "url"?: string;
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: {
                 "ca_cert_file"?: string;
                 "client_cert_file"?: string;
@@ -102021,8 +104442,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -102036,6 +104459,16 @@ export interface operations {
               "min_interval_ms"?: number;
               "tps"?: number;
               "type"?: string;
+            }) | null;
+            "results"?: ({
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
             }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
@@ -102064,6 +104497,8 @@ export interface operations {
               "content_checks"?: Array<{
                 "case_insensitive"?: boolean;
                 "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
                 "scope"?: string;
                 "text"?: string;
               }>;
@@ -102095,6 +104530,16 @@ export interface operations {
                 "mode"?: string;
               };
             }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
+            }) | null;
           }) | null;
         };
       };
@@ -102119,6 +104564,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -102165,6 +104612,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -102180,6 +104628,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -102193,6 +104642,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -102211,28 +104661,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -102258,8 +104718,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -102279,6 +104741,16 @@ export interface operations {
                 "pattern": string;
                 "replacement"?: string;
               }>;
+              "results"?: ({
+                "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
+                  "max_item_bytes"?: number;
+                  "max_items"?: number;
+                  "max_total_bytes"?: number;
+                  "mode": string;
+                  "sample_rate"?: number;
+                }) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -102306,6 +104778,8 @@ export interface operations {
                 "content_checks"?: Array<{
                   "case_insensitive"?: boolean;
                   "fail_if_found"?: (boolean) | null;
+                  "left_boundary"?: string;
+                  "right_boundary"?: string;
                   "scope"?: string;
                   "text"?: string;
                 }>;
@@ -102336,6 +104810,16 @@ export interface operations {
                   "fixed_bitrate_kbps"?: number;
                   "mode"?: string;
                 };
+              }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
               }) | null;
             }) | null;
             "test_id": string;
@@ -102691,6 +105175,7 @@ export interface operations {
             "actions"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -102786,6 +105271,8 @@ export interface operations {
             "config"?: {
               "base_url"?: string;
               "browser"?: {
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -102826,6 +105313,7 @@ export interface operations {
                   "allow_reviewed_javascript"?: boolean;
                 };
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -102841,6 +105329,7 @@ export interface operations {
                 "cache"?: ({
                   "cache_content_urls"?: (boolean) | null;
                   "check_newer_versions"?: (boolean) | null;
+                  "clear_cache_for_new_user"?: (boolean) | null;
                   "download_non_html_resources"?: (boolean) | null;
                   "new_user_each_iteration"?: (boolean) | null;
                   "simulate_cache"?: (boolean) | null;
@@ -102887,6 +105376,7 @@ export interface operations {
               };
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -102927,28 +105417,38 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Array<Record<string, unknown>>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: {
                   "no_proxy"?: Array<string>;
+                  "pac_url"?: string;
                   "password"?: string;
                   "url"?: string;
                   "username"?: string;
                 };
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: {
                   "ca_cert_file"?: string;
                   "client_cert_file"?: string;
@@ -103051,8 +105551,10 @@ export interface operations {
                 "transactional_id"?: string;
               };
               "log"?: {
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               };
@@ -103084,6 +105586,7 @@ export interface operations {
               };
               "results"?: {
                 "message_detail"?: ({
+                  "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
                   "max_items"?: number;
                   "max_total_bytes"?: number;
@@ -103163,6 +105666,7 @@ export interface operations {
                 };
               };
               "websocket"?: {
+                "callback_interval_ms"?: number;
                 "compression"?: boolean;
                 "max_message_size"?: number;
                 "origin"?: string;
@@ -103215,6 +105719,7 @@ export interface operations {
             "init"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -103352,6 +105857,7 @@ export interface operations {
             "teardown"?: Array<{
               "assertions"?: Array<{
                 "expected"?: unknown;
+                "legacy_html_check"?: boolean;
                 "max"?: number;
                 "min"?: number;
                 "type"?: string;
@@ -103851,6 +106357,8 @@ export interface operations {
                 "touch_mode"?: (boolean) | null;
               }) | null;
               "browser_config"?: ({
+                "available_screen_height"?: number;
+                "available_screen_width"?: number;
                 "cache_content_urls"?: (boolean) | null;
                 "cache_enabled"?: (boolean) | null;
                 "capture_screenshots"?: string;
@@ -103874,6 +106382,7 @@ export interface operations {
                 "proxy"?: Record<string, unknown>;
                 "review_policy"?: Record<string, unknown>;
                 "slow_mo_ms"?: number;
+                "system_language"?: string;
                 "timezone"?: string;
                 "touch_mode"?: (boolean) | null;
                 "traceparent"?: (boolean) | null;
@@ -103892,6 +106401,7 @@ export interface operations {
               "env"?: Record<string, string>;
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
+                "fail_transaction_on_error_message"?: (boolean) | null;
                 "max_retries"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
@@ -103904,23 +106414,32 @@ export interface operations {
                 "cache_enabled"?: (boolean) | null;
                 "cache_excluded_mime_types"?: Array<string>;
                 "cache_max_unused_iterations"?: number;
+                "challenge_delay_ms"?: number;
                 "clear_cookies_per_iteration"?: (boolean) | null;
                 "connect_timeout_ms"?: number;
+                "content_check_error_limit"?: number;
                 "cookies_enabled"?: (boolean) | null;
                 "default_header_list"?: Record<string, unknown>;
                 "default_headers"?: Record<string, string>;
+                "dns_cache"?: (boolean) | null;
+                "fail_noncritical_resources"?: (boolean) | null;
                 "html_excluded_mime_types"?: Array<string>;
                 "html_parse_mode"?: string;
+                "http_errors_as_warnings"?: (boolean) | null;
                 "idle_timeout_ms"?: number;
                 "ip_version"?: string;
                 "keep_alive"?: (boolean) | null;
+                "legacy_html_checks"?: (boolean) | null;
                 "max_conns_per_host"?: number;
                 "max_idle_conns"?: number;
+                "max_meta_refresh"?: number;
                 "max_redirects"?: (number) | null;
                 "page_timeout_ms"?: number;
                 "proxy"?: Record<string, unknown>;
                 "proxy_mode"?: string;
+                "receive_buffer_bytes"?: number;
                 "request_timeout_ms"?: number;
+                "resource_timeout_as_warning"?: (boolean) | null;
                 "tls"?: Record<string, unknown>;
                 "tls_timeout_ms"?: number;
                 "traceparent"?: (boolean) | null;
@@ -103939,8 +106458,10 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
               }) | null;
               "log"?: ({
+                "error_buffer_bytes"?: number;
                 "extended_options"?: Array<string>;
                 "level"?: string;
+                "max_response_bytes"?: number;
                 "on_error_only"?: boolean;
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
@@ -103956,6 +106477,9 @@ export interface operations {
                 "type"?: string;
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
+              "results"?: ({
+                "message_detail"?: (Record<string, unknown>) | null;
+              }) | null;
               "run_logic"?: ({
                 "action_sequence"?: Array<string>;
                 "auto_transactions"?: string;
@@ -103988,6 +106512,16 @@ export interface operations {
                 "source_ips"?: Array<string>;
                 "streaming"?: Record<string, unknown>;
               }) | null;
+              "websocket"?: ({
+                "callback_interval_ms"?: number;
+                "compression"?: boolean;
+                "max_message_size"?: number;
+                "origin"?: string;
+                "read_timeout_ms"?: number;
+                "reconnect"?: boolean;
+                "subprotocol"?: string;
+                "write_timeout_ms"?: number;
+              }) | null;
             }) | null;
             "script_id"?: string;
             "stages"?: Array<{
@@ -104014,6 +106548,8 @@ export interface operations {
               "touch_mode"?: (boolean) | null;
             }) | null;
             "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
               "cache_content_urls"?: (boolean) | null;
               "cache_enabled"?: (boolean) | null;
               "capture_screenshots"?: string;
@@ -104060,6 +106596,7 @@ export interface operations {
                 "allow_reviewed_javascript"?: boolean;
               };
               "slow_mo_ms"?: number;
+              "system_language"?: string;
               "timezone"?: string;
               "touch_mode"?: (boolean) | null;
               "traceparent"?: (boolean) | null;
@@ -104075,6 +106612,7 @@ export interface operations {
               "cache"?: ({
                 "cache_content_urls"?: (boolean) | null;
                 "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
                 "download_non_html_resources"?: (boolean) | null;
                 "new_user_each_iteration"?: (boolean) | null;
                 "simulate_cache"?: (boolean) | null;
@@ -104088,6 +106626,7 @@ export interface operations {
             "env"?: Record<string, string>;
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
               "max_retries"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
@@ -104106,28 +106645,38 @@ export interface operations {
               "cache_enabled"?: (boolean) | null;
               "cache_excluded_mime_types"?: Array<string>;
               "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
               "clear_cookies_per_iteration"?: (boolean) | null;
               "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
               "cookies_enabled"?: (boolean) | null;
               "default_header_list"?: Array<Record<string, unknown>>;
               "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
               "html_excluded_mime_types"?: Array<string>;
               "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
               "idle_timeout_ms"?: number;
               "ip_version"?: string;
               "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
               "max_conns_per_host"?: number;
               "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
               "max_redirects"?: (number) | null;
               "page_timeout_ms"?: number;
               "proxy"?: {
                 "no_proxy"?: Array<string>;
+                "pac_url"?: string;
                 "password"?: string;
                 "url"?: string;
                 "username"?: string;
               };
               "proxy_mode"?: string;
+              "receive_buffer_bytes"?: number;
               "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
               "tls"?: {
                 "ca_cert_file"?: string;
                 "client_cert_file"?: string;
@@ -104153,8 +106702,10 @@ export interface operations {
               "use_xbootclasspath"?: (boolean) | null;
             }) | null;
             "log"?: ({
+              "error_buffer_bytes"?: number;
               "extended_options"?: Array<string>;
               "level"?: string;
+              "max_response_bytes"?: number;
               "on_error_only"?: boolean;
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
@@ -104174,6 +106725,16 @@ export interface operations {
               "pattern"?: string;
               "replacement"?: string;
             }>;
+            "results"?: ({
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+            }) | null;
             "run_logic"?: ({
               "action_sequence"?: Array<string>;
               "auto_transactions"?: string;
@@ -104201,6 +106762,8 @@ export interface operations {
               "content_checks"?: Array<{
                 "case_insensitive"?: boolean;
                 "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
                 "scope"?: string;
                 "text"?: string;
               }>;
@@ -104231,6 +106794,16 @@ export interface operations {
                 "fixed_bitrate_kbps"?: number;
                 "mode"?: string;
               };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
             }) | null;
           }) | null;
           "scenario_mode"?: string;

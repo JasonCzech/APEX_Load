@@ -92,18 +92,30 @@ test('Source Mapping keeps equal source and destination widths through selection
   await page.getByRole('button', { name: 'Source Mapping', exact: true }).click()
   const mapping = page.getByRole('region', { name: 'Source Mapping', exact: true })
   await mapping.getByRole('button', { name: /^Show mappings/ }).click()
+  await expect(mapping.locator('.source-map-review')).toHaveCSS('overflow-y', 'auto')
   const panels = mapping.locator('.source-map-panel')
   const equalSplit = async () => {
     await expect(panels.nth(0)).toBeVisible()
     await expect(panels.nth(1)).toBeVisible()
-    const source = (await panels.nth(0).boundingBox())!
-    const destination = (await panels.nth(1).boundingBox())!
+    // Read both panes in the same layout frame while the responsive sidebar animates.
+    const [source, destination] = await panels.evaluateAll(elements => elements.map(element => {
+      const { x, y, width, height } = element.getBoundingClientRect()
+      return { x, y, width, height }
+    }))
     expect(Math.abs(source.width - destination.width)).toBeLessThanOrEqual(1)
-    expect(Math.abs(source.y - destination.y)).toBeLessThanOrEqual(1)
+    const stacked = await mapping.locator('.source-map-panels').evaluate(element => getComputedStyle(element).flexDirection === 'column')
+    if (stacked) {
+      expect(Math.abs(source.x - destination.x)).toBeLessThanOrEqual(1)
+      expect(destination.y).toBeGreaterThanOrEqual(source.y + source.height)
+    } else {
+      expect(Math.abs(source.y - destination.y)).toBeLessThanOrEqual(1)
+      expect(destination.x).toBeGreaterThan(source.x + source.width)
+    }
+    const headers = panels.locator('.source-map-panel-header')
+    expect(Math.abs((await headers.nth(0).boundingBox())!.height - (await headers.nth(1).boundingBox())!.height)).toBeLessThanOrEqual(1)
     expect(source.height).toBeGreaterThan(100)
     expect(source.height).toBeLessThanOrEqual(1000)
     expect(destination.height).toBeLessThanOrEqual(1000)
-    expect(destination.x).toBeGreaterThan(source.x + source.width)
     await expect(panels.nth(0)).toHaveCSS('resize', 'none')
   }
   for (const width of [1800, 1100, 900, 700]) {
@@ -112,9 +124,11 @@ test('Source Mapping keeps equal source and destination widths through selection
       await mapping.getByRole('row').filter({ hasText: functionName }).click()
       await equalSplit()
     }
+    await mapping.locator('.source-map-view-options > summary').click()
     await mapping.getByRole('button', { name: 'Word Wrap: On', exact: true }).click()
     await equalSplit()
     await mapping.getByRole('button', { name: 'Word Wrap: Off', exact: true }).click()
+    await mapping.locator('.source-map-view-options > summary').click()
     await panels.nth(0).getByRole('button', { name: 'Focus source', exact: true }).click()
     await expect(panels.nth(1)).toBeHidden()
     await panels.nth(0).getByRole('button', { name: 'Return to comparison', exact: true }).click()
@@ -163,6 +177,15 @@ test('source mapping review decisions survive saving and moved or edited destina
   await expect(mapping.getByRole('table')).toBeHidden()
   await expect(mapping).toContainText('Destination identity: matched')
   await expect(mapping).toContainText('Check the first request.')
+  const previewNotice = mapping.getByRole('note', { name: 'Source preview limits' })
+  await expect(previewNotice).toContainText('Preview limits only — not an import issue')
+  await previewNotice.locator('summary').click()
+  await expect(previewNotice.getByRole('listitem')).toHaveCount(2)
+  await expect(previewNotice.getByRole('listitem').filter({ hasText: 'missing.dat' })).toContainText('Not shown in preview')
+  await previewNotice.getByRole('button', { name: 'View preview of globals.h' }).click()
+  await expect(mapping.getByLabel('Captured source file (2)', { exact: true })).toHaveValue('globals.h')
+  await mapping.getByLabel('Captured source file (2)', { exact: true }).selectOption('Action.c')
+  await previewNotice.locator('summary').click()
   await mapping.getByText('Review & mapping details · Not reviewed', { exact: true }).click()
   await mapping.getByLabel('Review note', { exact: true }).fill('Checked against captured source')
   await mapping.getByRole('button', { name: 'Record review decision', exact: true }).click()

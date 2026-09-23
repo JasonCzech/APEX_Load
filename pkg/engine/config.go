@@ -250,6 +250,7 @@ func flattenContentChecks(checks []dsl.ContentCheckConfig) []map[string]any {
 	flattened := make([]map[string]any, 0, len(checks))
 	for _, check := range checks {
 		item := map[string]any{
+			"left_boundary": check.LeftBoundary, "right_boundary": check.RightBoundary,
 			"text":  check.Text,
 			"scope": check.Scope,
 		}

@@ -37,6 +37,15 @@ func appendBrunoConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	httpCfg := script.Config.HTTP
+	cfg["receive_buffer_bytes"] = httpCfg.ReceiveBufferBytes
+	cfg["max_meta_refresh"] = httpCfg.MaxMetaRefresh
+	cfg["content_check_error_limit"] = httpCfg.ContentCheckErrorLimit
+	cfg["challenge_delay_ms"] = httpCfg.AuthDelayMs
+	for key, value := range map[string]*bool{"http_errors_as_warnings": httpCfg.HTTPErrorsAsWarnings, "fail_noncritical_resources": httpCfg.FailNonCriticalResources, "resource_timeout_as_warning": httpCfg.ResourceTimeoutAsWarning, "legacy_html_checks": httpCfg.LegacyHTMLChecks, "dns_cache": httpCfg.DNSCache} {
+		if value != nil {
+			cfg[key] = *value
+		}
+	}
 	cfg["page_timeout_ms"] = float64(httpCfg.PageTimeoutMs)
 	cfg["ip_version"] = httpCfg.IPVersion
 	cfg["cache_max_unused_iterations"] = float64(httpCfg.CacheMaxUnusedIterations)
@@ -217,6 +226,9 @@ func appendBrowserEmulationHTTPConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendWebSocketConfig(cfg map[string]any, script *dsl.Script) {
 	webSocketCfg := script.Config.WebSocket
+	if webSocketCfg.CallbackIntervalMs > 0 {
+		cfg["websocket_callback_interval_ms"] = webSocketCfg.CallbackIntervalMs
+	}
 	if webSocketCfg.ReadTimeoutMs > 0 {
 		cfg["websocket_read_timeout_ms"] = float64(webSocketCfg.ReadTimeoutMs)
 	}
@@ -457,6 +469,9 @@ func appendNetworkConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	browserCfg := script.Config.Browser
+	cfg["browser_system_language"] = browserCfg.SystemLanguage
+	cfg["browser_available_screen_width"] = browserCfg.AvailableScreenWidth
+	cfg["browser_available_screen_height"] = browserCfg.AvailableScreenHeight
 	if browserCfg.Engine != "" {
 		cfg["browser_engine"] = browserCfg.Engine
 	}
@@ -817,6 +832,7 @@ func appendHTTPSecurityConfig(cfg map[string]any, script *dsl.Script) {
 		cfg["proxy_mode"] = httpCfg.ProxyMode
 	}
 	proxy := httpCfg.Proxy
+	cfg["proxy_pac_url"] = proxy.PACURL
 	if proxy.URL != "" {
 		cfg["proxy_url"] = proxy.URL
 	}

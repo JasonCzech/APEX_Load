@@ -860,7 +860,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -879,7 +879,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -898,7 +898,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -917,7 +917,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -936,7 +936,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -955,7 +955,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -974,7 +974,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1023,7 +1023,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1042,7 +1042,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1061,7 +1061,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1080,7 +1080,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1099,7 +1099,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1118,7 +1118,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1137,7 +1137,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1711,7 +1711,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1730,7 +1730,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1749,7 +1749,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1768,7 +1768,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1787,7 +1787,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1806,7 +1806,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1825,7 +1825,7 @@ Protocols: http, soap, java_http
 | `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
-| `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
+| `body_encoding` | string |  | Body wire encoding: base64 for binary payloads, or windows-1252 for strict text encoding after interpolation. Unrepresentable characters fail. |
 | `params.resources` | array |  | Explicit resource GETs belonging to this request: {url, referer?}. Maximum 64; relative URLs use the final response URL. Included in parent timing, cache, and verification. |
 | `params` | object |  | Protocol-specific request options. |
 | `soap` | object |  | SOAP-only: {action, operation, body_mode (raw_xml|generated)}. |
@@ -1844,6 +1844,18 @@ Opens the WebSocket connection.
 |-------|------|----------|-------------|
 | `target` | string | yes | WebSocket URL (ws:// or wss://); relative paths resolve against config.base_url. |
 | `headers` | object |  | Handshake request headers. |
+
+### `ws_dispatch`
+
+Waits until the next callback interval and dispatches queued messages serially.
+
+### `ws_on_message`
+
+Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.
+
+| Field | Kind | Required | Description |
+|-------|------|----------|-------------|
+| `control` | object | yes | control.steps executes for each queued message; var.ws_message and var.ws_message_type contain the event. |
 
 ### `ws_ping`
 

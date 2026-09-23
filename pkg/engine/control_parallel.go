@@ -164,6 +164,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		extractedVariables:           make(map[string]int),
 		sourceTransactions:           make(map[string]*sourceTransactionRuntimeState),
 	}
+	defer branchVU.closeErrorLogs()
 	branchVU.ensureImportedCredentialInspection()
 	branchVU.bindRuntimeTextRedactor()
 	config := vuserProtoConfig(buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", branchVU.secretResolver()), vu.ID)

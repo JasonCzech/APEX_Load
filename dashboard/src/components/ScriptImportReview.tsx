@@ -421,6 +421,7 @@ interface Props {
   dataContent?: ReactNode
   batchControls?: ReactNode
   compactReview?: boolean
+  showOriginalDiagnostics?: boolean
   showCredentials?: boolean
   showDataReview?: boolean
   credentialIntroduction?: ReactNode
@@ -491,6 +492,7 @@ export default function ScriptImportReview({
   showCredentials: requestedCredentials = true,
   showDataReview: requestedData = true,
   compactReview = false,
+  showOriginalDiagnostics = true,
   tabbed = false,
   runtimeContent,
   onSettingsApplied,
@@ -1034,7 +1036,7 @@ export default function ScriptImportReview({
 
       </div>
 
-      {(conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics" hidden={tabbed ? activeReviewTab !== 'review' : compactReview && (showDataReview || showCredentials || showPreview || showPreviewAside)}><summary hidden={!compactReview}>Original import diagnostics</summary>
+      {(conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics" hidden={!showOriginalDiagnostics || (tabbed ? activeReviewTab !== 'review' : compactReview && (showDataReview || showCredentials || showPreview || showPreviewAside))}><summary hidden={!compactReview}>Original import diagnostics</summary>
       {conversionNotes.length > 0 && <button type="button" className="script-health-token issue-pill-button" onClick={() => setIssueDialog({ title: 'Conversion notes', issues: conversionNotes })}>{conversionNotes.length} conversion note{conversionNotes.length === 1 ? '' : 's'}</button>}
       {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
         <div className="script-import-review-issue-summary" aria-label="Import issue summary">
@@ -1120,12 +1122,12 @@ export default function ScriptImportReview({
 
       {showPreview && previewPane}
       {tabbed && activeReviewTab === 'source' && !previewAside && <p className="import-review-empty">This importer did not provide source mappings. Conversion does not establish source parity; retain the original source for manual comparison.</p>}
-      {showPreviewAside && onSettingsApplied && <ImportSourceInventory script={script} />}
       {sourceVisited.current && previewAside && (
         <div className="script-import-review-preview-aside" hidden={!showPreviewAside}>
           {previewAside}
         </div>
       )}
+      {showPreviewAside && onSettingsApplied && <ImportSourceInventory script={script} />}
       {issueDialog && (
         <IssueDetailsDialog
           title={issueDialog.title}

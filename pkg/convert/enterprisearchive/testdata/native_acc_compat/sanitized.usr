@@ -1,0 +1,10 @@
+[General]
+Type=Multi
+DefaultCfg=default.cfg
+ActiveTypes=QTWeb
+GenerateTypes=QTWeb
+ScriptLanguage=C
+[Actions]
+vuser_init=vuser_init.c
+Action=Action.c
+vuser_end=vuser_end.c

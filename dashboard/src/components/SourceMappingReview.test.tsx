@@ -151,6 +151,27 @@ describe('SourceMappingReview', () => {
   let container: HTMLDivElement
   let root: Root
 
+  it('keeps the selected comparison available while navigating and filtering mappings', async () => {
+    await act(async () => { root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />) })
+    await flushPromises()
+    const workspace = container.querySelector('.source-map-workspace')!
+    const comparison = workspace.querySelector('.source-map-comparison')!
+    expect(comparison.querySelector('[aria-label="Generated DSL"]')).not.toBeNull()
+    expect(container.querySelector<HTMLDetailsElement>('.source-map-view-options')?.open).toBe(false)
+    const show = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Show mappings'))!
+    await act(async () => { show.click() })
+    expect(workspace.classList.contains('with-navigator')).toBe(true)
+    const logout = workspace.querySelector<HTMLButtonElement>('[data-mapping-id="logout"] button')!
+    await act(async () => { logout.click() })
+    await flushPromises()
+    expect(sourceFileSelect(container).value).toBe('vuser_end.c')
+    expect(comparison.querySelector('[aria-label="Generated DSL"]')?.textContent).toContain('/logout')
+    const hide = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Hide mappings')!
+    await act(async () => { hide.click() })
+    expect(workspace.classList.contains('with-navigator')).toBe(false)
+    expect(comparison.querySelector('[aria-label="Generated DSL"]')?.textContent).toContain('/logout')
+  })
+
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -571,6 +592,40 @@ describe('SourceMappingReview', () => {
     expect(withoutOrigin?.dataset.tooltip).toContain('no traceable source mapping')
   })
 
+  it('explains preview limits separately from import issues and opens a shortened file', async () => {
+    await act(async () => { root.render(<SourceMappingReview script={script} sourceReview={{
+      ...sourceReview,
+      total_source_files: 4,
+      omitted_source_files: ['support/extra.dat'],
+      source_files: sourceReview.source_files.map(file => ({ ...file, truncated: file.path === 'globals.h' })),
+    }} />) })
+    await flushPromises()
+    const notice = container.querySelector('[aria-label="Source preview limits"]')!
+    expect(notice.getAttribute('role')).toBe('note')
+    expect(notice.querySelector('[role="alert"]')).toBeNull()
+    expect(notice.textContent).toContain('do not truncate the imported script or remove data from the import')
+    expect(notice.textContent).toContain('Any conversion issues are reported separately')
+    const details = notice.querySelector('details')!
+    expect(details.open).toBe(false)
+    await act(async () => { details.querySelector('summary')!.click() })
+    expect(details.open).toBe(true)
+    const rows = Array.from(notice.querySelectorAll('li'))
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('globals.hShortened in preview')
+    expect(rows[1].textContent).toContain('support/extra.datNot shown in preview')
+    expect(rows[1].querySelector('button')).toBeNull()
+    await act(async () => { rows[0].querySelector('button')!.click() })
+    await flushPromises()
+    expect(sourceFileSelect(container).value).toBe('globals.h')
+  })
+
+  it('still reports inconsistent preview file counts as a separate alert', async () => {
+    await act(async () => { root.render(<SourceMappingReview script={script} sourceReview={{ ...sourceReview, total_source_files: 4 }} />) })
+    await flushPromises()
+    expect(container.querySelector('.source-map-preview-integrity[role="alert"]')?.textContent).toContain('Review file counts are inconsistent')
+    expect(container.querySelector('.source-map-preview-files')).toBeNull()
+  })
+
   it('warns when the bounded source-review payload omits or truncates executable source', async () => {
     const digest = `sha256:${'a'.repeat(64)}`
     const incompleteReview = {
@@ -608,8 +663,9 @@ describe('SourceMappingReview', () => {
 
     const warning = container.querySelector('.source-map-incomplete')
     expect(warning).not.toBeNull()
-    expect(warning?.textContent).toContain('2 source files are omitted')
-    expect(warning?.textContent).toContain('1 source file is truncated')
+    expect(warning?.textContent).toContain('Preview limits only — not an import issue')
+    expect(warning?.querySelectorAll('li')).toHaveLength(3)
+    expect(warning?.textContent).toContain('Shortened in preview')
     expect(warning?.textContent).toContain('out-of-band review of the governed original archive before approval')
     const manifest = container.querySelector('[aria-label="Java full-source manifest"]')
     expect(manifest?.textContent).toContain('5 Java files')

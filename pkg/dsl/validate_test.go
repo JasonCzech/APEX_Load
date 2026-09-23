@@ -702,7 +702,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.http.max_redirects must be between -1 and 50")
 	assertIssue(t, issues, `config.http.auth.type: unsupported HTTP auth type "hawk"`)
 	assertIssue(t, issues, "config.http.tls.max_version must not be lower than min_version")
-	assertIssue(t, issues, "config.http.proxy_mode must be none, system, or custom")
+	assertIssue(t, issues, "config.http.proxy_mode must be none, system, custom, or pac")
 	assertIssue(t, issues, "config.browser.download_resources must be none, recorded, or all")
 	assertIssue(t, issues, "config.web_runtime.additional_attributes keys must be non-empty")
 	assertIssue(t, issues, "config.web_runtime.download_filters.hosts is required when download filter mode is allow_list or block_list")

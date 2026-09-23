@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -27,6 +28,10 @@ type digestChallenge struct {
 }
 
 func retryWithDigestAuth(client *http.Client, req *http.Request, resp *http.Response, auth *protocol.AuthConfig, body []byte) (*http.Request, *http.Response, bool, error) {
+	return retryWithDigestAuthDelay(client, req, resp, auth, body, 0)
+}
+
+func retryWithDigestAuthDelay(client *http.Client, req *http.Request, resp *http.Response, auth *protocol.AuthConfig, body []byte, delay time.Duration) (*http.Request, *http.Response, bool, error) {
 	if client == nil || req == nil || resp == nil || !isDigestAuth(auth) || resp.StatusCode != http.StatusUnauthorized {
 		return req, resp, false, nil
 	}
@@ -57,6 +62,15 @@ func retryWithDigestAuth(client *http.Client, req *http.Request, resp *http.Resp
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	_ = resp.Body.Close()
 
+	if delay > 0 {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-req.Context().Done():
+			return req, nil, true, req.Context().Err()
+		}
+	}
 	retryBody := body
 	if challengedReq.Body == nil || challengedReq.Body == http.NoBody {
 		retryBody = nil

@@ -17,20 +17,23 @@ import (
 )
 
 type VUser struct {
-	ID                  int
-	TotalVUsers         int
-	ParameterAllocation *ParameterAllocation
-	Group               string
-	Region              string
-	Proto               protocol.Protocol
-	Script              *dsl.Script
-	Metrics             *MetricsCollector
-	ResultSink          ResultSink
-	Variables           map[string]string
-	DataProvider        *DataProvider
-	Parameters          *ParameterRuntime
-	SecretResolver      SecretResolver
-	RedactionConfig     *RedactionConfig
+	webSocketCallbackSteps []dsl.Action
+	inWebSocketCallback    bool
+	errorLogs              *errorLogBuffer
+	ID                     int
+	TotalVUsers            int
+	ParameterAllocation    *ParameterAllocation
+	Group                  string
+	Region                 string
+	Proto                  protocol.Protocol
+	Script                 *dsl.Script
+	Metrics                *MetricsCollector
+	ResultSink             ResultSink
+	Variables              map[string]string
+	DataProvider           *DataProvider
+	Parameters             *ParameterRuntime
+	SecretResolver         SecretResolver
+	RedactionConfig        *RedactionConfig
 	// runtimeRedaction publishes immutable redaction snapshots to protocol
 	// callbacks, which may run on a driver/event goroutine while the VUser adds
 	// newly extracted credentials on its execution goroutine.
@@ -201,6 +204,11 @@ func (vu *VUser) Run(ctx context.Context) {
 	cfg := vu.Script.Config
 	logCfg := cfg.Log
 	logger := vu.makeLogger(logCfg)
+	defer func() {
+		if vu.errorLogs != nil {
+			vu.errorLogs.close()
+		}
+	}()
 	vu.resultPhase = "action"
 
 	if err := vu.prepareRuntimeState(); err != nil {
@@ -482,7 +490,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					goto teardown
 				}
 			}
-			if newUser {
+			if newUser && (cfg.BrowserEmulation.Cache.ClearCacheForNewUser == nil || *cfg.BrowserEmulation.Cache.ClearCacheForNewUser) {
 				if err := vu.clearProtocolCache(iterationBoundaryCtx); err != nil {
 					logger.Error("iteration cache clear failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					goto teardown
@@ -790,6 +798,9 @@ func (vu *VUser) Run(ctx context.Context) {
 			vu.markUserWorkStarted()
 			sourceCompletionWillExecute := vu.sourceTransactionCompletionWillExecute(action)
 			if handled, err := vu.handleEngineAction(iterCtx, action); handled {
+				if dsl.CanonicalActionType(action.Type) == "error_message" && cfg.ErrorHandling.FailTransactionOnErrorMessage != nil && *cfg.ErrorHandling.FailTransactionOnErrorMessage {
+					iterSuccess = false
+				}
 				if sourceGoalClaimed && sourceTransactionStarts(action) {
 					vu.markSourceTransactionGoalClaimed(action)
 				}
@@ -864,7 +875,7 @@ func (vu *VUser) Run(ctx context.Context) {
 						recordIterationTransaction(false)
 						return flowTeardown
 					}
-				} else if logCfg.Level == "extended" {
+				} else if logCfg.Level == "extended" || logCfg.OnErrorOnly {
 					logger.Info("action ok", actionLogAttrs(action.Name, nil, result, logCfg, false, vu.RedactionConfig)...)
 				}
 				if !applyActionThinkTime(action) {
@@ -873,6 +884,11 @@ func (vu *VUser) Run(ctx context.Context) {
 				return flowNext
 			}
 
+			if err := vu.beforeWebSocketAction(iterCtx, action.Type); err != nil {
+				logger.Error("WebSocket callback failed", "err", scrubSensitiveError(err, vu.RedactionConfig))
+				recordIterationTransaction(false)
+				return flowTeardown
+			}
 			resolved := vu.resolveAction(action)
 			var actionTxStart time.Time
 			if actionTxMode && !claimActionTransaction() {
@@ -911,6 +927,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				}
 				return nil
 			})
+			vu.acceptWebSocketCallback(action, result, err)
 			if err != nil {
 				if knownBusinessTransactionEmitter {
 					releaseReservedActionTransaction()
@@ -987,7 +1004,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					recordIterationTransaction(false)
 					return flowTeardown
 				}
-			} else if logCfg.Level == "extended" {
+			} else if logCfg.Level == "extended" || logCfg.OnErrorOnly {
 				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false, vu.RedactionConfig)...)
 			}
 
@@ -1069,13 +1086,18 @@ func (vu *VUser) RunLifecycleBlock(ctx context.Context, actions []dsl.Action, ph
 // in-flight action context and a separately cancellable action-boundary
 // context. Init-at-once uses this split so graceful/shared-goal soft stops let
 // the current protocol call finish but prevent later init actions.
-func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Context, actions []dsl.Action, phase string) bool {
+func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Context, actions []dsl.Action, phase string) (ok bool) {
 	if vu == nil || vu.Script == nil {
 		return true
 	}
 	cfg := vu.Script.Config
 	logCfg := cfg.Log
 	ignoreErrors := strings.EqualFold(strings.TrimSpace(phase), "teardown")
+	defer func() {
+		if ignoreErrors || !ok {
+			vu.closeErrorLogs()
+		}
+	}()
 	var cleanupBindings map[string]string
 	if ignoreErrors {
 		cleanupBindings = vu.currentDataBindings()
@@ -1440,6 +1462,11 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 			}
 			return flowNext
 		}
+		if err := vu.beforeWebSocketAction(actionCtx, action.Type); err != nil {
+			logger.Error("WebSocket callback failed", "err", scrubSensitiveError(err, vu.RedactionConfig))
+			return flowTeardown
+		}
+
 		resolved := vu.resolveAction(action)
 		knownBusinessTransactionEmitter := actionEmitsBusinessTransactions(action)
 		emitterTransactionReserved := false
@@ -1483,6 +1510,7 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 			}
 			return nil
 		})
+		vu.acceptWebSocketCallback(action, result, err)
 		if err != nil {
 			releaseEmitterReservation()
 			if errors.Is(err, errTransactionGoalReached) {
@@ -1514,6 +1542,9 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 		vu.recordResult(result, errCfg, logCfg)
 		if result != nil {
 			vu.noteSourceTransactionResult(action, result.Success)
+		}
+		if result != nil && result.Success && (logCfg.OnErrorOnly || logCfg.Level == "extended") {
+			logger.Info(phase+" action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false, vu.RedactionConfig)...)
 		}
 		if result != nil && !result.Success {
 			if logCfg.OnErrorOnly || logCfg.Level == "extended" {

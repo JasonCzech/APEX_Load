@@ -79,6 +79,7 @@ func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	}
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot
+		snapshot.Resources = protocol.CloneResourceSnapshots(event.Snapshot.Resources)
 		snapshot.RequestHeaders = cloneStringMap(event.Snapshot.RequestHeaders)
 		snapshot.ResponseHeaders = cloneStringMap(event.Snapshot.ResponseHeaders)
 		snapshot.ConsoleEntries = cloneConsoleEntries(event.Snapshot.ConsoleEntries)

@@ -57,6 +57,16 @@ const (
 )
 
 func validateHTTPRuntimeConfigBounds(config map[string]any) error {
+	if _, err := protocol.BoundedMilliseconds(config["challenge_delay_ms"], 0, MaxConfiguredTimeout); err != nil {
+		return fmt.Errorf("challenge_delay_ms %w", err)
+	}
+	for _, key := range []string{"http_errors_as_warnings", "fail_noncritical_resources", "resource_timeout_as_warning", "legacy_html_checks", "dns_cache"} {
+		if v := config[key]; v != nil {
+			if _, ok := v.(bool); !ok {
+				return fmt.Errorf("%s must be a boolean", key)
+			}
+		}
+	}
 	if err := ValidateReplayCompatibilityConfig(config); err != nil {
 		return err
 	}

@@ -42,6 +42,7 @@ export function copyRuntimeSettingsForProtocol(
   if (!isRuntimeFieldApplicable('browser_config', protocol)) copy.browser_config = undefined
   if (!isRuntimeFieldApplicable('browser_emulation', protocol)) copy.browser_emulation = undefined
   if (!isRuntimeFieldApplicable('http', protocol)) copy.http = undefined
+  if (!isRuntimeFieldApplicable('websocket', protocol)) copy.websocket = undefined
   if (!isRuntimeFieldApplicable('web_runtime', protocol)) copy.web_runtime = undefined
   if (!isRuntimeFieldApplicable('java_vuser', protocol)) copy.java_vuser = undefined
   return copy
@@ -158,6 +159,8 @@ function applyEffectiveRuntimeLayer(base: RuntimeSettingsOverride, layer: Runtim
   if (layer.pacing) next.pacing = structuredClone(layer.pacing)
   if (layer.think_time) next.think_time = structuredClone(layer.think_time)
   if (layer.error_handling) next.error_handling = structuredClone(layer.error_handling)
+  if (layer.results) next.results = structuredClone(layer.results)
+  if (layer.websocket) next.websocket = structuredClone(layer.websocket)
   if (layer.http) next.http = structuredClone(layer.http)
   // Whole-section replace, mirroring the Go controller's browser_emulation merge.
   if (layer.browser_emulation) next.browser_emulation = structuredClone(layer.browser_emulation)

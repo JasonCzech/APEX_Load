@@ -75,6 +75,11 @@ func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
 			}
 		}
 	}
+	if src.Results.MessageDetail != nil {
+		detail := *src.Results.MessageDetail
+		detail.IncludeResources = cloneRuntimeBoolPointer(detail.IncludeResources)
+		dst.Results.MessageDetail = &detail
+	}
 	if src.BrowserEmulation != nil {
 		dst.BrowserEmulation = cloneBrowserEmulationConfig(src.BrowserEmulation)
 	}
@@ -116,6 +121,7 @@ func cloneBrowserEmulationConfig(src *dsl.BrowserEmulationConfig) *dsl.BrowserEm
 			CacheContentURLs:     cloneRuntimeBoolPointer(src.Cache.CacheContentURLs),
 			CheckNewerVersions:   cloneRuntimeBoolPointer(src.Cache.CheckNewerVersions),
 			NewUserEachIteration: cloneRuntimeBoolPointer(src.Cache.NewUserEachIteration),
+			ClearCacheForNewUser: cloneRuntimeBoolPointer(src.Cache.ClearCacheForNewUser),
 			SimulatePrefetch:     cloneRuntimeBoolPointer(src.Cache.SimulatePrefetch),
 			DownloadNonHTML:      cloneRuntimeBoolPointer(src.Cache.DownloadNonHTML),
 		}
@@ -178,19 +184,19 @@ func isEmptyRunLogicConfig(cfg dsl.RunLogicConfig) bool {
 }
 
 func isEmptyLogConfig(cfg dsl.LogConfig) bool {
-	return cfg.Level == "" && !cfg.OnErrorOnly && len(cfg.ExtendedOptions) == 0
+	return cfg.ErrorBufferBytes == 0 && cfg.MaxResponseBytes == 0 && cfg.Level == "" && !cfg.OnErrorOnly && len(cfg.ExtendedOptions) == 0
 }
 
 func isEmptyHTTPConfig(cfg dsl.HTTPConfig) bool {
-	return cfg.PageTimeoutMs == 0 && cfg.IPVersion == "" && cfg.CacheMaxUnusedIterations == 0 && len(cfg.CacheExcludedMIMETypes) == 0 && cfg.HTMLParseMode == "" && len(cfg.HTMLExcludedMIMETypes) == 0 && cfg.ConnectTimeoutMs == 0 && cfg.RequestTimeoutMs == 0 && cfg.TLSTimeoutMs == 0 && cfg.IdleTimeoutMs == 0 && cfg.Version == "" && cfg.MaxConnsPerHost == 0 && cfg.MaxIdleConns == 0 && cfg.KeepAlive == nil && cfg.ProxyMode == "" && cfg.UserAgent == "" && cfg.AcceptEncoding == "" && cfg.AcceptLanguage == "" && cfg.MaxRedirects == nil && len(cfg.DefaultHeaders) == 0 && cfg.Proxy.URL == "" && cfg.Proxy.Username == "" && cfg.Proxy.Password == "" && len(cfg.Proxy.NoProxy) == 0 && cfg.Auth.Type == "" && cfg.Auth.Username == "" && cfg.Auth.Password == "" && cfg.Auth.Token == "" && cfg.Auth.Domain == "" && cfg.TLS.MinVersion == "" && cfg.TLS.MaxVersion == "" && !cfg.TLS.InsecureSkipVerify && cfg.TLS.ClientCertFile == "" && cfg.TLS.ClientKeyFile == "" && cfg.TLS.CACertFile == ""
+	return cfg.ReceiveBufferBytes == 0 && cfg.MaxMetaRefresh == 0 && cfg.ContentCheckErrorLimit == 0 && cfg.HTTPErrorsAsWarnings == nil && cfg.FailNonCriticalResources == nil && cfg.ResourceTimeoutAsWarning == nil && cfg.LegacyHTMLChecks == nil && cfg.DNSCache == nil && cfg.AuthDelayMs == 0 && cfg.PageTimeoutMs == 0 && cfg.IPVersion == "" && cfg.CacheMaxUnusedIterations == 0 && len(cfg.CacheExcludedMIMETypes) == 0 && cfg.HTMLParseMode == "" && len(cfg.HTMLExcludedMIMETypes) == 0 && cfg.ConnectTimeoutMs == 0 && cfg.RequestTimeoutMs == 0 && cfg.TLSTimeoutMs == 0 && cfg.IdleTimeoutMs == 0 && cfg.Version == "" && cfg.MaxConnsPerHost == 0 && cfg.MaxIdleConns == 0 && cfg.KeepAlive == nil && cfg.ProxyMode == "" && cfg.UserAgent == "" && cfg.AcceptEncoding == "" && cfg.AcceptLanguage == "" && cfg.MaxRedirects == nil && len(cfg.DefaultHeaders) == 0 && cfg.Proxy.PACURL == "" && cfg.Proxy.URL == "" && cfg.Proxy.Username == "" && cfg.Proxy.Password == "" && len(cfg.Proxy.NoProxy) == 0 && cfg.Auth.Type == "" && cfg.Auth.Username == "" && cfg.Auth.Password == "" && cfg.Auth.Token == "" && cfg.Auth.Domain == "" && cfg.TLS.MinVersion == "" && cfg.TLS.MaxVersion == "" && !cfg.TLS.InsecureSkipVerify && cfg.TLS.ClientCertFile == "" && cfg.TLS.ClientKeyFile == "" && cfg.TLS.CACertFile == ""
 }
 
 func isEmptyBrowserConfig(cfg dsl.BrowserConfig) bool {
-	return cfg.Engine == "" && cfg.Headless == nil && cfg.SlowMoMs == 0 && cfg.UserAgent == "" && cfg.DeviceProfile == "" && cfg.TouchMode == nil && cfg.Orientation == "" && cfg.ClientMetrics == nil && cfg.CaptureScreenshots == "" && cfg.CacheEnabled == nil && cfg.CacheContentURLs == nil && cfg.CheckNewerVersions == nil && cfg.NewUserPerIter == nil && cfg.DownloadResources == "" && cfg.Viewport.Width == 0 && cfg.Viewport.Height == 0
+	return cfg.SystemLanguage == "" && cfg.AvailableScreenWidth == 0 && cfg.AvailableScreenHeight == 0 && cfg.Engine == "" && cfg.Headless == nil && cfg.SlowMoMs == 0 && cfg.UserAgent == "" && cfg.DeviceProfile == "" && cfg.TouchMode == nil && cfg.Orientation == "" && cfg.ClientMetrics == nil && cfg.CaptureScreenshots == "" && cfg.CacheEnabled == nil && cfg.CacheContentURLs == nil && cfg.CheckNewerVersions == nil && cfg.NewUserPerIter == nil && cfg.DownloadResources == "" && cfg.Viewport.Width == 0 && cfg.Viewport.Height == 0
 }
 
 func isEmptyErrorHandlingConfig(cfg dsl.ErrorHandlingConfig) bool {
-	return cfg.ContinueOnError == nil && cfg.MaxRetries == 0 && cfg.RetryDelayMs == 0 && cfg.RetryBackoff == "" && !cfg.SnapshotOnError
+	return cfg.FailTransactionOnErrorMessage == nil && cfg.ContinueOnError == nil && cfg.MaxRetries == 0 && cfg.RetryDelayMs == 0 && cfg.RetryBackoff == "" && !cfg.SnapshotOnError
 }
 
 func isEmptyWebRuntimeConfig(cfg dsl.WebRuntimeConfig) bool {

@@ -19,6 +19,8 @@ func validateWebSocketActionIssues(index int, action Action) []string {
 // websocketActionSpecs declares the websocket protocol action types.
 func websocketActionSpecs() []ActionSpec {
 	return []ActionSpec{
+		{Type: "ws_on_message", Protocols: []string{"websocket"}, Summary: "Registers serial per-VUser message callbacks for the current connection; reconnect requires registration again.", Fields: []FieldSpec{{Name: "control", Kind: FieldKindObject, Required: true, Doc: "control.steps executes for each queued message; var.ws_message and var.ws_message_type contain the event."}}},
+		{Type: "ws_dispatch", Protocols: []string{"websocket"}, Summary: "Waits until the next callback interval and dispatches queued messages serially."},
 		{
 			Type:      "ws_connect",
 			Protocols: []string{"websocket"},

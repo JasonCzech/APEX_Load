@@ -1948,6 +1948,8 @@ type RuntimeJavaVuserOverride struct {
 }
 
 type RuntimeSettingsOverride struct {
+	Results       *dsl.ResultsConfig        `json:"results,omitempty"`
+	WebSocket     *dsl.WebSocketConfig      `json:"websocket,omitempty"`
 	Iterations    *int                      `json:"iterations,omitempty"`
 	Pacing        *dsl.PacingConfig         `json:"pacing,omitempty"`
 	ThinkTime     *dsl.ThinkTimeConfig      `json:"think_time,omitempty"`

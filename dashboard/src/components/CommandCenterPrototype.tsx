@@ -1,3 +1,4 @@
+import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -2787,6 +2788,7 @@ function EvidenceSnapshotDetail({ evidence }: { evidence: LiveErrorEvidence }) {
               text={formatSnapshotResponseStatusAndHeaders(snapshotSection(snapshot), evidence.status_code)}
               preClassName="command-snapshot-pre"
             />
+            <ResourceSnapshotList snapshot={snapshot} />
             <span className="scenario-script-detail-label">Response body</span>
             <SnapshotBodyPreview
               body={snapshot.response_body}

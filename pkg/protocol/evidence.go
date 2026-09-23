@@ -23,6 +23,9 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	}
 	protocolName := inferEvidenceProtocol(action, result)
 	if protocolName == "" {
+		if len(result.WarningCodes) > 0 {
+			return BoundProtocolEvidence(map[string]any{"warnings": result.WarningCodes})
+		}
 		return nil
 	}
 	evidence := map[string]any{
@@ -30,6 +33,12 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 		"operation": evidenceOperation(action, result),
 		"target":    evidenceTarget(action, result),
 		"status":    evidenceStatus(result),
+	}
+	if len(result.WarningCodes) > 0 {
+		evidence["warnings"] = result.WarningCodes
+	}
+	if result.ContentCheckErrorMatches+result.ContentCheckInfoMatches > 0 {
+		evidence["content_check_matches"] = map[string]any{"errors": result.ContentCheckErrorMatches, "information": result.ContentCheckInfoMatches}
 	}
 	if timings := evidenceTimings(result); len(timings) > 0 {
 		evidence["timings"] = timings

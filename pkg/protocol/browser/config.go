@@ -24,6 +24,18 @@ const (
 func (b *Browser) applyConfig(config map[string]any) error {
 	b.applyDefaultConfig()
 	b.applyConfigOverrides(config)
+	b.systemLanguage = protocol.ConfigString(config, "browser_system_language")
+	b.availableScreenWidth = protocol.ConfigInt(config, "browser_available_screen_width")
+	b.availableScreenHeight = protocol.ConfigInt(config, "browser_available_screen_height")
+	if len(b.systemLanguage) > 64 || strings.ContainsAny(b.systemLanguage, "\r\n\x00") {
+		return fmt.Errorf("invalid browser system_language")
+	}
+	for _, key := range []string{"browser_available_screen_width", "browser_available_screen_height"} {
+		if n := protocol.ConfigFloat(config, key); math.IsNaN(n) || math.IsInf(n, 0) || math.Trunc(n) != n || n < 0 || n > 8192 {
+			return fmt.Errorf("%s must be between 0 and 8192", key)
+		}
+	}
+
 	if err := b.validateConfig(); err != nil {
 		return err
 	}
@@ -64,6 +76,9 @@ func (b *Browser) applyDefaultConfig() {
 	b.slowMo = 0
 	b.userAgent = ""
 	b.locale = ""
+	b.systemLanguage = ""
+	b.availableScreenWidth = 0
+	b.availableScreenHeight = 0
 	b.timezone = ""
 	b.geolocation = nil
 	b.geolocationIncomplete = false

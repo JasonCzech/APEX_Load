@@ -156,6 +156,7 @@ type TestGroupRuntimeSettingsView struct {
 }
 
 type TestGroupImportedRuntimeDisposition struct {
+	Reason   string   `json:"reason,omitempty"`
 	Status   string   `json:"status,omitempty"`
 	ParityID string   `json:"parity_id,omitempty"`
 	Fields   []string `json:"fields,omitempty"`
@@ -348,6 +349,7 @@ func projectTestGroupImportedRuntimeSource(script *dsl.Script) *TestGroupImporte
 					for index := range disposition.Fields {
 						disposition.Fields[index] = boundedTestGroupAuditValue(disposition.Fields[index])
 					}
+					disposition.Reason = boundedTestGroupAuditValue(disposition.Reason)
 					disposition.Status = boundedTestGroupAuditValue(disposition.Status)
 					disposition.ParityID = boundedTestGroupAuditValue(disposition.ParityID)
 					disposition.Note = boundedTestGroupAuditValue(disposition.Note)
@@ -1427,12 +1429,16 @@ func runtimeSettingsFieldValue(settings *RuntimeSettingsOverride, field string) 
 			return nil
 		}
 		return settings.BaseURL
+	case "results":
+		return nilIfNilPointer(settings.Results)
 	case "log":
 		return nilIfNilPointer(settings.Log)
 	case "run_logic":
 		return nilIfNilPointer(settings.RunLogic)
 	case "http":
 		return nilIfNilPointer(settings.HTTP)
+	case "websocket":
+		return nilIfNilPointer(settings.WebSocket)
 	case "web_runtime":
 		return nilIfNilPointer(settings.WebRuntime)
 	case "browser_config":

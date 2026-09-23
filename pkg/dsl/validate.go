@@ -882,7 +882,7 @@ func validateEngineActionIssues(protocol string, path string, index int, action 
 		return rebaseActionIssues(fmt.Sprintf("action[%d]", index), path, validateVerificationAction(index, action))
 	case "rendezvous":
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, validateRendezvousActionIssues(index, action))
-	case "control_if", "control_switch", "control_loop", "control_parallel":
+	case "ws_on_message", "control_if", "control_switch", "control_loop", "control_parallel":
 		return validateControlFlowIssues(protocol, path, action)
 	case "error_message":
 		label := actionLabel(path, action)
@@ -900,6 +900,9 @@ func validateEngineActionIssues(protocol string, path string, index int, action 
 // recursively validates its nested step bodies against the script protocol.
 func validateControlFlowIssues(protocol string, path string, action Action) []string {
 	label := actionLabel(path, action)
+	if action.Type == "ws_on_message" && (action.Control == nil || len(action.Control.Steps) == 0 || len(action.Control.Steps) > 64) {
+		return []string{label + ": ws_on_message requires 1..64 control.steps"}
+	}
 	if action.Control == nil {
 		return []string{fmt.Sprintf("%s: %s requires a control block", label, action.Type)}
 	}
@@ -1539,6 +1542,9 @@ func validateParameterTimezone(issues *[]string, label, name, timezone string) {
 
 func validateWebRuntimeIssues(script *Script) []string {
 	var issues []string
+	if script.Config.WebSocket.CallbackIntervalMs < 0 || script.Config.WebSocket.CallbackIntervalMs > 60000 {
+		issues = append(issues, "config.websocket.callback_interval_ms must be between 0 and 60000")
+	}
 
 	runLogic := script.Config.RunLogic
 	if runLogic.BlockScheduling != "" && !isAllowedValue(runLogic.BlockScheduling, "sequential", "random", "percentage") {
@@ -1571,7 +1577,21 @@ func validateWebRuntimeIssues(script *Script) []string {
 		}
 	}
 
+	if len(script.Config.Browser.SystemLanguage) > 64 || strings.ContainsAny(script.Config.Browser.SystemLanguage, "\r\n\x00") {
+		issues = append(issues, "config.browser.system_language must be at most 64 characters without control characters")
+	}
+	for key, value := range map[string]int{"available_screen_width": script.Config.Browser.AvailableScreenWidth, "available_screen_height": script.Config.Browser.AvailableScreenHeight} {
+		if value < 0 || value > 8192 {
+			issues = append(issues, "config.browser."+key+" must be between 0 and 8192")
+		}
+	}
 	logCfg := script.Config.Log
+	if logCfg.ErrorBufferBytes < 0 || logCfg.ErrorBufferBytes > 1048576 {
+		issues = append(issues, "config.log.error_buffer_bytes must be between 0 and 1048576")
+	}
+	if logCfg.MaxResponseBytes < 0 || logCfg.MaxResponseBytes > 1048576 {
+		issues = append(issues, "config.log.max_response_bytes must be between 0 and 1048576")
+	}
 	for index, option := range logCfg.ExtendedOptions {
 		if !isAllowedValue(option, "parameter_substitution", "data_returned", "advanced_trace") {
 			issues = append(issues, fmt.Sprintf("config.log.extended_options[%d] must be parameter_substitution, data_returned, or advanced_trace", index))
@@ -1599,12 +1619,14 @@ func validateWebRuntimeIssues(script *Script) []string {
 		{name: "tls_timeout_ms", value: httpCfg.TLSTimeoutMs},
 		{name: "idle_timeout_ms", value: httpCfg.IdleTimeoutMs},
 		{name: "page_timeout_ms", value: httpCfg.PageTimeoutMs},
+		{name: "challenge_delay_ms", value: httpCfg.AuthDelayMs},
 	} {
 		if err := httpprotocol.ValidateTimeoutMS(timeout.value); err != nil {
 			issues = append(issues, fmt.Sprintf("config.http.%s must be between 0 and %d", timeout.name, maxHTTPTimeoutMillis))
 		}
 	}
 	if err := httpprotocol.ValidateReplayCompatibilityConfig(map[string]any{
+		"receive_buffer_bytes": httpCfg.ReceiveBufferBytes, "max_meta_refresh": httpCfg.MaxMetaRefresh, "content_check_error_limit": httpCfg.ContentCheckErrorLimit,
 		"ip_version": httpCfg.IPVersion, "html_parse_mode": httpCfg.HTMLParseMode,
 		"cache_max_unused_iterations": httpCfg.CacheMaxUnusedIterations,
 		"cache_excluded_mime_types":   httpCfg.CacheExcludedMIMETypes,
@@ -1632,8 +1654,14 @@ func validateWebRuntimeIssues(script *Script) []string {
 	if minTLSVersionRank > maxTLSVersionRank && maxTLSVersionRank != 0 {
 		issues = append(issues, "config.http.tls.max_version must not be lower than min_version")
 	}
-	if httpCfg.ProxyMode != "" && !isAllowedValue(httpCfg.ProxyMode, "none", "system", "custom") {
-		issues = append(issues, "config.http.proxy_mode must be none, system, or custom")
+	if httpCfg.ProxyMode != "" && !isAllowedValue(httpCfg.ProxyMode, "none", "system", "custom", "pac") {
+		issues = append(issues, "config.http.proxy_mode must be none, system, custom, or pac")
+	}
+	if httpCfg.ProxyMode == "pac" {
+		u, err := url.Parse(httpCfg.Proxy.PACURL)
+		if err != nil || u.Hostname() == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") || len(httpCfg.Proxy.PACURL) > 4096 {
+			issues = append(issues, "config.http.proxy.pac_url requires an absolute HTTP(S) URL without userinfo")
+		}
 	}
 	if httpCfg.ProxyMode == "custom" && strings.TrimSpace(httpCfg.Proxy.URL) == "" {
 		issues = append(issues, "config.http.proxy.url is required when config.http.proxy_mode is custom")
@@ -1658,7 +1686,10 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 
 	for index, check := range script.Config.WebRuntime.ContentChecks {
-		if strings.TrimSpace(check.Text) == "" {
+		if (check.LeftBoundary == "") != (check.RightBoundary == "") || len(check.LeftBoundary) > 4096 || len(check.RightBoundary) > 4096 {
+			issues = append(issues, fmt.Sprintf("content_checks[%d] requires paired boundaries of at most 4096 bytes", index))
+		}
+		if strings.TrimSpace(check.Text) == "" && (check.LeftBoundary == "" || check.RightBoundary == "") {
 			issues = append(issues, fmt.Sprintf("config.web_runtime.content_checks[%d].text is required", index))
 		}
 		if check.Scope != "" && !isAllowedValue(check.Scope, "any_response", "main_document", "resource") {

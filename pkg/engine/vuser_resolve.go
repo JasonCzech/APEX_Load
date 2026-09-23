@@ -5,6 +5,7 @@ package engine
 import (
 	"encoding/base64"
 	"fmt"
+	"golang.org/x/text/encoding/charmap"
 	"hash/fnv"
 	"io"
 	"log/slog"
@@ -27,7 +28,7 @@ func validateMessageDetailRuntimeSupport(script *dsl.Script) error {
 	case "", "off", "errors":
 		return nil
 	case "sampled", "adaptive":
-		if strings.ToLower(strings.TrimSpace(script.Protocol)) != "http" {
+		if p := strings.ToLower(strings.TrimSpace(script.Protocol)); p != "http" && p != "http/1.1" && p != "http/2" && p != "soap" && p != "java_http" {
 			return fmt.Errorf("message detail mode %q currently requires the http protocol", mode)
 		}
 		return nil
@@ -133,6 +134,9 @@ func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
 			Level: slog.Level(100),
 		}))
 	default:
+		if cfg.OnErrorOnly {
+			return vu.errorOnlyLogger(cfg)
+		}
 		return slog.With(attrs...)
 	}
 }
@@ -173,8 +177,12 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 		)
 	}
 	if _, ok := options["data_returned"]; ok {
+		limit := maxRetainedResultEvidenceBytes
+		if cfg.MaxResponseBytes > 0 && cfg.MaxResponseBytes < limit {
+			limit = cfg.MaxResponseBytes
+		}
 		attrs = append(attrs, "response_body",
-			cloneBoundedResultString(scrubSensitiveTextWithConfig(result.ResponseBody, redactionConfig), maxRetainedResultEvidenceBytes))
+			cloneBoundedResultString(scrubSensitiveTextWithConfig(result.ResponseBody, redactionConfig), limit))
 	}
 	if _, ok := options["advanced_trace"]; ok {
 		attrs = append(attrs,
@@ -297,6 +305,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	}
 	if detailPolicy != nil {
 		resolved.MessageDetailMode = strings.ToLower(strings.TrimSpace(detailPolicy.Mode))
+		resolved.CaptureResourceDetails = detailPolicy.IncludeResources != nil && *detailPolicy.IncludeResources && resolved.MessageDetailMode != "off"
 		resolved.MessageDetailMaxItems = normalizedMessageDetailMaxItems(detailPolicy.MaxItems)
 		resolved.MessageDetailMaxItemBytes = normalizedMessageDetailMaxItemBytes(detailPolicy.MaxItemBytes)
 		resolved.MessageDetailMaxTotalBytes = normalizedMessageDetailMaxTotalBytes(detailPolicy.MaxTotalBytes)
@@ -392,6 +401,18 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 	interpolate := vu.interpolateWithSecrets
 	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
 		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
+		if strings.EqualFold(encoding, "windows-1252") {
+			interpolate = func(s string) (string, string) {
+				return vu.interpolateWithSecretsTransform(s, func(value string) string {
+					raw, err := charmap.Windows1252.NewEncoder().String(value)
+					if err != nil {
+						vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, "form value is not representable in Windows-1252")
+						return ""
+					}
+					return url.QueryEscape(raw)
+				})
+			}
+		}
 	}
 	decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, 0)
 	if !encoded || err != nil {
@@ -980,11 +1001,12 @@ func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Asserti
 			value, _ = vu.interpolateWithSecrets(value)
 		}
 		out[i] = protocol.Assertion{
-			Type:     a.Type,
-			Expected: expected,
-			Value:    value,
-			Min:      a.Min,
-			Max:      a.Max,
+			Type:            a.Type,
+			LegacyHTMLCheck: a.LegacyHTMLCheck,
+			Expected:        expected,
+			Value:           value,
+			Min:             a.Min,
+			Max:             a.Max,
 		}
 	}
 	return out

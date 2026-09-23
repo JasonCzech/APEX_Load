@@ -127,30 +127,21 @@ LogOptions=LogBrief
 	if logEntry.Status != RuntimeSettingStatusExecuted {
 		t.Fatalf("logging = %#v, want executed", logEntry)
 	}
-	unmapped := runtimeParityEntryByID(t, parity, "runtime_unmapped")
-	if unmapped.Status != RuntimeSettingStatusCompatibilityOnly {
-		t.Fatalf("runtime_unmapped = %#v, want compatibility_only", unmapped)
-	}
-	if len(unmapped.RuntimeFiles) != 1 || unmapped.RuntimeFiles[0] != "default.cfg" {
-		t.Fatalf("runtime_unmapped files = %#v, want exact default.cfg provenance", unmapped.RuntimeFiles)
-	}
-	for _, evidence := range []string{`[WEB] NetBufSize`} {
-		if !strings.Contains(unmapped.Notes, evidence) {
-			t.Fatalf("runtime_unmapped notes = %q, want %s", unmapped.Notes, evidence)
-		}
+	receive := runtimeParityEntryByID(t, parity, "http_receive_buffer")
+	if receive.Status != RuntimeSettingStatusPartial || len(receive.RuntimeFiles) != 1 || receive.RuntimeFiles[0] != "default.cfg" || rc.ToHTTPConfig().ReceiveBufferBytes != 120 {
+		t.Fatalf("receive buffer parity or provenance lost: %+v", receive)
 	}
 	idle := runtimeParityEntryByID(t, parity, "http_idle_timeout")
 	if idle.Status != RuntimeSettingStatusPartial || !strings.Contains(idle.Notes, "3600") || rc.IdleTimeoutMs != 0 {
 		t.Fatalf("oversized keep-alive timeout must remain an explicit review decision: %#v", idle)
 	}
-	// EnableSnapshotsInReplay is a VuGen authoring aid: it is accounted for as
-	// non-applicable rather than surfaced as a behavior gap.
-	nonApplicable := runtimeParityEntryByID(t, parity, "runtime_non_applicable")
-	if nonApplicable.Status != RuntimeSettingStatusNonApplicable {
-		t.Fatalf("runtime_non_applicable = %#v, want non_applicable", nonApplicable)
+	// Replay capture is now native bounded evidence, with partial LR parity.
+	capture := runtimeParityEntryByID(t, parity, "runtime_replay_snapshots")
+	if capture.Status != RuntimeSettingStatusPartial {
+		t.Fatalf("snapshot parity = %#v", capture)
 	}
-	if dispositions["default.cfg"]["WEB"]["EnableSnapshotsInReplay"].Status != RuntimeSettingDispositionNonApplicable {
-		t.Fatalf("EnableSnapshotsInReplay disposition = %#v, want non_applicable", dispositions["default.cfg"]["WEB"]["EnableSnapshotsInReplay"])
+	if dispositions["default.cfg"]["WEB"]["EnableSnapshotsInReplay"].Status != RuntimeSettingDispositionMapped {
+		t.Fatalf("snapshot disposition = %#v", dispositions["default.cfg"]["WEB"]["EnableSnapshotsInReplay"])
 	}
 }
 

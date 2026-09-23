@@ -438,6 +438,7 @@ func cloneProtocolErrorSnapshot(snapshot *protocol.ErrorSnapshot) *protocol.Erro
 		return nil
 	}
 	cloned := *snapshot
+	cloned.Resources = protocol.CloneResourceSnapshots(snapshot.Resources)
 	cloned.RequestHeaders = cloneProtocolStringMap(snapshot.RequestHeaders)
 	cloned.ResponseHeaders = cloneProtocolStringMap(snapshot.ResponseHeaders)
 	cloned.ConsoleEntries = append([]protocol.ConsoleEntry(nil), snapshot.ConsoleEntries...)

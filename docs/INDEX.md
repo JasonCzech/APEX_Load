@@ -80,6 +80,7 @@ These focused references are also current. They are kept separate from the prima
 | [PROJECT_SECRETS.md](PROJECT_SECRETS.md) | Project secret providers, API behavior, and operational guidance |
 | [RELEASE_EVIDENCE_MANIFEST.md](RELEASE_EVIDENCE_MANIFEST.md) | Required evidence behind release and parity claims |
 | [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
+| [RUNTIME_CAPTURE_DIAGNOSTICS.md](RUNTIME_CAPTURE_DIAGNOSTICS.md) | Imported setting reasons and bounded HTTP/resource capture |
 | [SCHEDULING_TIMEZONE_BEHAVIOR_CHANGE.md](SCHEDULING_TIMEZONE_BEHAVIOR_CHANGE.md) | Cron timezone and DST behavior migration note |
 | [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow and routes |
 | [LOADRUNNER_WEB_FUNCTION_COVERAGE.md](LOADRUNNER_WEB_FUNCTION_COVERAGE.md) | Generated LoadRunner Web conversion coverage |

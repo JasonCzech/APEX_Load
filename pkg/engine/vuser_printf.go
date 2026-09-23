@@ -5,7 +5,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 
@@ -14,7 +13,12 @@ import (
 
 func (vu *VUser) logErrorMessageAction(ctx context.Context, action dsl.Action) {
 	message := vu.renderErrorMessage(action)
-	slog.Default().ErrorContext(ctx, "source error message",
+	if vu.Script != nil && vu.Script.Config.ErrorHandling.FailTransactionOnErrorMessage != nil && *vu.Script.Config.ErrorHandling.FailTransactionOnErrorMessage {
+		for _, state := range vu.sourceTransactions {
+			vu.setSourceTransactionStatus(state, sourceTransactionFail)
+		}
+	}
+	vu.runtimeLogger().ErrorContext(ctx, "source error message",
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,

@@ -1337,6 +1337,7 @@ func cloneBrowserReplayEvent(event engine.ReplayActionEvent) engine.ReplayAction
 	}
 	if event.Snapshot != nil {
 		snapshot := *event.Snapshot
+		snapshot.Resources = protocol.CloneResourceSnapshots(event.Snapshot.Resources)
 		snapshot.RequestHeaders = cloneBrowserStringMap(event.Snapshot.RequestHeaders)
 		snapshot.ResponseHeaders = cloneBrowserStringMap(event.Snapshot.ResponseHeaders)
 		snapshot.ConsoleEntries = cloneBrowserConsoleEntries(event.Snapshot.ConsoleEntries)

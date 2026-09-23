@@ -165,6 +165,21 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	runtimeFileName, runtimeCfg := resolveRuntimeConfig(files, projectConfig)
+	if !javaArchive && trueClientScope == nil {
+		opts.sourceEncoding, err = decodeArchiveText(files, runtimeFileName)
+		if err != nil {
+			return nil, err
+		}
+		// Reparse after decoding so parameter and runtime strings use Unicode.
+		if projectFileName != "" {
+			projectSections = ParseConfigSections(files[projectFileName])
+			projectConfig, err = ParseUSRFile(files[projectFileName])
+			if err != nil {
+				return nil, err
+			}
+		}
+		runtimeFileName, runtimeCfg = resolveRuntimeConfig(files, projectConfig)
+	}
 	if runtimeCfg != nil {
 		callerHTTPConfig := opts.HTTPConfig != nil
 		if opts.HTTPConfig == nil {
@@ -2256,6 +2271,9 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	if len(runtimeSections) > 0 {
 		preserved["runtime_files"] = disclosureSafeRuntimeSections(runtimeSections)
 	}
+	if !nativeHTTPCompatibilityProtocol(script.Protocol) && runtimeCfg != nil && runtimeCfg.runtimePolicies.Results.MessageDetail != nil {
+		script.Config.Results.MessageDetail = nil
+	}
 	selectedSections := selectedRuntimeSections(runtimeSections, runtimeFileName, runtimeCfg)
 	dispositions := classifyRuntimeSelectedSections(selectedSections, script.Protocol)
 	refineRuntimeSettingDispositions(dispositions, runtimeCfg, files, script.Protocol)
@@ -2272,6 +2290,7 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 				for key, disposition := range keys {
 					if disposition.ParityID == "run_logic_action_sequence" || disposition.ParityID == "run_logic_block_scheduling" {
 						disposition.Status = RuntimeSettingDispositionMapped
+						disposition.Reason = ""
 						disposition.Note = "Verified flat source lifecycle matches native sequential execution."
 						keys[key] = disposition
 					}

@@ -18,6 +18,10 @@ func init() {
 }
 
 type Browser struct {
+	systemLanguage        string
+	availableScreenWidth  int
+	availableScreenHeight int
+
 	engine                     string
 	baseURL                    string
 	currentURL                 string

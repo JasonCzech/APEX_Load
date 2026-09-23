@@ -69,6 +69,8 @@ func (budget *assertionInputWorkBudget) charge(assertion protocol.Assertion) err
 }
 
 type contentCheck struct {
+	LeftBoundary    string
+	RightBoundary   string
 	Text            string
 	Scope           string
 	FailIfFound     bool
@@ -318,7 +320,9 @@ func parseContentCheckMaps(items []map[string]any) []contentCheck {
 	for _, item := range items {
 		text, _ := item["text"].(string)
 		text = strings.TrimSpace(text)
-		if text == "" {
+		left, _ := item["left_boundary"].(string)
+		right, _ := item["right_boundary"].(string)
+		if text == "" && (left == "" || right == "") {
 			continue
 		}
 		scope, _ := item["scope"].(string)
@@ -332,6 +336,7 @@ func parseContentCheckMaps(items []map[string]any) []contentCheck {
 			caseInsensitive = value
 		}
 		checks = append(checks, contentCheck{
+			LeftBoundary: left, RightBoundary: right,
 			Text:            text,
 			Scope:           scope,
 			FailIfFound:     failIfFound,
@@ -351,23 +356,60 @@ func normalizeContentCheckScope(scope string) string {
 }
 
 func evaluateContentChecks(checks []contentCheck, result *protocol.Result, bodyText string) error {
+	return evaluateContentChecksLimited(checks, result, bodyText, 0)
+}
+func evaluateContentChecksLimited(checks []contentCheck, result *protocol.Result, bodyText string, limit int) error {
+	var first error
 	for _, check := range checks {
 		if check.Scope == "resource" {
 			continue
 		}
-		haystack := bodyText
-		needle := check.Text
+		haystack, needle, left, right := bodyText, check.Text, check.LeftBoundary, check.RightBoundary
 		if check.CaseInsensitive {
 			haystack = strings.ToLower(haystack)
 			needle = strings.ToLower(needle)
+			left = strings.ToLower(left)
+			right = strings.ToLower(right)
 		}
-		contains := strings.Contains(haystack, needle)
-		if check.FailIfFound && contains {
-			return fmt.Errorf("content check (%s) matched forbidden text %q", check.Scope, check.Text)
+		matches := 0
+		if left != "" && right != "" {
+			rest := haystack
+			for {
+				i := strings.Index(rest, left)
+				if i < 0 {
+					break
+				}
+				rest = rest[i+len(left):]
+				j := strings.Index(rest, right)
+				if j < 0 {
+					break
+				}
+				if needle == "" || strings.Contains(rest[:j], needle) {
+					matches++
+				}
+				rest = rest[j+len(right):]
+			}
+		} else if needle != "" {
+			matches = strings.Count(haystack, needle)
 		}
-		if !check.FailIfFound && !contains {
-			return fmt.Errorf("content check (%s) did not find required text %q", check.Scope, check.Text)
+		if (matches > 0) == check.FailIfFound {
+			if first == nil {
+				if check.FailIfFound {
+					first = fmt.Errorf("content check (%s) matched forbidden text", check.Scope)
+				} else {
+					first = fmt.Errorf("content check (%s) did not find required text", check.Scope)
+				}
+			}
+			if check.FailIfFound && left != "" && right != "" {
+				errors := matches
+				if limit > 0 {
+					remaining := max(0, limit-result.ContentCheckErrorMatches)
+					errors = min(errors, remaining)
+				}
+				result.ContentCheckErrorMatches += errors
+				result.ContentCheckInfoMatches += matches - errors
+			}
 		}
 	}
-	return nil
+	return first
 }

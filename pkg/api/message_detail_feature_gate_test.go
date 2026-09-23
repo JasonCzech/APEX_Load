@@ -19,6 +19,13 @@ func TestValidateSuccessfulMessageDetailFeature(t *testing.T) {
 	if err := validateSuccessfulMessageDetailFeature(script, enabled); err != nil {
 		t.Fatalf("enabled feature rejected: %v", err)
 	}
+	for _, protocol := range []string{"http/1.1", "http/2", "soap", "java_http"} {
+		script.Protocol = protocol
+		if err := validateSuccessfulMessageDetailFeature(script, enabled); err != nil {
+			t.Fatalf("native wrapper %s rejected: %v", protocol, err)
+		}
+	}
+	script.Protocol = "http"
 	script.Config.Results.MessageDetail.Mode = "adaptive"
 	if err := validateSuccessfulMessageDetailFeature(script, enabled); err != nil {
 		t.Fatalf("adaptive capture rejected: %v", err)

@@ -18,6 +18,14 @@ var errPageDeadline = errors.New("page download deadline exceeded")
 
 // ValidateReplayCompatibilityConfig is shared by authored DSL and direct protocol callers.
 func ValidateReplayCompatibilityConfig(config map[string]any) error {
+	for key, max := range map[string]int64{"receive_buffer_bytes": 1048576, "max_meta_refresh": 50, "content_check_error_limit": 1000} {
+		if raw := config[key]; raw != nil {
+			n, err := exactHTTPConfigInteger(raw)
+			if err != nil || n < 0 || n > max {
+				return fmt.Errorf("%s must be an integer between 0 and %d", key, max)
+			}
+		}
+	}
 	for _, field := range []struct {
 		name    string
 		allowed []string

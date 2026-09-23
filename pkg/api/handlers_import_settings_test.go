@@ -223,3 +223,40 @@ func TestApplyImportRandomPercentageSettings(t *testing.T) {
 		t.Fatal("invalid edit mutated the draft")
 	}
 }
+
+func TestImportReplayPoliciesAtomicValidation(t *testing.T) {
+	for _, tc := range []struct {
+		category  string
+		changes   []ImportSettingsChange
+		wantError bool
+	}{
+		{"HTTP", []ImportSettingsChange{settingChange("config.http.http_errors_as_warnings", "false"), settingChange("config.http.fail_noncritical_resources", "true"), settingChange("config.http.resource_timeout_as_warning", "false"), settingChange("config.http.legacy_html_checks", "false"), settingChange("config.http.dns_cache", "true"), settingChange("config.http.challenge_delay_ms", "25")}, false},
+		{"Error handling", []ImportSettingsChange{settingChange("config.error_handling.fail_transaction_on_error_message", "false")}, false},
+		{"Browser emulation", []ImportSettingsChange{settingChange("config.browser_emulation.cache.clear_cache_for_new_user", "false")}, false},
+		{"Logging", []ImportSettingsChange{settingChange("config.log.max_response_bytes", "128")}, false},
+		{"Logging", []ImportSettingsChange{settingChange("config.log.max_response_bytes", "1048577")}, true},
+		{"HTTP", []ImportSettingsChange{settingChange("config.http.dns_cache", "true"), settingChange("config.http.challenge_delay_ms", "3600001")}, true},
+		{"HTTP", []ImportSettingsChange{settingChange("config.http.challenge_delay_ms", "0.5")}, true},
+	} {
+		original := settingsTestScript()
+		original.Config.HTTP.Auth.Password = "source credential"
+		before, _ := json.Marshal(original)
+		result, errs := applyImportSettings(original, tc.category, tc.changes)
+		if (len(errs) > 0) != tc.wantError {
+			t.Fatalf("category=%s errors=%v", tc.category, errs)
+		}
+		after, _ := json.Marshal(original)
+		if !bytes.Equal(before, after) {
+			t.Fatal("mutated source")
+		}
+		if tc.wantError {
+			if result != nil {
+				t.Fatal("partial candidate returned")
+			}
+			continue
+		}
+		if result.Config.HTTP.Auth.Password != "source credential" {
+			t.Fatal("credential changed")
+		}
+	}
+}

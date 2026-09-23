@@ -51,3 +51,21 @@ func TestHTTPWrapperDelegatesCacheIteration(t *testing.T) {
 		t.Fatal("cancellation not delegated")
 	}
 }
+
+func TestHTTPWrapperPreservesOutcomeWarnings(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503); w.Write([]byte("unavailable")) }))
+	defer server.Close()
+	var wrapper JavaHTTP
+	if err := wrapper.Init(context.Background(), map[string]any{"http_errors_as_warnings": true}); err != nil {
+		t.Fatal(err)
+	}
+	defer wrapper.Teardown(context.Background())
+	result, err := wrapper.Execute(context.Background(), &protocol.Action{Type: "http_request", Method: "GET", Target: server.URL})
+	if err != nil || !result.Success || len(result.WarningCodes) != 1 || result.WarningCodes[0] != "http_status_warning" {
+		t.Fatalf("%+v %v", result, err)
+	}
+	evidence := protocol.BuildProtocolEvidence(&protocol.Action{Type: "http_request"}, result)
+	if evidence["warnings"] == nil {
+		t.Fatal("warning lost during evidence projection")
+	}
+}

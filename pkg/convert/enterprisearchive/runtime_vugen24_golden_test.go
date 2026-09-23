@@ -164,7 +164,7 @@ func TestGoldenVuGen24RealRuntimeSettings(t *testing.T) {
 	}
 
 	unmapped := expectStatus("runtime_unmapped", RuntimeSettingStatusCompatibilityOnly)
-	for _, evidence := range []string{"[WEB] HttpErrorsAsWarnings", "[WEB] EnableChecks", "[General] automatic_nested_transactions"} {
+	for _, evidence := range []string{"[WEB] LoadChilEngine", "[General] automatic_nested_transactions"} {
 		if !strings.Contains(unmapped.Notes, evidence) {
 			t.Fatalf("runtime_unmapped notes missing %q: %s", evidence, unmapped.Notes)
 		}

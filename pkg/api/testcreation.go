@@ -2937,8 +2937,10 @@ func validateSuccessfulMessageDetailFeature(script *dsl.Script, projectQuotas []
 	if !scriptRequestsSuccessfulMessageDetail(script) {
 		return nil
 	}
-	if !strings.EqualFold(strings.TrimSpace(script.Protocol), "http") {
-		return fmt.Errorf("successful message detail capture currently supports the http protocol only")
+	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
+	case "http", "http/1.1", "http/2", "soap", "java_http":
+	default:
+		return fmt.Errorf("successful message detail capture supports native http protocol only (including SOAP and Java-over-HTTP)")
 	}
 	if len(projectQuotas) == 0 || !projectQuotas[0].features.SuccessfulMessageDetail {
 		return fmt.Errorf("successful message detail capture is disabled for this project; enable settings.features.successful_message_detail before launch")

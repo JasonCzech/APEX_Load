@@ -36,17 +36,22 @@ it('shows idle timeout seconds beside editable milliseconds and keeps superseded
  expect(groups['Not applicable'].find(row => row.label === 'StartEvery')?.note).toContain('Superseded by default.usp')
 })
 
-it('keeps active settings expanded and places a collapsed Not applicable disclosure last', () => {
+it('hides empty statuses and places details after current draft values', () => {
  const container = document.createElement('div'); const root = createRoot(container)
  try {
   act(() => root.render(<ImportRuntimeSettingsTable script={script()} />))
-  for (const name of ['Requires decision', 'Mapped for replay', 'Preserved only', 'Not applicable']) expect(container.querySelector(`[aria-label="${name}"]`)?.textContent).toContain('None.')
-  const disclosure = container.querySelector<HTMLDetailsElement>('[aria-label="Not applicable"] details')!
-  expect(disclosure.open).toBe(false)
-  expect(disclosure.querySelector('summary')?.textContent).toBe('Not applicable (0)')
-  expect(container.querySelector('.import-runtime-workspace')?.lastElementChild?.getAttribute('aria-label')).toBe('Not applicable')
-  for (const name of ['Requires decision', 'Mapped for replay', 'Current runtime settings']) expect(container.querySelector(`[aria-label="${name}"] > details`)).toBeNull()
-  expect(container.querySelector<HTMLDetailsElement>('[aria-label="Preserved only"] > details')?.open).toBe(false)
+  for (const name of ['Requires decision', 'Mapped for replay', 'Preserved only', 'Not applicable']) expect(container.querySelector(`section[aria-label="${name}"]`)).toBeNull()
+  const section = container.querySelector('.import-runtime-content > [aria-label="Additional APEX settings"]')!
+  expect(section.querySelector(':scope > details')).toBeNull()
+  expect(section.querySelector(':scope > p')?.textContent).toBe('Draft settings without a reported source mapping.')
+  expect(container.querySelector('input[aria-label="Additional APEX settings"]')).not.toBeNull()
+  expect(container.textContent).not.toContain('Current runtime settings')
+  expect([...section.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Setting', 'Imported value', 'Current draft value', 'Details'])
+  const row = section.querySelector('tbody tr:not(.import-category)')!
+  expect(row.querySelector('th details')).toBeNull()
+  expect(row.children[3].querySelector('details > summary')?.textContent).toBe('Details')
+  expect(section.querySelector('.import-category th')?.getAttribute('colspan')).toBe('4')
+  expect(container.querySelectorAll('.import-runtime-summary > label')).toHaveLength(1)
   expect(container.textContent).toContain('3000')
   expect(container.textContent).toContain('Disabled')
   expect(formatSettingValue(0)).toBe('0')
@@ -88,7 +93,7 @@ it('shows only the controls relevant to the current pacing and think-time modes'
  const draft = script()
  draft.config.pacing = { type: 'random_delay', min_delay_ms: 0, max_delay_ms: 500 }
  draft.config.think_time = { type: 'uniform', min_ms: 0, max_ms: 250 }
- const paths = runtimeSettingRows(draft)['Current runtime settings'].map(row => row.path)
+ const paths = runtimeSettingRows(draft)['Additional APEX settings'].map(row => row.path)
  expect(paths).toContain('config.pacing.min_delay_ms')
  expect(paths).toContain('config.think_time.min_ms')
  expect(paths).not.toContain('config.pacing.interval_ms')
@@ -279,20 +284,84 @@ it('initializes percentage controls and clears obsolete milliseconds when changi
  } finally { await act(async () => root.unmount()); mocks.request.mockReset() }
 })
 
-it('retains non-applicable source rows inside the disclosure', () => {
+it('includes source-only categories in navigation and filters every status consistently', () => {
  const draft = script()
  draft.metadata = { import: { preserved: {
-  runtime_files: { 'default.cfg': { Legacy: { Setting: 'original' } } },
-  runtime_setting_dispositions: { 'default.cfg': { Legacy: { Setting: { status: 'non_applicable', note: 'Does not apply to this protocol.' } } } },
+  runtime_files: { 'default.cfg': { Legacy: { Setting: 'original', Retained: 'legacy-value' }, HTTP: { Other: 'http-value' } } },
+  runtime_setting_dispositions: { 'default.cfg': { Legacy: { Setting: { status: 'non_applicable', note: 'Does not apply to this protocol.' }, Retained: { status: 'compatibility_only' } }, HTTP: { Other: { status: 'compatibility_only' } } } },
  } } }
  const container = document.createElement('div'); const root = createRoot(container)
  try {
   act(() => root.render(<ImportRuntimeSettingsTable script={draft} />))
-  const disclosure = container.querySelector<HTMLDetailsElement>('[aria-label="Not applicable"] details')!
-  expect(disclosure.open).toBe(false)
-  expect(disclosure.querySelector('summary')?.textContent).toBe('Not applicable (1)')
-  expect(disclosure.querySelector('table')?.textContent).toContain('original (default.cfg)')
-  expect(disclosure.querySelector('table')?.textContent).toContain('Does not apply to this protocol.')
+  expect(container.querySelector('section[aria-label="Not applicable"]')).toBeNull()
+  const summary = container.querySelector('.import-runtime-summary')!
+  const overall = summary.textContent
+  expect(overall).toContain('Preserved only2')
+  expect(overall).toContain('Not applicable1')
+  const legacy = [...container.querySelectorAll<HTMLButtonElement>('.import-category-nav button')].find(button => button.textContent === 'Legacy2')!
+  expect(legacy).toBeDefined()
+  act(() => legacy.click())
+  const inactive = container.querySelector('section[aria-label="Not applicable"]')!
+  expect(inactive.querySelector('h3')?.textContent).toBe('Not applicable (1)')
+  expect(inactive.querySelector('table')?.textContent).toContain('original (default.cfg)')
+  expect(inactive.querySelector('table')?.textContent).toContain('Does not apply to this protocol.')
+  expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).toContain('legacy-value')
+  expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).not.toContain('http-value')
+  act(() => {
+   for (const toggle of container.querySelectorAll<HTMLInputElement>('.import-runtime-summary input')) if (toggle.getAttribute('aria-label') !== 'Preserved only') toggle.click()
+   ;[...container.querySelectorAll<HTMLButtonElement>('.import-category-nav button')].find(button => button.textContent?.startsWith('All categories'))!.click()
+  })
+  expect(container.querySelectorAll('.import-runtime-content > section')).toHaveLength(1)
+  const navCounts = () => [...container.querySelectorAll('.import-category-nav button')].map(button => button.textContent)
+  expect(navCounts()).toEqual(expect.arrayContaining(['All categories2', 'HTTP1', 'Legacy1']))
+  expect(summary.textContent).toBe(overall)
+  act(() => container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Not applicable"]')!.click())
+  expect(navCounts()).toEqual(expect.arrayContaining(['All categories3', 'HTTP1', 'Legacy2']))
+  act(() => container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Not applicable"]')!.click())
+  expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).toContain('http-value')
+  expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).toContain('legacy-value')
+  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
+  act(() => {
+   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'legacy-value')
+   search.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).toContain('(1)')
+  expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).not.toContain('http-value')
+  expect(summary.textContent).toBe(overall)
+  act(() => {
+   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'no-such-setting')
+   search.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(container.querySelectorAll('.import-runtime-content > section')).toHaveLength(0)
+  expect(container.querySelector('[role="status"]')?.textContent).toContain('No settings match these filters')
+  expect(summary.textContent).toBe(overall)
+ } finally { act(() => root.unmount()) }
+})
+
+it('combines the run-logic family without losing section evidence or duplicate setting names', () => {
+ const draft = script()
+ draft.config.run_logic = { iterations: 1 }
+ const sections = ['RunLogicEndRoot', 'RunLogicEndRoot:vuser_end', 'RunLogicInitRoot:vuser_init', 'RunLogicErrorHandlerRoot', 'RunLogicRunRoot:Action', 'Profile Actions']
+ draft.metadata = { import: { preserved: { runtime_files: { 'default.usp': Object.fromEntries(sections.map(section => [section, { NumberOfEntries: '1' }])) } } } }
+ const container = document.createElement('div'); const root = createRoot(container)
+ try {
+  act(() => root.render(<ImportRuntimeSettingsTable script={draft} />))
+  const categories = [...container.querySelectorAll<HTMLButtonElement>('.import-category-nav button')]
+  expect(categories.some(button => sections.some(section => button.textContent?.startsWith(section)))).toBe(false)
+  const runLogic = categories.filter(button => button.textContent?.startsWith('Run logic'))
+  expect(runLogic).toHaveLength(1)
+  act(() => runLogic[0].click())
+  expect(container.querySelector('section[aria-label="Additional APEX settings"]')?.textContent).toContain('Iterations per VUser')
+  expect(container.querySelectorAll('[aria-label="Preserved only"] tbody > tr:not(.import-category)')).toHaveLength(sections.length)
+  expect(container.querySelectorAll('[aria-label="Preserved only"] .import-category')).toHaveLength(1)
+  for (const section of sections) expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).toContain(`Source section: ${section}.`)
+  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!
+  act(() => {
+   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(search, 'RunLogicErrorHandlerRoot')
+   search.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(container.querySelectorAll('[aria-label="Preserved only"] tbody > tr:not(.import-category)')).toHaveLength(1)
+  expect(container.querySelector('section[aria-label="Preserved only"]')?.textContent).toContain('RunLogicErrorHandlerRoot')
  } finally { act(() => root.unmount()) }
 })
 
@@ -481,8 +550,21 @@ it('shows edit actions only for categories in the selected runtime status', asyn
  const container = document.createElement('div'); const root = createRoot(container); const draft = script()
  try {
   await act(async () => root.render(<ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportRuntimeSettingsTable script={draft} /></ImportSettingsProvider>))
-  await act(async () => { const select = container.querySelector<HTMLSelectElement>('.import-settings-toolbar select')!; select.value = 'Requires decision'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  await act(async () => container.querySelector<HTMLInputElement>('.import-runtime-summary input')!.click())
   expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Edit HTTP')).toBe(false)
+  expect(container.querySelectorAll('.import-runtime-content > section')).toHaveLength(0)
+  expect(container.querySelector('[role="status"]')?.textContent).toContain('Enable a mapping status')
+  for (const count of container.querySelectorAll('.import-category-nav small')) expect(count.textContent).toBe('0')
+  await act(async () => container.querySelector<HTMLInputElement>('.import-runtime-summary input')!.click())
+  const edit = [...container.querySelectorAll('button')].find(button => button.textContent === 'Edit HTTP')!
+  expect(edit).toBeDefined()
+  await act(async () => edit.click())
+  await act(async () => container.querySelector<HTMLInputElement>('.import-runtime-summary input')!.click())
+  const review = [...container.querySelectorAll('button')].find(button => button.textContent === 'Review HTTP edits')!
+  expect(review).toBeDefined()
+  await act(async () => review.click())
+  expect(container.querySelector<HTMLInputElement>('.import-runtime-summary input')?.checked).toBe(true)
+  expect(container.querySelector('[aria-label="HTTP: Request timeout (ms)"]')).not.toBeNull()
  } finally { await act(async () => root.unmount()) }
 })
 
@@ -498,4 +580,20 @@ it('keeps allocation controls available when changing an auto-allocated paramete
   await act(async () => { const select = container.querySelector<HTMLSelectElement>('[aria-label="region: auto allocate"]')!; select.value = 'false'; select.dispatchEvent(new Event('change', { bubbles: true })) })
   expect(container.textContent).toContain('Needs attention (0)')
  } finally { await act(async () => root.unmount()) }
+})
+
+it('exposes replay policies once, with explicit false values and source evidence', () => {
+ const draft = script()
+ draft.config.http = { ...draft.config.http, legacy_html_checks: false, dns_cache: false }
+ draft.metadata = { import: { preserved: {
+  runtime_files: { 'default.cfg': { WEB: { EnableChecks: '0' } } },
+  runtime_setting_dispositions: { 'default.cfg': { WEB: { EnableChecks: { status: 'mapped', parity_id: 'http_legacy_checks', fields: ['config.http.legacy_html_checks'] } } } },
+  runtime_settings_parity: [{ id: 'http_legacy_checks', area: 'HTTP', concept: 'Legacy HTML checks', status: 'executed', fields: ['config.http.legacy_html_checks'] }],
+ } } }
+ const groups = runtimeSettingRows(draft)
+ const rows = Object.values(groups).flat().filter(row => row.path === 'config.http.legacy_html_checks')
+ expect(rows).toHaveLength(1)
+ expect(rows[0].importedSummary).toBe('Disabled')
+ expect(rows[0].field?.type).toBe('boolean')
+ expect(groups['Additional APEX settings'].some(row => row.path === 'config.http.dns_cache')).toBe(true)
 })

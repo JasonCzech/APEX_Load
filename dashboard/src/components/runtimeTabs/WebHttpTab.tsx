@@ -191,6 +191,7 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
       </div>
       {contentChecks.map((check, index) => (
         <div className="scenario-browser-grid" key={`content-check-${index}`}>
+          {(['left_boundary', 'right_boundary'] as const).map(field => <label key={field}><span>{field === 'left_boundary' ? 'Left boundary' : 'Right boundary'}</span><input className="settings-input" value={check[field] || ''} onChange={event => patchContentCheck(index, {[field]: event.target.value || undefined})} /></label>)}
           <label><span>Text</span><input className="settings-input" type="text" value={check.text || ''} onChange={event => patchContentCheck(index, { text: event.target.value || undefined })} placeholder="expected text" /></label>
           <label>
             <span>Scope</span>

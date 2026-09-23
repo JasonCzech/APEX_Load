@@ -22,6 +22,11 @@ const (
 	maxReplayPathDepth     = 64
 )
 
+// This budget counts snapshots without holding an additional copy of their payloads.
+type replaySnapshotBudget struct {
+	maxItems, maxItemBytes, remainingBytes, retainedItems int
+}
+
 func (report *ReplayReport) nextEventIndex() int {
 	if report == nil {
 		return 0
@@ -42,6 +47,18 @@ func appendReplayReportEvent(report *ReplayReport, event ReplayActionEvent) Repl
 	report.totalEventCount++
 	recordReplayReportDiagnosis(report, event)
 	recordReplayArtifactManifestEvent(report, event)
+	if budget := report.messageDetailBudget; budget != nil && event.Snapshot != nil {
+		if budget.retainedItems >= budget.maxItems || min(budget.maxItemBytes, budget.remainingBytes) < snapshotBaseOverhead {
+			event.Snapshot = nil
+			event.ResponseBodyState = "not_retained"
+			report.TruncatedEventEvidenceCount++
+		} else {
+			var retainedBytes int
+			event.Snapshot, retainedBytes = boundedErrorSnapshot(event.Snapshot, min(budget.maxItemBytes, budget.remainingBytes))
+			budget.remainingBytes -= retainedBytes
+			budget.retainedItems++
+		}
+	}
 
 	compact := BoundReplayActionEventForRetention(event, false)
 	compactBytes := ReplayActionEventRetentionBytes(compact)

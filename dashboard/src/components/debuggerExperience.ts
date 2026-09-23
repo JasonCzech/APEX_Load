@@ -19,8 +19,8 @@ export function captureScript(script: ScriptDefinition, capture: DebugCapture = 
   // native evidence mechanisms intact instead of sending unsupported settings.
   if (capture === 'script' || !['http', 'soap', 'java_http'].includes(script.protocol)) return script
   return { ...script, config: { ...script.config, results: { ...script.config.results, message_detail: capture === 'errors'
-    ? { mode: 'errors' }
-    : { mode: 'sampled', sample_rate: 1, max_items: 100, max_item_bytes: 65536, max_total_bytes: 4194304 } } } }
+    ? { ...script.config.results?.message_detail, mode: 'errors' }
+    : { include_resources: script.config.results?.message_detail?.include_resources, mode: 'sampled', sample_rate: 1, max_items: 100, max_item_bytes: 65536, max_total_bytes: 4194304 } } } }
 }
 export function executionLabel(replaying: boolean, session: ScriptDebugSession | null, report: BrowserReplayReport | null): string {
   if (!replaying) return !report ? 'Ready' : report.stopped ? 'Stopped' : report.success ? 'Passed' : 'Failed'

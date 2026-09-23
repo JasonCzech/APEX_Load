@@ -91,7 +91,7 @@ it('keeps expired draft evidence inspectable but disables repair and ignores lat
 })
 
 it('previews duration and iteration allocation from the data tab without applying a repair', async () => {
-  const script = { name: 'Allocation', protocol: 'http', actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:allocation' } } } } as unknown as ScriptDefinition
+  const script = { name: 'Allocation', protocol: 'http', actions: [], parameters: [{ name: 'ids', type: 'list', values: ['a', 'b'], selection: 'unique', auto_allocate: true }], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:allocation' } } } } as unknown as ScriptDefinition
   const result = { candidate_id: 'protected:allocation', revision: 'protected:allocation', script, findings: [], readiness: { replay_ready: true }, expires_at: '2099-01-01', fidelity_report: {} }
   mock.request.mockResolvedValue(result)
   const container = document.createElement('div'); const root = createRoot(container)
@@ -146,5 +146,26 @@ it('opens the authoritative issue for a source mapping focus request', async () 
     await act(async () => root.render(<StrictMode><ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} /></StrictMode>))
     expect(mock.request).toHaveBeenCalledTimes(1)
     expect(container.textContent).not.toContain('Checking current repair requirements')
+  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+
+it.each(['none', 'sequential', 'random'])('hides the allocation preview when selection is %s', async selection => {
+  const script = { name: 'Draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], parameters: selection === 'none' ? [] : [{ name: 'ids', type: 'list', selection, values: ['a'] }] } as ScriptDefinition
+  const container = document.createElement('div'); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" view="data" onApplied={vi.fn()} />))
+    expect(container.querySelector<HTMLElement>('[aria-label="Preview unique data allocation"]')?.hidden).toBe(true)
+  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
+})
+it.each(['missing', 'expired', 'locked', 'available'])('explains allocation preview availability: %s', async state => {
+  const script = { name: 'Draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], parameters: [{ name: 'ids', type: 'list', selection: 'unique', values: ['a'], auto_allocate: true }], metadata: { import: { preserved: { server_import_attestation_v1: state === 'missing' ? '' : 'protected:one' } } } } as ScriptDefinition
+  mock.request.mockResolvedValue({ script, findings: [], readiness: {}, expires_at: state === 'expired' ? '2000-01-01' : '2099-01-01' })
+  const container = document.createElement('div'); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" view="data" disabled={state === 'locked'} disabledReason="This draft has already been saved." onApplied={vi.fn()} />))
+    expect(container.querySelector<HTMLElement>('[aria-label="Preview unique data allocation"]')?.hidden).toBe(false)
+    expect(container.querySelector<HTMLFieldSetElement>('.lr-allocation-form')?.disabled).toBe(state !== 'available')
+    const reasons = { missing: 'requires a protected import draft', expired: 'has expired', locked: 'already been saved', available: 'Edit allocation rules in Parameters' }
+    expect(container.textContent).toContain(reasons[state as keyof typeof reasons])
   } finally { await act(async () => root.unmount()); vi.clearAllMocks() }
 })

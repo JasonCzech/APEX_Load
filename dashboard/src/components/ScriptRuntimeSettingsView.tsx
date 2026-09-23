@@ -1,3 +1,4 @@
+import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
 import { RuntimeCountLimit } from './RuntimeCountLimit'
@@ -688,6 +689,7 @@ export function ScriptRuntimeSettingsView({
     </button>
     {runtimeSectionIsActive('errors') && (
       <div className="section-body">
+        {['http', 'http/1.1', 'http/2', 'soap', 'java_http'].includes(script.protocol) && <MessageDetailFields value={script.config.results?.message_detail} onChange={value => updateField('config.results', { ...script.config.results, message_detail: value })} />}
         <div className="form-grid">
           <div className="runtime-checkbox-list">
             <label className="checkbox-label">
@@ -907,6 +909,7 @@ export function ScriptRuntimeSettingsView({
       {runtimeSectionIsActive('websocket') && (
         <div className="section-body">
           <div className="form-grid">
+            <label><span>Callback interval (ms)</span><input type="number" min={1} max={60000} value={script.config.websocket?.callback_interval_ms || 500} onChange={e => updateField('config.websocket', {...script.config.websocket,callback_interval_ms:Number(e.target.value)})} /></label>
             <label><span>Read Timeout (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.websocket?.read_timeout_ms} fallbackMs={30000}
                 onChangeMs={value => updateField('config.websocket', { ...script.config.websocket, read_timeout_ms: value ?? 0 })} /></label>
@@ -1259,8 +1262,10 @@ export function ScriptRuntimeSettingsView({
                 <option value="none">No Proxy</option>
                 <option value="system">Use system proxy</option>
                 <option value="custom">Custom proxy</option>
+ <option value="pac">PAC script</option>
               </select>
             </label>
+            <label className="full-width"><span>PAC URL</span><input value={script.config.http?.proxy?.pac_url || ''} onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, pac_url: e.target.value } })} placeholder="https://proxy.example/config.pac" /></label>
             <label className="full-width"><span>Proxy URL</span>
               <input value={script.config.http?.proxy?.url || ''} placeholder="http://proxy:8080"
                 onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, url: e.target.value } })} /></label>
@@ -1361,6 +1366,8 @@ export function ScriptRuntimeSettingsView({
                 <option value="landscape">Landscape</option>
               </select>
             </label>
+            <label><span>Emulated system language</span><input value={script.config.browser?.system_language || ''} onChange={e => updateField('config.browser', { ...script.config.browser, system_language: e.target.value })} /></label>
+ {(['available_screen_width', 'available_screen_height'] as const).map(field => <label key={field}><span>{field === 'available_screen_width' ? 'Available screen width' : 'Available screen height'}</span><input type="number" min="0" max="8192" value={script.config.browser?.[field] ?? ''} onChange={e => updateField('config.browser', { ...script.config.browser, [field]: Number(e.target.value) })} /></label>)}
             <label><span>Viewport Width</span>
               <input type="number" min="0" value={script.config.browser?.viewport?.width ?? ''} placeholder="393"
                 onChange={e => updateField('config.browser', {
@@ -1722,6 +1729,7 @@ export function ScriptRuntimeSettingsView({
               <option value="extended">Extended (verbose)</option>
             </select>
           </label>
+          <label><span>Error history buffer (bytes)</span><input type="number" min={0} max={1048576} value={script.config.log?.error_buffer_bytes ?? ''} placeholder="102400 by default" onChange={e => updateField('config.log', { ...script.config.log, error_buffer_bytes: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
           <div className="logging-checkbox-group runtime-checkbox-list">
             <label className="checkbox-label">
               <input type="checkbox" checked={script.config.log?.on_error_only || false}

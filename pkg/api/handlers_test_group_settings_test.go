@@ -223,6 +223,8 @@ func createQueuedGroupSettingsTest(t *testing.T, server *Server) *ManagedTest {
 func TestCommandCenterRuntimeFieldCoverage(t *testing.T) {
 	maxRedirects := 4
 	fullyPopulated := &RuntimeSettingsOverride{
+		Results:       &dsl.ResultsConfig{MessageDetail: &dsl.MessageDetailConfig{Mode: "sampled", SampleRate: 1}},
+		WebSocket:     &dsl.WebSocketConfig{CallbackIntervalMs: 100},
 		Pacing:        &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 100},
 		ThinkTime:     &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 100},
 		ErrorHandling: &dsl.ErrorHandlingConfig{MaxRetries: 2},

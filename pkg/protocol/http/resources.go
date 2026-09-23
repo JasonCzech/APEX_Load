@@ -25,7 +25,7 @@ import (
 // resource URLs against the final page URL, and fetches them with browser-like
 // bounded concurrency. Every fetch flows through the same simulated browser
 // cache as the main request, so "Simulate browser cache" is meaningful across
-// pages and iterations. Resource failures never fail the parent step.
+// pages and iterations. Resource failures follow the configured replay outcome policy.
 const (
 	// maxPageResources bounds the resources fetched per page (LR-comparable),
 	// including URLs discovered inside fetched CSS.
@@ -227,6 +227,7 @@ func (f *resourceFetcher) fetchPageResources(
 	}
 
 	stats.applyTo(result)
+	f.h.outcome.applyResources(ctx, result)
 }
 
 // filterResourceRefs resolves, dedupes, scheme-checks, filter-checks, and caps
@@ -433,14 +434,26 @@ func (h *HTTP) fetchResource(
 	pageURL string,
 	pageHeaders http.Header,
 ) (entry protocol.NetworkEntry, bytes int64, css *fetchedCSS, failed, cacheHit bool) {
-	entry = protocol.NetworkEntry{URL: ref.url, Method: http.MethodGet, ResourceType: ref.resourceType}
+	entry = protocol.NetworkEntry{FailureKind: "transport", URL: ref.url, Method: http.MethodGet, ResourceType: ref.resourceType}
+	var captureRequest, captureResponse http.Header
+	var captureBody []byte
+	captureComplete := false
+	defer func() {
+		recordResourceCapture(ctx, entry, captureRequest, captureResponse, captureBody, cacheHit, captureComplete)
+	}()
 
+	defer func() {
+		if !failed {
+			entry.FailureKind = ""
+		}
+	}()
 	// Generator-wide admission. Acquired before the clock starts so time spent
 	// queueing behind other VUsers never lands in this resource's own DurationMs.
 	slots := processResourceSlots()
 	select {
 	case slots <- struct{}{}:
 	case <-ctx.Done():
+		entry.FailureKind = resourceFailureKind(ctx.Err())
 		failed = true
 		return
 	}
@@ -479,6 +492,7 @@ func (h *HTTP) fetchResource(
 		req.Header.Set("Referer", referer)
 	}
 
+	captureRequest = req.Header
 	var staleEntry *httpCacheEntry
 	if h.cache != nil {
 		if cached, fresh := h.cache.lookup(req, time.Now()); cached != nil {
@@ -486,6 +500,7 @@ func (h *HTTP) fetchResource(
 				entry.StatusCode = cached.statusCode
 				entry.ResourceType = ref.resourceType + "(cache)"
 				cacheHit = true
+				captureResponse, captureBody, captureComplete = cached.header, cached.body, true
 				observeVerification(ctx, cached.header, cached.body, true, true)
 				return
 			}
@@ -525,10 +540,12 @@ func (h *HTTP) fetchResource(
 
 	resp, err := client.Do(req)
 	if err != nil {
+		entry.FailureKind = resourceFailureKind(err)
 		failed = true
 		return
 	}
 	defer resp.Body.Close()
+	captureResponse = resp.Header
 
 	if staleEntry != nil && resp.StatusCode == http.StatusNotModified {
 		h.cache.refresh(req, staleEntry, resp, time.Now())
@@ -536,6 +553,7 @@ func (h *HTTP) fetchResource(
 		entry.StatusCode = http.StatusNotModified
 		entry.ResourceType = ref.resourceType + "(revalidated)"
 		cacheHit = true
+		captureResponse, captureBody, captureComplete = staleEntry.header, staleEntry.body, true
 		observeVerification(ctx, staleEntry.header, staleEntry.body, true, true)
 		return
 	}
@@ -545,7 +563,18 @@ func (h *HTTP) fetchResource(
 	// drain (counting) up to the overall ceiling.
 	buffered := make([]byte, 0, 32*1024)
 	limited := io.LimitReader(resp.Body, int64(httpCacheMaxBodyBytes)+1)
-	chunk := make([]byte, 32*1024)
+	chunkSize := 32 * 1024
+	if h.receiveBufferBytes > 0 {
+		chunkSize = h.receiveBufferBytes
+	}
+	receiveLease := processHTTPResponseCaptureBudget.lease()
+	defer receiveLease.release()
+	if !receiveLease.reserve(int64(chunkSize)) {
+		entry.FailureKind = "body_limit"
+		failed = true
+		return
+	}
+	chunk := make([]byte, chunkSize)
 	for {
 		n, readErr := limited.Read(chunk)
 		if n > 0 {
@@ -553,6 +582,7 @@ func (h *HTTP) fetchResource(
 		}
 		if readErr != nil {
 			if readErr != io.EOF {
+				entry.FailureKind = resourceFailureKind(readErr)
 				failed = true
 			}
 			break
@@ -592,8 +622,12 @@ func (h *HTTP) fetchResource(
 			}
 		}
 	}
+	captureBody, captureComplete = buffered, !failed && bytes <= int64(httpCacheMaxBodyBytes)
 	observeVerification(ctx, resp.Header, buffered, true, !failed && bytes <= int64(httpCacheMaxBodyBytes))
 	if resp.StatusCode >= 400 {
+		if !failed {
+			entry.FailureKind = "http"
+		}
 		failed = true
 	}
 

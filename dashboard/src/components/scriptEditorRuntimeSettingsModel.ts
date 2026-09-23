@@ -232,7 +232,7 @@ export function buildScriptRuntimeSummary(script: Pick<ScriptDefinition, 'config
   const httpProxyMode = script.config.http?.proxy_mode || 'none'
   const httpProxySummary = httpProxyMode === 'system'
     ? 'System proxy'
-    : httpProxyMode === 'custom' && script.config.http?.proxy?.url
+    : httpProxyMode === 'pac' ? 'PAC script' : httpProxyMode === 'custom' && script.config.http?.proxy?.url
       ? 'Proxy configured'
       : 'Default'
   const thinkTimeLabel = script.config.think_time?.ignore
@@ -428,6 +428,7 @@ export function formatRuntimeSettingStatusLabel(status: string): string {
 
 /** Per-key classification the importer records for every selected cfg/usp key. */
 export interface ImportedRuntimeSettingDisposition {
+  reason?: string
   status?: string
   parity_id?: string
   fields?: string[]
@@ -482,6 +483,7 @@ export function readImportedRuntimeSettingDispositions(importMeta?: { preserved?
         const record = asRecord(value)
         if (!record) continue
         sectionKeys[key] = {
+          reason: typeof record.reason === 'string' ? record.reason : undefined,
           status: typeof record.status === 'string' ? record.status : undefined,
           parity_id: typeof record.parity_id === 'string' ? record.parity_id : undefined,
           fields: Array.isArray(record.fields) ? record.fields.filter((field): field is string => typeof field === 'string') : undefined,

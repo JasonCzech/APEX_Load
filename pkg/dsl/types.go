@@ -187,11 +187,12 @@ type ResultsConfig struct {
 // generator operator policy may reduce these limits but never raise them.
 // Absence preserves the legacy evidence path.
 type MessageDetailConfig struct {
-	Mode          string  `json:"mode" jsonschema:"enum=off,enum=errors,enum=sampled,enum=adaptive"`
-	SampleRate    float64 `json:"sample_rate,omitempty" jsonschema:"minimum=0,maximum=1"`
-	MaxItems      int     `json:"max_items,omitempty" jsonschema:"minimum=0,maximum=4096"`
-	MaxItemBytes  int64   `json:"max_item_bytes,omitempty" jsonschema:"minimum=0,maximum=16777216"`
-	MaxTotalBytes int64   `json:"max_total_bytes,omitempty" jsonschema:"minimum=0,maximum=1073741824"`
+	IncludeResources *bool   `json:"include_resources,omitempty"` // retain already-fetched resource evidence within the parent capture budget
+	Mode             string  `json:"mode" jsonschema:"enum=off,enum=errors,enum=sampled,enum=adaptive"`
+	SampleRate       float64 `json:"sample_rate,omitempty" jsonschema:"minimum=0,maximum=1"`
+	MaxItems         int     `json:"max_items,omitempty" jsonschema:"minimum=0,maximum=4096"`
+	MaxItemBytes     int64   `json:"max_item_bytes,omitempty" jsonschema:"minimum=0,maximum=16777216"`
+	MaxTotalBytes    int64   `json:"max_total_bytes,omitempty" jsonschema:"minimum=0,maximum=1073741824"`
 }
 
 // BrunoConfig binds a canonical APEX script to an immutable Bruno source
@@ -293,13 +294,14 @@ type JavaClasspathAsset struct {
 }
 
 type WebSocketConfig struct {
-	ReadTimeoutMs  int    `json:"read_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	WriteTimeoutMs int    `json:"write_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	MaxMessageSize int64  `json:"max_message_size,omitempty" jsonschema:"minimum=0,maximum=16777216"`
-	Subprotocol    string `json:"subprotocol,omitempty"`
-	Origin         string `json:"origin,omitempty"`
-	Compression    bool   `json:"compression,omitempty"`
-	Reconnect      bool   `json:"reconnect,omitempty"`
+	CallbackIntervalMs int    `json:"callback_interval_ms,omitempty" jsonschema:"minimum=0,maximum=60000"`
+	ReadTimeoutMs      int    `json:"read_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	WriteTimeoutMs     int    `json:"write_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	MaxMessageSize     int64  `json:"max_message_size,omitempty" jsonschema:"minimum=0,maximum=16777216"`
+	Subprotocol        string `json:"subprotocol,omitempty"`
+	Origin             string `json:"origin,omitempty"`
+	Compression        bool   `json:"compression,omitempty"`
+	Reconnect          bool   `json:"reconnect,omitempty"`
 }
 
 type GRPCConfig struct {
@@ -491,6 +493,8 @@ type BrowserEmulationConfig struct {
 // checkboxes. All fields are tri-state: nil inherits the engine default
 // (http.cache_enabled for SimulateCache, off for the rest).
 type BrowserCacheSimulationConfig struct {
+	ClearCacheForNewUser *bool `json:"clear_cache_for_new_user,omitempty"` // nil preserves the default: clear
+
 	// SimulateCache toggles the per-VUser HTTP response cache. Explicit false
 	// wins over http.cache_enabled=true.
 	SimulateCache *bool `json:"simulate_cache,omitempty"`
@@ -503,7 +507,7 @@ type BrowserCacheSimulationConfig struct {
 	// DownloadNonHTML fetches embedded page resources (images/CSS/JS/…) after
 	// each HTML response — LR "Download non-HTML resources".
 	DownloadNonHTML *bool `json:"download_non_html_resources,omitempty"`
-	// NewUserEachIteration clears cache AND cookies at the start of every
+	// NewUserEachIteration resets cookies (and cache unless explicitly retained) at each
 	// iteration — LR "Simulate a new user on each iteration".
 	NewUserEachIteration *bool `json:"new_user_each_iteration,omitempty"`
 	// SimulatePrefetch fetches link rel=prefetch/prerender/preload targets
@@ -513,6 +517,10 @@ type BrowserCacheSimulationConfig struct {
 }
 
 type BrowserConfig struct {
+	SystemLanguage        string `json:"system_language,omitempty"`
+	AvailableScreenWidth  int    `json:"available_screen_width,omitempty" jsonschema:"minimum=0,maximum=8192"`
+	AvailableScreenHeight int    `json:"available_screen_height,omitempty" jsonschema:"minimum=0,maximum=8192"`
+
 	Engine           string `json:"engine,omitempty"`
 	Headless         *bool  `json:"headless,omitempty"`
 	SlowMoMs         int    `json:"slow_mo_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
@@ -600,6 +608,9 @@ type DownloadFiltersConfig struct {
 }
 
 type ContentCheckConfig struct {
+	LeftBoundary  string `json:"left_boundary,omitempty"`
+	RightBoundary string `json:"right_boundary,omitempty"`
+
 	Text            string `json:"text,omitempty"`
 	Scope           string `json:"scope,omitempty"`
 	FailIfFound     *bool  `json:"fail_if_found,omitempty"`
@@ -676,6 +687,9 @@ type RunLogicConfig struct {
 
 // LogConfig controls per-VUser logging verbosity.
 type LogConfig struct {
+	ErrorBufferBytes int `json:"error_buffer_bytes,omitempty" jsonschema:"minimum=0,maximum=1048576"` // zero uses 100 KiB in error-only mode
+	MaxResponseBytes int `json:"max_response_bytes,omitempty" jsonschema:"minimum=0,maximum=1048576"` // zero keeps the engine evidence bound
+
 	Level           string   `json:"level,omitempty"`            // "disabled", "standard" (default), "extended"
 	OnErrorOnly     bool     `json:"on_error_only,omitempty"`    // if true, use extended logging only when errors occur
 	ExtendedOptions []string `json:"extended_options,omitempty"` // "parameter_substitution", "data_returned", "advanced_trace"
@@ -699,6 +713,18 @@ type LogConfig struct {
 // HTTPConfig holds all HTTP protocol runtime settings, modeled after
 // the configuration surface exposed by LoadRunner VuGen.
 type HTTPConfig struct {
+	ReceiveBufferBytes     int `json:"receive_buffer_bytes,omitempty" jsonschema:"minimum=0,maximum=1048576"`
+	MaxMetaRefresh         int `json:"max_meta_refresh,omitempty" jsonschema:"minimum=0,maximum=50"`
+	ContentCheckErrorLimit int `json:"content_check_error_limit,omitempty" jsonschema:"minimum=0,maximum=1000"`
+
+	// Replay outcome policies preserve explicit false values from source profiles.
+	HTTPErrorsAsWarnings     *bool `json:"http_errors_as_warnings,omitempty"`
+	FailNonCriticalResources *bool `json:"fail_noncritical_resources,omitempty"`
+	ResourceTimeoutAsWarning *bool `json:"resource_timeout_as_warning,omitempty"`
+	LegacyHTMLChecks         *bool `json:"legacy_html_checks,omitempty"`
+	DNSCache                 *bool `json:"dns_cache,omitempty"` // per-VUser, bounded to 256 hosts and 60 seconds
+	AuthDelayMs              int   `json:"challenge_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+
 	// PageTimeoutMs bounds the complete request plus embedded-resource operation.
 	PageTimeoutMs int `json:"page_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	// IPVersion selects the address family for outgoing TCP connections, including proxy connections.
@@ -762,6 +788,7 @@ type TLSConfig struct {
 
 // ProxyConfig defines HTTP/HTTPS proxy settings.
 type ProxyConfig struct {
+	PACURL   string   `json:"pac_url,omitempty"`
 	URL      string   `json:"url,omitempty"`      // e.g. "http://proxy.corp:8080"
 	Username string   `json:"username,omitempty"` // proxy basic auth
 	Password string   `json:"password,omitempty"`
@@ -779,6 +806,8 @@ type AuthConfig struct {
 
 // ErrorHandlingConfig controls how execution errors are handled.
 type ErrorHandlingConfig struct {
+	FailTransactionOnErrorMessage *bool `json:"fail_transaction_on_error_message,omitempty"`
+
 	// ContinueOnError is tri-state: nil means "not set at this layer" and lets a
 	// higher layer (the scenario's continue-on-error policy) supply the value,
 	// while a non-nil false is an explicit opt-out that the scenario default must
@@ -1115,6 +1144,8 @@ type Extractor struct {
 }
 
 type Assertion struct {
+	LegacyHTMLCheck bool `json:"legacy_html_check,omitempty"` // imported web_find only
+
 	Type     string `json:"type"`
 	Expected any    `json:"expected,omitempty"`
 	Value    string `json:"value,omitempty"`

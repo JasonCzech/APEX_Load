@@ -129,7 +129,7 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 		protocols := []string{"http", "browser", "source_web_http_html"}
 		scope := "imported Web HTTP/HTML and TruClient Mobile Web runtime settings mapped into APEX Load DSL/runtime fields"
 		switch entry.ID {
-		case "http_page_timeout", "http_ip_version", "http_cache_eviction", "http_html_parse":
+		case "runtime_replay_snapshots", "runtime_snapshot_resources", "http_receive_buffer", "http_meta_refresh", "http_content_check_limit", "http_status_policy", "http_resource_policy", "http_resource_timeout_policy", "http_legacy_checks", "http_dns_cache", "http_auth_delay", "http_new_user_cache", "runtime_fail_error_message", "runtime_response_log_limit", "http_page_timeout", "http_ip_version", "http_cache_eviction", "http_html_parse":
 			protocols = []string{"http", "soap", "java_http", "source_web_http_html"}
 			scope = "native HTTP transport, including SOAP and Java-over-HTTP wrappers"
 		}

@@ -99,6 +99,8 @@ export interface ReplayDiagnosisSummary {
 }
 
 export interface BrowserReplaySnapshot {
+  resources?: import('./scripts').ScriptResourceSnapshot[]
+  omitted_resources?: number
   response_body_state?: 'captured' | 'empty' | 'redacted' | 'not_captured' | 'expired'
   request_method?: string
   request_url?: string

@@ -9,6 +9,8 @@ import type {
   RunLogicConfig,
   ThinkTimeConfig,
   WebRuntimeConfig,
+  WebSocketConfig,
+  ScriptResultsConfig,
 } from './scripts'
 
 export interface RedactionRule {
@@ -58,6 +60,7 @@ export type RuntimeJavaVuserSettings = Pick<
  * browser section.
  */
 export interface RuntimeSettingsOverride {
+  results?: ScriptResultsConfig
   iterations?: number
   pacing?: PacingConfig | null
   think_time?: ThinkTimeConfig | null
@@ -68,6 +71,7 @@ export interface RuntimeSettingsOverride {
   log?: LogConfig
   run_logic?: RunLogicConfig
   http?: HTTPConfig
+  websocket?: WebSocketConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
   browser_emulation?: BrowserEmulationConfig
@@ -103,6 +107,7 @@ export interface RuntimeSettingsReview {
 }
 
 export interface ScenarioRuntimeSettingsDraft {
+  results?: ScriptResultsConfig
   iterations?: number
   pacing?: PacingConfig
   think_time?: ThinkTimeConfig
@@ -119,6 +124,7 @@ export interface ScenarioRuntimeSettingsDraft {
   log?: LogConfig
   run_logic?: RunLogicConfig
   http?: HTTPConfig
+  websocket?: WebSocketConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
   browser_emulation?: BrowserEmulationConfig

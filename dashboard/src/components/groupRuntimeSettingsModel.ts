@@ -2,6 +2,7 @@ import type { RuntimeSettingsOverride } from '../types/runtimeSettings'
 
 /** Field keys the Command Center dialog may send, mirroring the backend set. */
 export const EDITABLE_RUNTIME_FIELD_KEYS = [
+  'results',
   'iterations',
   'pacing',
   'think_time',
@@ -13,6 +14,7 @@ export const EDITABLE_RUNTIME_FIELD_KEYS = [
   'log',
   'run_logic',
   'http',
+  'websocket',
   'web_runtime',
   'browser_config',
   'browser_emulation',

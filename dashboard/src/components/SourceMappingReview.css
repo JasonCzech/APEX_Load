@@ -46,10 +46,10 @@
 
 .source-map-incomplete {
   padding: 10px 12px;
-  border: 1px solid var(--warning);
+  border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text-primary);
-  background: var(--warning-soft, rgba(255, 170, 0, 0.12));
+  background: var(--bg-secondary);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -576,3 +576,74 @@
 .source-map-selected-details p { margin: 0; }
 .mapping-review-details { overflow-wrap: anywhere; }
 .source-map-target-cell small { display: block; color: var(--text-muted); }
+
+/* Keep navigation and its selected comparison in one workspace. */
+.source-map-review { container-type: inline-size; gap: 10px; }
+.source-map-workspace { display: grid; gap: 12px; min-width: 0; }
+.source-map-comparison { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.source-map-view-options { font-size: 12px; }
+.source-map-view-options > summary { cursor: pointer; color: var(--text-secondary); }
+.source-map-view-options .source-map-review-controls { margin-top: 8px; border: 0; padding: 0; }
+.source-map-incomplete details { margin-top: 6px; }
+.source-map-review .lr-mapping-navigation { margin: 0; font-size: 12px; }
+.source-map-status-help { margin-left: auto; }
+.source-map-status-help p { max-width: 60ch; }
+.source-map-review .source-map-panel-header { display: grid; grid-template-rows: 18px 30px; gap: 8px; align-content: start; justify-content: stretch; }
+.source-map-review .source-map-panel-header > div { flex-wrap: nowrap; overflow-x: auto; }
+.source-map-panel-header .btn { white-space: nowrap; flex-shrink: 0; }
+.source-map-coverage .source-map-status-filter:not(:disabled) { cursor: pointer; }
+.source-map-toolbar span { color: var(--text-secondary); }
+@container (min-width: 1250px) {
+  .source-map-workspace.with-navigator { grid-template-columns: 300px minmax(0, 1fr); align-items: stretch; }
+  .with-navigator .source-map-table-wrap { max-height: 660px; min-height: 360px; }
+  .with-navigator .source-map-table { min-width: 0; table-layout: auto; }
+  .with-navigator .source-map-table colgroup { display: none; }
+  .with-navigator .source-map-table thead { display: block; position: sticky; top: 0; z-index: 2; background: var(--bg-card); }
+  .with-navigator .source-map-table thead tr { display: grid; grid-template-columns: 1fr 1fr; }
+  .with-navigator .source-map-table tbody { display: block; }
+  .with-navigator .source-map-table tbody tr { display: grid; padding: 10px; gap: 4px; border-bottom: 1px solid var(--border); }
+  .with-navigator .source-map-table td { display: block; padding: 0; border: 0; max-width: none; white-space: normal; overflow-wrap: anywhere; }
+  .with-navigator .source-map-table .source-map-source-cell { font-weight: 600; color: var(--text-primary); }
+}
+@container (max-width: 700px) {
+  .with-navigator .source-map-table { min-width: 0; table-layout: auto; }
+  .with-navigator .source-map-table colgroup { display: none; }
+  .with-navigator .source-map-table thead { display: block; position: sticky; top: 0; z-index: 2; background: var(--bg-card); }
+  .with-navigator .source-map-table thead tr { display: grid; grid-template-columns: 1fr 1fr; }
+  .with-navigator .source-map-table tbody { display: block; }
+  .with-navigator .source-map-table tbody tr { display: grid; padding: 10px; gap: 4px; border-bottom: 1px solid var(--border); }
+  .with-navigator .source-map-table td { display: block; padding: 0; border: 0; max-width: none; white-space: normal; overflow-wrap: anywhere; }
+  .with-navigator .source-map-table .source-map-source-cell { font-weight: 600; color: var(--text-primary); }
+  .source-map-header { flex-direction: column; align-items: stretch; }
+  .source-map-panels { flex-direction: column; height: auto; max-height: none; }
+  .source-map-panel { flex: none; height: 360px; }
+  .source-map-status-help { margin-left: 0; }
+}
+.source-map-filter-summary { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--text-secondary); }
+.with-navigator .source-map-table tbody tr.source-map-virtual-spacer { padding: 0; border: 0; gap: 0; }
+.source-map-filter-summary { flex-wrap: wrap; justify-content: space-between; }
+.source-map-view-options[open] { flex-basis: 100%; }
+.source-map-review .lr-mapping-navigation button:disabled { display: none; }
+.source-map-review .source-map-selected-details { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 10px; }
+@container (max-width: 700px) {
+  .source-map-review .source-map-comparison .source-map-panels { height: auto; min-height: 0; max-height: none; align-items: stretch; }
+  .source-map-review .source-map-panel { width: 100%; box-sizing: border-box; }
+}
+/* The shared editor has a bounded center pane; keep the full workspace reachable. */
+.center-document.imported-metadata-section .source-map-review { overflow: auto; }
+
+.source-map-incomplete > strong { display: block; font-size: 13px; }
+.source-map-incomplete > p { margin: 6px 0; max-width: 110ch; }
+.source-map-preview-files > summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+.source-map-preview-files ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: 280px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); }
+.source-map-preview-files li { display: grid; grid-template-columns: minmax(0, 1fr) 160px 150px; gap: 10px 16px; align-items: center; padding: 10px 12px; }
+.source-map-preview-files li + li { border-top: 1px solid var(--border); }
+.source-map-preview-path { overflow-wrap: anywhere; white-space: normal; color: var(--text-primary); }
+.source-map-preview-status { color: var(--text-secondary); font-size: 12px; }
+.source-map-preview-original { color: var(--text-secondary); font-size: 12px; text-align: center; }
+.source-map-preview-integrity { border-left: 3px solid var(--warning); padding-left: 10px; }
+@container (max-width: 650px) {
+  .source-map-preview-files li { grid-template-columns: minmax(0, 1fr) auto; }
+  .source-map-preview-path { grid-column: 1 / -1; }
+  .source-map-preview-original { text-align: right; }
+}

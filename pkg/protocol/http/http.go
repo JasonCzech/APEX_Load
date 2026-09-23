@@ -36,6 +36,12 @@ func init() {
 }
 
 type HTTP struct {
+	receiveBufferBytes     int
+	maxMetaRefresh         int
+	contentCheckErrorLimit int
+	outcome                replayOutcomePolicy
+	authDelay              time.Duration
+
 	client                     *http.Client
 	oauthClient                *http.Client
 	transport                  *http.Transport
@@ -133,6 +139,11 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	if err := validateHTTPRuntimeConfigBounds(config); err != nil {
 		return err
 	}
+	h.receiveBufferBytes = protocol.ConfigInt(config, "receive_buffer_bytes")
+	h.maxMetaRefresh = protocol.ConfigInt(config, "max_meta_refresh")
+	h.contentCheckErrorLimit = protocol.ConfigInt(config, "content_check_error_limit")
+	h.outcome = parseReplayOutcomePolicy(config)
+	h.authDelay = boundedHTTPTimeout(config, "challenge_delay_ms")
 	h.baseURL, _ = config["base_url"].(string)
 	h.captureCorrelationEvidence, _ = config[protocol.CorrelationEvidenceCaptureConfigKey].(bool)
 	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
@@ -153,6 +164,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 
 	h.transport = newTransport(transportSettings, tlsCfg)
+	if enabled, _ := config["dns_cache"].(bool); enabled {
+		h.transport.DialContext = familyDialContext(cachedDNSDialer(h.transport.DialContext, transportSettings.connectTimeout), transportSettings.ipVersion)
+	}
 	h.httpVersion, err = applyHTTPVersion(h.transport, config)
 	if err != nil {
 		return err
@@ -177,6 +191,16 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.oauthClient = hardenedOAuthHTTPClient(h.client)
 	if h.oauthClient != nil {
 		h.oauthTransport, _ = h.oauthClient.Transport.(*http.Transport)
+	}
+	if protocol.ConfigString(config, "proxy_mode") == "pac" {
+		source, err := fetchPAC(ctx, protocol.ConfigString(config, "proxy_pac_url"), h.allowedTargetHosts)
+		if err != nil {
+			return err
+		}
+		h.client.Transport = &pacRoundTripper{source: source, allowed: h.allowedTargetHosts, base: h.transport}
+		if h.oauthClient != nil && h.oauthTransport != nil {
+			h.oauthClient.Transport = &pacRoundTripper{source: source, allowed: h.allowedTargetHosts, base: h.oauthTransport}
+		}
 	}
 	if len(h.allowedTargetHosts) > 0 {
 		h.client.Transport = protocol.NewTargetPolicyRoundTripper(h.client.Transport, h.allowedTargetHosts)
@@ -231,12 +255,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		DependencyType: "http",
 		NetworkProfile: h.networkProfile,
 	}
+	resourceTimeoutWarned := false
+	callerCtx := ctx
 	if h.pageTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeoutCause(ctx, h.pageTimeout, errPageDeadline)
 		defer cancel()
 		defer func() {
-			if context.Cause(ctx) == errPageDeadline {
+			if context.Cause(ctx) == errPageDeadline && !(resourceTimeoutWarned && callerCtx.Err() == nil && result.Success) {
 				result.Success = false
 				result.ErrorMessage = errPageDeadline.Error()
 				result.Duration = time.Since(result.StartTime)
@@ -254,6 +280,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ErrorMessage = err.Error()
 		result.Duration = time.Since(result.StartTime)
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
+	}
+	if skip, _ := action.Params["legacy_html_check"].(bool); skip && !h.outcome.legacyChecks {
+		result.Success = true
+		result.ProtocolEvidence = map[string]any{"legacy_html_check": "disabled"}
 		return result, nil
 	}
 	defaultHeaders := h.defaultHeaders
@@ -290,6 +321,18 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			if decodedRedacted, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(redactedRequestBody))); err == nil {
 				redactedRequestBody = decodedRedacted
 			}
+		}
+	}
+	if strings.EqualFold(action.BodyEncoding, "windows-1252") {
+		var e error
+		requestBody, e = encodeWindows1252Body(action.Body)
+		if e != nil {
+			result.ErrorMessage = "HTTP body cannot be represented in Windows-1252"
+			result.Duration = time.Since(result.StartTime)
+			return result, nil
+		}
+		if len(redactedRequestBody) > 0 {
+			redactedRequestBody, _ = encodeWindows1252Body(redactedRequestBody)
 		}
 	}
 	requestBytes := int64(len(requestBody))
@@ -505,7 +548,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	digestRetried := false
 	if !cacheHit && digestAuth != nil {
 		var retryErr error
-		req, resp, digestRetried, retryErr = retryWithDigestAuth(&client, req, resp, digestAuth, requestBody)
+		req, resp, digestRetried, retryErr = retryWithDigestAuthDelay(&client, req, resp, digestAuth, requestBody, h.authDelay)
 		// retryWithDigestAuth returns the authenticated request even when its
 		// transport fails. Redact that request before every error/version path;
 		// waiting until the success-only accounting block below would copy the
@@ -579,14 +622,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	} else if maxBody > 0 {
 		// Bound the buffered body so a giant (or pathologically compressible)
 		// response becomes a failed sample instead of OOM-ing the generator.
-		n, bodyReadErr = io.Copy(&responseCaptureWriter{buffer: buf, lease: captureLease}, io.LimitReader(resp.Body, maxBody+1))
+		n, bodyReadErr = copyResponse(&responseCaptureWriter{buffer: buf, lease: captureLease}, io.LimitReader(resp.Body, maxBody+1), h.receiveBufferBytes)
 		if bodyReadErr == nil && n > maxBody {
 			buf.Truncate(int(maxBody))
 			n = maxBody
 			bodyReadErr = fmt.Errorf("response body exceeded %d-byte limit", maxBody)
 		}
 	} else {
-		n, bodyReadErr = io.Copy(buf, resp.Body)
+		n, bodyReadErr = copyResponse(buf, resp.Body, h.receiveBufferBytes)
 	}
 	bodyReadDuration := time.Since(bodyReadStart)
 	resp.Body.Close()
@@ -615,6 +658,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.ServerTelemetry.EventCount = sseEventCount
 	}
 	result.Success = resp.StatusCode >= 200 && resp.StatusCode < 400
+	if resp.StatusCode >= 400 && h.outcome.httpWarnings {
+		result.Success = true
+		addReplayWarning(result, "http_status_warning")
+	}
 	if bodyReadErr != nil {
 		result.Success = false
 		result.ErrorMessage = bodyReadErr.Error()
@@ -656,6 +703,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return result, nil
 	}
 	respBody = formattedBody
+	if bodyReadErr == nil {
+		if refreshed, ok := h.followMetaRefresh(ctx, action, req, resp, respBody, result); ok {
+			return refreshed, nil
+		}
+	}
 	if !result.Success && bodyReadErr == nil && result.ErrorMessage == "" && responseStatusExplicitlyAccepted(action.Assertions, result) {
 		result.Success = true
 	}
@@ -752,8 +804,15 @@ extractors:
 		}
 		return responseBodyText
 	}
+	// The final page owns assertions, but latency covers the complete refresh chain.
+	if state, ok := ctx.Value(metaRefreshContextKey{}).(*metaRefreshState); ok {
+		result.Duration = time.Since(state.start)
+	}
 	assertionWork := newAssertionInputWorkBudget(resp.Header, respBody)
 	for index, assertion := range action.Assertions {
+		if assertion.LegacyHTMLCheck && !h.outcome.legacyChecks {
+			continue
+		}
 		if err := assertionWork.charge(assertion); err != nil {
 			result.Success = false
 			result.ErrorMessage = fmt.Sprintf("assertion[%d] %q input rejected: %v", index, assertion.Type, err)
@@ -770,7 +829,7 @@ extractors:
 		}
 	}
 	if result.Success && len(h.contentChecks) > 0 {
-		if err := evaluateContentChecks(h.contentChecks, result, loadResponseBodyText()); err != nil {
+		if err := evaluateContentChecksLimited(h.contentChecks, result, loadResponseBodyText(), h.contentCheckErrorLimit); err != nil {
 			result.Success = false
 			result.ErrorMessage = err.Error()
 		}
@@ -787,6 +846,13 @@ extractors:
 	// outcome (not result.Success, which extractors/assertions may have
 	// flipped) — a real browser fetches resources for any rendered page.
 	observeVerification(ctx, resp.Header, respBody, false, bodyReadErr == nil)
+	var resourceEvidence *resourceCapture
+	resourceCtx := ctx
+	if action.CaptureResourceDetails {
+		resourceEvidence = newResourceCapture(action.MessageDetailMaxItemBytes)
+		defer resourceEvidence.lease.release()
+		resourceCtx = context.WithValue(ctx, resourceCaptureKey{}, resourceEvidence)
+	}
 	explicit, _ := ParseExplicitResources(action.Params)
 	fetcher := h.resources
 	if fetcher == nil && len(explicit) > 0 {
@@ -802,7 +868,14 @@ extractors:
 			pageBody = respBody
 		}
 		if len(explicit) > 0 || len(pageBody) > 0 {
-			fetcher.fetchPageResources(ctx, finalURL, pageBody, result, req.Header, explicit...)
+			fetcher.fetchPageResources(resourceCtx, finalURL, pageBody, result, req.Header, explicit...)
+			for _, warning := range result.WarningCodes {
+				resourceTimeoutWarned = resourceTimeoutWarned || warning == "resource_timeout_warning"
+			}
+			if callerCtx.Err() != nil {
+				result.Success = false
+				result.ErrorMessage = callerCtx.Err().Error()
+			}
 			result.Duration = time.Since(result.StartTime)
 		}
 	}
@@ -813,6 +886,13 @@ extractors:
 		if result.Snapshot == nil {
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		}
+	}
+
+	if resourceEvidence != nil && (action.CaptureMessageDetail || !result.Success) {
+		if result.Snapshot == nil {
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+		}
+		resourceEvidence.attach(result.Snapshot)
 	}
 
 	return result, nil
@@ -1420,7 +1500,7 @@ func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protoc
 	result.CorrelationEvidence = &protocol.CorrelationEvidence{
 		RequestURL:             requestURL,
 		RequestBody:            string(fallbackBody),
-		RequestBodyTransformed: action != nil && strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64"),
+		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252")),
 		RequestHeaders:         correlationEvidenceRequestHeaders(wireRequest),
 		ResponseBody:           string(responseBody),
 		ResponseHeaders:        responseHeaders,

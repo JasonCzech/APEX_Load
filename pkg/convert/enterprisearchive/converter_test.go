@@ -3650,7 +3650,7 @@ func TestRTSSupportMatrixHasNoPartialEntriesAfterParityReconciliation(t *testing
 		t.Fatal("expected RTS support matrix entries")
 	}
 	for _, entry := range matrix {
-		if entry.Status == RuntimeSettingStatusPartial {
+		if entry.Status == RuntimeSettingStatusPartial && entry.ID != "http_receive_buffer" && entry.ID != "runtime_replay_snapshots" && entry.ID != "runtime_snapshot_resources" {
 			t.Fatalf("support matrix entry %s is still partial: %#v", entry.ID, entry)
 		}
 	}

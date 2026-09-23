@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"io"
 	"path/filepath"
 	"sort"
@@ -74,13 +75,15 @@ func buildRunArchiveBrowserDiagnosticsContext(ctx context.Context, record *stora
 			event.NetworkEntries = cloneProtocolNetworkEntries(snapshot.NetworkEntries)
 			event.DOMSummary = cloneProtocolDOMSummary(snapshot.DOMSummary)
 			event.Snapshot = &BrowserDiagnosticSnapshot{
-				RequestMethod:   snapshot.RequestMethod,
-				RequestURL:      snapshot.RequestURL,
-				RequestHeaders:  cloneStringMap(snapshot.RequestHeaders),
-				RequestBody:     snapshot.RequestBody,
-				ResponseStatus:  snapshot.ResponseStatus,
-				ResponseHeaders: cloneStringMap(snapshot.ResponseHeaders),
-				ResponseBody:    snapshot.ResponseBody,
+				Resources:        protocol.CloneResourceSnapshots(snapshot.Resources),
+				OmittedResources: snapshot.OmittedResources,
+				RequestMethod:    snapshot.RequestMethod,
+				RequestURL:       snapshot.RequestURL,
+				RequestHeaders:   cloneStringMap(snapshot.RequestHeaders),
+				RequestBody:      snapshot.RequestBody,
+				ResponseStatus:   snapshot.ResponseStatus,
+				ResponseHeaders:  cloneStringMap(snapshot.ResponseHeaders),
+				ResponseBody:     snapshot.ResponseBody,
 			}
 			event.screenshotBase64 = snapshot.ScreenshotBase64
 			event.html = snapshot.HTML
@@ -190,6 +193,9 @@ func browserDiagnosticEventPayloadBytes(event *BrowserDiagnosticsEvent) int {
 	size := len(event.Group) + len(event.ActionName) + len(event.ErrorMessage) + len(event.PageURL) + len(event.PageTitle) + len(event.screenshotBase64) + len(event.html)
 	if event.Snapshot != nil {
 		size += len(event.Snapshot.RequestMethod) + len(event.Snapshot.RequestURL) + len(event.Snapshot.RequestBody) + len(event.Snapshot.ResponseBody)
+		if raw, err := json.Marshal(event.Snapshot.Resources); len(event.Snapshot.Resources) > 0 && err == nil {
+			size += len(raw)
+		}
 		for key, value := range event.Snapshot.RequestHeaders {
 			size += len(key) + len(value)
 		}

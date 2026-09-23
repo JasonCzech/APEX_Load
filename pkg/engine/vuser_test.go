@@ -1984,7 +1984,7 @@ func TestVUser_Run_ResetsBrowserProtocolPerIteration(t *testing.T) {
 	}
 }
 
-func TestVUser_Run_ErrorMessageActionLogsWhenScriptLoggingDisabled(t *testing.T) {
+func TestVUser_Run_ErrorMessageActionHonorsDisabledLogging(t *testing.T) {
 	protoStub := &loggingProtocol{result: &protocol.Result{
 		Success:       true,
 		StatusCode:    200,
@@ -2030,21 +2030,10 @@ func TestVUser_Run_ErrorMessageActionLogsWhenScriptLoggingDisabled(t *testing.T)
 	if protoStub.executeCalls != 1 {
 		t.Fatalf("executeCalls = %d, want only the HTTP request to reach protocol", protoStub.executeCalls)
 	}
-	logOutput := logBuf.String()
-	for _, expected := range []string{
-		"msg=\"source error message\"",
-		"vuser=7",
-		"group=Login",
-		"action=LR_Error_Message_12",
-		"message=\"Login failed for User: qa-user with status 500\"",
-	} {
-		if !strings.Contains(logOutput, expected) {
-			t.Fatalf("log output missing %q: %s", expected, logOutput)
-		}
+	if logBuf.Len() != 0 {
+		t.Fatalf("disabled logging emitted source diagnostics: %s", logBuf.String())
 	}
-	if strings.Contains(logOutput, "msg=\"action ok\"") {
-		t.Fatalf("disabled script logging emitted request logs: %s", logOutput)
-	}
+
 }
 
 func TestRenderPrintfLikeMessageSupportsSourceFormatting(t *testing.T) {

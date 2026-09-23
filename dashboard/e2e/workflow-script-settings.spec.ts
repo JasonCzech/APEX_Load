@@ -66,6 +66,11 @@ test('parameter workspace preserves 4000 rows, references, masked values and run
   await expect(page.getByRole('button', { name: 'Close script editor', exact: true })).toBeVisible()
   const runtime = page.getByRole('region', { name: 'Runtime Settings', exact: true })
   const navigation = runtime.getByRole('navigation', { name: 'Runtime setting categories' })
+  await navigation.getByRole('tab', { name: 'Error Handling', exact: true }).click()
+  await runtime.getByRole('combobox', { name: 'Exchange capture', exact: true }).selectOption('sampled')
+  await runtime.getByRole('combobox', { name: 'Include fetched resources', exact: true }).selectOption('false')
+  await expect(runtime.getByRole('spinbutton', { name: 'Capture sample rate', exact: true })).toHaveValue('1')
+  await expect(runtime.getByRole('combobox', { name: 'Include fetched resources', exact: true })).toHaveValue('false')
   await navigation.getByRole('tab', { name: 'Think Time', exact: true }).click()
   await expect(runtime.locator('.runtime-context-details')).not.toHaveAttribute('open', '')
   await expect(runtime.getByText('Editing: Script defaults', { exact: true })).toBeVisible()
@@ -86,10 +91,20 @@ test('parameter workspace preserves 4000 rows, references, masked values and run
   await expect(runtime.getByText('Editing: Script defaults', { exact: true })).toBeVisible()
   await expect(runtime.getByText(/Replay executes one virtual user/)).toBeVisible()
   await expect(runtime.getByRole('region', { name: 'Effective runtime context' })).toContainText('Replay executes one virtual user')
+  await navigation.getByRole('tab', { name: 'HTTP Transport', exact: true }).click()
+  await runtime.getByRole('tab', { name: /^Session & Cache(?:\s+\d+)?$/ }).click()
+  await runtime.getByRole('spinbutton', { name: 'Response read buffer (bytes)', exact: true }).fill('12288')
+  await runtime.getByRole('spinbutton', { name: 'Meta-refresh limit per URL', exact: true }).fill('2')
+  await runtime.getByRole('spinbutton', { name: 'Content-check error match limit', exact: true }).fill('10')
+  await runtime.getByRole('tab', { name: 'Proxy', exact: true }).click()
+  await runtime.getByRole('combobox', { name: 'Proxy Mode', exact: true }).selectOption('pac')
+  await runtime.getByRole('textbox', { name: 'PAC URL', exact: true }).fill('https://proxy.example.invalid/config.pac')
   const saved = mutation(page, 'PUT', `/api/v1/scripts/${id}`)
   await page.getByRole('button', { name: 'Save script', exact: true }).click()
   await json(await saved)
   const stored = (await json(await request.get(`/api/v1/scripts/${id}`))).script as { actions: { target: string }[]; parameters: { name: string; column: string; same_line_as?: string }[]; data_sources: { inline_data: string }[]; config: Record<string, unknown> }
+  expect(stored.config.results).toMatchObject({ message_detail: { mode: 'sampled', sample_rate: 1, include_resources: false } })
+  expect(stored.config.http).toMatchObject({receive_buffer_bytes:12288,max_meta_refresh:2,content_check_error_limit:10,proxy_mode:'pac',proxy:{pac_url:'https://proxy.example.invalid/config.pac'}})
   expect(stored.actions[0].target).toBe('/orders/{{param.account}}/{{data.users.account_id}}')
   expect(stored.parameters[1].same_line_as).toBe('account')
   expect(stored.data_sources[0].inline_data).toContain('edited1,example1')
@@ -103,4 +118,30 @@ test('parameter workspace preserves 4000 rows, references, masked values and run
   await expect(page.getByRole('searchbox', { name: 'Find parameter' })).toBeVisible()
   await page.getByRole('searchbox', { name: 'Find parameter' }).fill('paired')
   await expect(page.getByRole('navigation', { name: 'Parameter selection' }).getByRole('button')).toHaveCount(1)
+})
+
+test('older imported draft retains its saved snapshot classification until re-import', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: { name: 'Legacy_runtime_draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.invalid' },
+      actions: [{ name: 'fixture', type: 'request', method: 'GET', target: '/' }],
+      metadata: { import: { source: 'loadrunner', preserved: {
+        runtime_files: { 'default.cfg': { WEB: { EnableSnapshotsInReplay: '1' } } },
+        runtime_setting_dispositions: { 'default.cfg': { WEB: { EnableSnapshotsInReplay: { status: 'non_applicable', note: 'Legacy importer classification; re-import to obtain new mappings.' } } } },
+      } } },
+    },
+  } })))
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('tab', { name: 'Runtime Settings', exact: true }).click()
+  await page.getByRole('tab', { name: 'Imported Source Runtime Settings', exact: true }).click()
+  const row = page.locator('.imported-runtime-table tr').filter({ hasText: 'EnableSnapshotsInReplay' })
+  await expect(row).toContainText('Not applicable')
+  await expect(row.locator('.imported-runtime-disposition')).toHaveAttribute('title', /Legacy importer classification/)
+  const stored = (await json(await request.get(`/api/v1/scripts/${id}`))).script as { config: { results?: { message_detail?: unknown } } }
+  expect(stored.config.results?.message_detail).toBeUndefined()
+  await page.screenshot({ path: testInfo.outputPath('legacy-runtime-classification.png'), fullPage: true })
 })

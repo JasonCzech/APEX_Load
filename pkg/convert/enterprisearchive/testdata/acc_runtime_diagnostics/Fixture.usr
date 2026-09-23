@@ -1,0 +1,9 @@
+[General]
+Type=Web
+DefaultCfg=default.cfg
+MajorVersion=24
+MinorVersion=3
+[Actions]
+Action1=vuser_init.c
+Action2=Action.c
+Action3=vuser_end.c

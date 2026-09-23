@@ -36,6 +36,7 @@ interface Props {
 }
 
 const FIELD_SUMMARY_LABELS: Record<(typeof EDITABLE_RUNTIME_FIELD_KEYS)[number], string> = {
+  results: 'Diagnostics',
   iterations: 'Iterations',
   pacing: 'Pacing',
   think_time: 'Think time',
@@ -47,6 +48,7 @@ const FIELD_SUMMARY_LABELS: Record<(typeof EDITABLE_RUNTIME_FIELD_KEYS)[number],
   log: 'Logging',
   run_logic: 'Run logic',
   http: 'HTTP transport',
+  websocket:'WebSocket',
   web_runtime: 'Web runtime',
   browser_config: 'Browser config',
   browser_emulation: 'Browser emulation',
@@ -65,6 +67,7 @@ function scriptConfigFromSettings(settings?: RuntimeSettingsOverride): ScriptCon
     ...(settings.log ? { log: settings.log } : {}),
     ...(settings.run_logic ? { run_logic: settings.run_logic } : {}),
     ...(settings.http ? { http: settings.http } : {}),
+    ...(settings.websocket ? {websocket: settings.websocket} : {}),
     ...(settings.web_runtime ? { web_runtime: settings.web_runtime } : {}),
     ...(settings.browser_config ? { browser: settings.browser_config } : {}),
     ...(settings.browser_emulation ? { browser_emulation: settings.browser_emulation } : {}),

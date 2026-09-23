@@ -8,7 +8,7 @@ export const RUNTIME_WORKSPACE_CATEGORIES: { group: string; id: RuntimeSettingsS
   { group: 'Execution & timing', id: 'think', label: 'Think Time', fields: ['think_time'] },
   { group: 'Requests & connections', id: 'http', label: 'HTTP Transport', fields: ['http'] },
   { group: 'Session & browser identity', id: 'browser_emulation', label: 'Browser Emulation', fields: ['browser_emulation'] },
-  { group: 'Errors & diagnostics', id: 'errors', label: 'Error Handling', fields: ['error_handling'] },
+  { group: 'Errors & diagnostics', id: 'errors', label: 'Error Handling', fields: ['error_handling', 'results'] },
   { group: 'Errors & diagnostics', id: 'log', label: 'Logging', fields: ['log'] },
   { group: 'Protocol settings', id: 'soap', label: 'SOAP Settings', fields: ['soap'] },
   { group: 'Protocol settings', id: 'java_http', label: 'Java over HTTP', fields: ['java_http'] },

@@ -77,6 +77,15 @@ func (b *Browser) openBrowserContext() error {
 
 	b.installBrowserContextHandlers(browserContext)
 
+	if script := b.environmentEmulationScript(); script != "" {
+		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
+			b.stopRequestPolicyWaiters()
+			b.discardHARWorkingFile()
+			_ = browserContext.Close()
+			return err
+		}
+	}
+
 	page, err := browserContext.NewPage()
 	if err != nil {
 		b.stopRequestPolicyWaiters()

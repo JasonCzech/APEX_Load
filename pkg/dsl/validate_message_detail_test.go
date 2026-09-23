@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -47,5 +48,25 @@ func TestValidateScriptIssuesKeepsSnapshotAndMessageDetailIndependent(t *testing
 	issues := strings.Join(ValidateScriptIssues(script), "\n")
 	if !strings.Contains(issues, "sample_rate must be greater than 0") {
 		t.Fatalf("issues = %q, want message-detail validation independent of snapshot_on_error", issues)
+	}
+}
+
+func TestResourceCaptureBooleanContract(t *testing.T) {
+	for _, value := range []string{"true", "false"} {
+		var config MessageDetailConfig
+		if err := json.Unmarshal([]byte(`{"mode":"errors","include_resources":`+value+`}`), &config); err != nil {
+			t.Fatal(err)
+		}
+		if issues := validateMessageDetailResourceIssues(&config); len(issues) != 0 {
+			t.Fatal(issues)
+		}
+		raw, err := json.Marshal(config)
+		if err != nil || !strings.Contains(string(raw), `"include_resources":`+value) {
+			t.Fatalf("boolean lost: %s %v", raw, err)
+		}
+	}
+	var config MessageDetailConfig
+	if err := json.Unmarshal([]byte(`{"include_resources":"false"}`), &config); err == nil {
+		t.Fatal("non-boolean resource policy accepted")
 	}
 }

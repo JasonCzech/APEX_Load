@@ -1,0 +1,1 @@
+Sanitized runtime-profile fixture derived from acc_wls_reg_1.zip (VuGen 24.3). Runtime keys and selectors are preserved; proxy credentials, network identities and user agents are replaced. C source is reduced to synthetic examples of its operation families. No customer data or executable customer workflow is included.

@@ -102,6 +102,7 @@ export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): S
     log: cloneValue(settings?.log),
     run_logic: cloneValue(settings?.run_logic),
     http: cloneValue(settings?.http),
+    results: cloneValue(settings?.results),
     web_runtime: cloneValue(settings?.web_runtime),
     browser_config: cloneValue(settings?.browser_config),
     browser_emulation: cloneValue(settings?.browser_emulation),

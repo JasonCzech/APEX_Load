@@ -354,6 +354,9 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.ErrorHandling != nil {
 		script.Config.ErrorHandling = *overrides.ErrorHandling
 	}
+	if overrides.WebSocket != nil {
+		script.Config.WebSocket = *cloneViaJSON(overrides.WebSocket)
+	}
 	if overrides.HTTP != nil {
 		script.Config.HTTP = *cloneViaJSON(overrides.HTTP)
 	}
@@ -393,6 +396,9 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 		if overrides.Browser.Orientation != "" {
 			script.Config.Browser.Orientation = overrides.Browser.Orientation
 		}
+	}
+	if overrides.Results != nil {
+		script.Config.Results = *cloneViaJSON(overrides.Results)
 	}
 	if overrides.Log != nil {
 		script.Config.Log = *cloneLogConfig(overrides.Log)
@@ -478,8 +484,10 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 		errorHandling := *overrides.ErrorHandling
 		clone.ErrorHandling = &errorHandling
 	}
+	clone.Results = cloneViaJSON(overrides.Results)
 	clone.Log = cloneLogConfig(overrides.Log)
 	clone.RunLogic = cloneRunLogicConfig(overrides.RunLogic)
+	clone.WebSocket = cloneViaJSON(overrides.WebSocket)
 	clone.HTTP = cloneViaJSON(overrides.HTTP)
 	clone.WebRuntime = cloneViaJSON(overrides.WebRuntime)
 	clone.BrowserConfig = cloneViaJSON(overrides.BrowserConfig)
@@ -711,6 +719,9 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	}
 	if group.HTTP != nil {
 		merged.HTTP = cloneViaJSON(group.HTTP)
+	}
+	if group.WebSocket != nil {
+		merged.WebSocket = cloneViaJSON(group.WebSocket)
 	}
 	if group.WebRuntime != nil {
 		if merged.WebRuntime != nil {

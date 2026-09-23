@@ -91,6 +91,7 @@ type ConvertStats struct {
 
 // ConvertOptions controls the conversion behavior.
 type ConvertOptions struct {
+	sourceEncoding       string
 	ScriptName           string  // Override the generated script name
 	BaseURL              string  // Override base URL (otherwise auto-detected from first URL)
 	DefaultThinkTimeMs   float64 // Default think time if none in script (0 = no default)
@@ -309,6 +310,9 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				fn.Args["Text"] = fn.Args["What"]
 			}
 			assertion, saveCountExtractor, supportMode, warning := convertFindAssertion(fn)
+			if assertion != nil {
+				assertion.LegacyHTMLCheck = true
+			}
 			// web_find validates the previous response, so attach to the LAST emitted
 			// request action. pendingAssertions/pendingExtractors would flush forward
 			// onto the NEXT request, validating the wrong response.
@@ -647,28 +651,34 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		case "web_url", "web_submit_data", "web_submit_form", "web_custom_request", "web_rest", "web_service_call",
 			"web_link", "web_image", "web_image_check":
 			action, warnings := convertAction(fn, baseURL, currentTransaction, currentSubTransaction, opts, lastRequestURL)
-			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" {
+			if contextURL := sourceRequestContextURL(fn, lastRequestURL); contextURL != "" && fn.Name != "web_image_check" {
 				lastRequestURL = contextURL
 			}
 			if action != nil {
+				if fn.Name == "web_image_check" {
+					if action.Params == nil {
+						action.Params = map[string]any{}
+					}
+					action.Params["legacy_html_check"] = true
+				}
 				// Capture pre-attach counts so contributor mappings can point at the
 				// exact extractor/assertion index they land on in the generated action.
 				baseExtractorCount := len(action.Extractors)
 				baseAssertionCount := len(action.Assertions)
 
-				if len(pendingAssertions) > 0 {
+				if len(pendingAssertions) > 0 && fn.Name != "web_image_check" {
 					action.Assertions = append(action.Assertions, pendingAssertions...)
 					pendingAssertions = nil
 				}
 
 				// Attach pending extractors
-				if len(pendingExtractors) > 0 {
+				if len(pendingExtractors) > 0 && fn.Name != "web_image_check" {
 					action.Extractors = append(action.Extractors, pendingExtractors...)
 					pendingExtractors = nil
 				}
 
 				// Attach pending headers
-				if len(pendingHeaders) > 0 {
+				if len(pendingHeaders) > 0 && fn.Name != "web_image_check" {
 					if action.Headers == nil {
 						action.Headers = make(map[string]string)
 					}
@@ -727,7 +737,12 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				// up with the Nth attached extractor/assertion.
 				extractorIndex := baseExtractorCount
 				assertionIndex := baseAssertionCount
+				retainedMappings := make([]SourceReviewMapping, 0)
 				for _, pendingMapping := range pendingSourceMappings {
+					if fn.Name == "web_image_check" {
+						retainedMappings = append(retainedMappings, pendingMapping)
+						continue
+					}
 					contributorIndex := -1
 					switch pendingMapping.TargetKind {
 					case "extractor":
@@ -743,12 +758,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 					}
 					appendSourceReviewMapping(result, pendingMapping)
 				}
-				pendingSourceMappings = nil
+				pendingSourceMappings = retainedMappings
 
 				tagSourceFlowMetadata(result, fn, action)
 				appendActionForPhase(result.Script, fn.Phase, *action)
-				lastRequestPhase = fn.Phase
-				lastRequestIndex = actionCountForPhase(result.Script, fn.Phase) - 1
+				if fn.Name != "web_image_check" {
+					lastRequestPhase = fn.Phase
+					lastRequestIndex = actionCountForPhase(result.Script, fn.Phase) - 1
+				}
 				trackLastExecutable(fn)
 				result.Stats.ConvertedActions++
 				result.Stats.RawRequestActions++

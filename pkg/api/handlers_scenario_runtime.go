@@ -50,6 +50,7 @@ type ApplyRuntimeToGroupsResponse struct {
 // per-group and are never copied across groups. The set widens with the contract in
 // Phase 2.
 var runtimeOverrideFieldKeys = map[string]bool{
+	"results":           true,
 	"iterations":        true,
 	"pacing":            true,
 	"think_time":        true,
@@ -62,6 +63,7 @@ var runtimeOverrideFieldKeys = map[string]bool{
 	"run_logic":         true,
 	"http":              true,
 	"web_runtime":       true,
+	"websocket":         true,
 	"browser_config":    true,
 	"browser_emulation": true,
 	"java_vuser":        true,
@@ -233,6 +235,9 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 		errorHandling := config.ErrorHandling
 		projected.ErrorHandling = &errorHandling
 	}
+	if config.Results.MessageDetail != nil {
+		projected.Results = cloneViaJSON(&config.Results)
+	}
 	if !reflect.ValueOf(config.Log).IsZero() {
 		projected.Log = cloneLogConfig(&config.Log)
 	}
@@ -241,6 +246,9 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 	}
 	if !reflect.ValueOf(config.HTTP).IsZero() {
 		projected.HTTP = cloneViaJSON(&config.HTTP)
+	}
+	if !reflect.ValueOf(config.WebSocket).IsZero() {
+		projected.WebSocket = cloneViaJSON(&config.WebSocket)
 	}
 	if !reflect.ValueOf(config.WebRuntime).IsZero() {
 		projected.WebRuntime = cloneViaJSON(&config.WebRuntime)
@@ -387,6 +395,9 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if !requested["base_url"] {
 		clone.BaseURL = ""
 	}
+	if !requested["results"] {
+		clone.Results = nil
+	}
 	if !requested["log"] {
 		clone.Log = nil
 	}
@@ -395,6 +406,9 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	}
 	if !requested["http"] {
 		clone.HTTP = nil
+	}
+	if !requested["websocket"] {
+		clone.WebSocket = nil
 	}
 	if !requested["web_runtime"] {
 		clone.WebRuntime = nil
@@ -413,8 +427,8 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if clone.Iterations == nil && clone.Pacing == nil && clone.ThinkTime == nil &&
 		clone.ErrorHandling == nil && clone.Browser == nil && clone.LogLevel == "" &&
 		clone.AutoTransactions == "" && clone.BaseURL == "" &&
-		clone.Log == nil && clone.RunLogic == nil &&
-		clone.HTTP == nil && clone.WebRuntime == nil && clone.BrowserConfig == nil &&
+		clone.Results == nil && clone.Log == nil && clone.RunLogic == nil &&
+		clone.WebSocket == nil && clone.HTTP == nil && clone.WebRuntime == nil && clone.BrowserConfig == nil &&
 		clone.BrowserEmulation == nil && clone.JavaVuser == nil {
 		return nil
 	}
@@ -458,12 +472,16 @@ func replaceRuntimeFields(target, source *RuntimeSettingsOverride, fields []stri
 			replaceRuntimeAutoTransactions(next, src)
 		case "base_url":
 			next.BaseURL = src.BaseURL
+		case "results":
+			next.Results = src.Results
 		case "log":
 			next.Log = src.Log
 		case "run_logic":
 			next.RunLogic = src.RunLogic
 		case "http":
 			next.HTTP = src.HTTP
+		case "websocket":
+			next.WebSocket = src.WebSocket
 		case "web_runtime":
 			next.WebRuntime = src.WebRuntime
 		case "browser_config":
@@ -584,7 +602,7 @@ func runtimeSettingsOverrideEmpty(settings *RuntimeSettingsOverride) bool {
 		(settings.Iterations == nil && settings.Pacing == nil && settings.ThinkTime == nil &&
 			settings.ErrorHandling == nil && settings.Browser == nil && settings.LogLevel == "" &&
 			settings.AutoTransactions == "" && settings.BaseURL == "" && settings.Log == nil &&
-			settings.RunLogic == nil && settings.HTTP == nil && settings.WebRuntime == nil &&
+			settings.Results == nil && settings.RunLogic == nil && settings.WebSocket == nil && settings.HTTP == nil && settings.WebRuntime == nil &&
 			settings.BrowserConfig == nil && settings.BrowserEmulation == nil &&
 			settings.JavaVuser == nil &&
 			len(settings.Env) == 0 && len(settings.RedactionRules) == 0)
@@ -608,6 +626,10 @@ func fieldApplicableForProtocol(field, protocol string) bool {
 		// Browser emulation drives the HTTP replay engine only. The browser
 		// protocol's emulation home stays browser_config.
 		return isHTTPProtocol(protocol)
+	case "results":
+		return isHTTPProtocol(protocol)
+	case "websocket":
+		return strings.EqualFold(strings.TrimSpace(protocol), "websocket")
 	case "web_runtime":
 		return protocolFamilyIsBrowser(protocol) || isHTTPProtocol(protocol)
 	case "java_vuser":

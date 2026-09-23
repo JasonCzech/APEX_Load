@@ -155,6 +155,7 @@ type ReplayReport struct {
 	FinalVariables              map[string]string         `json:"final_variables,omitempty"`
 	Snapshots                   []*protocol.ErrorSnapshot `json:"snapshots,omitempty"`
 
+	messageDetailBudget     *replaySnapshotBudget
 	totalEventCount         int
 	retainedEventJSONBytes  int
 	eventJSONBytes          []int
@@ -377,6 +378,13 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		Success:          true,
 		Events:           make([]ReplayActionEvent, 0, min(MaxRetainedReplayEvents, len(script.Init)+len(script.Actions)+len(script.Teardown))),
 	}
+	if policy := script.Config.Results.MessageDetail; policy != nil && strings.ToLower(strings.TrimSpace(policy.Mode)) != "off" {
+		report.messageDetailBudget = &replaySnapshotBudget{
+			maxItems:       normalizedMessageDetailMaxItems(policy.MaxItems),
+			maxItemBytes:   int(normalizedMessageDetailMaxItemBytes(policy.MaxItemBytes)),
+			remainingBytes: int(normalizedMessageDetailMaxTotalBytes(policy.MaxTotalBytes)),
+		}
+	}
 	publishReplayProgress(opts.OnProgress, ReplayProgressEvent{
 		EventID:    replaySessionEventID(replaySessionID, "started"),
 		SessionID:  replaySessionID,
@@ -400,6 +408,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		importedCredentialInspection: importedCredentials,
 		SnapshotStore:                NewSnapshotStore(128),
 	}
+	defer vu.closeErrorLogs()
 	// Deterministic replay: seed random data selection and random template builtins
 	// BEFORE prepareRuntimeState, whose initial data-row load (loadDataRow → GetRow)
 	// draws from the data provider's RNG. Seeding afterward left the first row's
@@ -1292,6 +1301,13 @@ func runReplayAction(
 		}
 		return event, event.Success
 	}
+	if err := vu.beforeWebSocketAction(ctx, action.Type); err != nil {
+		event := ReplayActionEvent{EventID: eventID, ActionIndex: actionIndex, EventIndex: eventIndex, Phase: phase, ActionName: action.Name, ActionType: action.Type}
+		event.Success = false
+		event.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+		attachReplayDiagnosis(&event)
+		return event, false
+	}
 	resolved := vu.resolveAction(action)
 	start := time.Now()
 	var streamedChildFailure *protocol.Result
@@ -1307,6 +1323,7 @@ func runReplayAction(
 		}
 		return nil
 	})
+	vu.acceptWebSocketCallback(action, result, err)
 	completedAt := time.Now()
 
 	event := ReplayActionEvent{
@@ -1370,6 +1387,14 @@ func runReplayAction(
 	// recordResult scrubs and bounds retained result evidence in place.
 	event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
 	discardCorrelationEvidence(result)
+	logCfg := vu.Script.Config.Log
+	logger := vu.makeLogger(logCfg)
+	if !result.Success {
+		logger.Error("replay action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true, vu.RedactionConfig)...)
+	} else if logCfg.OnErrorOnly || logCfg.Level == "extended" {
+		logger.Info("replay action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false, vu.RedactionConfig)...)
+	}
+	retainedSnapshotCount := len(vu.SnapshotStore.Snapshots())
 	vu.recordResult(result, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
 	vu.noteSourceTransactionResult(action, result.Success)
 	event.StatusCode = result.StatusCode
@@ -1400,8 +1425,8 @@ func runReplayAction(
 			event.Snapshot = streamedChildFailure.Snapshot
 		}
 	}
-	if !result.Success && result.Snapshot != nil && vu.SnapshotStore != nil {
-		if retained := vu.SnapshotStore.Snapshots(); len(retained) > 0 {
+	if streamedChildFailure == nil && !result.Success && result.Snapshot != nil && vu.SnapshotStore != nil {
+		if retained := vu.SnapshotStore.Snapshots(); len(retained) > retainedSnapshotCount {
 			// Reuse the store's detached bounded copy so ReplayReport.Events and
 			// ReplayReport.Snapshots do not retain two copies of the same evidence.
 			event.Snapshot = retained[len(retained)-1]

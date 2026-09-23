@@ -896,7 +896,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('web_set_max_html_param_len')
     expect(container.textContent).toContain('Demo.usr')
     expect(container.textContent).toContain('Requires decision')
-    expect(container.textContent).toContain('Mapped for replay')
+    expect(container.querySelector<HTMLInputElement>('.import-runtime-summary input[aria-label="Mapped"]')?.checked).toBe(true)
     expect(container.textContent).toContain('Correlation suggestions')
     expect(container.textContent).toContain('SessionId')
     expect(container.textContent).toContain('Found in Step 1')

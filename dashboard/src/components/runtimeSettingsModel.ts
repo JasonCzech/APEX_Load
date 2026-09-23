@@ -41,6 +41,7 @@ const ENGINE_FALLBACK_LABEL: Partial<Record<RuntimeFieldKey, string>> = {
 
 /** Override fields the Scenario Builder can manage per group (Phase 1 surface). */
 export type RuntimeFieldKey =
+  | 'results'
   | 'iterations'
   | 'pacing'
   | 'think_time'
@@ -51,6 +52,7 @@ export type RuntimeFieldKey =
   | 'log'
   | 'run_logic'
   | 'http'
+  | 'websocket'
   | 'web_runtime'
   | 'browser_config'
   | 'browser_emulation'
@@ -166,6 +168,10 @@ export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: stri
       // HTTP transport (which now also hosts the browser-emulation settings in the
       // editor) applies to HTTP-family protocols AND the browser protocol.
       return isHTTPProtocol(protocol) || isBrowser
+    case 'results':
+      return isHTTPProtocol(protocol)
+    case 'websocket':
+      return (protocol || '').trim().toLowerCase() === 'websocket'
     case 'web_runtime':
       return isBrowser || isHTTPProtocol(protocol)
     case 'browser_emulation':
@@ -203,6 +209,8 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.log &&
     !draft.run_logic &&
     !draft.http &&
+    !draft.results &&
+    !draft.websocket &&
     !draft.web_runtime &&
     !draft.browser_config &&
     !draft.browser_emulation &&
@@ -250,6 +258,8 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     log: override.log,
     run_logic: override.run_logic,
     http: override.http,
+    results: override.results,
+    websocket: override.websocket,
     web_runtime: override.web_runtime,
     browser_config: override.browser_config,
     browser_emulation: override.browser_emulation,
@@ -293,6 +303,8 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     log: draft.log,
     run_logic: draft.run_logic,
     http: draft.http,
+    results: draft.results,
+    websocket: draft.websocket,
     web_runtime: draft.web_runtime,
     browser_config: draft.browser_config,
     browser_emulation: draft.browser_emulation,
@@ -411,6 +423,8 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeS
     log: config.log,
     run_logic: config.run_logic,
     http: config.http,
+    results: config.results,
+    websocket: config.websocket,
     web_runtime: config.web_runtime,
     browser_config: config.browser,
     browser_emulation: config.browser_emulation,
@@ -459,6 +473,8 @@ export function formatEffectiveRuntimeField(
     log: (o) => formatLog(o?.log),
     run_logic: (o) => formatRunLogic(o?.run_logic),
     http: (o) => formatHTTP(o?.http),
+    results: (o) => o?.results?.message_detail ? `Capture: ${o.results.message_detail.mode || 'default'}` : null,
+    websocket: (o) => o?.websocket ? `Callbacks ${o.websocket.callback_interval_ms || 500} ms` : null,
     web_runtime: (o) => formatWebRuntime(o?.web_runtime),
     browser_config: (o) => formatBrowserConfig(o?.browser_config),
     browser_emulation: (o) => formatBrowserEmulation(o?.browser_emulation),

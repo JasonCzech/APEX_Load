@@ -42,6 +42,8 @@ func init() {
 }
 
 type WebSocket struct {
+	callbacks          *callbackState
+	callbackInterval   time.Duration
 	baseURL            string
 	allowedTargetHosts []string
 	conn               *gorillawebsocket.Conn
@@ -62,6 +64,14 @@ type WebSocket struct {
 func (w *WebSocket) Name() string { return "websocket" }
 
 func (w *WebSocket) Init(_ context.Context, config map[string]any) error {
+	w.callbackInterval = 500 * time.Millisecond
+	if raw, ok := config["websocket_callback_interval_ms"]; ok {
+		d, e := protocol.BoundedMilliseconds(raw, 500*time.Millisecond, time.Minute)
+		if e != nil || d < time.Millisecond {
+			return fmt.Errorf("websocket callback interval must be 1..60000 milliseconds")
+		}
+		w.callbackInterval = d
+	}
 	w.baseURL, _ = stringConfig(config, "base_url")
 	w.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	var err error
@@ -108,6 +118,10 @@ func (w *WebSocket) Execute(ctx context.Context, action *protocol.Action) (*prot
 
 	var err error
 	switch action.Type {
+	case "ws_on_message":
+		err = w.registerCallback(ctx)
+	case "ws_dispatch":
+	// Dispatch is owned by the VUser goroutine.
 	case "ws_connect":
 		err = w.connect(ctx, action, result)
 	case "ws_send":
@@ -139,6 +153,7 @@ func (w *WebSocket) Teardown(_ context.Context) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.closedByAction = true
+	w.stopCallbacksLocked()
 	w.connectionEpoch++
 	if w.conn == nil {
 		return nil
@@ -194,9 +209,16 @@ func (w *WebSocket) connect(ctx context.Context, action *protocol.Action, result
 	// An explicit connect is a new connection intent. A later explicit close or
 	// connect increments the epoch and prevents this in-flight dial from
 	// replacing the newer state when the handshake completes.
+	w.stopCallbacksLocked()
 	w.connectionEpoch++
 	connectionEpoch := w.connectionEpoch
+	oldConn := w.conn
+	w.conn = nil
 	w.mu.Unlock()
+	// Wake any cancelled callback reader even if the new dial fails.
+	if oldConn != nil {
+		_ = oldConn.Close()
+	}
 
 	conn, resp, err := w.dialer.DialContext(ctx, target, headers)
 	if resp != nil {
@@ -259,6 +281,13 @@ func (w *WebSocket) send(ctx context.Context, action *protocol.Action, result *p
 }
 
 func (w *WebSocket) receive(ctx context.Context, action *protocol.Action, result *protocol.Result) error {
+	w.mu.Lock()
+	callbackMode := w.callbacks != nil
+	w.mu.Unlock()
+	if callbackMode {
+		return fmt.Errorf("ws_receive cannot compete with a registered callback; use ws_dispatch")
+	}
+
 	conn, err := w.currentOrReconnect(ctx, result)
 	if err != nil {
 		return err
@@ -362,6 +391,7 @@ func (w *WebSocket) close(action *protocol.Action, result *protocol.Result) erro
 	conn := w.conn
 	w.conn = nil
 	w.closedByAction = true
+	w.stopCallbacksLocked()
 	w.connectionEpoch++
 	w.mu.Unlock()
 	if conn == nil {
@@ -462,6 +492,8 @@ func (w *WebSocket) reconnectConn(ctx context.Context, result *protocol.Result) 
 		w.mu.Unlock()
 		return nil, fmt.Errorf("websocket connection is not open")
 	}
+	w.stopCallbacksLocked()
+	w.connectionEpoch++
 	connectionEpoch := w.connectionEpoch
 	target := w.lastTarget
 	headers := cloneHeader(w.lastHeaders)

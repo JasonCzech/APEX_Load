@@ -46,6 +46,7 @@ func excluded(reason string) credentialSurfaceDisposition {
 // until it is classified here, which is the point: the defect this mechanism
 // replaced was a fix applied to one of two sibling surfaces, twice.
 var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
+	"config.http.proxy.pac_url": excluded("PAC fetch rejects URL userinfo and never exposes raw URL or download errors; no synthesized credential composite"),
 	// --- covered: HTTP Basic composites -------------------------------------
 	"config.http.auth.username":  covered("config.http.auth", "basic only"),
 	"config.http.auth.password":  covered("config.http.auth", "basic only"),

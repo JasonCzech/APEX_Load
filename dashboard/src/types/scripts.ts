@@ -37,6 +37,7 @@ export interface ScriptExtractorDefinition {
 }
 
 export interface ScriptAssertionDefinition {
+  legacy_html_check?: boolean
   type: string
   expected?: unknown
   value?: string
@@ -190,6 +191,7 @@ export interface ScriptControlFlow {
 }
 
 export interface ScriptMessageDetailConfig {
+	include_resources?: boolean
 	mode?: 'off' | 'errors' | 'sampled' | 'adaptive'
 	sample_rate?: number
 	max_items?: number
@@ -237,6 +239,7 @@ export interface RunLogicConfig {
 }
 
 export interface ErrorHandlingConfig {
+  fail_transaction_on_error_message?: boolean
   continue_on_error?: boolean
   max_retries?: number
   retry_delay_ms?: number
@@ -245,6 +248,8 @@ export interface ErrorHandlingConfig {
 }
 
 export interface LogConfig {
+  error_buffer_bytes?: number
+  max_response_bytes?: number
   level?: string
   on_error_only?: boolean
   extended_options?: string[]
@@ -259,6 +264,15 @@ export interface LogConfig {
 }
 
 export interface HTTPConfig {
+  receive_buffer_bytes?: number
+  max_meta_refresh?: number
+  content_check_error_limit?: number
+  http_errors_as_warnings?: boolean
+  fail_noncritical_resources?: boolean
+  resource_timeout_as_warning?: boolean
+  legacy_html_checks?: boolean
+  dns_cache?: boolean
+  challenge_delay_ms?: number
   page_timeout_ms?: number
   ip_version?: 'auto' | 'ipv4' | 'ipv6'
   cache_max_unused_iterations?: number
@@ -294,6 +308,7 @@ export interface HTTPConfig {
     ca_cert_file?: string
   }
   proxy?: {
+    pac_url?: string
     url?: string
     username?: string
     password?: string
@@ -309,6 +324,9 @@ export interface HTTPConfig {
 }
 
 export interface BrowserConfig {
+  system_language?: string
+  available_screen_width?: number
+  available_screen_height?: number
   engine?: string
   headless?: boolean
   slow_mo_ms?: number
@@ -387,6 +405,7 @@ export interface BrowserEmulationConfig {
 }
 
 export interface BrowserCacheSimulationConfig {
+  clear_cache_for_new_user?: boolean
   simulate_cache?: boolean
   cache_content_urls?: boolean
   check_newer_versions?: boolean
@@ -415,6 +434,8 @@ export interface DownloadFiltersConfig {
 }
 
 export interface ContentCheckConfig {
+  left_boundary?: string
+  right_boundary?: string
   text?: string
   scope?: string
   fail_if_found?: boolean
@@ -783,6 +804,7 @@ export interface BrunoConfig {
 }
 
 export interface WebSocketConfig {
+  callback_interval_ms?: number
   read_timeout_ms?: number
   write_timeout_ms?: number
   max_message_size?: number
@@ -891,7 +913,21 @@ export interface ScriptReplayDOMSummary {
   visible_text?: string[]
 }
 
+export interface ScriptResourceSnapshot {
+  request_url: string
+  request_headers?: Record<string, string>
+  response_status: number
+  response_headers?: Record<string, string>
+  response_body?: string
+  response_body_state: string
+  cache_hit?: boolean
+  failure_kind?: string
+  truncated?: boolean
+}
+
 export interface ScriptReplaySnapshot {
+  resources?: ScriptResourceSnapshot[]
+  omitted_resources?: number
   response_body_state?: 'captured' | 'empty' | 'redacted' | 'not_captured' | 'expired'
   request_method?: string
   request_url?: string

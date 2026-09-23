@@ -17,6 +17,23 @@ const statuses = ['Requires decision', 'Mapped for replay', 'Preserved only', 'N
 const groupForStatus = (status: string) => status === 'executed' || status === 'mapped' ? statuses[1] : status === 'compatibility_only' ? statuses[2] : status === 'non_applicable' ? statuses[3] : statuses[0]
 export type RuntimeSettingRow = { id: string; category: string; label: string; path?: string; imported: string; importedSummary?: string; note: string; field?: Field }
 const sourceAliases: Record<string, string[]> = {
+ 'config.results.message_detail.mode': ['EnableSnapshotsInReplay'],
+ 'config.results.message_detail.sample_rate': ['EnableSnapshotsInReplay'],
+ 'config.results.message_detail.include_resources': ['SaveSnapshotResources'],
+ 'config.http.receive_buffer_bytes': ['NetBufSize'],
+ 'config.http.max_meta_refresh': ['MaxSelfMetaRefreshCount'],
+ 'config.http.content_check_error_limit': ['MaxErrorMatchesAsERRORS'],
+ 'config.log.error_buffer_bytes': ['AutoLogBufferSize'],
+ 'config.http.http_errors_as_warnings': ['HttpErrorsAsWarnings'],
+ 'config.http.fail_noncritical_resources': ['FailNonCriticalItem'],
+ 'config.http.resource_timeout_as_warning': ['ResourcePageTimeoutIsWarning'],
+ 'config.http.legacy_html_checks': ['EnableChecks'],
+ 'config.http.dns_cache': ['EnableIPCache'],
+ 'config.http.challenge_delay_ms': ['Retry401ThinkTime'],
+ 'config.error_handling.fail_transaction_on_error_message': ['FailTransOnErrorMsg'],
+ 'config.browser_emulation.cache.clear_cache_for_new_user': ['ClearCacheForSimulateNewUser'],
+ 'config.log.max_response_bytes': ['LogMaxResponseSize'],
+
  'config.http.accept_language': ['AcceptLanguage', 'BrowserAcceptLanguage', 'Language'],
  'config.http.accept_encoding': ['AcceptEncoding', 'BrowserAcceptEncoding', 'UseGzip'],
  'config.browser_emulation.custom_user_agent': ['UseCustomAgent', 'CustomUserAgent', 'UserAgent', 'BrowserUserAgent', 'UseBrowserAgent'],
@@ -105,17 +122,19 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
   const parityEntry = parity.find(entry => entry.id === disposition?.parity_id)
   const group = dispositions[file] ? groupForStatus(parityEntry && disposition?.status === 'mapped' ? parityEntry.status : disposition?.status || '') : statuses[2]
   const protectedValue = isSensitiveCredentialPreviewKey(key) || /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(value)
-  groups[group].push({ id: `${file}/${section}/${key}`, category: section, label: key, importedSummary: protectedValue ? 'Protected — manage in Credentials' : value || '(empty)', imported: `${protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : value} (${file})`, note: disposition?.note || 'Preserved source setting; no editable destination is available.' })
+  groups[group].push({ id: `${file}/${section}/${key}`, category: section, label: key, importedSummary: protectedValue ? 'Protected — manage in Credentials' : value || '(empty)', imported: `${protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : value} (${file})`, note: [disposition?.reason?.replace(/_/g, ' '), disposition?.note || 'Preserved source setting; no editable destination is available.'].filter(Boolean).join(' — ') })
  }
  // Importers without parity show actual settings, never invented mapping evidence.
  const known = new Set(Object.values(groups).flat().map(r => r.path).filter(Boolean))
  const defaults = ['Think time', 'Pacing', 'Error handling', ...(['http', 'http/1.1', 'http/2', 'browser', 'soap', 'java_http'].includes(script.protocol) ? ['HTTP'] : []), ...(script.protocol === 'kafka' ? ['Kafka'] : []), ...(script.protocol?.startsWith('jms') ? ['JMS'] : [])]
  const current = importRuntimeFields.filter(f => !known.has(f.path) && (readSetting(script, f.path) !== undefined || defaults.includes(f.category)) && settingIsRelevant(script, f.path))
- groups['Current runtime settings'] = current.map(f => ({ id: f.path, category: f.category, label: f.label, path: f.path, imported: 'No source mapping reported', note: 'Current draft setting.', field: f }))
+ groups['Additional APEX settings'] = current.map(f => ({ id: f.path, category: f.category, label: f.label, path: f.path, imported: 'No source mapping reported', note: 'Current draft setting.', field: f }))
  return groups
 }
 
 function settingIsRelevant(script: ScriptDefinition, path: string): boolean {
+ const nativeReplayPolicies = ['http_errors_as_warnings', 'fail_noncritical_resources', 'resource_timeout_as_warning', 'legacy_html_checks', 'dns_cache', 'challenge_delay_ms']
+ if (nativeReplayPolicies.some(key => path === `config.http.${key}`) && !['http', 'http/1.1', 'http/2', 'soap', 'java_http'].includes(script.protocol)) return false
  const think = script.config?.think_time?.type || 'fixed'
  const pacing = script.config?.pacing?.type || 'none'
  const pacingModes: Record<string, string[]> = { delay_ms: ['fixed_delay'], interval_ms: ['fixed_interval'], min_delay_ms: ['random_delay'], max_delay_ms: ['random_delay'], min_interval_ms: ['random_interval'], max_interval_ms: ['random_interval'], tps: ['tps'] }

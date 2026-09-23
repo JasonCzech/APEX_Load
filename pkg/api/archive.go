@@ -819,13 +819,15 @@ type BrowserDiagnosticsEvent struct {
 }
 
 type BrowserDiagnosticSnapshot struct {
-	RequestMethod   string            `json:"request_method,omitempty"`
-	RequestURL      string            `json:"request_url,omitempty"`
-	RequestHeaders  map[string]string `json:"request_headers,omitempty"`
-	RequestBody     string            `json:"request_body,omitempty"`
-	ResponseStatus  int               `json:"response_status,omitempty"`
-	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
-	ResponseBody    string            `json:"response_body,omitempty"`
+	Resources        []protocol.ResourceSnapshot `json:"resources,omitempty"`
+	OmittedResources int                         `json:"omitted_resources,omitempty"`
+	RequestMethod    string                      `json:"request_method,omitempty"`
+	RequestURL       string                      `json:"request_url,omitempty"`
+	RequestHeaders   map[string]string           `json:"request_headers,omitempty"`
+	RequestBody      string                      `json:"request_body,omitempty"`
+	ResponseStatus   int                         `json:"response_status,omitempty"`
+	ResponseHeaders  map[string]string           `json:"response_headers,omitempty"`
+	ResponseBody     string                      `json:"response_body,omitempty"`
 }
 
 type BrowserDiagnosticArtifacts struct {

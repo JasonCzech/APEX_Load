@@ -1,3 +1,4 @@
+import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord } from './debuggerExperience'
 import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
 import { debugOverrideCount, sessionVariablesError, handleOutlineKeys } from './scriptSidebarModel'
@@ -1039,6 +1040,7 @@ export function ScriptReplayDebuggerView({
                                   {event.snapshot?.response_body ? <button type="button" onClick={() => document.getElementById('debug-captured-response')?.scrollIntoView({ block: 'nearest' })}>View captured response below</button> : <p>{(event.snapshot?.response_body_state || event.response_body_state) === 'empty' ? 'The target returned an empty response body.' : (event.snapshot?.response_body_state || event.response_body_state) === 'redacted' ? 'Response body removed by the credential-redaction policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'expired' ? 'Response body expired under the retention policy.' : (event.snapshot?.response_body_state || event.response_body_state) === 'not_captured' ? 'Response body was not captured. Open Debug options and choose diagnostic capture before rerunning.' : event.response_body_state === 'not_retained' ? 'Response body was removed by the evidence-retention limit.' : 'Response body unavailable; the capture state is unknown. This does not establish that the response was empty.'}</p>}
                                   {!event.snapshot?.response_body && <button type="button" onClick={() => setDebuggerSettingsOpen(true)}>Review evidence capture settings</button>}
                                 </section>}
+                                <ResourceSnapshotList snapshot={event.snapshot} />
                                 {event.diagnosis && (
                                   <div className="replay-diagnosis-panel">
                                     <div>

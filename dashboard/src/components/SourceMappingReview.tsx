@@ -656,25 +656,42 @@ export default function SourceMappingReview({
       </div>
 
       {(omittedFiles.length > 0 || truncatedFiles.length > 0 || unaccountedFiles > 0) && (
-        <div className="source-map-incomplete" role="alert">
-          Source review is a bounded redacted preview.
-          {omittedFiles.length > 0
-            ? ` ${omittedFiles.length} source file${omittedFiles.length === 1 ? ' is' : 's are'} omitted from this bounded review payload.`
-            : ''}
-          {truncatedFiles.length > 0
-            ? ` ${truncatedFiles.length} source file${truncatedFiles.length === 1 ? ' is' : 's are'} truncated.`
-            : ''}
-          {unaccountedFiles > 0
-            ? ` ${unaccountedFiles} source file${unaccountedFiles === 1 ? ' is' : 's are'} not accounted for by the review payload.`
-            : ''}
-          {unaccountedFiles > 0
-            ? ' Review file counts are inconsistent; re-import before approval.'
-            : isBoundedJavaPreview
-              ? javaSourceManifest
-                ? ' Approval is bound to the immutable full Java source manifest. Omitted or truncated bytes require out-of-band review of the governed original archive before approval.'
-                : ' The immutable full Java source manifest is missing; re-import before approval.'
-              : ' Consult the original archive for content outside this bounded review payload.'}
-        </div>
+        <aside className="source-map-incomplete" role="note" aria-label="Source preview limits">
+          <strong>Preview limits only — not an import issue</strong>
+          <p>Some source content is shortened or not shown in this review pane. These preview limits do not truncate the imported script or remove data from the import. Any conversion issues are reported separately.</p>
+          <p>Use the original archive to inspect the complete source files.</p>
+          {unaccountedFiles > 0 && (
+            <p className="source-map-preview-integrity" role="alert">{unaccountedFiles} source file{unaccountedFiles === 1 ? ' is' : 's are'} not accounted for by the review payload. Review file counts are inconsistent; re-import before approval.</p>
+          )}
+          {isBoundedJavaPreview && (
+            <p className="source-map-preview-integrity" role={javaSourceManifest ? undefined : 'alert'}>
+              {javaSourceManifest
+                ? 'Approval is bound to the immutable full Java source manifest. Content outside this preview requires out-of-band review of the governed original archive before approval.'
+                : 'The immutable full Java source manifest is missing; re-import before approval.'}
+            </p>
+          )}
+          {(omittedFiles.length > 0 || truncatedFiles.length > 0) && (
+            <details className="source-map-preview-files">
+              <summary>View files with limited previews ({omittedFiles.length + truncatedFiles.length})</summary>
+              <ul aria-label="Files with limited previews">
+                {truncatedFiles.map(file => (
+                  <li key={file.path}>
+                    <code className="source-map-preview-path">{file.path}</code>
+                    <span className="source-map-preview-status">Shortened in preview</span>
+                    <button className="btn btn-sm btn-secondary" type="button" aria-label={`View preview of ${file.path}`} onClick={() => selectSourceFile(file.path)}>View preview</button>
+                  </li>
+                ))}
+                {omittedFiles.map(path => (
+                  <li key={path}>
+                    <code className="source-map-preview-path">{path}</code>
+                    <span className="source-map-preview-status">Not shown in preview</span>
+                    <span className="source-map-preview-original">See original archive</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </aside>
       )}
 
       {isJavaVuserReview && javaSourceManifest && (
@@ -703,15 +720,6 @@ export default function SourceMappingReview({
           <input value={filter} onChange={event => { setFilter(event.target.value); setIsTableCollapsed(false) }} placeholder="Function, target, status..." />
         </label>
         <div style={{ alignSelf: 'flex-end', marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ border: '1px solid var(--border)' }}
-            onClick={() => { void exportCsv() }}
-          >
-            Export filtered mappings
-          </button>
           <button
             type="button"
             className="btn btn-sm btn-ghost"
@@ -722,29 +730,32 @@ export default function SourceMappingReview({
           </button>
         </div>
       </div>
-      <div className="source-map-review-controls">
-        <label>Comparison scope<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
-        <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>
+      <div className="source-map-filter-summary">
         <span>{filteredMappings.length} of {mappings.length} mappings</span>
         {(filter || categoryFilter !== '') && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setFilter(''); setCategoryFilter('') }}>Clear filters</button>}
+      <details className="source-map-view-options"><summary>View options & export</summary>
+      <div className="source-map-review-controls">
+          <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            style={{ border: '1px solid var(--border)' }}
+            onClick={() => { void exportCsv() }}
+          >
+            Export filtered mappings
+          </button>
+
+        <label>Comparison scope<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
+        <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>
         <details><summary>Keyboard shortcuts</summary><p>In the mapping list, use ↑/↓ and Home/End to select. Use [ and ] to move between unacknowledged review items while focus is in this workspace.</p></details>
+      </div>
+      </details>
       </div>
       {destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? new Date(identity.state.capturedAt).toLocaleString() : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
       {identity.error && <p role="alert">{identity.error}</p>}
-      {(omittedFiles.length > 0 || truncatedFiles.length > 0) && <details><summary>Inspect omitted and truncated files</summary><ul>{omittedFiles.map(path => <li key={path}>Omitted: {path}</li>)}{truncatedFiles.map(file => <li key={file.path}><button type="button" onClick={() => selectSourceFile(file.path)}>Truncated: {file.path}</button></li>)}</ul></details>}
-      {showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
-      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<span>Mapping coverage is source evidence, not execution readiness. Review acknowledgement does not resolve blockers.</span></nav>
-      {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
-        <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
-        <span>Conversion: {formatStatusLabel(selectedMapping.status)} · Runtime support: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
-        <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}</span>
-        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
-        {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
-        <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />
-      </div>}
-      {onEditTarget && destinationPath && destinationView === 'current' && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditTarget(destinationPath)}>Edit destination in Author</button>}
-      {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
+      {showNoOrigin && !identity.checking && <div className="source-map-origin-list" aria-label="Destination items without source origin">{dslStatus.withoutOrigin.length ? dslStatus.withoutOrigin.map(path => <button className="btn btn-sm btn-ghost" type="button" key={path} onClick={() => { setNoOriginTarget(path); setRevealRequestId(value => value + 1) }}>{path}</button>) : <p>Every tracked destination item has a source mapping.</p>}</div>}
+      <div className={`source-map-workspace ${isTableCollapsed ? '' : 'with-navigator'}`}>
       <div ref={tableWrapRef} className="source-map-table-wrap" data-table-pagination="off" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">
           <colgroup>
@@ -808,6 +819,19 @@ export default function SourceMappingReview({
           </tbody>
         </table>
       </div>
+
+      <div className="source-map-comparison">
+      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<details className="source-map-status-help"><summary>About review status</summary><p>Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.</p></details></nav>
+      {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
+        <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
+        <span>Conversion: {formatStatusLabel(selectedMapping.status)} · Runtime support: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
+        <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}</span>
+        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
+        {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
+        <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />
+      </div>}
+      {onEditTarget && destinationPath && destinationView === 'current' && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditTarget(destinationPath)}>Edit destination in Author</button>}
+      {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
       <div className="source-map-panels">
         <div className={`source-map-panel ${maximizedPane === 'dsl' ? 'hidden' : maximizedPane === 'source' ? 'maximized' : ''}`}>
@@ -880,6 +904,8 @@ export default function SourceMappingReview({
             <div className="source-map-empty">{!dslDocument ? 'Destination is not available yet.' : identity.checking ? 'Verifying mapping identity…' : !selectedMapping ? 'This captured file has no destination mappings. Select a mapped file or inspect destination items without source origin.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path ? 'This source construct has no mapped destination. Its conversion status and review notes explain what needs attention.' : 'No verified destination. Inspect mapping details to re-link an edited, removed, or ambiguous target.'}</div>
           )}
         </div>
+      </div>
+      </div>
       </div>
     </section>
   )

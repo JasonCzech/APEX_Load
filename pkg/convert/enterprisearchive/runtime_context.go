@@ -43,20 +43,55 @@ func runtimeHTTPFeatureExplicitlyDisabled(sections map[string]map[string]string,
 // Refinement uses the selected profile identity and source corpus, not just an
 // individual INI row. Never erase source evidence; explain why it is dormant.
 func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[string]RuntimeSettingDisposition, rc *RuntimeConfig, files map[string]string, protocol string) {
+	defer func() {
+		for _, sections := range dispositions {
+			for section, keys := range sections {
+				for key, row := range keys {
+					keys[key] = explainRuntimeDisposition(row, section, key)
+				}
+			}
+		}
+	}()
 	usp := ""
 	if rc != nil {
 		usp = rc.selectedRunLogicFile
 	}
 	streamAbsent, syncAbsent := runtimeSourceOperationsAbsent(files, protocol)
+	wsAbsent, socketAbsent := runtimeSourceOperationsAbsentMatching(files, protocol, "web_websocket", "web_socket")
 	for file, sections := range dispositions {
 		_, source, _ := findRuntimeArchiveFile(files, file)
 		authConflict, paceConflict := false, false
-		for _, conflict := range runtimeConfigCaseFoldConflicts(source) {
+		conflicts := runtimeConfigCaseFoldConflicts(source)
+		for _, conflict := range conflicts {
 			authConflict = authConflict || (runtimeConfigCanonicalSection(conflict.section) == "http" && strings.EqualFold(conflict.key, "IntegratedAuthentication"))
 			paceConflict = paceConflict || (runtimeConfigCanonicalSection(conflict.section) == "runlogicrunroot" && strings.EqualFold(conflict.key, "RunLogicPaceType"))
 		}
 		for section, keys := range sections {
 			for key, row := range keys {
+				if rc != nil && (row.ParityID == "runtime_replay_snapshots" || row.ParityID == "runtime_snapshot_resources") {
+					for _, issue := range rc.RuntimeIssues {
+						if issue.ID == row.ParityID {
+							row.Status = RuntimeSettingDispositionCompatibilityOnly
+							row.Reason = "unverified_semantics"
+							row.Note = issue.Notes
+							keys[key] = row
+							break
+						}
+					}
+				}
+				if row.Status == RuntimeSettingDispositionNonApplicable {
+					ambiguous := false
+					parent := runtimeInactiveParentKey(section, key)
+					for _, conflict := range conflicts {
+						if parent != "" && compactRuntimeEnum(conflict.key) == parent {
+							ambiguous = true
+						}
+					}
+					if ambiguous {
+						keys[key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, Reason: "unverified_semantics", Note: "Conflicting " + parent + " selectors prevent proving this saved value inactive; review the selected source profile."}
+						continue
+					}
+				}
 				if authConflict && strings.HasPrefix(row.Note, "Saved authentication option is inactive") {
 					keys[key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, Note: "Conflicting IntegratedAuthentication selectors prevent determining whether this saved authentication option is active; review the source policy."}
 					continue
@@ -65,7 +100,42 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 					keys[key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, ParityID: "pacing", Fields: []string{"config.pacing"}, Note: "Conflicting RunLogicPaceType selectors prevent determining the active pacing bounds."}
 					continue
 				}
+				if (runtimeConfigCanonicalSection(section) == "general" && strings.EqualFold(key, "Encoding")) || (runtimeConfigCanonicalSection(section) == "http" && strings.EqualFold(key, "RecorderWinCodePage")) {
+					selected := rcSections(files, rc)
+					if strings.EqualFold(runtimeSectionValue(findSection(selected, "General"), "Encoding"), "ANSI") && runtimeSectionValue(findMergedSection(selected, "WEB", "Web"), "RecorderWinCodePage") == "1252" {
+						keys[key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionMapped, Note: "Consumed during strict Windows-1252 text decoding; request body bytes and binary assets are preserved."}
+						continue
+					}
+				}
 				note := ""
+				if nativeHTTPCompatibilityProtocol(protocol) && runtimeConfigCanonicalSection(section) == "http" {
+					switch strings.ToLower(key) {
+					case "resetcontext":
+						note = "Recording/code-generation context option; does not reset native replay iterations."
+					case "startrecordinggmt", "startrecordingisdst":
+						note = "Recording provenance; not used by ordinary native HTTP replay."
+					case "navigatorsystemlanguage", "screenavailwidth", "screenavailheight":
+						note = "DOM emulation property; native HTTP replay has no browser DOM."
+					case "proxyautoconfigscripturl":
+						if rc != nil && runtimeHTTPFeatureExplicitlyDisabled(rcSections(files, rc), "ProxyUseAutoConfigScript") {
+							note = "Inactive saved PAC URL: automatic proxy configuration is explicitly disabled."
+						}
+					case "websocketcallbacktimerintervalms":
+						if wsAbsent && socketAbsent {
+							note = "Inactive: no WebSocket operation or indirect reference exists in the inspected C source."
+						}
+					}
+				}
+				if strings.EqualFold(key, "ProxyPasswordIsEncrypted") && runtimeConfigCanonicalSection(section) == "http" {
+					keys[key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionMapped, ParityID: "proxy", Fields: []string{"config.http.proxy.password"}, Note: "Credential encoding marker consumed by the importer; provision the protected proxy password through Credentials."}
+					continue
+				}
+				if strings.EqualFold(key, "AutoLogBufferSize") && !parseBool(runtimeSectionValue(ParseConfigSections(source)[section], "AutoLog")) {
+					// Only a valid explicit false selector proves inactivity.
+					if active, valid := parseBoolExplicit(runtimeSectionValue(ParseConfigSections(source)[section], "AutoLog")); valid && !active {
+						note = "Error history capacity is inactive because AutoLog is disabled."
+					}
+				}
 				if row.ParityID == "http_cache_eviction" && rc != nil && rc.BESimulateCache != nil && !*rc.BESimulateCache {
 					note = "The source cache eviction policy is dormant because browser-cache simulation is disabled."
 				}
@@ -95,6 +165,25 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 // source leaves the warning intact. Macro and function-pointer references keep it, while
 // generated SDK function declarations are not mistaken for operations.
 func runtimeSourceOperationsAbsent(files map[string]string, protocol string) (stream, sync bool) {
+	return runtimeSourceOperationsAbsentMatching(files, protocol, "web_stream", "web_sync")
+}
+func rcSections(files map[string]string, rc *RuntimeConfig) map[string]map[string]string {
+	// Resolve the selected cfg rather than whichever profile happens to appear first.
+	if rc == nil {
+		return nil
+	}
+	for name, content := range files {
+		if strings.HasSuffix(strings.ToLower(name), ".cfg") {
+			for _, selected := range rc.RuntimeFiles {
+				if strings.EqualFold(name, selected) {
+					return ParseConfigSections(content)
+				}
+			}
+		}
+	}
+	return nil
+}
+func runtimeSourceOperationsAbsentMatching(files map[string]string, protocol, firstName, secondName string) (stream, sync bool) {
 	if protocol != "http" && protocol != "http/1.1" && protocol != "http/2" && protocol != "soap" {
 		return false, false
 	}
@@ -111,8 +200,8 @@ func runtimeSourceOperationsAbsent(files map[string]string, protocol string) (st
 			}
 			if parsed != nil {
 				for _, call := range parsed.Functions {
-					hasStream = hasStream || strings.HasPrefix(strings.ToLower(call.Name), "web_stream")
-					hasSync = hasSync || strings.EqualFold(call.Name, "web_sync")
+					hasStream = hasStream || strings.HasPrefix(strings.ToLower(call.Name), firstName)
+					hasSync = hasSync || strings.HasPrefix(strings.ToLower(call.Name), secondName)
 				}
 			}
 			// A function can be passed or assigned without being called by name.
@@ -124,15 +213,15 @@ func runtimeSourceOperationsAbsent(files map[string]string, protocol string) (st
 				if token.kind != cTransactionIdentifier || (i+1 < len(tokens) && tokens[i+1].text == "(") {
 					continue
 				}
-				hasStream = hasStream || strings.HasPrefix(strings.ToLower(token.text), "web_stream")
-				hasSync = hasSync || strings.EqualFold(token.text, "web_sync")
+				hasStream = hasStream || strings.HasPrefix(strings.ToLower(token.text), firstName)
+				hasSync = hasSync || strings.HasPrefix(strings.ToLower(token.text), secondName)
 			}
 			inComment := false
 			for line := range strings.SplitSeq(content, "\n") {
 				code := strings.ToLower(stripCComments(line, &inComment))
 				if strings.HasPrefix(strings.TrimSpace(code), "#") {
-					hasStream = hasStream || strings.Contains(code, "web_stream")
-					hasSync = hasSync || strings.Contains(code, "web_sync")
+					hasStream = hasStream || strings.Contains(code, firstName)
+					hasSync = hasSync || strings.Contains(code, secondName)
 					if strings.Contains(code, "##") || strings.HasSuffix(strings.TrimSpace(code), "\\") {
 						complete = false
 					}

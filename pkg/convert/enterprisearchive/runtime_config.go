@@ -24,6 +24,7 @@ import (
 // RuntimeConfig holds parsed source runtime settings from a .cfg file.
 type RuntimeConfig struct {
 	httpCompatibility      dsl.HTTPConfig
+	runtimePolicies        dsl.ScriptConfig
 	selectedRunLogicFile   string
 	ConnectTimeoutSec      int
 	ReceiveTimeoutSec      int
@@ -183,6 +184,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	sections := ParseConfigSections(content)
 	parseRuntimeHTTPTransportSettings(rc, sections)
 	parseRuntimeHTTPCompatibility(rc, sections)
+	parseRuntimeReplayPolicies(rc, sections)
 
 	parseRuntimeProxySettings(rc, sections)
 
@@ -620,10 +622,12 @@ func parseRuntimeDownloadFilterSettings(rc *RuntimeConfig, sections map[string]m
 // and whether finding it fails the step.
 func parseRuntimeContentCheckSettings(rc *RuntimeConfig, sections map[string]map[string]string) {
 	contentCheckSection := findMergedSection(sections, "Content Check", "ContentCheck")
-	if text := strings.TrimSpace(runtimeSectionFirstNonBlank(contentCheckSection, "Text", "SearchText")); text != "" {
+	left, right := runtimeSectionValue(contentCheckSection, "LeftBoundary"), runtimeSectionValue(contentCheckSection, "RightBoundary")
+	if text := strings.TrimSpace(runtimeSectionFirstNonBlank(contentCheckSection, "Text", "SearchText")); text != "" || (left != "" && right != "") {
 		failIfFound := !hasExplicitFalse(runtimeSectionValue(contentCheckSection, "FailIfFound"))
 		rc.ContentChecks = append(rc.ContentChecks, dsl.ContentCheckConfig{
-			Text:        text,
+			Text:         text,
+			LeftBoundary: left, RightBoundary: right,
 			Scope:       normalizeSourceContentCheckScope(firstNonBlank(runtimeSectionValue(contentCheckSection, "Scope"), "any_response")),
 			FailIfFound: &failIfFound,
 		})
@@ -979,6 +983,19 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 		config.JavaVuser.DedicatedClassLoader = cloneRuntimeBoolPointer(rc.JavaVMDedicatedClassLoader)
 		config.JavaVuser.Classpath = append([]string(nil), rc.JavaVMClasspath...)
 		config.JavaVuser.SkipParameterEvaluation = cloneRuntimeBoolPointer(rc.JavaVMSkipParameterEvaluation)
+	}
+	config.ErrorHandling.FailTransactionOnErrorMessage = rc.runtimePolicies.ErrorHandling.FailTransactionOnErrorMessage
+	config.Results = rc.runtimePolicies.Results
+	config.Log.MaxResponseBytes = rc.runtimePolicies.Log.MaxResponseBytes
+	config.Log.ErrorBufferBytes = rc.runtimePolicies.Log.ErrorBufferBytes
+	if source := rc.runtimePolicies.BrowserEmulation; source != nil && source.Cache != nil {
+		if config.BrowserEmulation == nil {
+			config.BrowserEmulation = &dsl.BrowserEmulationConfig{}
+		}
+		if config.BrowserEmulation.Cache == nil {
+			config.BrowserEmulation.Cache = &dsl.BrowserCacheSimulationConfig{}
+		}
+		config.BrowserEmulation.Cache.ClearCacheForNewUser = source.Cache.ClearCacheForNewUser
 	}
 	return config
 }
@@ -1594,7 +1611,7 @@ func runtimeConfigOccurrenceIdentity(section, key string) string {
 func runtimeConfigProxySemanticKey(key string) bool {
 	switch key {
 	case "mode", "proxymode", "proxyserver", "proxyuser", "proxypassword",
-		"proxyuseproxy", "proxyhttphost", "proxyhttpport",
+		"proxyusebrowser", "proxyuseautoconfigscript", "proxyautoconfigscripturl", "proxyuseproxy", "proxyhttphost", "proxyhttpport",
 		"proxyhttpshost", "proxyhttpsport", "proxyusesame",
 		"proxybypass", "proxynolocal":
 		return true
@@ -2016,12 +2033,12 @@ func runtimeConfigBooleanField(section, key string) bool {
 		case "enablehttp2", "keepalive", "usecustomagent", "touchmode",
 			"clientmetrics", "cacheenabled", "cachecontenturls",
 			"checknewerversions", "newuserperiteration", "simulateprefetch",
-			"downloadnonhtmlresources", "proxyuseproxy", "proxyusesame",
+			"downloadnonhtmlresources", "proxyusebrowser", "proxyuseautoconfigscript", "proxyuseproxy", "proxyusesame",
 			"proxynolocal", "snapshotonerroractive":
 			return true
 		}
 	case "proxy":
-		return key == "proxyuseproxy" || key == "proxyusesame" || key == "proxynolocal"
+		return key == "proxyusebrowser" || key == "proxyuseautoconfigscript" || key == "proxyuseproxy" || key == "proxyusesame" || key == "proxynolocal"
 	case "logging":
 		switch key {
 		case "onerroronly", "parametersubstitution", "datareturned",
@@ -2429,7 +2446,7 @@ func runtimeSupportedConflictIsActive(
 		// The enable/mode selector is always meaningful. Endpoint, credential,
 		// and bypass rows are dormant when proxying is explicitly disabled.
 		switch key {
-		case "mode", "proxymode", "proxyuseproxy":
+		case "proxyusebrowser", "proxyuseautoconfigscript", "mode", "proxymode", "proxyuseproxy":
 			return true
 		default:
 			if state.proxyExplicitlyDisabled {
@@ -2519,7 +2536,7 @@ func runtimeSupportedConflictEntry(conflict runtimeConfigCaseFoldConflict) (Runt
 	} {
 		for _, definition := range definitions {
 			if definition.entry.Status != RuntimeSettingStatusExecuted &&
-				definition.entry.ID != "java_vm_xbootclasspath" {
+				definition.entry.ID != "java_vm_xbootclasspath" && definition.entry.ID != "runtime_replay_snapshots" && definition.entry.ID != "runtime_snapshot_resources" {
 				continue
 			}
 			for _, matcher := range definition.matchers {
@@ -2563,6 +2580,41 @@ func resetRuntimeSupportedConflict(rc *RuntimeConfig, id string, conflict runtim
 	section := runtimeConfigCanonicalSection(conflict.section)
 	key := runtimeConfigCanonicalKey(section, conflict.key)
 	switch id {
+	case "runtime_replay_snapshots":
+		if policy := rc.runtimePolicies.Results.MessageDetail; policy != nil && policy.IncludeResources != nil {
+			rc.RuntimeIssues = append(rc.RuntimeIssues, RuntimeMigrationIssue{ID: "runtime_snapshot_resources", Area: "Diagnostics", sourceKey: "savesnapshotresources", Notes: "Conflicting EnableSnapshotsInReplay selectors prevent applying SaveSnapshotResources; review the parent capture policy."})
+		}
+		rc.runtimePolicies.Results.MessageDetail = nil
+	case "runtime_snapshot_resources":
+		if policy := rc.runtimePolicies.Results.MessageDetail; policy != nil {
+			policy.IncludeResources = nil
+		}
+	case "http_status_policy":
+		rc.httpCompatibility.HTTPErrorsAsWarnings = nil
+	case "http_resource_policy":
+		rc.httpCompatibility.FailNonCriticalResources = nil
+	case "http_resource_timeout_policy":
+		rc.httpCompatibility.ResourceTimeoutAsWarning = nil
+	case "http_legacy_checks":
+		rc.httpCompatibility.LegacyHTMLChecks = nil
+	case "http_dns_cache":
+		rc.httpCompatibility.DNSCache = nil
+	case "http_auth_delay":
+		rc.httpCompatibility.AuthDelayMs = 0
+	case "runtime_fail_error_message":
+		rc.runtimePolicies.ErrorHandling.FailTransactionOnErrorMessage = nil
+	case "http_new_user_cache":
+		rc.runtimePolicies.BrowserEmulation = nil
+	case "runtime_response_log_limit":
+		rc.runtimePolicies.Log.MaxResponseBytes = 0
+	case "http_receive_buffer":
+		rc.httpCompatibility.ReceiveBufferBytes = 0
+	case "http_meta_refresh":
+		rc.httpCompatibility.MaxMetaRefresh = 0
+	case "http_content_check_limit":
+		rc.httpCompatibility.ContentCheckErrorLimit = 0
+	case "runtime_error_log_buffer":
+		rc.runtimePolicies.Log.ErrorBufferBytes = 0
 	case "http_page_timeout":
 		rc.httpCompatibility.PageTimeoutMs = 0
 	case "http_ip_version":
@@ -3847,6 +3899,7 @@ func firstNonZeroInt(values ...string) int {
 }
 
 func parseRuntimeProxySettings(rc *RuntimeConfig, sections map[string]map[string]string) {
+	defer func() { refinePortableProxySelection(rc, sections) }()
 	if rc == nil {
 		return
 	}
@@ -3879,6 +3932,17 @@ func parseRuntimeProxySettings(rc *RuntimeConfig, sections map[string]map[string
 	rc.ProxyPasswordEncrypted = strings.EqualFold(encrypted, "true") || encrypted == "1"
 	if rc.ProxyPasswordEncrypted && rc.ProxyPass != "" {
 		rc.ProxyPass = "{{secret." + enterpriseProxyPasswordSecretName + "}}"
+	}
+	// Portable selectors do not require a static endpoint. Read credential
+	// metadata above, then let the unified selector policy make the decision.
+	for _, selector := range []string{"ProxyUseBrowser", "ProxyUseAutoConfigScript"} {
+		raw, _ := firstRuntimeSectionValue(sourceSections, selector)
+		if active, valid := parseBoolExplicit(raw); valid && active {
+			rc.proxyReviewUser, rc.proxyReviewPass = rc.ProxyUser, rc.ProxyPass
+			rc.ProxyURL, rc.ProxyUser, rc.ProxyPass = "", "", ""
+			rc.ProxyMode = ""
+			return
+		}
 	}
 	bypassIssue := ""
 	rc.ProxyNoProxy, bypassIssue = parseRuntimeProxyBypass(sourceSections)
@@ -4098,6 +4162,7 @@ func firstRuntimeSectionValue(sections []map[string]string, aliases ...string) (
 }
 
 func disableRuntimeProxy(rc *RuntimeConfig) {
+	rc.httpCompatibility.Proxy.PACURL = ""
 	rc.ProxyMode = "none"
 	rc.ProxyURL = ""
 	rc.ProxyUser = ""

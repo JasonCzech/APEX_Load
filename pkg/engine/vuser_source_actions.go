@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"log/slog"
 	"math"
 	"net/url"
 	"os"
@@ -98,7 +97,7 @@ func (vu *VUser) clearProtocolCookies(ctx context.Context) error {
 
 // browserEmulationNewUserEachIteration reports whether browser emulation's
 // "simulate a new user on each iteration" is enabled — the flag that clears
-// both the simulated browser cache and the cookie jar at iteration start.
+// cookies at iteration start, with cache clearing controlled separately.
 func browserEmulationNewUserEachIteration(cfg dsl.ScriptConfig) bool {
 	emu := cfg.BrowserEmulation
 	return emu != nil && emu.Cache != nil && emu.Cache.NewUserEachIteration != nil && *emu.Cache.NewUserEachIteration
@@ -236,11 +235,11 @@ func (vu *VUser) handleSourceMessageAction(ctx context.Context, action dsl.Actio
 	}
 	switch level {
 	case "debug":
-		slog.Default().DebugContext(ctx, "source message", attrs...)
+		vu.runtimeLogger().DebugContext(ctx, "source message", attrs...)
 	case "error":
-		slog.Default().ErrorContext(ctx, "source message", attrs...)
+		vu.runtimeLogger().ErrorContext(ctx, "source message", attrs...)
 	default:
-		slog.Default().InfoContext(ctx, "source message", attrs...)
+		vu.runtimeLogger().InfoContext(ctx, "source message", attrs...)
 	}
 }
 
@@ -266,7 +265,7 @@ func (vu *VUser) handleSourceRuntimeAction(ctx context.Context, action dsl.Actio
 	case "lr_load_dll":
 		vu.logSourceReviewAction(ctx, action)
 	default:
-		slog.Default().DebugContext(ctx, "source runtime action",
+		vu.runtimeLogger().DebugContext(ctx, "source runtime action",
 			"vuser", vu.ID,
 			"group", vu.Group,
 			"action", action.Name,
@@ -690,7 +689,7 @@ func (vu *VUser) logSourceTransactionError(ctx context.Context, action dsl.Actio
 		}
 		messageAction.Params["args"] = messageArgs
 	}
-	slog.Default().ErrorContext(ctx, "source transaction error",
+	vu.runtimeLogger().ErrorContext(ctx, "source transaction error",
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,
@@ -979,7 +978,7 @@ func (vu *VUser) handleSourceMetricAction(ctx context.Context, action dsl.Action
 	if len(args) > 1 {
 		value = args[1]
 	}
-	slog.Default().InfoContext(ctx, "source metric",
+	vu.runtimeLogger().InfoContext(ctx, "source metric",
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,
@@ -1151,7 +1150,7 @@ func (vu *VUser) handleSourceSecretAction(function string, action dsl.Action) {
 }
 
 func (vu *VUser) logSourceReviewAction(ctx context.Context, action dsl.Action) {
-	slog.Default().InfoContext(ctx, "source review action",
+	vu.runtimeLogger().InfoContext(ctx, "source review action",
 		"vuser", vu.ID,
 		"group", vu.Group,
 		"action", action.Name,

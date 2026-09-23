@@ -9,7 +9,7 @@ type Props = {
 
 /** Shared native HTTP policies for script settings and scenario overrides. */
 export function HTTPReplayPolicyFields({ value = {}, inherited, onChange, section }: Props) {
-  const number = (key: 'page_timeout_ms' | 'cache_max_unused_iterations', label: string, max: number) => (
+  const number = (key: 'receive_buffer_bytes' | 'max_meta_refresh' | 'content_check_error_limit' | 'page_timeout_ms' | 'cache_max_unused_iterations' | 'challenge_delay_ms', label: string, max: number) => (
     <label><span>{label}</span><input className="settings-input" type="number" min={0} max={max}
       placeholder={inherited ? `Inherited: ${inherited[key] ?? 0}` : '0 (disabled)'} value={value[key] ?? ''}
       onChange={event => onChange({ [key]: event.target.value === '' ? undefined : Number(event.target.value) })} /></label>
@@ -19,13 +19,25 @@ export function HTTPReplayPolicyFields({ value = {}, inherited, onChange, sectio
       placeholder={inherited?.[key]?.join('\n') || 'One exact MIME type per line'}
       onChange={event => onChange({ [key]: event.target.value.split('\n').map(item => item.trim()).filter(Boolean) })} /></label>
   )
-  if (section === 'timeouts') return <>{number('page_timeout_ms', 'Whole-page timeout (ms)', 3600000)}<div className="form-hint">Covers the request, redirects, and embedded resources. Zero disables this additional deadline.</div></>
+  const toggle = (key: 'http_errors_as_warnings' | 'fail_noncritical_resources' | 'resource_timeout_as_warning' | 'legacy_html_checks' | 'dns_cache', label: string) => <label><span>{label}</span><select className="settings-input" value={value[key] == null ? '' : String(value[key])} onChange={event => onChange({ [key]: event.target.value === '' ? undefined : event.target.value === 'true' })}>
+    <option value="">{inherited ? `Inherit (${inherited[key] == null ? 'default' : inherited[key] ? 'enabled' : 'disabled'})` : 'Default'}</option><option value="true">Enabled</option><option value="false">Disabled</option>
+  </select></label>
+  if (section === 'timeouts') return <>{number('page_timeout_ms', 'Whole-page timeout (ms)', 3600000)}{number('challenge_delay_ms', 'Digest authentication delay (ms)', 3600000)}<div className="form-hint">Covers the request, redirects, and embedded resources. Zero disables this additional deadline.</div></>
   if (section === 'connection') return <label><span>IP family</span><select className="settings-input" value={value.ip_version ?? ''}
     onChange={event => onChange({ ip_version: (event.target.value || undefined) as HTTPConfig['ip_version'] })}>
     <option value="">{inherited ? `Inherit (${inherited.ip_version || 'auto'})` : 'Default (auto)'}</option>
     <option value="auto">Automatic</option><option value="ipv4">IPv4</option><option value="ipv6">IPv6</option>
   </select><small>Controls outgoing TCP connections, including connections to proxies.</small></label>
   return <>
+    {number('receive_buffer_bytes', 'Response read buffer (bytes)', 1048576)}
+    {number('max_meta_refresh', 'Meta-refresh limit per URL', 50)}
+    {number('content_check_error_limit', 'Content-check error match limit', 1000)}
+    {toggle('http_errors_as_warnings', 'HTTP errors as warnings')}
+    {toggle('fail_noncritical_resources', 'Fail on non-critical resource errors')}
+    {toggle('resource_timeout_as_warning', 'Resource timeouts as warnings')}
+    {toggle('legacy_html_checks', 'Legacy HTML checks')}
+    {toggle('dns_cache', 'Per-VUser DNS cache')}
+    <div className="form-hint">Warnings preserve explicit assertion failures. Legacy checks affect imported HTML checks only. DNS entries expire after 60 seconds; system resolver caches remain independent.</div>
     {number('cache_max_unused_iterations', 'Unused iterations before cache eviction', 1000000)}
     {list('cache_excluded_mime_types', 'Do not cache MIME types')}
     <label><span>Discover HTML resources in</span><select className="settings-input" value={value.html_parse_mode ?? ''}

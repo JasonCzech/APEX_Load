@@ -199,8 +199,16 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 	}
 	for _, issue := range dsl.ValidateScriptIssuesWithPreservedImportCredentials(&draft) {
 		if !oldIssues[issue] {
-			errors["category"] = issue
-			break
+			matched := false
+			for _, change := range changes {
+				if change.Parameter == "" && strings.HasPrefix(issue, change.Path+" ") {
+					errors[change.Path] = issue
+					matched = true
+				}
+			}
+			if !matched {
+				errors["category"] = issue
+			}
 		}
 	}
 	projected, _ := json.Marshal(repairDisclosure(&draft))
