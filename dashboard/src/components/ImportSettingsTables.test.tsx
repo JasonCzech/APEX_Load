@@ -5,12 +5,57 @@ import { expect, it, vi } from 'vitest'
 import type { ScriptDefinition } from '../types/scripts'
 import { ApiError } from '../hooks/apiClient'
 import ImportRuntimeSettingsTable from './ImportRuntimeSettingsTable'
-import { runtimeSettingRows } from './importRuntimeSettingsModel'
+import { importRuntimeFields, runtimeSettingRows } from './importRuntimeSettingsModel'
+import { runtimeSettingEffects } from './importRuntimeSettingNotes'
 import ImportParameterInventory from './ImportParameterInventory'
 import { ImportSettingsProvider, formatSettingValue, useImportSettings, type SettingsResult } from './ImportSettingsContext'
 const mocks = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock('../hooks/apiClient', async importOriginal => ({ ...await importOriginal<typeof import('../hooks/apiClient')>(), request: mocks.request }))
 const script = (): ScriptDefinition => ({ name: 'Draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test', http: { request_timeout_ms: 3000, keep_alive: false } }, actions: [], parameters: [{ name: 'region', type: 'list', values: ['west'] }] })
+
+it('explains each editable runtime setting instead of reusing a generic note', () => {
+ expect(importRuntimeFields.map(field => field.path).filter(path => !runtimeSettingEffects[path])).toEqual([])
+ const rows = runtimeSettingRows(script())['Additional APEX settings']
+ const timeout = rows.find(row => row.path === 'config.http.request_timeout_ms')!
+ const keepAlive = rows.find(row => row.path === 'config.http.keep_alive')!
+ const thinkTime = rows.find(row => row.path === 'config.think_time.type')!
+ expect(timeout.note).toContain('before timing out')
+ expect(keepAlive.note).toContain('connection reuse')
+ expect(thinkTime.note).toContain('virtual-user timing')
+ expect(new Set([timeout.note, keepAlive.note, thinkTime.note]).size).toBe(3)
+ expect(rows.every(row => row.note.includes('source mapping') && row.note.includes('Compare it with the source configuration'))).toBe(true)
+})
+
+it('starts with configured runtime values and reveals the unset inventory on request', async () => {
+ const draft = script()
+ const container = document.createElement('div'); const root = createRoot(container)
+ try {
+  await act(async () => root.render(<ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportRuntimeSettingsTable script={draft} /></ImportSettingsProvider>))
+  expect(container.querySelector('.import-runtime-content')?.textContent).toContain('Request timeout (ms)')
+  expect(container.querySelector('.import-runtime-content')?.textContent).not.toContain('HTTP version')
+  const reveal = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(input => input.parentElement?.textContent?.includes('unconfigured APEX settings'))!
+  expect(reveal.checked).toBe(false)
+  await act(async () => reveal.click())
+  expect(container.querySelector('.import-runtime-content')?.textContent).toContain('HTTP version')
+ } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('explains parity and source-only fallbacks while retaining importer-provided notes', () => {
+ const draft = script()
+ draft.metadata = { import: { preserved: {
+  runtime_files: { 'default.cfg': { WEB: { ReceiveTimeout: '3', UnmappedLimit: '4', Superseded: '5' } } },
+  runtime_setting_dispositions: { 'default.cfg': { WEB: {
+   ReceiveTimeout: { status: 'mapped', parity_id: 'timeout', fields: ['config.http.request_timeout_ms'] },
+   UnmappedLimit: { status: 'unmapped' },
+   Superseded: { status: 'non_applicable', note: 'Replaced by a newer setting.' },
+  } } },
+  runtime_settings_parity: [{ id: 'timeout', area: 'HTTP', concept: 'Receive timeout', status: 'executed', fields: ['config.http.request_timeout_ms'] }],
+ } } }
+ const groups = runtimeSettingRows(draft)
+ expect(groups['Mapped for replay'][0].note).toContain('request can wait before timing out')
+ expect(groups['Requires decision'][0].note).toContain('UnmappedLimit in default.cfg / WEB has no confirmed replay mapping')
+ expect(groups['Not applicable'][0].note).toContain('Replaced by a newer setting.')
+})
 
 it('shows idle timeout seconds beside editable milliseconds and keeps superseded pacing inactive', () => {
  const draft = script()

@@ -1201,9 +1201,10 @@ export function useScriptApi() {
   const importPostmanUpload = useCallback(
     async (endpoint: '/scripts/import/postman' | '/scripts/import/postman/validate', file: File, options?: PostmanImportOptions): Promise<PostmanImportResult> => {
       const formData = new FormData()
+      // Authorization reads only fields before the first file.
+      if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
       if (options?.name) formData.append('script_name', options.name)
-      if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.environment_file) formData.append('environment', options.environment_file)
       if (options?.include_assertions !== undefined) formData.append('include_assertions', String(options.include_assertions))
@@ -1211,7 +1212,10 @@ export function useScriptApi() {
       if (options?.use_parameter_data_source !== undefined) formData.append('use_parameter_data_source', String(options.use_parameter_data_source))
       if (options?.default_think_time_ms !== undefined) formData.append('default_think_time_ms', String(options.default_think_time_ms))
 
-      const res = await apiFetch(`${endpoint}${options?.agentforce_transform ? '?agentforce_transform=true' : ''}`, { method: 'POST', body: formData })
+      const query = new URLSearchParams()
+      if (options?.project_id) query.set('project_id', options.project_id)
+      if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
+      const res = await apiFetch(`${endpoint}${query.size ? `?${query}` : ''}`, { method: 'POST', body: formData })
       if (!res.ok) {
         throw new Error(await errorMessageFromResponse(res))
       }

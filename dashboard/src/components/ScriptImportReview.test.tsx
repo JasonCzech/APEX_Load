@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useState } from 'react'
+import { act, useContext, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,6 +8,7 @@ import { type Parameterization } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import ScriptImportReview from './ScriptImportReview'
 import { CategoryActions } from './ImportSettingsContext'
+import { ImportSourceIssueFocusContext } from './ImportSourceIssueFocus'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -93,15 +94,55 @@ describe('ScriptImportReview', () => {
       warnings={['Duplicate legacy warning']} unsupportedElements={['Duplicate unsupported text']}
       reviewSections={[{ key: 'old', title: 'Old summary', severity: 'blocker', summary: 'Duplicate', items: ['Choose a timestamp policy'] }]} />))
     expect(container.querySelector('[aria-label="JMeter review summary"]')?.textContent).toContain('2 blocking behaviors')
+    expect(container.querySelector('.script-import-review-header [role="status"]')?.textContent).toContain('Import review has blockers')
     expect(container.querySelector('[aria-label="JMeter review summary"]')?.textContent).toContain('0 unsupported behaviors')
     expect(container.querySelectorAll('.shared-import-issue-list > button')).toHaveLength(3)
     expect(container.querySelector('.shared-import-issue-workspace')?.textContent).not.toContain('Duplicate')
-    const reviewed = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Mark reviewed with limitation')!
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).not.toContain('Mark reviewed with limitation')
+    act(() => Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row')).find(button => button.textContent?.includes('CSV export'))!.click())
+    const reviewed = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Mark reviewed')!
     act(() => reviewed.click())
     expect(container.querySelector('[aria-label="JMeter review summary"]')?.textContent).toContain('2 blocking behaviors')
     const source = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Open related source')!
     expect(source).toBeDefined()
     act(() => source.click())
+    expect(container.querySelector('[aria-label="Source Mapping"]')?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('separates preserved credentials and optional data suggestions from required setup', () => {
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="Sample review" script={script}
+      secretBindingRequirements={[{ id: 'body', path: '/actions/0/body', label: 'Request body', context: 'Request', suggested_name: 'BODY', destination_value_preserved: true }]}
+      sharedValues={{ candidates: [{ id: 'origin', kind: 'repeated_literal', name: 'origin', occurrence_count: 1 }], summary: { total: 1, by_kind: { repeated_literal: 1 }, credential_count: 0, multi_script_count: 0 } }}
+      onSharedValuesApplied={vi.fn()} />))
+    const summary = container.querySelector('.import-review-readiness')?.textContent || ''
+    expect(summary).toContain('1 preserved credential to review')
+    expect(summary).toContain('1 optional data suggestion')
+    expect(summary).not.toContain('credential requirement')
+    expect(summary).not.toContain('suggested data change')
+    act(() => Array.from(container.querySelectorAll<HTMLButtonElement>('.import-review-readiness button')).find(button => button.textContent?.includes('optional data suggestion'))!.click())
+    expect(container.querySelector<HTMLDetailsElement>('.import-review-suggestions')?.open).toBe(true)
+    expect(container.querySelector<HTMLDetailsElement>('.shared-values details')?.open).toBe(false)
+    expect(Array.from(container.querySelectorAll<HTMLDetailsElement>('.shared-values details')).find(item => item.textContent?.startsWith('Optional substitutions'))?.open).toBe(true)
+  })
+
+  it('keeps a dry-run validation outcome visible in the compact review header', () => {
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="Validation Review" script={script}
+      subtitle="This preview came from a dry-run validation; nothing has been saved." />))
+    expect(container.querySelector('.script-import-review-header')?.textContent).toContain('nothing has been saved')
+    expect(container.querySelector('.script-import-review-header details')).toBeNull()
+  })
+
+  it('passes a selected source finding to the source review surface', () => {
+    function SourceFocusProbe() {
+      const focus = useContext(ImportSourceIssueFocusContext)
+      return <span data-testid="source-focus">{focus ? `${focus.title}: ${focus.description}` : 'no issue focus'}</span>
+    }
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="Sample review" script={script}
+      reviewGeneration="source-focus" previewAside={<SourceFocusProbe />}
+      reviewSections={[{ key: 'source_order', title: 'Import Assumptions', severity: 'info', summary: '1 diagnostic', items: ['headers at line:6 [info]: the source exposed headers as a map; deterministic order was synthesized'] }]} />))
+    const source = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Inspect source evidence')!
+    act(() => source.click())
+    expect(container.querySelector('[data-testid="source-focus"]')?.textContent).toContain('line:6')
     expect(container.querySelector('[aria-label="Source Mapping"]')?.getAttribute('aria-selected')).toBe('true')
   })
 
@@ -133,6 +174,18 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(true)
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Review"]')!.click())
     expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(false)
+  })
+
+  it('uses a compact tabbed heading and puts the importer runtime action before the settings inventory', () => {
+    act(() => root.render(<ScriptImportReview tabbed title="Conversion Review" script={script}
+      onSettingsApplied={vi.fn()} runtimeContent={<section aria-label="Importer runtime action">Set termination rule</section>} />))
+    expect(container.querySelector('.script-import-review-compact')).not.toBeNull()
+    expect(container.querySelector('.script-import-review-header h3')?.textContent).toBe('Conversion Review')
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="Runtime settings"]')!.click())
+    const runtimeAction = container.querySelector('[aria-label="Importer runtime action"]')!
+    const inventory = container.querySelector('.import-runtime-workspace')
+    expect(inventory).not.toBeNull()
+    expect(runtimeAction.compareDocumentPosition(inventory!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('redacts arbitrary credential paths in the correct multi-script preview', () => {
@@ -457,10 +510,16 @@ describe('ScriptImportReview', () => {
       )
     })
 
-    expect(container.textContent).toContain('2 grouped issues')
+    expect(container.textContent).toContain('2 findings')
     expect(container.textContent).toContain('Import Diagnostics')
-    expect(container.textContent).toContain('Multipart file upload needs a governed file value.')
     expect(container.querySelector('.script-import-review-section')).toBeNull()
+    const diagnosticButton = Array.from(container.querySelectorAll('button'))
+      .find(button => button.textContent?.includes('Import Diagnostics')) as HTMLButtonElement
+    act(() => diagnosticButton.click())
+    const evidenceButton = Array.from(container.querySelectorAll('summary'))
+      .find(summary => summary.textContent?.includes('Technical evidence and affected locations')) as HTMLElement
+    act(() => evidenceButton.click())
+    expect(container.textContent).toContain('Multipart file upload needs a governed file value.')
     const unsupportedButton = Array.from(container.querySelectorAll('button'))
       .find(button => button.textContent?.includes('Unsupported element')) as HTMLButtonElement
     act(() => unsupportedButton.click())
@@ -519,7 +578,7 @@ describe('ScriptImportReview', () => {
     workspace = container.querySelector<HTMLElement>('.shared-import-issue-workspace')!
     expect(workspace.querySelectorAll('.shared-import-issue-evidence section')).toHaveLength(100)
     expect(workspace.textContent).toContain('Finding 00100')
-    expect(workspace.textContent).not.toContain('Finding 00000')
+    expect(workspace.querySelector('.shared-import-issue-evidence')?.textContent).not.toContain('Finding 00000')
 
     act(() => {
       root.render(

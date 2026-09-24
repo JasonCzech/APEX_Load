@@ -28,19 +28,27 @@
 
 .import-review-count-description { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
-.shared-import-issue-workspace { margin: 20px 0; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary); }
+.shared-import-issue-workspace { margin: 20px 0; padding: 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); }
 .shared-import-issue-layout { display: grid; grid-template-columns: minmax(240px, 0.85fr) minmax(0, 1.6fr); gap: 16px; align-items: start; }
-.shared-import-issue-list { display: flex; flex-direction: column; gap: 8px; max-height: 640px; overflow: auto; }
-.shared-import-issue-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); text-align: left; cursor: pointer; }
-.shared-import-issue-row[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+.shared-import-issue-list { display: flex; flex-direction: column; gap: 0; max-height: 70vh; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 8px; }
+.shared-import-issue-category { margin: 0; padding: 11px 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
+.shared-import-issue-category span { margin-left: 6px; color: var(--text-secondary); font-weight: 400; }
+.shared-import-issue-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; width: 100%; padding: 14px; border: 0; border-bottom: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); text-align: left; cursor: pointer; }
+.shared-import-issue-row:hover { background: var(--bg-hover); }
+.shared-import-issue-row[aria-pressed="true"] { background: var(--accent-soft, var(--bg-hover)); box-shadow: inset 3px 0 0 var(--accent); }
 .shared-import-issue-row > span:last-child { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
 .shared-import-issue-row strong, .shared-import-issue-row small { overflow-wrap: anywhere; }
 .shared-import-issue-row small { color: var(--text-secondary); }
-.shared-import-issue-detail { min-height: 260px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); }
+.shared-import-issue-detail { min-height: 260px; padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
 .shared-import-issue-detail-heading { display: flex; align-items: flex-start; gap: 12px; }
 .shared-import-issue-detail-heading h4 { margin: 0; font-size: 18px; text-transform: none; letter-spacing: normal; }
 .shared-import-issue-detail-heading p { margin: 6px 0 0; color: var(--text-secondary); }
 .shared-import-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.shared-import-issue-impact, .shared-import-issue-resolution { margin: 16px 0; }
+.shared-import-issue-detail h5 { margin: 0 0 8px; color: var(--text-primary); font-size: 14px; }
+.shared-import-issue-impact p, .shared-import-issue-resolution p { margin: 0; color: var(--text-secondary); line-height: 1.6; overflow-wrap: anywhere; }
+.shared-import-issue-evidence-details { margin-top: 16px; border-top: 1px solid var(--border); }
+.shared-import-issue-evidence-details > summary { padding: 14px 0; color: var(--text-primary); cursor: pointer; font-weight: 600; }
 .shared-import-issue-evidence { display: grid; gap: 10px; }
 .shared-import-issue-evidence section { padding: 12px; border: 1px solid var(--border); border-radius: 7px; }
 .shared-import-issue-evidence p { margin: 6px 0 0; color: var(--text-secondary); overflow-wrap: anywhere; }

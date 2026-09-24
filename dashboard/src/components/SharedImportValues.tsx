@@ -124,6 +124,7 @@ export default function SharedImportValues({
   if (candidates.length === 0) return null
 
   const editable = candidates.filter(candidate => !candidate.credential_shaped)
+  const hasRequiredInputs = candidates.some(candidate => candidate.kind === 'source_variable')
   const selectedIds = editable
     .filter(candidate => selected[candidate.id] && (values[candidate.id] ?? '').trim() !== '')
     .map(candidate => candidate.id)
@@ -200,7 +201,7 @@ export default function SharedImportValues({
       ))}
 
       {(guided || groupRequirements) && <div className="import-review-toolbar"><label>{guided ? 'Find optional value' : 'Find value'}<input type="search" value={search} onChange={e => setSearch(e.target.value)} /></label></div>}
-      {(groupRequirements ? ['Required runtime inputs', 'Optional substitutions'] : guided ? ['Environment overrides', 'Advanced repeated values'] : ['Values']).map(group => <details key={group} open={groupRequirements ? group === 'Required runtime inputs' || !!search : !guided || group === 'Environment overrides' || !!search}><summary>{group}</summary><ul className="shared-values-list">
+      {(groupRequirements ? ['Required runtime inputs', 'Optional substitutions'] : guided ? ['Environment overrides', 'Advanced repeated values'] : ['Values']).map(group => <details key={group} open={groupRequirements ? (group === 'Required runtime inputs' ? hasRequiredInputs : !hasRequiredInputs) || !!search : !guided || group === 'Environment overrides' || !!search}><summary>{group}</summary><ul className="shared-values-list">
         {candidates.filter(candidate => (!groupRequirements || (group === 'Required runtime inputs') === (candidate.kind === 'source_variable')) && (!guided || (group === 'Environment overrides') === (candidate.targets_base_url || candidate.name === 'base_url' || candidate.name.toLowerCase() === 'origin')) && (!search || candidate.name.toLowerCase().includes(search.toLowerCase()))).map(candidate => {
           const inputId = `shared-value-${candidate.id}`
           const nameError = nameErrors.get(candidate.id)

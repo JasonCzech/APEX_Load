@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
+import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import './IssueDetailsDialog.css'
 
 export type IssueDetailSeverity = 'blocker' | 'error' | 'warning' | 'info'
@@ -71,7 +72,7 @@ export default function IssueDetailsDialog({ title, issues, onClose }: Props) {
           {visibleIssues.map(issue => {
             const content = (
               <>
-                <span className={`issue-details-severity ${issue.severity}`}>{issue.severity}</span>
+                <ImportIssueSeverityTag severity={issue.severity} />
                 <span className="issue-details-copy">
                   <strong>{issue.title}</strong>
                   {issue.description && <span>{issue.description}</span>}

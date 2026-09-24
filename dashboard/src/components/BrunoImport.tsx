@@ -1,4 +1,5 @@
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
+import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import TabList from './ux/TabList'
@@ -627,6 +628,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
   const [nativeCandidatePage, setNativeCandidatePage] = useState(0)
   const [nativeCandidateSort, setNativeCandidateSort] = useState<{ key: NativeCandidateSortKey; direction: 'asc' | 'desc' }>({ key: 'sequence', direction: 'asc' })
   const [nativeFindingPage, setNativeFindingPage] = useState(0)
+  const [selectedNativeFindingId, setSelectedNativeFindingId] = useState('')
   const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
   const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
   const [nativeReviewCandidateId, setNativeReviewCandidateId] = useState<string | null>(null)
@@ -974,6 +976,11 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     () => nativeReviewFindings.map(finding => finding.id),
     [nativeReviewFindings],
   )
+  const nativeFindingCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    nativeReviewFindings.forEach(finding => counts.set(finding.code, (counts.get(finding.code) || 0) + 1))
+    return counts
+  }, [nativeReviewFindings])
   const acknowledgedFindingIdSet = useMemo(
     () => new Set(acknowledgedFindingIds),
     [acknowledgedFindingIds],
@@ -999,6 +1006,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     ),
     [nativeFindingPageStart, nativeReviewFindings],
   )
+  const selectedNativeFinding = visibleNativeReviewFindings.find(finding => finding.id === selectedNativeFindingId) || visibleNativeReviewFindings[0]
+  const nextNativeFinding = visibleNativeReviewFindings.find(finding => !acknowledgedFindingIdSet.has(finding.id) && finding.id !== selectedNativeFinding?.id)
   const selectedNativeMissingVariables = brunoMissingVariables(selectedNativeCandidates, inspection?.shared_values, sharedValueSelections)
   const selectedNativeNames = selectedNativeCandidates.map(candidate => (nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name).trim())
   const duplicateNativeNames = new Set(selectedNativeNames.map(value => value.toLowerCase())).size !== selectedNativeNames.length
@@ -1793,9 +1802,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
           {outputMode === 'native_requests' ? (
             <>
               <section className="bruno-card bruno-readiness" aria-label="Import readiness">
-                <div role="status"><strong>{selectedNativeCandidates.length} of {nativeCandidates.length} APIs selected</strong><p>Save readiness: {committed ? 'Saved' : canCommit ? 'Ready to save drafts' : `${saveBlockers.length} requirements remain`}</p><p>Replay readiness: {protectedSessionExpired ? 'Session expired — re-inspect source' : selectedNativeCandidates.length === 0 ? 'Select APIs to assess' : nativeReviewFindingIds.length || selectedNativeMissingVariables.length || !credentialsReadyForExecution ? 'Blocked' : 'Ready for controlled validation'}</p></div>
-                <div><strong>Needed to save</strong><div className="bruno-review-toolbar"><button type="button" className="btn btn-secondary" onClick={() => { setSetupOpen(true); requestAnimationFrame(() => document.getElementById('bruno-destination-folder')?.focus()) }}>Choose destination</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('source_apis')}>Select APIs</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Review {unacknowledgedFindingIds.length} acknowledgements</button></div></div>
-                <div><strong>Needed before replay</strong><div className="bruno-review-toolbar"><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('credentials')}>Credentials: {deferredSecretCount} missing{!credentialsValid ? ' · review pending' : ''}</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('data')}>Inputs: {selectedNativeMissingVariables.length} unresolved</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Conversions: {nativeReviewFindingIds.length} to repair</button></div></div>
+                <div className="bruno-readiness-status" role="status"><strong>{selectedNativeCandidates.length} of {nativeCandidates.length} APIs selected</strong><span>Save: {committed ? 'Saved' : canCommit ? 'Ready for draft save' : `${saveBlockers.length} requirements remain`}</span><span>Replay: {protectedSessionExpired ? 'Session expired — re-inspect source' : selectedNativeCandidates.length === 0 ? 'Select APIs to assess' : nativeReviewFindingIds.length || selectedNativeMissingVariables.length || !credentialsReadyForExecution ? 'Blocked' : 'Ready for controlled validation'}</span></div>
+                <div className="bruno-readiness-actions" aria-label="Review actions"><button type="button" className="btn btn-secondary" onClick={() => { setSetupOpen(true); requestAnimationFrame(() => document.getElementById('bruno-destination-folder')?.focus()) }}>Choose destination</button><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('source_apis')}>Select APIs</button>{unacknowledgedFindingIds.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('import')}>Review {unacknowledgedFindingIds.length} conversions</button>}{(deferredSecretCount > 0 || !credentialsValid) && <button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('credentials')}>Credentials: {deferredSecretCount} missing{!credentialsValid ? ' · review pending' : ''}</button>}{selectedNativeMissingVariables.length > 0 && <button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('data')}>Inputs: {selectedNativeMissingVariables.length} unresolved</button>}</div>
               </section>
               <button type="button" className="btn btn-secondary" id="bruno-api-selection-toggle" aria-expanded={apiSelectionOpen} aria-controls="bruno-api-selection" onClick={() => setAPISelectionOpen(value => !value)}>APIs ({selectedNativeCandidates.length} selected) — {apiSelectionOpen ? 'hide selection' : 'change selection'}</button>
               <section
@@ -2005,6 +2013,100 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   aria-labelledby="bruno-inspection-tab-summary"
                   hidden={activeInspectionTab !== 'summary'}
                 >
+                  {nativeReviewFindingIds.length > 0 && (
+                    <section className="bruno-card bruno-native-acknowledgements">
+                      <h4>Review-gated conversions</h4>
+                      <p>Each item below is a separate finding in an affected script. To save these incomplete drafts, acknowledge that you understand each limitation. Acknowledgement records awareness only; it does not approve replay or remove the safety gate.</p>
+                      {nextNativeFinding && <button type="button" className="btn btn-primary bruno-next-finding" onClick={() => setSelectedNativeFindingId(nextNativeFinding.id)}>Next unresolved finding</button>}
+                      <div className="bruno-native-finding-layout">
+                        <nav className="bruno-native-finding-queue" aria-label="Import issue queue">
+                          {visibleNativeReviewFindings.map((finding, pageIndex) => <div key={finding.id}>
+                            {(pageIndex === 0 || visibleNativeReviewFindings[pageIndex - 1].code !== finding.code) && <h5>{nativeReviewGuidance(finding.code).title} <small>{nativeFindingCounts.get(finding.code)} finding{nativeFindingCounts.get(finding.code) === 1 ? '' : 's'}</small></h5>}
+                            <button type="button" className="bruno-native-finding-row" aria-pressed={selectedNativeFinding?.id === finding.id} onClick={() => setSelectedNativeFindingId(finding.id)} onKeyDown={event => {
+                              if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+                              event.preventDefault()
+                              const buttons = Array.from(event.currentTarget.closest('.bruno-native-finding-queue')?.querySelectorAll<HTMLButtonElement>('.bruno-native-finding-row') || [])
+                              const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (pageIndex + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+                              buttons[nextIndex]?.focus()
+                            }}><ImportIssueSeverityTag severity="blocker" /><span><strong>{nativeReviewGuidance(finding.code).title}</strong><small>{finding.sourcePath}{acknowledgedFindingIdSet.has(finding.id) ? ' · acknowledged for draft save' : ''}</small></span></button>
+                          </div>)}
+                        </nav>
+                      <div className="bruno-native-acknowledgement-list" aria-label="Selected conversion finding">
+                        {visibleNativeReviewFindings.map((finding, pageIndex) => {
+                          const index = nativeFindingPageStart + pageIndex
+                          const guidance = nativeReviewGuidance(finding.code)
+                          const detailsId = `bruno-review-finding-${index + 1}`
+                          return (
+                            <article key={finding.id} className="bruno-native-acknowledgement-card" hidden={selectedNativeFinding?.id !== finding.id}>
+                              <div className="bruno-native-acknowledgement-heading">
+                                <strong>{guidance.title}</strong>
+                                <span>{finding.sourcePath}</span>
+                              </div>
+                              <div className="bruno-review-toolbar"><button className="btn btn-secondary" type="button" onClick={() => setNativeSourceCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '')}>Inspect affected source</button><button className="btn btn-secondary" type="button" onClick={() => { if (finding.code.includes('header')) goToReviewTab('credentials'); else setNativeReviewCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '') }}>{finding.code.includes('header') ? 'Configure header binding' : 'Open API conversion details'}</button></div>
+                              <dl id={detailsId}>
+                                <div>
+                                  <dt>What was found</dt>
+                                  <dd>{finding.message}</dd>
+                                </div>
+                                <div>
+                                  <dt>Why replay is blocked</dt>
+                                  <dd>{guidance.impact}</dd>
+                                </div>
+                                <div>
+                                  <dt>Required before replay</dt>
+                                  <dd>{guidance.resolution}</dd>
+                                </div>
+                              </dl>
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  disabled={loading}
+                                  checked={acknowledgedFindingIdSet.has(finding.id)}
+                                  aria-describedby={detailsId}
+                                  aria-label={`Acknowledge ${guidance.title} for ${finding.sourcePath}`}
+                                  onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
+                                    ? [...previous, finding.id]
+                                    : previous.filter(id => id !== finding.id))}
+                                />
+                                I understand this draft remains blocked from replay until this finding is resolved.
+                              </label>
+                            </article>
+                          )
+                        })}
+                      </div>
+                      </div>
+                      {nativeFindingPageCount > 1 && (
+                        <nav className="bruno-native-table-pagination" aria-label="Review-gated conversion pages">
+                          <span aria-live="polite">
+                            Showing findings {nativeFindingPageStart + 1}–{nativeFindingPageStart + visibleNativeReviewFindings.length} of {nativeReviewFindings.length}. Page {safeNativeFindingPage + 1} of {nativeFindingPageCount}.
+                          </span>
+                          <div role="group" aria-label="Review finding page controls">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              disabled={safeNativeFindingPage === 0}
+                              onClick={() => setNativeFindingPage(Math.max(0, safeNativeFindingPage - 1))}
+                            >
+                              Previous {NATIVE_FINDING_PAGE_SIZE}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              disabled={safeNativeFindingPage >= nativeFindingPageCount - 1}
+                              onClick={() => setNativeFindingPage(Math.min(nativeFindingPageCount - 1, safeNativeFindingPage + 1))}
+                            >
+                              Next {NATIVE_FINDING_PAGE_SIZE}
+                            </button>
+                          </div>
+                        </nav>
+                      )}
+                    </section>
+
+
+
+
+                  )}
+
                   <section className="bruno-summary-grid">
                     <article className="bruno-card">
                       <h3>Collection</h3>
@@ -2078,86 +2180,6 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     <p>These events describe source sanitization. Credential values still needed before replay are listed in Credentials.</p>
                     <div className="bruno-findings">{(inspection.result.security_findings || []).filter(finding => !finding.code.includes('review_required')).map(finding => <div className="bruno-finding" key={`${finding.code}-${finding.path || ''}`}><span>{finding.summary}</span><details><summary>Technical detail</summary><code>{finding.code}</code>{finding.path && <p>{finding.path}</p>}</details></div>)}</div>
                   </details>
-
-                  {nativeReviewFindingIds.length > 0 && (
-                    <section className="bruno-card bruno-native-acknowledgements">
-                      <h4>Review-gated conversions</h4>
-                      <p>Each item below is a separate finding in an affected script. To save these incomplete drafts, acknowledge that you understand each limitation. Acknowledgement records awareness only; it does not approve replay or remove the safety gate.</p>
-                      <div className="bruno-native-acknowledgement-list">
-                        {visibleNativeReviewFindings.map((finding, pageIndex) => {
-                          const index = nativeFindingPageStart + pageIndex
-                          const guidance = nativeReviewGuidance(finding.code)
-                          const detailsId = `bruno-review-finding-${index + 1}`
-                          return (
-                            <article key={finding.id} className="bruno-native-acknowledgement-card">
-                              {(pageIndex === 0 || visibleNativeReviewFindings[pageIndex - 1].code !== finding.code) && <h4>{guidance.title} · {nativeReviewFindings.filter(item => item.code === finding.code).length} affected findings</h4>}
-                              <div className="bruno-native-acknowledgement-heading">
-                                <strong>{guidance.title}</strong>
-                                <span>{finding.sourcePath}</span>
-                              </div>
-                              <div className="bruno-review-toolbar"><button className="btn btn-secondary" type="button" onClick={() => setNativeSourceCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '')}>Inspect affected source</button><button className="btn btn-secondary" type="button" onClick={() => { if (finding.code.includes('header')) goToReviewTab('credentials'); else setNativeReviewCandidateId(nativeCandidates.find(candidate => candidate.source_path === finding.sourcePath)?.candidate_id || '') }}>{finding.code.includes('header') ? 'Configure header binding' : 'Open API conversion details'}</button></div>
-                              <dl id={detailsId}>
-                                <div>
-                                  <dt>What was found</dt>
-                                  <dd>{finding.message}</dd>
-                                </div>
-                                <div>
-                                  <dt>Why replay is blocked</dt>
-                                  <dd>{guidance.impact}</dd>
-                                </div>
-                                <div>
-                                  <dt>Required before replay</dt>
-                                  <dd>{guidance.resolution}</dd>
-                                </div>
-                              </dl>
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  disabled={loading}
-                                  checked={acknowledgedFindingIdSet.has(finding.id)}
-                                  aria-describedby={detailsId}
-                                  aria-label={`Acknowledge ${guidance.title} for ${finding.sourcePath}`}
-                                  onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
-                                    ? [...previous, finding.id]
-                                    : previous.filter(id => id !== finding.id))}
-                                />
-                                I understand this draft remains blocked from replay until this finding is resolved.
-                              </label>
-                            </article>
-                          )
-                        })}
-                      </div>
-                      {nativeFindingPageCount > 1 && (
-                        <nav className="bruno-native-table-pagination" aria-label="Review-gated conversion pages">
-                          <span aria-live="polite">
-                            Showing findings {nativeFindingPageStart + 1}–{nativeFindingPageStart + visibleNativeReviewFindings.length} of {nativeReviewFindings.length}. Page {safeNativeFindingPage + 1} of {nativeFindingPageCount}.
-                          </span>
-                          <div role="group" aria-label="Review finding page controls">
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              disabled={safeNativeFindingPage === 0}
-                              onClick={() => setNativeFindingPage(Math.max(0, safeNativeFindingPage - 1))}
-                            >
-                              Previous {NATIVE_FINDING_PAGE_SIZE}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              disabled={safeNativeFindingPage >= nativeFindingPageCount - 1}
-                              onClick={() => setNativeFindingPage(Math.min(nativeFindingPageCount - 1, safeNativeFindingPage + 1))}
-                            >
-                              Next {NATIVE_FINDING_PAGE_SIZE}
-                            </button>
-                          </div>
-                        </nav>
-                      )}
-                    </section>
-
-
-
-
-                  )}
 
                   {!committed && (
                     <section className="bruno-commit-bar">
@@ -2238,7 +2260,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired} />}
               </section>
               {(['runtime', 'dsl', 'source'] as const).map(section => <section key={section} className="bruno-tab-panel" role="tabpanel" id={`bruno-inspection-panel-${section}`} aria-labelledby={`bruno-inspection-tab-${section}`} hidden={activeInspectionTab !== section}>
-                {activeInspectionTab === section && (section === 'runtime' ? <><h3>Runtime settings</h3><p>Native scripts use converted HTTP settings. Source preservation does not establish runtime parity. Review conversion requirements before replay.</p><p>Detected request types: {inspection.result.capabilities.request_types.join(', ') || 'None'}. Required sandbox for canonical replay: {inspection.result.capabilities.required_sandbox}.</p><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('summary')}>Review migration requirements</button><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button></> : <>
+                {activeInspectionTab === section && (section === 'runtime' ? <><h3>Runtime settings</h3><div className="bruno-review-toolbar"><button type="button" className="btn btn-primary" onClick={() => goToReviewTab('summary')}>Review migration requirements</button><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button></div><p>Native scripts use converted HTTP settings. Source preservation does not establish runtime parity. Review conversion requirements before replay.</p><p>Detected request types: {inspection.result.capabilities.request_types.join(', ') || 'None'}. Required sandbox for canonical replay: {inspection.result.capabilities.required_sandbox}.</p></> : <>
                   <label>API evidence<select value={nativeCandidates.some(candidate => candidate.candidate_id === evidenceCandidateId) ? evidenceCandidateId : nativeCandidates[0]?.candidate_id || ''} onChange={event => setEvidenceCandidateId(event.target.value)}>{nativeCandidates.map(candidate => <option key={candidate.candidate_id} value={candidate.candidate_id}>{candidate.source_path}</option>)}</select></label>
                   {(() => { const candidate = nativeCandidates.find(item => item.candidate_id === evidenceCandidateId) || nativeCandidates[0]; if (!candidate) return <p>No API evidence was generated.</p>; return section === 'dsl' ? <><p>Redacted inspection draft. Pending input and credential choices apply when saving.</p><SourceCodeViewer ariaLabel="Bruno DSL preview" sourcePath="draft.json" value={JSON.stringify(candidate.script, null, 2)} /></> : <><p>Source provenance for {candidate.source_path}. This inventory is not a line-by-line parity guarantee.</p><button type="button" className="btn btn-secondary" onClick={() => setNativeSourceCandidateId(candidate.candidate_id)}>Inspect sanitized source</button><SourceCodeViewer ariaLabel="Bruno source mappings" sourcePath="source-mappings.json" value={JSON.stringify(candidate.source_mappings || [], null, 2)} /></> })()}
                 </>)}
@@ -2390,7 +2412,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
               <h3>Required runtime inputs</h3><p>{inspection.result.missing_variables?.length ? inspection.result.missing_variables.join(', ') : 'No missing variables were reported.'}</p><p>Configure unresolved inputs through Bruno environments or supported APEX bindings before replay. Dynamic expressions require verified runtime behavior, not static guesses.</p>
             </div>
-            <div hidden={canonicalTab !== 'runtime'}><h3>Runtime settings</h3><p>Sandbox: {sandbox}. Selection: {runOptions.selection}. These source execution choices are captured in the inspected draft.</p><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button><p>{inspection.execution_preflight?.ready ? 'Runner preflight reported ready; controlled replay remains required.' : 'Runner prerequisites have not passed. Review the execution profile and operator prerequisites before replay.'}</p></div>
+            <div hidden={canonicalTab !== 'runtime'}><h3>Runtime settings</h3><button type="button" className="btn btn-primary" onClick={() => setSetupOpen(true)}>Change source execution profile</button><p>Sandbox: {sandbox}. Selection: {runOptions.selection}. These source execution choices are captured in the inspected draft.</p><p>{inspection.execution_preflight?.ready ? 'Runner preflight reported ready; controlled replay remains required.' : 'Runner prerequisites have not passed. Review the execution profile and operator prerequisites before replay.'}</p></div>
             {canonicalTab === 'dsl' && inspection.result.output_mode === 'canonical' && <><p>Redacted canonical inspection draft.</p><SourceCodeViewer ariaLabel="Canonical Bruno DSL preview" sourcePath="draft.json" value={JSON.stringify(inspection.result.script, null, 2)} /></>}
             {canonicalTab === 'source' && <><h3>Source bundle provenance</h3><p>Canonical replay preserves the source bundle. This manifest identifies retained files; it is not a native line-by-line conversion map.</p><SourceCodeViewer ariaLabel="Canonical source manifest" sourcePath="manifest.json" value={JSON.stringify(inspection.result.manifest, null, 2)} /></>}
             </ImportReviewTabs>

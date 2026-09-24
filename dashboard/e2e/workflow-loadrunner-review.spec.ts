@@ -513,6 +513,7 @@ test('LoadRunner credentials edit and apply in place while preserving protected 
   await destination.selectOption('project-secret')
   await reference.fill('INLINE_IMPORT_TOKEN')
   await page.getByRole('tab', { name: 'Runtime settings', exact: true }).click()
+  await page.getByRole('checkbox', { name: /Show \d+ unconfigured APEX settings/ }).check()
   await expect(page.getByRole('button', { name: 'Edit HTTP', exact: true })).toBeDisabled()
   await page.getByRole('tab', { name: 'Credentials', exact: true }).click()
   await expect(reference).toHaveValue('INLINE_IMPORT_TOKEN')
@@ -786,6 +787,8 @@ test('issue details retain concrete evidence, focus source and apply runtime cha
   await expect(page.getByText('Original import diagnostics', { exact: true })).toHaveCount(0)
   const issue = page.getByRole('region', { name: 'Selected issue', exact: true })
   await expect(issue).toBeVisible()
+  await expect(page.locator('.lr-issue-row .import-issue-severity-tag').first()).toBeVisible()
+  await expect(issue.locator('.import-issue-severity-tag')).toHaveCount(0)
   await page.locator('.main-content').evaluate(element => { element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight - 24) })
   const credentialsTab = page.getByRole('tab', { name: 'Credentials', exact: true })
   // Playwright may scroll the sticky tab into view before delivering the click.

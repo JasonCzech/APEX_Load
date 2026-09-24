@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SourceMappingReview from './SourceMappingReview'
+import { ImportSourceIssueFocusContext } from './ImportSourceIssueFocus'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { CODE_LINE_WRAP_STORAGE_KEY } from './codeLineWrapPreference'
 
@@ -1007,6 +1008,27 @@ describe('SourceMappingReview', () => {
     await act(async () => { select.value = sourceReview.source_files[0].path; select.dispatchEvent(new Event('change', { bubbles: true })) })
     await act(async () => { root.render(<SourceMappingReview sourceReview={{ ...withRuntime }} script={script} focusedSourceFile="default.cfg" focusRequestId={1} />) })
     expect(select.value).toBe(sourceReview.source_files[0].path)
+  })
+
+  it('shows the reported source line without selecting unrelated mappings on that line', async () => {
+    const sample = {
+      source_files: [{ path: 'sample.json', language: 'json', content: '{\n "request": {\n  "method": "POST",\n  "url": "/session",\n  "headers": {},\n  "body": {}\n }\n}' }],
+      mappings: [
+        { id: 'response_status', source_file: 'sample.json', start_line: 2, end_line: 7, function: 'response_status', target_path: 'actions[0]', status: 'converted' },
+        { id: 'request', source_file: 'sample.json', start_line: 5, end_line: 5, function: 'rest_json_request', target_path: 'actions[0]', status: 'converted' },
+      ],
+    }
+    await act(async () => {
+      root.render(<ImportSourceIssueFocusContext.Provider value={{ revision: 1, title: 'Confirm synthesized source order', source: 'Import conversion', description: 'headers at line:5 [info]: order was synthesized' }}>
+        <SourceMappingReview sourceReview={sample} script={script} />
+      </ImportSourceIssueFocusContext.Provider>)
+    })
+    await flushPromises()
+    expect(container.querySelector('.source-map-issue-focus')?.textContent).toContain('sample.json:5')
+    expect(container.querySelector('tr.active')).toBeNull()
+    expect(container.querySelector('[aria-label="sample.json source"]')?.getAttribute('data-active-range')).toBe('5-5')
+    expect(container.querySelector('[aria-label="Generated DSL"]')).toBeNull()
+    expect(container.textContent).toContain('No destination mapping is linked to this finding')
   })
 
   it('retains the requested mapping when StrictMode replays mount effects', async () => {

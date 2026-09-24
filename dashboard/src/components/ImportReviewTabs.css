@@ -8,7 +8,6 @@
 .import-review-empty { padding:20px; color:var(--text-secondary); }
 .import-review-links { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 .import-review-readiness { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; margin:12px 0; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-secondary); color:var(--text-secondary); }
-.import-review-readiness > :last-child { margin-left:auto; }
 .import-review-readiness button { border:0; padding:0; background:transparent; color:var(--accent); font:inherit; cursor:pointer; }
 .import-review-readiness button:hover { text-decoration:underline; }
 .import-review-layout .script-import-review-header { scroll-margin-top:100px; }

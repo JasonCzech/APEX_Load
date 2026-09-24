@@ -48,6 +48,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
 
   const validationReview = importControls.getByRole('heading', { level: 3, name: 'Validation Review' })
   await expect(validationReview).toBeVisible({ timeout: 15_000 })
+  await importControls.getByText('Save & editor behavior', { exact: true }).click()
   await expect(importControls.getByText(/dry-run validation; nothing has been saved/i)).toBeVisible()
   await expect(importControls.getByText('Preflight').locator('..').getByText('Ready with notes', { exact: true })).toBeVisible()
   await importControls.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
@@ -62,6 +63,7 @@ test('[U05] OpenAPI validation stays dry-run until the reviewed script is commit
   const conversionResponse = await conversionResponsePromise
   expect(conversionResponse.ok(), await conversionResponse.text()).toBeTruthy()
   await expect(importControls.getByRole('heading', { level: 3, name: 'Review Generated Script' })).toBeVisible({ timeout: 15_000 })
+  await importControls.getByText('Save & editor behavior', { exact: true }).click()
   await expect(importControls.getByText('1 action(s) generated from OpenAPI operations.', { exact: false })).toBeVisible()
 
   // Validation and conversion share the protected inspection endpoint. Check

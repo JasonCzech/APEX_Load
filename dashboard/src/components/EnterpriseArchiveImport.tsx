@@ -29,6 +29,7 @@ import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
 import ArchiveReviewBoundary from './ArchiveReviewBoundary'
 import { archiveReviewOutcome } from './enterpriseArchiveReviewOutcome'
+import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, draftImportFindings, reviewSectionFindings, type ImportFinding, type IssueCategory } from './importReviewIssues'
 import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
@@ -3935,7 +3936,11 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
               </nav>
             )}
             <div className="lr-file-list" aria-label="Queued enterprise script archives">
-              {visibleImportItems.map(item => (
+              {visibleImportItems.map(item => {
+                const reviewOutcome = item.status === 'validated' || item.status === 'converted'
+                  ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '')
+                  : ''
+                return (
                 <div
                   key={item.id}
                   className={`lr-file-row ${item.status} ${selectedItem?.id === item.id ? 'active' : ''}`}
@@ -3958,12 +3963,12 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                       <strong>{item.file.name}</strong>
                       <small className="lr-file-row-meta">
                         {formatEnterpriseArchiveFileSize(item.file)} ·{' '}
-                        <span className={`lr-file-status-pill ${item.status}`}>
-                          {enterpriseArchiveImportStatusIsRunning(item.status) && <span className="lr-status-dot" aria-hidden="true" />}
-                          {item.status === 'validated' || item.status === 'converted'
-                            ? archiveReviewOutcome(item, importOptionsIdentity(options), projectId || '')
-                            : enterpriseArchiveImportStatusLabel(item.status)}
-                        </span>
+                        {reviewOutcome === 'Blocker'
+                          ? <ImportIssueSeverityTag severity="blocker" />
+                          : <span className={`lr-file-status-pill ${item.status}`}>
+                            {enterpriseArchiveImportStatusIsRunning(item.status) && <span className="lr-status-dot" aria-hidden="true" />}
+                            {reviewOutcome || enterpriseArchiveImportStatusLabel(item.status)}
+                          </span>}
                         {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
                         {(item.supplementalFiles || []).length > 0 ? ` · Required files: ${(item.supplementalFiles || []).length}` : ''}
                       </small>
@@ -3983,7 +3988,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     Remove
                   </button>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
         ) : (

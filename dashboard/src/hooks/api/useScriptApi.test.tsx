@@ -90,6 +90,14 @@ describe('useScriptApi import wrappers', () => {
     expect(body.get('file')).toBe(file)
   })
 
+  it.each(['importPostman', 'validatePostmanImport'] as const)('%s includes project scope before collection bytes and in the URL', async method => {
+    const file = new File(['{}'], 'collection.json', { type: 'application/json' })
+    await api[method](file, { project_id: 'project-1', agentforce_transform: true })
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe(`/scripts/import/postman${method === 'validatePostmanImport' ? '/validate' : ''}?project_id=project-1&agentforce_transform=true`)
+    expect(Array.from((options.body as FormData).keys()).slice(0, 2)).toEqual(['project_id', 'file'])
+  })
+
   it('posts k6 imports as multipart with script_name/base_url/project_id', async () => {
     const file = new File(['import http from "k6/http";'], 'script.js', { type: 'application/javascript' })
     await api.importK6(file, { project_id: 'p1', base_url: 'https://api.example.test', name: 'My k6' })

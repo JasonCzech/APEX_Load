@@ -23,7 +23,7 @@ describe('archive queue review outcome', () => {
     expect(outcome(item)).toBe('Needs validation')
     item.reviewOptionsIdentity = 'current'
     item.result!.preflight = { valid: false, action_count: 0, expected_action_count: 0, data_source_count: 0, parameter_count: 0 }
-    expect(outcome(item)).toBe('Needs repair')
+    expect(outcome(item)).toBe('Blocker')
     item.result = null
     expect(outcome(item)).toBe('Review required')
   })
@@ -31,7 +31,7 @@ describe('archive queue review outcome', () => {
   it('requires repair for unresolved runtime references even if other checks passed', () => {
     const item = state()
     item.result!.preflight = { valid:true, action_count:1, expected_action_count:1, data_source_count:0, parameter_count:0, missing_secrets:['MASKED_PAYLOAD'] }
-    expect(outcome(item)).toBe('Needs repair')
+    expect(outcome(item)).toBe('Blocker')
   })
 
   it.each([

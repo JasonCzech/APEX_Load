@@ -607,10 +607,11 @@
 
 .bruno-native-acknowledgements {
   margin-top: 16px;
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  padding: 20px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--warning) 8%, transparent);
+  background: var(--bg-card);
+  scroll-margin-top: 160px;
 }
 
 .bruno-native-acknowledgements > p {
@@ -620,8 +621,19 @@
 .bruno-native-acknowledgement-list {
   display: grid;
   gap: 12px;
-  margin-top: 12px;
+  align-content: start;
 }
+
+.bruno-next-finding { margin: 0 0 14px; }
+.bruno-native-finding-layout { display: grid; grid-template-columns: minmax(240px, .85fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
+.bruno-native-finding-queue { max-height: 70vh; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--border); border-radius: 8px; }
+.bruno-native-finding-queue h5 { margin: 0; padding: 10px 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
+.bruno-native-finding-queue h5 small { margin-left: 6px; color: var(--text-secondary); font-weight: 400; }
+.bruno-native-finding-row { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 12px 14px; border: 0; border-top: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); text-align: left; cursor: pointer; }
+.bruno-native-finding-row:hover { background: var(--bg-hover); }
+.bruno-native-finding-row[aria-pressed="true"] { background: var(--accent-soft, var(--bg-hover)); box-shadow: inset 3px 0 0 var(--accent); }
+.bruno-native-finding-row span:last-child { display: grid; gap: 4px; min-width: 0; }
+.bruno-native-finding-row small { color: var(--text-secondary); overflow-wrap: anywhere; }
 
 .bruno-native-acknowledgement-card {
   display: grid;
@@ -631,6 +643,7 @@
   border-radius: 7px;
   background: var(--bg-secondary);
 }
+.bruno-native-acknowledgement-card[hidden] { display: none; }
 
 .bruno-native-acknowledgement-heading {
   display: flex;
@@ -682,6 +695,8 @@
 }
 
 @media (max-width: 640px) {
+  .bruno-native-finding-layout { grid-template-columns: 1fr; }
+  .bruno-native-finding-queue { max-height: 300px; }
   .bruno-native-acknowledgement-card dl > div {
     grid-template-columns: 1fr;
   }
@@ -1094,7 +1109,10 @@
   align-items: center;
   gap: 12px;
 }
-.bruno-readiness { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 18px; }
+.bruno-readiness { display: grid; gap: 10px; padding: 12px 16px; }
+.bruno-readiness-status, .bruno-readiness-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.bruno-readiness-status span { color: var(--text-secondary); font-size: 13px; }
+.bruno-readiness-actions .btn { min-height: 32px; }
 .bruno-readiness p, .bruno-data-review p { max-width: 80ch; line-height: 1.6; }
 .bruno-review-toolbar label, .bruno-data-review label { display: flex; flex-direction: column; gap: 6px; }
 .bruno-import input:not([type=checkbox]):not([type=radio]):not([type=file]), .bruno-import select {

@@ -2,7 +2,7 @@ import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { MappingReviewDetails } from './MappingReviewDetails'
 import { useMappingReviewState } from './useMappingReviewState'
 import { decisionMatches, type MappingReviewState } from './sourceMappingReviewState'
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import {
@@ -18,6 +18,7 @@ import CodeLineWrapToggle from './CodeLineWrapToggle'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
+import { ImportSourceIssueFocusContext, type ImportSourceIssueFocus } from './ImportSourceIssueFocus'
 import {
   type MappingCategory,
   type SourceFilePathResolver,
@@ -118,6 +119,30 @@ function findFirstMappingForFile(
   pathResolver: SourceFilePathResolver,
 ) {
   return mappings.find(mapping => mappingMatchesFile(mapping, filePath, pathResolver)) || null
+}
+
+function issueSourceTarget(
+  focus: ImportSourceIssueFocus,
+  files: SourceReviewFile[],
+  mappings: SourceReviewMapping[],
+  pathResolver: SourceFilePathResolver,
+) {
+  const evidence = `${focus.source} ${focus.description}`
+  const source = focus.source.toLowerCase()
+  const exactFile = files.find(file => source.includes(file.path.toLowerCase()))
+  const basenameMatches = files.filter(file => source.includes(file.path.split('/').pop()!.toLowerCase()))
+  const file = exactFile || (basenameMatches.length === 1 ? basenameMatches[0] : files.length === 1 ? files[0] : null)
+  const lineText = /\bline\s*:?\s*(\d+)\b/i.exec(evidence)?.[1] || /:(\d+)\b/.exec(focus.source)?.[1]
+  const line = lineText ? Number(lineText) : 0
+  const validLine = file && line > 0 && line <= file.content.split('\n').length ? line : 0
+  // Several unrelated mappings can share a source line. Only select a mapping
+  // when the finding explicitly identifies it; otherwise show the source line.
+  const mapping = mappings.find(item =>
+    (focus.source === item.id || focus.source.includes(`mapping:${item.id}`))
+    && (!file || mappingMatchesFile(item, file.path, pathResolver))
+  )
+  const mappedFile = mapping?.source_file ? findSourceFile(files, mapping.source_file, pathResolver) : null
+  return { file: file || mappedFile, line: validLine, mapping }
 }
 
 function compareText(a: string, b: string, direction: SortDirection) {
@@ -229,6 +254,8 @@ export default function SourceMappingReview({
   const sourceFileOptions = files
   const [selectedMappingId, setSelectedMappingId] = useState('')
   const [selectedFilePath, setSelectedFilePath] = useState('')
+  const sourceIssueFocus = useContext(ImportSourceIssueFocusContext)
+  const [unmappedIssueFocus, setUnmappedIssueFocus] = useState<{ filePath: string; line: number; title: string } | null>(null)
   // A reviewer may explicitly inspect a captured file even when an ambiguous
   // mapping cannot be attributed to it. Keep that choice separate from the
   // mapping-driven selection so the synchronization effect does not
@@ -256,6 +283,7 @@ export default function SourceMappingReview({
   const reviewRootRef = useRef<HTMLElement | null>(null)
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const lastAppliedFocusRequestRef = useRef<number | null>(null)
+  const lastAppliedIssueFocusRef = useRef<number | null>(null)
   const lastTableScrollFocusRequestRef = useRef<number | null>(null)
 
   const selectedMapping = useMemo(
@@ -263,10 +291,10 @@ export default function SourceMappingReview({
     [mappings, selectedMappingId],
   )
   const selectedFile = useMemo(
-    () => selectedFilePath
+    () => unmappedIssueFocus && !unmappedIssueFocus.filePath ? null : selectedFilePath
       ? findExactSourceFile(files, selectedFilePath)
       : findSourceFile(files, selectedMapping?.source_file, sourcePathResolver),
-    [files, selectedFilePath, selectedMapping?.source_file, sourcePathResolver],
+    [files, selectedFilePath, selectedMapping?.source_file, sourcePathResolver, unmappedIssueFocus],
   )
 
   const destinationScript = destinationView === 'baseline' ? identity.state?.snapshot : script
@@ -285,6 +313,11 @@ export default function SourceMappingReview({
   )
 
   useEffect(() => {
+    if (unmappedIssueFocus) {
+      if (selectedMappingId) setSelectedMappingId('')
+      if (selectedFilePath !== unmappedIssueFocus.filePath) setSelectedFilePath(unmappedIssueFocus.filePath)
+      return
+    }
     const inspectedFile = inspectedUnmappedFilePath
       ? findExactSourceFile(sourceFileOptions, inspectedUnmappedFilePath)
       : null
@@ -336,11 +369,27 @@ export default function SourceMappingReview({
     mappings,
     selectedFilePath,
     selectedMappingId,
+    unmappedIssueFocus,
     sourcePathResolver,
     sourceFileOptions,
   ])
 
   useEffect(() => {
+    if (!sourceIssueFocus || lastAppliedIssueFocusRef.current === sourceIssueFocus.revision) return
+    lastAppliedIssueFocusRef.current = sourceIssueFocus.revision
+    const target = issueSourceTarget(sourceIssueFocus, files, mappings, sourcePathResolver)
+    setUnmappedIssueFocus(target.mapping ? null : { filePath: target.file?.path || '', line: target.line, title: sourceIssueFocus.title })
+    setInspectedUnmappedFilePath('')
+    setSelectedMappingId(target.mapping?.id || '')
+    setSelectedFilePath(target.file?.path || '')
+    setCategoryFilter('')
+    setFilter('')
+    setNoOriginTarget('')
+    setRevealRequestId(value => value + 1)
+  }, [files, mappings, sourceIssueFocus, sourcePathResolver])
+
+  useEffect(() => {
+    if (sourceIssueFocus) return
     if (!focusedMappingId && !focusedSourceFile) return
     if (lastAppliedFocusRequestRef.current === focusRequestId) return
     const requestedFile = focusedSourceFile ? findSourceFile(files, focusedSourceFile, sourcePathResolver) : null
@@ -358,7 +407,7 @@ export default function SourceMappingReview({
     setNoOriginTarget('')
     setRevealRequestId(value => value + 1)
     setCopied('')
-  }, [files, focusedMappingId, focusedSourceFile, focusRequestId, mappings, sourcePathResolver])
+  }, [files, focusedMappingId, focusedSourceFile, focusRequestId, mappings, sourcePathResolver, sourceIssueFocus])
 
   const filteredMappings = useMemo(() => {
     const needle = filter.trim().toLowerCase()
@@ -405,6 +454,7 @@ export default function SourceMappingReview({
 
   const selectMapping = useCallback((mapping: SourceReviewMapping | null) => {
     if (!mapping) return
+    setUnmappedIssueFocus(null)
     setInspectedUnmappedFilePath('')
     setSelectedMappingId(mapping.id)
     setNoOriginTarget('')
@@ -445,6 +495,7 @@ export default function SourceMappingReview({
   }
 
   const selectSourceFile = (filePath: string) => {
+    setUnmappedIssueFocus(null)
     const nextMapping = findFirstMappingForFile(mappings, filePath, sourcePathResolver)
     setInspectedUnmappedFilePath(nextMapping ? '' : filePath)
     setSelectedFilePath(filePath)
@@ -561,10 +612,11 @@ export default function SourceMappingReview({
     }
   }
 
-  const sourceActiveRange = !noOriginTarget && selectedMapping && selectedFile &&
-    mappingMatchesFile(selectedMapping, selectedFile.path, sourcePathResolver)
-    ? { startLine: selectedMapping.start_line, endLine: selectedMapping.end_line || selectedMapping.start_line }
-    : null
+  const sourceActiveRange = unmappedIssueFocus && selectedFile?.path === unmappedIssueFocus.filePath && unmappedIssueFocus.line
+    ? { startLine: unmappedIssueFocus.line, endLine: unmappedIssueFocus.line }
+    : !noOriginTarget && selectedMapping && selectedFile && mappingMatchesFile(selectedMapping, selectedFile.path, sourcePathResolver)
+      ? { startLine: selectedMapping.start_line, endLine: selectedMapping.end_line || selectedMapping.start_line }
+      : null
   const destinationPath = noOriginTarget || (destinationView === 'baseline' ? selectedMapping?.target_path : selectedMapping ? identity.resolved[selectedMapping.id]?.path : undefined)
   const dslActiveRange = dslDocument ? lineRangeForTargetPath(dslDocument.ranges, destinationPath) : null
 
@@ -820,6 +872,7 @@ export default function SourceMappingReview({
 
       <div className="source-map-comparison">
       <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<details className="source-map-status-help"><summary>About review status</summary><p>Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.</p></details></nav>
+      {unmappedIssueFocus && <p className="source-map-issue-focus" role="status">No direct source mapping was identified for “{unmappedIssueFocus.title}”. {unmappedIssueFocus.filePath ? `Showing ${unmappedIssueFocus.filePath}${unmappedIssueFocus.line ? `:${unmappedIssueFocus.line}` : ''} for inspection.` : 'Select a captured source file to inspect this finding.'}</p>}
       {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
         <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
         <span>Conversion: {formatStatusLabel(selectedMapping.status)} · Runtime support: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
@@ -899,7 +952,7 @@ export default function SourceMappingReview({
               />
             </Suspense>
           ) : (
-            <div className="source-map-empty">{!dslDocument ? 'Destination is not available yet.' : identity.checking ? 'Verifying mapping identity…' : !selectedMapping ? 'This captured file has no destination mappings. Select a mapped file or inspect destination items without source origin.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path ? 'This source construct has no mapped destination. Its conversion status and review notes explain what needs attention.' : 'No verified destination. Inspect mapping details to re-link an edited, removed, or ambiguous target.'}</div>
+            <div className="source-map-empty">{!dslDocument ? 'Destination is not available yet.' : identity.checking ? 'Verifying mapping identity…' : !selectedMapping ? unmappedIssueFocus ? 'No destination mapping is linked to this finding. Other mappings for this source file are listed above.' : 'This captured file has no destination mappings. Select a mapped file or inspect destination items without source origin.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path ? 'This source construct has no mapped destination. Its conversion status and review notes explain what needs attention.' : 'No verified destination. Inspect mapping details to re-link an edited, removed, or ambiguous target.'}</div>
           )}
         </div>
       </div>

@@ -868,6 +868,9 @@ describe('ProtocolAssetImport', () => {
     expect(apiMock.importOpenAPI).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
     expect(container.textContent).toContain('Review Generated Script')
     expect(container.querySelector('.shared-import-issue-workspace')?.textContent).toContain('Import Diagnostics')
+    const diagnostics = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row'))
+      .find(button => button.textContent?.includes('Import Diagnostics'))!
+    await act(async () => diagnostics.click())
     expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('file bytes must be supplied before replay')
     const unsupportedDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row'))
       .find(button => button.textContent?.includes('Unsupported element'))!
@@ -1598,6 +1601,8 @@ describe('ProtocolAssetImport', () => {
     })
     await flushPromises()
 
+    await act(async () => Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.includes('unconfigured APEX settings'))?.querySelector('input')?.click())
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('.import-category-nav button')).find(button => button.textContent?.startsWith('Think time'))!.click())
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit Think time')!.click())
     const thinkTimeInput = container.querySelector<HTMLInputElement>('[aria-label="Think time: Mean delay (ms)"]')!
@@ -3741,6 +3746,8 @@ describe('ProtocolAssetImport', () => {
     }
 
     await completeReplay()
+    await act(async () => Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.includes('unconfigured APEX settings'))?.querySelector('input')?.click())
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('.import-category-nav button')).find(button => button.textContent?.startsWith('Think time'))!.click())
     await act(async () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit Think time')!.click())
     const thinkTimeInput = container.querySelector<HTMLInputElement>('[aria-label="Think time: Mean delay (ms)"]')!

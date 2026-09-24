@@ -220,10 +220,13 @@ it('retains pending repair values while navigating and never treats a reviewed l
  try {
   await act(async () => root.render(<ImportGuidedRepair script={script} projectId="p" onApplied={vi.fn()} />))
   await act(async () => button('Missing value: token').click())
+  expect(container.querySelector('.lr-issue-row .import-issue-severity-tag')?.textContent).toBe('Blocker')
+  expect(container.querySelector('.lr-issue-detail .import-issue-severity-tag')).toBeNull()
   expect(button('Mark reviewed with limitation')).toBeUndefined()
   const input = container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, 'retained-value'); input.dispatchEvent(new Event('input', { bubbles: true })) })
   await act(async () => button('Review assertion scope').click())
+  expect([...container.querySelectorAll('.lr-issue-row .import-issue-severity-tag')].some(tag => tag.textContent === 'Review note')).toBe(true)
   expect(container.querySelector('.lr-issue-detail')?.textContent).toContain('Script-wide')
   await act(async () => button('Mark reviewed with limitation').click())
   expect(container.textContent).toContain('Replay requirements are unchanged')

@@ -1,4 +1,5 @@
 import ImportIssueRuntimeEditor from './ImportIssueRuntimeEditor'
+import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useImportSettings } from './ImportSettingsContext'
@@ -177,7 +178,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
       } />
       {(expired || (!candidate.startsWith('protected:') && issues.some(issue => issue.findings.some(item => issueRepairOptions(item.code).length > 0)))) && <div className="lr-issue-unavailable" role="status"><strong>{expired ? 'This protected draft has expired' : 'Protected repairs unavailable for this draft'}</strong><p>{expired ? 'Revalidate the archive to renew its repair session.' : 'Body, correlation, and TLS repairs require encrypted import storage. Existing settings and credential editors remain available when supported.'}</p>{onReimport && <button type="button" className="btn btn-secondary btn-sm" onClick={onReimport}>Open archive setup to revalidate</button>}</div>}
       <div className="import-review-toolbar"><label>Find an issue<input type="search" value={search} placeholder="Search values or source locations" onChange={e => setSearch(e.target.value)} /></label>
-        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All unresolved ({issues.length})</option><option value="blockers">Needs repair ({blocked})</option><option value="review">Needs review ({reviewCount})</option><option value="resolved">Resolved ({resolved.length})</option><option value="reviewed">Reviewed with limitation ({issues.filter(issue => reviewed.has(issue.id)).length})</option></select></label>
+        <label>Show<select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">All unresolved ({issues.length})</option><option value="blockers">Blockers ({blocked})</option><option value="review">Review notes ({reviewCount})</option><option value="resolved">Resolved ({resolved.length})</option><option value="reviewed">Reviewed with limitation ({issues.filter(issue => reviewed.has(issue.id)).length})</option></select></label>
         <label>Issue category<select value={category} onChange={e => { setCategory(e.target.value as IssueCategory | 'all'); setSelection(''); resetPreview() }}><option value="all">All categories</option>{(Object.keys(issueCategories) as IssueCategory[]).map(key => <option value={key} key={key}>{issueCategories[key]}</option>)}</select></label>
         <span role="status">{shown.length} matching issues</span>
       </div>
@@ -193,14 +194,14 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
               const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
               buttons[next]?.focus()
             }}>
-            <span className="lr-issue-row-title">{issue.title}</span><span className="lr-issue-row-meta">{filter === 'resolved' ? 'Resolved' : reviewed.has(issue.id) ? 'Reviewed with limitation' : issue.blocking ? 'Blocks replay' : 'Needs review'} · {issueScope(issue)}</span>
+            <span className="lr-issue-row-title">{issue.title}</span><span className="lr-issue-row-meta"><ImportIssueSeverityTag severity={filter === 'resolved' ? 'resolved' : issue.blocking ? 'blocker' : 'info'} /><span>{reviewed.has(issue.id) ? 'Reviewed with limitation · ' : ''}{issueScope(issue)}</span></span>
           </button></li>)}</ul></details>
         })}
         {!shown.length && <p>{search ? 'No issues match this search.' : filter === 'resolved' ? 'Applied repairs will appear here when their issues are resolved.' : 'No issues in this view.'}</p>}
       </div><section className="lr-issue-detail" aria-label="Selected issue">
         {!selected || !finding ? <><h4>Select an issue to get started</h4><p>See its impact, inspect the source, and preview the repair before applying it.</p></> : <>
           <header className="lr-issue-detail-heading"><h4 tabIndex={-1} ref={detailRef} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.currentTarget.closest('.lr-issue-layout')?.querySelector<HTMLButtonElement>('.lr-issue-row[aria-pressed="true"]')?.focus() } }}>{selected.title}</h4>
-          <p><strong>{selectedResolved ? 'Resolved' : reviewed.has(selected.id) ? 'Reviewed with limitation · this session' : selected.blocking ? 'Blocks replay' : 'Needs review'}</strong><span>{issueScope(selected)}</span></p></header>
+          <p><span>{selectedResolved ? 'Resolved · ' : reviewed.has(selected.id) ? 'Reviewed with limitation · this session · ' : ''}{issueScope(selected)}</span></p></header>
           <section aria-label="Problem and impact"><h5>Why this matters</h5><p>{issueImpact}</p></section>
           {narrowerAssertion && <dl className="lr-issue-comparison"><div><dt>Source behavior</dt><dd>Search all response content</dd></div><div><dt>Current replay behavior</dt><dd>Search the main response body only</dd></div></dl>}
           {issueLocation && <p className="lr-issue-location"><strong>Location</strong> {issueLocation} {canViewSource && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onViewSource?.(finding.action_path || '', finding)}>Inspect {finding.source_ref || 'selected request'}</button>}</p>}

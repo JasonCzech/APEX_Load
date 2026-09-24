@@ -4888,6 +4888,10 @@ describe('EnterpriseArchiveImport', () => {
 
     await flushPromises()
 
+    const showUnconfigured = Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.includes('unconfigured APEX settings'))?.querySelector('input') as HTMLInputElement | undefined
+    expect(showUnconfigured).toBeDefined()
+    await act(async () => showUnconfigured?.click())
     const editHTTP = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit HTTP')
     expect(editHTTP?.disabled).toBe(true)
     expect(onEdit).not.toHaveBeenCalled()

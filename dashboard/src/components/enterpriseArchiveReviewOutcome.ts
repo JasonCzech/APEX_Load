@@ -26,11 +26,11 @@ export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string,
   if (protocol && protocol.import_mode !== 'executable') return 'Review only'
   if (scripts.length === 0) return 'Review required'
   const fidelity = result.fidelity_report ?? result.summary?.fidelity_report
-  if (fidelity?.promotion_status === 'blocked' || result.summary?.migration_readiness?.blocked) return 'Needs repair'
+  if (fidelity?.promotion_status === 'blocked' || result.summary?.migration_readiness?.blocked) return 'Blocker'
   if (scripts.some(script => {
     const preflight = (script.metadata?.import?.preserved?.replay_preflight ?? result.preflight) as ReplayPreflight | undefined
     return preflight?.valid === false || Boolean(preflight?.missing_secrets?.length || preflight?.missing_variables?.length) || preflight?.checks?.some(check => check.status === 'fail')
-  })) return 'Needs repair'
+  })) return 'Blocker'
   const browserIndex = scripts.findIndex(script => script.protocol === 'browser')
   if (browserIndex >= 0) {
     const matches = item.replayReviewGeneration === item.reviewGeneration

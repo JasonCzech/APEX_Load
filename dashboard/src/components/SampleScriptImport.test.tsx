@@ -830,6 +830,9 @@ describe('SampleScriptImport', () => {
       format: 'raw_http',
     }))
     expect(container.querySelector('.shared-import-issue-workspace')).not.toBeNull()
+    const javaWarning = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row'))
+      .find(button => button.textContent?.includes('Warnings'))!
+    await act(async () => javaWarning.click())
     expect(container.querySelector('.shared-import-issue-detail')?.textContent)
       .toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
 

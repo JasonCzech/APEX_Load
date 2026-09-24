@@ -3,6 +3,7 @@ import fieldSchema from '../../../pkg/api/import_settings_fields.json'
 import type { ScriptDefinition } from '../types/scripts'
 import { getImportSummary } from './scriptEditorImportModel'
 import { readImportedRuntimeFiles, readImportedRuntimeSettingDispositions } from './scriptEditorRuntimeSettingsModel'
+import { draftRuntimeSettingNote, runtimeSettingEffects } from './importRuntimeSettingNotes'
 
 type Field = { category: string; path: string; label: string; type: string; options?: string[] }
 export const importRuntimeFields: Field[] = fieldSchema
@@ -15,6 +16,21 @@ export const readSetting = (script: ScriptDefinition, path: string): unknown => 
 }
 const statuses = ['Requires decision', 'Mapped for replay', 'Preserved only', 'Not applicable']
 const groupForStatus = (status: string) => status === 'executed' || status === 'mapped' ? statuses[1] : status === 'compatibility_only' ? statuses[2] : status === 'non_applicable' ? statuses[3] : statuses[0]
+const parityFallbackNote = (group: string, concept: string, path?: string, label?: string) => {
+ const subject = label || concept
+ const effect = path && runtimeSettingEffects[path]
+ if (group === statuses[1]) return `The importer mapped source ${concept} to ${subject}. ${effect || 'This setting affects replay behavior.'} Verify the draft value against the source before replay.`
+ if (group === statuses[2]) return `Source ${concept} is retained for reference but is not applied to ${subject} during replay. ${effect || 'Review whether the draft needs an equivalent setting.'}`
+ if (group === statuses[3]) return `Source ${concept} was marked not applicable to this replay. ${effect ? `The draft ${subject} still ${effect.charAt(0).toLowerCase()}${effect.slice(1)}` : 'Confirm this source behavior is not needed.'}`
+ return `The importer could not confirm a replay mapping for source ${concept}${path ? ` to ${subject}` : ''}. ${effect || 'The source behavior may need an explicit replacement.'} Review the source behavior and adjust the draft before replay.`
+}
+const sourceFallbackNote = (file: string, section: string, key: string, group: string) => {
+ const source = `${key} in ${file} / ${section}`
+ if (group === statuses[3]) return `${source} was marked not applicable to replay; its value is retained for inspection.`
+ if (group === statuses[2]) return `${source} is preserved as source evidence, but no editable replay destination was identified. Check whether its behavior is needed.`
+ if (group === statuses[1]) return `${source} is reported as mapped, but the importer did not identify an editable destination here. Verify the mapped behavior in the draft.`
+ return `${source} has no confirmed replay mapping or editable destination. Check whether the draft needs an equivalent behavior before replay.`
+}
 export type RuntimeSettingRow = { id: string; category: string; label: string; path?: string; imported: string; importedSummary?: string; note: string; field?: Field }
 const sourceAliases: Record<string, string[]> = {
  'config.results.message_detail.mode': ['EnableSnapshotsInReplay'],
@@ -113,7 +129,7 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
     if (entry.notes && !existing.note.includes(entry.notes)) existing.note += `\n${entry.notes}`
     continue
    }
-   groups[group].push({ id: `${entry.id}:${path || ''}`, path, category: field?.category || entry.area, label: field?.label || path?.replace(/^config\./, '').replace(/_/g, ' ') || entry.concept, importedSummary: [...new Set(values)].join(' · '), imported: source.join('\n') || 'Source evidence not supplied by this importer', note: entry.notes || (group === statuses[1] ? 'Mapped to replay; target behavior is not verified.' : 'Retained from the imported source.'), field: group === statuses[2] || group === statuses[3] ? undefined : field })
+   groups[group].push({ id: `${entry.id}:${path || ''}`, path, category: field?.category || entry.area, label: field?.label || path?.replace(/^config\./, '').replace(/_/g, ' ') || entry.concept, importedSummary: [...new Set(values)].join(' · '), imported: source.join('\n') || 'Source evidence not supplied by this importer', note: entry.notes || parityFallbackNote(group, entry.concept, path, field?.label), field: group === statuses[2] || group === statuses[3] ? undefined : field })
   }
  }
  for (const [file, sections] of Object.entries(sourceFiles)) for (const [section, keys] of Object.entries(sections)) for (const [key, value] of Object.entries(keys)) {
@@ -122,13 +138,13 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
   const parityEntry = parity.find(entry => entry.id === disposition?.parity_id)
   const group = dispositions[file] ? groupForStatus(parityEntry && disposition?.status === 'mapped' ? parityEntry.status : disposition?.status || '') : statuses[2]
   const protectedValue = isSensitiveCredentialPreviewKey(key) || /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(value)
-  groups[group].push({ id: `${file}/${section}/${key}`, category: section, label: key, importedSummary: protectedValue ? 'Protected — manage in Credentials' : value || '(empty)', imported: `${protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : value} (${file})`, note: [disposition?.reason?.replace(/_/g, ' '), disposition?.note || 'Preserved source setting; no editable destination is available.'].filter(Boolean).join(' — ') })
+  groups[group].push({ id: `${file}/${section}/${key}`, category: section, label: key, importedSummary: protectedValue ? 'Protected — manage in Credentials' : value || '(empty)', imported: `${protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : value} (${file})`, note: [disposition?.reason?.replace(/_/g, ' '), disposition?.note || sourceFallbackNote(file, section, key, group)].filter(Boolean).join(' — ') })
  }
  // Importers without parity show actual settings, never invented mapping evidence.
  const known = new Set(Object.values(groups).flat().map(r => r.path).filter(Boolean))
  const defaults = ['Think time', 'Pacing', 'Error handling', ...(['http', 'http/1.1', 'http/2', 'browser', 'soap', 'java_http'].includes(script.protocol) ? ['HTTP'] : []), ...(script.protocol === 'kafka' ? ['Kafka'] : []), ...(script.protocol?.startsWith('jms') ? ['JMS'] : [])]
  const current = importRuntimeFields.filter(f => !known.has(f.path) && (readSetting(script, f.path) !== undefined || defaults.includes(f.category)) && settingIsRelevant(script, f.path))
- groups['Additional APEX settings'] = current.map(f => ({ id: f.path, category: f.category, label: f.label, path: f.path, imported: 'No source mapping reported', note: 'Current draft setting.', field: f }))
+ groups['Additional APEX settings'] = current.map(f => ({ id: f.path, category: f.category, label: f.label, path: f.path, imported: 'No source mapping reported', note: draftRuntimeSettingNote(f.path, f.label), field: f }))
  return groups
 }
 

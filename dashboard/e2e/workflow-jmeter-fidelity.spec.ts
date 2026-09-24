@@ -27,7 +27,7 @@ test('JMeter fidelity review retains blockers and regenerates explicit timestamp
   await expect(controls.getByLabel('JMeter review summary')).toContainText('2 blocking behaviors')
   await expect(controls.getByLabel('JMeter review summary')).toContainText('0 unsupported behaviors')
   expect(before.scenario_draft).toMatchObject({ termination_mode: 'iterations', duration: '', groups: [expect.objectContaining({ vusers: 50, iterations: 200, ramp_up: '1s' })] })
-  await controls.getByRole('button', { name: 'Mark reviewed with limitation', exact: true }).click()
+  await expect(controls.getByRole('button', { name: 'Mark reviewed with limitation', exact: true })).toHaveCount(0)
   await expect(controls.getByLabel('JMeter review summary')).toContainText('2 blocking behaviors')
   await controls.getByRole('button', { name: 'Open related source', exact: true }).click()
   await expect(controls.getByRole('tab', { name: 'Source Mapping', exact: true })).toHaveAttribute('aria-selected', 'true')

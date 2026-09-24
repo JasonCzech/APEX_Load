@@ -76,6 +76,28 @@ test('Oracle review clears obsolete findings and never offers a script destinati
   await page.screenshot({ path: testInfo.outputPath('oracle-current-source.png'), fullPage: true })
 })
 
+test('Postman inspection sends project scope before collection bytes', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const workspace = await createWorkspace(page.context().request)
+  await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Find a source format' }).fill('Postman')
+  await page.locator('.script-create-option').click()
+  const controls = page.getByRole('group', { name: 'Script import controls' })
+  await controls.locator('input[type=file]').first().setInputFiles({
+    name: 'orders.postman_collection.json', mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify({ info: { name: 'Orders' }, item: [{ name: 'Get orders', request: { method: 'GET', url: 'https://example.invalid/orders' } }] })),
+  })
+  const response = mutation(page, 'POST', '/api/v1/scripts/import/postman')
+  await controls.getByRole('button', { name: 'Inspect & review', exact: true }).click()
+  const imported = await response
+  expect(imported.ok(), await imported.text()).toBeTruthy()
+  expect(new URL(imported.url()).searchParams.get('project_id')).toBe(workspace.projectId)
+  await expect(controls.getByRole('heading', { name: 'Review Generated Script', exact: true })).toBeVisible()
+  await expect(controls.getByRole('tablist', { name: 'Import review sections' }).getByRole('tab')).toHaveCount(6)
+})
+
 test('HAR comparison can be removed and upload errors recover accessibly', async ({ page }) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
@@ -129,6 +151,14 @@ test('JMeter review uses the shared six tabs and retains project scope during up
     await expect(controls.getByRole('tabpanel', { name: label, exact: true })).toBeVisible()
   }
   await tabs.getByRole('tab', { name: 'Runtime settings', exact: true }).click()
+  await controls.getByRole('checkbox', { name: /Show \d+ unconfigured APEX settings/ }).check()
+  const runtime = controls.getByRole('region', { name: 'Additional APEX settings', exact: true })
+  const timeoutRow = runtime.getByRole('row', { name: /Request timeout \(ms\)/ })
+  await timeoutRow.getByText('Details', { exact: true }).click()
+  await expect(timeoutRow).toContainText('Limits how long a request can wait before timing out.')
+  const keepAliveRow = runtime.getByRole('row', { name: /Keep connections alive/ })
+  await keepAliveRow.getByText('Details', { exact: true }).click()
+  await expect(keepAliveRow).toContainText('Controls connection reuse')
   await controls.getByRole('button', { name: 'Edit HTTP', exact: true }).click()
   await controls.getByRole('spinbutton', { name: 'HTTP: Request timeout (ms)', exact: true }).fill('6500')
   const settingsApply = mutation(page, 'POST', '/api/v1/scripts/import/settings')

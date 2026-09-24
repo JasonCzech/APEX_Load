@@ -65,7 +65,7 @@ function isImportResponse(response: Response, endpoint: string): boolean {
   return response.request().method() === 'POST' && url.pathname === endpoint
 }
 
-test('[U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform', async ({ page }) => {
+test('[U23] Bruno native collection inspection, acknowledgements, and atomic save work on the host platform', async ({ page }, testInfo) => {
   test.setTimeout(120_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
@@ -126,7 +126,7 @@ http:
   await expect(controls.getByRole('button', { name: 'Inputs: 1 unresolved', exact: true })).toBeVisible()
   await controls.getByRole('tab', { name: 'Data & parameters', exact: true }).click()
   await controls.getByRole('textbox', { name: 'Literal value for env', exact: true }).fill('qa')
-  await expect(controls.getByRole('button', { name: 'Inputs: 0 unresolved', exact: true })).toBeVisible()
+  await expect(controls.getByRole('button', { name: /Inputs: .* unresolved/ })).toHaveCount(0)
   await controls.getByRole('button', { name: /^APIs .*change selection/ }).click()
   await controls.getByRole('searchbox', { name: 'Find API', exact: true }).fill('UnsupportedHook')
   await expect(controls.locator('.bruno-native-table tbody tr')).toHaveCount(1)
@@ -135,9 +135,16 @@ http:
   await expect(controls.locator('.bruno-native-table tbody tr')).toHaveCount(2)
 
   await controls.getByRole('tab', { name: 'Review', exact: true }).click()
+  const findingQueue = controls.getByRole('navigation', { name: 'Import issue queue' })
+  await expect(findingQueue.getByRole('button')).toHaveCount(2)
+  await controls.locator('.bruno-native-acknowledgements').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('bruno-issue-workspace.png'), fullPage: true })
   const acknowledgements = controls.getByRole('checkbox', { name: /^Acknowledge / })
-  await expect(acknowledgements).toHaveCount(2)
-  for (let index = 0; index < 2; index += 1) await acknowledgements.nth(index).check()
+  for (let index = 0; index < 2; index += 1) {
+    await findingQueue.getByRole('button').nth(index).click()
+    await expect(acknowledgements).toHaveCount(1)
+    await acknowledgements.check()
+  }
 
   const savePromise = page.waitForResponse(response => isImportResponse(response, '/api/v1/scripts/import/bruno/commit'))
   await controls.getByRole('button', { name: /Save \d+ drafts?/ }).click()

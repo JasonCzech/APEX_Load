@@ -1659,6 +1659,13 @@ describe('BrunoImport', () => {
 
     const cards = Array.from(container.querySelectorAll<HTMLElement>('.bruno-native-acknowledgement-card'))
     expect(cards).toHaveLength(2)
+    const issueButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.bruno-native-finding-row'))
+    expect(issueButtons).toHaveLength(2)
+    expect(container.querySelector('.bruno-native-acknowledgements')!.compareDocumentPosition(container.querySelector('.bruno-summary-grid')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(cards.filter(card => !card.hidden)).toHaveLength(1)
+    act(() => issueButtons[1].click())
+    expect(cards[1].hidden).toBe(false)
+    expect(cards[0].hidden).toBe(true)
     const javascriptCard = cards.find(card => card.textContent?.includes('Unsupported Bruno JavaScript'))
     expect(javascriptCard?.textContent).toContain('CTA/second.yml')
     expect(javascriptCard?.textContent).toContain('Translate unsupported response JavaScript.')
