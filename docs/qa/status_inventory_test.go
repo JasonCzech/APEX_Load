@@ -606,7 +606,7 @@ func TestInheritedReviewDefectsAreAllTracked(t *testing.T) {
 	for _, id := range inherited {
 		if !tracked[id] {
 			t.Errorf("%s is missing from DEFECTS.md; it is one of the eleven defects left open by "+
-				"docs/archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md and is in this program's scope", id)
+				"the 2026-08-02 whole-application review (see the Inherited section of DEFECTS.md) and is in this program's scope", id)
 		}
 	}
 }

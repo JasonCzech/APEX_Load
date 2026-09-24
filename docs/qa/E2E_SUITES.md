@@ -311,7 +311,7 @@ that does not change the S1–S12 journey states above.
 
 ## 2. Workflow regression suite
 
-The browser library now includes a continuous authenticated first-run journey and focused recovery tests based on [U01–U24](../archive/qa-reviews/DASHBOARD_UX_REVIEWS_2026-09.md#frontend-user-workflow-review). Tests exercise the embedded production dashboard against a real disposable controller and SQLite store. The [Figma review board](https://www.figma.com/design/9tjL68AABdh0cOtSDvexeT) records the original frontend evaluation.
+The browser library now includes a continuous authenticated first-run journey and focused recovery tests based on [U01–U24](../archive/qa-reviews/AUDITS_2026-09.md#dashboard-ux-reviews-2026-09-06-to-2026-09-20). Tests exercise the embedded production dashboard against a real disposable controller and SQLite store. The [Figma review board](https://www.figma.com/design/9tjL68AABdh0cOtSDvexeT) records the original frontend evaluation.
 
 ### Normal code-change cycle
 

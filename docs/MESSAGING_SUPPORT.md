@@ -49,7 +49,6 @@ The following files are retained for deeper implementation history and parity
 work:
 
 - [MESSAGING_PLAN.md](MESSAGING_PLAN.md)
-- [PROTOCOL_EXTENSION_PLAN.md](archive/plans/PROTOCOL_EXTENSION_PLAN.md)
 - [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md)
 
 ## JMS sidecar
@@ -165,7 +164,7 @@ The fixture preserves 100/50/50 threads, one-second thread ramps, 300-second lin
 - JAAS parsing accepts a bounded set of options and never loads uploaded Java classes. Nonstandard option names, malformed/unknown options, unsupported serializers/callbacks/configuration, unresolved variables and missing credentials retain source-linked blockers.
 - East/west Event Hubs bindings are distinct. Messaging source redaction checks decoded XML attributes as well as text, including credentials duplicated in message element names.
 - Preview shows three workload curves, planned samples, affinity, preserved Kafka overrides and explicit converted-versus-runnable status. Warnings include static data, unused counters, literal-Z assumptions, partition availability, View Results Tree and missing downstream verification.
-- The pinned reference installation starts and loads the synthetic JMX. See [reference evidence](../scripts/jmeter-reference/README.md). This is startup/formatter and deterministic parameter evidence only.
+- The pinned reference installation starts and loads the synthetic JMX. See [reference evidence](../scripts/README.md#jmeter-messaging-reference-baseline). This is startup/formatter and deterministic parameter evidence only.
 
 ### Execution boundary
 

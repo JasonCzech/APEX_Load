@@ -2,34 +2,61 @@
 
 Status: Historical
 
-Material here is preserved for audit and design history. It is not current product documentation, an API reference, or a release claim. For current documentation start with [docs/INDEX.md](../INDEX.md).
+Material here is preserved for audit and design history. It is not current product documentation, an API reference, or a release claim. For current documentation start with [docs/INDEX.md](../INDEX.md). Open reviews and evaluations are indexed in [../qa/reviews/README.md](../qa/reviews/README.md).
 
-## Implemented plans (`plans/`)
+## Contents
 
-| File | Status | Current reference |
+| Path | Status |
+| --- | --- |
+| [qa-reviews/AUDITS_2026-09.md](qa-reviews/AUDITS_2026-09.md) | Historical. One file with a section per completed September 2026 UX/QA audit (UX consistency, post-test reporting, end-to-end UX, the 2026-09-12 access, Command Center, landing dashboard, Import From Source, New Test, Results and Repository, Scenario Builder and Script/Scenario Library audits, Dashboard UX reviews, settings and execution-results reviews, Bruno/import-consistency/LoadRunner import reviews). Consolidated 2026-09-24 from 14 markdown files. Current browser coverage: [qa/E2E_SUITES.md](../qa/E2E_SUITES.md) |
+| `qa-reviews/<audit-folder>/` | Evidence only (screenshots, logs, JSON, DOM inventories) referenced from `AUDITS_2026-09.md`: `ux-consistency-2026-09-08`, `post-test-reporting-2026-09-08`, `end-to-end-ux-2026-09-09`, `access-audit-2026-09-12`, `command-center-audit-2026-09-12`, `dashboard-audit-2026-09-12`, `import-source-audit-2026-09-12`, `new-test-audit-2026-09-12`, `results-repository-audit-2026-09-12`, `scenario-builder-evaluation-2026-09-12`, `script-scenario-audit-2026-09-12`, `import-consistency-2026-09-19`, `user-settings-2026-09-09` |
+| [APEX_Load_DSL_Reference_Guide_v2.1.docx](APEX_Load_DSL_Reference_Guide_v2.1.docx) | Retired 2026-09-24. Hand-maintained snapshot (pinned to commit f757e96) that contradicted the code on loop caps, `pop` exhaustion, unknown action types and `fn.*()` calls. Use the generated [DSL_ACTION_REFERENCE.md](../DSL_ACTION_REFERENCE.md) and [HELP_DSL_OPERATOR_GUIDE.md](../HELP_DSL_OPERATOR_GUIDE.md) instead |
+
+## Removed 2026-09-24 (recoverable from git)
+
+These documents were fully implemented, remediated or superseded and were deleted. Restore any of them with `git show <hash>:<path>`.
+
+### Implemented plans (`plans/`)
+
+Restore with `git show 587d279b8:docs/archive/plans/<file>`.
+
+| File | Note | Current reference |
 | --- | --- | --- |
-| [plans/DYNATRACE_SAAS_MONITORING_PLAN.md](plans/DYNATRACE_SAAS_MONITORING_PLAN.md) | Implemented (archived 2026-09-24) | [MONITORING_INTEGRATIONS.md](../MONITORING_INTEGRATIONS.md) |
-| [plans/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](plans/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md) | Implemented, all phases (archived 2026-09-24) | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](../ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) |
-| [plans/AUTH_RBAC_FOLLOW_UP_TICKETS.md](plans/AUTH_RBAC_FOLLOW_UP_TICKETS.md) | Implemented, all tickets (archived 2026-09-24) | [AUTH_RBAC_OPERATIONS_RUNBOOK.md](../AUTH_RBAC_OPERATIONS_RUNBOOK.md) |
-| [plans/RUN_REPORT_IMPLEMENTATION_PLAN.md](plans/RUN_REPORT_IMPLEMENTATION_PLAN.md) | Implemented (RunReportPage and related components exist) | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md) |
-| [plans/PROTOCOL_EXTENSION_PLAN.md](plans/PROTOCOL_EXTENSION_PLAN.md) | Implemented (SOAP/java_http exist; archived 2026-09-24) | [MESSAGING_SUPPORT.md](../MESSAGING_SUPPORT.md), [WEB_API_EXECUTION_SUPPORT_MATRIX.md](../WEB_API_EXECUTION_SUPPORT_MATRIX.md) |
-| [plans/SCRIPT_EDITOR_INTERACTION_MODEL.md](plans/SCRIPT_EDITOR_INTERACTION_MODEL.md) | Implemented (archived 2026-09-24) | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md#authoring-a-script) |
+| AUTH_RBAC_FOLLOW_UP_TICKETS.md | Workstream 4 auth/RBAC follow-up decisions; all tickets implemented | [AUTH_RBAC_OPERATIONS_RUNBOOK.md](../AUTH_RBAC_OPERATIONS_RUNBOOK.md) |
+| DYNATRACE_SAAS_MONITORING_PLAN.md | Optional Dynatrace SaaS in-flight monitoring; implemented | [MONITORING_INTEGRATIONS.md](../MONITORING_INTEGRATIONS.md) |
+| ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md | PostgreSQL, Prometheus, object storage and Redis upgrade; all phases shipped | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](../ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) |
+| PROTOCOL_EXTENSION_PLAN.md | SOAP and Java-over-HTTP protocol support; implemented | [MESSAGING_SUPPORT.md](../MESSAGING_SUPPORT.md), [WEB_API_EXECUTION_SUPPORT_MATRIX.md](../WEB_API_EXECUTION_SUPPORT_MATRIX.md) |
+| RUN_REPORT_IMPLEMENTATION_PLAN.md | Answer-first Run Report page for completed runs; `RunReportPage` and related components exist | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md) |
+| SCRIPT_EDITOR_INTERACTION_MODEL.md | Script editor decision memo (Author outline, Action editor, Source tab); shipped | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md#authoring-a-script) |
 
-## Retired reference (`APEX_Load_DSL_Reference_Guide_v2.1.docx`)
+### Per-audit READMEs and theme files (`qa-reviews/`)
 
-| File | Status |
+Merged into [qa-reviews/AUDITS_2026-09.md](qa-reviews/AUDITS_2026-09.md); the originals are recoverable with `git show 587d279b8:docs/archive/qa-reviews/<file>`: `DASHBOARD_UX_REVIEWS_2026-09.md`, `import-reviews-complete-2026-09.md`, `ux-reviews-2026-09.md`, and `<folder>/README.md` for `access-audit-2026-09-12`, `command-center-audit-2026-09-12`, `dashboard-audit-2026-09-12`, `end-to-end-ux-2026-09-09`, `import-source-audit-2026-09-12`, `new-test-audit-2026-09-12`, `post-test-reporting-2026-09-08`, `results-repository-audit-2026-09-12`, `scenario-builder-evaluation-2026-09-12`, `script-scenario-audit-2026-09-12`, `ux-consistency-2026-09-08`.
+
+### Reviews (`reviews/`)
+
+| File | Note |
 | --- | --- |
-| [APEX_Load_DSL_Reference_Guide_v2.1.docx](APEX_Load_DSL_Reference_Guide_v2.1.docx) | Retired 2026-09-24. Hand-maintained snapshot (pinned to commit f757e96) that contradicted the code on loop caps, `pop` exhaustion, unknown action types and `fn.*()` calls. Use the generated [DSL_ACTION_REFERENCE.md](../DSL_ACTION_REFERENCE.md) and [HELP_DSL_OPERATOR_GUIDE.md](../HELP_DSL_OPERATOR_GUIDE.md) instead. |
+| WHOLE_APP_REVIEW_2026-08-02.md | Whole-application review (312 of 323 defects fixed at the time). Its 11 residual defects are tracked, with re-validation results, in [../qa/DEFECTS.md](../qa/DEFECTS.md). Restore with `git show 587d279b8:docs/archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md` |
+| README.md | Index of this folder (removed with it) |
 
-## QA UX reviews (`qa-reviews/`)
+The June and July 2026 reviews below were fully remediated or superseded and were deleted earlier the same day. Restore any of them with `git show 780f032b4:docs/archive/reviews/<file>` (handoff: `docs/archive/handoffs/<file>`).
 
-| File | Status |
+| File | Note |
 | --- | --- |
-| [qa-reviews/DASHBOARD_UX_REVIEWS_2026-09.md](qa-reviews/DASHBOARD_UX_REVIEWS_2026-09.md) | Historical. Merged 2026-09-24 from the September 2026 frontend user-workflow review, usability remediation and dashboard analysis review formerly in `docs/qa/`. Current coverage: [qa/E2E_SUITES.md](../qa/E2E_SUITES.md) |
-| [qa-reviews/import-reviews-complete-2026-09.md](qa-reviews/import-reviews-complete-2026-09.md) | Historical. Bruno, import design consistency and early LoadRunner review records (2026-09-19), consolidated 2026-09-24 from `docs/qa/reviews/`; captures in `qa-reviews/import-consistency-2026-09-19/` |
-| [qa-reviews/ux-reviews-2026-09.md](qa-reviews/ux-reviews-2026-09.md) | Historical. Personal settings review, settings/monitoring workflow review and Execution Results design QA (2026-09), consolidated 2026-09-24 from `docs/qa/reviews/` |
-| qa-reviews/`<folder>`/README.md | Historical. Completed September 2026 audits, each merged from its audit, implementation and validation files with its screenshots alongside: [ux-consistency-2026-09-08](qa-reviews/ux-consistency-2026-09-08/README.md), [post-test-reporting-2026-09-08](qa-reviews/post-test-reporting-2026-09-08/README.md), [end-to-end-ux-2026-09-09](qa-reviews/end-to-end-ux-2026-09-09/README.md), [access-audit-2026-09-12](qa-reviews/access-audit-2026-09-12/README.md), [command-center-audit-2026-09-12](qa-reviews/command-center-audit-2026-09-12/README.md), [dashboard-audit-2026-09-12](qa-reviews/dashboard-audit-2026-09-12/README.md), [import-source-audit-2026-09-12](qa-reviews/import-source-audit-2026-09-12/README.md), [new-test-audit-2026-09-12](qa-reviews/new-test-audit-2026-09-12/README.md), [results-repository-audit-2026-09-12](qa-reviews/results-repository-audit-2026-09-12/README.md), [scenario-builder-evaluation-2026-09-12](qa-reviews/scenario-builder-evaluation-2026-09-12/README.md), [script-scenario-audit-2026-09-12](qa-reviews/script-scenario-audit-2026-09-12/README.md). Reviews with open items stay in [../qa/reviews/README.md](../qa/reviews/README.md) |
+| CODE_REVIEW_REPORT.md | Full codebase review, 2026-06-15 |
+| REFACTORING_OPPORTUNITIES_2026-06-27.md | Refactoring opportunities |
+| TWO_WEEK_REVIEW_2026-06-17_to_2026-06-29.md, TWO_WEEK_REVIEW_REVERIFY_2026-07-02.md | Two-week review and re-verification |
+| FLEET_MANAGEMENT_REVIEW.md | Fleet management review |
+| WSDL_SOAP_IMPORT_REPLAY_REVIEW.md | WSDL/SOAP import and replay |
+| RECORDING_IMPORT_REPLAY_REVIEW_2026-07-02.md, apex_load_recording_import_replay_review.md | Recording/import/replay reviews and memory |
+| PERF_REVIEW_2026-07-06.md, PERF_BASELINES_2026-07-06.md | Performance review and baselines |
+| WEEK_REVIEW_2026-07-02_to_2026-07-07.md | Week review |
+| BRUNO_YAML_IMPORT_REVIEW_2026-07-16.md (+ _ROUND2) | Bruno YAML import review |
+| GITHUB_ACTIONS_CI_SECOND_OPINION_2026-07-16.md | CI second opinion |
+| UNCOMMITTED_REVIEW_2026-07-22.md | Uncommitted-changes review (all 48 findings fixed same day) |
+| ../handoffs/SESSION_FEATURE_HANDOFF_APPLIED_2026-07-24.md | One-off session report |
 
-## Reviews (`reviews/`)
+### Reviews moved out of `docs/reviews/`
 
-Only the whole-application review is kept; the rest of the June and July 2026 reviews and the session handoff were deleted on 2026-09-24 and are recoverable from git. See [reviews/README.md](reviews/README.md).
+`docs/reviews/` was merged into [../qa/reviews/](../qa/reviews/README.md) on 2026-09-24: the Data Pools and LoadRunner runtime-settings evaluations are now in [../qa/reviews/evaluations-2026.md](../qa/reviews/evaluations-2026.md). Originals: `git show 587d279b8:docs/reviews/<file>`.

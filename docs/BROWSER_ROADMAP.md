@@ -356,6 +356,6 @@ availability, ZIP export, and responsive layout.
 External requirements: Chromium/Chrome on generators, Playwright WebKit assets on
 hosts running WebKit profiles, controlled benchmark hardware for publishing
 density claims, and TrueClient sample archives for importer fixtures. Related:
-[PROTOCOL_EXTENSION_PLAN.md](archive/plans/PROTOCOL_EXTENSION_PLAN.md) (SOAP and Java are
+[WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md) (SOAP and Java are
 separate protocols) and the
 [enterprise archive runtime settings reference](COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference).

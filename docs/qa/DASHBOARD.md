@@ -29,7 +29,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Headli
 | Playwright spec files | 3 | 44 | assertion-driven |
 | Go statement coverage | 77.01% | 77.01% | ratchet |
 | Go coverage floor enforced | 0 | 0 | 1 |
-| Packages with no test file | 6 | 9 | 3 |
+| Packages with no test file | 6 | 8 | 3 |
 | Open inherited review defects | 11 | 1 | 0 |
 | Resource-leak linters enabled | 0 | 1 | 1 |
 | Converter golden files | 0 | 30 | all registered converters |

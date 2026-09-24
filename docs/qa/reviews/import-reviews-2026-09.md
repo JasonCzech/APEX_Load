@@ -2,7 +2,7 @@
 
 Status: Open. Every review below still carries remaining work; see each section's Status line.
 
-Grouped from the JMeter, LoadRunner, importer-consistency and fixture-matrix reviews. The evidence folders (`import-fixture-matrix-2026-09-12/`, `importer-consistency-2026-09-23/`, `jmeter-import-fidelity-2026-09-23/`, `loadrunner-issue-detail-2026-09-23/`, `loadrunner-panel-design-2026-09-23/`) stay next to this file. Completed import reviews were moved to [../../archive/qa-reviews/import-reviews-complete-2026-09.md](../../archive/qa-reviews/import-reviews-complete-2026-09.md) and [../../archive/qa-reviews/import-source-audit-2026-09-12/README.md](../../archive/qa-reviews/import-source-audit-2026-09-12/README.md).
+Grouped from the JMeter, LoadRunner, importer-consistency and fixture-matrix reviews. The evidence folders (`import-fixture-matrix-2026-09-12/`, `importer-consistency-2026-09-23/`, `jmeter-import-fidelity-2026-09-23/`, `loadrunner-issue-detail-2026-09-23/`, `loadrunner-panel-design-2026-09-23/`) stay next to this file. Completed import reviews were moved to [AUDITS_2026-09.md](../../archive/qa-reviews/AUDITS_2026-09.md) (sections "Import reviews 2026-09" and "Import From Source audit").
 
 ## Import fixture matrix and broker runbook
 
@@ -10,7 +10,7 @@ Date: 2026-09-12. Status: Open: Service Bus, Event Hubs, IBM MQ and customer ent
 
 ### Import conversion and replay fixture matrix
 
-Date: 2026-09-12. This follows the [Import From Source usability audit](../../archive/qa-reviews/import-source-audit-2026-09-12/README.md). The matrix validates observable source behavior and records unavailable evidence separately.
+Date: 2026-09-12. This follows the [Import From Source usability audit](../../archive/qa-reviews/AUDITS_2026-09.md#import-from-source-audit-2026-09-12). The matrix validates observable source behavior and records unavailable evidence separately.
 
 #### Result
 
