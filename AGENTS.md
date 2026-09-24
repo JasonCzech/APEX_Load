@@ -13,7 +13,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
 - **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks + opt-in OTLP traces for controller HTTP, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC. Controller aggregates with t-digest for percentiles. OpenTelemetry metrics/log export is not implemented.
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
-- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service uses the launcher in `deployments/azure/appservice/` with PostgreSQL and static generator targets. A Helm chart for Kubernetes/AKS enterprise installs lives in `deployments/helm/apexload`. (No operator/CRDs yet.) System administrators can additionally register N external clusters (generic Kubernetes via a ServiceAccount token, AKS via an Azure AD service principal) from the dashboard and set per-pool CPU/memory and node placement — see [docs/CLUSTER_CONNECTIONS.md](docs/CLUSTER_CONNECTIONS.md). Node reads for pool/zone discovery need the opt-in `deployments/k8s/aks/node-read.optional.yaml` ClusterRole; everything degrades gracefully without it.
+- **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress), and EKS (`deployments/k8s/eks`), each with `*-ha` and related overlays; Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault) and the AWS stack (`deployments/aws/terraform`: EKS/ECR/RDS/ElastiCache/S3/EFS/KMS). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service uses the launcher in `deployments/azure/appservice/` with PostgreSQL and static generator targets. A Helm chart for Kubernetes/AKS enterprise installs lives in `deployments/helm/apexload`. (No operator/CRDs yet.) System administrators can additionally register N external clusters (generic Kubernetes via a ServiceAccount token, AKS via an Azure AD service principal) from the dashboard and set per-pool CPU/memory and node placement — see [docs/CLUSTER_CONNECTIONS.md](docs/CLUSTER_CONNECTIONS.md). Node reads for pool/zone discovery need the opt-in `deployments/k8s/aks/node-read.optional.yaml` ClusterRole; everything degrades gracefully without it.
 
 ## Module Path
 `github.com/jasonczech/apexload`
@@ -25,7 +25,13 @@ cmd/
   controller/    — Test controller + API server binary (Deployment; HA replicas are opt-in with APEXLOAD_CONTROLLER_HA + shared storage)
   apexctl/       — CLI tool for running/managing tests
   apexload-record-agent/ — Local browser-recording bridge agent (run on operator workstations)
+  apexload-collector-agent/ — Monitoring collector agent (controller heartbeat + host-metric packs)
+  apexload-java-vuser-runner/ — Java Vuser runner bridge (external-runner container for `java_vuser`)
+  apexbench/     — Controlled local performance-evidence harness (`make performance-smoke`)
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
+  swaggergen/    — Code generator for docs/swagger.yaml + docs/api-endpoint-catalog.json
+  openapits/     — Code generator for the dashboard's TypeScript API contract from the OpenAPI document
+  webcoverage/   — Generator for the LoadRunner import coverage docs (`docs/LOADRUNNER_*_COVERAGE.md`)
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation
@@ -81,13 +87,15 @@ dashboard/       — React 18 + TypeScript + Recharts SPA
 desktop/         — Wails native client shell embedding the controller API + dashboard
 mcp/             — Python MCP server exposing the REST API as agent tools
 deployments/
-  k8s/           — Kubernetes manifests (Kustomize overlays: local/local-kind/onprem/aks)
+  k8s/           — Kubernetes manifests (Kustomize overlays: local, local-kind, onprem, aks, eks, plus `*-ha`, `*-prometheus`, and `*-java-vuser` variants)
   helm/          — Helm chart (apexload) for Kubernetes/AKS enterprise installs
   docker/        — docker-compose stack for local multi-service runs
   azure/
     terraform/   — Azure IaC (AKS, ACR, PostgreSQL, Redis, Blob, Key Vault)
     appservice/  — Node.js launcher wrapper for Azure App Service deployments
-  .github/workflows/ — Authoritative CI/CD workflows
+  aws/
+    terraform/   — AWS IaC (EKS, ECR, RDS, ElastiCache, S3, EFS, KMS)
+.github/workflows/ — Authoritative CI/CD workflows (repo root)
 ```
 
 The `pkg/` listing above is machine-checked: `check_package_inventory` in
@@ -138,7 +146,7 @@ validation, dashboard editor metadata, `GET /api/v1/dsl/actions`, and the genera
 `go generate ./pkg/dsl`; freshness is test-enforced.
 
 ## REST API
-The controller binary serves a REST API on `:8080` (configurable via `APEXLOAD_ADDR`).
+The controller binary serves a REST API on `127.0.0.1:8080` locally (`:8080` when `APEXLOAD_ENV=production|prod`; configurable via `APEXLOAD_ADDR`).
 The OpenAPI spec `docs/swagger.yaml` and endpoint catalog `docs/api-endpoint-catalog.json` are
 generated from the controller routing layer by `cmd/swaggergen`; do not hand-edit them. After route
 changes, run `go generate ./pkg/api`; freshness is test-enforced by `pkg/api`.
@@ -161,16 +169,14 @@ requirement — not optional. When adding or modifying code:
 
 ## Build & Run
 ```bash
-# Build all binaries
-go build ./cmd/generator
-go build ./cmd/controller
-go build ./cmd/apexctl
+# Build default binaries into ./bin (generator, controller, apexctl, record-agent, collector-agent)
+make build
 
 # Run controller with API server + dashboard
-./bin/controller    # serves on :8080
+./bin/controller    # serves on 127.0.0.1:8080 locally
 
 # Run a test via CLI (direct, no controller)
-./apexctl run --script order-flow.json --vusers 100 --duration 5m
+./bin/apexctl run --script order-flow.json --vusers 100 --duration 5m
 
 # Dashboard dev server (proxies /api to :8080)
 cd dashboard && npm install && npm run dev   # http://localhost:4000
@@ -188,15 +194,6 @@ These are design targets, not yet backed by published benchmark artifacts. Do no
 - VUsers per pod (HTTP): 10,000 on 4 vCPU / 8 GB
 - Metrics latency (generator → dashboard): < 2 seconds
 - Ramp-up rate: 500 VUsers/second/pod
-
-## Development Phases
-The original week-numbered phasing below is historical; the codebase is well past it (auth/RBAC, scheduling, distributed gRPC execution, governance, and authoring/import are all implemented). Treat it as a roadmap sketch, not current status.
-1. Foundation: Single-pod HTTP, basic controller, CLI
-2. Distribution & Telemetry: Multi-pod, telemetry, persistence
-3. Dashboard MVP: React real-time monitoring
-4. Assisted Scripting: deterministic DSL draft/repair (LLM integration policy-gated)
-5. JMS & Advanced: JMS protocols, multi-test concurrency
-6. Scale & Harden: 50k VUsers, HA, production readiness
 
 ## Tech Stack
 Go 1.26+ | SQLite (default) / PostgreSQL 16 (optional) | Redis/Valkey (optional, HA) | React 18 + TS | Prometheus + gRPC | AKS | Helm | Terraform

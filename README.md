@@ -4,7 +4,7 @@ Kubernetes-native performance testing platform replacing LoadRunner Enterprise. 
 
 ## What This Is
 
-APEX Load provides **three primary surfaces**:
+APEX Load provides **four primary surfaces**:
 
 - **Hosted browser dashboard**: Zero-install web UI served same-origin by the controller for authoring, scheduling, running, monitoring, and reviewing tests
 - **Wails desktop workspace**: Optional installed local workspace with an embedded loopback controller, local SQLite/keyring storage, local runs, and Remote Workspace sync/remote execution
@@ -42,6 +42,10 @@ The current controller can run in either local or distributed mode without chang
 | `cmd/apexctl` | CLI for direct script execution (no controller needed) |
 | `cmd/apexload-record-agent` | Production local browser recording bridge for remote dashboards |
 | `cmd/generator` | Distributed load generator (Kubernetes StatefulSet pod) |
+| `cmd/apexload-collector-agent` | Monitoring collector agent (controller heartbeat plus host-metric packs) |
+| `cmd/apexload-java-vuser-runner` | Java Vuser runner bridge |
+| `cmd/apexbench` | Component benchmark and performance-evidence harness |
+| `cmd/dslschema`, `cmd/swaggergen`, `cmd/openapits`, `cmd/webcoverage` | Generators (invoked via `make generate` / `go generate`): DSL schema/reference, `docs/swagger.yaml` + endpoint catalog, dashboard TypeScript API contract, LoadRunner import coverage docs |
 | `pkg/engine` | VUser goroutine engine, pacing, metrics, lifecycle |
 | `pkg/protocol` | Protocol interface; HTTP, SOAP, Java-over-HTTP, WebSocket, gRPC, JMS, Kafka, database, network, browser implementations |
 | `pkg/dsl` | Script parser and runtime structures |
@@ -93,7 +97,8 @@ For a local containerized controller plus Prometheus:
 make docker-local-up
 ```
 
-Open the dashboard at `http://127.0.0.1:8080` and Prometheus at
+This also starts the generator, Bruno runner, and Java Vuser runner containers
+defined in `compose.yaml`. Open the dashboard at `http://127.0.0.1:8080` and Prometheus at
 `http://127.0.0.1:9090`. Prometheus scrapes the controller's dedicated metrics
 listener at `http://127.0.0.1:9091/metrics`. See
 `deployments/docker/README.md` for target checks, PromQL examples, and the
@@ -135,7 +140,7 @@ Navigate to `http://127.0.0.1:8080`.
    - Go to **Scripts** page
    - Click **New Script**
    - Name: "API Load Test"
-  - Paste example from `examples/simple-http.json` or `examples/simple-java-http-embedded.json`
+   - Paste example from `examples/simple-http.json` or `examples/simple-java-http-embedded.json`
    - Click **Save**
 
 2. **Create a scenario** (test configuration):
@@ -244,7 +249,7 @@ Controller runtime configuration:
 - `APEXLOAD_WRAPPING_MASTER_KEY`: stable 32-byte (or base64-encoded 32-byte) protocol-neutral wrapping key for encrypted database-backed Project Secrets and protected source artifacts. Bruno import needs an envelope key to retain its source; when neither this nor `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID` is set, a non-production controller generates a local key beside its import assets (`.bruno-artifact-key`, owner-only) so import works unconfigured. That key is Bruno-scoped — it never enables encrypted database-backed Project Secrets or the shared protected-import flow — and sources retained under it cannot be read after switching to an operator-managed key. `APEXLOAD_ENV=production` (or `APEXLOAD_REQUIRE_AUTH`) requires an operator-managed key instead
 - `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`: optional versioned Azure Key Vault cryptographic key used instead of the local wrapping master key
 - `APEXLOAD_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
-- `APEXLOAD_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
+- `APEXLOAD_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `<UserCacheDir>/apexload/archives`, falling back to the OS temp directory)
 - `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
 - `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
 
@@ -260,12 +265,16 @@ Note: If you run with `APEXLOAD_ENV=production|prod` or enable `APEXLOAD_REQUIRE
 Use Make targets from repo root:
 
 ```bash
-make build       # builds generator/controller/apexctl/apexload-record-agent into ./bin
+make build       # builds generator, controller, apexctl, apexload-record-agent, and apexload-collector-agent into ./bin
 make package-recording-agent  # builds cross-platform Recording Agent release archives
 make test        # runs Go tests with race detector
 make test-cover  # race + coverage report (coverage.out / coverage.html)
 make lint        # runs golangci-lint (if installed)
-make docker-local-up                 # runs controller + Prometheus locally
+make generate    # regenerates committed DSL schema/reference and OpenAPI/Swagger artifacts
+make desktop     # builds the Wails desktop app (also: make clients, make desktop-preflight)
+make java-vuser-runner  # builds the Java Vuser runner jar and bridge binary
+make performance-smoke  # runs the apexbench smoke profile (JSON to stdout)
+make docker-local-up                 # runs controller + Prometheus (plus generator and runners) locally
 make docker-local-prometheus-check   # validates the local Prometheus config
 ```
 
@@ -290,7 +299,9 @@ go test ./pkg/engine
 go test -cover ./...
 
 # Benchmark performance
-go test -bench=BenchmarkEngine ./pkg/engine -benchmem
+go test -run='^$' -bench=BenchmarkHarnessOverhead -benchmem ./pkg/engine/
+# or the apexbench smoke profile
+make performance-smoke
 ```
 
 ## CLI Usage
@@ -322,6 +333,25 @@ go run ./cmd/apexctl run \
 - `--env, -env` — Runtime environment substitution for `{{env.KEY}}` placeholders
 - `--base-url` — Override the script base URL at run time
 - `--p95-latency-ms`, `--max-error-pct`, `--max-avg-server-processing-ms`, `--max-avg-transfer-ms`, `--max-error-count` — CI/CD guardrails that make `apexctl` exit non-zero when breached
+
+Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API run wait timeout; default duration + 30m), and `--transaction-rule` / `--transaction-rules-file` (exact per-transaction SLA rules; require `--api`).
+
+**Subcommands** (`apexctl help` prints the full list):
+
+| Command | Purpose |
+|---------|---------|
+| `run` | Execute a performance test locally or via `--api` |
+| `ci` | Run a CI performance gate locally or through a controller |
+| `script` | Validate or explain a JSON DSL script |
+| `status` | Print a test's current status and SLA verdict (exits 1 on breach/failure) |
+| `wait` | Block until a started test finishes, then report the SLA verdict |
+| `archive` | Inspect an archived run (`verify` re-checks artifact SHA-256 integrity) |
+| `record` | Record a browser script with the embedded recorder |
+| `record-agent` | Start the localhost browser recording bridge for a remote dashboard |
+| `github` | Inspect and run GitHub Enterprise sync/check workflows |
+| `import` | Import Bruno collections or Grafana dashboards |
+| `library` | Export or import portable project library bundles |
+| `version` | Print version information |
 
 **JSON pipeline example:**
 ```bash
@@ -362,44 +392,51 @@ Scripts are JSON with these sections:
 
 ```json
 {
-  "goal_config": {
-    "p95_latency_ms": 800,
-    "max_error_pct": 2.5,
-    "max_error_count": 10
-  },
-  "config": {
+  "script": {
+    "name": "Products_API",
+    "version": "1.0.0",
     "protocol": "http",
-    "base_url": "https://api.example.com",
-    "timeout_seconds": 30
-  },
-  "data_sources": [
-    {
-      "name": "users",
-      "type": "csv",
-      "path": "users.csv",
-      "cycling": "sequential"
-    }
-  ],
-  "init": [
-    {
-      "name": "login",
-      "type": "http",
-      "method": "POST",
-      "target": "/auth/login",
-      "body": "{\"user\": \"{{data.users.email}}\", \"pass\": \"{{data.users.password}}\"}"
-    }
-  ],
-  "actions": [
-    {
-      "name": "list_products",
-      "type": "http",
-      "method": "GET",
-      "target": "/products"
-    }
-  ],
-  "teardown": []
+    "goal_config": {
+      "p95_latency_ms": 800,
+      "max_error_pct": 2.5,
+      "max_error_count": 10
+    },
+    "config": {
+      "base_url": "https://api.example.com",
+      "think_time": { "type": "fixed", "mean_ms": 1000 }
+    },
+    "data_sources": [
+      {
+        "name": "users",
+        "type": "csv",
+        "path": "users.csv",
+        "strategy": "sequential",
+        "first_row_header": true
+      }
+    ],
+    "init": [
+      {
+        "name": "login",
+        "type": "POST",
+        "target": "/auth/login",
+        "headers": { "Content-Type": "application/json" },
+        "body": "{\"user\": \"{{data.users.email}}\", \"pass\": \"{{data.users.password}}\"}"
+      }
+    ],
+    "actions": [
+      {
+        "name": "list_products",
+        "type": "GET",
+        "target": "/products",
+        "assertions": [{ "type": "status_code", "expected": 200 }]
+      }
+    ],
+    "teardown": []
+  }
 }
 ```
+
+`protocol` lives on the top-level `script` object (not in `config`). HTTP actions use the method as `type` (`GET`, `POST`, ...) with a `target` path relative to `config.base_url`. Data sources use `strategy` (`sequential`, `random`, `unique`, `pop`). See `examples/simple-http.json` for a complete runnable script.
 
 **Features:**
 - **Template variables**: `{{env.VAR}}`, `{{data.source.column}}`, `{{param.name}}`, `{{var.name}}`, `{{fn.uuid()}}`
@@ -421,27 +458,11 @@ See [docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md) and
 ## Repository Layout
 
 ```
-cmd/
-  controller/         # Main API server + dashboard
-  apexctl/           # CLI tool
-  generator/         # Distributed load generator
-  dslschema/         # Generates docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
-
-pkg/
-  engine/            # Core VUser engine, pacing, metrics
-  protocol/          # Protocol interface + HTTP/SOAP/Java-over-HTTP/WebSocket/gRPC/JMS/Kafka/database/network/browser implementations
-  dsl/               # Script parser, types, action catalog
-  api/               # REST handlers, WebSocket, test runner
-  controller/        # Test orchestration logic
-  distributed/       # Generator-side gRPC worker
-  storage/           # SQLite (default) / PostgreSQL persistence
-  recorder/          # HTTP recording + HAR conversion + browser recording
-  convert/           # Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient, SAP GUI, Java-family imports)
-  selector/          # Shared element-selector model + replay self-heal
-  scrub/             # PII/credential redaction for artifacts and HAR exports
-  refkey/            # Human-readable reference keys
-  buildinfo/         # Build metadata (version/commit/build-time)
-  config/            # Configuration
+cmd/                 # controller, apexctl, generator, apexbench, apexload-collector-agent,
+                     # apexload-java-vuser-runner, apexload-record-agent, dslschema,
+                     # openapits, swaggergen, webcoverage
+pkg/                 # Go packages: engine, protocol, dsl, api, controller, distributed,
+                     # storage, recorder, convert, config, and more (see AGENTS.md for the full inventory)
 
 dashboard/           # React 18 + TypeScript frontend
   src/
@@ -454,7 +475,7 @@ dashboard/           # React 18 + TypeScript frontend
 
 desktop/             # Wails native client shell (embeds controller API + dashboard)
 mcp/                 # Python MCP server exposing the REST API as agent tools
-deployments/         # Kustomize manifests, Helm chart, Docker Compose, Azure Terraform/IaC, CI templates
+deployments/         # Kustomize manifests, Helm chart, Docker Compose, Azure/AWS Terraform, CI templates
 examples/            # Sample scripts and HAR files
 ```
 
