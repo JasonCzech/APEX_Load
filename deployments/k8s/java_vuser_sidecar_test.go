@@ -334,7 +334,7 @@ func TestJavaVuserOperatorEnablementIsExplicitInRawDeployments(t *testing.T) {
 		}
 	}
 	for path, required := range map[string][]string{
-		"components/java-vuser-runner/README.md": {
+		"../README.md": { // deployments/README.md, "Java Vuser runner component" section
 			"legacy `full_lifecycle` execution only",
 			"persistent_lifecycle_unavailable",
 			"Java Vuser Runtime",

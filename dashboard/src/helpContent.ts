@@ -43,8 +43,6 @@ const sources = import.meta.glob<string>([
   '../../deployments/k8s/aks/README.md',
   '../../deployments/helm/apexload/README.md',
   '../../deployments/docker/README.md',
-  '../../deployments/azure/terraform/README.md',
-  '../../deployments/k8s/monitoring/README.md',
   '../../docs/LOADRUNNER_COVERAGE.md',
 ], { query: '?raw', import: 'default' })
 const pending = new Map<string, Promise<string>>()

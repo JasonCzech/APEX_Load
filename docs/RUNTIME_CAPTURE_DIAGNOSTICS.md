@@ -47,7 +47,7 @@ review, or scenario/group runtime settings. Scenario `results` overrides replace
 the whole section; omission inherits the existing policy.
 
 Regression fixture: `pkg/convert/enterprisearchive/testdata/acc_runtime_diagnostics`
-is a sanitized runtime-profile twin of acc_wls_reg_1.zip, with synthetic C actions.
+is a sanitized runtime-profile twin of acc_wls_reg_1.zip (VuGen 24.3), with synthetic C actions. Runtime keys and selectors are preserved; proxy credentials, network identities and user agents are replaced; C source is reduced to synthetic examples of its operation families. No customer data or executable customer workflow is included.
 
 A local Apple M4 microbenchmark of one small resource's collector (Go 1.26.5,
 2026-09-23) measured approximately 16.9 µs, 2,351 allocated bytes and 40 allocations

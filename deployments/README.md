@@ -2,6 +2,8 @@
 
 Status: Current
 
+## Overview
+
 Choose the deployment surface that matches your environment. Deployment-specific
 READMEs own the details; this page is the router.
 
@@ -14,10 +16,11 @@ READMEs own the details; this page is the router.
 | EKS (deployment, readiness) | [k8s/eks/README.md](k8s/eks/README.md) |
 | Helm chart | [helm/apexload/README.md](helm/apexload/README.md) |
 | Docker Compose monitoring | [docker/README.md](docker/README.md) |
-| Azure Terraform | [azure/terraform/README.md](azure/terraform/README.md) |
-| AWS Terraform | [aws/terraform/README.md](aws/terraform/README.md) |
+| Azure Terraform | [k8s/aks/README.md](k8s/aks/README.md#azure-terraform) |
+| AWS Terraform | [k8s/eks/README.md](k8s/eks/README.md#aws-terraform) |
 | AKS Azure Monitor overlay | [k8s/aks/README.md](k8s/aks/README.md#azure-monitor-managed-prometheus-overlay) |
-| Kubernetes monitoring examples | [k8s/monitoring/README.md](k8s/monitoring/README.md) |
+| Kubernetes monitoring examples | [Kubernetes monitoring stack](#kubernetes-monitoring-stack) |
+| Java Vuser runner component | [Java Vuser runner component](#java-vuser-runner-component) |
 | Local AI provider secrets | [AI provider setup for local Kubernetes](#ai-provider-setup-for-local-kubernetes) |
 
 ## Validation Baseline
@@ -102,3 +105,65 @@ kubectl -n apexload-local exec deploy/apexload-controller -- printenv OPENAI_MOD
 ```
 
 Do not print the API key values back out of the pod.
+
+## Kubernetes monitoring stack
+
+These manifests are production-oriented examples for Phase 3 of the enterprise data platform upgrade.
+
+APEX Load keeps exposing `/metrics` from the controller. Prometheus scrapes that endpoint for live operational metrics, then remote-writes to the enterprise retention backend:
+
+- Grafana Mimir
+- Thanos Receive
+- A managed Prometheus-compatible remote-write endpoint
+
+Use these examples as overlays, not as local-kind defaults. `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL` is consumed by the external Prometheus configuration in `deployments/k8s/monitoring`; the APEX Load controller remains scrape-only and does not remote-write samples itself.
+
+### Files
+
+- `servicemonitor.yaml` - Prometheus Operator scrape definition for the controller.
+- `prometheus-remote-write-example.yaml` - example Prometheus config with remote-write destinations.
+- `prometheusrule.yaml` - starter alert rules for scrape absence, telemetry staleness, telemetry drops, and WebSocket fan-out drops.
+
+### Required Labels
+
+The controller metrics endpoint should preserve bounded labels suitable for retention:
+
+- `environment`
+- `domain`
+- `project`
+- `release`
+- `scenario`
+- `run`
+- `protocol`
+- `generator_region`
+- generator identity is intentionally kept out of controller `/metrics`; use Kubernetes pod labels, cAdvisor, and kube-state-metrics for per-generator host telemetry.
+
+High-cardinality raw transaction details stay in APEX Load archive bundles instead of Prometheus.
+
+## Java Vuser runner component
+
+This opt-in component adds the loopback-only, credential-minimized Java Vuser
+runner to an APEX Load generator pod (`deployments/k8s/components/java-vuser-runner`).
+Add it to a local, on-prem, or AKS overlay:
+
+```yaml
+components:
+  - ../components/java-vuser-runner
+```
+
+The published image includes JDK 21 and a Java 17-compatible harness. User
+classes must be precompiled into a signed custom runner image, or supplied by a
+separate read-only volume patch. Do not mount generator state, gRPC credentials,
+service-account tokens, or workload-identity files into this container.
+
+This stock non-privileged component does not receive writable cgroup v2
+delegation. It therefore supports legacy `full_lifecycle` execution only;
+combined persistent Java imports fail sidecar capability preflight with
+`persistent_lifecycle_unavailable`. Do not add a privileged host-cgroup mount
+as a workaround. Persistent lifecycle execution requires a separately governed
+Windows runner or Linux runner with a narrowly delegated cgroup subtree. See
+[Java Vuser Runtime](../docs/JAVA_VUSER_RUNTIME.md) for the platform
+and containment contract.
+
+The sidecar separates those credentials from reviewed Java code; it is not a
+sandbox for mutually untrusted scripts because it still shares the pod network.

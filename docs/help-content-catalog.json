@@ -394,7 +394,13 @@
     "path": "deployments/README.md",
     "area": "admin-guide",
     "group": "Installation",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Overview",
+      "Validation Baseline",
+      "AI provider setup for local Kubernetes",
+      "Java Vuser runner component"
+    ]
   },
   {
     "id": "install-local",
@@ -418,7 +424,16 @@
     "path": "deployments/k8s/aks/README.md",
     "area": "admin-guide",
     "group": "Installation",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Overview",
+      "How the Azure pieces map to APEX Load config",
+      "Fresh deployment",
+      "Migrating from on-prem Kubernetes",
+      "Operational notes",
+      "Integration readiness",
+      "Azure Monitor managed Prometheus overlay"
+    ]
   },
   {
     "id": "install-helm",
@@ -439,18 +454,24 @@
   {
     "id": "install-terraform",
     "title": "Azure infrastructure",
-    "path": "deployments/azure/terraform/README.md",
+    "path": "deployments/k8s/aks/README.md",
     "area": "admin-guide",
     "group": "Installation",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Azure Terraform"
+    ]
   },
   {
     "id": "install-monitoring",
     "title": "Kubernetes monitoring",
-    "path": "deployments/k8s/monitoring/README.md",
+    "path": "deployments/README.md",
     "area": "admin-guide",
     "group": "Installation",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Kubernetes monitoring stack"
+    ]
   },
   {
     "id": "lr-web",
