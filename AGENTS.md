@@ -160,9 +160,9 @@ Every new feature, bug fix, or refactor **must** include corresponding tests. Th
 requirement — not optional. When adding or modifying code:
 - Add unit tests for new functions and methods in `*_test.go` files alongside the source.
 - Cover both the happy path and meaningful edge cases (empty inputs, error conditions, boundary values).
-- Run `go test ./...` before considering any Go change complete.
+- During Go development, run the tests for the affected packages for fast feedback. The full `go test ./...` suite remains a required CI merge gate; run it locally before merge when the change crosses package boundaries, affects shared infrastructure, or is likely to change behavior outside the directly affected packages.
 - If a change touches the dashboard, verify UI behavior in a browser (type checking alone is insufficient).
-- After frontend or user-workflow code changes, run `cd dashboard && npm run test:cycle`. This includes unit checks, a fresh embedded build, and both dev-admin and local-auth Playwright workflow profiles. CI runs the same browser profiles on code changes; do not replace them with route-only smoke checks.
+- During dashboard development, run typecheck, lint, relevant unit tests, and the affected Playwright workflows in each impacted auth profile. The full dashboard checks remain a required CI merge gate; CI builds the embedded dashboard and runs both dev-admin and local-auth Playwright profiles. Run `cd dashboard && npm run test:cycle` locally before merge for broad UI changes or changes to shared workflows, authentication, routing, or build configuration. Do not replace browser verification with route-only smoke checks.
 - Test files live next to the code they test (e.g. `pkg/engine/metrics_test.go` tests `metrics.go`).
 - Use table-driven tests where multiple input/output combinations exist.
 - Do not mock internal packages unless required for isolation; prefer testing against real implementations.
