@@ -1,5 +1,5 @@
 # Each output maps onto a value in deployments/k8s/aks (configmap.yaml,
-# serviceaccounts.yaml, kustomization.yaml) — see the README for the wiring.
+# serviceaccounts.yaml, kustomization.yaml) — see deployments/k8s/aks/README.md (Azure Terraform) for the wiring.
 
 output "resource_group_name" {
   value = azurerm_resource_group.main.name

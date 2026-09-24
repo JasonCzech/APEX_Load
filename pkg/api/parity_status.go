@@ -381,7 +381,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"docs/COMPETITIVE_COMPARISON.md#specialized-enterprise-protocols",
-				"docs/archive/plans/PROTOCOL_EXTENSION_PLAN.md",
+				"docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md",
 				"docs/BROWSER_ROADMAP.md#vision-and-architecture",
 			},
 			Remaining: []string{

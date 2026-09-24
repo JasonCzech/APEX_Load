@@ -3,8 +3,10 @@
 Rolling log for the test program. Two sources feed it:
 
 1. **Inherited** — the 11 defects left open by
-   [`docs/archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md`](../archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md).
-   Each is *partly* fixed; the review records exactly which half remains.
+   whole-application review of 2026-08-02 (312 of 323 defects fixed; the file was removed from the
+   archive on 2026-09-24 and is recoverable with
+   `git show 587d279b8:docs/archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md`).
+   Every remaining item is tracked in the table below, so nothing depends on that file.
 2. **Found** — anything this program's suites catch, logged as `QA-nnn`.
 
 States: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `FIXED` · `DEFERRED` (needs a written rationale)
@@ -16,7 +18,7 @@ resolution cell must use `owner=<name>; review=YYYY-MM-DD; target=M<n>; rational
 
 **Re-validated 2026-08-18: 10 of the 11 are already fixed. One remains.**
 
-The `WHOLE_APP_REVIEW_2026-08-02.md` snapshot is now more than two weeks stale, and substantial work
+The 2026-08-02 whole-application review snapshot is now more than two weeks stale, and substantial work
 landed after it — including `6938e544e` on 2026-08-10. Every entry below was checked against current
 code rather than taken from the review. Finding #154 (`pool_id` stripping), which the review did not
 even list as open, was likewise found already fixed.
@@ -51,7 +53,7 @@ jar no longer harvests values from the system under test into the runtime secret
 cookie value issued by the SUT was never platform-managed secret material, so treating it as such
 was the actual defect.
 
-**Why the tracker said otherwise.** `WHOLE_APP_REVIEW_2026-08-02.md` recorded DEF-11 as "no code
+**Why the tracker said otherwise.** The 2026-08-02 whole-application review recorded DEF-11 as "no code
 change at all" and named two tests as pinning the disputed behaviour. The review is dated
 **2026-08-02**; the fix landed **2026-08-10**. One of the two named tests
 (`TestBoundedCookieJarRuntimeSnapshotProtectsShortApplicationDefinedCookies`) no longer exists —

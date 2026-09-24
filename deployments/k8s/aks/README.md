@@ -1,5 +1,7 @@
 # APEX Load on Azure AKS — deployment & on-prem migration guide
 
+## Overview
+
 Production-grade manifests for running APEX Load on AKS with the full Azure
 data platform: PostgreSQL Flexible Server, Azure Cache for Redis, Blob Storage
 archives, Key Vault script secrets (workload identity — no static tokens), a
@@ -9,7 +11,7 @@ Controller-loss fencing is mandatory. Follow the maintenance-window rollout
 gate and acceptance drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision)
 when upgrading from a tokenless release.
 
-The matching infrastructure lives in [`deployments/azure/terraform`](../../azure/terraform/README.md).
+The matching infrastructure lives in [`deployments/azure/terraform`](../../azure/terraform) (see [Azure Terraform](#azure-terraform)).
 
 ```
                         ┌─ AKS (apexload namespace) ─────────────────────┐
@@ -332,3 +334,141 @@ Terraform grants that identity `Monitoring Reader` at the resource-group scope;
 scope it more tightly if your managed Prometheus workspace lives elsewhere.
 
 The checked-in overlay is a template: it needs a cluster-specific workspace query endpoint and KEDA authentication before it works.
+
+## Azure Terraform
+
+Provisions the Azure data platform and the selected APEX Load compute roles. Set
+`controller_compute` and `generator_compute` independently to `aks`,
+`container_apps`, or `external`; AKS is omitted when neither role selects it.
+
+| Resource | Purpose | Maps to |
+|---|---|---|
+| AKS cluster | Optional controller and/or generator Kubernetes runtime. | `deployments/k8s/aks` |
+| Azure Container Apps + Jobs | Optional PaaS controller, warm generators, and burst generators. | `containerapps.tf` |
+| `loadgen` node pool | Dedicated autoscaling pool for generators (taint/label `apexload.io/...=generators`). | `generator-statefulset.yaml` nodeSelector |
+| ACR | Container images. Kubelet identity gets `AcrPull` — no pull secrets. | `kustomization.yaml` images |
+| PostgreSQL Flexible Server 16 | Enterprise persistence (`APEXLOAD_STORE=postgres`). Required for App Service topology (SQLite is unsafe on the CIFS `/home` share). | Secret `APEXLOAD_DATABASE_URL` / App Service app setting |
+| Azure Managed Redis | Default live-run state + WebSocket fanout cache. Legacy Azure Cache remains an explicit migration bridge. | Secret `APEXLOAD_REDIS_URL` / controller environment |
+| Storage account + `apexload-archives` container | Run-evidence archives (`APEXLOAD_ARCHIVE_BACKEND=azure_blob`). Account keys disabled — workload identity / managed identity only. | ConfigMap `AZURE_STORAGE_ACCOUNT`, `APEXLOAD_ARCHIVE_CONTAINER` |
+| Key Vault (RBAC) | `{{secret.*}}` script secrets and gRPC TLS PEM blobs (App Service topology). | ConfigMap `APEXLOAD_AZURE_KEY_VAULT_URL`; App Service Key Vault references |
+| User-assigned identities + federated credentials | Split workload identities for `apexload-controller` and `apexload-generator`. Controller gets Blob + Key Vault secret-management access; generators retain read-only Key Vault access. | `serviceaccounts.yaml` client-id annotations; App Service system-assigned identity needs controller-equivalent roles |
+| Private networking | Production default private endpoints/private DNS for PostgreSQL, Redis, Blob, and Key Vault. | `network_mode=private` |
+
+### Usage
+
+```bash
+cd deployments/azure/terraform
+cp terraform.tfvars.example terraform.tfvars   # edit
+terraform init \
+  -backend-config=resource_group_name=<tfstate-rg> \
+  -backend-config=storage_account_name=<tfstateaccount> \
+  -backend-config=container_name=tfstate \
+  -backend-config=key=apexload.terraform.tfstate
+terraform plan
+terraform apply
+```
+
+New deployments use Azure Managed Redis. Existing state that contains
+`azurerm_redis_cache.main` must first set
+`redis_service = "azure_cache_legacy"`. Then migrate application cache state
+(or schedule a cache-safe outage), switch to `managed_redis`, review the
+replacement plan, and apply. Redis contains live coordination state rather than
+durable run evidence, so do not switch while tests or provisioning operations
+are active.
+
+### Wiring the outputs into the manifests
+
+```bash
+# Cluster credentials
+$(terraform output -raw kubeconfig_command)
+
+# Service accounts: workload identity client IDs
+export CONTROLLER_WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw controller_workload_identity_client_id)
+export GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID=$(terraform output -raw generator_workload_identity_client_id)
+terraform output -raw keda_workload_identity_client_id # → KEDA Azure Monitor TriggerAuthentication identityId
+
+# ConfigMap values (deployments/k8s/aks/configmap.yaml)
+terraform output -raw storage_account_name   # → AZURE_STORAGE_ACCOUNT
+terraform output -raw key_vault_url          # → APEXLOAD_AZURE_KEY_VAULT_URL
+
+# Secret (never committed)
+kubectl -n apexload create secret generic apexload-data-platform \
+  --from-literal=APEXLOAD_DATABASE_URL="$(terraform output -raw apexload_database_url)" \
+  --from-literal=APEXLOAD_REDIS_URL="$(terraform output -raw apexload_redis_url)" \
+  --from-literal=APEXLOAD_GRPC_AUTH_TOKEN="$(openssl rand -hex 32)"
+
+# Images (deployments/k8s/aks/kustomization.yaml)
+terraform output -raw acr_login_server       # → images newName prefix
+```
+
+Full migration steps (data, archives, cutover): [Migrating from on-prem Kubernetes](#migrating-from-on-prem-kubernetes).
+
+For Kustomize deployments, prefer the render script so placeholders are checked
+before anything is applied:
+
+```bash
+scripts/render-aks-manifests.sh --output /tmp/apexload-aks.yaml --image-tag "$(git rev-parse --short HEAD)"
+kubectl apply -f /tmp/apexload-aks.yaml
+```
+
+### Generator Capacity Guard
+
+`terraform plan` validates that the autoscaling `loadgen` node pool can schedule
+the configured KEDA generator ceiling. The check is intentionally parametric:
+`generator_keda_max_replicas`, `generator_node_vm_size`,
+`generator_node_max_count`, `generator_pod_cpu_millicores`,
+`generator_pod_memory_mib`, and `generator_node_reserved_fraction` all feed the
+precondition on the generator node pool. If you change the AKS generator manifest
+requests or the KEDA `maxReplicaCount`, update the matching Terraform variables
+in the same change.
+
+### Wiring the outputs into App Service
+
+If deploying the controller to Azure App Service instead of AKS, wire the same Terraform outputs as app settings:
+
+```bash
+# Get the outputs you need
+DB_URL=$(terraform output -raw apexload_database_url)
+REDIS_URL=$(terraform output -raw apexload_redis_url)
+STORAGE_ACCOUNT=$(terraform output -raw storage_account_name)
+KV_URL=$(terraform output -raw key_vault_url)
+
+# Set app settings (use Key Vault references for secrets in production)
+az webapp config appsettings set -g <resource-group> -n <app-name> --settings \
+  APEXLOAD_STORE=postgres \
+  APEXLOAD_DATABASE_URL="$DB_URL" \
+  APEXLOAD_ARCHIVE_BACKEND=azure_blob \
+  APEXLOAD_ARCHIVE_CONTAINER=apexload-archives \
+  AZURE_STORAGE_ACCOUNT="$STORAGE_ACCOUNT" \
+  APEXLOAD_AZURE_KEY_VAULT_URL="$KV_URL" \
+  APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity \
+  APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true \
+  SCM_DO_BUILD_DURING_DEPLOYMENT=false
+```
+
+The App Service's system-assigned managed identity must have
+`Storage Blob Data Contributor` on the storage account and
+`Key Vault Secrets Officer` on the Key Vault—the same roles as the AKS
+controller workload identity. Generator connectivity requires VNet integration
+and static `APEXLOAD_GENERATORS` targets (see
+`deployments/azure/appservice/` and `docs/CICD_INTEGRATION.md`).
+
+### Notes
+
+- **State**: the module declares an `azurerm` backend. Use `terraform init
+  -backend-config=...`; local state is only for throwaway experiments via
+  `terraform init -backend=false`.
+- **Networking**: `network_mode=private` is the production default and creates a
+  VNet, AKS subnets, private endpoints, and private DNS for PostgreSQL, Redis,
+  Blob Storage, and Key Vault. `network_mode=public` keeps the earlier
+  evaluation posture with public data-plane endpoints plus PostgreSQL firewall
+  rules; set `public_network_allowed_cidrs` to restrict Storage and Key Vault
+  public endpoints in that mode.
+- **Observability**: a Log Analytics workspace and diagnostic settings are
+  created for AKS, ACR, PostgreSQL, Redis, Storage, and Key Vault.
+- **Prometheus**: the KEDA ScaledObject expects a Prometheus query endpoint.
+  Installing kube-prometheus-stack in-cluster mirrors the on-prem setup; Azure
+  Monitor managed Prometheus also works with a workload-identity
+  TriggerAuthentication (see [Azure Monitor managed Prometheus overlay](#azure-monitor-managed-prometheus-overlay)).
+- **Purge protection** is enabled on Key Vault; destroying the stack leaves the
+  vault in soft-deleted state for 30 days.

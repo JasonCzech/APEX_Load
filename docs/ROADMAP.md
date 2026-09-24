@@ -90,7 +90,7 @@ Variant comparison and card layout: each protocol's dashboard card follows hero 
 
 Stages 2-4 are independent after Stage 1. Risks: `ServerTelemetry` growth (keep a nil pointer, benchmark); SLA config friction (optional, sensible defaults); baseline mismatches across script versions; UI surface multiplication (shared card layout, protocol selector); JMS broker metrics needing provider APIs (start client-observable, broker APIs are L3).
 
-Related: [BROWSER_ROADMAP.md](BROWSER_ROADMAP.md) is the most complete existing L2 example; [archive/plans/PROTOCOL_EXTENSION_PLAN.md](archive/plans/PROTOCOL_EXTENSION_PLAN.md) gave L1 direction for SOAP and Java HTTP.
+Related: [BROWSER_ROADMAP.md](BROWSER_ROADMAP.md) is the most complete existing L2 example; [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md) records the shipped L1 SOAP and Java HTTP support.
 
 ---
 

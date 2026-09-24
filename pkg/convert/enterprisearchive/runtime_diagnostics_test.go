@@ -10,6 +10,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+// Fixture: sanitized runtime-profile twin of acc_wls_reg_1.zip (VuGen 24.3); see
+// docs/RUNTIME_CAPTURE_DIAGNOSTICS.md. No customer data is included.
 func TestAccRuntimeDiagnosticsProfile(t *testing.T) {
 	files := map[string]string{}
 	entries, err := os.ReadDir("testdata/acc_runtime_diagnostics")

@@ -375,7 +375,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 **Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC, HAR, JMeter, DevWeb, AsyncAPI, and enterprise script archive migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
 
-**Evidence:** `docs/archive/plans/PROTOCOL_EXTENSION_PLAN.md`, `docs/BROWSER_ROADMAP.md#vision-and-architecture`, `/api/v1/protocol-bundles/support-matrix`
+**Evidence:** `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md`, `docs/BROWSER_ROADMAP.md#vision-and-architecture`, `/api/v1/protocol-bundles/support-matrix`
 
 **Remaining:** Complete customer-backed demand assessment. Publish explicit non-goals or coexistence guidance for unsupported legacy protocols. JMS/broker-specific diagnostics (queue depth, DLQ, consumer lag) are partially implemented.
 

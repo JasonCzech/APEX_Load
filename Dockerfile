@@ -32,7 +32,6 @@ COPY deployments/README.md ./deployments/README.md
 COPY deployments/docker/ ./deployments/docker/
 COPY deployments/helm/ ./deployments/helm/
 COPY deployments/k8s/ ./deployments/k8s/
-COPY deployments/azure/terraform/README.md ./deployments/azure/terraform/README.md
 COPY dashboard/ ./dashboard/
 # The dashboard build deliberately writes to /src/pkg/api/static, matching the
 # go:embed path used by the controller. Building it here makes image contents

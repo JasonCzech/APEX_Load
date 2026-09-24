@@ -1,5 +1,5 @@
 # Each output maps onto a value in deployments/k8s/eks (configmap.yaml,
-# serviceaccounts.yaml, kustomization.yaml) — see the README for the wiring.
+# serviceaccounts.yaml, kustomization.yaml) — see deployments/k8s/eks/README.md (AWS Terraform) for the wiring.
 #
 # scripts/render-eks-manifests.sh consumes these names EXACTLY; renaming one
 # without updating the script leaves a CHANGE-ME placeholder in the rendered

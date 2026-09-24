@@ -55,7 +55,7 @@ Local test servers provide behavior evidence. No application endpoint from the s
 
 ### Validation record (2026-09-23)
 
-Point-in-time record (2026-09-23); the "not green" statements below are historical. `docs/contracts/orchestration-v1/CODE_REVIEW.md` records a full `npm run test:cycle` passing (typecheck, lint, unit tests, build, dev-admin and local-auth browser workflows) on a different change set, so the browser-suite failures listed here were not reproduced there; this document has not been re-run since. The following records the initial implementation checks. See [Review notes](#review-notes) below for review fixes and the latest test outcomes.
+Point-in-time record (2026-09-23); the "not green" statements below are historical. the Code review section of `docs/contracts/orchestration-v1/README.md` records a full `npm run test:cycle` passing (typecheck, lint, unit tests, build, dev-admin and local-auth browser workflows) on a different change set, so the browser-suite failures listed here were not reproduced there; this document has not been re-run since. The following records the initial implementation checks. See [Review notes](#review-notes) below for review fixes and the latest test outcomes.
 
 - The final `go test ./...` passed. An earlier concurrent run exposed the existing 80 ms generator execution-lease test's timing sensitivity; five isolated repetitions and the final full suite passed. Focused race checks passed for the engine, HTTP/PAC, WebSocket, and browser changes, including the final PAC alias/shadowing regressions.
 - Dashboard type checking, lint, all 4,446 unit tests, and the embedded build passed.

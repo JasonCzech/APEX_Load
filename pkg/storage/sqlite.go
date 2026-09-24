@@ -618,7 +618,7 @@ type timescaleHypertable struct {
 // constraints, so it can be converted cleanly. usage_accounting_snapshots
 // (PRIMARY KEY id) and archive-resident resource samples require a composite key
 // that includes the partition column before they can be converted; they are left
-// as documented, gated extensions (see docs/archive/plans/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md).
+// as documented, gated extensions (see docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md).
 var timescaleHypertables = []timescaleHypertable{
 	{table: "test_interval_summaries", timeColumn: "timestamp"},
 }

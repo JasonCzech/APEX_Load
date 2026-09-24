@@ -182,7 +182,7 @@ pollute every later signal.
 | 1 | Stand up `docs/qa/` + `status_inventory_test.go`. Baseline per-package coverage (exclude `.claude/worktrees/`). Publish the first dashboard artifact. | 8 |
 | 2 | Coverage gate: add a `coverage` job to `ci.yml` enforcing a **ratchet** (floor = current, never decreases) plus a diff-coverage floor on changed files. Record baselines in `evidence/M0/coverage-baseline.json`. | 8 |
 | 3 | **Deterministic time harness.** Extend the repository's injected `now func() time.Time` convention from epoch fencing through scheduler and execution leadership; do not introduce a competing clock abstraction. Run repeated Go and Playwright flake hunts nightly and seed `FLAKE_LOG.md`. | 8 |
-| 4 | Enable `bodyclose`, `sqlclosecheck`, `rowserrcheck`, `nilerr` in `.golangci.yml` and fix the ~40 violations its header already enumerates. Triage the 11 open items in `docs/archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md` into `DEFECTS.md`. | 7 |
+| 4 | Enable `bodyclose`, `sqlclosecheck`, `rowserrcheck`, `nilerr` in `.golangci.yml` and fix the ~40 violations its header already enumerates. Triage the 11 open items of the 2026-08-02 whole-application review into `DEFECTS.md` (done; see its "Inherited" section). | 7 |
 
 **Key files:** `.github/workflows/ci.yml`, `.golangci.yml`, `docs/qa/*`, `pkg/api/scheduler.go`,
 `pkg/api/execution_leadership.go`, `pkg/distributed/generatorrpc/execution_epoch.go`.
