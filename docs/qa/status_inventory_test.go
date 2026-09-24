@@ -649,7 +649,7 @@ func TestOpenHighSeverityRisksHaveOwners(t *testing.T) {
 
 // TestTrackerFilesExist guards the tracker's own shape.
 func TestTrackerFilesExist(t *testing.T) {
-	for _, name := range []string{"STATUS.md", "DEFECTS.md", "FLAKE_LOG.md", "TEST_PROGRAM.md", "evidence-contract.json", "evidence-manifest.schema.json", "DASHBOARD.md", "HEADLINE_METRICS.md", "E2E_SUITES.md"} {
+	for _, name := range []string{"STATUS.md", "DEFECTS.md", "FLAKE_LOG.md", "TEST_PROGRAM.md", "evidence-contract.json", "evidence-manifest.schema.json", "DASHBOARD.md", "E2E_SUITES.md"} {
 		if !isCommitted(t, name) {
 			t.Errorf("docs/qa/%s is not a committed regular file in HEAD", name)
 		}
@@ -657,13 +657,8 @@ func TestTrackerFilesExist(t *testing.T) {
 }
 
 func TestGeneratedDashboardIsFresh(t *testing.T) {
-	metrics := exec.Command("python3", "../../scripts/qa-generate-metrics.py",
-		"--root", "../..", "--output", "docs/qa/HEADLINE_METRICS.md", "--check")
-	if output, err := metrics.CombinedOutput(); err != nil {
-		t.Fatalf("QA metrics freshness: %v\n%s", err, output)
-	}
 	command := exec.Command("python3", "../../scripts/qa-generate-dashboard.py",
-		"--status", "STATUS.md", "--matrix", "E2E_SUITES.md", "--metrics", "HEADLINE_METRICS.md",
+		"--root", "../..", "--status", "STATUS.md", "--matrix", "E2E_SUITES.md",
 		"--api-contract", "evidence/M1/api-contract-matrix.json", "--output", "DASHBOARD.md", "--check")
 	command.Dir = "."
 	if output, err := command.CombinedOutput(); err != nil {

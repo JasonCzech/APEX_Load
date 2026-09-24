@@ -1,6 +1,6 @@
 # Test Program — Status
 
-Point-in-time narrative; the generated [DASHBOARD.md](DASHBOARD.md) and [HEADLINE_METRICS.md](HEADLINE_METRICS.md) are the current state and are not hand-edited. Scope is defined by [TEST_PROGRAM.md](TEST_PROGRAM.md); this file records only
+Point-in-time narrative; the generated [DASHBOARD.md](DASHBOARD.md) is the current state and is not hand-edited. Scope is defined by [TEST_PROGRAM.md](TEST_PROGRAM.md); this file records only
 *state*. Enforced by `status_inventory_test.go` — a milestone cannot be marked `DONE` without a
 populated `evidence/M<n>/` directory.
 
@@ -82,11 +82,11 @@ real PostgreSQL reconciliation, and restore drill remain open.
 ## Headline metrics
 
 Every number is generated from tracked files or committed evidence in
-[HEADLINE_METRICS.md](HEADLINE_METRICS.md). `STATUS.md` no longer carries a hand-maintained copy.
+[DASHBOARD.md](DASHBOARD.md). `STATUS.md` no longer carries a hand-maintained copy.
 
 ### Reference counts (baseline, 2026-08-18; not current)
 
-These are the program-start baseline. Current values (e.g. 44 Playwright spec files) are in the generated [HEADLINE_METRICS.md](HEADLINE_METRICS.md).
+These are the program-start baseline. Current values (e.g. 44 Playwright spec files) are in the generated [DASHBOARD.md](DASHBOARD.md).
 
 Derived by `scripts/qa-baseline-counts.sh` — quote that script, never a hand-run glob. These
 numbers first disagreed across three files because they were gathered ad hoc; the dashboard figure

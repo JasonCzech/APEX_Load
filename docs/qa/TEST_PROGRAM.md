@@ -4,8 +4,8 @@ _Program scope of record. Live state is in [STATUS.md](STATUS.md); defects in [D
 
 ## Context
 
-APEX Load is already heavily tested at the unit level; the current inventory is generated in
-[HEADLINE_METRICS.md](HEADLINE_METRICS.md), rather than copied into this scope document.
+APEX Load is already heavily tested at the unit level; the current inventory is generated in the
+[QA dashboard](DASHBOARD.md), rather than copied into this scope document.
 **This is not a "write more tests" plan.** The gap is different and specific:
 
 | What's missing | Evidence |
@@ -55,8 +55,7 @@ All tracking lives in the repo under a new `docs/qa/` directory, plus a regenera
 docs/qa/
   TEST_PROGRAM.md          # this plan, versioned; the single source of scope
   STATUS.md                # milestone + workstream table, updated weekly
-  DASHBOARD.md             # generated repository-owned view; never hand-edited
-  HEADLINE_METRICS.md      # generated from tracked files and committed evidence
+  DASHBOARD.md             # generated status, coverage, and metric summaries; never hand-edited
   E2E_SUITES.md            # Tier-0 journey + assertion matrix, workflow and recording suites
   evidence-contract.json   # required committed artifacts per milestone
   evidence-manifest.schema.json # common evidence metadata/hash contract

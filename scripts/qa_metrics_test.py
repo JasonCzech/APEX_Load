@@ -1,15 +1,11 @@
-import importlib.util
 from pathlib import Path
+import sys
 import unittest
 
 
-spec = importlib.util.spec_from_file_location("qa_generate_metrics", Path(__file__).with_name("qa-generate-metrics.py"))
-module = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(module)
-open_inherited_defects = module.open_inherited_defects
-packages_without_tests = module.packages_without_tests
-tier0_states = module.tier0_states
+sys.path.insert(0, str(Path(__file__).parent))
+
+from qa_metrics import open_inherited_defects, packages_without_tests, tier0_states
 
 
 class QAMetricsTest(unittest.TestCase):

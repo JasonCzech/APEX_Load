@@ -13,7 +13,7 @@ class QADashboardTest(unittest.TestCase):
             root = Path(directory)
             status = root / "STATUS.md"
             matrix = root / "E2E_SUITES.md"
-            metrics = root / "HEADLINE_METRICS.md"
+            metrics = root / "metrics-table.md"
             api_contract = root / "api-contract-matrix.json"
             output = root / "DASHBOARD.md"
             status.write_text(

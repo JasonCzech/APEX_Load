@@ -64,8 +64,7 @@ The current controller can run in either local or distributed mode without chang
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
 - **[docs/ENTERPRISE_PLATFORM_RUNBOOK.md](docs/ENTERPRISE_PLATFORM_RUNBOOK.md)** — Current enterprise storage, cache, archive, and telemetry operations
 - **[docs/COMPETITIVE_COMPARISON.md](docs/COMPETITIVE_COMPARISON.md)** — How APEX Load compares to LoadRunner/LRE, k6, NeoLoad, JMeter, and DevWeb; honest leads/matches/trails; migration and import reference (RTS mappings, protocol routing, bundle coverage)
-- **[docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)** — Current browser canary, mobile emulation, client metrics, and benchmark guidance
-- **[docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)** — Current JMS, Kafka, AsyncAPI, and Event Hubs support summary
+- **[docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)** — Current web/API, browser/mobile, messaging, Java Vuser, and SAP GUI support boundaries
 - **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
 - **[docs/ACCESS_SURFACES.md](docs/ACCESS_SURFACES.md)** — Hosted browser, desktop workspace, CLI, deployment identity, binding defaults, and desktop promotion governance
 - **[docs/recording-agent.md](docs/recording-agent.md)** — Production packaging and deployment guidance for the local browser Recording Agent

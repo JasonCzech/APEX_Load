@@ -1,6 +1,6 @@
-# Help Center
+# Observability Integrations
 
-A guided collection of operator articles for the APEX Load dashboard.
+Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, Power BI, and Elastic integrations.
 
 
 ## Prometheus scrape endpoint
