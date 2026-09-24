@@ -636,7 +636,7 @@ func TestQuarantinedFlakesHaveOwnersAndUnexpiredDates(t *testing.T) {
 }
 
 func TestOpenHighSeverityRisksHaveOwners(t *testing.T) {
-	for _, line := range readLines(t, "RISK_REGISTER.md") {
+	for _, line := range readLines(t, "TEST_PROGRAM.md") {
 		cells := splitRow(line)
 		if len(cells) != 7 || !strings.HasPrefix(cells[0], "R-") || cells[2] != "High" || cells[6] != "OPEN" {
 			continue
@@ -649,7 +649,7 @@ func TestOpenHighSeverityRisksHaveOwners(t *testing.T) {
 
 // TestTrackerFilesExist guards the tracker's own shape.
 func TestTrackerFilesExist(t *testing.T) {
-	for _, name := range []string{"STATUS.md", "DEFECTS.md", "RISK_REGISTER.md", "FLAKE_LOG.md", "TEST_PROGRAM.md", "evidence-contract.json", "evidence-manifest.schema.json", "DASHBOARD.md", "HEADLINE_METRICS.md", "TIER0_ASSERTION_MATRIX.md", "RELEASE_TEST_CHECKLIST.md"} {
+	for _, name := range []string{"STATUS.md", "DEFECTS.md", "FLAKE_LOG.md", "TEST_PROGRAM.md", "evidence-contract.json", "evidence-manifest.schema.json", "DASHBOARD.md", "HEADLINE_METRICS.md", "E2E_SUITES.md"} {
 		if !isCommitted(t, name) {
 			t.Errorf("docs/qa/%s is not a committed regular file in HEAD", name)
 		}
@@ -663,7 +663,7 @@ func TestGeneratedDashboardIsFresh(t *testing.T) {
 		t.Fatalf("QA metrics freshness: %v\n%s", err, output)
 	}
 	command := exec.Command("python3", "../../scripts/qa-generate-dashboard.py",
-		"--status", "STATUS.md", "--matrix", "TIER0_ASSERTION_MATRIX.md", "--metrics", "HEADLINE_METRICS.md",
+		"--status", "STATUS.md", "--matrix", "E2E_SUITES.md", "--metrics", "HEADLINE_METRICS.md",
 		"--api-contract", "evidence/M1/api-contract-matrix.json", "--output", "DASHBOARD.md", "--check")
 	command.Dir = "."
 	if output, err := command.CombinedOutput(); err != nil {

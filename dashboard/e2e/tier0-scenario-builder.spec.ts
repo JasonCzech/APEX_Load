@@ -38,7 +38,7 @@ function isScenarioCreate(response: Response): boolean {
     && new URL(response.url()).pathname === '/api/v1/scenarios'
 }
 
-// Tier-0 journey step S5 (docs/qa/TIER0_JOURNEY.md): traverse all five
+// Tier-0 journey step S5 (docs/qa/E2E_SUITES.md): traverse all five
 // Scenario Builder steps, prove state survives backward/forward navigation,
 // and require the Review step and stored API resource to agree with the draft.
 test('[U09] the five-step scenario builder preserves the draft and reviews the saved values', async ({ page, request }) => {

@@ -2,7 +2,7 @@
 """Turn a Go coverage profile into a per-package statement-coverage baseline.
 
 Emits the versioned-JSON-plus-deterministic-Markdown shape the repository
-already uses for performance evidence (docs/PERFORMANCE_BENCHMARK_EVIDENCE.md),
+already uses for performance evidence (docs/PERFORMANCE_BENCHMARKS.md),
 so the coverage ratchet has a stable artifact to compare against.
 
 Usage: coverage_baseline_report.py PROFILE OUT PKGLIST STATUS

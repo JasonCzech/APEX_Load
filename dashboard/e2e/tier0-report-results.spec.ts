@@ -2,7 +2,7 @@ import type { APIRequestContext } from '@playwright/test'
 
 import { expect, test } from './support/liveRun'
 
-// Tier-0 journey steps S10 and S12 (docs/qa/TIER0_JOURNEY.md): reading the
+// Tier-0 journey steps S10 and S12 (docs/qa/E2E_SUITES.md): reading the
 // report a finished run produced, and finding that run again afterwards.
 //
 // The report is the same run told three ways. The assertion that carries weight
@@ -46,7 +46,7 @@ async function waitForTerminal(request: APIRequestContext, testId: string): Prom
  * GET /api/v1/tests/{id}/report serves a rendered HTML document, not JSON —
  * parsing it as JSON fails with `Unexpected token '<'`, which reads like a
  * server error rather than a wrong content type. Recorded in
- * docs/qa/TIER0_JOURNEY.md so the next caller does not repeat it.
+ * docs/qa/E2E_SUITES.md so the next caller does not repeat it.
  */
 async function waitForReport(request: APIRequestContext, testId: string): Promise<string> {
   const deadline = Date.now() + 90_000

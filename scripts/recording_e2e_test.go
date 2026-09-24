@@ -64,7 +64,7 @@ func TestRecordingScenarioInventoryHasCoverageAssertions(t *testing.T) {
 	if err := json.Unmarshal(b, &titles); err != nil {
 		t.Fatal(err)
 	}
-	matrix, err := os.ReadFile("../docs/qa/RECORDING_E2E.md")
+	matrix, err := os.ReadFile("../docs/qa/E2E_SUITES.md")
 	if err != nil {
 		t.Fatal(err)
 	}

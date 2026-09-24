@@ -24,7 +24,7 @@ function routeScope(url: string): URLSearchParams {
   return new URLSearchParams(query)
 }
 
-// Tier-0 journey step S2 (docs/qa/TIER0_JOURNEY.md): the workspace hierarchy a
+// Tier-0 journey step S2 (docs/qa/E2E_SUITES.md): the workspace hierarchy a
 // user builds before anything else can happen.
 //
 // Two assertions here are regression guards rather than happy-path checks:

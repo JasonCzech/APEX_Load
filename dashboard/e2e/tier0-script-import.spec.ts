@@ -16,7 +16,7 @@ function record(value: unknown, what: string): Record<string, unknown> {
   return value as Record<string, unknown>
 }
 
-// Tier-0 journey step S3 (docs/qa/TIER0_JOURNEY.md): import a small,
+// Tier-0 journey step S3 (docs/qa/E2E_SUITES.md): import a small,
 // dependency-free OpenAPI contract, validate the generated script, commit it,
 // and prove that the stored result is visible in the project Script Library.
 test('[U05] OpenAPI validation stays dry-run until the reviewed script is committed to the library', async ({ page, request }) => {

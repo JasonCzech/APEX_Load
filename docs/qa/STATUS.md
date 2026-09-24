@@ -43,7 +43,7 @@ QA-owned diff.
 
 M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally against a fresh
 controller and throwaway database. Completion is tracked by
-[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1–S12 are green. A continuous U01 full-arc smoke
+[the Tier-0 assertion matrix](E2E_SUITES.md#tier-0-assertion-matrix), not spec count: S1–S12 are green. A continuous U01 full-arc smoke
 is implemented in `dashboard/e2e/workflow-local-auth.spec.ts` (see the final paragraph of the matrix);
 whether it is enforced on every PR has not been re-verified here. S1 uses a separate local-auth controller
 profile and drives both rejected and successful seeded administrator login.

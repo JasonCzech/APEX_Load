@@ -4,7 +4,7 @@ import { basename } from 'node:path'
 
 import { expect, test } from './support/liveRun'
 
-// Tier-0 journey steps S8, S9 and S11 (docs/qa/TIER0_JOURNEY.md): controlling a
+// Tier-0 journey steps S8, S9 and S11 (docs/qa/E2E_SUITES.md): controlling a
 // run mid-flight, stopping it, and proving the evidence it produced is intact.
 //
 // The archive assertion is the strongest one in the whole journey: it proves the

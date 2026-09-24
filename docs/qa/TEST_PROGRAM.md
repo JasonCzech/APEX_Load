@@ -1,6 +1,6 @@
 # APEX Load — 9-Month Progressive Test & Infrastructure-Readiness Program
 
-_Program scope of record. Live state is in [STATUS.md](STATUS.md); defects in [DEFECTS.md](DEFECTS.md); risks in [RISK_REGISTER.md](RISK_REGISTER.md). Started 2026-08-18. Calendar months are forecasts; only exit gates close milestones._
+_Program scope of record. Live state is in [STATUS.md](STATUS.md); defects in [DEFECTS.md](DEFECTS.md); risks in the [live risk register](#live-risk-register). Started 2026-08-18. Calendar months are forecasts; only exit gates close milestones._
 
 ## Context
 
@@ -11,9 +11,9 @@ APEX Load is already heavily tested at the unit level; the current inventory is 
 | What's missing | Evidence |
 |---|---|
 | Coverage is collected and thrown away | `ci.yml` writes `coverage.out`, uploads it as a 14-day artifact. No threshold, no diff-coverage, no Codecov. |
-| End-to-end coverage is incomplete | [TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md) records required behavior as `GREEN`, `PARTIAL`, or `MISSING`; spec-file count is not completion evidence. |
-| Every performance claim is unproven | All four targets in `docs/PERFORMANCE_BENCHMARK_EVIDENCE.md` are `attainment_status: not_evaluated`, and the schema validator *rejects* a report claiming `met`. |
-| HA failover has never been tested for real | `APEXLOAD_RUN_HA_FAILOVER_SOAK` is an in-process two-`api.Server` simulation. `docs/AKS_INTEGRATION_READINESS.md` states plainly: no production controller-failover evidence is committed. |
+| End-to-end coverage is incomplete | the [Tier-0 assertion matrix](E2E_SUITES.md#tier-0-assertion-matrix) records required behavior as `GREEN`, `PARTIAL`, or `MISSING`; spec-file count is not completion evidence. |
+| Every performance claim is unproven | All four targets in `docs/PERFORMANCE_BENCHMARKS.md` are `attainment_status: not_evaluated`, and the schema validator *rejects* a report claiming `met`. |
+| HA failover has never been tested for real | `APEXLOAD_RUN_HA_FAILOVER_SOAK` is an in-process two-`api.Server` simulation. `deployments/k8s/aks/README.md` (Integration readiness) states plainly: no production controller-failover evidence is committed. |
 | Converter output lacks an enforced golden inventory | M2 must derive registered converters and require valid and diagnostic cases for each; source-file and converter counts are generated, not embedded here. |
 | Deterministic-time coverage is incomplete | The existing injected `now` convention must cover scheduler, execution leadership, and epoch fencing without introducing a competing clock abstraction. |
 | No SQLite→Postgres migrator, no restore drill | `docs/SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md` tells you to write the migrator yourself. Backup/restore is runbook prose only. |
@@ -36,13 +36,13 @@ The intended outcome: work bottom-up from a rock-solid single-node end-user expe
 ## Guiding principles
 
 1. **Progressive gating.** A milestone's exit gate becomes the next milestone's entry precondition. Fast checks remain PR gates; repeated/integration suites run nightly; cloud, scale, performance, and soak work is executed manually and its committed evidence is validated on every PR.
-2. **Evidence over assertion.** Every claim lands as a committed artifact under `docs/qa/evidence/`. Follow the existing house style in `docs/PERFORMANCE_BENCHMARK_EVIDENCE.md` — versioned JSON plus deterministic Markdown, never prose alone.
+2. **Evidence over assertion.** Every claim lands as a committed artifact under `docs/qa/evidence/`. Follow the existing house style in `docs/PERFORMANCE_BENCHMARKS.md` — versioned JSON plus deterministic Markdown, never prose alone.
 3. **Reuse the repo's own patterns.** This codebase already has excellent conventions to extend rather than replace:
    - Self-enforcing meta-tests — `pkg/convert/enterprisearchive/optin_suite_inventory_test.go` fails if a gated suite isn't documented in `docs/OPTIN_TEST_SUITES.md`.
    - Config-as-data tests — `scripts/*_test.go` and `deployments/k8s/*_test.go` are Go tests asserting on shell scripts, workflow YAML, and manifests.
    - Generated-artifact freshness gates — `go generate ./pkg/api` + `docs/api-endpoint-catalog.json`.
    - Build-tag/env-var opt-in suites with paired `!tag` default files (e.g. `kafka_unavailable_default_test.go`).
-4. **Honesty discipline.** `docs/EVALUATOR_TRUST_PACK.md` and the `*_INTEGRATION_READINESS.md` docs are candid about limits. Keep that. Never promote a status without the artifact behind it.
+4. **Honesty discipline.** `docs/COMPETITIVE_COMPARISON.md#evaluator-trust-pack` and the AKS/EKS README "Integration readiness" sections are candid about limits. Keep that. Never promote a status without the artifact behind it.
 5. **Trap to avoid:** `.claude/worktrees/` holds a full duplicate checkout. Any `find`/`wc`/coverage tooling you build must exclude it or every count will be roughly doubled.
 
 ---
@@ -57,13 +57,12 @@ docs/qa/
   STATUS.md                # milestone + workstream table, updated weekly
   DASHBOARD.md             # generated repository-owned view; never hand-edited
   HEADLINE_METRICS.md      # generated from tracked files and committed evidence
-  TIER0_ASSERTION_MATRIX.md # assertion-level M1 completion inventory
+  E2E_SUITES.md            # Tier-0 journey + assertion matrix, workflow and recording suites
   evidence-contract.json   # required committed artifacts per milestone
   evidence-manifest.schema.json # common evidence metadata/hash contract
-  RISK_REGISTER.md         # open risks w/ owner, severity, mitigation, milestone
   DEFECTS.md               # rolling defect log: id, severity, found-by, milestone, state
   FLAKE_LOG.md             # quarantined tests, first-seen, root cause, un-quarantine date
-  RELEASE_TEST_CHECKLIST.md # drafted in M0, evolved through M7, executed in M8
+  (open risks and the release checklist live in this file: see "Live risk register" and "Release test checklist")
   evidence/
     M0/ … M8/              # coverage snapshots, perf JSON, failover logs, drill transcripts
 ```
@@ -86,14 +85,14 @@ evidence; PR CI validates its manifest rather than attempting to rerun it.
 - *Weekly (~30 min):* update `STATUS.md` — items moved, hours spent, blockers. Append to `FLAKE_LOG.md`.
 - *Monthly (~2 hrs):* close the milestone, generate `evidence/M<n>/SUMMARY.md` with
   `scripts/qa-generate-evidence-summary.py`, regenerate the repository dashboard, and re-score
-  `RISK_REGISTER.md`.
+  the live risk register (this file).
 
 **Headline metrics** (the dashboard's top row — every one starts at zero or unknown):
 
 | Metric | Start | Target |
 |---|---|---|
 | Perf targets `not_evaluated` → measured | 0 / 4 | 4 / 4 |
-| AKS cutover gates passed (`AKS_INTEGRATION_READINESS.md` §Production Migration Gates) | 0 / 10 | 10 / 10 |
+| AKS cutover gates passed (`deployments/k8s/aks/README.md` (Integration readiness) §Production Migration Gates) | 0 / 10 | 10 / 10 |
 | Tier-0 journey assertions green in CI | generated assertion inventory | every required assertion plus the full arc |
 | Go coverage, enforced floor | none | ratchet |
 | Open whole-app-review defects | 11 | 0 or explicitly deferred with rationale |
@@ -222,7 +221,7 @@ archive.
 
 | Week | Work | Hrs |
 |---|---|---|
-| 1 | Maintain `TIER0_ASSERTION_MATRIX.md`, extend the reusable journey fixtures, and run S2–S12 under the `dev-admin` profile. Run S1 separately under `local-auth` and perform a real seeded administrator login; dev bypass does not count as sign-in. | 8 |
+| 1 | Maintain the Tier-0 assertion matrix in `E2E_SUITES.md`, extend the reusable journey fixtures, and run S2–S12 under the `dev-admin` profile. Run S1 separately under `local-auth` and perform a real seeded administrator login; dev bypass does not count as sign-in. | 8 |
 | 2–3 | Close every `PARTIAL`/`MISSING` assertion in the matrix and add one full-arc smoke. Adopt Testing Library, `user-event`, and `jest-dom` for new accessible component tests without mechanically rewriting the existing suite. | 16 |
 | 4 | **API contract matrix.** Generate cases from `docs/api-endpoint-catalog.json` rather than a hard-coded route count. Assert public/authenticated posture plus allowed and denied roles for every protected route. | 7 |
 
@@ -331,7 +330,7 @@ been run wide.
 | 1 | Scale ladder on kind (`make k8s-kind-apply`): 2 → 5 → 10 generators. Verify two-phase common-start, epoch fencing rejects a stale controller, `dns://` discovery re-resolution (15 s), archive pull-through. | 8 |
 | 2 | Failure injection: kill a generator mid-run, partition one, exhaust one's capacity, drain one (`PATCH /api/v1/system/generators/drain`). Assert `pkg/api/distributed_resilience.go` behavior — this file holds open review defect #2. | 8 |
 | 3 | **Find the WebSocket fanout ceiling.** `maxHubClients = 1024`, per-client buffer 64, broadcast channel 256, all with drop counters (`pkg/api/websocket.go:97`). The counters exist because nobody knows where it breaks. Measure and document it. | 8 |
-| 4 | Convert the first two perf targets: **harness overhead < 50 µs** and **ramp rate 500 VUsers/s/pod**, via `make performance-evidence`. Publish real numbers into `docs/PERFORMANCE_BENCHMARK_EVIDENCE.md`. | 7 |
+| 4 | Convert the first two perf targets: **harness overhead < 50 µs** and **ramp rate 500 VUsers/s/pod**, via `make performance-evidence`. Publish real numbers into `docs/PERFORMANCE_BENCHMARKS.md`. | 7 |
 
 **Exit gate:** 10-generator distributed run reproducible from a script · fanout ceiling documented ·
 2 of 4 perf targets measured. Also record where `maxDistributedTargetsPerRun = 256`
@@ -344,11 +343,11 @@ been run wide.
 | Week | Work | Hrs |
 |---|---|---|
 | 1 | Terraform `deployments/azure/terraform/` → AKS + Postgres Flexible Server + Azure Cache for Redis + Blob + Key Vault + workload identity. Deploy via Helm (`deployments/helm/apexload`) and the `aks-ha` overlay. Script the whole thing; it will be re-run many times. | 8 |
-| 2 | Walk **all 10 AKS cutover gates** verbatim from `docs/AKS_INTEGRATION_READINESS.md` §Production Migration Gates. Record pass/fail per gate in `evidence/M6/aks-gates.md`. Gate 6 (script → distributed run → stream → archive → report) reuses the M1 Tier-0 journey. | 8 |
+| 2 | Walk **all 10 AKS cutover gates** verbatim from `deployments/k8s/aks/README.md` (Integration readiness) §Production Migration Gates. Record pass/fail per gate in `evidence/M6/aks-gates.md`. Gate 6 (script → distributed run → stream → archive → report) reuses the M1 Tier-0 journey. | 8 |
 | 3 | **Real HA failover drills** — the thing the simulation cannot do. With `APEXLOAD_CONTROLLER_HA=true`, shared Postgres/Redis: pod delete mid-run, node drain, network partition of the lease holder, Postgres failover. Assert the five properties gate 10 demands: one execution start, no stale-owner mutation, strictly newer lease generation, one terminal test outcome, one terminal archive. Verify the generation-fenced active EndpointSlice follows. | 8 |
-| 4 | KEDA scale-out/scale-in mid-run. Resolve the doc conflict: `ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md:79` says "at least two controller replicas"; `ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md` and `AKS_INTEGRATION_READINESS.md` say "keep one controller by default." Pick one and correct the other. | 7 |
+| 4 | KEDA scale-out/scale-in mid-run. Resolve the doc conflict: `ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md:79` says "at least two controller replicas"; `ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md` and `deployments/k8s/aks/README.md` (Integration readiness) say "keep one controller by default." Pick one and correct the other. | 7 |
 
-**Exit gate:** 10/10 AKS gates pass · real failover evidence committed — `AKS_INTEGRATION_READINESS.md`
+**Exit gate:** 10/10 AKS gates pass · real failover evidence committed — `deployments/k8s/aks/README.md` (Integration readiness)
 can finally say controller failover has passed an AKS disruption test, because it has.
 
 ---
@@ -372,9 +371,9 @@ can finally say controller failover has passed an AKS disruption test, because i
 | Week | Work | Hrs |
 |---|---|---|
 | 1 | Security pass: execute the generated route matrix under local, trusted-header, OIDC, and service-account authentication, including production fail-closed posture (`APEXLOAD_ENV=production` refusing `dev`/`local`, trusted-proxy gate, bootstrap admin); SSRF guard (`pkg/netpolicy/`); secret handling and redaction; gRPC mTLS hard-fail; supply-chain verification. | 8 |
-| 2 | Chaos & dependency loss on AKS: kill Postgres, kill Redis, revoke Blob access, induce clock skew (a documented fatality in `EKS_INTEGRATION_READINESS.md`), rolling upgrade in place with a run active. | 8 |
+| 2 | Chaos & dependency loss on AKS: kill Postgres, kill Redis, revoke Blob access, induce clock skew (a documented fatality in `deployments/k8s/eks/README.md` (Integration readiness)), rolling upgrade in place with a run active. | 8 |
 | 3 | **72-hour endurance soak on AKS**, multi-region, Postgres, HA enabled. Full observability capture. This is where the resource leaks the M0 linters didn't catch will surface. | 8 |
-| 4 | Finalize and execute the release checklist drafted in M0. Update `docs/RELEASE_EVIDENCE_MANIFEST.md` to link every claim to its M0–M8 artifact. Regenerate the repository dashboard. | 7 |
+| 4 | Finalize and execute the release checklist drafted in M0. Update `docs/GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md` (Release evidence manifest) to link every claim to its M0–M8 artifact. Regenerate the repository dashboard. | 7 |
 
 **Exit gate:** 72 h soak clean · release checklist executed · every performance and readiness claim in
 the docs traceable to a committed artifact.
@@ -383,14 +382,50 @@ the docs traceable to a committed artifact.
 
 ## Risk register (initial)
 
+Scoping-time summary. The scored, owned register is [below](#live-risk-register).
+
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Perf targets prove unreachable when measured | Docs and positioning need revision | M5/M7 publish real numbers regardless. `PERFORMANCE_BENCHMARK_EVIDENCE.md` is already built to record honest results — the schema rejects unearned `met`. |
+| Perf targets prove unreachable when measured | Docs and positioning need revision | M5/M7 publish real numbers regardless. `PERFORMANCE_BENCHMARKS.md` is already built to record honest results — the schema rejects unearned `met`. |
 | Postgres dialect drift is worse than expected | M4 overruns | Timebox week 1 to *cataloguing*; if the list is large, fix by blast radius and carry the tail into M5. |
 | Azure spend during M6–M8 | Budget | Scripted teardown after every drill; use spot node pools for generators; keep the ladder on kind through M5. |
 | Solo bus factor on cloud drills | Program stalls | Every drill is a committed script, never a manual sequence. If it isn't scripted, it isn't done. |
 | E2E flake erodes trust in the gate | Suites get ignored | Strict `FLAKE_LOG.md` policy: quarantine within 24 h with a root-cause entry and a dated un-quarantine commitment. The M0 fake clock removes the largest structural cause. |
 | Azure subscription, quota, DNS/TLS, or budget prerequisites are unavailable | M6 cannot produce honest evidence | Validate and commit the prerequisite report before provisioning; mark M6 `BLOCKED` rather than substituting simulation. |
+
+## Live risk register
+
+Re-scored at each milestone close. Severity = Impact × Likelihood, both High/Med/Low.
+
+| ID | Risk | Sev | Milestone | Owner | Mitigation | State |
+|---|---|---|---|---|---|---|
+| R-1 | Performance targets prove unreachable once actually measured. All four are `not_evaluated` today and the docs already say "design target, not yet benchmarked." | High | M5, M7 | Performance/QA | Publish real numbers regardless of outcome. `PERFORMANCE_BENCHMARKS.md` is built for this — its schema validator rejects an unearned `met`. If a target is missed, revise the target or the docs, not the evidence. | OPEN |
+| R-2 | Postgres dialect drift is worse than expected. `PostgresStore` is `struct { *SQLiteStore }` with a flag; one SQL codebase runtime-translated by `rewriteSQL()`, and most of `pkg/storage`'s 192 files are SQLite-shaped. | High | M4 | Storage | Timebox M4 week 1 to *cataloguing* divergences, not fixing them. If the list is large, fix by blast radius and carry the tail into M5. | OPEN |
+| R-3 | Azure spend during M6–M8 cloud drills. | Med | M6–M8 | Cloud operator | Scripted teardown after every drill. Spot node pools for generators. Keep the scale ladder on kind through M5. Set a budget alert before the first `terraform apply`. | OPEN |
+| R-4 | Solo bus factor — cloud drills done by hand can't be repeated or reviewed. | Med | M6–M8 | Program owner | Hard rule: every drill is a committed script. If it isn't scripted, it isn't done and it doesn't count as evidence. | OPEN |
+| R-5 | E2E flake erodes trust in the gate; suites get ignored or disabled. | High | M1 onward | QA | Log the first unexplained failure; after the second, fix or quarantine within 24 h with an owner and dated commitment. | OPEN |
+| R-6 | DEF-11 (over-eager redaction) stays undecided and every run archive collected in M3–M8 is full of over-redacted evidence. | High | M0 | Engine | **Closed 2026-08-18.** Decision taken (short common cookie values are not redacted) and found already implemented in `6938e544e`. Archives from M3 onward are not at risk from this. | CLOSED |
+| R-7 | The API surface grows during the program, outpacing the contract matrix. | Med | M1 onward | API | Generate the matrix from `docs/api-endpoint-catalog.json`, which is already regenerated and freshness-enforced. New route ⇒ new row automatically. | OPEN |
+| R-8 | Schema migrations are ~100+ unordered `ALTER TABLE ADD COLUMN` applied on every startup with no version table, so an upgrade/rollback test has nothing to assert against. | Med | M4 | Storage | M4 week 3 adds the version ledger first, then the upgrade/rollback matrix becomes expressible. | OPEN |
+| R-9 | Counting/coverage tooling silently double-counts because `.claude/worktrees/` holds a full duplicate checkout. | Low | M0 | QA | All tooling reads `git ls-files`, never bare `find`. Recorded in TEST_PROGRAM.md principles. | MITIGATED |
+| R-10 | Azure subscription access, quota, budget alert, or DNS/TLS prerequisites are unavailable when M6 starts. | High | M6 | Cloud operator | Commit `azure-prerequisites.json` before provisioning. If any prerequisite fails, mark M6 `BLOCKED`; do not substitute simulation for AKS evidence. | OPEN |
+
+## Release test checklist
+
+_Draft created in M0. It remains a living checklist until M8 records an executed result._
+
+- [ ] Repository quality and generated-artifact gates pass on the release commit.
+- [ ] Coverage ratchet and changed-line coverage pass.
+- [ ] Tier-0 assertion matrix and full-arc journey are green.
+- [ ] Converter golden inventory and protected import journey are green.
+- [ ] Run-control, archive-integrity, PostgreSQL migration, and restore evidence pass.
+- [ ] kind scale/failure matrix and all four performance measurements are committed.
+- [ ] AKS prerequisites, 10/10 readiness gates, and HA disruption evidence pass.
+- [ ] Multi-region placement and attribution reconcile.
+- [ ] Four-mode authentication matrix and production fail-closed checks pass.
+- [ ] 72-hour soak meets the committed thresholds.
+- [ ] Every open high-severity risk has an owner and no expired deferral.
+- [ ] Release evidence manifest links every published claim to a committed artifact.
 
 ---
 
@@ -419,14 +454,14 @@ make docker-local-up && make k8s-kind-apply && make k8s-smoke-test
 ```
 
 - **M0:** CI fails deliberate overall/package/missing-package coverage regressions; `rowserrcheck` is enabled and other leak-linter exclusions remain documented.
-- **M1:** every assertion in `TIER0_ASSERTION_MATRIX.md` is green against a freshly built controller; the generated route contract matrix passes.
+- **M1:** every assertion in the Tier-0 assertion matrix in `E2E_SUITES.md` is green against a freshly built controller; the generated route contract matrix passes.
 - **M2:** `go test ./pkg/convert/...` green with goldens; a deliberate converter tweak produces a golden diff.
 - **M3:** `evidence/M3/soak-24h/` shows flat goroutine and heap curves; archive verify exits 0.
 - **M4:** full suite green under `APEXLOAD_STORE=postgres`; migrator count parity once the migrator exists; restore drill executed with evidence (target: a `scripts/restore-drill.sh` exiting 0, once created).
 - **M5:** 10-generator kind run reproducible from one script; perf JSON shows 2 targets measured.
 - **M6:** `evidence/M6/aks-gates.md` shows 10/10; failover transcripts show a single execution owner and monotonic lease generations.
 - **M7:** a 2-region run whose per-region archive numbers reconcile with per-generator data; perf JSON shows 4/4 measured.
-- **M8:** 72 h AKS soak artifacts; `RELEASE_TEST_CHECKLIST.md` executed with results recorded.
+- **M8:** 72 h AKS soak artifacts; the release test checklist (this file) executed with results recorded.
 
 Progress is visible continuously in `docs/qa/STATUS.md` (enforced by `status_inventory_test.go`) and
 in the dashboard Artifact regenerated at each milestone close.

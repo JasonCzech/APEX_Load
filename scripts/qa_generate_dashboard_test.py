@@ -12,7 +12,7 @@ class QADashboardTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             status = root / "STATUS.md"
-            matrix = root / "TIER0_ASSERTION_MATRIX.md"
+            matrix = root / "E2E_SUITES.md"
             metrics = root / "HEADLINE_METRICS.md"
             api_contract = root / "api-contract-matrix.json"
             output = root / "DASHBOARD.md"
@@ -20,7 +20,7 @@ class QADashboardTest(unittest.TestCase):
                 "## Milestones\n\n| ID | State |\n|---|---|\n| M0 | IN_PROGRESS |\n"
             )
             matrix.write_text(
-                "# Tier-0 Assertion Matrix\n\n| Step | Requirement | State |\n|---|---|---|\n"
+                "### Tier-0 assertion matrix\n\n| Step | Requirement | State |\n|---|---|---|\n"
                 "| S1 | Login | GREEN |\n| S2 | Workspace | PARTIAL |\n| S3 | Import | MISSING |\n"
             )
             metrics.write_text("# QA Headline Metrics\n\n| Metric | Current |\n|---|---:|\n| Specs | 1 |\n")
