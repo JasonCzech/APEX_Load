@@ -32,3 +32,35 @@ Instrument producer creation/sharing/send/acknowledgement/flush/close and sample
 ## Deterministic parameter evidence
 
 `ReferenceParameters.java` uses the pinned JDK 17 and JMeter 5.4.1 classes to generate `pkg/engine/testdata/jmeter_parameter_vectors.json`. It covers 600 Java random values (including rejection sampling bounds and signed seed extremes), 20 counter iterations and 20 RandomVariableConfig iterations. `parameter-evidence.json` records the source and output digests. Engine tests compare both shared and per-user modes against these vectors; concurrent tests verify exact wrap counts and session isolation. This is component evidence, not full sampler lifecycle or live parity.
+
+## Deterministic timer calculations
+
+`ReferenceSchedules.java` calls TST 2.6's real `getRPSForSecond` and, through reflection, its private `getDelay`. `verify-schedules.py` rejects classpaths whose JAR hashes differ from the recorded startup installation. Run it with `--java-home`, `--classpath-file`, `--jmeter-home`, `--vectors pkg/engine/testdata/jmeter_schedule_vectors.json`, and `--evidence scripts/jmeter-reference/schedule-evidence.json`.
+
+The captured 7,804 rate vectors cover both workload curves through second 3,901. The 448 delay vectors cover fractional rates, Java integer saturation, sent counts, waiting-thread counts and within-second offsets. Go tests match these exactly and exercise full-duration virtual clocks and concurrent admission. The final segment includes second 3,900; the timer first requests stopping at second 3,901. The displayed 3,900-second authored duration and integrated nominal volume remain unchanged.
+
+This evidence does **not** verify Java monitor wake ordering, pre-sampler integration, thread-group stop escalation, or cancellation/pause integration. Separate component tests cover the Go wait loop's timer ordering, notifications, contention counts and cancellation cleanup. The Go admission state is now connected to pre-sampler engine paths and the active pause clock, with component tests for group completion and cancellation. Compatibility launch gates remain in force; this does not establish reference lifecycle conformance.
+
+
+## Deterministic OAuth wire evidence
+
+`ReferenceOAuth.java` invokes the real Kafka 3.3.1 callback's private formatters without sending network requests. `verify-oauth.py` uses the same classpath hash lock and requires JDK 17.0.16+8. Its seven synthetic vectors cover Basic URL-safe Base64, UTF-8, Java's narrow whitespace trimming, omitted scope, and Java form encoding of spaces, `*` and `~`. Go OAuth tests compare the actual HTTP header and request body with these vectors.
+
+Run it with the same harness flags as `verify-schedules.py`, setting `--vectors pkg/protocol/http/testdata/kafka331_oauth_vectors.json --evidence scripts/jmeter-reference/oauth-evidence.json`. This verifies callback formatting only; token refresh against an identity service and broker authentication remain separate conformance work.
+
+
+## Deterministic DI Kafka record evidence
+
+`ReferenceKafkaKeys.java` invokes the pinned sampler's private record builder with StringSerializer and an explicit partition. No producer is constructed and no broker is contacted. The four vectors demonstrate that empty keys become null while whitespace and nonempty UTF-8 keys survive. The synthetic variable context reproduces this revision's null serializer-variable-name fields for its matching string serializers.
+
+Run `verify-kafka-keys.py` with the same harness flags, using `--vectors pkg/protocol/kafka/testdata/di_kafka_key_vectors.json --evidence scripts/jmeter-reference/kafka-key-evidence.json`. This checks record construction, not producer creation or send/acknowledgement behavior.
+
+## Offline PNOP lifecycle traces
+
+`instrumentation/ReferenceEventHubsLifecycle.java` executes the unchanged pinned PNOP sampler with a Java instrumentation agent. The agent replaces only SDK producer creation, send and close with deterministic hooks, and observes JMeter's real `sampleStart`/`sampleEnd` calls. A JDK 17 network guard rejects connections, listening and acceptance; the SDK producer constructor never runs. Internal ASM and allocation APIs are confined to this separate, version-pinned harness and are not part of the product or the ordinary Maven assembly.
+
+Run `verify-eventhubs-lifecycle.py` with the same harness flags, setting `--vectors scripts/jmeter-reference/eventhubs-lifecycle-vectors.json --evidence scripts/jmeter-reference/eventhubs-lifecycle-evidence.json`. The verifier checks the complete pinned classpath, requires JDK 17.0.16+8 and asserts that all five intended methods were instrumented. Repeated generation is deterministic; an altered classpath is rejected before execution.
+
+The five cases exercise two successful samples with distinct producers, creation failure, send failure, and close failure. Three messages (including an empty message) stay within one sampled send. Success follows `sampleStart → create → send → acknowledgement → sampleEnd → close`. Creation and send failures return an unsuccessful sample without `sampleEnd`. A close exception escapes the sampler, even after a successful send: it does not return a failed `SampleResult`.
+
+This is **plugin control-flow evidence with a substituted transport**, not real SDK lifecycle or service conformance. APEX currently represents close failure as a failed protocol result; the difference remains unresolved for strict replay. Actual SDK creation/cleanup, batch allocation, acknowledgement, network timing and service behavior still require separate evidence.

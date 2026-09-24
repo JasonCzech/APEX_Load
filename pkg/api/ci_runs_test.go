@@ -2229,3 +2229,23 @@ func TestCIRunDurationPolicyRejectsOverflowingPolicyLimit(t *testing.T) {
 		t.Fatalf("overflowing policy duration error = %v", err)
 	}
 }
+
+func TestCollectCITargetHostsIncludesKafkaOAuth(t *testing.T) {
+	script := &dsl.Script{Protocol: "kafka", Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{
+		Brokers: []string{"broker.example.test:9093"},
+		OAuth:   &dsl.KafkaOAuthConfig{TokenURL: "https://identity.example.test/token"},
+	}}}
+	hosts, deferred, err := collectCITargetHosts(script, "")
+	if err != nil || deferred || len(hosts) != 2 {
+		t.Fatalf("hosts=%v deferred=%v err=%v", hosts, deferred, err)
+	}
+	found := false
+	for _, host := range hosts {
+		if host == "identity.example.test" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("token destination omitted from outbound policy", hosts)
+	}
+}

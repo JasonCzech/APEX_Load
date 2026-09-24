@@ -27,6 +27,9 @@ func buildProtoConfigForRunModeWithSecretResolver(script *dsl.Script, runMode st
 
 func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
 	cfg := buildProtoConfigForRunModeWithSecretResolver(group.Script, runMode, group.SecretResolver)
+	if group.sourceSamplers != nil {
+		group.sourceSamplers.bindProtocolConfig(cfg, group.Script)
+	}
 	if scenarioID := strings.TrimSpace(group.ScenarioID); scenarioID != "" {
 		cfg["scenario_id"] = scenarioID
 	}

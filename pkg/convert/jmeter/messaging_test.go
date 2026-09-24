@@ -281,7 +281,8 @@ func TestMessagingMultipleKafkaConfigurationsDoNotOverwrite(t *testing.T) {
 	sampler := func(id string) string {
 		return fmt.Sprintf(`<%s testname="%s"><stringProp name="kafkaProducerClientVariableName">%s</stringProp><stringProp name="kafkaTopic">events</stringProp><stringProp name="kafkaMessage">payload</stringProp></%s><hashTree/>`, diKafkaSampler, id, id, diKafkaSampler)
 	}
-	input := `<jmeterTestPlan><hashTree><TestPlan/><hashTree><ThreadGroup/><hashTree>` + config("one", "first.test") + config("two", "second.test") + sampler("one") + sampler("two") + `</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	first := strings.Replace(config("one", "first.test"), "</"+diKafkaConfig+">", `<collectionProp name="extraConfigs"><elementProp name="tls"><stringProp name="configKey">ssl.enabled.protocols</stringProp><stringProp name="configValue">TLSv1.2</stringProp></elementProp><elementProp name="oauth"><stringProp name="configKey">sasl.jaas.config</stringProp><stringProp name="configValue">org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="synthetic" clientSecret="***";</stringProp></elementProp></collectionProp></`+diKafkaConfig+">", 1)
+	input := `<jmeterTestPlan><hashTree><TestPlan/><hashTree><ThreadGroup/><hashTree>` + first + config("two", "second.test") + sampler("one") + sampler("two") + `</hashTree></hashTree></hashTree></jmeterTestPlan>`
 	r, err := ConvertJMX([]byte(input), ConvertOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -290,13 +291,37 @@ func TestMessagingMultipleKafkaConfigurationsDoNotOverwrite(t *testing.T) {
 	if s.Config.Kafka.Brokers[0] != "first.test:9092" {
 		t.Fatal("second producer overwrote first")
 	}
+	if s.Config.JMeter.ConfigurationID != s.Actions[0].Metadata["jmeter_kafka"].(map[string]interface{})["source_node_id"] {
+		t.Fatal("second producer overwrote first configuration identity")
+	}
 	meta := s.Actions[1].Metadata["jmeter_kafka"].(map[string]interface{})
+	native := meta["native_config"].(dsl.KafkaConfig)
+	if native.OAuth != nil || native.TLS != nil {
+		t.Fatal("second producer inherited first credentials or TLS")
+	}
+	if s.Config.Kafka.OAuth == nil || s.Config.Kafka.TLS == nil {
+		t.Fatal("first producer lost optional settings")
+	}
 	if meta["native_config"].(dsl.KafkaConfig).Brokers[0] != "second.test:9092" {
 		t.Fatal("second producer config lost")
 	}
 	action, _ := json.Marshal(s.Actions[1])
 	if !strings.Contains(string(action), "jmeter_multiple_producer_configurations_unsupported") {
 		t.Fatal("distinct producer configs not blocked")
+	}
+
+	identical := `<jmeterTestPlan><hashTree><TestPlan/><hashTree><ThreadGroup/><hashTree>` + config("one", "same.test") + config("two", "same.test") + sampler("one") + sampler("two") + `</hashTree></hashTree></hashTree></jmeterTestPlan>`
+	same, err := ConvertJMX([]byte(identical), ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstID := same.Scripts[0].Actions[0].Metadata["jmeter_kafka"].(map[string]interface{})["source_node_id"]
+	if same.Scripts[0].Config.JMeter.ConfigurationID != firstID {
+		t.Fatal("identical settings collapsed distinct producer identities")
+	}
+	action, _ = json.Marshal(same.Scripts[0].Actions[1])
+	if !strings.Contains(string(action), "jmeter_multiple_producer_configurations_unsupported") {
+		t.Fatal("separate producer lifetimes silently combined")
 	}
 }
 
@@ -376,5 +401,77 @@ func TestUnsupportedPluginSamplerRetainsBlockedGroup(t *testing.T) {
 	}
 	if r.Scripts[0].Actions[0].Metadata["execution_blocker"] == nil {
 		t.Fatal("unsupported plugin is executable")
+	}
+}
+
+func TestMessagingInvalidProducerTuningRetainsSavableDraft(t *testing.T) {
+	source := string(messagingFixture(t, "original"))
+	for _, value := range []string{"-1", "999999999999999999999999999", "broken"} {
+		t.Run(value, func(t *testing.T) {
+			input := strings.ReplaceAll(source, "<stringProp name=\"configValue\">16384</stringProp>", "<stringProp name=\"configValue\">"+value+"</stringProp>")
+			if input == source {
+				t.Fatal("fixture no longer has batch override")
+			}
+			result, err := ConvertJMX([]byte(input), ConvertOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Scripts) != 3 {
+				t.Fatal("invalid config dropped source groups")
+			}
+			serialized, _ := json.Marshal(result.Scripts[0])
+			if !strings.Contains(string(serialized), "jmeter_kafka_producer_setting_invalid") {
+				t.Fatal("invalid source setting not blocked")
+			}
+			if result.Scripts[0].Config.Kafka.Producer != nil {
+				t.Fatal("invalid tuning persisted as runnable native configuration")
+			}
+		})
+	}
+}
+
+func TestMessagingInvalidOAuthEndpointRemainsSavableBlockedDraft(t *testing.T) {
+	source := string(messagingFixture(t, "original"))
+	old := "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/oauth2/v2.0/token"
+	for _, endpoint := range []string{"", "http://identity.example.test/token", "https://"} {
+		result, err := ConvertJMX([]byte(strings.ReplaceAll(source, old, endpoint)), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := result.Scripts[0]
+		serialized, _ := json.Marshal(script)
+		if !strings.Contains(string(serialized), "jmeter_kafka_oauth_endpoint_invalid") {
+			t.Fatal("missing endpoint blocker")
+		}
+		if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
+			t.Fatal("source defect prevents blocked draft preservation", issues)
+		}
+	}
+}
+
+func TestMissingEventHubsMessagesRemainSaveableBlockedDrafts(t *testing.T) {
+	source := string(messagingFixture(t, "original"))
+	missing := strings.ReplaceAll(source, `name="Messages.messages"`, `name="unused.messages"`)
+	if missing == source {
+		t.Fatal("fixture message list not found")
+	}
+	result, err := ConvertJMX([]byte(missing), ConvertOptions{ScenarioDraft: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 3 || result.ScenarioDraft == nil {
+		t.Fatal("missing messages dropped workload groups")
+	}
+	for _, script := range result.Scripts[1:] {
+		if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
+			t.Fatalf("blocked draft cannot be saved: %v", issues)
+		}
+		action, _ := json.Marshal(script.Actions[0])
+		if !strings.Contains(string(action), "jmeter_eventhubs_messages_missing") {
+			t.Fatal("missing execution blocker")
+		}
+		if count := script.Actions[0].Metadata["jmeter_eventhubs"].(map[string]interface{})["message_count"]; count != 0 {
+			t.Fatal("missing source message count", count)
+		}
 	}
 }

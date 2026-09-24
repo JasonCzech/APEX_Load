@@ -800,8 +800,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -835,9 +838,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -3013,8 +3018,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -3048,9 +3056,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -3799,8 +3809,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -3834,9 +3847,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -4487,8 +4502,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -4522,9 +4540,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -6176,8 +6196,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -6211,9 +6234,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -6965,8 +6990,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -7000,9 +7028,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -7630,8 +7660,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -7665,9 +7698,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -8337,8 +8372,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -8372,9 +8410,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -8946,8 +8986,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -8981,9 +9024,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -10145,8 +10190,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -10180,9 +10228,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -11521,8 +11571,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -11556,9 +11609,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -13120,8 +13175,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -13155,9 +13213,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -13773,8 +13833,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -13808,9 +13871,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -14700,8 +14765,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile": string;
+                "sample_timing"?: string;
                 "source_group_id": string;
                 "source_plan_id": string;
                 "timezone"?: string;
@@ -14739,9 +14807,26 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id": string;
+                  "client_secret_ref": string;
+                  "mode": string;
+                  "scope"?: string;
+                  "token_url": string;
+                }) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -14760,6 +14845,8 @@ export interface operations {
                   "client_cert_file"?: string;
                   "client_key_file"?: string;
                   "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
                 }) | null;
                 "topic"?: string;
                 "transactional_id"?: string;
@@ -15483,8 +15570,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -15518,9 +15608,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -16160,8 +16252,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -16195,9 +16290,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -23350,8 +23447,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -23389,9 +23489,26 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id"?: string;
+                  "client_secret_ref"?: string;
+                  "mode"?: string;
+                  "scope"?: string;
+                  "token_url"?: string;
+                }) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -23410,6 +23527,8 @@ export interface operations {
                   "client_cert_file"?: string;
                   "client_key_file"?: string;
                   "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
                 }) | null;
                 "topic"?: string;
                 "transactional_id"?: string;
@@ -24138,8 +24257,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -24173,9 +24295,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -34508,8 +34632,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -34543,9 +34670,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -36229,8 +36358,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -36264,9 +36396,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -45296,8 +45430,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -45331,9 +45468,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -53967,8 +54106,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -54002,9 +54144,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -54636,8 +54780,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -54671,9 +54818,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -64689,8 +64838,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -64724,9 +64876,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -65511,8 +65665,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -65546,9 +65703,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -66189,8 +66348,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -66224,9 +66386,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -66936,8 +67100,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -66971,9 +67138,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -67840,8 +68009,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -67875,9 +68047,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -68505,8 +68679,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -68540,9 +68717,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -69985,8 +70164,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -70020,9 +70202,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -77806,8 +77990,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -77841,9 +78028,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -78569,8 +78758,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -78604,9 +78796,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -80632,8 +80826,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -80667,9 +80864,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -82001,8 +82200,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -82036,9 +82238,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -82605,8 +82809,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -82640,9 +82847,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -84992,8 +85201,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -85027,9 +85239,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -86079,8 +86293,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -86114,9 +86331,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -87243,8 +87462,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -87278,9 +87500,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -88406,8 +88630,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -88441,9 +88668,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -89570,8 +89799,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -89605,9 +89837,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -90733,8 +90967,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -90768,9 +91005,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -96693,8 +96932,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -96728,9 +96970,11 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: (Record<string, unknown>) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: (Record<string, unknown>) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -97369,8 +97613,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -97404,9 +97651,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -102267,8 +102516,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -102306,9 +102558,26 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id"?: string;
+                  "client_secret_ref"?: string;
+                  "mode"?: string;
+                  "scope"?: string;
+                  "token_url"?: string;
+                }) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -102327,6 +102596,8 @@ export interface operations {
                   "client_cert_file"?: string;
                   "client_key_file"?: string;
                   "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
                 }) | null;
                 "topic"?: string;
                 "transactional_id"?: string;
@@ -103054,8 +103325,11 @@ export interface operations {
                   "work_dir"?: string;
                 };
                 "jmeter"?: ({
+                  "configuration_id"?: string;
                   "context_confirmed"?: boolean;
+                  "producer_lifecycle"?: string;
                   "profile": string;
+                  "sample_timing"?: string;
                   "source_group_id": string;
                   "source_plan_id": string;
                   "timezone"?: string;
@@ -103089,9 +103363,11 @@ export interface operations {
                   "isolation_level"?: string;
                   "max_message_bytes"?: number;
                   "mock"?: boolean;
+                  "oauth"?: (Record<string, unknown>) | null;
                   "oauth_scope"?: string;
                   "partition_strategy"?: string;
                   "partitions"?: number;
+                  "producer"?: (Record<string, unknown>) | null;
                   "profile"?: string;
                   "properties"?: Record<string, string>;
                   "sasl_mechanism"?: string;
@@ -106858,8 +107134,11 @@ export interface operations {
                 "work_dir"?: string;
               };
               "jmeter"?: ({
+                "configuration_id"?: string;
                 "context_confirmed"?: boolean;
+                "producer_lifecycle"?: string;
                 "profile"?: string;
+                "sample_timing"?: string;
                 "source_group_id"?: string;
                 "source_plan_id"?: string;
                 "timezone"?: string;
@@ -106897,9 +107176,26 @@ export interface operations {
                 "isolation_level"?: string;
                 "max_message_bytes"?: number;
                 "mock"?: boolean;
+                "oauth"?: ({
+                  "authentication_method"?: string;
+                  "client_id"?: string;
+                  "client_secret_ref"?: string;
+                  "mode"?: string;
+                  "scope"?: string;
+                  "token_url"?: string;
+                }) | null;
                 "oauth_scope"?: string;
                 "partition_strategy"?: string;
                 "partitions"?: number;
+                "producer"?: ({
+                  "admission_timeout_ms"?: (number) | null;
+                  "batch_bytes"?: (number) | null;
+                  "buffer_bytes"?: (number) | null;
+                  "delivery_timeout_ms"?: (number) | null;
+                  "linger_ms"?: (number) | null;
+                  "request_timeout_ms"?: (number) | null;
+                  "retries"?: (number) | null;
+                }) | null;
                 "profile"?: string;
                 "properties"?: Record<string, string>;
                 "sasl_mechanism"?: string;
@@ -106918,6 +107214,8 @@ export interface operations {
                   "client_cert_file"?: string;
                   "client_key_file"?: string;
                   "insecure_skip_verify"?: boolean;
+                  "max_version"?: string;
+                  "min_version"?: string;
                 }) | null;
                 "topic"?: string;
                 "transactional_id"?: string;

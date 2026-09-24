@@ -435,40 +435,63 @@ type JMSTLSConfig struct {
 }
 
 // KafkaConfig holds broker, security, and producer/consumer settings for Kafka scripts.
+type KafkaOAuthConfig struct {
+	Mode                 string `json:"mode"`
+	TokenURL             string `json:"token_url"`
+	ClientID             string `json:"client_id"`
+	ClientSecretRef      string `json:"client_secret_ref"`
+	Scope                string `json:"scope,omitempty"`
+	AuthenticationMethod string `json:"authentication_method,omitempty"`
+}
+
+type KafkaProducerConfig struct {
+	Retries            *int `json:"retries,omitempty"`
+	LingerMs           *int `json:"linger_ms,omitempty"`
+	BatchBytes         *int `json:"batch_bytes,omitempty"`
+	BufferBytes        *int `json:"buffer_bytes,omitempty"`
+	AdmissionTimeoutMs *int `json:"admission_timeout_ms,omitempty"`
+	DeliveryTimeoutMs  *int `json:"delivery_timeout_ms,omitempty"`
+	RequestTimeoutMs   *int `json:"request_timeout_ms,omitempty"`
+}
+
 type KafkaConfig struct {
-	Brokers            []string          `json:"brokers,omitempty"`                                                   // bootstrap brokers, e.g. ["broker:9092"]
-	Profile            string            `json:"profile,omitempty"`                                                   // ""|eventhubs — Azure Event Hubs Kafka-endpoint profile (forces sasl_ssl + $ConnectionString PLAIN, 1 MiB cap)
-	SecurityProtocol   string            `json:"security_protocol,omitempty"`                                         // plaintext|ssl|sasl_ssl|sasl_plaintext
-	SASLMechanism      string            `json:"sasl_mechanism,omitempty"`                                            // plain|scram-sha-256|scram-sha-512|oauthbearer
-	SASLUsername       string            `json:"sasl_username,omitempty"`                                             // SASL username
-	SASLPassword       string            `json:"sasl_password,omitempty"`                                             // SASL password (inline)
-	SASLPasswordSecret string            `json:"sasl_password_secret,omitempty"`                                      // secret reference resolved at runtime
-	OAuthScope         string            `json:"oauth_scope,omitempty"`                                               // Managed-identity OAUTHBEARER is Event Hubs-only and fixed to https://eventhubs.azure.net/.default.
-	TLS                *KafkaTLSConfig   `json:"tls,omitempty"`                                                       // TLS material for ssl/sasl_ssl
-	ClientID           string            `json:"client_id,omitempty"`                                                 // Kafka client.id
-	ConsumerGroup      string            `json:"consumer_group,omitempty"`                                            // consumer group id for kafka_consume
-	Topic              string            `json:"topic,omitempty"`                                                     // default topic
-	Acks               string            `json:"acks,omitempty"`                                                      // none|leader|all
-	Idempotence        string            `json:"idempotence,omitempty"`                                               // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
-	TransactionalID    string            `json:"transactional_id,omitempty"`                                          // producer transactional.id; enables Kafka transactions / EOS (requires acks=all)
-	Compression        string            `json:"compression,omitempty"`                                               // none|gzip|snappy|lz4|zstd
-	PartitionStrategy  string            `json:"partition_strategy,omitempty"`                                        // key-hash|round-robin|explicit
-	AutoOffsetReset    string            `json:"auto_offset_reset,omitempty"`                                         // earliest|latest
-	IsolationLevel     string            `json:"isolation_level,omitempty"`                                           // ""(default)|read_uncommitted|read_committed (consumer)
-	Partitions         int               `json:"partitions,omitempty" jsonschema:"minimum=0,maximum=1000000"`         // partition count hint for the mock broker
-	TimeoutMs          int               `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`         // default consume/request timeout
-	MaxMessageBytes    int               `json:"max_message_bytes,omitempty" jsonschema:"minimum=0,maximum=67108864"` // producer-side max record size; Event Hubs caps at 1 MiB (Std/Prem), 20 MiB (Dedicated)
-	Serialization      string            `json:"serialization,omitempty"`                                             // ""(raw)|json_schema|avro — Confluent Schema Registry wire-format serde
-	SchemaRegistryURL  string            `json:"schema_registry_url,omitempty"`                                       // Confluent Schema Registry base URL; registers the subject to obtain the schema id
-	Subject            string            `json:"subject,omitempty"`                                                   // explicit registry subject; defaults to <topic>-value
-	Schema             string            `json:"schema,omitempty"`                                                    // schema document registered for the record value
-	SchemaID           int               `json:"schema_id,omitempty" jsonschema:"minimum=0,maximum=2147483647"`       // static schema id to frame with (alternative to schema_registry_url)
-	Properties         map[string]string `json:"properties,omitempty"`                                                // additional client properties
-	Mock               bool              `json:"mock,omitempty"`                                                      // use in-memory broker for local shakeout
+	Producer           *KafkaProducerConfig `json:"producer,omitempty"`
+	OAuth              *KafkaOAuthConfig    `json:"oauth,omitempty"`
+	Brokers            []string             `json:"brokers,omitempty"`                                                   // bootstrap brokers, e.g. ["broker:9092"]
+	Profile            string               `json:"profile,omitempty"`                                                   // ""|eventhubs — Azure Event Hubs Kafka-endpoint profile (forces sasl_ssl + $ConnectionString PLAIN, 1 MiB cap)
+	SecurityProtocol   string               `json:"security_protocol,omitempty"`                                         // plaintext|ssl|sasl_ssl|sasl_plaintext
+	SASLMechanism      string               `json:"sasl_mechanism,omitempty"`                                            // plain|scram-sha-256|scram-sha-512|oauthbearer
+	SASLUsername       string               `json:"sasl_username,omitempty"`                                             // SASL username
+	SASLPassword       string               `json:"sasl_password,omitempty"`                                             // SASL password (inline)
+	SASLPasswordSecret string               `json:"sasl_password_secret,omitempty"`                                      // secret reference resolved at runtime
+	OAuthScope         string               `json:"oauth_scope,omitempty"`                                               // Managed-identity OAUTHBEARER is Event Hubs-only and fixed to https://eventhubs.azure.net/.default.
+	TLS                *KafkaTLSConfig      `json:"tls,omitempty"`                                                       // TLS material for ssl/sasl_ssl
+	ClientID           string               `json:"client_id,omitempty"`                                                 // Kafka client.id
+	ConsumerGroup      string               `json:"consumer_group,omitempty"`                                            // consumer group id for kafka_consume
+	Topic              string               `json:"topic,omitempty"`                                                     // default topic
+	Acks               string               `json:"acks,omitempty"`                                                      // none|leader|all
+	Idempotence        string               `json:"idempotence,omitempty"`                                               // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
+	TransactionalID    string               `json:"transactional_id,omitempty"`                                          // producer transactional.id; enables Kafka transactions / EOS (requires acks=all)
+	Compression        string               `json:"compression,omitempty"`                                               // none|gzip|snappy|lz4|zstd
+	PartitionStrategy  string               `json:"partition_strategy,omitempty"`                                        // key-hash|round-robin|explicit
+	AutoOffsetReset    string               `json:"auto_offset_reset,omitempty"`                                         // earliest|latest
+	IsolationLevel     string               `json:"isolation_level,omitempty"`                                           // ""(default)|read_uncommitted|read_committed (consumer)
+	Partitions         int                  `json:"partitions,omitempty" jsonschema:"minimum=0,maximum=1000000"`         // partition count hint for the mock broker
+	TimeoutMs          int                  `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`         // default consume/request timeout
+	MaxMessageBytes    int                  `json:"max_message_bytes,omitempty" jsonschema:"minimum=0,maximum=67108864"` // producer-side max record size; Event Hubs caps at 1 MiB (Std/Prem), 20 MiB (Dedicated)
+	Serialization      string               `json:"serialization,omitempty"`                                             // ""(raw)|json_schema|avro — Confluent Schema Registry wire-format serde
+	SchemaRegistryURL  string               `json:"schema_registry_url,omitempty"`                                       // Confluent Schema Registry base URL; registers the subject to obtain the schema id
+	Subject            string               `json:"subject,omitempty"`                                                   // explicit registry subject; defaults to <topic>-value
+	Schema             string               `json:"schema,omitempty"`                                                    // schema document registered for the record value
+	SchemaID           int                  `json:"schema_id,omitempty" jsonschema:"minimum=0,maximum=2147483647"`       // static schema id to frame with (alternative to schema_registry_url)
+	Properties         map[string]string    `json:"properties,omitempty"`                                                // additional client properties
+	Mock               bool                 `json:"mock,omitempty"`                                                      // use in-memory broker for local shakeout
 }
 
 // KafkaTLSConfig holds TLS material for ssl/sasl_ssl security protocols.
 type KafkaTLSConfig struct {
+	MinVersion         string `json:"min_version,omitempty"`
+	MaxVersion         string `json:"max_version,omitempty"`
 	InsecureSkipVerify bool   `json:"insecure_skip_verify,omitempty"`
 	ClientCertFile     string `json:"client_cert_file,omitempty"`
 	ClientKeyFile      string `json:"client_key_file,omitempty"`

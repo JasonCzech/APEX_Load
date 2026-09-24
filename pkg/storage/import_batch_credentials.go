@@ -578,6 +578,14 @@ func validateImportBatchConfigCredentials(script *dsl.Script, context importBatc
 		{script.Config.Browser.HTTPCredentials.Password, "config.browser.http_credentials.password"},
 		{script.Config.Browser.Proxy.Password, "config.browser.proxy.password"},
 	}
+	if oauth := script.Config.Kafka.OAuth; oauth != nil {
+		if err := validateImportBatchDedicatedSecretReference(oauth.ClientSecretRef, "config.kafka.oauth.client_secret_ref"); err != nil {
+			return err
+		}
+		if err := validateImportBatchURL(oauth.TokenURL, "config.kafka.oauth.token_url", context); err != nil {
+			return err
+		}
+	}
 	for _, item := range credentialValues {
 		if err := validateImportBatchCredentialScalar(item.value, false, item.path, context); err != nil {
 			return err

@@ -33,6 +33,7 @@ type VUser struct {
 	DataProvider           *DataProvider
 	Parameters             *ParameterRuntime
 	sourceParameters       *sourceParameterState
+	sourceSamplers         *sourceSamplerRuntime
 	SecretResolver         SecretResolver
 	RedactionConfig        *RedactionConfig
 	// runtimeRedaction publishes immutable redaction snapshots to protocol
@@ -202,6 +203,14 @@ func (ss *SnapshotStore) Snapshots() []*protocol.ErrorSnapshot {
 }
 
 func (vu *VUser) Run(ctx context.Context) {
+	var cleanup func()
+	var bindErr error
+	ctx, cleanup, bindErr = vu.bindSourceSamplerBoundary(ctx)
+	if bindErr != nil {
+		vu.recordDataRowError(bindErr)
+		return
+	}
+	defer cleanup()
 	cfg := vu.Script.Config
 	logCfg := cfg.Log
 	logger := vu.makeLogger(logCfg)
@@ -885,6 +894,12 @@ func (vu *VUser) Run(ctx context.Context) {
 				return flowNext
 			}
 
+			if err := vu.beforeSourceSampler(iterationBoundaryCtx, action); err != nil {
+				if !errors.Is(err, errSamplerScheduleComplete) && !errors.Is(err, context.Canceled) {
+					logger.Error("sampler gate failed", "err", err)
+				}
+				return flowTeardown
+			}
 			if err := vu.beforeWebSocketAction(iterCtx, action.Type); err != nil {
 				logger.Error("WebSocket callback failed", "err", scrubSensitiveError(err, vu.RedactionConfig))
 				recordIterationTransaction(false)
@@ -969,7 +984,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					restoreIterationBoundary()
 				}
 				if actionTxMode {
-					vu.recordTransaction(action.Name, time.Since(actionTxStart), false, result)
+					vu.recordTransaction(action.Name, vu.sourceSampleDuration(actionTxStart, result), false, result)
 					restoreIterationBoundary()
 				}
 				return flowTeardown
@@ -991,7 +1006,7 @@ func (vu *VUser) Run(ctx context.Context) {
 
 			// Record auto-transaction for this action
 			if actionTxMode {
-				vu.recordTransaction(action.Name, time.Since(actionTxStart), result.Success, result)
+				vu.recordTransaction(action.Name, vu.sourceSampleDuration(actionTxStart, result), result.Success, result)
 				restoreIterationBoundary()
 			}
 
@@ -1470,6 +1485,12 @@ func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.
 			}
 			return flowNext
 		}
+		if err := vu.beforeSourceSampler(boundaryCtx, action); err != nil {
+			if !errors.Is(err, errSamplerScheduleComplete) && !errors.Is(err, context.Canceled) {
+				logger.Error("sampler gate failed", "err", err)
+			}
+			return flowTeardown
+		}
 		if err := vu.beforeWebSocketAction(actionCtx, action.Type); err != nil {
 			logger.Error("WebSocket callback failed", "err", scrubSensitiveError(err, vu.RedactionConfig))
 			return flowTeardown
@@ -1625,7 +1646,11 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 		return err
 	}
 	vu.bindRuntimeTextRedactor()
-	if err := callProtocolInit(ctx, vu.Proto, buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver()), vu.RedactionConfig); err != nil {
+	config := buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver())
+	if vu.sourceSamplers != nil {
+		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)
+	}
+	if err := callProtocolInit(ctx, vu.Proto, config, vu.RedactionConfig); err != nil {
 		return err
 	}
 	return ctx.Err()

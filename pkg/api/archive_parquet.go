@@ -14,6 +14,7 @@ import (
 )
 
 type parquetTransactionEvent struct {
+	WorkerDurationMs    float64 `parquet:"name=worker_duration_ms, type=DOUBLE"`
 	EventID             string  `parquet:"name=event_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TimestampUnixMs     int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
 	TimestampRFC3339    string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -247,6 +248,7 @@ func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {
 			DependencyType:      item.DependencyType,
 			DependencyTarget:    item.DependencyTarget,
 			DurationMs:          item.DurationMs,
+			WorkerDurationMs:    item.WorkerDurationMs,
 			DNSMs:               item.DNSMs,
 			ConnectMs:           item.ConnectMs,
 			TLSMs:               item.TLSMs,

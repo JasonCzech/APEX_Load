@@ -3095,6 +3095,7 @@ func (x *ServerTelemetry) GetPartitionId() string {
 
 type TransactionMetric struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
+	WorkerDurationMs float64                `protobuf:"fixed64,25,opt,name=worker_duration_ms,json=workerDurationMs,proto3" json:"worker_duration_ms,omitempty"`
 	Name             string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	StartTimeUnixMs  int64                  `protobuf:"varint,2,opt,name=start_time_unix_ms,json=startTimeUnixMs,proto3" json:"start_time_unix_ms,omitempty"`
 	DurationMs       float64                `protobuf:"fixed64,3,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
@@ -3151,6 +3152,13 @@ func (x *TransactionMetric) ProtoReflect() protoreflect.Message {
 // Deprecated: Use TransactionMetric.ProtoReflect.Descriptor instead.
 func (*TransactionMetric) Descriptor() ([]byte, []int) {
 	return file_api_proto_generator_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *TransactionMetric) GetWorkerDurationMs() float64 {
+	if x != nil {
+		return x.WorkerDurationMs
+	}
+	return 0
 }
 
 func (x *TransactionMetric) GetName() string {
@@ -4962,8 +4970,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x14quota_exceeded_count\x18\x1a \x01(\x05R\x12quotaExceededCount\x121\n" +
 	"\x15event_too_large_count\x18\x1b \x01(\x05R\x12eventTooLargeCount\x120\n" +
 	"\x15end_to_end_latency_ms\x18\x1c \x01(\x01R\x11endToEndLatencyMs\x12!\n" +
-	"\fpartition_id\x18\x1d \x01(\tR\vpartitionId\"\xbb\x06\n" +
-	"\x11TransactionMetric\x12\x12\n" +
+	"\fpartition_id\x18\x1d \x01(\tR\vpartitionId\"\xe9\x06\n" +
+	"\x11TransactionMetric\x12,\n" +
+	"\x12worker_duration_ms\x18\x19 \x01(\x01R\x10workerDurationMs\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x12start_time_unix_ms\x18\x02 \x01(\x03R\x0fstartTimeUnixMs\x12\x1f\n" +
 	"\vduration_ms\x18\x03 \x01(\x01R\n" +

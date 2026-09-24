@@ -113,6 +113,9 @@ func planDistributedGroupShards(groups []TestGroup, loadByTarget map[string]gene
 }
 
 func planDistributedGroupShardsForCandidates(groups []TestGroup, allLoadByTarget map[string]generatorLoadSnapshot, defaultLoadByTarget map[string]generatorLoadSnapshot, preferredAll []string, preferredDefault []string, assignment *GeneratorAssignmentSettings, targetSpecs []generatorTargetSpec) map[string][]GeneratorShardSummary {
+	if assignment != nil && assignment.SourceAffinity == "single_generator" {
+		return planSourceAffineGroups(groups, defaultLoadByTarget, preferredDefault, assignment, targetSpecs)
+	}
 	if len(allLoadByTarget) == 0 {
 		return nil
 	}
@@ -737,6 +740,12 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 
 func groupRequiredRuntimeFeature(group TestGroup) string {
 	base := groupBaseRuntimeFeature(group)
+	if dsl.RequiresJMeterMessaging(group.script) {
+		if base != "" {
+			base += "+"
+		}
+		base += dsl.FeatureJMeterMessagingV1
+	}
 	if dsl.RequiresLRFidelity(group.script) {
 		if base != "" {
 			return base + "+" + dsl.FeatureLRFidelityV1

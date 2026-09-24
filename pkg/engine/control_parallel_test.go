@@ -104,3 +104,27 @@ func TestParallelBranchDoesNotInitializeParentSecretResolver(t *testing.T) {
 		t.Fatal("branch mutated the parent secret resolver")
 	}
 }
+
+func TestParallelBranchesInheritSourceIterationValue(t *testing.T) {
+	script := scheduleScript("plan", 42)
+	script.Protocol = parallelTestProtocolName
+	script.Parameters = []dsl.Parameter{{Name: "counter", Type: "counter", Scope: "source_engine", ScopeID: "counter-node", Update: "each_iteration", Start: 1, End: 100, Step: 1}}
+	state, err := newSourceParameterState([]*dsl.Script{script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vu := &VUser{Script: script, Proto: &parallelTestProtocol{}, Metrics: NewMetricsCollector(32), Variables: map[string]string{}, sourceParameters: state}
+	if err := vu.prepareRuntimeState(); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		result := vu.runParallelBranch(context.Background(), 0, dsl.ParallelBranch{Name: "branch", Steps: []dsl.Action{{Name: "get", Type: "GET", Target: "/{{param.counter}}"}}}, "action")
+		if result.failed || result.err != nil || result.variables["observed"] != "/1" {
+			t.Fatalf("branch lost source iteration: %+v", result)
+		}
+	}
+	value, ok := state.next("plan", script.Parameters[0])
+	if !ok || value != "2" {
+		t.Fatalf("branches advanced shared counter: %q", value)
+	}
+}

@@ -9,14 +9,52 @@ import (
 
 const JMeterMessagingProfile = "jmeter-messaging-v1"
 
+// Reserved until the complete distributed source-session contract passes
+// conformance. Requiring it now prevents older generators ignoring new fields.
+const FeatureJMeterMessagingV1 = "jmeter_messaging_v1"
+
+func RequiresJMeterMessaging(s *Script) bool {
+	if s == nil {
+		return false
+	}
+	if s.Config.JMeter != nil || len(s.Config.SamplerSchedules) != 0 {
+		return true
+	}
+	for _, p := range s.Parameters {
+		if p.Scope == "source_engine" || p.ScopeID != "" || p.RandomAlgorithm != "" {
+			return true
+		}
+	}
+	if len(validateScriptStructureIssues(s)) > 0 {
+		return true
+	}
+	stack := append(append(append([]Action(nil), s.Init...), s.Actions...), s.Teardown...)
+	for len(stack) > 0 {
+		a := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if len(a.PacingIDs) > 0 {
+			return true
+		}
+		if a.Control != nil {
+			for _, branch := range a.Control.ActionBranches() {
+				stack = append(stack, branch.Actions...)
+			}
+		}
+	}
+	return false
+}
+
 // JMeterCompatibility records the source-engine boundary. It is executable
 // configuration, not a claim that an import has passed live conformance.
 type JMeterCompatibility struct {
-	Profile          string `json:"profile"`
-	SourcePlanID     string `json:"source_plan_id"`
-	SourceGroupID    string `json:"source_group_id"`
-	Timezone         string `json:"timezone,omitempty"`
-	ContextConfirmed bool   `json:"context_confirmed,omitempty"`
+	Profile           string `json:"profile"`
+	SourcePlanID      string `json:"source_plan_id"`
+	SourceGroupID     string `json:"source_group_id"`
+	Timezone          string `json:"timezone,omitempty"`
+	ContextConfirmed  bool   `json:"context_confirmed,omitempty"`
+	ProducerLifecycle string `json:"producer_lifecycle,omitempty"`
+	SampleTiming      string `json:"sample_timing,omitempty"`
+	ConfigurationID   string `json:"configuration_id,omitempty"`
 }
 
 // SamplerSchedule limits starts, not completions or iterations. A schedule is
@@ -70,6 +108,18 @@ func validateJMeterCompatibility(s *Script, execution bool) []string {
 		}
 		if !validCompatibilityID(c.SourcePlanID) || !validCompatibilityID(c.SourceGroupID) {
 			issues = append(issues, "config.jmeter requires bounded source identities")
+		}
+		if c.ProducerLifecycle != "" && c.ProducerLifecycle != "source_engine" && c.ProducerLifecycle != "per_sample" {
+			issues = append(issues, "unsupported JMeter producer lifecycle")
+		}
+		if c.SampleTiming != "" && c.SampleTiming != "send_acknowledgement" && c.SampleTiming != "pnop_create_send_excludes_close" {
+			issues = append(issues, "unsupported JMeter sample timing")
+		}
+		if c.ProducerLifecycle == "source_engine" && c.ConfigurationID == "" {
+			issues = append(issues, "source-engine producer lifecycle requires configuration identity")
+		}
+		if c.ConfigurationID != "" && !validCompatibilityID(c.ConfigurationID) {
+			issues = append(issues, "invalid JMeter configuration identity")
 		}
 		if c.Timezone != "" {
 			if _, err := time.LoadLocation(c.Timezone); err != nil {

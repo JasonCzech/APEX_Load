@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"sort"
 	"strings"
@@ -68,6 +70,8 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 		"http.ProxyURL userinfo -> Proxy-Authorization"),
 	"config.browser.proxy.server": covered("config.browser.proxy.server",
 		"Playwright proxy server userinfo"),
+	"config.kafka.oauth.client_secret_ref": covered("config.kafka.oauth", "OAuth Basic credential pair"),
+	"config.kafka.oauth.token_url":         excluded("runtime rejects endpoint userinfo; token endpoint never synthesizes Basic from a URL"),
 	"config.kafka.schema_registry_url": covered("config.kafka.schema_registry_url",
 		"dialed by a net/http client in pkg/protocol/kafka"),
 	"action.target": covered("action.target",
@@ -282,6 +286,7 @@ func emittedCredentialSurfaceNames() map[string]struct{} {
 				TLS: &dsl.JMSTLSConfig{CACertSecret: "JMS_CA"},
 			},
 			Kafka: dsl.KafkaConfig{
+				OAuth:             &dsl.KafkaOAuthConfig{ClientID: "u", ClientSecretRef: "{{secret.P}}", AuthenticationMethod: "client_secret_basic"},
 				SchemaRegistryURL: "https://u:{{secret.P}}@registry.test",
 				SASLUsername:      "u", SASLPassword: "{{secret.P}}", SASLPasswordSecret: "KAFKA_PASSWORD",
 			},
@@ -550,4 +555,33 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestKafkaOAuthCredentialComposites(t *testing.T) {
+	for _, method := range []string{"client_secret_basic", "kafka_3_3_1_basic"} {
+		t.Run(method, func(t *testing.T) {
+			script := &dsl.Script{Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{OAuth: &dsl.KafkaOAuthConfig{ClientID: " client+id ", ClientSecretRef: "{{secret.oauth}}", AuthenticationMethod: method}}}}
+			resolver := SecretResolverFunc(func(name string) (string, bool) { return " secret/? ", name == "oauth" })
+			values := runtimeProtocolAuthCompositeValues(script, resolver)
+			pair := url.QueryEscape(" client+id ") + ":" + url.QueryEscape(" secret/? ")
+			encoding := base64.StdEncoding
+			if method == "kafka_3_3_1_basic" {
+				pair = "client+id:secret/?"
+				encoding = base64.URLEncoding
+			}
+			if !containsString(values, encoding.EncodeToString([]byte(pair))) {
+				t.Fatal("missing encoded OAuth credential composite")
+			}
+		})
+	}
+}
+
+func TestMissingKafkaOAuthLogicalSecretNeverBecomesLiteral(t *testing.T) {
+	script := &dsl.Script{Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{OAuth: &dsl.KafkaOAuthConfig{ClientSecretRef: "missing_oauth"}}}}
+	for _, resolver := range []SecretResolver{nil, SecretResolverFunc(func(string) (string, bool) { return "", false })} {
+		cfg := buildProtoConfigWithSecretResolver(script, resolver)
+		if cfg["kafka_oauth_client_secret"] != "{{secret.missing_oauth}}" {
+			t.Fatal("unresolved logical name became a credential")
+		}
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -57,19 +58,20 @@ const (
 )
 
 type OAuthTokenRequest struct {
-	TokenURL     string
-	GrantType    string
-	ClientID     string
-	ClientSecret string
-	Scope        string
-	Audience     string
-	Issuer       string
-	Subject      string
-	PrivateKey   string
-	RefreshToken string
-	Username     string
-	Password     string
-	HTTPClient   *http.Client `json:"-"`
+	ClientAuthentication string
+	TokenURL             string
+	GrantType            string
+	ClientID             string
+	ClientSecret         string
+	Scope                string
+	Audience             string
+	Issuer               string
+	Subject              string
+	PrivateKey           string
+	RefreshToken         string
+	Username             string
+	Password             string
+	HTTPClient           *http.Client `json:"-"`
 }
 
 type OAuthToken struct {
@@ -158,7 +160,13 @@ func oauthRequestClient(base *http.Client) *http.Client {
 }
 
 func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, error) {
+	if err := ctx.Err(); err != nil {
+		return OAuthToken{}, err
+	}
 	req.GrantType = normalizeOAuthGrant(req.GrantType)
+	if req.ClientAuthentication == "" {
+		req.ClientAuthentication = "client_secret_post"
+	}
 	if err := validateOAuthTokenRequest(req); err != nil {
 		return OAuthToken{}, err
 	}
@@ -166,7 +174,7 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 	if token, ok := loadOAuthToken(key); ok {
 		return token, nil
 	}
-	value, err, _ := oauthTokenGroup.Do(key, func() (any, error) {
+	pending := oauthTokenGroup.DoChan(key, func() (any, error) {
 		if token, ok := loadOAuthToken(key); ok {
 			return token, nil
 		}
@@ -181,10 +189,15 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 		storeOAuthToken(key, token)
 		return token, nil
 	})
-	if err != nil {
-		return OAuthToken{}, err
+	select {
+	case <-ctx.Done():
+		return OAuthToken{}, ctx.Err()
+	case result := <-pending:
+		if result.Err != nil {
+			return OAuthToken{}, result.Err
+		}
+		return result.Val.(OAuthToken), nil
 	}
-	return value.(OAuthToken), nil
 }
 
 func loadOAuthToken(key string) (OAuthToken, bool) {
@@ -318,6 +331,12 @@ func normalizeOAuthGrant(grant string) string {
 }
 
 func validateOAuthTokenRequest(req OAuthTokenRequest) error {
+	if req.ClientAuthentication != "" && req.ClientAuthentication != "client_secret_post" && req.ClientAuthentication != "client_secret_basic" && req.ClientAuthentication != "kafka_3_3_1_basic" {
+		return fmt.Errorf("unsupported OAuth client authentication method")
+	}
+	if (req.ClientAuthentication == "client_secret_basic" || req.ClientAuthentication == "kafka_3_3_1_basic") && req.GrantType != OAuthGrantClientCredentials {
+		return fmt.Errorf("client_secret_basic requires client_credentials grant")
+	}
 	rawTokenURL := strings.TrimSpace(req.TokenURL)
 	if len(rawTokenURL) > maxOAuthInstanceURLBytes {
 		return fmt.Errorf("token_url must not exceed %d bytes", maxOAuthInstanceURLBytes)
@@ -439,9 +458,25 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		return OAuthToken{}, fmt.Errorf("unsupported OAuth2 grant_type %q", req.GrantType)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, req.TokenURL, strings.NewReader(form.Encode()))
+	if req.ClientAuthentication == "client_secret_basic" || req.ClientAuthentication == "kafka_3_3_1_basic" {
+		form.Del("client_id")
+		form.Del("client_secret")
+	}
+	encodedForm := form.Encode()
+	if req.ClientAuthentication == "kafka_3_3_1_basic" {
+		encodedForm = "grant_type=client_credentials"
+		if scope := trimKafka331Value(req.Scope); scope != "" {
+			encodedForm += "&scope=" + strings.ReplaceAll(strings.ReplaceAll(url.QueryEscape(scope), "%2A", "*"), "~", "%7E")
+		}
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, req.TokenURL, strings.NewReader(encodedForm))
 	if err != nil {
 		return OAuthToken{}, err
+	}
+	if req.ClientAuthentication == "client_secret_basic" {
+		httpReq.SetBasicAuth(url.QueryEscape(req.ClientID), url.QueryEscape(req.ClientSecret))
+	} else if req.ClientAuthentication == "kafka_3_3_1_basic" {
+		httpReq.Header.Set("Authorization", "Basic "+base64.URLEncoding.EncodeToString([]byte(trimKafka331Value(req.ClientID)+":"+trimKafka331Value(req.ClientSecret))))
 	}
 	httpReq.Header.Set("Content-Type", oauthFormContentType)
 	httpReq.Header.Set("Accept", oauthJSONAcceptMimeType)
@@ -583,7 +618,7 @@ func redactOAuthErrorDescription(desc string, req OAuthTokenRequest) string {
 	if desc == "" {
 		return ""
 	}
-	for _, secret := range []string{req.ClientSecret, req.PrivateKey, req.RefreshToken, req.Password} {
+	for _, secret := range []string{base64.URLEncoding.EncodeToString([]byte(trimKafka331Value(req.ClientID) + ":" + trimKafka331Value(req.ClientSecret))), base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(req.ClientID) + ":" + url.QueryEscape(req.ClientSecret))), req.ClientSecret, url.QueryEscape(req.ClientSecret), req.PrivateKey, req.RefreshToken, req.Password} {
 		secret = strings.TrimSpace(secret)
 		if secret != "" {
 			desc = strings.ReplaceAll(desc, secret, "[redacted]")
@@ -623,9 +658,10 @@ func buildJWTBearerAssertion(req OAuthTokenRequest, now time.Time) (string, erro
 func oauthTokenCacheKey(req OAuthTokenRequest) string {
 	parts := []string{
 		req.GrantType,
+		req.ClientAuthentication,
 		strings.TrimSpace(req.TokenURL),
-		strings.TrimSpace(req.ClientID),
-		strings.TrimSpace(req.Scope),
+		req.ClientID,
+		req.Scope,
 		strings.TrimSpace(req.Audience),
 		strings.TrimSpace(req.Issuer),
 		strings.TrimSpace(req.Subject),
@@ -643,10 +679,14 @@ func oauthTokenCacheKey(req OAuthTokenRequest) string {
 }
 
 func secretFingerprint(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
+	if value == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(trimmed))
+	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
+}
+
+// Java String.trim removes only code units through U+0020.
+func trimKafka331Value(value string) string {
+	return strings.TrimFunc(value, func(r rune) bool { return r <= 0x20 })
 }

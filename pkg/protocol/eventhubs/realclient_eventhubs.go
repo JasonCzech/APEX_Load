@@ -54,35 +54,60 @@ const (
 )
 
 func (c *realClient) Send(ctx context.Context, hub string, ev event) (eventMeta, error) {
+	return c.SendBatch(ctx, hub, []event{ev})
+}
+
+func (c *realClient) SendBatch(ctx context.Context, hub string, events []event) (eventMeta, error) {
+	if len(events) == 0 {
+		return eventMeta{}, fmt.Errorf("Event Hubs message list is empty")
+	}
 	prod, err := c.producer(ctx, hub)
 	if err != nil {
 		return eventMeta{}, err
 	}
 	opts := &azeventhubs.EventDataBatchOptions{}
-	if ev.PartitionKey != "" {
-		pk := ev.PartitionKey
-		opts.PartitionKey = &pk
+	first := events[0]
+	if first.PartitionKey != "" {
+		opts.PartitionKey = &first.PartitionKey
 	}
-	if ev.PartitionID != "" {
-		pid := ev.PartitionID
-		opts.PartitionID = &pid
+	if first.PartitionID != "" {
+		opts.PartitionID = &first.PartitionID
+	}
+	for _, ev := range events {
+		if ev.PartitionKey != first.PartitionKey || ev.PartitionID != first.PartitionID {
+			return eventMeta{}, fmt.Errorf("sampled Event Hubs messages require one partition selection")
+		}
 	}
 	batch, err := prod.NewEventDataBatch(ctx, opts)
 	if err != nil {
 		return eventMeta{}, err
 	}
-	if err := batch.AddEventData(&azeventhubs.EventData{Body: ev.Body, Properties: toAnyMap(ev.Properties)}, nil); err != nil {
-		if errors.Is(err, azeventhubs.ErrEventDataTooLarge) {
-			return eventMeta{}, fmt.Errorf("event exceeds the Event Hubs batch size limit: %w", err)
+	count := 0
+	for _, ev := range events {
+		data := &azeventhubs.EventData{Body: ev.Body, Properties: toAnyMap(ev.Properties)}
+		err = batch.AddEventData(data, nil)
+		if errors.Is(err, azeventhubs.ErrEventDataTooLarge) && count > 0 {
+			if err = prod.SendEventDataBatch(ctx, batch, nil); err != nil {
+				return eventMeta{}, err
+			}
+			batch, err = prod.NewEventDataBatch(ctx, opts)
+			if err != nil {
+				return eventMeta{}, err
+			}
+			count = 0
+			err = batch.AddEventData(data, nil)
 		}
-		return eventMeta{}, err
+		if err != nil {
+			return eventMeta{}, err
+		}
+		count++
 	}
-	if err := prod.SendEventDataBatch(ctx, batch, nil); err != nil {
-		return eventMeta{}, err
+	if count > 0 {
+		if err = prod.SendEventDataBatch(ctx, batch, nil); err != nil {
+			return eventMeta{}, err
+		}
 	}
-	// SendEventDataBatch does not return per-event offsets/sequence numbers, so we
-	// report the client-side send time and the resolved partition id (if any).
-	return eventMeta{PartitionID: ev.PartitionID, EnqueuedAt: time.Now()}, nil
+	return eventMeta{PartitionID: first.PartitionID, EnqueuedAt: time.Now()}, nil
 }
 
 func (c *realClient) Receive(ctx context.Context, hub, group string, timeout time.Duration) (event, int64, error) {

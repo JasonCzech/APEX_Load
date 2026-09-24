@@ -6,11 +6,16 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -18,12 +23,12 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/sync/singleflight"
 )
 
 func resetOAuthTokenCacheForTest() {
 	oauthTokenCache = newBoundedOAuthTokenCache()
-	oauthTokenGroup = singleflight.Group{}
+	// Never overwrite a live singleflight mutex: DoChan can still be
+	// releasing it after its result is received. Cache reset is sufficient.
 }
 
 func TestFetchOAuth2TokenClientCredentials(t *testing.T) {
@@ -544,5 +549,147 @@ func TestRedactOAuthErrorDescriptionCapsLength(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "…") {
 		t.Fatalf("capped description should end with an ellipsis: %q", got)
+	}
+}
+
+func TestOAuthClientSecretBasicUsesEncodedCredentials(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, password, ok := r.BasicAuth()
+		if !ok || user != "client%3Aid" || password != "secret%2Bvalue" {
+			t.Errorf("unexpected encoded basic credentials")
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		if r.Form.Has("client_id") || r.Form.Has("client_secret") {
+			t.Error("credentials duplicated in body")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"basic-token","expires_in":3600}`))
+	}))
+	defer server.Close()
+	token, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{TokenURL: server.URL, GrantType: OAuthGrantClientCredentials, ClientAuthentication: "client_secret_basic", ClientID: "client:id", ClientSecret: "secret+value"})
+	if err != nil || token.AccessToken != "basic-token" {
+		t.Fatal(token, err)
+	}
+}
+
+func TestOAuthConcurrentWaiterCanCancel(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	entered, release := make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-release
+		_, _ = w.Write([]byte(`{"access_token":"shared-token","expires_in":3600}`))
+	}))
+	defer server.Close()
+	req := OAuthTokenRequest{TokenURL: server.URL, GrantType: OAuthGrantClientCredentials, ClientID: "cancel-client", ClientSecret: "secret"}
+	first := make(chan error, 1)
+	go func() { _, err := FetchOAuth2Token(context.Background(), req); first <- err }()
+	<-entered
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := FetchOAuth2Token(ctx, req)
+	close(release)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if err = <-first; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKafka331OAuthBasicAndCredentialSafeError(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	req := OAuthTokenRequest{GrantType: OAuthGrantClientCredentials, ClientAuthentication: "kafka_3_3_1_basic", ClientID: " client:id ", ClientSecret: " secret/? "}
+	want := "Basic " + base64.URLEncoding.EncodeToString([]byte("client:id:secret/?"))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != want {
+			t.Error("Kafka 3.3.1 Basic wire format mismatch")
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		if r.Form.Has("client_id") || r.Form.Has("client_secret") {
+			t.Error("duplicated credentials")
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "invalid_client", "error_description": want})
+	}))
+	defer server.Close()
+	req.TokenURL = server.URL
+	_, err := FetchOAuth2Token(context.Background(), req)
+	if err == nil || strings.Contains(err.Error(), strings.TrimPrefix(want, "Basic ")) {
+		t.Fatal("encoded credential leaked")
+	}
+}
+
+func TestOAuthCacheSeparatesAuthenticationAndSecretWhitespace(t *testing.T) {
+	base := OAuthTokenRequest{TokenURL: "https://identity.test/token", GrantType: OAuthGrantClientCredentials, ClientID: "client", ClientSecret: "secret", ClientAuthentication: "client_secret_post"}
+	first := oauthTokenCacheKey(base)
+	base.ClientSecret = " secret "
+	if first == oauthTokenCacheKey(base) {
+		t.Fatal("distinct secrets share a token cache entry")
+	}
+	base.ClientSecret = "secret"
+	base.ClientAuthentication = "client_secret_basic"
+	if first == oauthTokenCacheKey(base) {
+		t.Fatal("authentication methods share a token cache entry")
+	}
+}
+
+func TestKafka331OAuthMatchesPinnedJavaVectors(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	data, err := os.ReadFile("testdata/kafka331_oauth_vectors.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectors struct {
+		Vectors [][]string `json:"vectors"`
+	}
+	if err = json.Unmarshal(data, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	if len(vectors.Vectors) != 7 {
+		t.Fatal("incomplete pinned OAuth vectors")
+	}
+	decode := func(s string) string {
+		b, e := base64.StdEncoding.DecodeString(s)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return string(b)
+	}
+	for i, v := range vectors.Vectors {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, e := io.ReadAll(r.Body)
+				if e != nil {
+					t.Error(e)
+				}
+				if r.Header.Get("Authorization") != v[3] || string(body) != decode(v[4]) {
+					t.Error("wire format differs from pinned Java callback")
+				}
+				_, _ = w.Write([]byte(`{"access_token":"synthetic-token","expires_in":60}`))
+			}))
+			defer server.Close()
+			_, err := FetchOAuth2Token(context.Background(), OAuthTokenRequest{TokenURL: server.URL, GrantType: OAuthGrantClientCredentials, ClientAuthentication: "kafka_3_3_1_basic", ClientID: decode(v[0]), ClientSecret: decode(v[1]), Scope: decode(v[2])})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCancelledOAuthCallerCannotReceiveCachedToken(t *testing.T) {
+	req := OAuthTokenRequest{TokenURL: "https://synthetic.invalid/token", GrantType: OAuthGrantClientCredentials, ClientID: "cancelled-cache-client", ClientSecret: "synthetic-secret", ClientAuthentication: "client_secret_post"}
+	token := OAuthToken{AccessToken: "cached-token", ExpiresAt: time.Now().Add(time.Hour)}
+	storeOAuthToken(oauthTokenCacheKey(req), token)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got, err := FetchOAuth2Token(ctx, req)
+	if !errors.Is(err, context.Canceled) || got.AccessToken != "" {
+		t.Fatalf("cancelled caller received token: %v", err)
 	}
 }

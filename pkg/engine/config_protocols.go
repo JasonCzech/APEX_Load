@@ -667,6 +667,25 @@ func appendJMSConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	kafkaCfg := script.Config.Kafka
+	if p := kafkaCfg.Producer; p != nil {
+		for key, value := range map[string]*int{"retries": p.Retries, "linger_ms": p.LingerMs, "batch_bytes": p.BatchBytes, "buffer_bytes": p.BufferBytes, "admission_timeout_ms": p.AdmissionTimeoutMs, "delivery_timeout_ms": p.DeliveryTimeoutMs, "request_timeout_ms": p.RequestTimeoutMs} {
+			if value != nil {
+				cfg["kafka_producer_"+key] = float64(*value)
+			}
+		}
+	}
+	if kafkaCfg.TLS != nil {
+		cfg["kafka_tls_min_version"] = kafkaCfg.TLS.MinVersion
+		cfg["kafka_tls_max_version"] = kafkaCfg.TLS.MaxVersion
+	}
+	if o := kafkaCfg.OAuth; o != nil {
+		cfg["kafka_oauth_mode"] = o.Mode
+		cfg["kafka_oauth_token_url"] = o.TokenURL
+		cfg["kafka_oauth_client_id"] = o.ClientID
+		cfg["kafka_oauth_client_secret"] = o.ClientSecretRef
+		cfg["kafka_oauth_client_scope"] = o.Scope
+		cfg["kafka_oauth_authentication_method"] = o.AuthenticationMethod
+	}
 	if len(kafkaCfg.Brokers) > 0 {
 		cfg["kafka_brokers"] = kafkaCfg.Brokers
 	}
@@ -769,6 +788,10 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {
 	ehCfg := script.Config.EventHubs
+	if c := script.Config.JMeter; c != nil {
+		cfg["eventhubs_producer_lifecycle"] = c.ProducerLifecycle
+		cfg["eventhubs_sample_timing"] = c.SampleTiming
+	}
 	if ehCfg.Namespace != "" {
 		cfg["eventhubs_namespace"] = ehCfg.Namespace
 	}

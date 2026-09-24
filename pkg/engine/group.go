@@ -57,6 +57,7 @@ type GroupConfig struct {
 	// creates. Callers do not supply it; see runtimeSecretValuesForScript.
 	importedCredentials *importedCredentialInspection
 	sourceParameters    *sourceParameterState
+	sourceSamplers      *sourceSamplerRuntime
 }
 
 type ResultSink interface {
@@ -519,7 +520,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 // fenced until the epoch; this setup phase lets peer generators align their
 // ramps without turning initialization latency into a launch burst. Local callers
 // use Run, which starts now.
-func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time) (*MultiGroupRunResult, error) {
+func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time) (runResult *MultiGroupRunResult, runErr error) {
 	// Ready is both a successful control boundary and a terminal release for
 	// callers already waiting on a committed engine. Every return path—including
 	// preflight failure or a graceful stop latched before Run—must unblock it.
@@ -541,8 +542,14 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	if sourceErr != nil {
 		return nil, sourceErr
 	}
+	sourceSamplers, sourceErr := newSourceSamplerRuntime(sourceScripts, mge)
+	if sourceErr != nil {
+		return nil, sourceErr
+	}
+	defer func() { runErr = errors.Join(runErr, sourceSamplers.close()) }()
 	for i := range mge.groups {
 		mge.groups[i].sourceParameters = sourceState
+		mge.groups[i].sourceSamplers = sourceSamplers
 	}
 	if err := mge.preflightRuntimeAtStart(ctx); err != nil {
 		return nil, err
@@ -1751,6 +1758,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		RedactionConfig:              group.RedactionConfig,
 		importedCredentialInspection: group.importedCredentials,
 		sourceParameters:             group.sourceParameters,
+		sourceSamplers:               group.sourceSamplers,
 		SecretResolver:               group.SecretResolver,
 		Rendezvous:                   group.rendezvous,
 		ExecutionGoals:               group.executionGoals,
@@ -2001,6 +2009,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			RedactionConfig:              prepared.group.RedactionConfig,
 			importedCredentialInspection: prepared.group.importedCredentials,
 			sourceParameters:             prepared.group.sourceParameters,
+			sourceSamplers:               prepared.group.sourceSamplers,
 			SecretResolver:               prepared.group.SecretResolver,
 			PauseControl:                 mge,
 			IterationRateLimiter:         prepared.group.rateLimiter,
@@ -2505,6 +2514,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 			RedactionConfig:              group.RedactionConfig,
 			importedCredentialInspection: group.importedCredentials,
 			sourceParameters:             group.sourceParameters,
+			sourceSamplers:               group.sourceSamplers,
 			SecretResolver:               group.SecretResolver,
 			PauseControl:                 mge,
 			ExecutionGoals:               group.executionGoals,
@@ -2546,6 +2556,14 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 	if groupIndex < 0 {
 		mge.mu.Unlock()
 		return fmt.Errorf("group not found: %s", groupName)
+	}
+	if dsl.RequiresJMeterMessaging(mge.groups[groupIndex].Script) {
+		current := mge.groups[groupIndex].VUsers
+		mge.mu.Unlock()
+		if targetVUsers == current {
+			return nil
+		}
+		return fmt.Errorf("JMeter source thread population is fixed; changing VUsers requires a new run")
 	}
 	if mge.baseCtx != nil && mge.baseCtx.Err() == nil &&
 		mge.loopCtx != nil && mge.loopCtx.Err() == nil &&

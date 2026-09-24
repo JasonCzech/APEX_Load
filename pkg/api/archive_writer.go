@@ -288,6 +288,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		DependencyType:        result.DependencyType,
 		DependencyTarget:      result.DependencyTarget,
 		DurationMs:            durationMillis(result.Duration),
+		WorkerDurationMs:      durationMillis(result.WorkerDuration),
 		DNSMs:                 durationMillis(result.DNSTime),
 		ConnectMs:             durationMillis(result.ConnectTime),
 		TLSMs:                 durationMillis(result.TLSTime),

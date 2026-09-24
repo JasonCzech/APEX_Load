@@ -345,7 +345,7 @@ func walkScriptSecretJSON(value any, path string, root, dedicatedField bool, vis
 				continue
 			}
 			_, childDedicated := map[string]struct{}{
-				"dsn_secret": {}, "sasl_password_secret": {}, "connection_string_secret": {}, "ca_cert_secret": {},
+				"client_secret_ref": {}, "dsn_secret": {}, "sasl_password_secret": {}, "connection_string_secret": {}, "ca_cert_secret": {},
 			}[normalizedKey]
 			childPath := path + "/" + escapeJSONPointerToken(key)
 			if text, ok := child.(string); ok {

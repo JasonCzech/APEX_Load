@@ -13,6 +13,7 @@ func eventHubsActionSpecs() []ActionSpec {
 			Summary:   "Publishes an event to an event hub (the primary ingestion action).",
 			Fields: []FieldSpec{
 				{Name: "target", Kind: FieldKindString, Doc: "Event hub; falls back to config.eventhubs.event_hub or params.event_hub."},
+				{Name: "params.messages", Kind: FieldKindArray, Doc: "String message list sampled as one action; mutually exclusive with body. Maximum 4096 messages and 64 MiB total."},
 				{Name: "body", Kind: FieldKindString, Doc: "Event body; template variables are expanded."},
 				{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the event body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 				{Name: "headers", Kind: FieldKindObject, Doc: "Application properties set on the event."},

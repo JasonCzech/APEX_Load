@@ -152,6 +152,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		Success:             success,
 	}
 	if source != nil {
+		tx.WorkerDuration = source.WorkerDuration
 		tx.StartTime = source.StartTime
 		if tx.StartTime.IsZero() {
 			tx.StartTime = time.Now().Add(-duration)

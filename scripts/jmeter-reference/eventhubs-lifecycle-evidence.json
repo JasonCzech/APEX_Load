@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "live_conformance": "unverified",
+  "scope": "Unchanged PNOP sampler lifecycle and sample boundaries with instrumented SDK transport; network forbidden",
+  "source_sha256": "cbe52259a5926a72d1359263aa4972f4d8a36aed8cec54c16d3fe46c935ff5a0",
+  "vectors_sha256": "c8c20d2141de7a279545e6426c1406379decdca81982e6c763b07b1d5ead149d",
+  "startup_evidence_sha256": "e554126f22c81f7869adb179a7012efc03d25680612eb634b0b2940d0476d709",
+  "vectors": 5
+}

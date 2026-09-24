@@ -1103,6 +1103,12 @@ func javaVuserDistributedContainmentError(capabilities protocol.RuntimeCapabilit
 
 func requiredRuntimeFeature(script *dsl.Script) string {
 	base := requiredBaseRuntimeFeature(script)
+	if dsl.RequiresJMeterMessaging(script) {
+		if base != "" {
+			base += "+"
+		}
+		base += dsl.FeatureJMeterMessagingV1
+	}
 	if dsl.RequiresLRFidelity(script) {
 		if base != "" {
 			return base + "+" + dsl.FeatureLRFidelityV1

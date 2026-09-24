@@ -141,6 +141,8 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	sink := &parallelResultSink{downstream: vu.ResultSink}
 	branchVU := &VUser{
 		ID:                           vu.ID,
+		sourceSamplers:               vu.sourceSamplers,
+		sourceParameters:             vu.sourceParameters,
 		TotalVUsers:                  vu.TotalVUsers,
 		Group:                        vu.Group,
 		Region:                       vu.Region,
@@ -168,6 +170,9 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	branchVU.ensureImportedCredentialInspection()
 	branchVU.bindRuntimeTextRedactor()
 	config := vuserProtoConfig(buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", branchVU.secretResolver()), vu.ID)
+	if vu.sourceSamplers != nil {
+		vu.sourceSamplers.bindProtocolConfig(config, vu.Script)
+	}
 	if err := callProtocolInit(ctx, instance, config, vu.RedactionConfig); err != nil {
 		result.err, result.failed = err, true
 		return
@@ -194,6 +199,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	if branchVU.Parameters != nil {
 		branchVU.Parameters.Prime()
 		branchVU.Parameters.inheritAllocatedParameterState(vu.Parameters)
+		branchVU.Parameters.inheritSourceParameterState(vu.Parameters)
 	}
 	_ = branchVU.refreshImportedCredentialRuntimeValues()
 	cfg := vu.Script.Config

@@ -795,6 +795,12 @@ func (vu *VUser) interpolateAny(v any) any {
 	switch typed := v.(type) {
 	case string:
 		return vu.interpolate(typed)
+	case []string:
+		out := make([]string, len(typed))
+		for i := range typed {
+			out[i] = vu.interpolate(typed[i])
+		}
+		return out
 	case []any:
 		out := make([]any, len(typed))
 		for i := range typed {
@@ -816,6 +822,12 @@ func (vu *VUser) interpolateAnyWithSecrets(v any) (any, any) {
 	switch typed := v.(type) {
 	case string:
 		return vu.interpolateWithSecrets(typed)
+	case []string:
+		resolved, redacted := make([]string, len(typed)), make([]string, len(typed))
+		for i := range typed {
+			resolved[i], redacted[i] = vu.interpolateWithSecrets(typed[i])
+		}
+		return resolved, redacted
 	case []any:
 		resolved := make([]any, len(typed))
 		redacted := make([]any, len(typed))

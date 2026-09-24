@@ -65,6 +65,18 @@ func TestGenericImportBatchRejectsCredentialsInExecutableConfigSurfaces(t *testi
 			},
 		},
 		{
+			name: "Kafka OAuth endpoint credentials",
+			mutate: func(script *dsl.Script) {
+				script.Config.Kafka.OAuth = &dsl.KafkaOAuthConfig{TokenURL: "https://user:" + canary + "@identity.test/token"}
+			},
+		},
+		{
+			name: "Kafka OAuth secret reference contains literal",
+			mutate: func(script *dsl.Script) {
+				script.Config.Kafka.OAuth = &dsl.KafkaOAuthConfig{ClientSecretRef: "literal:" + canary}
+			},
+		},
+		{
 			name: "Kafka schema registry URL",
 			mutate: func(script *dsl.Script) {
 				script.Config.Kafka.SchemaRegistryURL = "https://user:" + canary + "@registry.test"

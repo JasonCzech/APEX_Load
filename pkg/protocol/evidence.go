@@ -81,6 +81,8 @@ func inferEvidenceProtocol(action *Action, result *Result) string {
 		return "network"
 	case strings.HasPrefix(dependency, "jms") || strings.HasPrefix(actionType, "jms_"):
 		return "jms"
+	case strings.HasPrefix(dependency, "eventhubs") || strings.HasPrefix(actionType, "eventhubs_"):
+		return "eventhubs"
 	case strings.HasPrefix(dependency, "kafka") || strings.HasPrefix(actionType, "kafka_"):
 		return "kafka"
 	case strings.HasPrefix(dependency, "java_vuser") || strings.HasPrefix(actionType, "java_vuser_"):
@@ -136,6 +138,7 @@ func evidenceTimings(result *Result) map[string]any {
 		}
 	}
 	addDuration("duration_ms", result.Duration)
+	addDuration("worker_duration_ms", result.WorkerDuration)
 	addDuration("dns_ms", result.DNSTime)
 	addDuration("connect_ms", result.ConnectTime)
 	addDuration("tls_ms", result.TLSTime)

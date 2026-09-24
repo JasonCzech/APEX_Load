@@ -92,6 +92,14 @@ func validateEventHubsCatalogActionIssues(path string, action Action, script *Sc
 func validateEventHubsActionSemanticIssues(path string, action Action, eh EventHubsConfig) []string {
 	label := actionLabel(path, action)
 	var issues []string
+	if value, present := action.Params["messages"]; present {
+		if action.Type != "eventhubs_produce" || action.Body != "" {
+			issues = append(issues, label+": messages require a produce action without body")
+		}
+		if _, err := eventhubsprotocol.MessageBodies(value); err != nil {
+			issues = append(issues, label+": "+err.Error())
+		}
+	}
 	hub := actionParamString(action.Params, "event_hub")
 	if hub == "" {
 		hub = action.Target

@@ -21,7 +21,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
@@ -43,10 +45,11 @@ func newRealClient(cfg config) kafkaClient {
 		}
 		cfg.TransactionalID = base + suffix
 	}
-	return &franzClient{cfg: cfg}
+	return &franzClient{cfg: cfg, admission: newProducerAdmission(cfg.Producer)}
 }
 
 type franzClient struct {
+	admission            *producerAdmission
 	cfg                  config
 	once                 sync.Once
 	cl                   *kgo.Client
@@ -170,6 +173,25 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 		kgo.SeedBrokers(c.cfg.Brokers...),
 		kgo.RecordPartitioner(resolvedRecordPartitioner(c.cfg.PartitionStrategy)),
 	}
+	p := c.cfg.Producer
+	if p.Retries != nil {
+		opts = append(opts, kgo.RecordRetries(*p.Retries))
+	}
+	if p.LingerMs != nil {
+		opts = append(opts, kgo.ProducerLinger(time.Duration(*p.LingerMs)*time.Millisecond))
+	}
+	if p.BufferBytes != nil {
+		opts = append(opts, kgo.MaxBufferedBytes(*p.BufferBytes), kgo.MaxBufferedRecords(2147483647))
+	}
+	if p.RequestTimeoutMs != nil {
+		opts = append(opts, kgo.ProduceRequestTimeout(time.Duration(*p.RequestTimeoutMs)*time.Millisecond))
+	}
+	if p.DeliveryTimeoutMs != nil {
+		opts = append(opts, kgo.RecordDeliveryTimeout(time.Duration(*p.DeliveryTimeoutMs)*time.Millisecond))
+	}
+	if p.BatchBytes != nil {
+		opts = append(opts, kgo.ProducerBatchMaxBytes(int32(*p.BatchBytes)))
+	}
 	if c.cfg.ClientID != "" {
 		opts = append(opts, kgo.ClientID(c.cfg.ClientID))
 	}
@@ -225,13 +247,21 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 	if codec, ok := compressionCodec(c.cfg.Compression); ok {
 		opts = append(opts, kgo.ProducerBatchCompression(codec))
 	}
-	if c.cfg.MaxMessageBytes > 0 {
+	if c.cfg.MaxMessageBytes > 0 && (p.BatchBytes == nil || c.cfg.MaxMessageBytes < *p.BatchBytes) {
 		// Authoritative client-side cap (e.g. Event Hubs' 1 MiB limit): franz
 		// rejects any record exceeding the batch-max, complementing the
 		// conservative pre-flight guard in kafka.go checkRecordSize.
 		opts = append(opts, kgo.ProducerBatchMaxBytes(int32(c.cfg.MaxMessageBytes)))
 	}
-	if strings.EqualFold(c.cfg.SASLMechanism, "oauthbearer") {
+	if hasExplicitOAuth(c.cfg) {
+		if err := validateExplicitOAuth(c.cfg); err != nil {
+			return nil, err
+		}
+		opts = append(opts, kgo.SASL(oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+			token, err := explicitOAuthToken(ctx, c.cfg)
+			return oauth.Auth{Token: token}, err
+		})))
+	} else if strings.EqualFold(c.cfg.SASLMechanism, "oauthbearer") {
 		src, serr := c.oauthTokenSource()
 		if serr != nil {
 			return nil, serr
@@ -388,6 +418,57 @@ func (c *franzClient) Produce(ctx context.Context, topic string, rec kafkaRecord
 	if err != nil {
 		return recordMeta{}, err
 	}
+	size := int64(len(rec.Value) + len(rec.Key))
+	for key, value := range rec.Headers {
+		size += int64(len(key) + len(value))
+	}
+	release, err := c.admission.admit(ctx, size, func(admission context.Context) error {
+		req := kmsg.NewPtrMetadataRequest()
+		req.AllowAutoTopicCreation = true
+		req.Topics = []kmsg.MetadataRequestTopic{{Topic: &topic}}
+		maxAge := 5 * time.Minute
+		for {
+			response, err := cl.RequestCachedMetadata(admission, req, maxAge)
+			if err != nil {
+				return err
+			}
+			ready := false
+			for _, t := range response.Topics {
+				if t.Topic == nil || *t.Topic != topic {
+					continue
+				}
+				if t.ErrorCode != 0 {
+					err = kerr.ErrorForCode(t.ErrorCode)
+					if !kerr.IsRetriable(err) {
+						return err
+					}
+					continue
+				}
+				for _, partition := range t.Partitions {
+					if !rec.ManualPartition || partition.Partition == rec.Partition {
+						ready = true
+						break
+					}
+				}
+			}
+			if ready {
+				return nil
+			}
+			maxAge = 0 // A missing partition must be checked against fresh broker metadata.
+			timer := time.NewTimer(50 * time.Millisecond)
+			select {
+			case <-admission.Done():
+				timer.Stop()
+				return admission.Err()
+			case <-timer.C:
+				cl.ForceMetadataRefresh()
+			}
+		}
+	})
+	if err != nil {
+		return recordMeta{}, err
+	}
+	defer release()
 	r := resolvedProducerRecord(topic, rec)
 	results := cl.ProduceSync(ctx, r)
 	if err := results.FirstErr(); err != nil {
@@ -1068,7 +1149,11 @@ func (c *franzClient) usesTLS() bool {
 }
 
 func (c *franzClient) buildTLSConfig() (*tls.Config, error) {
-	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: c.cfg.TLSInsecureSkipVerify} //nolint:gosec // operator-controlled, mirrors HTTP/database TLS knobs
+	minimum, maximum, err := producerTLSVersions(c.cfg)
+	if err != nil {
+		return nil, err
+	}
+	tlsCfg := &tls.Config{MinVersion: minimum, MaxVersion: maximum, InsecureSkipVerify: c.cfg.TLSInsecureSkipVerify} //nolint:gosec // operator-controlled, mirrors HTTP/database TLS knobs
 	certFile := strings.TrimSpace(c.cfg.TLSClientCertFile)
 	keyFile := strings.TrimSpace(c.cfg.TLSClientKeyFile)
 	if (certFile == "") != (keyFile == "") {
@@ -1135,4 +1220,13 @@ func fromKgoRecord(rec *kgo.Record) kafkaRecord {
 		Timestamp:     rec.Timestamp,
 		CorrelationID: headers["kafka_correlation_id"],
 	}
+}
+
+func (c *franzClient) initializeProducer(context.Context) error { _, err := c.handle(); return err }
+func (c *franzClient) Flush(ctx context.Context) error {
+	cl, err := c.handle()
+	if err != nil {
+		return err
+	}
+	return cl.Flush(ctx)
 }

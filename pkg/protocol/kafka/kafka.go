@@ -74,17 +74,18 @@ const (
 
 // Kafka implements protocol.Protocol for Apache Kafka messaging.
 type Kafka struct {
-	name        string
-	cfg         config
-	client      kafkaClient
-	session     *messaging.Session[string]
-	valueSerde  serde            // record-value (de)serializer; rawSerde by default
-	txOpen      bool             // a transaction is in progress (per-VUser)
-	txBuffer    []pendingProduce // records produced within the open transaction
-	txBytes     int64
-	txPoisoned  bool   // broker transaction outcome could not be confirmed
-	rrCounter   uint64 // round-robin partition counter
-	initialized bool
+	name           string
+	cfg            config
+	client         kafkaClient
+	session        *messaging.Session[string]
+	valueSerde     serde            // record-value (de)serializer; rawSerde by default
+	txOpen         bool             // a transaction is in progress (per-VUser)
+	txBuffer       []pendingProduce // records produced within the open transaction
+	txBytes        int64
+	txPoisoned     bool   // broker transaction outcome could not be confirmed
+	rrCounter      uint64 // round-robin partition counter
+	initialized    bool
+	sharedProducer bool
 }
 
 // pendingProduce is a record buffered during an open transaction; it is flushed
@@ -103,34 +104,37 @@ type atomicTransactionCommitter interface {
 }
 
 type config struct {
-	Brokers            []string
-	Profile            string
-	MaxMessageBytes    int
-	SecurityProtocol   string
-	SASLMechanism      string
-	SASLUsername       string
-	SASLPassword       string
-	OAuthScope         string
-	ClientID           string
-	ConsumerGroup      string
-	Topic              string
-	Acks               string
-	Idempotence        string
-	TransactionalID    string
-	Compression        string
-	PartitionStrategy  string
-	AutoOffsetReset    string
-	IsolationLevel     string
-	Partitions         int32
-	Timeout            time.Duration
-	Serialization      string
-	SchemaRegistryURL  string
-	Subject            string
-	Schema             string
-	SchemaID           int
-	Properties         map[string]string
-	Mock               bool
-	AllowedTargetHosts []string
+	Producer                                                                                                producerTuning
+	TLSMinVersion, TLSMaxVersion                                                                            string
+	OAuthMode, OAuthTokenURL, OAuthClientID, OAuthClientSecret, OAuthClientScope, OAuthAuthenticationMethod string
+	Brokers                                                                                                 []string
+	Profile                                                                                                 string
+	MaxMessageBytes                                                                                         int
+	SecurityProtocol                                                                                        string
+	SASLMechanism                                                                                           string
+	SASLUsername                                                                                            string
+	SASLPassword                                                                                            string
+	OAuthScope                                                                                              string
+	ClientID                                                                                                string
+	ConsumerGroup                                                                                           string
+	Topic                                                                                                   string
+	Acks                                                                                                    string
+	Idempotence                                                                                             string
+	TransactionalID                                                                                         string
+	Compression                                                                                             string
+	PartitionStrategy                                                                                       string
+	AutoOffsetReset                                                                                         string
+	IsolationLevel                                                                                          string
+	Partitions                                                                                              int32
+	Timeout                                                                                                 time.Duration
+	Serialization                                                                                           string
+	SchemaRegistryURL                                                                                       string
+	Subject                                                                                                 string
+	Schema                                                                                                  string
+	SchemaID                                                                                                int
+	Properties                                                                                              map[string]string
+	Mock                                                                                                    bool
+	AllowedTargetHosts                                                                                      []string
 
 	// TLS material (consumed by the franz-go adapter under the kafka_real build tag).
 	TLSInsecureSkipVerify bool
@@ -146,7 +150,7 @@ func (c config) tlsConfigured() bool {
 
 func (k *Kafka) Name() string { return k.name }
 
-func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
+func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 	partitions, err := boundedConfigInt(cfg, "kafka_partitions", defaultMockPartitions, 0, MaxConfiguredPartitions)
 	if err != nil {
 		return err
@@ -163,35 +167,47 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 	if err != nil {
 		return err
 	}
+	tuning, err := parseProducerTuning(cfg)
+	if err != nil {
+		return err
+	}
 	k.cfg = config{
-		Brokers:            stringSliceValue(cfg, "kafka_brokers"),
-		Profile:            strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_profile"))),
-		MaxMessageBytes:    maxMessageBytes,
-		SecurityProtocol:   stringValue(cfg, "kafka_security_protocol"),
-		SASLMechanism:      stringValue(cfg, "kafka_sasl_mechanism"),
-		SASLUsername:       stringValue(cfg, "kafka_sasl_username"),
-		SASLPassword:       stringValue(cfg, "kafka_sasl_password"),
-		OAuthScope:         stringValue(cfg, "kafka_oauth_scope"),
-		ClientID:           stringValue(cfg, "kafka_client_id"),
-		ConsumerGroup:      stringValue(cfg, "kafka_consumer_group"),
-		Topic:              stringValue(cfg, "kafka_topic"),
-		Acks:               stringValue(cfg, "kafka_acks"),
-		Idempotence:        strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_idempotence"))),
-		TransactionalID:    stringValue(cfg, "kafka_transactional_id"),
-		Compression:        stringValue(cfg, "kafka_compression"),
-		PartitionStrategy:  stringValue(cfg, "kafka_partition_strategy"),
-		AutoOffsetReset:    stringValue(cfg, "kafka_auto_offset_reset"),
-		IsolationLevel:     strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_isolation_level"))),
-		Partitions:         int32(partitions),
-		Timeout:            time.Duration(timeoutMS) * time.Millisecond,
-		Serialization:      strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_serialization"))),
-		SchemaRegistryURL:  stringValue(cfg, "kafka_schema_registry_url"),
-		Subject:            stringValue(cfg, "kafka_subject"),
-		Schema:             stringValue(cfg, "kafka_schema"),
-		SchemaID:           schemaID,
-		Properties:         stringMapValue(cfg, "kafka_properties"),
-		Mock:               boolValue(cfg, "kafka_mock"),
-		AllowedTargetHosts: protocol.TargetPolicyHosts(cfg),
+		Producer:      tuning,
+		TLSMinVersion: stringValue(cfg, "kafka_tls_min_version"), TLSMaxVersion: stringValue(cfg, "kafka_tls_max_version"),
+		OAuthMode:                 stringValue(cfg, "kafka_oauth_mode"),
+		OAuthTokenURL:             stringValue(cfg, "kafka_oauth_token_url"),
+		OAuthClientID:             stringValue(cfg, "kafka_oauth_client_id"),
+		OAuthClientSecret:         stringValue(cfg, "kafka_oauth_client_secret"),
+		OAuthClientScope:          stringValue(cfg, "kafka_oauth_client_scope"),
+		OAuthAuthenticationMethod: stringValue(cfg, "kafka_oauth_authentication_method"),
+		Brokers:                   stringSliceValue(cfg, "kafka_brokers"),
+		Profile:                   strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_profile"))),
+		MaxMessageBytes:           maxMessageBytes,
+		SecurityProtocol:          stringValue(cfg, "kafka_security_protocol"),
+		SASLMechanism:             stringValue(cfg, "kafka_sasl_mechanism"),
+		SASLUsername:              stringValue(cfg, "kafka_sasl_username"),
+		SASLPassword:              stringValue(cfg, "kafka_sasl_password"),
+		OAuthScope:                stringValue(cfg, "kafka_oauth_scope"),
+		ClientID:                  stringValue(cfg, "kafka_client_id"),
+		ConsumerGroup:             stringValue(cfg, "kafka_consumer_group"),
+		Topic:                     stringValue(cfg, "kafka_topic"),
+		Acks:                      stringValue(cfg, "kafka_acks"),
+		Idempotence:               strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_idempotence"))),
+		TransactionalID:           stringValue(cfg, "kafka_transactional_id"),
+		Compression:               stringValue(cfg, "kafka_compression"),
+		PartitionStrategy:         stringValue(cfg, "kafka_partition_strategy"),
+		AutoOffsetReset:           stringValue(cfg, "kafka_auto_offset_reset"),
+		IsolationLevel:            strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_isolation_level"))),
+		Partitions:                int32(partitions),
+		Timeout:                   time.Duration(timeoutMS) * time.Millisecond,
+		Serialization:             strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_serialization"))),
+		SchemaRegistryURL:         stringValue(cfg, "kafka_schema_registry_url"),
+		Subject:                   stringValue(cfg, "kafka_subject"),
+		Schema:                    stringValue(cfg, "kafka_schema"),
+		SchemaID:                  schemaID,
+		Properties:                stringMapValue(cfg, "kafka_properties"),
+		Mock:                      boolValue(cfg, "kafka_mock"),
+		AllowedTargetHosts:        protocol.TargetPolicyHosts(cfg),
 
 		TLSInsecureSkipVerify: boolValue(cfg, "kafka_tls_insecure_skip_verify"),
 		TLSClientCertFile:     stringValue(cfg, "kafka_tls_client_cert_file"),
@@ -258,20 +274,47 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 			return err
 		}
 	}
+	if len(k.cfg.Properties) != 0 {
+		return fmt.Errorf("Kafka generic properties are not executable; use validated typed configuration")
+	}
+	if hasExplicitOAuth(k.cfg) {
+		if err := validateExplicitOAuth(k.cfg); err != nil {
+			return err
+		}
+	}
+	if _, _, err := producerTLSVersions(k.cfg); err != nil {
+		return err
+	}
 	valueSerde, err := buildSerde(k.cfg)
 	if err != nil {
 		return err
 	}
-	if k.cfg.Mock {
-		namespace := stringValue(cfg, "runtime_mock_namespace")
-		sharedBroker.acquire(namespace)
-		k.client = mockClient{broker: sharedBroker, namespace: namespace, release: &sync.Once{}}
-	} else {
-		// The real network adapter is provided by the build-tagged seam
-		// (newRealClient). Default builds return an unavailable stub; build with
-		// -tags kafka_real to compile in the franz-go-backed client.
-		k.client = newRealClient(k.cfg)
+	namespace := stringValue(cfg, "runtime_mock_namespace")
+	create := func() kafkaClient {
+		if k.cfg.Mock {
+			sharedBroker.acquire(namespace)
+			return mockClient{broker: sharedBroker, namespace: namespace, release: &sync.Once{}}
+		}
+		return newRealClient(k.cfg)
 	}
+	k.sharedProducer = false
+	if lifecycle := stringValue(cfg, "kafka_producer_lifecycle"); lifecycle != "" {
+		if lifecycle != "source_engine" || k.cfg.TransactionalID != "" {
+			return fmt.Errorf("unsupported shared Kafka producer lifecycle")
+		}
+		owner, ok := cfg["kafka_producer_session"].(*ProducerSession)
+		if !ok || owner == nil {
+			return fmt.Errorf("Kafka source producer session is required")
+		}
+		k.client, err = owner.acquire(ctx, stringValue(cfg, "kafka_source_configuration"), k.cfg, namespace, create)
+		if err != nil {
+			return err
+		}
+		k.sharedProducer = true
+	} else {
+		k.client = create()
+	}
+
 	k.valueSerde = valueSerde
 	k.session = messaging.New[string](messaging.ParseAckMode(""))
 	k.initialized = true
@@ -328,6 +371,9 @@ func schemaResolver(cfg config, format string) (schemaIDResolver, error) {
 
 func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	start := time.Now()
+	if k.sharedProducer && (action == nil || action.Type != "kafka_produce") {
+		return nil, fmt.Errorf("source-shared Kafka session only supports produce actions")
+	}
 	if k.session == nil {
 		k.session = messaging.New[string](messaging.ParseAckMode(""))
 	}
@@ -352,7 +398,17 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
-	actionCtx, actionCancel := context.WithTimeout(ctx, k.timeout(action))
+	var actionCtx context.Context
+	var actionCancel context.CancelFunc
+	if k.sharedProducer {
+		if _, explicit := action.Params["timeout_ms"]; !explicit {
+			actionCtx, actionCancel = context.WithCancel(ctx)
+		} else {
+			actionCtx, actionCancel = context.WithTimeout(ctx, k.timeout(action))
+		}
+	} else {
+		actionCtx, actionCancel = context.WithTimeout(ctx, k.timeout(action))
+	}
 	defer actionCancel()
 	ctx = actionCtx
 
@@ -406,7 +462,10 @@ func (k *Kafka) Execute(ctx context.Context, action *protocol.Action) (*protocol
 		}
 	}
 
-	result.Duration = time.Since(start)
+	result.Duration = time.Since(result.StartTime)
+	if k.sharedProducer {
+		result.WorkerDuration = time.Since(start)
+	}
 	if result.ServerTelemetry == nil {
 		result.ServerTelemetry = finalizeKafkaServerTelemetry(result, requestRec, hasRequest, responseRec, hasResponse)
 	}
@@ -641,6 +700,9 @@ func (k *Kafka) produce(ctx context.Context, action *protocol.Action, result *pr
 		result.Extractions["kafka_transactional"] = "true"
 		return rec, evaluateAssertions(action.Assertions, result, rec)
 	}
+	if k.sharedProducer {
+		result.StartTime = time.Now()
+	}
 	meta, err := k.client.Produce(ctx, topic, rec)
 	if err != nil {
 		return kafkaRecord{}, err
@@ -862,8 +924,11 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 }
 
 func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
-	key := paramString(action.Params, "key", "")
+	key, _ := action.Params["key"].(string)
 	_, keyPresent := action.Params["key"]
+	if k.sharedProducer && key == "" {
+		keyPresent = false
+	} // DI KafkaMeter maps empty strings to null.
 	correlationID := paramString(action.Params, "correlation_id", "")
 	_, actionPartition := intParamOK(action.Params, "partition")
 	manualPartition := actionPartition || strings.EqualFold(strings.TrimSpace(k.cfg.PartitionStrategy), "explicit")

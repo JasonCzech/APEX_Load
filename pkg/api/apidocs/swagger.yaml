@@ -2285,9 +2285,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -2366,6 +2372,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -2373,6 +2383,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -8216,9 +8230,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -8293,6 +8313,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -8300,6 +8324,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -10191,9 +10219,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -10268,6 +10302,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -10275,6 +10313,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -11972,9 +12014,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -12053,6 +12101,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -12060,6 +12112,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -29891,9 +29947,15 @@ paths:
                       jmeter:
                         type: object
                         properties:
+                          configuration_id:
+                            type: string
                           context_confirmed:
                             type: boolean
+                          producer_lifecycle:
+                            type: string
                           profile:
+                            type: string
+                          sample_timing:
                             type: string
                           source_group_id:
                             type: string
@@ -29978,6 +30040,27 @@ paths:
                             format: int64
                           mock:
                             type: boolean
+                          oauth:
+                            type: object
+                            properties:
+                              authentication_method:
+                                type: string
+                              client_id:
+                                type: string
+                              client_secret_ref:
+                                type: string
+                              mode:
+                                type: string
+                              scope:
+                                type: string
+                              token_url:
+                                type: string
+                            required:
+                              - client_id
+                              - client_secret_ref
+                              - mode
+                              - token_url
+                            nullable: true
                           oauth_scope:
                             type: string
                           partition_strategy:
@@ -29985,6 +30068,38 @@ paths:
                           partitions:
                             type: integer
                             format: int64
+                          producer:
+                            type: object
+                            properties:
+                              admission_timeout_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              batch_bytes:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              buffer_bytes:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              delivery_timeout_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              linger_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              request_timeout_ms:
+                                type: integer
+                                format: int64
+                                nullable: true
+                              retries:
+                                type: integer
+                                format: int64
+                                nullable: true
+                            nullable: true
                           profile:
                             type: string
                           properties:
@@ -30026,6 +30141,10 @@ paths:
                                 type: string
                               insecure_skip_verify:
                                 type: boolean
+                              max_version:
+                                type: string
+                              min_version:
+                                type: string
                             nullable: true
                           topic:
                             type: string
@@ -119671,9 +119790,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -119754,6 +119879,22 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              properties:
+                                authentication_method:
+                                  type: string
+                                client_id:
+                                  type: string
+                                client_secret_ref:
+                                  type: string
+                                mode:
+                                  type: string
+                                scope:
+                                  type: string
+                                token_url:
+                                  type: string
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -119761,6 +119902,38 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              properties:
+                                admission_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                batch_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                buffer_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                delivery_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                linger_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                request_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                retries:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -119802,6 +119975,10 @@ paths:
                                   type: string
                                 insecure_skip_verify:
                                   type: boolean
+                                max_version:
+                                  type: string
+                                min_version:
+                                  type: string
                               nullable: true
                             topic:
                               type: string
@@ -121667,9 +121844,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -121748,6 +121931,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -121755,6 +121942,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -123683,9 +123874,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -123764,6 +123961,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -123771,6 +123972,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -125619,9 +125824,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -125702,6 +125913,22 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              properties:
+                                authentication_method:
+                                  type: string
+                                client_id:
+                                  type: string
+                                client_secret_ref:
+                                  type: string
+                                mode:
+                                  type: string
+                                scope:
+                                  type: string
+                                token_url:
+                                  type: string
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -125709,6 +125936,38 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              properties:
+                                admission_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                batch_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                buffer_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                delivery_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                linger_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                request_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                retries:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -125750,6 +126009,10 @@ paths:
                                   type: string
                                 insecure_skip_verify:
                                   type: boolean
+                                max_version:
+                                  type: string
+                                min_version:
+                                  type: string
                               nullable: true
                             topic:
                               type: string
@@ -127613,9 +127876,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -127694,6 +127963,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -127701,6 +127974,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -129593,9 +129870,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -129670,6 +129953,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -129677,6 +129964,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -132872,9 +133163,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -132949,6 +133246,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -132956,6 +133257,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -136649,9 +136954,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -136726,6 +137037,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -136733,6 +137048,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -138627,9 +138946,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -138704,6 +139029,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -138711,6 +139040,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -143161,9 +143494,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -143242,6 +143581,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -143249,6 +143592,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -144963,9 +145310,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -145044,6 +145397,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -145051,6 +145408,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -146856,9 +147217,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -146937,6 +147304,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -146944,6 +147315,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -148670,9 +149045,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -148747,6 +149128,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -148754,6 +149139,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -150410,9 +150799,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -150491,6 +150886,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -150498,6 +150897,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -153888,9 +154291,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -153969,6 +154378,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -153976,6 +154389,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -156011,9 +156428,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -156088,6 +156511,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -156095,6 +156522,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -158747,9 +159178,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -158824,6 +159261,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -158831,6 +159272,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -160499,9 +160944,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -160580,6 +161031,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -160587,6 +161042,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -162499,9 +162958,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -162580,6 +163045,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -162587,6 +163056,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -164523,9 +164996,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -164600,6 +165079,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -164607,6 +165090,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -167363,9 +167850,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -167440,6 +167933,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -167447,6 +167944,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -170027,9 +170528,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -170105,6 +170612,11 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                description: 'Go type: KafkaOAuthConfig'
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -170112,6 +170624,11 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                description: 'Go type: KafkaProducerConfig'
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -171693,9 +172210,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -171770,6 +172293,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -171777,6 +172304,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -173809,9 +174340,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -173887,6 +174424,11 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                description: 'Go type: KafkaOAuthConfig'
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -173894,6 +174436,11 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                description: 'Go type: KafkaProducerConfig'
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -175449,9 +175996,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -175527,6 +176080,11 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                description: 'Go type: KafkaOAuthConfig'
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -175534,6 +176092,11 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                description: 'Go type: KafkaProducerConfig'
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -177466,9 +178029,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -177543,6 +178112,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -177550,6 +178123,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -180308,9 +180885,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -180385,6 +180968,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -180392,6 +180979,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -182563,9 +183154,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -182640,6 +183237,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -182647,6 +183248,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -185758,9 +186363,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -185839,6 +186450,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -185846,6 +186461,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -187531,9 +188150,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -187612,6 +188237,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -187619,6 +188248,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -189553,9 +190186,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -189634,6 +190273,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -189641,6 +190284,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -191326,9 +191973,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -191407,6 +192060,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -191414,6 +192071,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -193495,9 +194156,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -193572,6 +194239,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -193579,6 +194250,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -195222,9 +195897,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -195303,6 +195984,10 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -195310,6 +195995,10 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -197085,9 +197774,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -197162,6 +197857,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -197169,6 +197868,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -198671,9 +199374,15 @@ paths:
                           jmeter:
                             type: object
                             properties:
+                              configuration_id:
+                                type: string
                               context_confirmed:
                                 type: boolean
+                              producer_lifecycle:
+                                type: string
                               profile:
+                                type: string
+                              sample_timing:
                                 type: string
                               source_group_id:
                                 type: string
@@ -198749,6 +199458,11 @@ paths:
                                 format: int64
                               mock:
                                 type: boolean
+                              oauth:
+                                type: object
+                                description: 'Go type: KafkaOAuthConfig'
+                                additionalProperties: true
+                                nullable: true
                               oauth_scope:
                                 type: string
                               partition_strategy:
@@ -198756,6 +199470,11 @@ paths:
                               partitions:
                                 type: integer
                                 format: int64
+                              producer:
+                                type: object
+                                description: 'Go type: KafkaProducerConfig'
+                                additionalProperties: true
+                                nullable: true
                               profile:
                                 type: string
                               properties:
@@ -200271,9 +200990,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -200348,6 +201073,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -200355,6 +201084,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -202237,9 +202970,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -202314,6 +203053,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -202321,6 +203064,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -205081,9 +205828,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -205158,6 +205911,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -205165,6 +205922,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -206843,9 +207604,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -206920,6 +207687,10 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -206927,6 +207698,10 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -208746,9 +209521,15 @@ paths:
                         jmeter:
                           type: object
                           properties:
+                            configuration_id:
+                              type: string
                             context_confirmed:
                               type: boolean
+                            producer_lifecycle:
+                              type: string
                             profile:
+                              type: string
+                            sample_timing:
                               type: string
                             source_group_id:
                               type: string
@@ -208829,6 +209610,22 @@ paths:
                               format: int64
                             mock:
                               type: boolean
+                            oauth:
+                              type: object
+                              properties:
+                                authentication_method:
+                                  type: string
+                                client_id:
+                                  type: string
+                                client_secret_ref:
+                                  type: string
+                                mode:
+                                  type: string
+                                scope:
+                                  type: string
+                                token_url:
+                                  type: string
+                              nullable: true
                             oauth_scope:
                               type: string
                             partition_strategy:
@@ -208836,6 +209633,38 @@ paths:
                             partitions:
                               type: integer
                               format: int64
+                            producer:
+                              type: object
+                              properties:
+                                admission_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                batch_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                buffer_bytes:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                delivery_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                linger_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                request_timeout_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                retries:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                              nullable: true
                             profile:
                               type: string
                             properties:
@@ -208877,6 +209706,10 @@ paths:
                                   type: string
                                 insecure_skip_verify:
                                   type: boolean
+                                max_version:
+                                  type: string
+                                min_version:
+                                  type: string
                               nullable: true
                             topic:
                               type: string

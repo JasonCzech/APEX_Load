@@ -748,7 +748,18 @@ func resolveProtoConfigSecrets(value any, resolver SecretResolver) any {
 				continue
 			}
 			if text, ok := item.(string); ok && isDedicatedProtoConfigSecretKey(key) {
-				resolved[key] = resolveDedicatedProtoConfigSecret(text, resolver)
+				if key == "kafka_oauth_client_secret" && !strings.Contains(text, "{{") {
+					// This field is always a reference, never a literal fallback.
+					name := strings.TrimSpace(text)
+					resolved[key] = "{{secret." + name + "}}"
+					if resolver != nil && ValidLogicalSecretName(name) {
+						if secret, ok := resolver.Resolve(name); ok {
+							resolved[key] = secret
+						}
+					}
+				} else {
+					resolved[key] = resolveDedicatedProtoConfigSecret(text, resolver)
+				}
 				continue
 			}
 			resolved[key] = resolveProtoConfigSecrets(item, resolver)
@@ -761,7 +772,7 @@ func resolveProtoConfigSecrets(value any, resolver SecretResolver) any {
 
 func isDedicatedProtoConfigSecretKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "database_dsn_secret", "kafka_sasl_password_secret",
+	case "database_dsn_secret", "kafka_sasl_password_secret", "kafka_oauth_client_secret",
 		"eventhubs_connection_string_secret", "jms_tls_ca_cert_secret":
 		return true
 	default:

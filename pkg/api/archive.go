@@ -197,6 +197,7 @@ type RunArchiveExecutionPlanApprovalSnapshot struct {
 }
 
 type TransactionEvent struct {
+	WorkerDurationMs      float64                   `json:"worker_duration_ms,omitempty"`
 	CSVExportIDs          []string                  `json:"csv_export_ids"`
 	ExtractionsIncomplete bool                      `json:"extractions_incomplete,omitempty"`
 	Population            string                    `json:"population,omitempty"`

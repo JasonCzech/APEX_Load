@@ -1723,6 +1723,11 @@ func collectCITargetHosts(script *dsl.Script, baseURLOverride string, resolvers 
 			return nil, false, err
 		}
 	}
+	if oauth := script.Config.Kafka.OAuth; oauth != nil {
+		if err := add(oauth.TokenURL, "config.kafka.oauth.token_url", true); err != nil {
+			return nil, false, err
+		}
+	}
 	for i, broker := range script.Config.Kafka.Brokers {
 		if err := add(broker, fmt.Sprintf("config.kafka.brokers[%d]", i), true); err != nil {
 			return nil, false, err

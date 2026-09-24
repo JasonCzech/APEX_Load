@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "live_conformance": "unverified",
+  "scope": "Kafka 3.3.1 OAuth Basic and form formatting only",
+  "source_sha256": "2d7bd74bd2f859902f7510ad58768c63263795a7b2e2fc3e8af6bdc02d2fcde8",
+  "vectors_sha256": "67c317a082deaebdbbf9868107cdb254de860c0ea0cdf23104b88fdee46354b8",
+  "startup_evidence_sha256": "e554126f22c81f7869adb179a7012efc03d25680612eb634b0b2940d0476d709",
+  "vectors": 7
+}

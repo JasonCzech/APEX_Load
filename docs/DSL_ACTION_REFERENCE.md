@@ -784,6 +784,7 @@ Publishes an event to an event hub (the primary ingestion action).
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Event hub; falls back to config.eventhubs.event_hub or params.event_hub. |
+| `params.messages` | array |  | String message list sampled as one action; mutually exclusive with body. Maximum 4096 messages and 64 MiB total. |
 | `body` | string |  | Event body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the event body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `headers` | object |  | Application properties set on the event. |

@@ -655,6 +655,7 @@ type Result struct {
 	PageName            string        // Stable authored/imported page label used for rollups
 	StartTime           time.Time     // When the action started
 	Duration            time.Duration // Time to execute action
+	WorkerDuration      time.Duration `json:"worker_duration,omitempty"` // Includes compatibility cleanup outside sample timing
 	CorrelationID       string        // Correlation or request id when the protocol exposes one
 	NetworkProfile      string        // Effective network emulation profile used for this result
 	DependencyType      string        // Classified dependency type (http, jms_queue, etc.)

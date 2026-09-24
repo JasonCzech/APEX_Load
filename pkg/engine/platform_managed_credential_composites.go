@@ -72,7 +72,8 @@ type platformManagedCredentialSurface struct {
 	// no exact-value matcher can cover by construction; pkg/protocol/http
 	// substitutes "Digest [REDACTED]" for the whole header in its own snapshots
 	// instead (buildRedactedActionAuthHeader).
-	basic bool
+	basic       bool
+	oauthMethod string
 
 	// connectionString marks a surface whose resolvedPassword is a whole
 	// credential-bearing connection string rather than one half of a pair. Its
@@ -156,6 +157,12 @@ func appendPlatformManagedCompositeValues(
 			continue
 		}
 		pair := surface.resolvedUsername + ":" + surface.resolvedPassword
+		if surface.oauthMethod == "client_secret_basic" {
+			pair = url.QueryEscape(surface.resolvedUsername) + ":" + url.QueryEscape(surface.resolvedPassword)
+		} else if surface.oauthMethod == "kafka_3_3_1_basic" {
+			pair = strings.TrimFunc(surface.resolvedUsername, func(r rune) bool { return r <= 0x20 }) + ":" + strings.TrimFunc(surface.resolvedPassword, func(r rune) bool { return r <= 0x20 })
+			values = append(values, base64.URLEncoding.EncodeToString([]byte(pair)))
+		}
 		payload := base64.StdEncoding.EncodeToString([]byte(pair))
 		values = append(values, pair, payload, "Basic "+payload)
 	}
@@ -297,6 +304,17 @@ func scriptCredentialCompositeSurfaces(
 		}
 	}
 
+	if oauth := script.Config.Kafka.OAuth; oauth != nil {
+		clientID, _ := config["kafka_oauth_client_id"].(string)
+		clientSecret, _ := config["kafka_oauth_client_secret"].(string)
+		surfaces = append(surfaces, platformManagedCredentialSurface{
+			name: "config.kafka.oauth", authoredUsername: oauth.ClientID, authoredPassword: oauth.ClientSecretRef,
+			resolvedUsername: clientID,
+			resolvedPassword: clientSecret,
+			basic:            oauth.AuthenticationMethod == "client_secret_basic" || oauth.AuthenticationMethod == "kafka_3_3_1_basic",
+			oauthMethod:      oauth.AuthenticationMethod, dedicatedSecretField: true,
+		})
+	}
 	httpAuth := script.Config.HTTP.Auth
 	httpProxy := script.Config.HTTP.Proxy
 	browserCredentials := script.Config.Browser.HTTPCredentials

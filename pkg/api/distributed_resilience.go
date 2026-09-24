@@ -54,6 +54,9 @@ func assignmentToleratesGeneratorLoss(assignment *GeneratorAssignmentSettings) b
 }
 
 func groupAllowsGeneratorLossReshard(group TestGroup) (bool, string) {
+	if dsl.RequiresJMeterMessaging(group.script) || (group.Assignment != nil && group.Assignment.SourceAffinity == "single_generator") {
+		return false, "JMeter source state cannot be restarted or replayed after generator loss"
+	}
 	if engine.HasAllocatedParameters(group.script) {
 		return false, "unique parameter block progress cannot be recovered on a replacement generator"
 	}

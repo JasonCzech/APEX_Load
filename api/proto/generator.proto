@@ -452,6 +452,7 @@ message ServerTelemetry {
 }
 
 message TransactionMetric {
+  double worker_duration_ms = 25;
   string name = 1;
   int64 start_time_unix_ms = 2;
   double duration_ms = 3;

@@ -115,3 +115,20 @@ func javaRandomValue(p dsl.Parameter, r *javaRandom) (string, bool) {
 	}
 	return strconv.FormatInt(int64(p.Min)+int64(r.nextInt(int32(rangeSize))), 10), true
 }
+
+// Parallel branches reuse the parent iteration's assigned source values.
+// Sequence state stays session-owned; no branch consumes an extra iteration.
+func (pr *ParameterRuntime) inheritSourceParameterState(parent *ParameterRuntime) {
+	if pr == nil || parent == nil {
+		return
+	}
+	pr.sourceState, pr.sourcePlan = parent.sourceState, parent.sourcePlan
+	for name, parameter := range parent.params {
+		if parameter.Scope != "source_engine" {
+			continue
+		}
+		if source, destination := parent.states[name], pr.states[name]; source != nil && destination != nil {
+			destination.cached, destination.hasCached = source.cached, source.hasCached
+		}
+	}
+}

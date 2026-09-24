@@ -24,6 +24,7 @@ const (
 var logicalSecretNameInputPattern = regexp.MustCompile(`^` + LogicalSecretNameInputPattern + `$`)
 var scriptTemplateReferencePattern = regexp.MustCompile(`\{\{([^{}\r\n]+)\}\}`)
 var dedicatedLogicalSecretFields = map[string]struct{}{
+	"client_secret_ref":        {},
 	"dsn_secret":               {},
 	"sasl_password_secret":     {},
 	"connection_string_secret": {},

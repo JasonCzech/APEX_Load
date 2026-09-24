@@ -1543,7 +1543,7 @@ func isSensitiveScriptKey(key string) bool {
 
 func isSecretReferenceKey(key string) bool {
 	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "dsn_secret", "sasl_password_secret", "connection_string_secret", "ca_cert_secret",
+	case "client_secret_ref", "dsn_secret", "sasl_password_secret", "connection_string_secret", "ca_cert_secret",
 		"trust_store_ref", "credential_ref", "storage_ref":
 		return true
 	default:

@@ -282,6 +282,7 @@ type ServerTelemetry struct {
 }
 
 type TransactionMetric struct {
+	WorkerDurationMs float64
 	Name             string
 	StartTimeUnixMs  int64
 	Group            string
@@ -1281,6 +1282,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 			Phase:            tx.GetPhase(),
 			PageName:         tx.GetPageName(),
 			DurationMs:       tx.GetDurationMs(),
+			WorkerDurationMs: tx.GetWorkerDurationMs(),
 			DNSMs:            tx.GetDnsMs(),
 			ConnectMs:        tx.GetConnectMs(),
 			TLSMs:            tx.GetTlsMs(),

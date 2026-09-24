@@ -3079,6 +3079,10 @@
                     "description": "Event hub alternative to target.",
                     "type": "string"
                   },
+                  "messages": {
+                    "description": "String message list sampled as one action; mutually exclusive with body. Maximum 4096 messages and 64 MiB total.",
+                    "type": "array"
+                  },
                   "partition_id": {
                     "description": "Explicit partition id (mutually exclusive with partition_key); falls back to config.eventhubs.partition_id.",
                     "type": "string"
@@ -7846,10 +7850,19 @@
     "JMeterCompatibility": {
       "additionalProperties": false,
       "properties": {
+        "configuration_id": {
+          "type": "string"
+        },
         "context_confirmed": {
           "type": "boolean"
         },
+        "producer_lifecycle": {
+          "type": "string"
+        },
         "profile": {
+          "type": "string"
+        },
+        "sample_timing": {
           "type": "string"
         },
         "source_group_id": {
@@ -8043,6 +8056,9 @@
         "mock": {
           "type": "boolean"
         },
+        "oauth": {
+          "$ref": "#/$defs/KafkaOAuthConfig"
+        },
         "oauth_scope": {
           "type": "string"
         },
@@ -8053,6 +8069,9 @@
           "maximum": 1000000,
           "minimum": 0,
           "type": "integer"
+        },
+        "producer": {
+          "$ref": "#/$defs/KafkaProducerConfig"
         },
         "profile": {
           "type": "string"
@@ -8112,6 +8131,57 @@
       },
       "type": "object"
     },
+    "KafkaOAuthConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "authentication_method": {
+          "type": "string"
+        },
+        "client_id": {
+          "type": "string"
+        },
+        "client_secret_ref": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "token_url": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "KafkaProducerConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "admission_timeout_ms": {
+          "type": "integer"
+        },
+        "batch_bytes": {
+          "type": "integer"
+        },
+        "buffer_bytes": {
+          "type": "integer"
+        },
+        "delivery_timeout_ms": {
+          "type": "integer"
+        },
+        "linger_ms": {
+          "type": "integer"
+        },
+        "request_timeout_ms": {
+          "type": "integer"
+        },
+        "retries": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "KafkaTLSConfig": {
       "additionalProperties": false,
       "properties": {
@@ -8126,6 +8196,12 @@
         },
         "insecure_skip_verify": {
           "type": "boolean"
+        },
+        "max_version": {
+          "type": "string"
+        },
+        "min_version": {
+          "type": "string"
         }
       },
       "type": "object"

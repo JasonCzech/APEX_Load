@@ -27,6 +27,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -75,6 +76,7 @@ type Engine struct {
 	// runtimeSecretValuesForScript.
 	importedCredentials *importedCredentialInspection
 	sourceParameters    *sourceParameterState
+	sourceSamplers      *sourceSamplerRuntime
 	// javaVuserCapacityLimit is populated by the governed runtime validation
 	// immediately before Run acquires its process-wide persistent-session lease.
 	javaVuserCapacityLimit int64
@@ -181,7 +183,7 @@ func New(cfg Config) (*Engine, error) {
 	}, nil
 }
 
-func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
+func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	// Re-check durable import gates at the actual execution boundary. Engine
 	// construction and execution are intentionally separate, and callers retain
 	// the Script pointer, so a draft can acquire a blocker after New returns.
@@ -198,6 +200,11 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	if sourceErr != nil {
 		return nil, sourceErr
 	}
+	e.sourceSamplers, sourceErr = newSourceSamplerRuntime([]*dsl.Script{e.script}, nil)
+	if sourceErr != nil {
+		return nil, sourceErr
+	}
+	defer func() { runErr = errors.Join(runErr, e.sourceSamplers.close()) }()
 	var cancel context.CancelFunc
 	if e.terminationMode == dsl.TerminationIterations {
 		ctx, cancel = context.WithCancel(ctx)
@@ -234,6 +241,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	defer javaLegacyReservation.Release()
 
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(e.script, "load", e.secrets)
+	e.sourceSamplers.bindProtocolConfig(protoConfig, e.script)
 	if _, ok := proto.(protocol.RuntimePreflightProvider); ok {
 		targets, targetErr := runtimePreflightTargets(ctx, e.script, e.secrets)
 		if targetErr != nil {
@@ -401,6 +409,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				RedactionConfig:              e.redaction,
 				importedCredentialInspection: e.importedCredentials,
 				sourceParameters:             e.sourceParameters,
+				sourceSamplers:               e.sourceSamplers,
 				IterationRateLimiter:         iterationRateLimiter,
 				Rendezvous:                   rendezvous,
 				ExecutionGoals:               executionGoals,
@@ -651,6 +660,7 @@ func (e *Engine) runOpenWorkload(
 				RedactionConfig:              e.redaction,
 				importedCredentialInspection: e.importedCredentials,
 				sourceParameters:             e.sourceParameters,
+				sourceSamplers:               e.sourceSamplers,
 				ExecutionGoals:               executionGoals,
 				HardStopCtx:                  hardStopCtx,
 				ActionBoundaryCtx:            actionBoundaryCtx,

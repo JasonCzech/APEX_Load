@@ -48,6 +48,8 @@ func init() {
 }
 
 type config struct {
+	ProducerLifecycle  string
+	SampleTiming       string
 	Namespace          string
 	EventHub           string
 	ConnectionString   string
@@ -63,10 +65,11 @@ type config struct {
 
 // EventHubs is a per-VUser Azure Event Hubs client.
 type EventHubs struct {
-	name        string
-	cfg         config
-	client      eventHubsClient
-	initialized bool
+	name          string
+	cfg           config
+	client        eventHubsClient
+	initialized   bool
+	clientFactory func() eventHubsClient
 	// observer detects duplicate / out-of-order events by sequence number on the
 	// consume probe. Event Hubs has no ack/rollback model, so the session is used
 	// only for its bounded sequence observer (lazily created on first consume).
@@ -81,6 +84,8 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 		return fmt.Errorf("eventhubs timeout_ms: %w", err)
 	}
 	e.cfg = config{
+		ProducerLifecycle:  stringValue(cfg, "eventhubs_producer_lifecycle"),
+		SampleTiming:       stringValue(cfg, "eventhubs_sample_timing"),
 		Namespace:          stringValue(cfg, "eventhubs_namespace"),
 		EventHub:           stringValue(cfg, "eventhubs_event_hub"),
 		ConnectionString:   stringValue(cfg, "eventhubs_connection_string"),
@@ -122,6 +127,15 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 	} else {
 		e.client = newRealClient(e.cfg)
 	}
+	mockNamespace := stringValue(cfg, "runtime_mock_namespace")
+	e.clientFactory = func() eventHubsClient {
+		if e.cfg.Mock {
+			namespace := mockNamespace
+			sharedBroker.acquire(namespace)
+			return mockClient{broker: sharedBroker, namespace: namespace, release: &sync.Once{}}
+		}
+		return newRealClient(e.cfg)
+	}
 	e.initialized = true
 	return nil
 }
@@ -159,6 +173,31 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	defer actionCancel()
 	ctx = actionCtx
 
+	if e.cfg.ProducerLifecycle == "per_sample" && strings.EqualFold(action.Type, "eventhubs_produce") {
+		if e.clientFactory == nil {
+			return nil, fmt.Errorf("per-sample producer factory is unavailable")
+		}
+		previous := e.client
+		client := e.clientFactory()
+		if client == nil {
+			return nil, fmt.Errorf("per-sample producer factory returned no client")
+		}
+		e.client = client
+		defer func() { e.client = previous }()
+		defer func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			closeErr := e.client.Teardown(cleanupCtx)
+			result.WorkerDuration = time.Since(start)
+			_ = protocol.StoreExtraction(result, "eventhubs_worker_occupancy_ms", strconv.FormatFloat(float64(result.WorkerDuration)/float64(time.Millisecond), 'f', 3, 64))
+			if closeErr != nil {
+				result.Success = false
+				result.StatusCode = 500
+				result.ErrorMessage = "Event Hubs producer cleanup failed"
+			}
+			result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		}()
+	}
 	var err error
 	var sent, received event
 	var hasSent, hasReceived bool
@@ -174,6 +213,9 @@ func (e *EventHubs) Execute(ctx context.Context, action *protocol.Action) (*prot
 	}
 
 	result.Duration = time.Since(start)
+	if err != nil && e.cfg.SampleTiming == "pnop_create_send_excludes_close" {
+		result.Duration = 0
+	}
 	// An empty observer probe (no event within the timeout) is an expected
 	// no-content outcome for this read-only, producer-first probe — consume() has
 	// already set StatusCode 204 and the empty-probe extraction. Clear the error
@@ -211,6 +253,9 @@ func (e *EventHubs) Teardown(ctx context.Context) error {
 }
 
 func (e *EventHubs) HealthCheck(ctx context.Context) error {
+	if e.cfg.ProducerLifecycle == "per_sample" {
+		return nil
+	}
 	if !e.initialized || e.client == nil {
 		return nil
 	}
@@ -218,6 +263,13 @@ func (e *EventHubs) HealthCheck(ctx context.Context) error {
 }
 
 func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result *protocol.Result) (event, error) {
+	if value, present := action.Params["messages"]; present {
+		bodies, err := MessageBodies(value)
+		if err != nil {
+			return event{}, err
+		}
+		return e.produceBatch(ctx, action, result, bodies)
+	}
 	hub := e.hub(action)
 	if hub == "" {
 		return event{}, fmt.Errorf("event hub name is required")
@@ -245,6 +297,12 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 }
 
 func validateEventHubsConfigBounds(cfg config) error {
+	if cfg.ProducerLifecycle != "" && cfg.ProducerLifecycle != "per_sample" {
+		return fmt.Errorf("unsupported Event Hubs producer lifecycle")
+	}
+	if cfg.SampleTiming != "" && (cfg.SampleTiming != "pnop_create_send_excludes_close" || cfg.ProducerLifecycle != "per_sample") {
+		return fmt.Errorf("unsupported Event Hubs sample timing")
+	}
 	if len(cfg.EventHub) > MaxEventHubNameBytes {
 		return fmt.Errorf("eventhubs event_hub exceeds %d bytes", MaxEventHubNameBytes)
 	}
@@ -263,6 +321,14 @@ func validateEventHubsConfigBounds(cfg config) error {
 }
 
 func (e *EventHubs) validateActionBounds(action *protocol.Action) error {
+	if value, present := action.Params["messages"]; present {
+		if action.Type != "eventhubs_produce" || len(action.Body) != 0 {
+			return fmt.Errorf("messages require a produce action without body")
+		}
+		if _, err := MessageBodies(value); err != nil {
+			return err
+		}
+	}
 	if len(e.hub(action)) > MaxEventHubNameBytes {
 		return fmt.Errorf("eventhubs event hub name exceeds %d bytes", MaxEventHubNameBytes)
 	}

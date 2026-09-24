@@ -62,6 +62,7 @@ type archiveMessageDetailCapture struct {
 }
 
 type archiveTransactionEvent struct {
+	WorkerDurationMs      float64                   `json:"worker_duration_ms,omitempty"`
 	CSVExportIDs          []string                  `json:"csv_export_ids"`
 	ExtractionsIncomplete bool                      `json:"extractions_incomplete,omitempty"`
 	Timestamp             time.Time                 `json:"timestamp"`
@@ -557,6 +558,7 @@ func (f *generatorArchiveQuotaParquetFile) Create(name string) (source.ParquetFi
 }
 
 type parquetTransactionEvent struct {
+	WorkerDurationMs     float64 `parquet:"name=worker_duration_ms, type=DOUBLE"`
 	TimestampUnixMs      int64   `parquet:"name=timestamp_unix_ms, type=INT64"`
 	TimestampRFC3339     string  `parquet:"name=timestamp_rfc3339, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 	TestID               string  `parquet:"name=test_id, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
@@ -965,6 +967,7 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		BusinessTransaction:   result.BusinessTransaction,
 		Population:            archiveResultPopulation(result.BusinessTransaction),
 		DurationMs:            durationMillis(result.Duration),
+		WorkerDurationMs:      durationMillis(result.WorkerDuration),
 		DNSMs:                 durationMillis(result.DNSTime),
 		ConnectMs:             durationMillis(result.ConnectTime),
 		TLSMs:                 durationMillis(result.TLSTime),
@@ -1591,6 +1594,7 @@ func toParquetTransactions(items []archiveTransactionEvent) []parquetTransaction
 			BusinessTransaction:  item.BusinessTransaction,
 			Population:           item.Population,
 			DurationMs:           item.DurationMs,
+			WorkerDurationMs:     item.WorkerDurationMs,
 			DNSMs:                item.DNSMs,
 			ConnectMs:            item.ConnectMs,
 			TLSMs:                item.TLSMs,

@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
 )
 
 const diKafkaSampler = "com.di.jmeter.kafka.sampler.KafkaProducerSampler"
@@ -90,7 +91,10 @@ func handleJMeterMessagingSampler(node *treeNode, ctx *convertContext, script *d
 	block("jmeter_reference_context_confirmation_required")
 	scope := append(append([]*treeNode(nil), ctx.contributors...), node.Children...)
 	if expected == "kafka" {
+		script.Config.JMeter.ProducerLifecycle = "source_engine"
+		script.Config.JMeter.SampleTiming = "send_acknowledgement"
 		previous := script.Config.Kafka
+		previousIdentity := script.Config.JMeter.ConfigurationID
 		convertDIKafka(e, scope, ctx, script, &a, file, block)
 		if meta, ok := a.Metadata["jmeter_kafka"].(map[string]interface{}); ok {
 			meta["native_config"] = script.Config.Kafka
@@ -98,12 +102,15 @@ func handleJMeterMessagingSampler(node *treeNode, ctx *convertContext, script *d
 			// cannot be represented by a single script-level configuration.
 			comparison := script.Config.Kafka
 			comparison.Topic = previous.Topic
-			if len(previous.Brokers) > 0 && !reflect.DeepEqual(previous, comparison) {
+			if len(previous.Brokers) > 0 && (previousIdentity != script.Config.JMeter.ConfigurationID || !reflect.DeepEqual(previous, comparison)) {
 				block("jmeter_multiple_producer_configurations_unsupported")
 				script.Config.Kafka = previous
+				script.Config.JMeter.ConfigurationID = previousIdentity
 			}
 		}
 	} else {
+		script.Config.JMeter.ProducerLifecycle = "per_sample"
+		script.Config.JMeter.SampleTiming = "pnop_create_send_excludes_close"
 		previous := script.Config.EventHubs
 		convertPNOPEventHubs(e, ctx, script, &a, file, block)
 		if meta, ok := a.Metadata["jmeter_eventhubs"].(map[string]interface{}); ok {
@@ -324,7 +331,9 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 			effective[prop(row, "configKey")] = prop(row, "configValue")
 		}
 	}
+	secondary := len(script.Config.Kafka.Brokers) > 0
 	cfg := &script.Config.Kafka
+	*cfg = dsl.KafkaConfig{} // Each source configuration is independent, including absent optional fields.
 	cfg.Brokers = strings.Split(effective["bootstrap.servers"], ",")
 	cfg.ClientID = effective["client.id"]
 	cfg.SecurityProtocol = strings.ToLower(effective["security.protocol"])
@@ -344,6 +353,58 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 	if effective["enable.idempotence"] == "true" {
 		cfg.Idempotence = "enabled"
 	}
+	cfg.Producer = &dsl.KafkaProducerConfig{}
+	tuning := map[string]any{}
+	invalidTuning := false
+	for _, setting := range []struct {
+		source   string
+		target   **int
+		fallback int
+	}{
+		{"retries", &cfg.Producer.Retries, 2147483647}, {"linger.ms", &cfg.Producer.LingerMs, 0}, {"batch.size", &cfg.Producer.BatchBytes, 16384}, {"buffer.memory", &cfg.Producer.BufferBytes, 33554432}, {"max.block.ms", &cfg.Producer.AdmissionTimeoutMs, 60000}, {"delivery.timeout.ms", &cfg.Producer.DeliveryTimeoutMs, 120000}, {"request.timeout.ms", &cfg.Producer.RequestTimeoutMs, 30000},
+	} {
+		value := setting.fallback
+		if raw, exists := effective[setting.source]; exists && raw != "" {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil {
+				block("jmeter_kafka_producer_setting_invalid")
+				invalidTuning = true
+				continue
+			}
+			value = parsed
+		}
+		nativeKey := map[string]string{"retries": "retries", "linger.ms": "linger_ms", "batch.size": "batch_bytes", "buffer.memory": "buffer_bytes", "max.block.ms": "admission_timeout_ms", "delivery.timeout.ms": "delivery_timeout_ms", "request.timeout.ms": "request_timeout_ms"}[setting.source]
+		tuning["kafka_producer_"+nativeKey] = value
+		*setting.target = &value
+	}
+	if err := kafkaprotocol.ValidateProducerSettings(tuning); err != nil || invalidTuning {
+		block("jmeter_kafka_producer_setting_invalid")
+		cfg.Producer = nil // Raw settings survive in evidence; invalid native fields must not prevent saving the blocked draft.
+	} else {
+		// Kafka batch.size is an allocation target and permits larger singleton
+		// records. franz-go's batch maximum rejects them; it is not equivalent.
+		cfg.Producer.BatchBytes = nil
+		block("jmeter_kafka_batch_allocation_parity_unverified")
+	}
+	if protocols, exists := effective["ssl.enabled.protocols"]; exists {
+		cfg.TLS = &dsl.KafkaTLSConfig{}
+		versions := map[string]bool{}
+		for _, version := range strings.Split(protocols, ",") {
+			versions[strings.TrimSpace(version)] = true
+		}
+		if len(versions) == 1 && versions["TLSv1.2"] {
+			cfg.TLS.MinVersion = "1.2"
+			cfg.TLS.MaxVersion = "1.2"
+		} else if len(versions) == 1 && versions["TLSv1.3"] {
+			cfg.TLS.MinVersion = "1.3"
+			cfg.TLS.MaxVersion = "1.3"
+		} else if len(versions) == 2 && versions["TLSv1.2"] && versions["TLSv1.3"] {
+			cfg.TLS.MinVersion = "1.2"
+			cfg.TLS.MaxVersion = "1.3"
+		} else {
+			block("jmeter_kafka_tls_protocols_unsupported")
+		}
+	}
 	cfg.Topic = prop(e, "kafkaTopic")
 	if _, explicit := a.Params["partition"]; explicit {
 		cfg.PartitionStrategy = "explicit"
@@ -352,7 +413,7 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 	ignored := []string{}
 	oauthSource := map[string]interface{}{}
 	allowed := map[string]bool{}
-	for _, key := range []string{"bootstrap.servers", "batch.size", "client.id", "security.protocol", "key.serializer", "value.serializer", "acks", "retries", "linger.ms", "max.block.ms", "buffer.memory", "enable.idempotence", "ssl.enabled.protocols", "sasl.mechanism", "sasl.oauthbearer.token.endpoint.url", "sasl.login.callback.handler.class"} {
+	for _, key := range []string{"bootstrap.servers", "batch.size", "client.id", "security.protocol", "key.serializer", "value.serializer", "acks", "retries", "linger.ms", "max.block.ms", "delivery.timeout.ms", "request.timeout.ms", "buffer.memory", "enable.idempotence", "ssl.enabled.protocols", "sasl.mechanism", "sasl.oauthbearer.token.endpoint.url", "sasl.login.callback.handler.class"} {
 		allowed[key] = true
 	}
 	for key, value := range effective {
@@ -372,6 +433,32 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 				oauthSource["option_names"] = names
 				oauthSource["scope"] = options["scope"]
 				oauthSource["credentials"] = "protected binding required"
+				if err := kafkaprotocol.ValidateOAuthTokenEndpoint(effective["sasl.oauthbearer.token.endpoint.url"]); err != nil {
+					block("jmeter_kafka_oauth_endpoint_invalid")
+				}
+				cfg.OAuth = &dsl.KafkaOAuthConfig{Mode: "client_credentials", TokenURL: effective["sasl.oauthbearer.token.endpoint.url"], Scope: options["scope"], AuthenticationMethod: "kafka_3_3_1_basic"}
+				for _, binding := range []struct {
+					key, field  string
+					destination *string
+				}{{"clientId", "config.kafka.oauth.client_id", &cfg.OAuth.ClientID}, {"clientSecret", "config.kafka.oauth.client_secret_ref", &cfg.OAuth.ClientSecretRef}} {
+					value := options[binding.key]
+					target := credentialpolicy.TargetRef{RequestKey: script.Name, Field: binding.field}
+					if secondary {
+						target.RequestKey = a.Name
+						target.Field = strings.Replace(binding.field, "config.kafka.", "metadata.jmeter_kafka.native_config.", 1)
+					}
+					requirement, replacement, bindingErr := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: "kafka_oauth_" + binding.key, Label: "Kafka OAuth " + binding.key, NameHint: "JMETER_" + strings.ToUpper(sanitizeName(script.Name)) + "_KAFKA_" + strings.ToUpper(binding.key), Source: credentialpolicy.SourceRef{Format: "jmeter", Path: file, Pointer: messagingNodeID(script.Config.JMeter.SourcePlanID, c), ItemID: script.Name}, Targets: []credentialpolicy.TargetRef{target}, Value: value, Mode: credentialpolicy.SecretReference, Registry: ctx.credentialNames})
+					if bindingErr != nil {
+						if ctx.importErr != nil {
+							*ctx.importErr = bindingErr
+						}
+						block("jmeter_kafka_oauth_credentials_required")
+						continue
+					}
+					*binding.destination = replacement
+					ctx.credentialRequirements = append(ctx.credentialRequirements, requirement)
+				}
+
 			}
 			_, legacyID := options["cid"]
 			_, legacySecret := options["cs"]
@@ -408,6 +495,7 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 		}
 	}
 	sort.Strings(ignored)
+	script.Config.JMeter.ConfigurationID = messagingNodeID(script.Config.JMeter.SourcePlanID, c)
 	a.Metadata["jmeter_kafka"] = map[string]interface{}{"source_node_id": messagingNodeID(script.Config.JMeter.SourcePlanID, c), "base_settings": base, "effective_settings": safe, "ignored_producer_settings": ignored, "producer_variable": identity, "oauth_source": oauthSource, "producer_lifecycle": "source_engine", "sample_timing": "send_acknowledgement"}
 }
 
@@ -455,15 +543,15 @@ func convertPNOPEventHubs(e *xmlNode, ctx *convertContext, script *dsl.Script, a
 			}
 		}
 	}
-	if len(messages) == 1 {
+	switch len(messages) {
+	case 0:
+		// Retain the defective sampler as a blocked draft, without emitting an
+		// invalid native message list. Source evidence keeps its zero count.
+		block("jmeter_eventhubs_messages_missing")
+	case 1:
 		a.Body = messages[0]
-	} else {
+	default:
 		a.Params["messages"] = messages
-		if len(messages) == 0 {
-			block("jmeter_eventhubs_messages_missing")
-		} else {
-			block("jmeter_eventhubs_batch_runtime_required")
-		}
 	}
 	a.Metadata["jmeter_eventhubs"] = map[string]interface{}{"message_count": len(messages), "producer_lifecycle": "per_sample", "sample_timing": "create_send_excludes_close", "shared_access_key_name": prop(e, "sharedAccessKeyName")}
 	if prop(e, "authType") != "Shared access signature" {

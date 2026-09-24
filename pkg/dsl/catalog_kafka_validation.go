@@ -13,12 +13,48 @@ import (
 func validateKafkaScriptIssues(script *Script) []string {
 	var issues []string
 	kafka := script.Config.Kafka
+	if len(kafka.Properties) != 0 && !isBlockedJMeterMessagingDraft(script) {
+		issues = append(issues, "config.kafka.properties is not executable; use validated typed Kafka configuration")
+	}
+	if p := kafka.Producer; p != nil {
+		values := map[string]any{}
+		for key, value := range map[string]*int{"retries": p.Retries, "linger_ms": p.LingerMs, "batch_bytes": p.BatchBytes, "buffer_bytes": p.BufferBytes, "admission_timeout_ms": p.AdmissionTimeoutMs, "delivery_timeout_ms": p.DeliveryTimeoutMs, "request_timeout_ms": p.RequestTimeoutMs} {
+			if value != nil {
+				values["kafka_producer_"+key] = *value
+			}
+		}
+		if err := kafkaprotocol.ValidateProducerSettings(values); err != nil {
+			issues = append(issues, err.Error())
+		}
+	}
+	if kafka.TLS != nil {
+		if err := kafkaprotocol.ValidateTLSVersions(kafka.TLS.MinVersion, kafka.TLS.MaxVersion); err != nil {
+			issues = append(issues, err.Error())
+		}
+	}
 	if !kafka.Mock && !isBlockedJMeterMessagingDraft(script) {
 		if len(kafka.Brokers) == 0 {
 			issues = append(issues, "config.kafka.brokers is required when mock mode is disabled")
 		}
 		if !KafkaRealAdapterAvailable() {
 			issues = append(issues, "real Kafka network adapter is not available in this build; enable config.kafka.mock for replay or build with -tags kafka_real")
+		}
+	}
+	if o := kafka.OAuth; o != nil {
+		if o.Mode != "client_credentials" {
+			issues = append(issues, "config.kafka.oauth.mode must be client_credentials")
+		}
+		if kafka.Profile != "" || !strings.EqualFold(kafka.SASLMechanism, "oauthbearer") || !strings.EqualFold(kafka.SecurityProtocol, "sasl_ssl") {
+			issues = append(issues, "explicit Kafka OAuth requires oauthbearer, sasl_ssl, and no Event Hubs profile")
+		}
+		if o.AuthenticationMethod != "" && o.AuthenticationMethod != "client_secret_post" && o.AuthenticationMethod != "client_secret_basic" && o.AuthenticationMethod != "kafka_3_3_1_basic" {
+			issues = append(issues, "unsupported Kafka OAuth authentication_method")
+		}
+		if !isBlockedJMeterMessagingDraft(script) && (o.ClientID == "" || o.ClientSecretRef == "" || strings.Contains(o.ClientID, "***") || strings.Contains(o.ClientSecretRef, "***")) {
+			issues = append(issues, "Kafka OAuth credentials are unresolved")
+		}
+		if err := kafkaprotocol.ValidateOAuthTokenEndpoint(o.TokenURL); err != nil && !isBlockedJMeterMessagingDraft(script) {
+			issues = append(issues, err.Error())
 		}
 	}
 	profile := strings.ToLower(strings.TrimSpace(kafka.Profile))
@@ -50,13 +86,13 @@ func validateKafkaScriptIssues(script *Script) []string {
 		if !eventHubsProfile && !strings.Contains(strings.ToLower(kafka.SecurityProtocol), "ssl") {
 			issues = append(issues, "config.kafka.sasl_mechanism oauthbearer requires a TLS security_protocol (e.g. sasl_ssl)")
 		}
-		if !eventHubsProfile && !isBlockedJMeterMessagingDraft(script) {
+		if !eventHubsProfile && kafka.OAuth == nil && !isBlockedJMeterMessagingDraft(script) {
 			issues = append(issues, "config.kafka managed-identity oauthbearer requires profile eventhubs")
 		}
 		if kafka.TLS != nil && kafka.TLS.InsecureSkipVerify {
 			issues = append(issues, "config.kafka managed-identity oauthbearer forbids tls.insecure_skip_verify")
 		}
-		if scope := strings.TrimSpace(kafka.OAuthScope); scope != "" && scope != identitypolicy.AzureEventHubsOAuthScope {
+		if scope := strings.TrimSpace(kafka.OAuthScope); kafka.OAuth == nil && scope != "" && scope != identitypolicy.AzureEventHubsOAuthScope {
 			issues = append(issues, fmt.Sprintf("config.kafka.oauth_scope must be %q for managed-identity oauthbearer", identitypolicy.AzureEventHubsOAuthScope))
 		}
 	}

@@ -411,3 +411,16 @@ func TestScriptSecretReferenceLifecycleKeepsNamesAuthoritative(t *testing.T) {
 		t.Fatalf("destination status = %d body=%s", status.Code, status.Body.String())
 	}
 }
+
+func TestKafkaOAuthLogicalSecretReferenceRebind(t *testing.T) {
+	for _, authored := range []string{"kafka_oauth", "{{secret.kafka_oauth}}"} {
+		script := &dsl.Script{Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{OAuth: &dsl.KafkaOAuthConfig{ClientSecretRef: authored}}}}
+		updated, paths, count, err := transformScriptSecretReferences(script, "kafka_oauth", "replacement_oauth")
+		if err != nil || count != 1 || len(paths) != 1 {
+			t.Fatalf("rebind count=%d paths=%v err=%v", count, paths, err)
+		}
+		if !strings.Contains(updated.Config.Kafka.OAuth.ClientSecretRef, "REPLACEMENT_OAUTH") || script.Config.Kafka.OAuth.ClientSecretRef != authored {
+			t.Fatal("secret reference was not immutably rebound")
+		}
+	}
+}
