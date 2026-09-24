@@ -98,6 +98,9 @@ services:
       - no-new-privileges:true
     environment:
       APEXLOAD_ENV: local
+      # Do not fall back to Docker's container-ID hostname: this value is the
+      # stable, operator-facing name shown in Monitoring and fleet views.
+      APEXLOAD_GENERATOR_ID: apexload-generator-local
       APEXLOAD_GENERATOR_LISTEN_ADDR: ":9090"
       APEXLOAD_GENERATOR_MAX_VUSERS: "1000"
       APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL: "60s"

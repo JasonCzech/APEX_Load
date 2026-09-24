@@ -526,6 +526,8 @@ describe('MonitoringPage', () => {
 
     const topbar = container.querySelector('[data-testid="topbar-contribution"]')
     expect(topbar?.textContent).toContain('Monitoring')
+    expect(topbar?.querySelector('[aria-label="Monitor categories"]')?.classList.contains('topbar-page-section-toggle')).toBe(true)
+    expect(topbar?.querySelectorAll('[aria-label="Monitor categories"] [role="tab"]')).toHaveLength(5)
     expect(topbar?.textContent).toContain('1 advisory warning')
     expect(topbar?.querySelector('.monitoring-topbar-controls .warning')?.textContent).toBe('1 advisory warning')
     const topbarText = topbar?.textContent ?? ''

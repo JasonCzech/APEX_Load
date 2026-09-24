@@ -25,6 +25,7 @@ describe('Help documentation', () => {
   it('starts with a self-contained first test and five semantic areas for administrators', async () => {
     await render({ effectiveAccessResources: access(['manage_system']) })
     expect(container.querySelector('[data-testid="topbar"]')?.textContent).toContain('Help & documentation')
+    expect(container.querySelector('[data-testid="topbar"] nav[aria-label="Help areas"]')?.classList.contains('topbar-page-section-toggle')).toBe(true)
     expect(Array.from(container.querySelectorAll('nav[aria-label="Help areas"] a')).map(a => a.textContent)).toEqual(['Getting Started', 'User Guide', 'Administration', 'API & Automation', 'Troubleshooting'])
     expect(container.textContent).toContain('Your first test')
     expect(container.textContent).toContain('First_HTTP_Test')
