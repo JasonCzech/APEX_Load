@@ -405,14 +405,6 @@
     "owner": "APEX Load maintainers"
   },
   {
-    "id": "install-kind",
-    "title": "Docker Desktop kind",
-    "path": "deployments/k8s/local-kind/README.md",
-    "area": "admin-guide",
-    "group": "Installation",
-    "owner": "APEX Load maintainers"
-  },
-  {
     "id": "install-onprem",
     "title": "On-premises Kubernetes",
     "path": "deployments/k8s/onprem/README.md",
@@ -453,25 +445,9 @@
     "owner": "APEX Load maintainers"
   },
   {
-    "id": "install-azure-monitor",
-    "title": "AKS Azure Monitor",
-    "path": "deployments/k8s/aks-azure-monitor/README.md",
-    "area": "admin-guide",
-    "group": "Installation",
-    "owner": "APEX Load maintainers"
-  },
-  {
     "id": "install-monitoring",
     "title": "Kubernetes monitoring",
     "path": "deployments/k8s/monitoring/README.md",
-    "area": "admin-guide",
-    "group": "Installation",
-    "owner": "APEX Load maintainers"
-  },
-  {
-    "id": "ai-secrets",
-    "title": "Local AI provider secrets",
-    "path": "deployments/k8s/AI_PROVIDER_SETUP.md",
     "area": "admin-guide",
     "group": "Installation",
     "owner": "APEX Load maintainers"

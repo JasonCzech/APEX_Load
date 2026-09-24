@@ -11,7 +11,7 @@ import (
 // generator process. Every generator command in them must set an explicit bind
 // address, because APEXLOAD_GENERATORS quick starts point at two loopback
 // targets and DefaultGeneratorConfig binds both to the same port.
-var generatorDocFiles = []string{"README.md", "QUICK_REFERENCE.md", "DEVELOPMENT.md"}
+var generatorDocFiles = []string{"README.md", "DEVELOPMENT.md"}
 
 func TestGeneratorDocsSetListenAddrOnEveryStartCommand(t *testing.T) {
 	for _, name := range generatorDocFiles {
@@ -67,7 +67,7 @@ func TestGeneratorDocSnippetsMatchConfigSurface(t *testing.T) {
 
 func TestGeneratorDocsDocumentDefaultListenAddr(t *testing.T) {
 	want := DefaultGeneratorConfig().ListenAddr
-	for _, name := range []string{"README.md", "QUICK_REFERENCE.md"} {
+	for _, name := range []string{"README.md", "DEVELOPMENT.md"} {
 		body := strings.Join(readDocLines(t, name), "\n")
 		if !strings.Contains(body, "`"+want+"`") {
 			t.Errorf("%s does not document the generator default bind address %q", name, want)

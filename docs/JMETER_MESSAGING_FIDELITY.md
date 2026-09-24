@@ -131,6 +131,6 @@ Final review validation: the complete Go suite passed on the final production tr
 The source-plan manifest and single-engine commit path now group all source
 threads on one generator. Protected messaging previews can apply a complete
 scripts-plus-scenario repair revision atomically. See
-[the source-plan and repair contract](JMETER_SOURCE_PLAN_REPAIRS.md) for fencing,
+[the source-plan and repair contract](IMPORT_FIDELITY_AND_REPAIRS.md#jmeter-source-plan-execution-and-reviewed-batch-repairs) for fencing,
 retry, storage and operator behavior. These additions do not remove the strict
 compatibility gate or resolve the remaining protocol/live-conformance gaps.

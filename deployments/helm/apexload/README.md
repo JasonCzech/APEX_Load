@@ -108,7 +108,7 @@ its values schema caps renewal at 10 seconds so every allowed TTL retains at
 least three renewal opportunities. The first upgrade from a tokenless release
 requires a no-active-tests maintenance window because mixed controller/generator
 versions intentionally reject new work. Follow the rollout gate and connectivity
-drill in [Generator run supervision](../../../docs/GENERATOR_RUN_SUPERVISION.md).
+drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision).
 The controller pod template checksums the shared ConfigMap, so changing the TTL
 or renewal value triggers a controller rollout instead of leaving stale process
 environment behind.

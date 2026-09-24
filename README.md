@@ -58,10 +58,8 @@ The current controller can run in either local or distributed mode without chang
 ## Documentation
 
 - **[docs/INDEX.md](docs/INDEX.md)** — Canonical documentation map with current/generated/roadmap/historical labels
-- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** — Fast lookup: commands, DSL skeletons, common errors
-- **[DEVELOPMENT.md](DEVELOPMENT.md)** — Developer setup, packages overview, frontend architecture, conventions, testing policy
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** — Developer setup, packages overview, frontend architecture, conventions, testing policy, quick-reference cheat-sheet
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — System architecture, data flow diagrams, engine internals, metrics collection, performance characteristics
-- **[API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)** — Compatibility landing page for generated API and DSL references
 - **[docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)** — Operator and CI/CD API workflows; generated Swagger/Endpoint Map remain the exhaustive route source
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
 - **[docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md)** — Current enterprise storage, cache, archive, and telemetry operations
@@ -384,7 +382,7 @@ Do not maintain endpoint catalogs by hand in Markdown.
 - Generated endpoint catalog: [docs/api-endpoint-catalog.json](docs/api-endpoint-catalog.json)
 - Runtime docs endpoints: `GET /api/v1/docs/swagger.yaml` and `GET /api/v1/docs/endpoint-catalog`
 - Workflow guide: [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)
-- Compatibility landing page: [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md)
+- Regeneration (`go generate ./pkg/api`, `go generate ./pkg/dsl`) is described in [DEVELOPMENT.md](DEVELOPMENT.md#api-documentation)
 
 ## DSL Script Structure
 
@@ -518,7 +516,7 @@ make test-cover
 
 These are design targets. A reproducible local component harness covers all four target areas and
 emits validated JSON/Markdown evidence as described in
-[docs/PERFORMANCE_BENCHMARK_EVIDENCE.md](docs/PERFORMANCE_BENCHMARK_EVIDENCE.md). Its comparisons are
+[docs/PERFORMANCE_BENCHMARKS.md](docs/PERFORMANCE_BENCHMARKS.md). Its comparisons are
 explicitly `not_evaluated`; complete, release-specific target-scope evidence is still required before
 any target is cited as achieved.
 
@@ -545,7 +543,7 @@ any target is cited as achieved.
 - ✅ Browser client metrics for web-app synthetic UX telemetry are implemented for the current browser contract; WebKit process attribution and broader benchmark publication remain evidence/hardening work.
 - 🟡 Messaging protocols are mixed maturity: Kafka and Azure Event Hubs have opt-in real adapters, Solace/Service Bus are build-tag gated, IBM MQ is mock-only with fail-fast real-mode validation, and deeper broker-native parity is tracked in [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
 - ✅ GitHub Actions CI/CD gating: controller-native `apexctl ci run`, signed canonical action releases, JUnit/JSON evidence, and active immutable deployment workflows (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
-- ✅ Evaluator trust pack: one-command demo seeding plus bounded k6 HTTP subset import/export (see [docs/EVALUATOR_TRUST_PACK.md](docs/EVALUATOR_TRUST_PACK.md))
+- ✅ Evaluator trust pack: one-command demo seeding plus bounded k6 HTTP subset import/export (see [docs/COMPETITIVE_COMPARISON.md](docs/COMPETITIVE_COMPARISON.md#evaluator-trust-pack))
 - ✅ Correlation rules engine + replay-failure detection, response-family rule packs, stale-literal evidence, and guided/batch repair (`/api/v1/correlations/diagnose`)
 - ✅ Assisted authoring (deterministic-local draft/repair/explain over the DSL, via MCP)
 - 🟡 External LLM script generation (policy-gated; not wired by default)
@@ -562,7 +560,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 - **Protocol interface**: `pkg/protocol/protocol.go` — All protocols implement this
 - **DSL types**: `pkg/dsl/types.go` — Script structures
 - **API handlers**: `pkg/api/handlers.go` — Endpoint implementations
-- **Runtime telemetry SLA plan**: `docs/RUNTIME_TELEMETRY_SLA_PLAN.md` — Telemetry capture, streaming, and storage hardening roadmap
+- **Runtime telemetry SLA plan**: `docs/ROADMAP.md#runtime-telemetry-sla` — Telemetry capture, streaming, and storage hardening roadmap
 - **Prometheus metrics catalog**: `docs/PROMETHEUS_METRICS.md` — Controller scrape series, labels, and telemetry troubleshooting
 - **Dynatrace webhook setup**: `docs/DYNATRACE_WEBHOOKS.md` — Events API webhook configuration and retry behavior
 - **OpenTelemetry tracing**: `docs/OPENTELEMETRY.md` — OTLP configuration, span coverage, sampling, propagation, and data-safety behavior

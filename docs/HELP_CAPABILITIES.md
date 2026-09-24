@@ -23,7 +23,7 @@ Import recognition, authoring, runtime execution and production adapter availabi
 
 ## Import conversion and replay evidence
 
-The September 12, 2026 [fixture matrix](https://github.com/JasonCzech/APEX_Load/blob/main/docs/qa/reviews/import-fixture-matrix-2026-09-12/README.md) passed 16 cases, with four blocked by unavailable provider or customer environments. These results establish the coverage below; they do not expand runtime availability or certify complete source-tool parity.
+The September 12, 2026 [fixture matrix](https://github.com/JasonCzech/APEX_Load/blob/main/docs/qa/reviews/import-reviews-2026-09.md#import-fixture-matrix-and-broker-runbook) passed 16 cases, with four blocked by unavailable provider or customer environments. These results establish the coverage below; they do not expand runtime availability or certify complete source-tool parity.
 
 | Source or provider | Validated coverage | Remaining limitation |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ The September 12, 2026 [fixture matrix](https://github.com/JasonCzech/APEX_Load/
 | Other messaging | Mock AsyncAPI, MQSC/JNDI and Event Hubs Capture conversion/replay checks passed | Live Azure Service Bus, Azure Event Hubs and IBM MQ validation remains blocked; the current Event Hubs live smoke also needs exact-marker assertions before establishing payload fidelity |
 | Enterprise imports | Persisted CloudTest, SAP GUI and disabled Java runner constraints held; Java lifecycle conversion, TruClient preservation and 26 pinned public source directories passed their checks | Customer enterprise replay baselines remain unavailable. CloudTest unproven mappings remain blocked, SAP GUI has no standard runtime, and Java needs its governed runner. Supported TruClient browser actions are not universally blocked |
 
-Use the [matrix results and logs](https://github.com/JasonCzech/APEX_Load/blob/main/docs/qa/reviews/import-fixture-matrix-2026-09-12/evidence/results.json) and [reproduction runbook](https://github.com/JasonCzech/APEX_Load/blob/main/docs/qa/reviews/import-fixture-matrix-2026-09-12/RUNBOOK.md) to distinguish real-provider replay, mock behavior and conversion-only evidence. Public and synthetic fixtures do not replace customer replay baselines.
+Use the [matrix results and logs](https://github.com/JasonCzech/APEX_Load/blob/main/docs/qa/reviews/import-fixture-matrix-2026-09-12/evidence/results.json) and [reproduction runbook](https://github.com/JasonCzech/APEX_Load/blob/main/docs/qa/reviews/import-reviews-2026-09.md#import-fixture-matrix-and-broker-runbook) to distinguish real-provider replay, mock behavior and conversion-only evidence. Public and synthetic fixtures do not replace customer replay baselines.
 
 ## Current references
 

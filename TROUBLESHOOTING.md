@@ -486,4 +486,4 @@ When reporting issues:
 4. **Check existing documentation:**
    - [DEVELOPMENT.md](DEVELOPMENT.md) — Dev setup
    - [ARCHITECTURE.md](ARCHITECTURE.md) — System internals
-   - [API_AND_DSL_REFERENCE.md](API_AND_DSL_REFERENCE.md) — API/DSL syntax
+   - [docs/DSL_ACTION_REFERENCE.md](docs/DSL_ACTION_REFERENCE.md) and [docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md) — DSL and API syntax
