@@ -208,7 +208,7 @@ javaVuser:
   # stock chart supports legacy full_lifecycle execution only. Combined
   # persistent lifecycles require a separately governed Windows runner or a
   # Linux runner with a narrowly delegated cgroup subtree; see
-  # docs/JAVA_VUSER_RUNTIME.md.
+  # docs/PROTOCOL_SUPPORT.md.
   enabled: false
   runner:
     image:

@@ -2,7 +2,7 @@
 
 Status: Roadmap. Planned and in-progress engineering work with the current state of each track. Landed behavior is described in the guides linked from [INDEX.md](INDEX.md); this file records only what is decided, what has landed toward it, and what remains.
 
-Source note: consolidated 2026-09-24 from the former `RUNTIME_TELEMETRY_SLA_PLAN.md`, `PROTOCOL_TELEMETRY_PARITY_PLAN.md`, `SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md`, `PT_ANALYSIS_PARQUET_IMPORT_PLAN.md`, `MESSAGING_PLAN.md`, `BROWSER_ROADMAP.md` and `CLOUDTEST_PARITY_PROGRAM.md`. Older design sketches can be recovered from git history. Current support guidance lives in [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md) and [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md); benchmark procedure lives in [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md#browser-benchmark-runbook).
+Source note: consolidated 2026-09-24 from the former `RUNTIME_TELEMETRY_SLA_PLAN.md`, `PROTOCOL_TELEMETRY_PARITY_PLAN.md`, `SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md`, `PT_ANALYSIS_PARQUET_IMPORT_PLAN.md`, `MESSAGING_PLAN.md`, `BROWSER_ROADMAP.md` and `CLOUDTEST_PARITY_PROGRAM.md`. Older design sketches can be recovered from git history. Current support guidance lives in [Browser and mobile support](PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation) and [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support); benchmark procedure lives in [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md#browser-benchmark-runbook).
 
 ## Track status
 
@@ -92,7 +92,7 @@ Variant comparison and card layout: each protocol's dashboard card follows hero 
 
 Stages 2-4 are independent after Stage 1. Risks: `ServerTelemetry` growth (keep a nil pointer, benchmark); SLA config friction (optional, sensible defaults); baseline mismatches across script versions; UI surface multiplication (shared card layout, protocol selector); JMS broker metrics needing provider APIs (start client-observable, broker APIs are L3).
 
-Related: [Browser and mobile](#browser-and-mobile) is the most complete existing L2 example; [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md) records the shipped L1 SOAP and Java HTTP support.
+Related: [Browser and mobile](#browser-and-mobile) is the most complete existing L2 example; [Web/API execution matrix](PROTOCOL_SUPPORT.md#webapi-execution-support-matrix) records the shipped L1 SOAP and Java HTTP support.
 
 ---
 
@@ -149,7 +149,7 @@ Follow-on: saved mappings per source/tool, automatic unit normalization, partiti
 
 ## Messaging
 
-Scope: importing, running and evaluating results for JMS, Apache Kafka, Solace PubSub+, IBM MQ, Azure Service Bus and Azure Event Hubs. Current behavior is authoritative in [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md). Most of this program has landed; this section keeps the open work, a compact record of what landed, the coverage picture and the design decisions that still constrain new adapters. It was condensed from the former 1,551-line coverage plan and the Kafka/AsyncAPI plan; per-item baselines superseded by landed code were dropped (recover from git history).
+Scope: importing, running and evaluating results for JMS, Apache Kafka, Solace PubSub+, IBM MQ, Azure Service Bus and Azure Event Hubs. Current behavior is authoritative in [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support). Most of this program has landed; this section keeps the open work, a compact record of what landed, the coverage picture and the design decisions that still constrain new adapters. It was condensed from the former 1,551-line coverage plan and the Kafka/AsyncAPI plan; per-item baselines superseded by landed code were dropped (recover from git history).
 
 ### Open work (rechecked 2026-09-24)
 
@@ -264,7 +264,7 @@ Two additive deliverables: a Kafka protocol plugin (`pkg/protocol/kafka`, direct
 
 ## Browser and mobile
 
-Scope: mobile device emulation, client-side metrics, the UX-platform strategy tying them together, TrueClient MobileWeb import and browser replay HAR capture. Current support guidance: [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md). Benchmark procedure: [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md#browser-benchmark-runbook).
+Scope: mobile device emulation, client-side metrics, the UX-platform strategy tying them together, TrueClient MobileWeb import and browser replay HAR capture. Current support guidance: [Browser and mobile support](PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation). Benchmark procedure: [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md#browser-benchmark-runbook).
 
 ### Vision and decisions
 
@@ -383,7 +383,7 @@ HAR is evidence for debugging, migration review and browser-to-HTTP conversion, 
 | Memory per browser VUser exceeds expectations | Keep canary positioning and the hybrid HTTP + browser model |
 | Layer 3 scope creep | Defer until stages 1-4 produce real data |
 
-External requirements: Chromium/Chrome on generators, Playwright WebKit assets on WebKit hosts, controlled benchmark hardware for density claims, TrueClient sample archives. Related: [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md) and the [enterprise archive runtime settings reference](COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference).
+External requirements: Chromium/Chrome on generators, Playwright WebKit assets on WebKit hosts, controlled benchmark hardware for density claims, TrueClient sample archives. Related: [Web/API execution matrix](PROTOCOL_SUPPORT.md#webapi-execution-support-matrix) and the [enterprise archive runtime settings reference](COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference).
 
 ---
 

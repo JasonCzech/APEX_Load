@@ -146,7 +146,7 @@ they are replaced with behavior the engine executes.
 
 Imported or existing `java_vuser` scripts expose a protocol-scoped Java VM section. JDK selection/home, exact JVM argument tokens, and script-controlled path references to operator-provisioned precompiled artifacts are `executed`. Dedicated class loading is also `executed`: local and sidecar execution create one child class loader and Actions object per VUser session, retain them across init, action iterations, and end, and close them at teardown. APEX Load does not reproduce every LoadRunner JVM-reuse topology — VUser sessions remain isolated governed processes. `use_xbootclasspath` is `compatibility_only`: on supported Java 17+ runtimes it produces stable fallback evidence and uses the ordinary classpath; APEX Load never emits an `-Xbootclasspath` launcher option.
 
-Execution remains operator-gated. A specified JDK is resolved only on the selected executor, must contain an executable Java 17+ launcher, and never falls back to an internal JDK. Distributed assignments run Java-specific preflight before commit so an unavailable runner, JDK, harness, classpath, or target class fails before VUsers are allocated. See `docs/JAVA_VUSER_RUNTIME.md` for the runtime and deployment contract.
+Execution remains operator-gated. A specified JDK is resolved only on the selected executor, must contain an executable Java 17+ launcher, and never falls back to an internal JDK. Distributed assignments run Java-specific preflight before commit so an unavailable runner, JDK, harness, classpath, or target class fails before VUsers are allocated. See `docs/PROTOCOL_SUPPORT.md` for the runtime and deployment contract.
 
 ## Evidence
 

@@ -107,7 +107,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"runner must be explicitly configured and allowed by project egress policy"},
 			RecommendedWorkflow: "Inspect and approve the collection, configure the pinned runner and egress policy, then replay before promotion.",
 			Source:              "apexload-native",
-			Evidence:            []string{"pkg/protocol/bruno", "runners/bruno", "docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md"},
+			Evidence:            []string{"pkg/protocol/bruno", "runners/bruno", "docs/PROTOCOL_SUPPORT.md"},
 		},
 		{
 			ID:                  "database-sql",
@@ -143,7 +143,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"native Oracle client image, wallet/auth prerequisites, and benchmark evidence"},
 			RecommendedWorkflow: "Classify and preserve imported Oracle scripts until a project-approved Oracle client runner is available.",
 			Source:              "license-bundles-2023",
-			Evidence:            []string{"docs/SAPGUI_RUNNER_SPEC.md", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
+			Evidence:            []string{"docs/PROTOCOL_SUPPORT.md", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		networkBundleEntry("network-dns", "dns", "DNS", "supported", "native_linux", "go_generator", "P0", "10k DNS VUsers per generator pending benchmark", []string{"A/AAAA/CNAME/MX/NS/TXT lookups", "response record diagnostics", "DNS timing telemetry"}),
 		networkBundleEntry("network-ftp", "ftp", "FTP", "supported", "native_linux", "go_generator", "P0", "2k-5k FTP control-command VUsers per generator pending file-size mix", []string{"connect", "login", "NOOP/raw control commands", "response diagnostics"}),
@@ -249,7 +249,7 @@ func protocolBundleSupportMatrix() []ProtocolBundleSupportEntry {
 			RemainingGaps:       []string{"Windows runner bridge and SAP GUI client version certification"},
 			RecommendedWorkflow: "Govern entitlement first, import for review, then place only on SAP GUI-capable Windows runner pools.",
 			Source:              "sap-solutions-2024",
-			Evidence:            []string{"docs/SAPGUI_RUNNER_SPEC.md", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
+			Evidence:            []string{"docs/PROTOCOL_SUPPORT.md", "docs/COMPETITIVE_COMPARISON.md#protocol-bundle-coverage"},
 		},
 		{
 			ID:                  "sap-web",

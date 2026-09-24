@@ -180,7 +180,7 @@ services:
     read_only: true
     # The stock non-privileged container has no writable cgroup v2 delegation.
     # It advertises legacy full_lifecycle only; combined persistent lifecycle
-    # requires a separately governed runner described in JAVA_VUSER_RUNTIME.md.
+    # requires a separately governed runner described in PROTOCOL_SUPPORT.md.
     cap_drop:
       - ALL
     security_opt:

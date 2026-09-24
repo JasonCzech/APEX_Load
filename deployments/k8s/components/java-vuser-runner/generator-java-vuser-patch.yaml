@@ -30,7 +30,7 @@ spec:
           # No host cgroup mount or elevated capability is granted here.
           # Consequently this stock sidecar advertises legacy full_lifecycle
           # only; combined persistent lifecycle placement fails capability
-          # preflight. See docs/JAVA_VUSER_RUNTIME.md.
+          # preflight. See docs/PROTOCOL_SUPPORT.md.
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

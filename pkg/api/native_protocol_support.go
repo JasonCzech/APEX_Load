@@ -183,7 +183,7 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 			ImportSources:       []string{"JSON DSL", "enterprise script archive review"},
 			RemainingGaps:       []string{"no native IBM MQ MQI adapter is registered; real broker execution is unavailable"},
 			RecommendedWorkflow: "Use mock replay only for script review; do not approve real IBM MQ execution until a governed MQI adapter and broker evidence are available.",
-			Evidence:            []string{"pkg/protocol/jms/jms_test.go", "docs/MESSAGING_SUPPORT.md"},
+			Evidence:            []string{"pkg/protocol/jms/jms_test.go", "docs/PROTOCOL_SUPPORT.md"},
 		},
 	}
 	sort.SliceStable(entries, func(i, j int) bool {

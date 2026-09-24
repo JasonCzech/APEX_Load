@@ -317,7 +317,7 @@ func TestJavaVuserOperatorEnablementIsExplicitInRawDeployments(t *testing.T) {
 		}
 	}
 
-	runtimeDocs := readTextFile(t, "../../docs/JAVA_VUSER_RUNTIME.md")
+	runtimeDocs := readTextFile(t, "../../docs/PROTOCOL_SUPPORT.md")
 	for _, required := range []string{
 		"APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN",
 		"per-pod sidecar authentication token",

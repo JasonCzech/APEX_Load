@@ -375,7 +375,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 **Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC, HAR, JMeter, DevWeb, AsyncAPI, and enterprise script archive migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
 
-**Evidence:** `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md`, `docs/ROADMAP.md#browser-and-mobile`, `/api/v1/protocol-bundles/support-matrix`
+**Evidence:** `docs/PROTOCOL_SUPPORT.md`, `docs/ROADMAP.md#browser-and-mobile`, `/api/v1/protocol-bundles/support-matrix`
 
 **Remaining:** Complete customer-backed demand assessment. Publish explicit non-goals or coexistence guidance for unsupported legacy protocols. JMS/broker-specific diagnostics (queue depth, DLQ, consumer lag) are partially implemented.
 
@@ -704,7 +704,7 @@ The following sections carry functional tables referenced by `pkg/api/` evidence
 
 Postman, JMeter HTTP, OpenAPI, WSDL, the constrained k6 HTTP subset, and sample/HAR requests retain their source-specific parsers but share effective-request projection, structured credential handling, runtime capability checks, durable review gates, and final DSL validation.
 
-The shared result vocabulary is `executable_exact` (preserved supported behavior), `executable_bounded` (replay-safe runtime clamp plus diagnostic), `blocked_draft` (valid sanitized draft that cannot reach transport), and `rejected` (no valid disclosure-safe draft). These outcomes do not replace existing endpoint response fields or the broader `supported`/`partial`/`review_only` support labels. Full per-importer dispositions and archive-ingress rejection rules are documented in [Web/API Execution Support Matrix](WEB_API_EXECUTION_SUPPORT_MATRIX.md#tested-adopter-dispositions).
+The shared result vocabulary is `executable_exact` (preserved supported behavior), `executable_bounded` (replay-safe runtime clamp plus diagnostic), `blocked_draft` (valid sanitized draft that cannot reach transport), and `rejected` (no valid disclosure-safe draft). These outcomes do not replace existing endpoint response fields or the broader `supported`/`partial`/`review_only` support labels. Full per-importer dispositions and archive-ingress rejection rules are documented in [Web/API Execution Support Matrix](PROTOCOL_SUPPORT.md#tested-adopter-dispositions).
 
 ---
 
