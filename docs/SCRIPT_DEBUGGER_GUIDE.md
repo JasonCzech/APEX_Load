@@ -32,12 +32,12 @@ The transport shows Run, Pause or Continue according to the session state. **Fol
 
 ## Routes
 
-Use `/api/v1/replay/sessions/{session_id}` for session reads and transport controls. The older `/api/v1/script-debug/sessions/{session_id}` routes are deprecated compatibility aliases. Browser replay canary sessions still use `/api/v1/browser-replay/sessions/{session_id}`.
+Use `/api/v1/replay/sessions/{session_id}` for session reads and transport controls; it is the canonical route family. The older `/api/v1/script-debug/sessions/{session_id}` routes are still registered but marked deprecated in `swagger.yaml`. Browser replay canary sessions still use `/api/v1/browser-replay/sessions/{session_id}`.
 
-Start routes:
+Start routes (all registered; the `replay/sessions` routes are preferred, and the `debug/sessions` routes are compatibility wrappers over the same session engine):
 
-- Saved script: `POST /api/v1/scripts/{script_id}/debug/sessions`
-- Draft script: `POST /api/v1/scripts/debug/sessions`
+- Saved script: `POST /api/v1/scripts/{script_id}/replay/sessions` (compat: `POST /api/v1/scripts/{script_id}/debug/sessions`)
+- Draft script: `POST /api/v1/scripts/replay/sessions` (compat: `POST /api/v1/scripts/debug/sessions`)
 
 Session controls:
 

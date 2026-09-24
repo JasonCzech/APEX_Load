@@ -1,6 +1,10 @@
 # Script Editor Interaction Model — Decision Memo & Re-Architecture Plan
 
-**Status:** Approved direction (2026-06-18). Phase 1/2 builds start on separate explicit go-aheads.
+**Status:** Implemented design record. The direction approved on 2026-06-18 has shipped: the editor no longer
+leads with raw JSON. Author mode provides an **Author outline**, an **Action editor**, and a **Source** tab
+(with **Edit in Full Script JSON** for whole-document edits); see
+[Authoring A Script](APPLICATION_USER_GUIDE.md#authoring-a-script). This memo is kept as the rationale for
+that design; the sections below keep their original decision-time wording.
 **Audience:** Script-editor product owner + engineering.
 **Related:** [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) (why the DSL is an interpreted action list, not code).
 
@@ -16,13 +20,13 @@ single canonical source of truth and demoting raw JSON to a read-only/diff **Sou
 > **Recommendation:** ship **Phase 1 (Incremental-JSON-plus, M)** first — outline navigator, in-editor
 > parameterize code-lens, per-action form popovers, large-import perf hardening — then **Phase 2
 > (Action-List-First, XL)** — promote the action list to the primary editable surface, demote JSON,
-> replace JSON-in-textarea control flow with nested rows, and decompose the ~16k-line
+> replace JSON-in-textarea control flow with nested rows, and decompose the (then ~16k-line)
 > `ScriptEditor.tsx` god-component. **Reject** the bidirectional-hybrid reconciler and the node-flow
 > canvas as the default surface.
 
 ```mermaid
 flowchart LR
-    NOW["Today<br/>raw-JSON-first · 16k-line ScriptEditor.tsx<br/>structured forms exist but secondary"]
+    NOW["Today<br/>raw-JSON-first · ~16k-line ScriptEditor.tsx at decision time<br/>structured forms exist but secondary"]
     P1["Phase 1 (M) — Incremental-JSON-plus<br/>outline nav · parameterize code-lens<br/>form popovers · perf hardening<br/>JSON stays primary"]
     P2["Phase 2 (XL) — Action-List-First<br/>list = primary editable surface<br/>JSON → read-only/diff Source tab<br/>decompose god-component"]
     P3["Phase 3 (deferred)<br/>granular PATCH endpoint<br/>optional control-flow map"]
@@ -35,7 +39,7 @@ flowchart LR
 
 ## 1. The problem
 
-Today's editor (`dashboard/src/components/ScriptEditor.tsx`) is a **~16,000-line god-component** whose
+At decision time the editor (`dashboard/src/components/ScriptEditor.tsx`) was a **~16,000-line god-component** (it is now roughly 6,900 lines after decomposition) whose
 primary surface is raw JSON in CodeMirror (`@uiw/react-codemirror`, the `script-json` center tab). Two
 observations make the status quo questionable:
 
@@ -46,10 +50,10 @@ observations make the status quo questionable:
    what is conceptually "edit row 37 / parameterize this value."
 2. **The structured model already mostly exists — it's just secondary.** Per-protocol form editors
    (`HttpActionFields`, `BrowserActionFields`, `GrpcActionFields`, `ProtocolExtractorsSection`, … in
-   `scriptActionFields.tsx`), an `ActionEditor` detail pane (`ScriptEditor.tsx:14938`), a catalog
+   `scriptActionFields.tsx`), an `ActionEditor` detail pane (`ScriptEditor.tsx`), a catalog
    consumer (`dslActionCatalog.ts`), and even an author-mode **virtualized action list** already exist
    (`buildScriptPhaseActionRows()` + `@tanstack/react-virtual`, with a `selectAuthorPhaseAction`
-   handler at `ScriptEditor.tsx:3102/3874/10367`). The raw-JSON tab is just what's in front.
+   handler in `ScriptEditor.tsx`). The raw-JSON tab is just what's in front.
 
 Large generated imports are kept alive only by perf caps (`SCRIPT_CODE_LINE_LAYOUT_MAX_LINES=4000`,
 `JSON_SOURCE_MAP_MAX_DOC_CHARS=250k`), and the editable ~98k-line case still strains — because
@@ -121,9 +125,9 @@ This is why D1's "XL" label overstates the true delta — the spine exists. Buil
 | Need | Reuse (path:symbol) |
 |---|---|
 | Action contracts / labels / field specs | `dslActionCatalog.ts` (`ensureDslActionCatalog`, `dslSpecForActionType`, `dslActionTypesForProtocol`) ← `GET /api/v1/dsl/actions` |
-| Flattened ordered rows + virtualization | `buildScriptPhaseActionRows()` + `ScriptPhaseActionRow` + `@tanstack/react-virtual`; `selectAuthorPhaseAction` (`ScriptEditor.tsx:3102/3874`) |
-| Per-protocol forms / detail pane | `scriptActionFields.tsx` (`HttpActionFields`, …, `ProtocolExtractorsSection`, `ProtocolAssertionsSection`) + `ActionEditor` (`ScriptEditor.tsx:14938`) |
-| Per-value parameterize | `openParameterizeChoice` / `upsertParameterFromActionEditor` / `ParameterizeDialog` (`ScriptEditor.tsx:5896/5670/7303`) |
+| Flattened ordered rows + virtualization | `buildScriptPhaseActionRows()` + `ScriptPhaseActionRow` + `@tanstack/react-virtual`; `selectAuthorPhaseAction` (`ScriptEditor.tsx`) |
+| Per-protocol forms / detail pane | `scriptActionFields.tsx` (`HttpActionFields`, …, `ProtocolExtractorsSection`, `ProtocolAssertionsSection`) + `ActionEditor` (`ScriptEditor.tsx`) |
+| Per-value parameterize | `openParameterizeChoice` / `upsertParameterFromActionEditor` / `ParameterizeDialog` (`ScriptEditor.tsx`) |
 | Bulk param suggest/apply | `ParameterizationReview.tsx` ← `/scripts/{id}/parameterize/suggest`, `/scripts/import/parameterize/apply` |
 | Path ↔ editor-range ↔ row linking | `dslEditorAssist.ts` (`jsonPathForNode`, `locateJsonPath`, `enclosingActionContext`, `ISSUE_PATH_PATTERN`) |
 | Per-row inline affordances pattern | `BrowserRecorderControlPanel.tsx` (exclude/secret/param/delete + confidence badges) |
@@ -228,7 +232,7 @@ parameterize proven on real LR/HAR/OpenAPI imports; whole-script PUT save latenc
    kebab (duplicate/delete/move/parameterize); modeled on `BrowserRecorderControlPanel`.
 3. **`NestedControlFlowList.tsx`** — recursive indented child list for `control_if`/`control_loop`
    (`Action.ControlFlow` in `pkg/dsl/types.go`), replacing the JSON-in-textarea `ControlFlowFields`
-   (`ScriptEditor.tsx:15275`); document a depth cap → "drop to JSON" boundary.
+   (`ScriptEditor.tsx`); document a depth cap → "drop to JSON" boundary.
 4. **Action mutation helpers** — `addAt`/`duplicate`/`delete`/`move`/`reorder` over
    `script.init|actions|teardown` and nested `control.steps`; stable keys; **reference-integrity
    checks** (don't orphan extractor/param refs); atomic PUT for MVP.

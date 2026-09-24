@@ -58,7 +58,7 @@ JSON uses `{ }` for an object, `[ ]` for an ordered list, and `"key": value` for
 | `actions` | Ordered actions for one iteration; the main journey. |
 | `teardown` | Ordered cleanup actions after that user's work. |
 
-The examples below are **script objects** for the editor's JSON view or a DSL file. For API requests such as script validation, place the object inside a `script` property as shown in [Your first test](HELP_GETTING_STARTED.md). Do not paste the API wrapper into a field that expects only the script. Smaller examples are explicitly labeled as fragments.
+The examples below are **script objects** for the editor's JSON view or a DSL file. The editor and the DSL parser accept either form: the bare script object or the same object wrapped as `{"script": {...}}`, which is how API requests such as script validation carry it (see [Your first test](HELP_GETTING_STARTED.md)). Smaller examples are explicitly labeled as fragments.
 
 ## Walk through a complete HTTP example
 
@@ -237,7 +237,7 @@ Use `control_if` for a branch, `control_switch` for ordered alternatives, and `c
 
 Place it after **Read product** so `product_id` already exists. The loop adds two requests per iteration, not two VUsers. For conditions, use `left`, `op`, and `right` (for example comparing `{{var.status}}` with `ready`) or a supported CEL expression. Bound polling loops with `max_iterations` and include suitable waits. `control_break` and `control_continue` affect the nearest enclosing loop.
 
-`control_parallel` explicitly runs named branches concurrently with isolated protocol state and merges extracted values under `{{var.parallel.<branch>.<name>}}`. Do not assume branches share their parent's logged-in HTTP session. Keep dependent login-and-request steps sequential unless the branch itself establishes the required session. See the [parallel action contract](DSL_ACTION_REFERENCE.md#control-parallel).
+`control_parallel` explicitly runs named branches concurrently with isolated protocol state and merges extracted values under `{{var.parallel.<branch>.<name>}}`. Do not assume branches share their parent's logged-in HTTP session. Keep dependent login-and-request steps sequential unless the branch itself establishes the required session. See the [`control_parallel` action contract](DSL_ACTION_REFERENCE.md).
 
 ## Name measurements and handle failures
 
@@ -265,7 +265,7 @@ An omitted error policy can inherit a scenario setting. Inspect the effective po
 
 | Symptom | First check |
 | --- | --- |
-| JSON fails validation | Quotes, commas, numeric types, supported action names, and whether you pasted a script or API wrapper. |
+| JSON fails validation | Quotes, commas, numeric types, supported action names, and the required top-level fields (`name`, `protocol`, `actions`), whether bare or wrapped in `script`. |
 | First request succeeds; next returns 401/403 | Missing or expired correlated token, incorrect header, or cookies cleared between iterations. |
 | Literal template or empty value in a request | Namespace, column spelling, parameter declaration, and whether the producing action ran. |
 | Replay works; multiple users fail | Account collisions, insufficient rows, shared server-side state, or remote asset availability. |
@@ -285,9 +285,9 @@ Start with one verified journey, keep its inputs and measurements explicit, and 
 
 HTTP, SOAP, and Java-over-HTTP actions use a case-insensitive HTTP method as their
 `type` (`get` and `GET` both work), or an explicit `method`. Unknown types such as
-`post_order` or `request` without a method now fail validation and execution;
-older scripts that relied on an implicit GET must specify `method: "GET"`.
-An omitted type and method retain the runtime GET default.
+`post_order` or `request` without a method fail validation and execution, so a
+script that needs GET must say so with `type: "GET"` or `method: "GET"`. An omitted
+type and method use the runtime GET default.
 
 Count and `for_each` loops execute their declared passes, up to the hard ceiling
 of 1,000,000. An explicit `max_iterations` still caps any loop. Only
@@ -295,7 +295,7 @@ condition-driven loops use the default safety cap of 1,000.
 
 Zero-argument builtins accept both spellings, including
 `{{fn.timestamp.unix}}` and `{{fn.timestamp.unix()}}` (also `unix_ms`, `iso8601`,
-and `rfc3339`). Existing Agentforce templates using parentheses resolve normally.
-`pop` data sources no longer reuse the last row after exhaustion; replays and
-shakeouts report an exhaustion error, and load runs record a failed result and
-stop the affected VUser.
+and `rfc3339`); templates that use parentheses, such as imported Agentforce
+scripts, resolve the same way. A `pop` data source never reuses the last row
+after exhaustion: replays and shakeouts report an exhaustion error, and load runs
+record a failed result and stop the affected VUser.

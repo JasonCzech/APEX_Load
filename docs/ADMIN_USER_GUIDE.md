@@ -123,14 +123,12 @@ authorized human workflow.
 ## Project secret providers
 
 A read-only provider requires the deployment administrator to supply values through
-the configured environment or secret manager. The dashboard cannot create or
-rotate values in that provider. For a writable encrypted database provider, configure
-`APEXLOAD_WRAPPING_MASTER_KEY` (or a versioned `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`)
-on the controller. For writable Azure Key Vault, enable
-`APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true`, set `APEXLOAD_AZURE_KEY_VAULT_URL`,
-and grant the controller identity Key Vault Secrets Officer. Protect and back up
-wrapping keys; losing them makes encrypted values unreadable. See
-[Project Secrets](PROJECT_SECRETS.md) for deployment and migration details.
+the configured environment or secret manager; the dashboard cannot create or rotate
+values there. Writable providers (an encrypted database keyed by a wrapping key, or
+Azure Key Vault) need controller configuration and, for Key Vault, the Secrets Officer
+role. Protect and back up wrapping keys; losing them makes encrypted values
+unreadable. The environment variables, provider table, and migration steps are
+maintained in [Project Secrets](PROJECT_SECRETS.md).
 
 ## Activity, Audit, And Access Review
 
