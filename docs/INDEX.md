@@ -87,10 +87,7 @@ not the source of truth for current API or DSL contracts.
 
 | Document | Status |
 | --- | --- |
-| [BROWSER_ROADMAP.md](BROWSER_ROADMAP.md) | Roadmap/detail |
-| [MESSAGING_PLAN.md](MESSAGING_PLAN.md) | Roadmap/detail: messaging open work (IBM MQ, Solace SMF, Event Hubs deployment), landed-work record, and Kafka/AsyncAPI design record |
-| [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, proposed PT Analysis Parquet import, CloudTest program status |
-| [CLOUDTEST_PARITY_PROGRAM.md](CLOUDTEST_PARITY_PROGRAM.md) | CloudTest outcome-parity evidence ledger, implementation sequencing, and migration gates |
+| [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, proposed PT Analysis Parquet import, messaging open work and design record, browser/mobile roadmap, CloudTest outcome-parity ledger and phases |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record, live risk register and release test checklist |
 | [qa/STATUS.md](qa/STATUS.md) | Live milestone state and headline metrics for the test program (tracker-enforced) |
 | [qa/E2E_SUITES.md](qa/E2E_SUITES.md) | Browser E2E suites: the twelve-step Tier-0 journey and assertion matrix, workflow regression suite, and recording/replay suite |

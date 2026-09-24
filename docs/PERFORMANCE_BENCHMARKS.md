@@ -309,7 +309,7 @@ The benchmark code lives in `pkg/protocol/browser/mobile_benchmark_test.go`.
 
 ### Acceptance Review
 
-Use the conservative targets from `docs/BROWSER_ROADMAP.md` until measured project data supports a higher envelope:
+Use the conservative targets from `docs/ROADMAP.md#browser-and-mobile` until measured project data supports a higher envelope:
 
 | Measurement | Starting Acceptance |
 |:---|:---|
@@ -326,6 +326,6 @@ For each release candidate, browser dependency upgrade, or published benchmark u
 1. Record CPU, memory, OS, container limits, browser versions, Playwright WebKit version, and APEX Load commit SHA; run on a quiet host matching the release generator image and note whether it was local, containerized, or Kubernetes-hosted.
 2. Capture raw output from the command above and attach it to the release evidence record.
 3. Summarize median and worst observed launch time, action latency, allocation count, and RSS per profile.
-4. Keep the default canary envelope unless all three profile classes meet the acceptance targets, and update the conservative VUser envelope in `docs/BROWSER_ROADMAP.md` only when repeated controlled runs are stable.
+4. Keep the default canary envelope unless all three profile classes meet the acceptance targets, and update the conservative VUser envelope in `docs/ROADMAP.md#browser-and-mobile` only when repeated controlled runs are stable.
 
 Do not publish higher browser-density claims from one-off laptop runs. Mobile browser VUsers remain diagnostic canaries around high-scale HTTP/JMS workloads until a controlled hardware matrix says otherwise.

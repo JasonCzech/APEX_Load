@@ -48,7 +48,7 @@ provider-specific management-plane probes.
 The following files are retained for deeper implementation history and parity
 work:
 
-- [MESSAGING_PLAN.md](MESSAGING_PLAN.md)
+- [ROADMAP.md](ROADMAP.md#messaging)
 - [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md)
 
 ## JMS sidecar
