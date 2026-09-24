@@ -547,7 +547,7 @@ func runtimeSettingsProfilePresets() []RuntimeSettingsProfilePreset {
 			},
 			ScriptConfigHints: map[string]any{"config.browser.client_metrics": true, "config.browser.capture_screenshots": "on_error"},
 			ScenarioHints:     map[string]any{"vusers_per_generator": "1-5", "claim_policy": "diagnostic_canary_only"},
-			Evidence:          []string{"/api/v1/system/browser-benchmarks", "docs/BROWSER_BENCHMARK_ARTIFACTS.md"},
+			Evidence:          []string{"/api/v1/system/browser-benchmarks", "docs/PERFORMANCE_BENCHMARKS.md"},
 		},
 		{
 			ID:                   "debug_trace",
