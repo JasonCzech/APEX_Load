@@ -6,7 +6,7 @@ const outputRoot = process.env.APEXLOAD_E2E_OUTPUT_ROOT || 'test-results'
 export default defineConfig({
   testDir: './e2e',
   testMatch: process.env.APEXLOAD_E2E_PROFILE === 'local-auth'
-    ? ['**/tier0-bruno-import.spec.ts', '**/workflow-library-assignments.spec.ts', '**/workflow-script-folders.spec.ts', '**/tier0-local-auth.spec.ts', '**/workflow-local-auth.spec.ts', '**/workflow-loadrunner-review.spec.ts', '**/workflow-import-source.spec.ts', '**/workflow-help.spec.ts', '**/workflow-monitoring.spec.ts', '**/workflow-dashboard.spec.ts', '**/workflow-dashboard-analysis.spec.ts', '**/workflow-command-center.spec.ts', '**/workflow-new-test.spec.ts', '**/workflow-script-settings.spec.ts', '**/workflow-script-sidebars.spec.ts', '**/workflow-debugger-experience.spec.ts', '**/workflow-author-experience.spec.ts']
+    ? ['**/workflow-jmeter-fidelity.spec.ts', '**/tier0-bruno-import.spec.ts', '**/workflow-library-assignments.spec.ts', '**/workflow-script-folders.spec.ts', '**/tier0-local-auth.spec.ts', '**/workflow-local-auth.spec.ts', '**/workflow-loadrunner-review.spec.ts', '**/workflow-import-source.spec.ts', '**/workflow-help.spec.ts', '**/workflow-monitoring.spec.ts', '**/workflow-dashboard.spec.ts', '**/workflow-dashboard-analysis.spec.ts', '**/workflow-command-center.spec.ts', '**/workflow-new-test.spec.ts', '**/workflow-script-settings.spec.ts', '**/workflow-script-sidebars.spec.ts', '**/workflow-debugger-experience.spec.ts', '**/workflow-author-experience.spec.ts']
     : '**/*.spec.ts',
   testIgnore: process.env.APEXLOAD_E2E_PROFILE === 'local-auth' ? [] : ['**/*local-auth.spec.ts'],
   fullyParallel: false,

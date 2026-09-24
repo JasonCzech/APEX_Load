@@ -105,6 +105,7 @@ func firstNonZeroInt32(values ...int32) int32 {
 
 func mergeGeneratorStats(left GeneratorStats, right GeneratorStats) GeneratorStats {
 	left.ActiveVUsers += right.ActiveVUsers
+	left.CompletedIterations += right.CompletedIterations
 	left.CPUPercent = maxFloat64(left.CPUPercent, right.CPUPercent)
 	left.MemoryBytes = maxInt64(left.MemoryBytes, right.MemoryBytes)
 	left.GoroutineCount = maxInt32(left.GoroutineCount, right.GoroutineCount)

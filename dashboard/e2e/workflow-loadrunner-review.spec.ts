@@ -771,6 +771,8 @@ test('fresh runtime diagnostic import separates capture from dormant source valu
 })
 
 test('issue details retain concrete evidence, focus source and apply runtime changes without leaving Review', async ({ page }, testInfo) => {
+  // Geometry assertions use the supported reduced-motion mode to avoid measuring entrance transitions.
+  await page.emulateMedia({ reducedMotion: 'reduce' })
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const workspace = await createWorkspace(page.context().request)
   await page.goto(`/#/scripts?mode=create&${scopeQuery(workspace)}`)
@@ -783,10 +785,24 @@ test('issue details retain concrete evidence, focus source and apply runtime cha
   expect((await validation).ok()).toBeTruthy()
   await expect(page.getByText('Original import diagnostics', { exact: true })).toHaveCount(0)
   const issue = page.getByRole('region', { name: 'Selected issue', exact: true })
+  await expect(issue).toBeVisible()
   await page.locator('.main-content').evaluate(element => { element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight - 24) })
-  const scrollBeforeCredentials = await page.locator('.main-content').evaluate(element => element.scrollTop)
-  await page.getByRole('tab', { name: 'Credentials', exact: true }).click()
-  await expect.poll(() => page.locator('.main-content').evaluate(element => element.scrollTop)).toBeGreaterThanOrEqual(Math.max(0, scrollBeforeCredentials - 2))
+  const credentialsTab = page.getByRole('tab', { name: 'Credentials', exact: true })
+  // Playwright may scroll the sticky tab into view before delivering the click.
+  // Capture at the event boundary, before React switches panels, so we measure
+  // the application's scroll preservation rather than automation's positioning.
+  await credentialsTab.evaluate(button => button.addEventListener('click', () => {
+    button.setAttribute('data-scroll-before-switch', String(document.querySelector('.main-content')?.scrollTop ?? 0))
+  }, { capture: true, once: true }))
+  await credentialsTab.click()
+  const capturedScroll = await credentialsTab.getAttribute('data-scroll-before-switch')
+  expect(capturedScroll).not.toBeNull()
+  const scrollBeforeCredentials = Number(capturedScroll)
+  // A shorter tab may reduce the scroll range; browsers clamp to its new maximum.
+  await expect.poll(() => page.locator('.main-content').evaluate((element, previous) => {
+    const reachableScroll = Math.min(previous, Math.max(0, element.scrollHeight - element.clientHeight))
+    return element.scrollTop >= Math.max(0, reachableScroll - 2)
+  }, scrollBeforeCredentials)).toBe(true)
   await page.getByRole('tab', { name: 'Review', exact: true }).click()
   await page.locator('.lr-issue-row', { hasText: 'Text check searches a narrower response scope' }).click()
   await expect(issue).toContainText('Search the main response body only')

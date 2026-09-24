@@ -243,6 +243,7 @@ func aggregateDistributedGeneratorStats(stats []generatorrpc.GeneratorStats) gen
 	activeCount := 0
 	for _, s := range stats {
 		combined.ActiveVUsers += s.ActiveVUsers
+		combined.CompletedIterations += s.CompletedIterations
 		combined.MemoryBytes += s.MemoryBytes
 		combined.GoroutineCount += s.GoroutineCount
 		combined.ThreadCount += s.ThreadCount

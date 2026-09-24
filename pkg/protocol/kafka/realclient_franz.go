@@ -458,7 +458,7 @@ func resolvedProducerRecord(topic string, rec kafkaRecord) *kgo.Record {
 		partition = rec.Partition
 	}
 	r := &kgo.Record{Topic: topic, Value: rec.Value, Partition: partition}
-	if rec.Key != "" {
+	if rec.KeyPresent || rec.Key != "" {
 		r.Key = []byte(rec.Key)
 	}
 	for k, v := range rec.Headers {
@@ -1125,6 +1125,7 @@ func fromKgoRecord(rec *kgo.Record) kafkaRecord {
 	}
 	return kafkaRecord{
 		Key:           string(rec.Key),
+		KeyPresent:    rec.Key != nil,
 		Value:         rec.Value,
 		Headers:       headers,
 		Topic:         rec.Topic,

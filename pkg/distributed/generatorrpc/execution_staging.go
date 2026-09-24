@@ -313,6 +313,9 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		return rejectedAssignmentStage("test id already has a retained completed archive", available)
 	}
 	if currentExists {
+		if dsl.CanonicalTerminationMode(current.terminationMode) != dsl.CanonicalTerminationMode(request.GetTerminationMode()) || (current.terminationMode == "iterations" && current.committed) {
+			return rejectedAssignmentStage("iteration runs cannot admit late groups or mixed termination modes", available)
+		}
 		if current.executionGeneration != request.GetExecutionGeneration() {
 			return assignmentStageDecision{err: status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", current.executionGeneration), availableCapacity: available}
 		}
@@ -603,6 +606,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 
 	next := cloneAssignmentForStage(current)
 	next.testID = request.GetTestId()
+	next.terminationMode = request.GetTerminationMode()
 	next.lifecycle = plan.nextLifecycle
 	next.executionGeneration = request.GetExecutionGeneration()
 	next.requireTestExecutionLease = request.GetRequireTestExecutionLease()
@@ -930,8 +934,11 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		}
 	}
 	duration := plan.executionDuration
-	if duration <= 0 {
+	if duration <= 0 && request.GetTerminationMode() != "iterations" {
 		duration = time.Second
+	}
+	if err := dsl.ValidateTermination(request.GetTerminationMode(), duration, &script); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	stagedDataFiles, err := assignmentDataFiles(request, &script, service.scriptCache.maxBytes())
 	if err != nil {
@@ -1004,6 +1011,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		return nil, fmt.Errorf("invalid distributed parameter allocation")
 	}
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
+		TerminationMode: request.GetTerminationMode(),
 		Groups: []engine.GroupConfig{{
 			Name:                         request.GetGroupName(),
 			StartOffset:                  plan.validated.startOffset,

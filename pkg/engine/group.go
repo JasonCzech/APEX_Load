@@ -56,6 +56,7 @@ type GroupConfig struct {
 	// walk, produced by NewMultiGroup and handed to every VUser the group
 	// creates. Callers do not supply it; see runtimeSecretValuesForScript.
 	importedCredentials *importedCredentialInspection
+	sourceParameters    *sourceParameterState
 }
 
 type ResultSink interface {
@@ -67,10 +68,11 @@ type TransactionSink interface {
 }
 
 type MultiGroupConfig struct {
-	Groups       []GroupConfig
-	Duration     time.Duration
-	PreBaseline  time.Duration
-	PostBaseline time.Duration
+	TerminationMode string
+	Groups          []GroupConfig
+	Duration        time.Duration
+	PreBaseline     time.Duration
+	PostBaseline    time.Duration
 	// StartPaused latches the execution gate before Run creates any VUsers.
 	// Distributed evacuation uses it when a replacement joins a paused run.
 	StartPaused bool
@@ -82,14 +84,15 @@ type MultiGroupConfig struct {
 }
 
 type MultiGroupEngine struct {
-	groups       []GroupConfig
-	duration     time.Duration
-	preBaseline  time.Duration
-	postBaseline time.Duration
-	metrics      *MetricsCollector
-	cancel       context.CancelFunc
-	readyCh      chan struct{}
-	readyOnce    sync.Once
+	terminationMode string
+	groups          []GroupConfig
+	duration        time.Duration
+	preBaseline     time.Duration
+	postBaseline    time.Duration
+	metrics         *MetricsCollector
+	cancel          context.CancelFunc
+	readyCh         chan struct{}
+	readyOnce       sync.Once
 
 	// Dynamic control state
 	mu                     sync.Mutex
@@ -237,8 +240,12 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	if len(cfg.Groups) > MaxEngineGroups {
 		return nil, fmt.Errorf("group count must not exceed %d", MaxEngineGroups)
 	}
-	if cfg.Duration <= 0 {
-		return nil, fmt.Errorf("duration must be positive")
+	scripts := make([]*dsl.Script, 0, len(cfg.Groups))
+	for _, group := range cfg.Groups {
+		scripts = append(scripts, group.Script)
+	}
+	if err := dsl.ValidateTermination(cfg.TerminationMode, cfg.Duration, scripts...); err != nil {
+		return nil, err
 	}
 	if cfg.PreBaseline < 0 {
 		return nil, fmt.Errorf("pre-baseline must be non-negative")
@@ -270,7 +277,7 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		if g.StartOffset < 0 {
 			return nil, fmt.Errorf("group[%d] %q: start offset must be non-negative", i, g.Name)
 		}
-		if g.StartOffset > cfg.Duration {
+		if cfg.TerminationMode != dsl.TerminationIterations && g.StartOffset > cfg.Duration {
 			return nil, fmt.Errorf("group[%d] %q: start offset %s begins after the %s scenario deadline", i, g.Name, g.StartOffset, cfg.Duration)
 		}
 		if err := importExecutionGateError(g.Script, "launch"); err != nil {
@@ -278,6 +285,9 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		}
 		if issues := dsl.ValidateWorkloadSettingsIssues(g.Script.Config.RunLogic, g.Script.Config.Pacing); len(issues) > 0 {
 			return nil, fmt.Errorf("group[%d] %q: invalid workload settings: %s", i, g.Name, issues[0])
+		}
+		if cfg.TerminationMode == dsl.TerminationIterations && (g.VUsers <= 0 || g.RampDown > 0) {
+			return nil, fmt.Errorf("iteration termination requires positive fixed users and no ramp-down")
 		}
 		if g.VUsers < 0 {
 			return nil, fmt.Errorf("group[%d] %q: vusers must be zero or greater", i, g.Name)
@@ -430,6 +440,7 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 	mge := &MultiGroupEngine{
 		groups:                cfg.Groups,
 		duration:              cfg.Duration,
+		terminationMode:       cfg.TerminationMode,
 		preBaseline:           cfg.PreBaseline,
 		postBaseline:          cfg.PostBaseline,
 		metrics:               NewMetricsCollector(10000),
@@ -521,6 +532,17 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	futureCoordinatedStartAtEntry := coordinatedStart && executionStart.After(runEnteredAt)
 	if err := mge.importExecutionGateError("launch"); err != nil {
 		return nil, err
+	}
+	sourceScripts := make([]*dsl.Script, len(mge.groups))
+	for i := range mge.groups {
+		sourceScripts[i] = mge.groups[i].Script
+	}
+	sourceState, sourceErr := newSourceParameterState(sourceScripts)
+	if sourceErr != nil {
+		return nil, sourceErr
+	}
+	for i := range mge.groups {
+		mge.groups[i].sourceParameters = sourceState
 	}
 	if err := mge.preflightRuntimeAtStart(ctx); err != nil {
 		return nil, err
@@ -654,7 +676,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	// window before starting the asynchronous deadline manager. This makes the
 	// zero-work outcome deterministic instead of racing a context cancellation.
 	mge.mu.Lock()
-	expiredBeforeBaseline := !mge.paused && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration
+	expiredBeforeBaseline := mge.terminationMode != dsl.TerminationIterations && !mge.paused && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration
 	if expiredBeforeBaseline {
 		mge.controlsReady = false
 		mge.scalingOpen = false
@@ -677,6 +699,9 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	// duration share the same active-time origin; slow startup consumes the
 	// configured post-baseline duration instead of extending the run forever.
 	go func() {
+		if mge.terminationMode == dsl.TerminationIterations {
+			return
+		}
 		for {
 			mge.mu.Lock()
 			if mge.baseCtx.Err() != nil {
@@ -740,7 +765,7 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 		return nil, loopCtx.Err()
 	}
 	mge.mu.Lock()
-	if mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration || mge.launchCtx.Err() != nil {
+	if (mge.terminationMode != dsl.TerminationIterations && mge.activeElapsedAtLocked(time.Now()) >= mge.preBaseline+mge.baseTargetDuration) || mge.launchCtx.Err() != nil {
 		mge.controlsReady = false
 		mge.scalingOpen = false
 		mge.initialRampInProgress = false
@@ -1238,6 +1263,15 @@ groupLoop:
 	if snap, ok := mge.metrics.LatestSnapshot(); ok {
 		result.FinalSnapshot = snap
 	}
+	if mge.terminationMode == dsl.TerminationIterations {
+		var expected int64
+		for _, g := range mge.groups {
+			expected += int64(g.VUsers) * int64(g.Script.Config.RunLogic.Iterations)
+		}
+		if got := mge.metrics.CompletedIterations(); got != expected {
+			return result, fmt.Errorf("iteration work incomplete: completed %d of %d iterations", got, expected)
+		}
+	}
 	return result, nil
 }
 
@@ -1716,6 +1750,7 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		ResultSink:                   group.ResultSink,
 		RedactionConfig:              group.RedactionConfig,
 		importedCredentialInspection: group.importedCredentials,
+		sourceParameters:             group.sourceParameters,
 		SecretResolver:               group.SecretResolver,
 		Rendezvous:                   group.rendezvous,
 		ExecutionGoals:               group.executionGoals,
@@ -1965,6 +2000,7 @@ func (mge *MultiGroupEngine) activatePreparedVUserWithAdmission(prepared *prepar
 			ResultSink:                   prepared.group.ResultSink,
 			RedactionConfig:              prepared.group.RedactionConfig,
 			importedCredentialInspection: prepared.group.importedCredentials,
+			sourceParameters:             prepared.group.sourceParameters,
 			SecretResolver:               prepared.group.SecretResolver,
 			PauseControl:                 mge,
 			IterationRateLimiter:         prepared.group.rateLimiter,
@@ -2468,6 +2504,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 			ResultSink:                   group.ResultSink,
 			RedactionConfig:              group.RedactionConfig,
 			importedCredentialInspection: group.importedCredentials,
+			sourceParameters:             group.sourceParameters,
 			SecretResolver:               group.SecretResolver,
 			PauseControl:                 mge,
 			ExecutionGoals:               group.executionGoals,
@@ -2486,6 +2523,9 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 // If targetVUsers > current, new VUsers are spawned.
 // If targetVUsers < current, excess VUsers are cancelled (LIFO).
 func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) error {
+	if mge.terminationMode == dsl.TerminationIterations {
+		return fmt.Errorf("VUser scaling is unavailable for iteration termination")
+	}
 	mge.scaleMu.Lock()
 	defer mge.scaleMu.Unlock()
 	if targetVUsers < 0 {
@@ -2713,6 +2753,9 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 // AdjustDuration extends or shortens the remaining test duration.
 // The new duration is relative to the original start time.
 func (mge *MultiGroupEngine) AdjustDuration(newDuration time.Duration) error {
+	if mge.terminationMode == dsl.TerminationIterations {
+		return fmt.Errorf("duration adjustment is unavailable for iteration termination")
+	}
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
@@ -3065,3 +3108,5 @@ func groupParameterAllocation(group GroupConfig, local int) *ParameterAllocation
 	a.Offset += local
 	return &a
 }
+
+func (mge *MultiGroupEngine) CompletedIterations() int64 { return mge.metrics.CompletedIterations() }

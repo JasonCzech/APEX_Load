@@ -77,7 +77,7 @@ export default function CommandCenterOverview(props: CommandCenterOverviewProps)
             <td data-label="Current / planned VU">{waitingRun ? 'Not started' : number(run.live_metrics?.active_vusers)} / {number(run.total_vusers)}</td>
             <td data-label="TPS">{health.hasSamples && !waitingRun ? number(run.live_metrics?.tps, 1) : '—'}</td>
             <td data-label="Overall error %">{waitingRun ? '—' : number(health.errorPct, 2)}</td>
-            <td data-label="Elapsed / remaining">{timing.elapsed}<small>{timing.remaining} remaining</small></td>
+            <td data-label="Elapsed / remaining">{timing.elapsed}<small>{timing.remaining}{run.termination_mode === 'iterations' ? '' : ' remaining'}</small></td>
             <td data-label="Metrics updated">{waitingRun || metricTime === undefined ? 'Unavailable' : new Date(metricTime).toLocaleTimeString()}</td>
           </tr>
         })}</tbody>

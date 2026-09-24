@@ -197,3 +197,9 @@ it('keeps recurring wall-clock labels stable across the daylight-saving boundary
   expect(formatScheduleTimestampInZone('2026-03-07T14:00:00Z', zone)).toContain('9:00')
   expect(formatScheduleTimestampInZone('2026-03-08T13:00:00Z', zone)).toContain('9:00')
 })
+
+it('shows iteration completion without inventing a capacity deadline', () => {
+  const result = preflight({ candidate_window: { start_at: '2026-09-23T12:00:00Z', open_ended: true, duration_seconds: 0 } })
+  expect(formatLaunchWindow(result)).toContain('until all iterations complete')
+  expect(formatReservationWindow(result)).toContain('cannot reserve')
+})

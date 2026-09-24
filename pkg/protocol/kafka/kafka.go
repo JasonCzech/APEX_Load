@@ -863,6 +863,7 @@ func (k *Kafka) requestReply(ctx context.Context, action *protocol.Action, resul
 
 func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 	key := paramString(action.Params, "key", "")
+	_, keyPresent := action.Params["key"]
 	correlationID := paramString(action.Params, "correlation_id", "")
 	_, actionPartition := intParamOK(action.Params, "partition")
 	manualPartition := actionPartition || strings.EqualFold(strings.TrimSpace(k.cfg.PartitionStrategy), "explicit")
@@ -880,6 +881,7 @@ func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 	}
 	return kafkaRecord{
 		Key:             key,
+		KeyPresent:      keyPresent,
 		Value:           action.Body,
 		Headers:         headers,
 		Topic:           topic,
@@ -893,10 +895,10 @@ func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 func metadataKeyIsProvenance(key string) bool {
 	key = strings.ToLower(strings.TrimSpace(key))
 	switch key {
-	case "original_url", "source_path", "source_step_id", "source_profile", "source_uid":
+	case "original_url", "source_path", "source_step_id", "source_profile", "source_uid", "source_node_id":
 		return true
 	default:
-		return strings.HasPrefix(key, "asyncapi_")
+		return strings.HasPrefix(key, "asyncapi_") || strings.HasPrefix(key, "jmeter_")
 	}
 }
 

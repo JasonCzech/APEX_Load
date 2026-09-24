@@ -618,6 +618,12 @@ export interface EnterpriseArchiveSupportMatrixExample {
 }
 
 export interface JMeterConvertStats {
+  enabled_workload_samplers?: number
+  disabled_workload_samplers?: number
+  converted_workload_samplers?: number
+  blocked_workload_samplers?: number
+  configuration_contributors?: number
+  ignored_reporting_elements?: number
   thread_groups: number
   samplers: number
   total_samplers?: number
@@ -644,6 +650,7 @@ export interface JMeterImportSummary {
 
 export interface JMeterScenarioDraftGroup {
   source_group_id?: string
+  sampler_schedules?: Array<{ id: string; segments: Array<{ start_rps: number; end_rps: number; duration_seconds: number }> }>
   iterations?: number
   name: string
   script_name: string
@@ -653,6 +660,7 @@ export interface JMeterScenarioDraftGroup {
 }
 
 export interface JMeterScenarioDraft {
+  generator_affinity?: string
   termination_mode?: string
   name: string
   duration: string

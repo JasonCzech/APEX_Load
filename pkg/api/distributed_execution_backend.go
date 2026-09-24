@@ -1116,6 +1116,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			continue
 		}
 		if result.client != nil {
+			if test.TerminationMode == "iterations" && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureIterationTerminationV1) {
+				_ = result.client.Close()
+				discoveryFatal = fmt.Errorf("generator %s lacks iteration_termination_v1; no traffic was started", result.target)
+				continue
+			}
 			if b.requireRunSupervision && !stringSliceContainsEqualFold(result.load.CompatibleFeatures, generatorrpc.FeatureRunSupervisionV1) {
 				_ = result.client.Close()
 				slog.Warn("distributed generator lacks required run supervision", "target", result.target, "feature", generatorrpc.FeatureRunSupervisionV1)
@@ -1297,6 +1302,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				ContentHash:         contentHash,
 			},
 			generatorrpc.Assignment{
+				TerminationMode:            test.TerminationMode,
 				TestID:                     test.ID,
 				ExecutionGeneration:        executionGeneration,
 				ScenarioID:                 test.ScenarioID,

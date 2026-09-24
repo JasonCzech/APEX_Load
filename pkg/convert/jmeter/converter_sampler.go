@@ -61,13 +61,19 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		absolute := buildURL(protocol, domain, port, rawPath)
 		absoluteURL = absolute
 		samplerBaseURL := buildBaseURL(protocol, domain, port)
-		projectionBaseURL := strings.TrimSpace(opts.BaseURL)
-		if projectionBaseURL == "" {
-			if ctx.effectiveBaseURL == "" && !strings.Contains(samplerBaseURL, "{{") {
-				ctx.effectiveBaseURL = samplerBaseURL
-			}
-			projectionBaseURL = ctx.effectiveBaseURL
+		if ctx.endpoint == nil {
+			ctx.endpoint = &jmeterEndpointState{}
 		}
+		if ctx.endpoint.baseURL == "" && !strings.Contains(samplerBaseURL, "{{") {
+			ctx.endpoint.baseURL = samplerBaseURL
+		}
+		// Relative requests to the first source endpoint follow the explicit
+		// script-level override. Other hosts retain their absolute identity.
+		projectionBaseURL := ctx.endpoint.baseURL
+		if strings.HasPrefix(rawPath, "http://") || strings.HasPrefix(rawPath, "https://") {
+			projectionBaseURL = strings.TrimSpace(opts.BaseURL)
+		}
+
 		target = makeRelative(absolute, projectionBaseURL)
 	}
 	action := &dsl.Action{

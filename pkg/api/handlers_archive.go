@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,6 +158,12 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		writeError(w, http.StatusNotFound, "archive artifact not found")
 		return
 	}
+	for _, export := range manifest.CSVExports {
+		if export.FileName == name && export.Status != "complete" {
+			writeError(w, http.StatusConflict, "CSV export is incomplete: "+export.Error)
+			return
+		}
+	}
 	artifacts, err := archiveManifestArtifactNames(manifest)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "invalid archive manifest: "+err.Error())
@@ -213,7 +220,27 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	}
 	defer artifact.Close()
 	filename := fmt.Sprintf("%s-%s-%s", sanitizeFilename(test.Name), id, name)
-	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	for _, export := range manifest.CSVExports {
+		if export.FileName == name && export.Status == "complete" {
+			expected := ""
+			for _, descriptor := range manifest.Artifacts {
+				if descriptor.Name == name {
+					expected = descriptor.SHA256
+				}
+			}
+			sum, err := sha256Reader(artifact)
+			if err != nil || expected == "" || sum != expected {
+				writeError(w, http.StatusConflict, "CSV export integrity could not be verified")
+				return
+			}
+			if _, err := artifact.Seek(0, io.SeekStart); err != nil {
+				writeError(w, http.StatusInternalServerError, "CSV export could not be read")
+				return
+			}
+			filename = name
+		}
+	}
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.Header().Set("Content-Type", artifactContentType(name))
 	clearArchiveWriteDeadline(w)
 	http.ServeContent(w, r, filename, info.ModTime(), artifact)

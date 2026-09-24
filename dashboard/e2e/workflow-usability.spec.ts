@@ -79,8 +79,8 @@ test('guided setup creates the full hierarchy across scope changes', async({page
   await page.getByLabel('New release name',{exact:true}).fill('Acceptance release')
   await page.getByRole('button',{name:'Create release and continue'}).click()
   await expect(page.getByText('Workspace ready.',{exact:false})).toBeVisible()
-  await expect(page.getByRole('button',{name:new RegExp(`Current application: ${name}`)})).toBeVisible()
-  await expect(page.getByRole('button',{name:/Current release: Acceptance release/})).toBeVisible()
+  await expect(page.getByRole('button',{name:new RegExp(`Workspace context\\..*${name}`)})).toBeVisible()
+  await expect(page.getByRole('button',{name:/Workspace context\..*Acceptance release/})).toBeVisible()
 })
 
 test('OpenAPI prerequisite import returns the saved script to the original group',async({page,request,target})=>{

@@ -54,6 +54,7 @@ func (tr *TestRunner) EstimateDraftCapacity(req CreateTestRequest) (*DraftCapaci
 	}
 
 	estimate := &DraftCapacityEstimate{
+		TerminationMode:       preview.TerminationMode,
 		ScenarioMode:          preview.ScenarioMode,
 		TotalVUsers:           preview.TotalVUsers,
 		Duration:              preview.DurationStr,
@@ -1272,11 +1273,11 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 	req.Assignment = resolvedAssignment
 
-	dur, err := time.ParseDuration(req.Duration)
+	dur, err := parseTerminationDuration(req.Duration, req.TerminationMode)
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration: %w", err)
 	}
-	if dur <= 0 {
+	if dur <= 0 && req.TerminationMode != dsl.TerminationIterations {
 		return nil, fmt.Errorf("duration must be greater than zero")
 	}
 
@@ -1297,6 +1298,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 	for index := range groups {
 		groups[index].runtimeSecretScope = id
+		groups[index].iterationCompletion = req.TerminationMode == dsl.TerminationIterations
 	}
 	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups, revisionSource)
 	if err != nil {
@@ -1342,12 +1344,15 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	if err := validateIterationEngineGroups(req.TerminationMode, engineGroups); err != nil {
+		return nil, err
+	}
 	if err := validateTrafficProfileCompiledGroups(req.TrafficProfile, testGroups); err != nil {
 		return nil, err
 	}
 	applyTransactionResponseTimeSLAThresholds(req.GoalConfig, testGroups, engineGroups)
 	for index, group := range engineGroups {
-		if group.StartOffset > dur {
+		if req.TerminationMode != dsl.TerminationIterations && group.StartOffset > dur {
 			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, dur)
 		}
 	}
@@ -1433,6 +1438,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		TotalVUsers:                  totalVUsers,
 		Duration:                     dur,
 		DurationStr:                  req.Duration,
+		TerminationMode:              req.TerminationMode,
 		CreatedAt:                    now,
 		CreatedBySubject:             creationActor.Subject,
 		CreatedByDisplayName:         creationActor.DisplayName,
@@ -1828,6 +1834,7 @@ func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenar
 func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *StoredScenario, revisionSource *ManagedTest) CreateTestRequest {
 	if revisionSource != nil {
 		req.Name = firstNonEmpty(req.Name, revisionSource.Name)
+		req.TerminationMode = firstNonEmpty(req.TerminationMode, revisionSource.TerminationMode)
 		req.Duration = firstNonEmpty(req.Duration, revisionSource.DurationStr)
 		req.ScenarioMode = firstNonEmpty(req.ScenarioMode, revisionSource.ScenarioMode)
 		if !req.scriptShakeoutProvided && !req.ScriptShakeout {
@@ -1853,6 +1860,7 @@ func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *Stor
 		}
 	} else if scenario != nil {
 		req.Name = firstNonEmpty(req.Name, scenario.Name)
+		req.TerminationMode = firstNonEmpty(req.TerminationMode, scenario.TerminationMode)
 		req.Duration = firstNonEmpty(req.Duration, scenario.Duration)
 		req.ScenarioMode = firstNonEmpty(req.ScenarioMode, scenario.ScenarioMode)
 		if !req.scriptShakeoutProvided && !req.ScriptShakeout {
@@ -2156,6 +2164,12 @@ func setRuntimeSettingsIteration(settings *RuntimeSettingsOverride, iterations i
 }
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
+	if _, err := parseTerminationDuration(req.Duration, req.TerminationMode); req.Duration != "" && err != nil {
+		return "", err
+	}
+	if err := validateIterationRequest(req); err != nil {
+		return "", err
+	}
 	scenarioMode := normalizeScenarioMode(req.ScenarioMode)
 	if req.GoalConfig != nil {
 		if value := req.GoalConfig.TransactionResponseTimeSLAMs; value != nil && (!finiteFloat(*value) || *value <= 0) {
@@ -2558,7 +2572,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	if !ok {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script not found: %s", index, group.ScriptID)
 	}
-	if issues := launchReviewGateIssues(script.Script); len(issues) > 0 {
+	if issues := launchReviewGateIssues(script.Script); len(issues) > 0 && !group.preserveJMeterDraft {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
 	}
 
@@ -2851,7 +2865,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		}
 	}
 	// The scenario schedule, not the script, decides when this group's VUsers
-	// stop. Runs are always duration-driven, so a script-sourced per-VUser
+	// stop in duration mode. A script-sourced per-VUser
 	// iteration cap would retire this group mid-run while the other groups keep
 	// loading. testGroup.Iterations is the effective scenario/group intent and is
 	// final by this point (the revision branch above restores it), so it is the
@@ -2863,12 +2877,16 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	// queued before this rule existed can still carry a cap there; a fresh create
 	// of the same scenario applies it.
 	_, javaVuserApprovalRetained := readJavaVuserAuthoringApproval(&scriptCopy)
-	if !runtimeAlreadyApplied || !javaVuserApprovalRetained {
+	if !group.iterationCompletion && (!runtimeAlreadyApplied || !javaVuserApprovalRetained) {
 		if overriddenCap := applyScheduleIterationAuthority(&scriptCopy, testGroup.Iterations); overriddenCap > 0 {
 			testGroup.scheduleOverriddenScriptIterations = overriddenCap
 			slog.Info("scenario schedule overrides the script per-vuser iteration cap",
 				"group", name, "script_id", group.ScriptID, "script_iterations", overriddenCap)
 		}
+	}
+	if group.iterationCompletion && testGroup.Iterations == nil {
+		iterations := scriptCopy.Config.RunLogic.Iterations
+		testGroup.Iterations = &iterations
 	}
 	redactionConfig, err := buildRuntimeRedactionConfig(effectiveRuntimeSettings)
 	if err != nil {

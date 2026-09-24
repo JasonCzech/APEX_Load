@@ -336,6 +336,8 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.StartDelay = snapshot.StartDelay
 	provenance.TotalVUsers = snapshot.TotalVUsers
 	provenance.Duration = snapshot.DurationStr
+	provenance.TerminationMode = snapshot.TerminationMode
+	provenance.CSVExports = declaredCSVExports(snapshot)
 	provenance.Assignment = cloneGeneratorAssignmentSettings(snapshot.Assignment)
 	provenance.GeneratorShards = cloneGeneratorShardSummaries(snapshot.GeneratorShards)
 	provenance.GoalConfig = cloneGoalConfig(snapshot.GoalConfig)

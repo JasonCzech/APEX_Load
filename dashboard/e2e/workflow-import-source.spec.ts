@@ -143,7 +143,7 @@ test('JMeter review uses the shared six tabs and retains project scope during up
   const reference = controls.locator('.import-conversion-details')
   await expect(reference).not.toHaveAttribute('open')
   await reference.locator('summary').click()
-  await expect(reference.locator('dt', { hasText: 'HTTP Samplers' }).locator('..').locator('dd')).toHaveText('1')
+  await expect(reference.locator('dt', { hasText: 'Converted Samplers' }).locator('..').locator('dd')).toHaveText('1')
   await expect(controls.locator('.lr-stat')).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('jmeter-six-tab-review.png'), fullPage: true })
   await page.setViewportSize({ width: 760, height: 900 })

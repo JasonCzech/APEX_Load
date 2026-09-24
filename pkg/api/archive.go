@@ -36,15 +36,17 @@ const (
 )
 
 type RunArchiveManifest struct {
-	TerminationReason string               `json:"termination_reason,omitempty"`
-	SchemaVersion     string               `json:"schema_version"`
-	TestID            string               `json:"test_id"`
-	TestName          string               `json:"test_name"`
-	CreatedAt         time.Time            `json:"created_at"`
-	CompletedAt       time.Time            `json:"completed_at,omitempty"`
-	Status            string               `json:"status,omitempty"`
-	Error             string               `json:"error,omitempty"`
-	Provenance        RunArchiveProvenance `json:"provenance,omitempty"`
+	CSVExports          []RunArchiveCSVExportStatus `json:"csv_exports,omitempty"`
+	CSVExportIncomplete string                      `json:"csv_export_incomplete,omitempty"`
+	TerminationReason   string                      `json:"termination_reason,omitempty"`
+	SchemaVersion       string                      `json:"schema_version"`
+	TestID              string                      `json:"test_id"`
+	TestName            string                      `json:"test_name"`
+	CreatedAt           time.Time                   `json:"created_at"`
+	CompletedAt         time.Time                   `json:"completed_at,omitempty"`
+	Status              string                      `json:"status,omitempty"`
+	Error               string                      `json:"error,omitempty"`
+	Provenance          RunArchiveProvenance        `json:"provenance,omitempty"`
 	// InitialProvenance is captured once when archive recording begins and is
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.
@@ -122,6 +124,8 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
+	TerminationMode       string                              `json:"termination_mode,omitempty"`
+	CSVExports            []RunArchiveCSVExport               `json:"csv_exports,omitempty"`
 	ApplicationID         string                              `json:"application_id,omitempty"`
 	ReleaseID             string                              `json:"release_id,omitempty"`
 	ScenarioID            string                              `json:"scenario_id,omitempty"`
@@ -193,6 +197,8 @@ type RunArchiveExecutionPlanApprovalSnapshot struct {
 }
 
 type TransactionEvent struct {
+	CSVExportIDs          []string                  `json:"csv_export_ids"`
+	ExtractionsIncomplete bool                      `json:"extractions_incomplete,omitempty"`
 	Population            string                    `json:"population,omitempty"`
 	EventID               string                    `json:"event_id"`
 	Timestamp             time.Time                 `json:"timestamp"`
@@ -292,6 +298,7 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
+	CompletedIterations      int64                              `json:"completed_iterations,omitempty"`
 	Timestamp                time.Time                          `json:"timestamp"`
 	TestID                   string                             `json:"test_id"`
 	TestName                 string                             `json:"test_name"`

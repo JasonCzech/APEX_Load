@@ -23,13 +23,9 @@ async function status(request: APIRequestContext, testId: string): Promise<strin
 }
 
 async function openLiveControls(page: Page, testId: string): Promise<void> {
-  await page.goto(`/#/test/${testId}?tab=overview`)
-  await expect(page.getByText(testId, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
-  const liveControlsRegion = page.getByRole('region', { name: 'Live controls' })
-  await expect(liveControlsRegion, 'a RUNNING test must expose its live controls').toBeVisible({ timeout: 15_000 })
-  const toggle = liveControlsRegion.getByRole('button', { name: /^(Live|Hide) Controls$/ })
-  if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click()
-  await expect(page.getByRole('heading', { name: 'VUser Scaling' })).toBeVisible()
+  await page.goto(`/#/command-center/${testId}`)
+  await expect(page.getByRole('combobox', { name: 'Current run', exact: true })).toHaveValue(testId)
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
 }
 
 /** Polls rather than sleeping a fixed interval: run transitions are not instant
@@ -84,18 +80,21 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     await page.getByRole('dialog', { name: 'Resume this test run?' }).getByRole('button', { name: 'Resume Test' }).click()
     await waitForStatus(request, testId, value => value === 'RUNNING', 'resume')
 
-    const vuserRow = page.locator('.vuser-control-row').filter({ hasText: 'smoke' })
-    await vuserRow.getByLabel('smoke VUser target value').fill('3')
-    await vuserRow.getByRole('button', { name: 'Apply' }).click()
-    await expect(vuserRow.getByText('Current: 3')).toBeVisible({ timeout: 30_000 })
+    const target = page.getByRole('spinbutton', { name: 'smoke target VUsers', exact: true })
+    const vuserRow = page.getByRole('row').filter({ has: target })
+    await target.fill('3')
+    await vuserRow.getByRole('button', { name: 'Apply', exact: true }).click()
+    await expect.poll(async () => (await (await request.get(`/api/v1/tests/${testId}`)).json()).groups[0].vusers).toBe(3)
 
-    // Extend the five-minute fixture through the UI. The value is intentionally
-    // small and deterministic so the request changes the saved stop time without
-    // increasing the leak budget materially.
-    const durationGroup = page.locator('.control-group-nested').filter({ hasText: 'Test Duration' })
-    await durationGroup.getByLabel('Duration value').fill('6')
-    await durationGroup.getByRole('button', { name: 'Apply' }).click()
-    await expect(durationGroup.getByLabel('Duration value')).toHaveValue('6')
+    // The current command-center dialog previews and applies the runtime change.
+    await page.getByRole('button', { name: 'Change duration', exact: true }).click()
+    const durationDialog = page.getByRole('dialog', { name: 'Change duration', exact: true })
+    await durationDialog.getByLabel('smoke target duration', { exact: true }).fill('6m')
+    await durationDialog.getByRole('button', { name: 'Review changes', exact: true }).click()
+    await expect(durationDialog).toContainText('Ready to apply')
+    await durationDialog.getByRole('button', { name: 'Apply changes', exact: true }).click()
+    await expect(durationDialog).toBeHidden()
+    await expect.poll(async () => (await (await request.get(`/api/v1/tests/${testId}`)).json()).duration).toBe('6m0s')
 
     // S9 — stop must reach a terminal status. The specific status is asserted
     // below rather than accepted as "whatever happened": a prior review recorded
@@ -141,7 +140,7 @@ test('[U13 U14] a run dismisses confirmation, pauses, resumes, scales, extends, 
     expect(report.mismatched, 'no artifact may fail its recorded checksum').toBe(0)
 
     await page.goto(`/#/test/${testId}?tab=archive`)
-    await expect(page.getByRole('tab', { name: 'Evidence', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page).toHaveURL(new RegExp(`/report/${testId}\\?section=evidence`))
     await page.getByText('Raw evidence downloads', { exact: true }).click()
     const downloadButton = page.getByRole('button', { name: 'Download Transactions JSONL' }).first()
     await expect(downloadButton).toBeVisible({ timeout: 30_000 })

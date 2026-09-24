@@ -276,12 +276,33 @@ func applyJMeterSharedReviewGate(action *dsl.Action, reasons []string, sourceRef
 	if action.Metadata == nil {
 		action.Metadata = make(map[string]any)
 	}
+	refs := []string{sourceRef}
+	if previous, ok := action.Metadata["import_review"].(map[string]any); ok {
+		for _, key := range []string{"reason_codes", "source_refs"} {
+			var values []string
+			switch list := previous[key].(type) {
+			case []string:
+				values = list
+			case []any:
+				for _, v := range list {
+					if str, ok := v.(string); ok {
+						values = append(values, str)
+					}
+				}
+			}
+			if key == "reason_codes" {
+				reasons = append(reasons, values...)
+			} else {
+				refs = append(refs, values...)
+			}
+		}
+	}
 	action.Metadata["execution_blocker"] = "import_review_required"
 	action.Metadata["import_review"] = map[string]any{
 		"version":      1,
 		"source":       "jmeter",
 		"reason_codes": uniqueJMeterStrings(reasons),
-		"source_refs":  []string{sourceRef},
+		"source_refs":  uniqueJMeterStrings(refs),
 		"resolution":   "replace_behavior_and_remove_gate",
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/refkey"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -243,7 +244,7 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, fmt.Errorf("scenario name is required")
 	}
-	if strings.TrimSpace(req.Duration) == "" {
+	if req.TerminationMode != dsl.TerminationIterations && strings.TrimSpace(req.Duration) == "" {
 		return nil, fmt.Errorf("scenario duration is required")
 	}
 	// Reconcile masked runtime secrets against the prior stored scenario before any
@@ -294,12 +295,13 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		req.Groups[i].RuntimeSettings = protected
 	}
 	if _, err := validateScenarioRequest(CreateTestRequest{
-		ScenarioMode: req.ScenarioMode,
-		Duration:     req.Duration,
-		StartDelay:   req.StartDelay,
-		Assignment:   req.Assignment,
-		GoalConfig:   req.GoalConfig,
-		Groups:       req.Groups,
+		TerminationMode: req.TerminationMode,
+		ScenarioMode:    req.ScenarioMode,
+		Duration:        req.Duration,
+		StartDelay:      req.StartDelay,
+		Assignment:      req.Assignment,
+		GoalConfig:      req.GoalConfig,
+		Groups:          req.Groups,
 	}); err != nil {
 		return nil, err
 	}
@@ -321,10 +323,15 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	}
 	for index := range groups {
 		groups[index].runtimeSecretScope = id
+		if stored := tr.scripts[tr.resolveRefKeyLocked(groups[index].ScriptID)]; stored != nil && stored.Script != nil && stored.Script.Config.JMeter != nil && stored.Script.Config.JMeter.Profile == dsl.JMeterMessagingProfile {
+			groups[index].preserveJMeterDraft = true
+		}
+		groups[index].iterationCompletion = req.TerminationMode == dsl.TerminationIterations
 	}
 	buildRequest := CreateTestRequest{
 		Groups:          groups,
 		RuntimeSettings: req.RuntimeSettings,
+		TerminationMode: req.TerminationMode,
 		ScenarioMode:    normalizeScenarioMode(req.ScenarioMode),
 	}
 	buildSnapshot, preparedBuildRequest, buildFence := tr.managedTestBuildSnapshotLocked(buildRequest)
@@ -342,12 +349,15 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if err := validateTrafficProfileCompiledGroups(req.TrafficProfile, testGroups); err != nil {
 		return nil, err
 	}
-	scenarioDuration, err := time.ParseDuration(req.Duration)
+	scenarioDuration, err := parseTerminationDuration(req.Duration, req.TerminationMode)
 	if err != nil {
 		return nil, fmt.Errorf("invalid duration: %w", err)
 	}
+	if err := validateIterationEngineGroups(req.TerminationMode, engineGroups); err != nil {
+		return nil, err
+	}
 	for index, group := range engineGroups {
-		if group.StartOffset > scenarioDuration {
+		if req.TerminationMode != dsl.TerminationIterations && group.StartOffset > scenarioDuration {
 			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, scenarioDuration)
 		}
 	}
@@ -388,6 +398,7 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 		WorkloadShapeID:  workloadShapeID,
 		Duration:         req.Duration,
 		StartDelay:       req.StartDelay,
+		TerminationMode:  req.TerminationMode,
 		ScenarioMode:     normalizeScenarioMode(req.ScenarioMode),
 		ScriptShakeout:   req.ScriptShakeout,
 		ResourceBaseline: req.ResourceBaseline,
@@ -527,6 +538,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		Duration         string
 		StartDelay       string
 		ScenarioMode     string
+		TerminationMode  string
 		ScriptShakeout   bool
 		ResourceBaseline bool
 		Assignment       any
@@ -541,6 +553,7 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 		WorkloadShapeID:  scenario.WorkloadShapeID,
 		Duration:         scenario.Duration,
 		StartDelay:       scenario.StartDelay,
+		TerminationMode:  scenario.TerminationMode,
 		ScenarioMode:     scenario.ScenarioMode,
 		ScriptShakeout:   scenario.ScriptShakeout,
 		ResourceBaseline: scenario.ResourceBaseline,

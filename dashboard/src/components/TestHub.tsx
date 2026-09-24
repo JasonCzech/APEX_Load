@@ -98,6 +98,7 @@ interface Props {
 }
 
 export interface ScenarioFormState {
+  termination_mode?: 'duration' | 'iterations'
   name: string
   duration: string
   /** Preserved even though start delay is not currently exposed by this editor. */
@@ -1431,7 +1432,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       name: draftForm.name || 'Draft scenario',
       projectId: activeProjectId,
       workloadShapeId: selectedShapeId,
-      duration: draftForm.duration || '1m',
+      duration: draftForm.termination_mode === 'iterations' ? '' : draftForm.duration || '1m',
+      termination_mode: draftForm.termination_mode,
       startDelay: draftForm.start_delay,
       scenarioMode: draftForm.scenario_mode,
       scriptShakeout: draftForm.script_shakeout,
@@ -2804,7 +2806,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setLoadModelValidationError('Select a script for every group before validating the load model.')
       return
     }
-    if (!isValidDurationInput(form.duration)) {
+    if (!(form.termination_mode === 'iterations' || isValidDurationInput(form.duration))) {
       setLoadModelValidationError('Set a positive scenario duration before validating the load model.')
       return
     }
@@ -2881,7 +2883,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       openScriptComposition()
       return null
     }
-    if (!isValidDurationInput(form.duration)) {
+    if (!(form.termination_mode === 'iterations' || isValidDurationInput(form.duration))) {
       setError('Scenario duration is required.')
       return null
     }
@@ -2992,7 +2994,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     } else setAuthoringDraft(latest)
   }
   const saveScenario = async (): Promise<boolean> => {
-    if (sourcePending || goalSizingIncomplete || blockedScriptGroups.length || !form.name.trim() || !isValidDurationInput(form.duration)
+    if (sourcePending || goalSizingIncomplete || blockedScriptGroups.length || !form.name.trim() || !(form.termination_mode === 'iterations' || isValidDurationInput(form.duration))
       || form.groups.some(group => !group.script_id) || blockingStageTimelineMessage || steppedRampBlockingMessage
       || closedVUserBlockingMessage || goalDrivenBlockingMessage || observerEnvelopeError || aggregateEnvelopeError
       || assignmentValidationError || scenarioGroupNameError || bindingErrors.length) return saveBrowserProgress()
@@ -3199,7 +3201,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const shapeLabel = selectedTemplate?.name || selectedShape?.support.name || (scenarioSourceMode === 'existing' ? 'Modeled from scenario' : scenarioSourceMode === 'csv_driven' ? 'CSV Driven' : 'Manual shape')
   const goalSizingIncomplete = isGoalDriven && formGroups.some((_, index) => !(Number(goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.art?.art_ms) > 0))
   const validationLabel = loadModelValidationLoading ? 'Checking' : loadModelValidationError ? 'Validation failed' : loadModelValidation ? formatLoadModelDimension(loadModelValidation.status) : 'Not validated'
-  const requiredDraftReady = Boolean(form.name.trim() && isValidDurationInput(form.duration) && formGroups.every(group => group.script_id) && !scenarioGroupNameError)
+  const requiredDraftReady = Boolean(form.name.trim() && (form.termination_mode === 'iterations' || isValidDurationInput(form.duration)) && formGroups.every(group => group.script_id) && !scenarioGroupNameError)
   const sourceStepComplete = !sourcePending && (scenarioStartChoice === 'goal'
     ? isGoalDriven
     : scenarioSourceMode === 'existing'
@@ -3208,7 +3210,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const wizardStepCompletion: Record<ScenarioWizardStep, boolean> = {
     source: sourceStepComplete,
     scripts: Boolean(form.name.trim() && formGroups.length > 0 && formGroups.every(group => group.script_id) && !scenarioGroupNameError),
-    run: Boolean(sourceStepComplete && (!isGoalDriven || formGroups.every((_, index) => goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.art)) && isValidDurationInput(form.duration) && !blockingStageTimelineMessage && !steppedRampBlockingMessage && !closedVUserBlockingMessage && !goalDrivenBlockingMessage),
+    run: Boolean(sourceStepComplete && (!isGoalDriven || formGroups.every((_, index) => goalDrivenConfig.groups[goalDrivenGroupKey(index)]?.art)) && (form.termination_mode === 'iterations' || isValidDurationInput(form.duration)) && !blockingStageTimelineMessage && !steppedRampBlockingMessage && !closedVUserBlockingMessage && !goalDrivenBlockingMessage),
     data: bindingErrors.length === 0,
     review: Boolean(requiredDraftReady && !sourcePending && loadModelValidation && loadModelValidation.status !== 'blocked' && !loadModelValidationError && !blockingStageTimelineMessage),
   }
@@ -4059,6 +4061,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 										className="scenario-field"
 										label="Duration"
 										value={form.duration}
+              disabled={form.termination_mode === 'iterations'}
 										required
 										showPresets
 										onChange={value => updateSteppedRamp(undefined, undefined, value)}
@@ -4110,6 +4113,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               className="scenario-field"
               label="Duration"
               value={form.duration}
+              disabled={form.termination_mode === 'iterations'}
               required
               showPresets
               onChange={value => {
@@ -4518,7 +4522,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
           <div className="scenario-review-card"><span>Shape</span><strong>{shapeLabel}</strong></div>
           <div className="scenario-review-card"><span>Scripts</span><strong>{formGroups.length} group{formGroups.length === 1 ? '' : 's'}</strong></div>
-          <div className="scenario-review-card"><span>Duration</span><strong>{form.duration}</strong></div>
+          <div className="scenario-review-card"><span>{form.termination_mode === 'iterations' ? 'Completion' : 'Duration'}</span><strong>{form.termination_mode === 'iterations' ? 'All per-user iterations' : form.duration}</strong></div>
           <div className="scenario-review-card"><span>Mode</span><strong>{form.scenario_mode === 'goal_oriented' ? 'Goal oriented' : 'VUser driven'}</strong></div>
           <div className="scenario-review-card"><span>Data</span><strong>{dataPoolLabel}</strong></div>
           <div className="scenario-review-card"><span>Shakeout</span><strong>{form.script_shakeout ? 'Enabled' : 'Disabled'}</strong></div>

@@ -976,16 +976,25 @@ func toProtocolExtractors(exts []dsl.Extractor, vu *VUser) []protocol.Extractor 
 		if vu != nil {
 			expression, _ = vu.interpolateWithSecrets(expression)
 		}
+		defaultValue := e.DefaultValue
+		if defaultValue != nil {
+			value := *defaultValue
+			if vu != nil {
+				value, _ = vu.interpolateWithSecrets(value)
+			}
+			defaultValue = &value
+		}
 		out[i] = protocol.Extractor{
-			Name:       e.Name,
-			Source:     e.Source,
-			Type:       e.Type,
-			Expression: expression,
-			OnMiss:     e.OnMiss,
-			Mode:       e.Mode,
-			SaveOffset: e.SaveOffset,
-			SaveLength: e.SaveLength,
-			Convert:    e.Convert,
+			DefaultValue: defaultValue,
+			Name:         e.Name,
+			Source:       e.Source,
+			Type:         e.Type,
+			Expression:   expression,
+			OnMiss:       e.OnMiss,
+			Mode:         e.Mode,
+			SaveOffset:   e.SaveOffset,
+			SaveLength:   e.SaveLength,
+			Convert:      e.Convert,
 		}
 	}
 	return out

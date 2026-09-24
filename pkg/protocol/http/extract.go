@@ -420,7 +420,7 @@ func extractFromHeaders(ext protocol.Extractor, headers http.Header) (string, er
 	case "", "header":
 		v := headers.Get(ext.Expression)
 		if v == "" {
-			return "", fmt.Errorf("header %q not found", ext.Expression)
+			return "", fmt.Errorf("%w: header %q not found", protocol.ErrExtractionMiss, ext.Expression)
 		}
 		return v, nil
 	case "regex":
@@ -759,13 +759,13 @@ func extractCSS(expr string, body []byte) (string, error) {
 
 	match := doc.Find(selector).First()
 	if match.Length() == 0 {
-		return "", fmt.Errorf("no match for CSS selector %q", selector)
+		return "", fmt.Errorf("%w: no match for CSS selector %q", protocol.ErrExtractionMiss, selector)
 	}
 
 	if attribute != "" {
 		value, ok := match.Attr(attribute)
 		if !ok {
-			return "", fmt.Errorf("attribute %q not found for CSS selector %q", attribute, selector)
+			return "", fmt.Errorf("%w: attribute %q not found for CSS selector %q", protocol.ErrExtractionMiss, attribute, selector)
 		}
 		return value, nil
 	}
@@ -796,7 +796,7 @@ func extractXPath(expr string, body []byte) (string, error) {
 		}
 		node := xmlquery.QuerySelector(doc, selector)
 		if node == nil {
-			return "", fmt.Errorf("no match for XPath %q", expr)
+			return "", fmt.Errorf("%w: no match for XPath %q", protocol.ErrExtractionMiss, expr)
 		}
 		if fragment {
 			return node.OutputXMLWithOptions(xmlquery.WithOutputSelf(), xmlquery.WithoutPreserveSpace()), nil
@@ -811,7 +811,7 @@ func extractXPath(expr string, body []byte) (string, error) {
 
 	node := htmlquery.QuerySelector(doc, selector)
 	if node == nil {
-		return "", fmt.Errorf("no match for XPath %q", expr)
+		return "", fmt.Errorf("%w: no match for XPath %q", protocol.ErrExtractionMiss, expr)
 	}
 	if fragment {
 		return htmlquery.OutputHTML(node, true), nil
@@ -909,43 +909,32 @@ func extractJSONPath(expr string, body []byte) (string, error) {
 	return jsonPathValueString(current), nil
 }
 
-func extractJSONPathValue(expr string, body []byte) (any, error) {
-	current, err := decodeExtractorJSON(body)
-	if err != nil {
-		return nil, err
-	}
+type jsonPathStep struct {
+	field string
+	index int
+	array bool
+}
 
-	if expr == "$" {
-		return current, nil
-	}
+// Parse the entire expression before inspecting the response. Otherwise a missing
+// ancestor can hide an invalid suffix and turn a configuration error into a default.
+func parseJSONPathSteps(expr string) ([]jsonPathStep, error) {
 	if !strings.HasPrefix(expr, "$") {
 		return nil, fmt.Errorf("jsonpath must start with $")
 	}
+	var steps []jsonPathStep
 	path := strings.TrimPrefix(expr, "$")
 	for len(path) > 0 {
 		switch path[0] {
 		case '.':
 			path = path[1:]
-			nextSep := len(path)
-			if dot := strings.Index(path, "."); dot >= 0 && dot < nextSep {
-				nextSep = dot
-			}
-			if bracket := strings.Index(path, "["); bracket >= 0 && bracket < nextSep {
-				nextSep = bracket
+			nextSep := strings.IndexAny(path, ".[")
+			if nextSep < 0 {
+				nextSep = len(path)
 			}
 			if nextSep == 0 {
 				return nil, fmt.Errorf("empty jsonpath field in %q", expr)
 			}
-			field := path[:nextSep]
-			obj, ok := current.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("expected object at %q", field)
-			}
-			var exists bool
-			current, exists = obj[field]
-			if !exists {
-				return nil, fmt.Errorf("field %q not found", field)
-			}
+			steps = append(steps, jsonPathStep{field: path[:nextSep]})
 			path = path[nextSep:]
 		case '[':
 			close := strings.Index(path, "]")
@@ -957,20 +946,46 @@ func extractJSONPathValue(expr string, body []byte) (any, error) {
 			if err != nil {
 				return nil, fmt.Errorf("unsupported jsonpath index %q", indexText)
 			}
-			arr, ok := current.([]any)
-			if !ok {
-				return nil, fmt.Errorf("expected array for index %d", idx)
-			}
-			if idx < 0 || idx >= len(arr) {
-				return nil, fmt.Errorf("index %d out of range", idx)
-			}
-			current = arr[idx]
+			steps = append(steps, jsonPathStep{index: idx, array: true})
 			path = path[close+1:]
 		default:
 			return nil, fmt.Errorf("unsupported jsonpath segment in %q", expr)
 		}
 	}
+	return steps, nil
+}
 
+func extractJSONPathValue(expr string, body []byte) (any, error) {
+	steps, err := parseJSONPathSteps(expr)
+	if err != nil {
+		return nil, err
+	}
+	current, err := decodeExtractorJSON(body)
+	if err != nil {
+		return nil, err
+	}
+	for _, step := range steps {
+		if step.array {
+			arr, ok := current.([]any)
+			if !ok {
+				return nil, fmt.Errorf("%w: expected array for index %d", protocol.ErrExtractionMiss, step.index)
+			}
+			if step.index < 0 || step.index >= len(arr) {
+				return nil, fmt.Errorf("%w: index %d out of range", protocol.ErrExtractionMiss, step.index)
+			}
+			current = arr[step.index]
+		} else {
+			obj, ok := current.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("%w: expected object at %q", protocol.ErrExtractionMiss, step.field)
+			}
+			var exists bool
+			current, exists = obj[step.field]
+			if !exists {
+				return nil, fmt.Errorf("%w: field %q not found", protocol.ErrExtractionMiss, step.field)
+			}
+		}
+	}
 	return current, nil
 }
 
@@ -1564,7 +1579,7 @@ func extractJMESPath(expr string, body []byte) (string, error) {
 		return "", fmt.Errorf("evaluate JMESPath expression: %w", originalErr)
 	}
 	if result == nil {
-		return "", fmt.Errorf("no match for JMESPath %q", expr)
+		return "", fmt.Errorf("%w: no match for JMESPath %q", protocol.ErrExtractionMiss, expr)
 	}
 
 	return stringifyJSONLeaf(result), nil
@@ -1577,7 +1592,7 @@ func extractRegex(expr string, body []byte) (string, error) {
 	}
 	matches := re.FindSubmatch(body)
 	if len(matches) == 0 {
-		return "", fmt.Errorf("no match for regex %q", expr)
+		return "", fmt.Errorf("%w: no match for regex %q", protocol.ErrExtractionMiss, expr)
 	}
 	matched := matches[0]
 	if len(matches) > 1 {
@@ -1615,7 +1630,7 @@ func extractRegexOrdinal(expr string, body []byte) (string, error) {
 	}
 	matches := re.FindAllSubmatch(body, config.Ordinal)
 	if len(matches) < config.Ordinal {
-		return "", fmt.Errorf("regex %q match ordinal %d not found", config.Expression, config.Ordinal)
+		return "", fmt.Errorf("%w: regex %q match ordinal %d not found", protocol.ErrExtractionMiss, config.Expression, config.Ordinal)
 	}
 	match := matches[config.Ordinal-1]
 	matched := match[0]
@@ -1695,9 +1710,9 @@ func extractBoundary(expr string, body []byte) (string, error) {
 		li := strings.Index(haystack[pos:], left)
 		if li < 0 {
 			if occurrence == 1 {
-				return "", fmt.Errorf("left boundary %q not found", config.Left)
+				return "", fmt.Errorf("%w: left boundary %q not found", protocol.ErrExtractionMiss, config.Left)
 			}
-			return "", fmt.Errorf("boundary match ordinal %d not found (only %d occurrences)", ordinal, occurrence-1)
+			return "", fmt.Errorf("%w: boundary match ordinal %d not found (only %d occurrences)", protocol.ErrExtractionMiss, ordinal, occurrence-1)
 		}
 		start := pos + li + len(left)
 		// An empty right boundary extends the match to the end of the content.
@@ -1707,9 +1722,9 @@ func extractBoundary(expr string, body []byte) (string, error) {
 		}
 		if ri < 0 {
 			if occurrence == 1 {
-				return "", fmt.Errorf("right boundary %q not found", config.Right)
+				return "", fmt.Errorf("%w: right boundary %q not found", protocol.ErrExtractionMiss, config.Right)
 			}
-			return "", fmt.Errorf("boundary match ordinal %d not found (only %d occurrences)", ordinal, occurrence-1)
+			return "", fmt.Errorf("%w: boundary match ordinal %d not found (only %d occurrences)", protocol.ErrExtractionMiss, ordinal, occurrence-1)
 		}
 		if occurrence == ordinal {
 			return s[start : start+ri], nil

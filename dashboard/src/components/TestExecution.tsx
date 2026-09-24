@@ -464,10 +464,10 @@ export default function TestExecution({
     meta: [
       { id: 'status', label: test.status === 'COMPLETE' && test.stopped_by_subject ? 'Stopped by operator' : topbarRunStatusLabel(test.status), tone: executionStatusTone },
       { id: 'name', label: test.name || 'Untitled test', tone: 'accent' },
-      { id: 'duration', label: test.duration || 'No duration', tone: 'default' },
+      { id: 'duration', label: test.termination_mode === 'iterations' ? 'Iteration completion' : test.duration || 'No duration', tone: 'default' },
       { id: 'groups', label: `${groupCount} ${groupCount === 1 ? 'group' : 'groups'}`, tone: isMultiGroup ? 'accent' : 'default' },
       { id: 'started', label: `Started ${formatRunStartTime(test.started_at || test.start_time)}`, tone: 'default', hidden: !showLiveControls },
-      { id: 'remaining', label: `Remaining ${formatTimeCompact(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
+      { id: 'remaining', label: test.termination_mode === 'iterations' ? `Iterations ${test.live_metrics?.completed_iterations ?? 0} / ${(test.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}` : `Remaining ${formatTimeCompact(remainingSeconds)}`, tone: remainingSeconds <= 60 ? 'warning' : 'default', hidden: !showLiveControls },
       { id: 'stopping', label: 'Stopping...', tone: 'danger', hidden: !isStopping },
     ],
     secondaryActions: [

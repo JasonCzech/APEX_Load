@@ -62,6 +62,8 @@ type archiveMessageDetailCapture struct {
 }
 
 type archiveTransactionEvent struct {
+	CSVExportIDs          []string                  `json:"csv_export_ids"`
+	ExtractionsIncomplete bool                      `json:"extractions_incomplete,omitempty"`
 	Timestamp             time.Time                 `json:"timestamp"`
 	TestID                string                    `json:"test_id"`
 	TestName              string                    `json:"test_name"`
@@ -151,26 +153,27 @@ type archiveResourceSample struct {
 }
 
 type archiveIntervalSummary struct {
-	Timestamp       time.Time                                     `json:"timestamp"`
-	TestID          string                                        `json:"test_id"`
-	TestName        string                                        `json:"test_name"`
-	ActiveVUsers    int64                                         `json:"active_vusers"`
-	TPS             float64                                       `json:"tps"`
-	AvgResponseMs   float64                                       `json:"avg_response_ms"`
-	ErrorPct        float64                                       `json:"error_pct"`
-	TotalTx         int64                                         `json:"total_transactions"`
-	TotalErrors     int64                                         `json:"total_errors"`
-	P50Ms           float64                                       `json:"p50_ms"`
-	P90Ms           float64                                       `json:"p90_ms"`
-	P95Ms           float64                                       `json:"p95_ms"`
-	P99Ms           float64                                       `json:"p99_ms"`
-	DurationDigest  *engine.TDigestSnapshot                       `json:"duration_digest,omitempty"`
-	Groups          map[string]*archiveGroupLiveMetrics           `json:"groups,omitempty"`
-	Transactions    map[string]*archiveIntervalTransactionMetrics `json:"transactions,omitempty"`
-	ByRegion        map[string]*archiveIntervalTransactionMetrics `json:"by_region,omitempty"`
-	Browser         *archiveBrowserLiveMetrics                    `json:"browser,omitempty"`
-	BrowserByDevice map[string]*archiveBrowserDeviceMetric        `json:"browser_by_device,omitempty"`
-	Telemetry       *archiveTelemetryHealth                       `json:"telemetry,omitempty"`
+	CompletedIterations int64                                         `json:"completed_iterations,omitempty"`
+	Timestamp           time.Time                                     `json:"timestamp"`
+	TestID              string                                        `json:"test_id"`
+	TestName            string                                        `json:"test_name"`
+	ActiveVUsers        int64                                         `json:"active_vusers"`
+	TPS                 float64                                       `json:"tps"`
+	AvgResponseMs       float64                                       `json:"avg_response_ms"`
+	ErrorPct            float64                                       `json:"error_pct"`
+	TotalTx             int64                                         `json:"total_transactions"`
+	TotalErrors         int64                                         `json:"total_errors"`
+	P50Ms               float64                                       `json:"p50_ms"`
+	P90Ms               float64                                       `json:"p90_ms"`
+	P95Ms               float64                                       `json:"p95_ms"`
+	P99Ms               float64                                       `json:"p99_ms"`
+	DurationDigest      *engine.TDigestSnapshot                       `json:"duration_digest,omitempty"`
+	Groups              map[string]*archiveGroupLiveMetrics           `json:"groups,omitempty"`
+	Transactions        map[string]*archiveIntervalTransactionMetrics `json:"transactions,omitempty"`
+	ByRegion            map[string]*archiveIntervalTransactionMetrics `json:"by_region,omitempty"`
+	Browser             *archiveBrowserLiveMetrics                    `json:"browser,omitempty"`
+	BrowserByDevice     map[string]*archiveBrowserDeviceMetric        `json:"browser_by_device,omitempty"`
+	Telemetry           *archiveTelemetryHealth                       `json:"telemetry,omitempty"`
 }
 
 // archiveIntervalTransactionMetrics is the generator-side wire-compatible
@@ -947,6 +950,8 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		return w.recordErr
 	}
 	event := archiveTransactionEvent{
+		CSVExportIDs:          result.CSVExportIDs,
+		ExtractionsIncomplete: result.ExtractionsIncomplete,
 		Timestamp:             result.StartTime,
 		TestID:                w.manifest.TestID,
 		TestName:              w.manifest.TestName,
@@ -989,6 +994,14 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		ProtocolEvidence:      result.ProtocolEvidence,
 		Extractions:           boundedArchiveExtractions(result.Extractions),
 		Snapshot:              engine.BoundErrorSnapshot(result.Snapshot, 1<<20),
+	}
+	if len(event.Extractions) != len(result.Extractions) {
+		event.ExtractionsIncomplete = true
+	}
+	for k, v := range result.Extractions {
+		if event.Extractions[k] != v {
+			event.ExtractionsIncomplete = true
+		}
 	}
 	event.HasDetail = event.Snapshot != nil || event.ClientMetrics != nil || event.ServerTelemetry != nil ||
 		len(event.ProtocolEvidence) > 0 || len(event.NetworkEntries) > 0 || len(event.ConsoleEntries) > 0 || event.DOMSummary != nil

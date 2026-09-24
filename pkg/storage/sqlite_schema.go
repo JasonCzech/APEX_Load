@@ -135,6 +135,7 @@ func schemaCreateTableStatements() []string {
 			duration TEXT NOT NULL,
 			start_delay TEXT,
 			scenario_mode TEXT,
+ termination_mode TEXT NOT NULL DEFAULT 'duration',
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
 			assignment_json TEXT,
@@ -490,6 +491,7 @@ func schemaCreateTableStatements() []string {
 			project_id TEXT REFERENCES projects(id),
 			folder_id TEXT REFERENCES folders(id),
 			scenario_mode TEXT,
+ termination_mode TEXT NOT NULL DEFAULT 'duration',
 			shakeout_enabled INTEGER DEFAULT 0,
 			resource_baseline_enabled INTEGER DEFAULT 0,
 			start_delay TEXT,
@@ -1517,6 +1519,8 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "scenarios.termination_mode", query: `ALTER TABLE scenarios ADD COLUMN termination_mode TEXT NOT NULL DEFAULT 'duration'`},
+		{name: "tests.termination_mode", query: `ALTER TABLE tests ADD COLUMN termination_mode TEXT NOT NULL DEFAULT 'duration'`},
 		// Defaults to 0 (no sanitized document). Existing rows are all Bruno
 		// imports that do have one, and are backfilled to 1 immediately after
 		// this runs -- see backfillSanitizedSourceAvailability. Doing it in that

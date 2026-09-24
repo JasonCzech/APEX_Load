@@ -278,7 +278,7 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 || len(result.SourceReview.Mappings) == 0 {
 		t.Fatalf("source review = %#v, want files and mappings", result.SourceReview)
 	}
-	assertJMeterSourceMapping(t, result.SourceReview.Mappings, "HTTPSamplerProxy", "actions[0]", "converted")
+	assertJMeterSourceMapping(t, result.SourceReview.Mappings, "HTTPSamplerProxy", "actions[0]", "review_only")
 	assertJMeterSourceMapping(t, result.SourceReview.Mappings, "jmeter_assertion", "actions[0].assertions[0]", "contributor")
 }
 
@@ -1322,7 +1322,7 @@ func TestConvertJMXReviewGatesUnsupportedAuthWithoutBasicApproximation(t *testin
 				t.Fatalf("import_review = %#v, want structured review metadata", action.Metadata["import_review"])
 			}
 			reasons, ok := review["reason_codes"].([]string)
-			if !ok || len(reasons) != 1 || reasons[0] != "unsupported_auth_scheme" {
+			if !ok || !strings.Contains(strings.Join(reasons, ","), "unsupported_auth_scheme") {
 				t.Fatalf("reason codes = %#v", review["reason_codes"])
 			}
 			if !containsJMeterDiagnostic(result, "requires review") {

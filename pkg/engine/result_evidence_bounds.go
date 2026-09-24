@@ -52,7 +52,16 @@ func boundResultEvidence(result *protocol.Result) {
 		result.DOMSummary = nil
 	}
 	result.ErrorMessage = cloneBoundedResultString(result.ErrorMessage, maxResultErrorBytes)
-	result.Extractions = boundedResultStringMap(result.Extractions, maxResultExtractions, maxResultExtractionBytes)
+	boundedExtractions := boundedResultStringMap(result.Extractions, maxResultExtractions, maxResultExtractionBytes)
+	if len(boundedExtractions) != len(result.Extractions) {
+		result.ExtractionsIncomplete = true
+	}
+	for k, v := range result.Extractions {
+		if boundedExtractions[k] != v {
+			result.ExtractionsIncomplete = true
+		}
+	}
+	result.Extractions = boundedExtractions
 	result.ProtocolEvidence = protocol.BoundProtocolEvidence(result.ProtocolEvidence)
 	result.Snapshot, _ = boundedErrorSnapshot(result.Snapshot, defaultErrorSnapshotMaxBytes)
 }

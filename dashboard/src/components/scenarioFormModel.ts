@@ -339,6 +339,7 @@ export function scenarioFormStateFromStoredScenario(
   return {
     name: cloneDraft ? `${scenario.name} (Copy)` : scenario.name,
     duration: scenario.duration,
+    termination_mode: scenario.termination_mode,
     start_delay: scenario.start_delay || '',
     groups: ensureScenarioGroups(groups),
     scenario_mode: scenario.scenario_mode || 'vuser_driven',

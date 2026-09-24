@@ -11,11 +11,12 @@ to their `source_*` equivalents.
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
+| `pacing_ids` | array |  | Source sampler schedule identities; requires JMeter messaging compatibility. Currently execution-gated pending runtime conformance. |
 | `name` | string | yes | Unique step name; used in transaction reporting and issue labels. |
 | `type` | string | yes | Action type discriminator; see the per-protocol action catalog. |
 | `think_time` | object |  | Per-action think-time override (type, mean_ms, ...). |
 | `think_time_after` | bool |  | Apply think time after this action completes. |
-| `extractors` | array |  | Response extractors: {name, source, type, expression, on_miss, mode, save_offset, save_length, convert}. on_miss: "fail" fails the request when nothing matches, "empty" assigns an empty string; mode "all" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode | url_decode | html_decode | html_url_encode). The behavior fields are honored by the HTTP protocol family. |
+| `extractors` | array |  | Response extractors: {name, source, type, expression, on_miss, default_value, mode, save_offset, save_length, convert}. on_miss: "fail" fails the request when nothing matches, "empty" assigns an empty string; "default" assigns default_value (including an explicitly empty default); mode "all" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode | url_decode | html_decode | html_url_encode). The behavior fields are honored by the HTTP protocol family. |
 | `assertions` | array |  | Response assertions: {type, expected, value, max}. HTTP supports status/time/body checks plus header_contains (value is a case-insensitive header name; expected is a case-sensitive substring) and body_regex_capture_equals (value is a Go/RE2 pattern up to 4 KiB; expected equals the first capture group, or the full match when no group exists). |
 | `metadata` | object |  | Free-form metadata; importers preserve source details here. |
 | `timeout_ms` | int |  | Per-action timeout override in milliseconds. |

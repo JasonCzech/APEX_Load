@@ -52,6 +52,14 @@ func archiveManifestArtifactNames(manifest *RunArchiveManifest) (map[string]stru
 		}
 		artifacts[name] = struct{}{}
 	}
+	for _, export := range manifest.CSVExports {
+		if export.Status == "complete" {
+			if _, err := normalizeArchiveArtifactName(export.FileName); err != nil {
+				return nil, err
+			}
+			artifacts[export.FileName] = struct{}{}
+		}
+	}
 	return artifacts, nil
 }
 

@@ -751,7 +751,7 @@ export function useScriptApi() {
   )
 
   const importJMeter = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string; time_mode?: string; timezone?: string; variable_bindings?: Record<string, string> }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
@@ -759,6 +759,9 @@ export function useScriptApi() {
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
+      if (options?.time_mode) formData.append('time_mode', options.time_mode)
+      if (options?.timezone) formData.append('timezone', options.timezone)
+      if (options?.variable_bindings) formData.append('variable_bindings', JSON.stringify(options.variable_bindings))
 
       const res = await apiFetch('/scripts/import/jmeter', {
         method: 'POST',
@@ -773,7 +776,7 @@ export function useScriptApi() {
   )
 
   const validateJMeterImport = useCallback(
-    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string }): Promise<JMeterImportResult> => {
+    async (file: File, options?: { name?: string; base_url?: string; include_assertions?: boolean; scenario_draft?: boolean; project_id?: string; time_mode?: string; timezone?: string; variable_bindings?: Record<string, string> }): Promise<JMeterImportResult> => {
       const formData = new FormData()
       if (options?.project_id) formData.append('project_id', options.project_id)
       formData.append('file', file)
@@ -781,6 +784,9 @@ export function useScriptApi() {
       if (options?.base_url) formData.append('base_url', options.base_url)
       if (options?.include_assertions) formData.append('include_assertions', 'true')
       if (options?.scenario_draft) formData.append('scenario_draft', 'true')
+      if (options?.time_mode) formData.append('time_mode', options.time_mode)
+      if (options?.timezone) formData.append('timezone', options.timezone)
+      if (options?.variable_bindings) formData.append('variable_bindings', JSON.stringify(options.variable_bindings))
 
       const res = await apiFetch('/scripts/import/jmeter/validate', {
         method: 'POST',

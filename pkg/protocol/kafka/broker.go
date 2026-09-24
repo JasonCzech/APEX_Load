@@ -31,11 +31,12 @@ type kafkaClient interface {
 
 // kafkaRecord is a provider-neutral representation of a Kafka record.
 type kafkaRecord struct {
-	Key       string
-	Value     []byte
-	Headers   map[string]string
-	Topic     string
-	Partition int32
+	KeyPresent bool // Distinguishes a serialized empty string from a Kafka null key.
+	Key        string
+	Value      []byte
+	Headers    map[string]string
+	Topic      string
+	Partition  int32
 	// ManualPartition distinguishes an authored partition (including zero) from
 	// the mock broker's resolved partition hint. Real clients must let their
 	// partitioner use broker metadata for key-hash and round-robin routing.
@@ -408,6 +409,7 @@ func (c mockClient) RequestReply(ctx context.Context, reqTopic, replyTopic strin
 	if !c.broker.hasMessages(c.topic(replyTopic), "") {
 		if _, err := c.broker.produce(c.topic(replyTopic), kafkaRecord{
 			Key:           req.Key,
+			KeyPresent:    req.KeyPresent,
 			Value:         req.Value,
 			Headers:       cloneStringMap(req.Headers),
 			CorrelationID: req.CorrelationID,

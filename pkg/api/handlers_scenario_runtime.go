@@ -314,8 +314,8 @@ func (tr *TestRunner) validateScenarioRuntimeMutationLocked(scenario *StoredScen
 	if err != nil {
 		return err
 	}
-	duration, err := time.ParseDuration(scenario.Duration)
-	if err != nil || duration <= 0 {
+	duration, err := parseTerminationDuration(scenario.Duration, scenario.TerminationMode)
+	if err != nil {
 		return fmt.Errorf("invalid scenario duration %q", scenario.Duration)
 	}
 	for index := range groups {
@@ -330,8 +330,11 @@ func (tr *TestRunner) validateScenarioRuntimeMutationLocked(scenario *StoredScen
 	if err != nil {
 		return err
 	}
+	if err := validateIterationEngineGroups(scenario.TerminationMode, engineGroups); err != nil {
+		return err
+	}
 	for index, group := range engineGroups {
-		if group.StartOffset > duration {
+		if scenario.TerminationMode != "iterations" && group.StartOffset > duration {
 			return fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, group.StartOffset, duration)
 		}
 	}

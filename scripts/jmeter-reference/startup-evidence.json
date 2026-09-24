@@ -1,0 +1,444 @@
+{
+  "schema_version": 1,
+  "startup": "passed",
+  "live_conformance": "unverified",
+  "timezone": "UTC",
+  "property_overrides": {},
+  "fixture": {
+    "name": "messaging_original.jmx",
+    "sha256": "843dde9a1a6109cc2b71c35af69434e5c8bace7eb8158f75e2b05e97f168ef98"
+  },
+  "harness_source_sha256": "6c3acd5731ac35d20f18d895c053bcace1e0988b5c5d7c65c63a63fa929455b0",
+  "runtime_artifacts": [
+    {
+      "artifact": "ApacheJMeter_core-5.4.1.jar",
+      "sha256": "d9dc8d4ce487db6df89127da130b3ee9b95a334a455f462ab4d7c8ad26eefc5a"
+    },
+    {
+      "artifact": "ApacheJMeter-5.4.1.jar",
+      "sha256": "d84be9aabfb6a65976f92bc02463ab018db6e068764c78c605380b80fb7b513c"
+    },
+    {
+      "artifact": "jorphan-5.4.1.jar",
+      "sha256": "be0508765b74d8d2e879d5b44e24e71fb940b92bacaefa44d50b8fde44889d4c"
+    },
+    {
+      "artifact": "bsf-2.4.0.jar",
+      "sha256": "f873773deb91c1a1c12150f6cdb13b8a2e1b496a75ac903c4bbfa103b363a7c7"
+    },
+    {
+      "artifact": "commons-logging-1.0.4.jar",
+      "sha256": "e94af49749384c11f5aa50e8d0f5fe679be771295b52030338d32843c980351e"
+    },
+    {
+      "artifact": "rsyntaxtextarea-3.1.1.jar",
+      "sha256": "cd93001bf024ddf560bc948624dcf65befa3bf3a61f43bca1bdb14518846ded8"
+    },
+    {
+      "artifact": "jtidy-r938.jar",
+      "sha256": "6fc03e51e73fa884f06e7eae0761e045e56fdeb4e146a4d952e3023cc9e3fb43"
+    },
+    {
+      "artifact": "xstream-1.4.15.jar",
+      "sha256": "3277849961aa9eb055f8771810450086d38cc2e407eeb8346d0239ea0218a453"
+    },
+    {
+      "artifact": "xmlpull-1.1.3.1.jar",
+      "sha256": "34e08ee62116071cbb69c0ed70d15a7a5b208d62798c59f2120bb8929324cb63"
+    },
+    {
+      "artifact": "xpp3_min-1.1.4c.jar",
+      "sha256": "bfc90e9e32d0eab1f397fb974b5f150a815188382ac41f372a7149d5bc178008"
+    },
+    {
+      "artifact": "log4j-1.2-api-2.13.3.jar",
+      "sha256": "86cc75ae4b9f7c643412dda3bc2de05af6dfa760b80ab7ba96dc4ce505f8a05b"
+    },
+    {
+      "artifact": "log4j-api-2.13.3.jar",
+      "sha256": "2b4b1965c9dce7f3732a0fbf5c8493199c1e6bf8cf65c3e235b57d98da5f36af"
+    },
+    {
+      "artifact": "log4j-core-2.13.3.jar",
+      "sha256": "9529c55814264ab96b0eeba2920ac0805170969c994cc479bd3d4d7eb24a35a8"
+    },
+    {
+      "artifact": "log4j-slf4j-impl-2.13.3.jar",
+      "sha256": "9010069ee8ec2a1fbd0e5f14810f01c0c162a9aa21b41909fd1d851bf02257d6"
+    },
+    {
+      "artifact": "apiguardian-api-1.1.0.jar",
+      "sha256": "a9aae9ff8ae3e17a2a18f79175e82b16267c246fbbd3ca9dfbbb290b08dcfdd4"
+    },
+    {
+      "artifact": "oro-2.0.8.jar",
+      "sha256": "e00ccdad5df7eb43fdee44232ef64602bf63807c2d133a7be83ba09fd49af26e"
+    },
+    {
+      "artifact": "xalan-2.7.2.jar",
+      "sha256": "a44bd80e82cb0f4cfac0dac8575746223802514e3cec9dc75235bc0de646af14"
+    },
+    {
+      "artifact": "serializer-2.7.2.jar",
+      "sha256": "e8f5b4340d3b12a0cfa44ac2db4be4e0639e479ae847df04c4ed8b521734bb4a"
+    },
+    {
+      "artifact": "Saxon-HE-9.9.1-8.jar",
+      "sha256": "504ad5c71b55a3fd04c5609419b5e51d51b419f26628b4b6254c38766487abdf"
+    },
+    {
+      "artifact": "jackson-annotations-2.10.5.jar",
+      "sha256": "5ad94fbb2642df695892c4d6e2ab4c319821e5f9bfb7b920f1378de4f611417c"
+    },
+    {
+      "artifact": "jackson-core-2.10.5.jar",
+      "sha256": "2656010d1e921ac69b76fc7e0c0f5a6b14aca62fa9603e78831e6148eb7c77ba"
+    },
+    {
+      "artifact": "jackson-databind-2.10.5.jar",
+      "sha256": "5e19fdaed7e0f2a37aa756d480879ae26926b9fc0d8270d78c4dcd5bf65a7a54"
+    },
+    {
+      "artifact": "svgSalamander-1.1.2.3.jar",
+      "sha256": "90cc284ae3103351f293e8e6a113f2858e8cc9f78a37726e9ac92b74cef8dd39"
+    },
+    {
+      "artifact": "caffeine-2.8.8.jar",
+      "sha256": "7b7b72c6ce3e47e774e29060ceba19e83e8259bd475986e04b4f3272d4a58f73"
+    },
+    {
+      "artifact": "checker-qual-3.8.0.jar",
+      "sha256": "c88c2e6a5fdaeb9f26fcf879264042de8a9ee9d376e2477838feaabcfa44dda6"
+    },
+    {
+      "artifact": "error_prone_annotations-2.4.0.jar",
+      "sha256": "5f2a0648230a662e8be049df308d583d7369f13af683e44ddf5829b6d741a228"
+    },
+    {
+      "artifact": "darklaf-core-2.5.4.jar",
+      "sha256": "c6546a1ff0531ff89a101cb31b13127607cd76d78ac129519ef92aa6832151d0"
+    },
+    {
+      "artifact": "darklaf-utils-2.5.4.jar",
+      "sha256": "f9379738c83ba08c763a4380c9100c1d0b1d7590c7d3b6a9e79f53a1d3847857"
+    },
+    {
+      "artifact": "darklaf-native-utils-2.5.4.jar",
+      "sha256": "7c858e24f9b6cf3d5236e6e66f9c287272728bb6bc20788eb3633c9060f540fb"
+    },
+    {
+      "artifact": "darklaf-platform-base-2.5.4.jar",
+      "sha256": "0a34a0f7777286a32d3254c0a62a7da4a1f0b647dc2e3ffa9f071dee49580d6e"
+    },
+    {
+      "artifact": "darklaf-windows-2.5.4.jar",
+      "sha256": "a60b7b6d7971559ce17360d55a3dc61b10ea4bbf235c24c19a1773ab5d6ba7ca"
+    },
+    {
+      "artifact": "jna-5.5.0.jar",
+      "sha256": "b308faebfe4ed409de8410e0a632d164b2126b035f6eacff968d3908cafb4d9e"
+    },
+    {
+      "artifact": "darklaf-macos-2.5.4.jar",
+      "sha256": "30c8f583df9d128b84b86f5210cbb03339ce1a1e5c1bd0c4c7cdf7b9c39a30e7"
+    },
+    {
+      "artifact": "jxlayer-3.0.4.jar",
+      "sha256": "5dec074eecb14b12dd456a98df59bb7d7245ebac65ff67640c2631f232c961aa"
+    },
+    {
+      "artifact": "darklaf-theme-2.5.4.jar",
+      "sha256": "7492b819d4335f832924ed05d46ca68c65f9cb09470890973b293bc0ba492c61"
+    },
+    {
+      "artifact": "darklaf-property-loader-2.5.4.jar",
+      "sha256": "b06f7f40f6eedfdd3cfa46878cf97422d0aa96cabfb4e1ce0a6f7c2e90d8da83"
+    },
+    {
+      "artifact": "darklaf-extensions-rsyntaxarea-0.3.4.jar",
+      "sha256": "dc9b09fea1a786d8dcd004733fe6b47246719c3fda6e5e5f5baa2ca0d6e776ab"
+    },
+    {
+      "artifact": "miglayout-swing-5.2.jar",
+      "sha256": "8369f682ea153efb681a3f582acc488e82a97ee6f47d25352f080e977f138c86"
+    },
+    {
+      "artifact": "miglayout-core-5.2.jar",
+      "sha256": "669f0da8fd76be53d75f5940f481626f29b544cd9925b7da2611187d2684bc7a"
+    },
+    {
+      "artifact": "commons-codec-1.15.jar",
+      "sha256": "b3e9f6d63a790109bf0d056611fbed1cf69055826defeb9894a71369d246ed63"
+    },
+    {
+      "artifact": "commons-collections-3.2.2.jar",
+      "sha256": "eeeae917917144a68a741d4c0dff66aa5c5c5fd85593ff217bced3fc8ca783b8"
+    },
+    {
+      "artifact": "commons-collections4-4.4.jar",
+      "sha256": "1df8b9430b5c8ed143d7815e403e33ef5371b2400aadbe9bda0883762e0846d1"
+    },
+    {
+      "artifact": "commons-math3-3.6.1.jar",
+      "sha256": "1e56d7b058d28b65abd256b8458e3885b674c1d588fa43cd7d1cbb9c7ef2b308"
+    },
+    {
+      "artifact": "commons-text-1.9.jar",
+      "sha256": "0812f284ac5dd0d617461d9a2ab6ac6811137f25122dfffd4788a4871e732d00"
+    },
+    {
+      "artifact": "tika-core-1.24.1.jar",
+      "sha256": "08618e1ca8708bcb41313a8c37bdfcde3156801628fa59108b98a7f186a63bda"
+    },
+    {
+      "artifact": "xmlgraphics-commons-2.3.jar",
+      "sha256": "1fb91bac2795f7a768a7665f40cde996023a489ecc43e5ee67ad40fbaa79e194"
+    },
+    {
+      "artifact": "freemarker-2.3.30.jar",
+      "sha256": "6586433d90957c0b05a32bce07c71e8cebcea6afbea2e043bfe0c576c4d94338"
+    },
+    {
+      "artifact": "jodd-core-5.0.13.jar",
+      "sha256": "a77cf7400ef90c946a70ffa410920e9b62ac6bf9e0d8b2d6d185e894313b285b"
+    },
+    {
+      "artifact": "jodd-props-5.0.13.jar",
+      "sha256": "f1029ee3be973df0c4a65dac2d18c718116d83c11a0e2fa526344dc7537a4f45"
+    },
+    {
+      "artifact": "rhino-1.7.13.jar",
+      "sha256": "931dda33789d8e004ff5b5478ee3d6d224305de330c48266df7c3e49d52fc606"
+    },
+    {
+      "artifact": "jcl-over-slf4j-1.7.30.jar",
+      "sha256": "71e9ee37b9e4eb7802a2acc5f41728a4cf3915e7483d798db3b4ff2ec8847c50"
+    },
+    {
+      "artifact": "groovy-3.0.7.jar",
+      "sha256": "51d1777e8dd1f00e60ea56e00d8a354ff5aab1f00fc8464ae8d39d71867e401f"
+    },
+    {
+      "artifact": "groovy-dateutil-3.0.7.jar",
+      "sha256": "dd1d25cbfc150b566ed6e9bbe3295faf5073e3bd7ec9f019ea88f632b9b7e9ee"
+    },
+    {
+      "artifact": "groovy-datetime-3.0.7.jar",
+      "sha256": "b9823d14b1a4f94236ae2f8a471701aab17e093e1b33402b91550b5c8dd88f04"
+    },
+    {
+      "artifact": "groovy-jmx-3.0.7.jar",
+      "sha256": "0a89f3007884eb156751937d93382038b83d39c7c2f0ab156ebf251a7251f2ab"
+    },
+    {
+      "artifact": "groovy-json-3.0.7.jar",
+      "sha256": "df1f0ee475e3fc93a6a0d17548294e160cca5de6d9d36817a7be1fbe650de03b"
+    },
+    {
+      "artifact": "groovy-jsr223-3.0.7.jar",
+      "sha256": "1dbd969595332416193baa660fbb45743d19696eaa25fe98e591a2739e13517e"
+    },
+    {
+      "artifact": "groovy-sql-3.0.7.jar",
+      "sha256": "252bb6c74e1a9f41756ad4fbd3b0d2eddc93bb61109961dd1952a37bf2d57a64"
+    },
+    {
+      "artifact": "groovy-templates-3.0.7.jar",
+      "sha256": "f119e07f650ef186ae5a4b944f9e30915b14311bad47c94a6b32de8d4f69bc80"
+    },
+    {
+      "artifact": "groovy-xml-3.0.7.jar",
+      "sha256": "8a62e7c9ddece3e82676c4bef2f2c100f459602cd1fb6a14e94187bf863e97ff"
+    },
+    {
+      "artifact": "tika-parsers-1.24.1.jar",
+      "sha256": "57543d83784b62eaddcccc320b08ed19c7c87acb6fbd30bfed6955a9a01e37a4"
+    },
+    {
+      "artifact": "xercesImpl-2.12.0.jar",
+      "sha256": "b50d3a4ca502faa4d1c838acb8aa9480446953421f7327e338c5dda3da5e76d0"
+    },
+    {
+      "artifact": "xml-apis-1.4.01.jar",
+      "sha256": "a840968176645684bb01aed376e067ab39614885f9eee44abe35a5f20ebe7fad"
+    },
+    {
+      "artifact": "ApacheJMeter_components-5.4.1.jar",
+      "sha256": "ab58264be239a68c8a3e61b0870ccb5c648508ca8c076615883ef6cce50f0bfb"
+    },
+    {
+      "artifact": "bsh-2.0b6.jar",
+      "sha256": "a17955976070c0573235ee662f2794a78082758b61accffce8d3f8aedcd91047"
+    },
+    {
+      "artifact": "mail-1.5.0-b01.jar",
+      "sha256": "04f10be09bc598b4b65b93e5eb55bb380abe1ca76c440cf0c8233d86e868f1c7"
+    },
+    {
+      "artifact": "jmespath-core-0.5.0.jar",
+      "sha256": "d19551fef93e00e0093dcd9d31023952516959bec10a0e6b634eea4e1878dddf"
+    },
+    {
+      "artifact": "jmespath-jackson-0.5.0.jar",
+      "sha256": "2af9b1ad79784334d3b59147f86720330be57b1a24343589de40da3bbfe69681"
+    },
+    {
+      "artifact": "jcharts-0.7.5.jar",
+      "sha256": "c0fdb330280ff7223923e399be06b7575c1920451faaeb29333f9c2b0f5d2ddc"
+    },
+    {
+      "artifact": "json-smart-2.3.jar",
+      "sha256": "903f48c8aa4c3f6426440b8d32de89fa1dc23b1169abde25e4e1d068aa67708b"
+    },
+    {
+      "artifact": "accessors-smart-1.2.jar",
+      "sha256": "0c7c265d62fc007124dc32b91336e9c4272651d629bc5fa1a4e4e3bc758eb2e4"
+    },
+    {
+      "artifact": "commons-pool2-2.9.0.jar",
+      "sha256": "bc919b426bfafb31ecc45d6652a9f137462465d849fb3873d78d90c3f8d35b01"
+    },
+    {
+      "artifact": "asm-9.0.jar",
+      "sha256": "0df97574914aee92fd349d0cb4e00f3345d45b2c239e0bb50f0a90ead47888e0"
+    },
+    {
+      "artifact": "jodd-log-5.0.13.jar",
+      "sha256": "0fdf30d3b6c27ac78545a226a62c9f2f5675d3168ca91561968a5e0db73c232d"
+    },
+    {
+      "artifact": "jodd-lagarto-5.0.13.jar",
+      "sha256": "47b35d8323e8ebc716f6a88d217b438d36dffafbdefa7724c5e9c85ac7c8bff2"
+    },
+    {
+      "artifact": "json-path-2.4.0.jar",
+      "sha256": "60441c74fb64e5a480070f86a604941927aaf684e2b513d780fb7a38fb4c5639"
+    },
+    {
+      "artifact": "httpasyncclient-4.1.4.jar",
+      "sha256": "50e981a8e567a16ebdad104605b156540a863459fa127b8ba647f310dfc83ef8"
+    },
+    {
+      "artifact": "httpclient-4.5.6.jar",
+      "sha256": "c03f813195e7a80e3608d0ddd8da80b21696a4c92a6a2298865bf149071551c7"
+    },
+    {
+      "artifact": "httpcore-nio-4.4.13.jar",
+      "sha256": "71fcfbe869002c48563cc5979fc734571c8d0d167ccce42970c932f337981f19"
+    },
+    {
+      "artifact": "jsoup-1.13.1.jar",
+      "sha256": "e2b99c0d2fa39f69f27efb1c0016390713feb2f2e02d8ea7f1c36b780271598a"
+    },
+    {
+      "artifact": "commons-lang3-3.11.jar",
+      "sha256": "4ee380259c068d1dbe9e84ab52186f2acd65de067ec09beff731fca1697fdb16"
+    },
+    {
+      "artifact": "commons-io-2.8.0.jar",
+      "sha256": "02f291e5d1243dc143496e3cbbb40a1ced47aa58f2d633d3e38780cd068d5074"
+    },
+    {
+      "artifact": "javax.activation-1.2.0.jar",
+      "sha256": "993302b16cd7056f21e779cc577d175a810bb4900ef73cd8fbf2b50f928ba9ce"
+    },
+    {
+      "artifact": "ApacheJMeter_http-5.4.1.jar",
+      "sha256": "4494b7c538bfb0db7b588a839c61df3cc08aa45f6c89aa0e2b19de5b30e751d9"
+    },
+    {
+      "artifact": "commons-net-3.7.2.jar",
+      "sha256": "a84e3429f8aeedefdfc11df060e50e1e0e90e9fc7f960f14dba49be38c4572d1"
+    },
+    {
+      "artifact": "ph-commons-9.5.1.jar",
+      "sha256": "46b19a449c233e124999eeb3989f9faafd5d3854a63b02e7064481a8d8f6aa70"
+    },
+    {
+      "artifact": "ph-css-6.2.3.jar",
+      "sha256": "c4511d6ef4825d82dfaf6b0681a412a008416f58b760f44d256cc33cbd2564df"
+    },
+    {
+      "artifact": "dnsjava-2.1.9.jar",
+      "sha256": "072bba34267ffad8907c30a99a6b68f900782f3191454d278e395e289d478446"
+    },
+    {
+      "artifact": "httpmime-4.5.12.jar",
+      "sha256": "0cac77bd2f8cf326727f0516d6fcbe1aeddbab36e971a3da44ff47fa87b2eac4"
+    },
+    {
+      "artifact": "httpcore-4.4.13.jar",
+      "sha256": "e06e89d40943245fcfa39ec537cdbfce3762aecde8f9c597780d2b00c2b43424"
+    },
+    {
+      "artifact": "dec-0.1.2.jar",
+      "sha256": "615c0c3efef990d77831104475fba6a1f7971388691d4bad1471ad84101f6d52"
+    },
+    {
+      "artifact": "ApacheJMeter_java-5.4.1.jar",
+      "sha256": "e7391a942e0fcaf0e91db44bcb3e4880adb76e00427bc412caea03a17c259699"
+    },
+    {
+      "artifact": "di-kafkameter-1.3.jar",
+      "sha256": "e9f9e9e2c332a5a2a4c8b2864f4dffb45f6c7a03d9ca9b6c86c17d36c4060fcb"
+    },
+    {
+      "artifact": "slf4j-api-1.7.29.jar",
+      "sha256": "47b624903c712f9118330ad2fb91d0780f7f666c3f22919d0fc14522c5cad9ea"
+    },
+    {
+      "artifact": "guava-31.1-jre.jar",
+      "sha256": "a42edc9cab792e39fe39bb94f3fca655ed157ff87a8af78e1d6ba5b07c4a00ab"
+    },
+    {
+      "artifact": "failureaccess-1.0.1.jar",
+      "sha256": "a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26"
+    },
+    {
+      "artifact": "listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+      "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99"
+    },
+    {
+      "artifact": "jsr305-3.0.2.jar",
+      "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+    },
+    {
+      "artifact": "j2objc-annotations-1.3.jar",
+      "sha256": "21af30c92267bd6122c0e0b4d20cccb6641a37eaf956c6540ec471d584e64a7b"
+    },
+    {
+      "artifact": "kafka-clients-3.3.1.jar",
+      "sha256": "39d06474e22c6c8f5bd1d67c69a56e43dfb6a21605454c6e7d705c65aafe118c"
+    },
+    {
+      "artifact": "zstd-jni-1.5.2-1.jar",
+      "sha256": "93f7e4cbc907c2650f89f9f0bec94873735a58f1e4b66a54973294e4ec1878e8"
+    },
+    {
+      "artifact": "lz4-java-1.8.0.jar",
+      "sha256": "d74a3334fb35195009b338a951f918203d6bbca3d1d359033dc33edd1cadc9ef"
+    },
+    {
+      "artifact": "snappy-java-1.1.8.4.jar",
+      "sha256": "24c4d1fc1e89e078331ab8f401a99cad68599bde4a2e4516042cb548c51b1c3e"
+    },
+    {
+      "artifact": "jmeter-plugins-azure-eventhubs-0.2.8.jar",
+      "sha256": "d0f68fdecfa85fa161a573293133da9047cd31f44ad2ca2c002412f06b8f08eb"
+    },
+    {
+      "artifact": "jmeter-plugins-tst-2.6.jar",
+      "sha256": "7ddcf371020fb7a4edaf9ed1f2a85a33ded8d388852fab859dfe99db89b13c1c"
+    },
+    {
+      "artifact": "jmeter-plugins-cmn-jmeter-0.3.jar",
+      "sha256": "f85bea0d0e87b9fa3a6c696e5eb6e0c0e91decde36ca957c14b051e2d1d4cb29"
+    },
+    {
+      "artifact": "jmeter-plugins-charts-0.1.jar",
+      "sha256": "23bf31b91131160b2b4051d08cae788e466ace61b72f3012a1d1eb26757c2af3"
+    }
+  ],
+  "stdout": "millisecond=0 formatted=00:00:00.0\nmillisecond=1 formatted=00:00:00.1\nmillisecond=12 formatted=00:00:00.12\nmillisecond=123 formatted=00:00:00.123\nmillisecond=999 formatted=00:00:00.999\nREFERENCE_STARTUP_OK; LIVE_CONFORMANCE_UNVERIFIED\n",
+  "stderr": ""
+}

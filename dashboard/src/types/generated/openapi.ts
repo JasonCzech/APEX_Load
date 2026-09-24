@@ -591,6 +591,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -798,6 +799,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -882,6 +890,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -892,8 +901,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -1026,6 +1040,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -1081,6 +1096,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -1089,7 +1105,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -1147,6 +1166,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -1645,6 +1665,15 @@ export interface operations {
               }>;
               "completed_at"?: string;
               "created_at"?: string;
+              "csv_export_incomplete"?: string;
+              "csv_exports"?: Array<{
+                "error"?: string;
+                "file_name"?: string;
+                "group"?: string;
+                "id"?: string;
+                "rows"?: number;
+                "status"?: string;
+              }>;
               "dynatrace_evidence_count"?: number;
               "dynatrace_evidence_file"?: string;
               "elk_evidence_count"?: number;
@@ -1658,6 +1687,7 @@ export interface operations {
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "duration"?: string;
                 "dynatrace_capture"?: (Record<string, unknown>) | null;
                 "elk_capture"?: (Record<string, unknown>) | null;
@@ -1683,6 +1713,7 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
               }) | null;
@@ -1703,6 +1734,7 @@ export interface operations {
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "duration"?: string;
                 "dynatrace_capture"?: (Record<string, unknown>) | null;
                 "elk_capture"?: (Record<string, unknown>) | null;
@@ -1728,6 +1760,7 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: (Record<string, unknown>) | null;
               };
@@ -2284,6 +2317,12 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
               "message_detail"?: ({
                 "include_resources"?: (boolean) | null;
                 "max_item_bytes"?: number;
@@ -2301,6 +2340,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -2374,6 +2414,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -2437,6 +2478,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -2612,6 +2654,7 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -2622,6 +2665,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -2660,6 +2704,7 @@ export interface operations {
             "scenario_mode"?: string;
             "script_shakeout"?: boolean;
             "start_delay"?: string;
+            "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -2759,6 +2804,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -2966,6 +3012,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -3050,6 +3103,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -3060,8 +3114,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -3194,6 +3253,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -3249,6 +3309,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -3257,7 +3318,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -3315,6 +3379,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -3525,6 +3590,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -3732,6 +3798,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -3816,6 +3889,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -3826,8 +3900,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -3960,6 +4039,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -4015,6 +4095,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -4023,7 +4104,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -4081,6 +4165,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -4193,6 +4278,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -4400,6 +4486,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -4484,6 +4577,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -4494,8 +4588,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -4628,6 +4727,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -4683,6 +4783,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -4691,7 +4792,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -4749,6 +4853,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -5862,6 +5967,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -6069,6 +6175,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -6153,6 +6266,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -6163,8 +6277,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -6297,6 +6416,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -6352,6 +6472,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -6360,7 +6481,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -6418,6 +6542,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -6520,6 +6645,7 @@ export interface operations {
             "body"?: (string) | null;
             "extractor"?: ({
               "convert"?: string;
+              "default_value"?: (string) | null;
               "expression"?: string;
               "mode"?: string;
               "name"?: string;
@@ -6538,6 +6664,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -6546,7 +6673,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -6626,6 +6756,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -6833,6 +6964,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -6917,6 +7055,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -6927,8 +7066,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -7061,6 +7205,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -7116,6 +7261,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -7124,7 +7270,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -7182,6 +7331,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -7271,6 +7421,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -7478,6 +7629,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -7562,6 +7720,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -7572,8 +7731,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -7706,6 +7870,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -7761,6 +7926,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -7769,7 +7935,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -7827,6 +7996,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -7958,6 +8128,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -8165,6 +8336,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -8249,6 +8427,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -8259,8 +8438,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -8393,6 +8577,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -8448,6 +8633,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -8456,7 +8642,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -8514,6 +8703,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -8571,6 +8761,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -8754,6 +8945,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -8838,6 +9036,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -8848,8 +9047,10 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<Record<string, unknown>>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -8950,6 +9151,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -8981,6 +9183,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -8989,7 +9192,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -9021,6 +9227,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -9211,6 +9418,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "associated_releases"?: Array<{
@@ -9427,6 +9635,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -9437,6 +9646,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -9538,6 +9748,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -9577,6 +9788,7 @@ export interface operations {
                 "vusers": number;
               }>;
               "start_delay"?: string;
+              "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -9724,6 +9936,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -9931,6 +10144,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -10015,6 +10235,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -10025,8 +10246,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -10159,6 +10385,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -10214,6 +10441,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -10222,7 +10450,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -10280,6 +10511,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -10445,6 +10677,7 @@ export interface operations {
                   "method"?: string;
                   "name": string;
                   "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
                   "params"?: Record<string, unknown>;
                   "selector"?: string;
                   "soap"?: (Record<string, unknown>) | null;
@@ -10469,6 +10702,7 @@ export interface operations {
                   "http"?: Record<string, unknown>;
                   "java_http"?: Record<string, unknown>;
                   "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
@@ -10477,6 +10711,7 @@ export interface operations {
                   "pacing"?: Record<string, unknown>;
                   "results"?: Record<string, unknown>;
                   "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
                   "sapgui"?: Record<string, unknown>;
                   "soap"?: Record<string, unknown>;
                   "think_time"?: Record<string, unknown>;
@@ -10534,6 +10769,7 @@ export interface operations {
                   "method"?: string;
                   "name": string;
                   "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
                   "params"?: Record<string, unknown>;
                   "selector"?: string;
                   "soap"?: (Record<string, unknown>) | null;
@@ -10559,6 +10795,7 @@ export interface operations {
                   "data_source"?: string;
                   "end"?: number;
                   "format"?: string;
+                  "format_dialect"?: string;
                   "length"?: number;
                   "max"?: number;
                   "min"?: number;
@@ -10567,7 +10804,10 @@ export interface operations {
                   "on_exhaustion"?: string;
                   "pad_char"?: string;
                   "pad_width"?: number;
+                  "random_algorithm"?: string;
                   "same_line_as"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
                   "seed"?: (number) | null;
                   "selection"?: string;
                   "start"?: number;
@@ -10599,6 +10839,7 @@ export interface operations {
                   "method"?: string;
                   "name": string;
                   "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
                   "params"?: Record<string, unknown>;
                   "selector"?: string;
                   "soap"?: (Record<string, unknown>) | null;
@@ -10638,6 +10879,7 @@ export interface operations {
                   "method"?: string;
                   "name": string;
                   "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
                   "params"?: Record<string, unknown>;
                   "selector"?: string;
                   "soap"?: (Record<string, unknown>) | null;
@@ -10662,6 +10904,7 @@ export interface operations {
                   "http"?: Record<string, unknown>;
                   "java_http"?: Record<string, unknown>;
                   "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
@@ -10670,6 +10913,7 @@ export interface operations {
                   "pacing"?: Record<string, unknown>;
                   "results"?: Record<string, unknown>;
                   "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
                   "sapgui"?: Record<string, unknown>;
                   "soap"?: Record<string, unknown>;
                   "think_time"?: Record<string, unknown>;
@@ -10727,6 +10971,7 @@ export interface operations {
                   "method"?: string;
                   "name": string;
                   "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
                   "params"?: Record<string, unknown>;
                   "selector"?: string;
                   "soap"?: (Record<string, unknown>) | null;
@@ -10752,6 +10997,7 @@ export interface operations {
                   "data_source"?: string;
                   "end"?: number;
                   "format"?: string;
+                  "format_dialect"?: string;
                   "length"?: number;
                   "max"?: number;
                   "min"?: number;
@@ -10760,7 +11006,10 @@ export interface operations {
                   "on_exhaustion"?: string;
                   "pad_char"?: string;
                   "pad_width"?: number;
+                  "random_algorithm"?: string;
                   "same_line_as"?: string;
+                  "scope"?: string;
+                  "scope_id"?: string;
                   "seed"?: (number) | null;
                   "selection"?: string;
                   "start"?: number;
@@ -10792,6 +11041,7 @@ export interface operations {
                   "method"?: string;
                   "name": string;
                   "object_ref"?: string;
+                  "pacing_ids"?: Array<string>;
                   "params"?: Record<string, unknown>;
                   "selector"?: string;
                   "soap"?: (Record<string, unknown>) | null;
@@ -11062,6 +11312,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -11269,6 +11520,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -11353,6 +11611,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -11363,8 +11622,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -11497,6 +11761,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -11552,6 +11817,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -11560,7 +11826,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -11618,6 +11887,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -12401,6 +12671,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -12425,6 +12696,7 @@ export interface operations {
               "http"?: Record<string, unknown>;
               "java_http"?: Record<string, unknown>;
               "java_vuser"?: Record<string, unknown>;
+              "jmeter"?: (Record<string, unknown>) | null;
               "jms"?: Record<string, unknown>;
               "kafka"?: Record<string, unknown>;
               "log"?: Record<string, unknown>;
@@ -12433,6 +12705,7 @@ export interface operations {
               "pacing"?: Record<string, unknown>;
               "results"?: Record<string, unknown>;
               "run_logic"?: Record<string, unknown>;
+              "sampler_schedules"?: Array<Record<string, unknown>>;
               "sapgui"?: Record<string, unknown>;
               "soap"?: Record<string, unknown>;
               "think_time"?: Record<string, unknown>;
@@ -12490,6 +12763,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -12515,6 +12789,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -12523,7 +12798,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -12555,6 +12833,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -12656,6 +12935,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -12839,6 +13119,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -12923,6 +13210,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -12933,8 +13221,10 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<Record<string, unknown>>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -13035,6 +13325,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -13066,6 +13357,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -13074,7 +13366,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -13106,6 +13401,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -13292,6 +13588,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -13475,6 +13772,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -13559,6 +13863,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -13569,8 +13874,10 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<Record<string, unknown>>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -13671,6 +13978,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -13702,6 +14010,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -13710,7 +14019,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -13742,6 +14054,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -13902,6 +14215,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -13926,6 +14240,7 @@ export interface operations {
               "http"?: Record<string, unknown>;
               "java_http"?: Record<string, unknown>;
               "java_vuser"?: Record<string, unknown>;
+              "jmeter"?: (Record<string, unknown>) | null;
               "jms"?: Record<string, unknown>;
               "kafka"?: Record<string, unknown>;
               "log"?: Record<string, unknown>;
@@ -13934,6 +14249,7 @@ export interface operations {
               "pacing"?: Record<string, unknown>;
               "results"?: Record<string, unknown>;
               "run_logic"?: Record<string, unknown>;
+              "sampler_schedules"?: Array<Record<string, unknown>>;
               "sapgui"?: Record<string, unknown>;
               "soap"?: Record<string, unknown>;
               "think_time"?: Record<string, unknown>;
@@ -13991,6 +14307,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -14016,6 +14333,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -14024,7 +14342,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -14056,6 +14377,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -14377,6 +14699,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile": string;
+                "source_group_id": string;
+                "source_plan_id": string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -14476,6 +14805,12 @@ export interface operations {
                 "type": string;
               };
               "results"?: {
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -14493,8 +14828,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id": string;
+                "segments": Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -14934,6 +15274,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -15141,6 +15482,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -15225,6 +15573,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -15235,8 +15584,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -15369,6 +15723,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -15424,6 +15779,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -15432,7 +15788,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -15490,6 +15849,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -15591,6 +15951,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -15798,6 +16159,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -15882,6 +16250,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -15892,8 +16261,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -16026,6 +16400,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -16081,6 +16456,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -16089,7 +16465,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -16147,6 +16526,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -18513,6 +18893,7 @@ export interface operations {
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "sharing_mode"?: string;
+            "source_affinity"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -18585,6 +18966,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -18766,6 +19148,7 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<Record<string, unknown>>;
               "message_detail"?: (Record<string, unknown>) | null;
             }) | null;
             "run_logic"?: ({
@@ -18776,6 +19159,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -18822,6 +19206,7 @@ export interface operations {
             "override_capacity_shortfall"?: boolean;
             "override_script_shakeout_failure"?: boolean;
           }) | null;
+          "termination_mode"?: string;
           "test"?: ({
             "application_id"?: string;
             "assignment"?: ({
@@ -18833,6 +19218,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -18905,6 +19291,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -19085,6 +19472,7 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -19095,6 +19483,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -19136,6 +19525,7 @@ export interface operations {
             "script_id"?: string;
             "script_shakeout"?: boolean;
             "start_delay"?: string;
+            "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "traffic_profile"?: ({
               "amplitude"?: {
@@ -19327,6 +19717,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -19563,6 +19954,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -19650,6 +20042,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, (Record<string, unknown>) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -19882,6 +20275,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -20336,6 +20730,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -20346,6 +20741,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -20469,6 +20865,7 @@ export interface operations {
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               }) | null;
+              "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
               "traffic_profile"?: ({
@@ -20680,6 +21077,7 @@ export interface operations {
             "method"?: string;
             "name"?: string;
             "object_ref"?: string;
+            "pacing_ids"?: Array<string>;
             "params"?: Record<string, unknown>;
             "selector"?: string;
             "soap"?: ({
@@ -20776,6 +21174,7 @@ export interface operations {
             "method"?: string;
             "name"?: string;
             "object_ref"?: string;
+            "pacing_ids"?: Array<string>;
             "params"?: Record<string, unknown>;
             "selector"?: string;
             "soap"?: ({
@@ -20822,6 +21221,7 @@ export interface operations {
             "data_source"?: string;
             "end"?: number;
             "format"?: string;
+            "format_dialect"?: string;
             "length"?: number;
             "max"?: number;
             "min"?: number;
@@ -20830,7 +21230,10 @@ export interface operations {
             "on_exhaustion"?: string;
             "pad_char"?: string;
             "pad_width"?: number;
+            "random_algorithm"?: string;
             "same_line_as"?: string;
+            "scope"?: string;
+            "scope_id"?: string;
             "seed"?: (number) | null;
             "selection"?: string;
             "start"?: number;
@@ -20889,6 +21292,7 @@ export interface operations {
             "method"?: string;
             "name"?: string;
             "object_ref"?: string;
+            "pacing_ids"?: Array<string>;
             "params"?: Record<string, unknown>;
             "selector"?: string;
             "soap"?: ({
@@ -20985,6 +21389,7 @@ export interface operations {
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "sharing_mode"?: string;
+            "source_affinity"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -21058,6 +21463,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -21199,6 +21605,7 @@ export interface operations {
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -21209,6 +21616,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -21447,6 +21855,12 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
               "message_detail"?: ({
                 "include_resources"?: (boolean) | null;
                 "max_item_bytes"?: number;
@@ -21464,6 +21878,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -21530,6 +21945,7 @@ export interface operations {
           "scenario_mode"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "termination_mode"?: string;
           "traffic_profile"?: ({
             "amplitude"?: {
               "mode"?: string;
@@ -21645,6 +22061,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "associated_releases"?: Array<{
@@ -21924,6 +22341,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -21941,6 +22364,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -22100,6 +22524,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -22241,6 +22666,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -22251,6 +22677,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -22300,6 +22727,7 @@ export interface operations {
               "vusers": number;
             }>;
             "start_delay"?: string;
+            "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -22643,6 +23071,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -22659,6 +23088,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -22919,6 +23349,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -23012,6 +23449,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -23029,8 +23467,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -23187,6 +23630,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -23203,6 +23647,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -23258,6 +23703,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -23266,7 +23712,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -23325,6 +23774,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -23341,6 +23791,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -23478,6 +23929,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -23685,6 +24137,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -23769,6 +24228,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -23779,8 +24239,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -23913,6 +24378,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -23968,6 +24434,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -23976,7 +24443,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -24034,6 +24504,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -24214,6 +24685,7 @@ export interface operations {
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "sharing_mode"?: string;
+            "source_affinity"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -24296,6 +24768,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -24437,6 +24910,7 @@ export interface operations {
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -24447,6 +24921,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -24690,6 +25165,12 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
               "message_detail"?: ({
                 "include_resources"?: (boolean) | null;
                 "max_item_bytes"?: number;
@@ -24707,6 +25188,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -24776,6 +25258,7 @@ export interface operations {
           "script_id"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "traffic_profile"?: ({
             "amplitude"?: {
@@ -24910,6 +25393,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -25242,6 +25726,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -25397,6 +25882,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -25407,6 +25893,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -25528,6 +26015,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -25961,6 +26449,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -26748,6 +27237,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -26765,6 +27260,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -26916,6 +27412,7 @@ export interface operations {
               "summary"?: string;
               "sustained_breach"?: boolean;
             }) | null;
+            "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
             "traffic_profile"?: ({
@@ -28940,6 +29437,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -29003,6 +29501,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -29178,6 +29677,7 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -29188,6 +29688,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -29226,6 +29727,7 @@ export interface operations {
             "scenario_mode"?: string;
             "script_shakeout"?: boolean;
             "start_delay"?: string;
+            "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -29557,6 +30059,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "data_pools"?: Array<{
@@ -29620,6 +30123,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -29795,6 +30299,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -29805,6 +30310,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -29843,6 +30349,7 @@ export interface operations {
               "scenario_mode"?: string;
               "script_shakeout"?: boolean;
               "start_delay"?: string;
+              "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -30096,6 +30603,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "data_pools"?: Array<{
@@ -30159,6 +30667,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -30334,6 +30843,7 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -30344,6 +30854,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -30382,6 +30893,7 @@ export interface operations {
             "scenario_mode"?: string;
             "script_shakeout"?: boolean;
             "start_delay"?: string;
+            "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -30713,6 +31225,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "data_pools"?: Array<{
@@ -30776,6 +31289,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -30951,6 +31465,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -30961,6 +31476,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -30999,6 +31515,7 @@ export interface operations {
               "scenario_mode"?: string;
               "script_shakeout"?: boolean;
               "start_delay"?: string;
+              "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -31959,6 +32476,11 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -32298,6 +32820,7 @@ export interface operations {
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "sharing_mode"?: string;
+            "source_affinity"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -32380,6 +32903,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -32521,6 +33045,7 @@ export interface operations {
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -32531,6 +33056,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -32774,6 +33300,12 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
               "message_detail"?: ({
                 "include_resources"?: (boolean) | null;
                 "max_item_bytes"?: number;
@@ -32791,6 +33323,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -32860,6 +33393,7 @@ export interface operations {
           "script_id"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "traffic_profile"?: ({
             "amplitude"?: {
@@ -32976,6 +33510,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "assignment_recommendation"?: ({
@@ -33079,6 +33614,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -33234,6 +33770,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -33244,6 +33781,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -33339,6 +33877,7 @@ export interface operations {
               "warnings"?: Array<string>;
             }) | null;
             "scenario_mode"?: string;
+            "termination_mode"?: string;
             "total_vusers": number;
           }) | null;
         };
@@ -33760,6 +34299,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -33967,6 +34507,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -34051,6 +34598,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -34061,8 +34609,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -34195,6 +34748,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -34250,6 +34804,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -34258,7 +34813,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -34316,6 +34874,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -35461,6 +36020,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -35668,6 +36228,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -35752,6 +36319,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -35762,8 +36330,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -35896,6 +36469,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -35951,6 +36525,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -35959,7 +36534,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -36017,6 +36595,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -39110,6 +39689,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -39346,6 +39926,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -39433,6 +40014,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, (Record<string, unknown>) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -39665,6 +40247,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -40119,6 +40702,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -40129,6 +40713,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -40252,6 +40837,7 @@ export interface operations {
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               }) | null;
+              "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
               "traffic_profile"?: ({
@@ -40681,6 +41267,15 @@ export interface operations {
             }>;
             "completed_at"?: string;
             "created_at": string;
+            "csv_export_incomplete"?: string;
+            "csv_exports"?: Array<{
+              "error"?: string;
+              "file_name": string;
+              "group": string;
+              "id": string;
+              "rows": number;
+              "status": string;
+            }>;
             "dynatrace_evidence_count"?: number;
             "dynatrace_evidence_file"?: string;
             "elk_evidence_count"?: number;
@@ -40697,6 +41292,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -40704,6 +41300,15 @@ export interface operations {
               "controller_env"?: Record<string, string>;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
+              "csv_exports"?: Array<{
+                "export": {
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                };
+                "group": string;
+              }>;
               "duration"?: string;
               "dynatrace_capture"?: ({
                 "connection_id": string;
@@ -40914,6 +41519,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -41107,6 +41713,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -41117,6 +41724,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -41198,6 +41806,7 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "termination_mode"?: string;
               "total_vusers"?: number;
               "traffic_profile"?: ({
                 "amplitude"?: {
@@ -41273,6 +41882,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -41280,6 +41890,15 @@ export interface operations {
               "controller_env"?: Record<string, string>;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
+              "csv_exports"?: Array<{
+                "export": {
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                };
+                "group": string;
+              }>;
               "duration"?: string;
               "dynatrace_capture"?: ({
                 "connection_id": string;
@@ -41490,6 +42109,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -41683,6 +42303,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -41693,6 +42314,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -41774,6 +42396,7 @@ export interface operations {
               "started_by_subject"?: string;
               "stopped_by_display_name"?: string;
               "stopped_by_subject"?: string;
+              "termination_mode"?: string;
               "total_vusers"?: number;
               "traffic_profile"?: ({
                 "amplitude"?: {
@@ -42217,6 +42840,15 @@ export interface operations {
               }>;
               "completed_at"?: string;
               "created_at": string;
+              "csv_export_incomplete"?: string;
+              "csv_exports"?: Array<{
+                "error"?: string;
+                "file_name": string;
+                "group": string;
+                "id": string;
+                "rows": number;
+                "status": string;
+              }>;
               "dynatrace_evidence_count"?: number;
               "dynatrace_evidence_file"?: string;
               "elk_evidence_count"?: number;
@@ -42233,6 +42865,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "baseline_pinned"?: boolean;
@@ -42240,6 +42873,10 @@ export interface operations {
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
+                "csv_exports"?: Array<{
+                  "export": Record<string, unknown>;
+                  "group": string;
+                }>;
                 "duration"?: string;
                 "dynatrace_capture"?: ({
                   "connection_id": string;
@@ -42431,6 +43068,7 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: ({
                   "amplitude"?: Record<string, unknown>;
@@ -42469,6 +43107,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "baseline_pinned"?: boolean;
@@ -42476,6 +43115,10 @@ export interface operations {
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
+                "csv_exports"?: Array<{
+                  "export": Record<string, unknown>;
+                  "group": string;
+                }>;
                 "duration"?: string;
                 "dynatrace_capture"?: ({
                   "connection_id": string;
@@ -42667,6 +43310,7 @@ export interface operations {
                 "started_by_subject"?: string;
                 "stopped_by_display_name"?: string;
                 "stopped_by_subject"?: string;
+                "termination_mode"?: string;
                 "total_vusers"?: number;
                 "traffic_profile"?: ({
                   "amplitude"?: Record<string, unknown>;
@@ -43505,6 +44149,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "associated_releases"?: Array<{
@@ -43784,6 +44429,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -43801,6 +44452,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -43960,6 +44612,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -44101,6 +44754,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -44111,6 +44765,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -44160,6 +44815,7 @@ export interface operations {
               "vusers": number;
             }>;
             "start_delay"?: string;
+            "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -44431,6 +45087,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -44638,6 +45295,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -44722,6 +45386,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -44732,8 +45397,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -44866,6 +45536,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -44921,6 +45592,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -44929,7 +45601,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -44987,6 +45662,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -46287,6 +46963,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -46619,6 +47296,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -46774,6 +47452,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -46784,6 +47463,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -46905,6 +47585,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -47338,6 +48019,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -48125,6 +48807,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -48142,6 +48830,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -48293,6 +48982,7 @@ export interface operations {
               "summary"?: string;
               "sustained_breach"?: boolean;
             }) | null;
+            "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
             "traffic_profile"?: ({
@@ -48454,6 +49144,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -48462,7 +49153,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -48712,6 +49406,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -48729,6 +49429,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -48996,6 +49697,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -49013,6 +49720,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -49266,6 +49974,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -49283,6 +49997,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -49536,6 +50251,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -49553,6 +50274,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -49738,6 +50460,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -49818,6 +50541,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -50008,6 +50732,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -50018,6 +50743,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -50186,6 +50912,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -50266,6 +50993,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -50456,6 +51184,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -50466,6 +51195,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -50619,6 +51349,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "controller_env"?: Record<string, string>;
@@ -50758,6 +51489,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -50908,6 +51640,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -50918,6 +51651,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -52574,6 +53308,9 @@ export interface operations {
           "include_assertions"?: string;
           "name"?: string;
           "scenario_draft"?: string;
+          "time_mode"?: string;
+          "timezone"?: string;
+          "variable_bindings"?: string;
           [key: string]: unknown;
         };
       };
@@ -53021,6 +53758,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -53228,6 +53966,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -53312,6 +54057,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -53322,8 +54068,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -53456,6 +54207,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -53511,6 +54263,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -53519,7 +54272,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -53577,6 +54333,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -53670,6 +54427,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -53877,6 +54635,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -53961,6 +54726,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -53971,8 +54737,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -54105,6 +54876,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -54160,6 +54932,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -54168,7 +54941,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -54226,6 +55002,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -54997,6 +55774,7 @@ export interface operations {
                   "stopped_by_display_name"?: string;
                   "stopped_by_subject"?: string;
                   "telemetry_health"?: (Record<string, unknown>) | null;
+                  "termination_mode"?: string;
                   "timeslot_id"?: (string) | null;
                   "total_vusers": number;
                   "traffic_profile"?: (Record<string, unknown>) | null;
@@ -55018,6 +55796,7 @@ export interface operations {
                   "scenario_mode"?: string;
                   "script_shakeout"?: boolean;
                   "start_delay"?: string;
+                  "termination_mode"?: string;
                   "traffic_profile"?: (Record<string, unknown>) | null;
                   "workload_shape_id"?: (string) | null;
                 };
@@ -55036,6 +55815,7 @@ export interface operations {
                   "http"?: Record<string, unknown>;
                   "java_http"?: Record<string, unknown>;
                   "java_vuser"?: Record<string, unknown>;
+                  "jmeter"?: (Record<string, unknown>) | null;
                   "jms"?: Record<string, unknown>;
                   "kafka"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
@@ -55044,6 +55824,7 @@ export interface operations {
                   "pacing"?: Record<string, unknown>;
                   "results"?: Record<string, unknown>;
                   "run_logic"?: Record<string, unknown>;
+                  "sampler_schedules"?: Array<Record<string, unknown>>;
                   "sapgui"?: Record<string, unknown>;
                   "soap"?: Record<string, unknown>;
                   "think_time"?: Record<string, unknown>;
@@ -60822,6 +61603,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -61154,6 +61936,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -61309,6 +62092,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -61319,6 +62103,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -61440,6 +62225,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -61873,6 +62659,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -62660,6 +63447,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -62677,6 +63470,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -62828,6 +63622,7 @@ export interface operations {
               "summary"?: string;
               "sustained_breach"?: boolean;
             }) | null;
+            "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
             "traffic_profile"?: ({
@@ -63078,6 +63873,7 @@ export interface operations {
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "sharing_mode"?: string;
+            "source_affinity"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -63150,6 +63946,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -63331,6 +64128,7 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<Record<string, unknown>>;
               "message_detail"?: (Record<string, unknown>) | null;
             }) | null;
             "run_logic"?: ({
@@ -63341,6 +64139,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -63382,6 +64181,7 @@ export interface operations {
           "script_id"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "termination_mode"?: string;
           "timeslot_id"?: (string) | null;
           "traffic_profile"?: ({
             "amplitude"?: {
@@ -63457,7 +64257,8 @@ export interface operations {
             }>;
             "candidate_window": {
               "duration_seconds": number;
-              "end_at": string;
+              "end_at"?: string;
+              "open_ended"?: boolean;
               "start_at": string;
             };
             "capacity_advisory"?: ({
@@ -63679,6 +64480,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -63886,6 +64688,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -63970,6 +64779,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -63980,8 +64790,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -64114,6 +64929,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -64169,6 +64985,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -64177,7 +64994,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -64235,6 +65055,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -64276,6 +65097,7 @@ export interface operations {
             }) | null;
             "extractor": {
               "convert"?: string;
+              "default_value"?: (string) | null;
               "expression": string;
               "mode"?: string;
               "name": string;
@@ -64297,6 +65119,7 @@ export interface operations {
               "error"?: string;
               "extractor": {
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression": string;
                 "mode"?: string;
                 "name": string;
@@ -64479,6 +65302,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -64686,6 +65510,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -64770,6 +65601,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -64780,8 +65612,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -64914,6 +65751,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -64969,6 +65807,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -64977,7 +65816,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -65035,6 +65877,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -65137,6 +65980,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -65344,6 +66188,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -65428,6 +66279,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -65438,8 +66290,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -65572,6 +66429,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -65627,6 +66485,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -65635,7 +66494,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -65693,6 +66555,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -65864,6 +66727,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -66071,6 +66935,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -66155,6 +67026,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -66165,8 +67037,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -66299,6 +67176,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -66354,6 +67232,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -66362,7 +67241,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -66420,6 +67302,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -66637,6 +67520,7 @@ export interface operations {
             "body"?: (string) | null;
             "extractor"?: ({
               "convert"?: string;
+              "default_value"?: (string) | null;
               "expression"?: string;
               "mode"?: string;
               "name"?: string;
@@ -66655,6 +67539,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -66663,7 +67548,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -66743,6 +67631,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -66950,6 +67839,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -67034,6 +67930,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -67044,8 +67941,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -67178,6 +68080,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -67233,6 +68136,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -67241,7 +68145,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -67299,6 +68206,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -67388,6 +68296,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -67595,6 +68504,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -67679,6 +68595,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -67689,8 +68606,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -67823,6 +68745,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -67878,6 +68801,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -67886,7 +68810,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -67944,6 +68871,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -68057,6 +68985,7 @@ export interface operations {
             "data_source"?: string;
             "end"?: number;
             "format"?: string;
+            "format_dialect"?: string;
             "length"?: number;
             "max"?: number;
             "min"?: number;
@@ -68065,7 +68994,10 @@ export interface operations {
             "on_exhaustion"?: string;
             "pad_char"?: string;
             "pad_width"?: number;
+            "random_algorithm"?: string;
             "same_line_as"?: string;
+            "scope"?: string;
+            "scope_id"?: string;
             "seed"?: (number) | null;
             "selection"?: string;
             "start"?: number;
@@ -68844,6 +69776,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -69051,6 +69984,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -69135,6 +70075,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -69145,8 +70086,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -69279,6 +70225,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -69334,6 +70281,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -69342,7 +70290,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -69400,6 +70351,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -69890,6 +70842,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -70126,6 +71079,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -70213,6 +71167,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, (Record<string, unknown>) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -70445,6 +71400,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -70899,6 +71855,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -70909,6 +71866,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -71032,6 +71990,7 @@ export interface operations {
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               }) | null;
+              "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
               "traffic_profile"?: ({
@@ -71226,6 +72185,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -71462,6 +72422,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -71549,6 +72510,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, (Record<string, unknown>) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -71781,6 +72743,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -72235,6 +73198,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -72245,6 +73209,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -72368,6 +73333,7 @@ export interface operations {
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               }) | null;
+              "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
               "traffic_profile"?: ({
@@ -72562,6 +73528,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -72798,6 +73765,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -72885,6 +73853,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, (Record<string, unknown>) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -73117,6 +74086,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -73571,6 +74541,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -73581,6 +74552,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -73704,6 +74676,7 @@ export interface operations {
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               }) | null;
+              "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
               "traffic_profile"?: ({
@@ -73898,6 +74871,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -74134,6 +75108,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -74221,6 +75196,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, (Record<string, unknown>) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -74453,6 +75429,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -74907,6 +75884,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -74917,6 +75895,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -75040,6 +76019,7 @@ export interface operations {
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               }) | null;
+              "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
               "traffic_profile"?: ({
@@ -75234,6 +76214,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "baseline_pinned"?: boolean;
@@ -75470,6 +76451,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "continue_on_error"?: ({
@@ -75557,6 +76539,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, (Record<string, unknown>) | null>;
                 "dependency_map"?: ({
                   "edges": Array<Record<string, unknown>>;
@@ -75789,6 +76772,7 @@ export interface operations {
                   "rejected_vusers": number;
                   "saturated": boolean;
                 }) | null;
+                "completed_iterations": number;
                 "dependency_health"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
@@ -76243,6 +77227,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -76253,6 +77238,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -76376,6 +77362,7 @@ export interface operations {
                 "summary"?: string;
                 "sustained_breach"?: boolean;
               }) | null;
+              "termination_mode"?: string;
               "timeslot_id"?: (string) | null;
               "total_vusers": number;
               "traffic_profile"?: ({
@@ -76610,6 +77597,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -76817,6 +77805,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -76901,6 +77896,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -76911,8 +77907,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -77045,6 +78046,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -77100,6 +78102,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -77108,7 +78111,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -77166,6 +78172,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -77353,6 +78360,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -77560,6 +78568,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -77644,6 +78659,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -77654,8 +78670,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -77788,6 +78809,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -77843,6 +78865,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -77851,7 +78874,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -77909,6 +78935,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -79396,6 +80423,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -79603,6 +80631,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -79687,6 +80722,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -79697,8 +80733,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -79831,6 +80872,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -79886,6 +80928,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -79894,7 +80937,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -79952,6 +80998,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -80646,6 +81693,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -80656,6 +81704,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -80767,6 +81816,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -80950,6 +82000,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -81034,6 +82091,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -81044,8 +82102,10 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<Record<string, unknown>>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -81146,6 +82206,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -81177,6 +82238,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -81185,7 +82247,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -81217,6 +82282,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -81330,6 +82396,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -81537,6 +82604,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -81621,6 +82695,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -81631,8 +82706,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -81765,6 +82845,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -81820,6 +82901,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -81828,7 +82910,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -81886,6 +82971,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -82000,6 +83086,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -82024,6 +83111,7 @@ export interface operations {
               "http"?: Record<string, unknown>;
               "java_http"?: Record<string, unknown>;
               "java_vuser"?: Record<string, unknown>;
+              "jmeter"?: (Record<string, unknown>) | null;
               "jms"?: Record<string, unknown>;
               "kafka"?: Record<string, unknown>;
               "log"?: Record<string, unknown>;
@@ -82032,6 +83120,7 @@ export interface operations {
               "pacing"?: Record<string, unknown>;
               "results"?: Record<string, unknown>;
               "run_logic"?: Record<string, unknown>;
+              "sampler_schedules"?: Array<Record<string, unknown>>;
               "sapgui"?: Record<string, unknown>;
               "soap"?: Record<string, unknown>;
               "think_time"?: Record<string, unknown>;
@@ -82089,6 +83178,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -82114,6 +83204,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -82122,7 +83213,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -82154,6 +83248,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: (Record<string, unknown>) | null;
@@ -83062,6 +84157,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "data_pools"?: Array<{
@@ -83125,6 +84221,7 @@ export interface operations {
                   "selected_targets"?: Array<string>;
                   "shard_strategy"?: string;
                   "sharing_mode"?: string;
+                  "source_affinity"?: string;
                   "tolerate_generator_loss"?: boolean;
                 }) | null;
                 "initialization"?: string;
@@ -83300,6 +84397,7 @@ export interface operations {
                   "replacement"?: string;
                 }>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -83310,6 +84408,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -83348,6 +84447,7 @@ export interface operations {
               "scenario_mode"?: string;
               "script_shakeout"?: boolean;
               "start_delay"?: string;
+              "termination_mode"?: string;
               "traffic_profile"?: ({
                 "amplitude"?: {
                   "mode"?: string;
@@ -83683,6 +84783,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -83890,6 +84991,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -83974,6 +85082,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -83984,8 +85093,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -84118,6 +85232,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -84173,6 +85288,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -84181,7 +85297,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -84239,6 +85358,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -84750,6 +85870,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -84957,6 +86078,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -85041,6 +86169,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -85051,8 +86180,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -85185,6 +86319,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -85240,6 +86375,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -85248,7 +86384,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -85306,6 +86445,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -85894,6 +87034,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -86101,6 +87242,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -86185,6 +87333,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -86195,8 +87344,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -86329,6 +87483,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -86384,6 +87539,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -86392,7 +87548,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -86450,6 +87609,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -87037,6 +88197,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -87244,6 +88405,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -87328,6 +88496,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -87338,8 +88507,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -87472,6 +88646,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -87527,6 +88702,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -87535,7 +88711,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -87593,6 +88772,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -88181,6 +89361,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -88388,6 +89569,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -88472,6 +89660,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -88482,8 +89671,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -88616,6 +89810,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -88671,6 +89866,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -88679,7 +89875,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -88737,6 +89936,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -89324,6 +90524,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -89531,6 +90732,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -89615,6 +90823,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -89625,8 +90834,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -89759,6 +90973,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -89814,6 +91029,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -89822,7 +91038,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -89880,6 +91099,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -92925,6 +94145,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "baseline_pinned"?: boolean;
@@ -93257,6 +94478,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "continue_on_error"?: ({
@@ -93412,6 +94634,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -93422,6 +94645,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -93543,6 +94767,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -93976,6 +95201,7 @@ export interface operations {
                 "rejected_vusers": number;
                 "saturated": boolean;
               }) | null;
+              "completed_iterations": number;
               "dependency_health"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -94763,6 +95989,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -94780,6 +96012,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -94931,6 +96164,7 @@ export interface operations {
               "summary"?: string;
               "sustained_breach"?: boolean;
             }) | null;
+            "termination_mode"?: string;
             "timeslot_id"?: (string) | null;
             "total_vusers": number;
             "traffic_profile"?: ({
@@ -95250,6 +96484,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -95457,6 +96692,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -95541,6 +96783,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               };
               "run_logic"?: {
@@ -95551,8 +96794,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -95685,6 +96933,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -95740,6 +96989,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -95748,7 +96998,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -95806,6 +97059,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -95906,6 +97160,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -96113,6 +97368,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -96197,6 +97459,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -96207,8 +97470,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -96341,6 +97609,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -96396,6 +97665,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -96404,7 +97674,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -96462,6 +97735,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -98932,6 +100206,7 @@ export interface operations {
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "sharing_mode"?: string;
+            "source_affinity"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -99005,6 +100280,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -99146,6 +100422,7 @@ export interface operations {
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -99156,6 +100433,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -99394,6 +100672,12 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
               "message_detail"?: ({
                 "include_resources"?: (boolean) | null;
                 "max_item_bytes"?: number;
@@ -99411,6 +100695,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -99477,6 +100762,7 @@ export interface operations {
           "scenario_mode"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "termination_mode"?: string;
           "traffic_profile"?: ({
             "amplitude"?: {
               "mode"?: string;
@@ -99592,6 +100878,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "associated_releases"?: Array<{
@@ -99871,6 +101158,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -99888,6 +101181,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -100047,6 +101341,7 @@ export interface operations {
                 "selected_targets"?: Array<string>;
                 "shard_strategy"?: string;
                 "sharing_mode"?: string;
+                "source_affinity"?: string;
                 "tolerate_generator_loss"?: boolean;
               }) | null;
               "initialization"?: string;
@@ -100188,6 +101483,7 @@ export interface operations {
                 }) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: ({
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 }) | null;
                 "run_logic"?: ({
@@ -100198,6 +101494,7 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
@@ -100247,6 +101544,7 @@ export interface operations {
               "vusers": number;
             }>;
             "start_delay"?: string;
+            "termination_mode"?: string;
             "traffic_profile"?: ({
               "amplitude"?: {
                 "mode"?: string;
@@ -100690,6 +101988,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -100706,6 +102005,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -100966,6 +102266,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -101059,6 +102366,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -101076,8 +102384,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -101234,6 +102547,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -101250,6 +102564,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -101305,6 +102620,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -101313,7 +102629,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -101372,6 +102691,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -101388,6 +102708,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -101524,6 +102845,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -101731,6 +103053,13 @@ export interface operations {
                   "use_xbootclasspath"?: (boolean) | null;
                   "work_dir"?: string;
                 };
+                "jmeter"?: ({
+                  "context_confirmed"?: boolean;
+                  "profile": string;
+                  "source_group_id": string;
+                  "source_plan_id": string;
+                  "timezone"?: string;
+                }) | null;
                 "jms"?: {
                   "acknowledgement"?: string;
                   "broker_url"?: string;
@@ -101815,6 +103144,7 @@ export interface operations {
                   "type": string;
                 };
                 "results"?: {
+                  "csv_exports"?: Array<Record<string, unknown>>;
                   "message_detail"?: (Record<string, unknown>) | null;
                 };
                 "run_logic"?: {
@@ -101825,8 +103155,13 @@ export interface operations {
                   "iterations"?: number;
                   "max_in_flight"?: number;
                   "max_transactions"?: number;
+                  "termination_mode"?: string;
                   "workload_model"?: string;
                 };
+                "sampler_schedules"?: Array<{
+                  "id": string;
+                  "segments": Array<Record<string, unknown>>;
+                }>;
                 "sapgui"?: {
                   "auto_logon"?: boolean;
                   "client"?: string;
@@ -101959,6 +103294,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -102014,6 +103350,7 @@ export interface operations {
                 "data_source"?: string;
                 "end"?: number;
                 "format"?: string;
+                "format_dialect"?: string;
                 "length"?: number;
                 "max"?: number;
                 "min"?: number;
@@ -102022,7 +103359,10 @@ export interface operations {
                 "on_exhaustion"?: string;
                 "pad_char"?: string;
                 "pad_width"?: number;
+                "random_algorithm"?: string;
                 "same_line_as"?: string;
+                "scope"?: string;
+                "scope_id"?: string;
                 "seed"?: (number) | null;
                 "selection"?: string;
                 "start"?: number;
@@ -102080,6 +103420,7 @@ export interface operations {
                 "method"?: string;
                 "name": string;
                 "object_ref"?: string;
+                "pacing_ids"?: Array<string>;
                 "params"?: Record<string, unknown>;
                 "selector"?: string;
                 "soap"?: ({
@@ -104154,6 +105495,7 @@ export interface operations {
             "data_source"?: string;
             "end"?: number;
             "format"?: string;
+            "format_dialect"?: string;
             "length"?: number;
             "max"?: number;
             "min"?: number;
@@ -104162,7 +105504,10 @@ export interface operations {
             "on_exhaustion"?: string;
             "pad_char"?: string;
             "pad_width"?: number;
+            "random_algorithm"?: string;
             "same_line_as"?: string;
+            "scope"?: string;
+            "scope_id"?: string;
             "seed"?: (number) | null;
             "selection"?: string;
             "start"?: number;
@@ -104193,6 +105538,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -104201,7 +105547,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -104461,6 +105810,12 @@ export interface operations {
               "type"?: string;
             }) | null;
             "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
               "message_detail"?: ({
                 "include_resources"?: (boolean) | null;
                 "max_item_bytes"?: number;
@@ -104478,6 +105833,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -104742,6 +106098,12 @@ export interface operations {
                 "replacement"?: string;
               }>;
               "results"?: ({
+                "csv_exports"?: Array<{
+                  "action_name": string;
+                  "columns": Array<Record<string, unknown>>;
+                  "file_name": string;
+                  "id": string;
+                }>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -104759,6 +106121,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -105216,6 +106579,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -105232,6 +106596,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -105492,6 +106857,13 @@ export interface operations {
                 "use_xbootclasspath"?: (boolean) | null;
                 "work_dir"?: string;
               };
+              "jmeter"?: ({
+                "context_confirmed"?: boolean;
+                "profile"?: string;
+                "source_group_id"?: string;
+                "source_plan_id"?: string;
+                "timezone"?: string;
+              }) | null;
               "jms"?: {
                 "acknowledgement"?: string;
                 "broker_url"?: string;
@@ -105585,6 +106957,7 @@ export interface operations {
                 "type"?: string;
               };
               "results"?: {
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: ({
                   "include_resources"?: (boolean) | null;
                   "max_item_bytes"?: number;
@@ -105602,8 +106975,13 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               };
+              "sampler_schedules"?: Array<{
+                "id"?: string;
+                "segments"?: Array<Record<string, unknown>>;
+              }>;
               "sapgui"?: {
                 "auto_logon"?: boolean;
                 "client"?: string;
@@ -105760,6 +107138,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -105776,6 +107155,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -105831,6 +107211,7 @@ export interface operations {
               "data_source"?: string;
               "end"?: number;
               "format"?: string;
+              "format_dialect"?: string;
               "length"?: number;
               "max"?: number;
               "min"?: number;
@@ -105839,7 +107220,10 @@ export interface operations {
               "on_exhaustion"?: string;
               "pad_char"?: string;
               "pad_width"?: number;
+              "random_algorithm"?: string;
               "same_line_as"?: string;
+              "scope"?: string;
+              "scope_id"?: string;
               "seed"?: (number) | null;
               "selection"?: string;
               "start"?: number;
@@ -105898,6 +107282,7 @@ export interface operations {
               }) | null;
               "extractors"?: Array<{
                 "convert"?: string;
+                "default_value"?: (string) | null;
                 "expression"?: string;
                 "mode"?: string;
                 "name"?: string;
@@ -105914,6 +107299,7 @@ export interface operations {
               "method"?: string;
               "name"?: string;
               "object_ref"?: string;
+              "pacing_ids"?: Array<string>;
               "params"?: Record<string, unknown>;
               "selector"?: string;
               "soap"?: ({
@@ -106118,6 +107504,9 @@ export interface operations {
           "include_assertions"?: string;
           "name"?: string;
           "scenario_draft"?: string;
+          "time_mode"?: string;
+          "timezone"?: string;
+          "variable_bindings"?: string;
           [key: string]: unknown;
         };
       };
@@ -106264,6 +107653,7 @@ export interface operations {
             "selected_targets"?: Array<string>;
             "shard_strategy"?: string;
             "sharing_mode"?: string;
+            "source_affinity"?: string;
             "tolerate_generator_loss"?: boolean;
           }) | null;
           "data_pools"?: Array<{
@@ -106337,6 +107727,7 @@ export interface operations {
               "selected_targets"?: Array<string>;
               "shard_strategy"?: string;
               "sharing_mode"?: string;
+              "source_affinity"?: string;
               "tolerate_generator_loss"?: boolean;
             }) | null;
             "initialization"?: string;
@@ -106478,6 +107869,7 @@ export interface operations {
               }) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
               "results"?: ({
+                "csv_exports"?: Array<Record<string, unknown>>;
                 "message_detail"?: (Record<string, unknown>) | null;
               }) | null;
               "run_logic"?: ({
@@ -106488,6 +107880,7 @@ export interface operations {
                 "iterations"?: number;
                 "max_in_flight"?: number;
                 "max_transactions"?: number;
+                "termination_mode"?: string;
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
@@ -106726,6 +108119,12 @@ export interface operations {
               "replacement"?: string;
             }>;
             "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
               "message_detail"?: ({
                 "include_resources"?: (boolean) | null;
                 "max_item_bytes"?: number;
@@ -106743,6 +108142,7 @@ export interface operations {
               "iterations"?: number;
               "max_in_flight"?: number;
               "max_transactions"?: number;
+              "termination_mode"?: string;
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
@@ -106809,6 +108209,7 @@ export interface operations {
           "scenario_mode"?: string;
           "script_shakeout"?: boolean;
           "start_delay"?: string;
+          "termination_mode"?: string;
           "traffic_profile"?: ({
             "amplitude"?: {
               "mode"?: string;

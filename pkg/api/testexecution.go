@@ -3045,6 +3045,9 @@ func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int)
 }
 
 func (tr *TestRunner) ScaleVUsersWithOptions(id string, groupName string, targetVUsers int, opts ScaleVUsersOptions) error {
+	if err := tr.rejectIterationControl(id); err != nil {
+		return err
+	}
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
@@ -4291,6 +4294,9 @@ func (tr *TestRunner) rollbackDurationReservationLocked(test *ManagedTest, appli
 }
 
 func (tr *TestRunner) AdjustDuration(id string, newDuration time.Duration) error {
+	if err := tr.rejectIterationControl(id); err != nil {
+		return err
+	}
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
 	}
@@ -5266,10 +5272,11 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	return engine.NewMultiGroup(engine.MultiGroupConfig{
-		Groups:       groups,
-		Duration:     test.Duration,
-		PreBaseline:  preBaseline,
-		PostBaseline: postBaseline,
+		TerminationMode: test.TerminationMode,
+		Groups:          groups,
+		Duration:        test.Duration,
+		PreBaseline:     preBaseline,
+		PostBaseline:    postBaseline,
 	})
 }
 

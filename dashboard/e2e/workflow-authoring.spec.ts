@@ -81,7 +81,7 @@ test('[U04] project scope and browser history never substitute a similarly named
     await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
     await page.getByRole('tab', { name: 'Runtime Settings' }).click()
     await expect(page.getByRole('textbox', { name: 'Base URL' })).toHaveValue(`http://127.0.0.1:${port}`)
-    await expect(page.getByRole('button', { name: new RegExp(`Current project: ${workspace.label}`) })).toBeVisible()
+    await expect(page.getByRole('button', { name: new RegExp(`Workspace context\\..*${workspace.label} project`) })).toBeVisible()
   }
   await page.reload()
   await page.getByRole('tab', { name: 'Runtime Settings' }).click()

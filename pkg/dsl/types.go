@@ -145,20 +145,22 @@ type ImportMetadata struct {
 }
 
 type ScriptConfig struct {
-	BaseURL    string           `json:"base_url"`
-	ThinkTime  ThinkTimeConfig  `json:"think_time,omitempty"`
-	Pacing     PacingConfig     `json:"pacing,omitempty"`
-	Bruno      BrunoConfig      `json:"bruno,omitempty"`
-	HTTP       HTTPConfig       `json:"http,omitempty"`
-	WebRuntime WebRuntimeConfig `json:"web_runtime,omitempty"`
-	WebSocket  WebSocketConfig  `json:"websocket,omitempty"`
-	GRPC       GRPCConfig       `json:"grpc,omitempty"`
-	JavaHTTP   JavaHTTPConfig   `json:"java_http,omitempty"`
-	JavaVuser  JavaVuserConfig  `json:"java_vuser,omitempty"`
-	SOAP       SOAPConfig       `json:"soap,omitempty"`
-	Database   DatabaseConfig   `json:"database,omitempty"`
-	Network    NetworkConfig    `json:"network,omitempty"`
-	Browser    BrowserConfig    `json:"browser,omitempty"`
+	JMeter           *JMeterCompatibility `json:"jmeter,omitempty"`
+	SamplerSchedules []SamplerSchedule    `json:"sampler_schedules,omitempty"`
+	BaseURL          string               `json:"base_url"`
+	ThinkTime        ThinkTimeConfig      `json:"think_time,omitempty"`
+	Pacing           PacingConfig         `json:"pacing,omitempty"`
+	Bruno            BrunoConfig          `json:"bruno,omitempty"`
+	HTTP             HTTPConfig           `json:"http,omitempty"`
+	WebRuntime       WebRuntimeConfig     `json:"web_runtime,omitempty"`
+	WebSocket        WebSocketConfig      `json:"websocket,omitempty"`
+	GRPC             GRPCConfig           `json:"grpc,omitempty"`
+	JavaHTTP         JavaHTTPConfig       `json:"java_http,omitempty"`
+	JavaVuser        JavaVuserConfig      `json:"java_vuser,omitempty"`
+	SOAP             SOAPConfig           `json:"soap,omitempty"`
+	Database         DatabaseConfig       `json:"database,omitempty"`
+	Network          NetworkConfig        `json:"network,omitempty"`
+	Browser          BrowserConfig        `json:"browser,omitempty"`
 	// BrowserEmulation drives HTTP-transport replay identity (User-Agent /
 	// Accept-Language) and browser-cache simulation. Nil means legacy behavior:
 	// http.user_agent / http.accept_language / http.cache_enabled stay in
@@ -179,7 +181,23 @@ type ScriptConfig struct {
 // ResultsConfig controls optional retained run evidence. It is deliberately
 // independent from ErrorHandlingConfig: snapshot_on_error remains a debugger
 // snapshot policy and does not become the archive-detail switch.
+// CSVExport defines a native, per-run projection of complete action evidence.
+type CSVExport struct {
+	ID         string            `json:"id"`
+	FileName   string            `json:"file_name"`
+	ActionName string            `json:"action_name"`
+	Columns    []CSVExportColumn `json:"columns"`
+}
+
+type CSVExportColumn struct {
+	Name         string  `json:"name"`
+	Extraction   string  `json:"extraction,omitempty"`
+	Metric       string  `json:"metric,omitempty"`
+	DefaultValue *string `json:"default_value,omitempty"`
+}
+
 type ResultsConfig struct {
+	CSVExports    []CSVExport          `json:"csv_exports,omitempty"`
 	MessageDetail *MessageDetailConfig `json:"message_detail,omitempty"`
 }
 
@@ -675,6 +693,7 @@ type BrowserCaptureOptions struct {
 
 // RunLogicConfig controls iteration behavior and automatic transaction wrapping.
 type RunLogicConfig struct {
+	TerminationMode  string   `json:"termination_mode,omitempty"`
 	Iterations       int      `json:"iterations,omitempty"`        // 0 = run until duration (default)
 	GlobalIterations int      `json:"global_iterations,omitempty"` // 0 = no shared iteration cap across VUsers
 	MaxTransactions  int64    `json:"max_transactions,omitempty"`  // 0 = no shared transaction cap across VUsers
@@ -878,6 +897,10 @@ type DataSource struct {
 }
 
 type Parameter struct {
+	Scope             string   `json:"scope,omitempty"`
+	ScopeID           string   `json:"scope_id,omitempty"`
+	RandomAlgorithm   string   `json:"random_algorithm,omitempty"`
+	FormatDialect     string   `json:"format_dialect,omitempty"`
 	Name              string   `json:"name"`
 	Type              string   `json:"type"` // "file", "list", "random_number", "date_time", "timestamp", "counter", "current_iteration", "vuser_id", "host", "time", "uuid", "random_string"
 	Update            string   `json:"update,omitempty"`
@@ -971,11 +994,12 @@ func (headers HeaderList) ToMap() map[string]string {
 }
 
 type Action struct {
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Method   string `json:"method,omitempty"`
-	Target   string `json:"target"`
-	Selector string `json:"selector,omitempty"`
+	PacingIDs []string `json:"pacing_ids,omitempty"`
+	Name      string   `json:"name"`
+	Type      string   `json:"type"`
+	Method    string   `json:"method,omitempty"`
+	Target    string   `json:"target"`
+	Selector  string   `json:"selector,omitempty"`
 	// ObjectRef binds this action to a named object in a project-scoped object
 	// repository instead of (or as a fallback to) an inline selector. The
 	// controller resolves it at script-preparation time into a concrete selector
@@ -1128,6 +1152,8 @@ type Extractor struct {
 	// "fail" marks the request failed so correlation misses surface
 	// immediately instead of cascading into later requests.
 	OnMiss string `json:"on_miss,omitempty"`
+	// DefaultValue distinguishes an absent fallback from an explicitly empty one.
+	DefaultValue *string `json:"default_value,omitempty"`
 	// Mode "" extracts a single value into {{var.name}}. Mode "all" saves every
 	// match as {{var.name_1}}..{{var.name_N}} plus {{var.name_count}}; zero
 	// matches count as a miss for OnMiss purposes.

@@ -32,11 +32,12 @@ type TestRun struct {
 }
 
 type TestConfig struct {
-	Name     string
-	Script   *dsl.Script
-	VUsers   int
-	Duration time.Duration
-	RampUp   time.Duration
+	TerminationMode string
+	Name            string
+	Script          *dsl.Script
+	VUsers          int
+	Duration        time.Duration
+	RampUp          time.Duration
 }
 
 type TestStatus string
@@ -212,8 +213,8 @@ func validateTestConfig(cfg TestConfig) error {
 	if cfg.VUsers <= 0 {
 		return fmt.Errorf("test vusers must be greater than zero")
 	}
-	if cfg.Duration <= 0 {
-		return fmt.Errorf("test duration must be greater than zero")
+	if err := dsl.ValidateTermination(cfg.TerminationMode, cfg.Duration, cfg.Script); err != nil {
+		return err
 	}
 	if cfg.RampUp < 0 {
 		return fmt.Errorf("test ramp-up must not be negative")

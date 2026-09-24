@@ -326,6 +326,9 @@ func reviewGateFixtures() map[string]reviewGateFixture {
 		"k6-browser":    k6Fixture("import { chromium } from 'k6/browser';\n" + k6ContractRequest),
 		"k6-javascript": k6Fixture("for (let i = 0; i < 2; i++) {\n  " + k6ContractRequest + "\n}"),
 
+		"jmeter-messaging-producers": jmeterFixture("messaging-producer", `<com.di.jmeter.kafka.sampler.KafkaProducerSampler testname="producer"/><hashTree/>`, jmeterContractSampler),
+		"jmeter-throughput-shaping":  jmeterFixture("throughput-shaping", `<kg.apc.jmeter.timers.VariableThroughputTimer testname="schedule"/><hashTree/><com.di.jmeter.kafka.sampler.KafkaProducerSampler testname="producer"/><hashTree/>`, `<com.di.jmeter.kafka.sampler.KafkaProducerSampler testname="producer"/><hashTree/>`),
+		"jmeter-formatted-time":      jmeterFixture("formatted-time", strings.Replace(jmeterContractSampler, "/home", "/home/${__time(EEEE,)}", 1), jmeterContractSampler),
 		"jmeter-auth-manager": jmeterFixture("auth-manager",
 			`<AuthManager testname="auth"><collectionProp name="AuthManager.auth_list"><elementProp elementType="Authorization">`+
 				`<stringProp name="Authorization.url"></stringProp>`+

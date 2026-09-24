@@ -39,11 +39,12 @@ type MetricsCollector struct {
 const throughputGapAlertThresholdPct = 5.0
 
 type liveCounters struct {
-	totalTransactions atomic.Int64
-	totalErrors       atomic.Int64
-	activeVUsers      atomic.Int64
-	droppedResults    atomic.Int64
-	sheddedArrivals   atomic.Int64
+	completedIterations atomic.Int64
+	totalTransactions   atomic.Int64
+	totalErrors         atomic.Int64
+	activeVUsers        atomic.Int64
+	droppedResults      atomic.Int64
+	sheddedArrivals     atomic.Int64
 }
 
 type groupRunCounters struct {
@@ -52,6 +53,7 @@ type groupRunCounters struct {
 }
 
 type MetricsSnapshot struct {
+	CompletedIterations    int64
 	Timestamp              time.Time
 	Window                 time.Duration
 	Transactions           int64
@@ -592,18 +594,19 @@ func (mc *MetricsCollector) publishSnapshot(batch []*protocol.Result, window tim
 
 func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window time.Duration) MetricsSnapshot {
 	snap := MetricsSnapshot{
-		Timestamp:          time.Now(),
-		Window:             window,
-		ActiveVUsers:       mc.current.activeVUsers.Load(),
-		ByAction:           make(map[string]*ActionMetrics),
-		ByTransaction:      make(map[string]*ActionMetrics),
-		ByDependencyTarget: make(map[string]*ActionMetrics),
-		BySOAPOperation:    make(map[string]*ActionMetrics),
-		ByNetworkProfile:   make(map[string]*ActionMetrics),
-		ByRegion:           make(map[string]*ActionMetrics),
-		ByGroup:            make(map[string]*GroupMetrics),
-		ErrorsByClass:      make(map[string]int64),
-		BrowserByDevice:    make(map[string]*BrowserDeviceMetrics),
+		CompletedIterations: mc.current.completedIterations.Load(),
+		Timestamp:           time.Now(),
+		Window:              window,
+		ActiveVUsers:        mc.current.activeVUsers.Load(),
+		ByAction:            make(map[string]*ActionMetrics),
+		ByTransaction:       make(map[string]*ActionMetrics),
+		ByDependencyTarget:  make(map[string]*ActionMetrics),
+		BySOAPOperation:     make(map[string]*ActionMetrics),
+		ByNetworkProfile:    make(map[string]*ActionMetrics),
+		ByRegion:            make(map[string]*ActionMetrics),
+		ByGroup:             make(map[string]*GroupMetrics),
+		ErrorsByClass:       make(map[string]int64),
+		BrowserByDevice:     make(map[string]*BrowserDeviceMetrics),
 		Telemetry: &TelemetryMetrics{
 			DroppedResults:  mc.current.droppedResults.Load(),
 			SheddedArrivals: mc.current.sheddedArrivals.Load(),
@@ -1321,3 +1324,5 @@ func finalizeBrowserDeviceMetrics(summary *BrowserDeviceMetrics) {
 	summary.AvgBrowserProcessCPU /= divisor
 	summary.AvgBrowserProcessMem /= divisor
 }
+
+func (mc *MetricsCollector) CompletedIterations() int64 { return mc.current.completedIterations.Load() }

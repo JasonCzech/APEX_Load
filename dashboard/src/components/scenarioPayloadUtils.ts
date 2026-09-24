@@ -17,6 +17,7 @@ export type ScenarioGroupPayload = {
     name?: string
     type: 'ramp_up' | 'hold' | 'ramp_down' | string
     duration: string
+  termination_mode?: 'duration' | 'iterations'
     target_vusers?: number
     target_tps?: number
   }>
@@ -32,6 +33,7 @@ export type ScenarioUpsertPayload = {
   project_id?: string
   workload_shape_id?: string
   duration: string
+  termination_mode?: 'duration' | 'iterations'
   start_delay?: string
   scenario_mode: ScenarioMode
   script_shakeout: boolean
@@ -65,6 +67,7 @@ export type ScenarioUpsertPayload = {
 export type CreateTestPayload = {
   name?: string
   duration: string
+  termination_mode?: 'duration' | 'iterations'
   start_delay?: string
   application_id?: string
   release_id?: string
@@ -92,6 +95,7 @@ export type CreateTestPayload = {
 
 type ScenarioPayloadInput = {
   duration: string
+  termination_mode?: 'duration' | 'iterations'
   startDelay: string
   scenarioMode: ScenarioMode
   scriptShakeout: boolean
@@ -396,6 +400,7 @@ export function buildScenarioUpsertPayload({
   projectId,
   workloadShapeId,
   duration,
+  termination_mode,
   startDelay,
   scenarioMode,
   scriptShakeout,
@@ -414,6 +419,7 @@ export function buildScenarioUpsertPayload({
     ...(projectId ? { project_id: projectId } : {}),
     ...(workloadShapeId !== undefined ? { workload_shape_id: workloadShapeId } : {}),
     duration,
+    ...(termination_mode ? { termination_mode } : {}),
     scenario_mode: scenarioMode,
     script_shakeout: scriptShakeout,
     resource_baseline: resourceBaseline,
@@ -449,6 +455,7 @@ export function buildScenarioUpsertPayload({
 export function buildCreateTestPayload({
   name,
   duration,
+  termination_mode,
   startDelay,
   scenarioMode,
   scriptShakeout,
@@ -472,6 +479,7 @@ export function buildCreateTestPayload({
 
   const payload: CreateTestPayload = {
     duration,
+    ...(termination_mode ? { termination_mode } : {}),
     scenario_mode: scenarioMode,
     script_shakeout: scriptShakeout,
     resource_baseline: resourceBaseline,

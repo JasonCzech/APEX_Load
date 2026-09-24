@@ -101,3 +101,19 @@ func TestResolvedProducerRecordLeavesEmptyKeyForFranzRouting(t *testing.T) {
 		t.Fatalf("empty-key broker partition = %d, want [0,3)", partition)
 	}
 }
+
+func TestProducerRecordPreservesNullAndEmptyKeys(t *testing.T) {
+	for _, tc := range []struct {
+		key     string
+		present bool
+	}{{"", false}, {"", true}, {"value", true}} {
+		native := resolvedProducerRecord("events", kafkaRecord{Key: tc.key, KeyPresent: tc.present})
+		if (native.Key != nil) != tc.present {
+			t.Fatalf("key presence lost: %+v", tc)
+		}
+		roundTrip := fromKgoRecord(native)
+		if roundTrip.Key != tc.key || roundTrip.KeyPresent != tc.present {
+			t.Fatalf("key roundtrip: %+v", roundTrip)
+		}
+	}
+}

@@ -450,6 +450,7 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	TerminationMode       string `json:"termination_mode,omitempty"`
 	podCapacityEnabled    bool
 	ID                    string                            `json:"id"`
 	RefKey                string                            `json:"ref_key,omitempty"`
@@ -770,6 +771,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	CompletedIterations        int64                                 `json:"completed_iterations"`
 	Timestamp                  time.Time                             `json:"timestamp"`
 	ActiveVUsers               int64                                 `json:"active_vusers"`
 	TPS                        float64                               `json:"tps"`
@@ -1225,6 +1227,7 @@ type StoredScript struct {
 }
 
 type StoredScenario struct {
+	TerminationMode    string                            `json:"termination_mode,omitempty"`
 	LibraryAssignment  *storage.LibraryAssignment        `json:"library_assignment,omitempty"`
 	ID                 string                            `json:"id"`
 	RefKey             string                            `json:"ref_key,omitempty"`
@@ -1316,6 +1319,7 @@ type latencyRouteCacheEntry struct {
 }
 
 type GeneratorAssignmentSettings struct {
+	SourceAffinity  string            `json:"source_affinity,omitempty"` // single_generator: preserved source-engine requirement; execution currently gated.
 	SharingMode     string            `json:"sharing_mode,omitempty"`
 	Mode            string            `json:"mode,omitempty"`
 	SelectedTargets []string          `json:"selected_targets,omitempty"`
@@ -1735,7 +1739,8 @@ const (
 // Helper to convert map back to LiveMetrics (since GetHistory returns any)
 
 type CreateTestRequest struct {
-	Name string `json:"name"`
+	TerminationMode string `json:"termination_mode,omitempty"`
+	Name            string `json:"name"`
 	// RequestedTestID is used by controller-to-controller run creation to make
 	// the remote side effect recoverable across a lost response. It must be a
 	// UUID and is always persisted through the create-only test path.
@@ -1789,6 +1794,7 @@ type CreateTestRequest struct {
 }
 
 type CreateScenarioRequest struct {
+	TerminationMode  string                            `json:"termination_mode,omitempty"`
 	Name             string                            `json:"name"`
 	ProjectID        string                            `json:"project_id,omitempty"`
 	WorkloadShapeID  *string                           `json:"workload_shape_id,omitempty"`
@@ -2004,7 +2010,11 @@ type CreateGroupEntry struct {
 	Role string `json:"role,omitempty"`
 	// runtimeSecretScope is a process-only namespace (normally the preassigned
 	// test UUID) used to derive non-colliding governed runtime secret names.
-	runtimeSecretScope string
+	// preserveJMeterDraft is set only while saving a scenario, never by JSON
+	// requests or run compilation. It retains blocked messaging library drafts.
+	preserveJMeterDraft bool
+	runtimeSecretScope  string
+	iterationCompletion bool
 }
 
 type StartTestOptions struct {
@@ -2137,6 +2147,7 @@ type ScriptShakeoutResult struct {
 }
 
 type DraftCapacityEstimate struct {
+	TerminationMode       string                       `json:"termination_mode,omitempty"`
 	PodPlacements         []PodCapacityPreview         `json:"pod_placements,omitempty"`
 	PodCapacityWarnings   []string                     `json:"pod_capacity_warnings,omitempty"`
 	ScenarioMode          string                       `json:"scenario_mode,omitempty"`

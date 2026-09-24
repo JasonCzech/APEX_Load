@@ -146,7 +146,7 @@ test('the UI creates and scopes the complete workspace hierarchy', async ({ page
   expect(application.project_id, 'application must belong to the project chosen in the UI').toBe(ownerProjectId)
 
   await expect(page.locator('button.settings-app-card').filter({ hasText: applicationName })).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('button', { name: new RegExp(`Current project: ${ownerProjectName}`) })).toBeVisible()
+  await expect(page.getByRole('button', { name: new RegExp(`Workspace context\\..*${ownerProjectName}`) })).toBeVisible()
   await expect.poll(() => routeScope(page.url()).get('projectId')).toBe(ownerProjectId)
   await expect.poll(() => routeScope(page.url()).get('applicationId')).toBe(applicationId)
 
@@ -156,6 +156,7 @@ test('the UI creates and scopes the complete workspace hierarchy', async ({ page
 
   // Release creation in the sidebar changes active scope. The repository tabs
   // below then prove that the same hierarchy is visible on the S2 route.
+  await page.getByRole('button', { name: /^Workspace context\./ }).click()
   await page.getByRole('button', { name: /Select release\. Current release:/ }).click()
   await page.getByRole('button', { name: 'New Release' }).click()
   const releaseDialog = page.getByRole('dialog', { name: 'New Release' })
@@ -171,7 +172,7 @@ test('the UI creates and scopes the complete workspace hierarchy', async ({ page
     ? release.application_release_id
     : responseID(releasePayload, 'create release', 'release')
 
-  await expect(page.getByRole('button', { name: new RegExp(`Current release: ${releaseName}`) })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: new RegExp(`Workspace context\\..*${releaseName}`) })).toBeVisible({ timeout: 15_000 })
   await expect.poll(() => routeScope(page.url()).get('releaseId')).toBe(releaseId)
 
   await page.getByRole('button', { name: 'Repository', exact: true }).click()
@@ -179,9 +180,9 @@ test('the UI creates and scopes the complete workspace hierarchy', async ({ page
 
   const repositoryTabs = page.getByRole('tablist', { name: 'Repository asset types' })
   await repositoryTabs.getByRole('tab', { name: /Projects/ }).click()
-  await expect(page.getByText(ownerProjectName, { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('main').getByRole('button', { name: ownerProjectName, exact: true }).first()).toBeVisible()
   await repositoryTabs.getByRole('tab', { name: /Releases/ }).click()
-  await expect(page.getByText(releaseName, { exact: true }).first()).toBeVisible()
+  await expect(page.getByRole('main').getByRole('button', { name: releaseName, exact: true }).first()).toBeVisible()
 
   const finalScope = routeScope(page.url())
   expect(finalScope.get('projectId')).toBe(ownerProjectId)

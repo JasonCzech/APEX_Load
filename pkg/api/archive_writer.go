@@ -266,6 +266,8 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		population = "transaction"
 	}
 	event := TransactionEvent{
+		CSVExportIDs:          result.CSVExportIDs,
+		ExtractionsIncomplete: result.ExtractionsIncomplete,
 		Population:            population,
 		Timestamp:             result.StartTime,
 		TestID:                w.manifest.TestID,
@@ -311,6 +313,20 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 		SourceActionName:      result.SourceActionName,
 		SourceProfile:         result.SourceProfile,
 	}
+	// Direct recorder callers do not pass through the engine's pre-redaction
+	// binding. Bind them against the same immutable admission provenance here.
+	provenance := w.manifest.InitialProvenance
+	if provenance == nil {
+		provenance = &w.manifest.Provenance
+	}
+	if event.CSVExportIDs == nil && len(provenance.CSVExports) > 0 {
+		event.CSVExportIDs = []string{}
+		for _, declaration := range provenance.CSVExports {
+			if declaration.Group == result.Group && declaration.Export.ActionName == result.ActionName {
+				event.CSVExportIDs = append(event.CSVExportIDs, declaration.Export.ID)
+			}
+		}
+	}
 	// Defense in depth for callers that record protocol results without going
 	// through the VUser projection seam. This also detaches nested evidence from
 	// the live result before the encoder observes it.
@@ -318,6 +334,7 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	w.applyMessageDetailBudget(&event, result)
 	finalizeTransactionEventDerivedFields(&event, w.manifest.TransactionCount)
 	if err := w.txEncoder.Encode(event); err != nil {
+		w.flushErr = err
 		return err
 	}
 	w.manifest.TransactionCount++
@@ -517,6 +534,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	}
 	activeRuntimeSeconds := live.ActiveRuntimeSeconds
 	record := IntervalSummaryRecord{
+		CompletedIterations:      live.CompletedIterations,
 		Timestamp:                live.Timestamp,
 		TestID:                   w.manifest.TestID,
 		TestName:                 w.manifest.TestName,
@@ -676,6 +694,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	if err := writeArchiveParquetFiles(w.rootDir, &w.manifest); err != nil {
 		return nil, err
 	}
+	materializeDeclaredCSVExports(w.rootDir, &w.manifest)
 	if err := updateRunArchiveArtifactIntegrity(w.rootDir, &w.manifest); err != nil {
 		return nil, err
 	}
@@ -904,6 +923,11 @@ func updateRunArchiveArtifactIntegrity(root string, manifest *RunArchiveManifest
 		{Name: manifest.TestNotesFile, Kind: "notes", Format: "json", RecordType: "test_notes"},
 		{Name: manifest.ELKEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "elk_log_samples", Count: manifest.ELKEvidenceCount},
 		{Name: manifest.DynatraceEvidenceFile, Kind: "evidence", Format: "jsonl", RecordType: "dynatrace_evidence", Count: manifest.DynatraceEvidenceCount},
+	}
+	for _, export := range manifest.CSVExports {
+		if export.Status == "complete" {
+			descriptors = append(descriptors, RunArchiveArtifact{Name: export.FileName, Kind: "csv_export", Format: "csv", RecordType: "action_results", Count: export.Rows})
+		}
 	}
 	artifacts := make([]RunArchiveArtifact, 0, len(descriptors))
 	for _, artifact := range descriptors {

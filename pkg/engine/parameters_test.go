@@ -394,3 +394,18 @@ func TestVUser_Interpolate_ParametersAndFunctions(t *testing.T) {
 		t.Fatalf("fake.email interpolation returned unexpected value: %q", fakeEmailValue)
 	}
 }
+
+func TestJMeterFormattedTimestampMidnightAndTimezone(t *testing.T) {
+	for _, tc := range []struct{ zone, want string }{{"UTC", "2026-01-01T00:00:00.123Z"}, {"America/New_York", "2025-12-31T19:00:00.123Z"}} {
+		runtime := NewParameterRuntime([]dsl.Parameter{{Name: "timestamp", Type: "date_time", Update: "each_occurrence", Format: "2006-01-02T15:04:05.000Z", Timezone: tc.zone}}, nil, 0)
+		current := time.Date(2026, 1, 1, 0, 0, 0, 123000000, time.UTC)
+		runtime.now = func() time.Time { return current }
+		if got, ok := runtime.ResolveNamed("timestamp"); !ok || got != tc.want {
+			t.Fatalf("zone %s: %q %t", tc.zone, got, ok)
+		}
+		current = current.Add(time.Millisecond)
+		if got, _ := runtime.ResolveNamed("timestamp"); got == tc.want {
+			t.Fatal("each occurrence reused timestamp")
+		}
+	}
+}

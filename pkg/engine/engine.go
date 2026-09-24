@@ -58,21 +58,23 @@ const (
 // contention. Call MetricsSnapshot() periodically (e.g., every second) to
 // extract aggregated metrics during or after a run.
 type Engine struct {
-	script    *dsl.Script
-	vusers    int
-	duration  time.Duration
-	rampUp    time.Duration
-	metrics   *MetricsCollector
-	data      *DataProvider
-	mu        sync.Mutex // guards cancel
-	cancel    context.CancelFunc
-	softStop  context.CancelFunc
-	secrets   SecretResolver
-	redaction *RedactionConfig
+	script          *dsl.Script
+	vusers          int
+	duration        time.Duration
+	terminationMode string
+	rampUp          time.Duration
+	metrics         *MetricsCollector
+	data            *DataProvider
+	mu              sync.Mutex // guards cancel
+	cancel          context.CancelFunc
+	softStop        context.CancelFunc
+	secrets         SecretResolver
+	redaction       *RedactionConfig
 	// importedCredentials is the run's single retained-credential locator walk.
 	// Every VUser this engine creates is handed it; see
 	// runtimeSecretValuesForScript.
 	importedCredentials *importedCredentialInspection
+	sourceParameters    *sourceParameterState
 	// javaVuserCapacityLimit is populated by the governed runtime validation
 	// immediately before Run acquires its process-wide persistent-session lease.
 	javaVuserCapacityLimit int64
@@ -80,11 +82,12 @@ type Engine struct {
 
 // Config contains configuration for Engine creation.
 type Config struct {
-	Script         *dsl.Script   // Test script (required)
-	VUsers         int           // Number of virtual users (required, > 0)
-	Duration       time.Duration // Total test duration (required, > 0)
-	RampUp         time.Duration // Ramp-up period (can be 0 for immediate start)
-	SecretResolver SecretResolver
+	TerminationMode string
+	Script          *dsl.Script   // Test script (required)
+	VUsers          int           // Number of virtual users (required, > 0)
+	Duration        time.Duration // Total test duration (required, > 0)
+	RampUp          time.Duration // Ramp-up period (can be 0 for immediate start)
+	SecretResolver  SecretResolver
 }
 
 // RunResult contains final test results after execution completes.
@@ -125,8 +128,8 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.VUsers > MaxEngineVUsers {
 		return nil, fmt.Errorf("vusers must not exceed %d", MaxEngineVUsers)
 	}
-	if cfg.Duration <= 0 {
-		return nil, fmt.Errorf("duration must be positive")
+	if err := dsl.ValidateTermination(cfg.TerminationMode, cfg.Duration, cfg.Script); err != nil {
+		return nil, err
 	}
 	dataProvider, err := NewDataProvider(cfg.Script.DataSources)
 	if err != nil {
@@ -168,6 +171,7 @@ func New(cfg Config) (*Engine, error) {
 		script:              cfg.Script,
 		vusers:              cfg.VUsers,
 		duration:            cfg.Duration,
+		terminationMode:     cfg.TerminationMode,
 		rampUp:              cfg.RampUp,
 		metrics:             NewMetricsCollector(10000),
 		data:                dataProvider,
@@ -189,7 +193,17 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, e.duration)
+	var sourceErr error
+	e.sourceParameters, sourceErr = newSourceParameterState([]*dsl.Script{e.script})
+	if sourceErr != nil {
+		return nil, sourceErr
+	}
+	var cancel context.CancelFunc
+	if e.terminationMode == dsl.TerminationIterations {
+		ctx, cancel = context.WithCancel(ctx)
+	} else {
+		ctx, cancel = context.WithTimeout(ctx, e.duration)
+	}
 	e.mu.Lock()
 	e.cancel = cancel
 	e.mu.Unlock()
@@ -386,6 +400,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				SecretResolver:               e.secrets,
 				RedactionConfig:              e.redaction,
 				importedCredentialInspection: e.importedCredentials,
+				sourceParameters:             e.sourceParameters,
 				IterationRateLimiter:         iterationRateLimiter,
 				Rendezvous:                   rendezvous,
 				ExecutionGoals:               executionGoals,
@@ -413,6 +428,11 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	}
 	if snap, ok := e.metrics.LatestSnapshot(); ok {
 		result.FinalSnapshot = snap
+	}
+	if e.terminationMode == dsl.TerminationIterations {
+		if got, expected := e.metrics.CompletedIterations(), int64(e.vusers)*int64(e.script.Config.RunLogic.Iterations); got != expected {
+			return result, fmt.Errorf("iteration work incomplete: completed %d of %d iterations", got, expected)
+		}
 	}
 	return result, nil
 }
@@ -630,6 +650,7 @@ func (e *Engine) runOpenWorkload(
 				SecretResolver:               e.secrets,
 				RedactionConfig:              e.redaction,
 				importedCredentialInspection: e.importedCredentials,
+				sourceParameters:             e.sourceParameters,
 				ExecutionGoals:               executionGoals,
 				HardStopCtx:                  hardStopCtx,
 				ActionBoundaryCtx:            actionBoundaryCtx,

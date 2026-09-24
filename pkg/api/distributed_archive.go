@@ -88,6 +88,9 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	}
 
 	manifest := mergeRemoteArchiveManifest(tr, test, bundles, finalStatus, finalError, completedAt)
+	if !requireAll {
+		manifest.CSVExportIncomplete = "not all generator archives were required; complete export cannot be verified"
+	}
 	workingDir, err := createArchiveTemporaryDirectory(archiveParent, filepath.Base(archiveDir)+"-staging", 0o755)
 	if err != nil {
 		return nil, err
@@ -112,6 +115,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	if err := writeArchiveParquetFiles(workingDir, &manifest); err != nil {
 		return nil, err
 	}
+	materializeDeclaredCSVExports(workingDir, &manifest)
 	if err := updateRunArchiveArtifactIntegrity(workingDir, &manifest); err != nil {
 		return nil, err
 	}
@@ -1201,8 +1205,10 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 	windowGeneratorMarks := make([]int64, len(bundles))
 	windowRecords := make([]IntervalSummaryRecord, 0, windowCapacity)
 	sourceCumulativeTx := make([]int64, len(bundles))
+	sourceIterations := make([]int64, len(bundles))
 	previousSourceTimestamps := make([]time.Time, len(bundles))
 	recordSourceWindow := func(cursor *remoteArchiveSummaryCursor, fleetIndex int) {
+		sourceIterations[cursor.index] = cursor.record.CompletedIterations
 		if !collectSourceWindows {
 			return
 		}
@@ -1336,6 +1342,9 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 		}
 		aggregate.Transactions = compactIntervalTransactions(aggregate.Transactions)
 		aggregate.ByRegion = compactIntervalTransactions(aggregate.ByRegion)
+		for _, iterations := range sourceIterations {
+			aggregate.CompletedIterations += iterations
+		}
 		aggregate.TotalTx = cumulativeTx
 		aggregate.TotalErrors = cumulativeErrors
 		if attempts > 0 {

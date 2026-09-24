@@ -24,6 +24,14 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result == nil {
 		return
 	}
+	if vu.Script != nil && len(vu.Script.Config.Results.CSVExports) > 0 {
+		result.CSVExportIDs = []string{}
+		for _, export := range vu.Script.Config.Results.CSVExports {
+			if result.ActionName == export.ActionName {
+				result.CSVExportIDs = append(result.CSVExportIDs, export.ID)
+			}
+		}
+	}
 	// CorrelationEvidence is a replay-only, pre-scrub side channel. No metrics or
 	// ResultSink implementation may retain it, even accidentally in-process.
 	result.CorrelationEvidence = nil
@@ -39,6 +47,7 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	}
 	if err := vu.mergeExtractions(result); err != nil {
 		result.Success = false
+		result.ExtractionsIncomplete = true
 		result.Extractions = nil
 		if result.ErrorMessage == "" {
 			result.ErrorMessage = "extraction retention failed: " + err.Error()
@@ -78,6 +87,7 @@ func clearUnredactableResultEvidence(result *protocol.Result) {
 	result.ErrorMessage = "runtime credential redaction failed"
 	result.ResponseBody = ""
 	result.CorrelationEvidence = nil
+	result.ExtractionsIncomplete = true
 	result.Extractions = nil
 	result.CorrelationID = ""
 	result.DependencyTarget = ""

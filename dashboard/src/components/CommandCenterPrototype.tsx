@@ -1410,7 +1410,7 @@ export default function CommandCenterPrototype({
         onAbort={confirmRunAction('abort', abortRun)}
         onOpenExecution={testId && onOpenExecution ? () => onOpenExecution(testId) : undefined}
         onOpenTestNotes={testId ? () => setShowNotes(true) : undefined}
-        onChangeDuration={liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
+        onChangeDuration={liveMode && displayTest.termination_mode !== 'iterations' && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         changeDurationDisabled={showRuntimeAdjustment || pendingAction !== null}
       />
       {pendingAction && (
@@ -1527,7 +1527,7 @@ export default function CommandCenterPrototype({
           runStatus={runStatus}
           totalDurationSeconds={totalDurationSeconds}
           remainingSeconds={remainingSeconds}
-          readOnly={historicalRun}
+          readOnly={historicalRun || displayTest.termination_mode === 'iterations'}
           targetTransitionMode={state.targetTransitionMode}
           targetRampDuration={state.targetRampDuration}
           onTargetTransitionModeChange={changeTargetTransitionMode}
@@ -1536,7 +1536,7 @@ export default function CommandCenterPrototype({
           onApplyTarget={applyTarget}
           onErrorSelect={selectError}
           onOpenGroupSettings={liveMode && testId ? openGroupSettings : undefined}
-          onChangeDuration={liveMode && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
+          onChangeDuration={liveMode && displayTest.termination_mode !== 'iterations' && runStatus === 'RUNNING' ? () => setShowRuntimeAdjustment(true) : undefined}
         />
       )}
       {!noRequestSamples && variant === 'grafana' && runStatus !== 'RESERVED' && runStatus !== 'QUEUED' && (
@@ -1656,7 +1656,7 @@ function RunControlShelf({
         <StatusBadge status={status} />
         <div>
           <strong>{test.name}</strong>
-          <span>{test.ref_key} / {test.duration} duration / {test.groups.length} groups</span>
+          <span>{test.ref_key} / {test.termination_mode === 'iterations' ? 'Iteration completion' : `${test.duration} duration`} / {test.groups.length} groups</span>
         </div>
       </div>
 
@@ -1668,7 +1668,7 @@ function RunControlShelf({
             : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}
           tone="info"
         />
-        <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />
+        {test.termination_mode === 'iterations' ? <><MetricPill label="Completed / expected iterations" value={`${test.live_metrics?.completed_iterations ?? 0} / ${test.groups.reduce((n,g) => n + g.vusers * (g.iterations || 0), 0)}`} /><MetricPill label="Elapsed" value={formatRemaining(test.started_at ? Math.max(0, ((test.ended_at ? Date.parse(test.ended_at) : Date.now()) - Date.parse(test.started_at)) / 1000) : 0)} /></> : <MetricPill label="Remaining" value={formatRemaining(remainingSeconds)} tone={remainingSeconds <= 60 ? 'warning' : 'default'} />}
         {tps !== undefined && <MetricPill label={tpsHint ? `TPS (${tpsHint})` : 'TPS'} value={canStart ? "Not started" : noRequestSamples ? "No samples" : formatNumber(tps, 1)} tone="accent" />}
         <MetricPill label="Overall Error Rate" value={canStart || noRequestSamples ? "No samples" : formatOptionalPercent(errorPct)} tone={errorPct && errorPct > 0 ? "danger" : "default"} />
         {test.groups.length > 1 && (

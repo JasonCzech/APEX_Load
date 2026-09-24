@@ -100,7 +100,8 @@ func RecoverableSourceCredentialValue(value string) (string, bool) {
 }
 
 func containsDisclosureSentinel(value string) bool {
-	return strings.Contains(strings.ToLower(value), strings.ToLower(credential.Redacted))
+	trimmed := strings.TrimSpace(value)
+	return (len(trimmed) >= 3 && strings.Trim(trimmed, "*") == "") || strings.Contains(strings.ToLower(value), strings.ToLower(credential.Redacted))
 }
 
 func sourceCredentialDecodings(value string) ([]string, bool) {

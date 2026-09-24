@@ -72,11 +72,18 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 		return nil, nil
 	}
 	out := &GeneratorAssignmentSettings{
+		SourceAffinity:        strings.TrimSpace(in.SourceAffinity),
 		SharingMode:           strings.TrimSpace(in.SharingMode),
 		Mode:                  strings.TrimSpace(in.Mode),
 		PoolID:                strings.TrimSpace(in.PoolID),
 		RequiredLabels:        normalizeRequiredLabels(in.RequiredLabels),
 		TolerateGeneratorLoss: in.TolerateGeneratorLoss,
+	}
+	if out.SourceAffinity != "" && out.SourceAffinity != "single_generator" {
+		return nil, fmt.Errorf("assignment.source_affinity must be single_generator")
+	}
+	if out.SourceAffinity != "" && out.TolerateGeneratorLoss {
+		return nil, fmt.Errorf("source-engine affinity forbids generator-loss recovery")
 	}
 	if out.Mode == "" {
 		out.Mode = generatorAssignmentModeAuto
@@ -137,6 +144,9 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 }
 
 func (tr *TestRunner) validateGeneratorLossTolerance(assignment *GeneratorAssignmentSettings) error {
+	if assignment != nil && assignment.SourceAffinity != "" {
+		return fmt.Errorf("source-engine affinity requires JMeter messaging runtime compatibility, which is not yet available")
+	}
 	if assignmentToleratesGeneratorLoss(assignment) && (tr == nil || !tr.durableExecutionFence) {
 		return fmt.Errorf("assignment.tolerate_generator_loss requires HA execution leadership backed by the same durable test store")
 	}

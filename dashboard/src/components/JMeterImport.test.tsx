@@ -435,7 +435,7 @@ describe('JMeterImport', () => {
     expect(container.textContent).toContain('actions[0]')
     expect(container.textContent).toContain('Save 1 draft')
     const stats = Array.from(container.querySelectorAll('.import-evidence-facts > div')).map(item => item.textContent)
-    expect(stats).toContain('HTTP Samplers1')
+    expect(stats).toContain('Converted Samplers1')
     expect(stats).toContain('Total Samplers2')
     expect(stats).toContain('Skipped Samplers1')
   })

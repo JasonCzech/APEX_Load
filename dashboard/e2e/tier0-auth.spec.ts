@@ -15,6 +15,7 @@ test('lands in the explicit dev-admin workspace with a live connection', async (
 
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
   await expect(page.locator('.sidebar-status')).toHaveText('Live')
+  await page.getByRole('button', { name: 'Preview permissions. Current mode: admin', exact: true }).click()
   await expect(page.getByRole('group', { name: 'Development dashboard view' }).getByRole('button', { name: 'Admin' })).toHaveAttribute('aria-pressed', 'true')
 
   const navigation = page.locator('nav.sidebar-nav')

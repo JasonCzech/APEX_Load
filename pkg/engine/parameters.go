@@ -22,6 +22,8 @@ type ParameterRuntime struct {
 	provider       *DataProvider
 	vuserID        int
 	allocation     *ParameterAllocation
+	sourceState    *sourceParameterState
+	sourcePlan     string
 	now            func() time.Time
 }
 
@@ -32,6 +34,7 @@ type parameterState struct {
 	counter    int
 	seeded     bool
 	random     *rand.Rand
+	javaRandom *javaRandom
 	values     []string
 	loaded     bool
 	lastIndex  int
@@ -66,7 +69,11 @@ func NewParameterRuntime(parameters []dsl.Parameter, provider *DataProvider, vus
 		if param.Seed != nil {
 			seed = *param.Seed
 		}
-		runtime.states[param.Name] = &parameterState{random: rand.New(rand.NewSource(seed))}
+		state := &parameterState{random: rand.New(rand.NewSource(seed))}
+		if param.RandomAlgorithm == "java48" {
+			state.javaRandom = newJavaRandom(seed)
+		}
+		runtime.states[param.Name] = state
 	}
 	return runtime
 }
@@ -181,6 +188,18 @@ func (pr *ParameterRuntime) refreshWithStack(name string, visiting map[string]bo
 }
 
 func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState, visiting map[string]bool) (string, bool) {
+	if param.Scope == "source_engine" {
+		if pr.sourceState == nil {
+			return "", false
+		}
+		return pr.sourceState.next(pr.sourcePlan, param)
+	}
+	if param.RandomAlgorithm == "java48" {
+		return javaRandomValue(param, state.javaRandom)
+	}
+	if param.Type == "counter" && param.ScopeID != "" {
+		return jmeterCounterValue(param, state)
+	}
 	switch dsl.CanonicalParameterType(param.Type) {
 	case "file", "list":
 		if hasSameLineReference(param) {
@@ -208,6 +227,10 @@ func (pr *ParameterRuntime) generate(param dsl.Parameter, state *parameterState,
 		now, ok := resolveParameterTime(pr.now, param)
 		if !ok {
 			return "", false
+		}
+		if param.FormatDialect == "java_simple_date_format" {
+			value, err := dsl.FormatJMeterTime(now, param.Format)
+			return value, err == nil
 		}
 		layout := param.Format
 		if layout == "" {

@@ -122,3 +122,14 @@ func TestRedactProjectionKeepsDisclosureSentinelWithoutRetainingItAsSource(t *te
 		t.Fatalf("requirements = %#v, want no recoverable source value", result.Requirements)
 	}
 }
+
+func TestSourceCredentialAsteriskPlaceholdersUnavailable(t *testing.T) {
+	for _, value := range []string{"***", "****", "  *****  "} {
+		if ClassifySourceCredentialValue(value).Available() {
+			t.Fatalf("placeholder %q is available", value)
+		}
+	}
+	if !ClassifySourceCredentialValue("fixture*password").Available() {
+		t.Fatal("real value containing an asterisk was classified as a mask")
+	}
+}

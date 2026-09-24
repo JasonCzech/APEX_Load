@@ -23,6 +23,7 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 	}
 	fingerprintWriteBool(h, true)
 	fingerprintWriteString(h, assignment.GetTestId())
+	fingerprintWriteString(h, assignment.GetTerminationMode())
 	fingerprintWriteString(h, assignment.GetGroupName())
 	fingerprintWriteUint64(h, uint64(assignment.GetTargetDurationSeconds()))
 	fingerprintWriteString(h, assignment.GetScriptId())

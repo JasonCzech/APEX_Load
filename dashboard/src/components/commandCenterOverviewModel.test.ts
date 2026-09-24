@@ -39,3 +39,9 @@ describe('Command Center overview evidence', () => {
     expect(commandRunTiming(run('queue', 'QUEUED'), now)).toEqual({ elapsed: 'Not started', remaining: '10m' })
   })
 })
+
+it('reports iteration progress instead of a zero-duration countdown', () => {
+  const source = run('finite')
+  const timing = commandRunTiming({ ...source, termination_mode: 'iterations', duration: '', groups: [{ name: 'users', vusers: 50, iterations: 200, script_id: 'script', script_name: 'Script', protocol: 'http', ramp_up: '1s', initialization: 'at_runtime' }], live_metrics: { completed_iterations: 500 } as TestSummary['live_metrics'] }, Date.parse('2026-09-12T12:00:00Z'))
+  expect(timing).toEqual({ elapsed: '5m', remaining: '500 / 10000 iterations' })
+})

@@ -10,7 +10,7 @@ test('advanced details returns to the same run without losing cockpit edits or g
   await cockpit.getByRole('searchbox', { name: 'Filter command center table rows' }).fill('smoke')
   await cockpit.getByRole('button', { name: 'Advanced run details', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/test/${run.testId}\\?`))
-  await expect(page.getByRole('tab', { name: /^Overview/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('tab', { name: /^Run state/ })).toHaveAttribute('aria-selected', 'true')
   await expect(cockpit).toBeHidden()
   await page.getByRole('button', { name: 'Back to Command Center', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/command-center/${run.testId}`))

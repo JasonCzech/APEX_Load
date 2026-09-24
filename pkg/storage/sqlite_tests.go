@@ -159,14 +159,14 @@ func (s *SQLiteStore) writePreparedTestWithExecutor(executor testSaveExecutor, t
 		}
 		allowMaterializedPrelaunchAbort = strings.EqualFold(strings.TrimSpace(previousStatus), "INITIALIZING")
 	}
-	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id)
-			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	query := `INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id)
+			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			  ON CONFLICT(id) DO UPDATE SET
 			  ref_key=excluded.ref_key,
 			  materialization_key=excluded.materialization_key,
 			  name=excluded.name, status=excluded.status, application_id=excluded.application_id, release_id=excluded.release_id, scenario_id=excluded.scenario_id,
 			  project_id=excluded.project_id, folder_id=excluded.folder_id,
-			  scenario_mode=excluded.scenario_mode, shakeout_enabled=excluded.shakeout_enabled,
+			  scenario_mode=excluded.scenario_mode, termination_mode=excluded.termination_mode, shakeout_enabled=excluded.shakeout_enabled,
 			  resource_baseline_enabled=excluded.resource_baseline_enabled, start_delay=excluded.start_delay, assignment_json=excluded.assignment_json, total_vusers=excluded.total_vusers,
 			  duration_ns=excluded.duration_ns, start_time=excluded.start_time, scheduled_start_at=excluded.scheduled_start_at, started_at=excluded.started_at, pending_since=excluded.pending_since,
 			  paused_at=excluded.paused_at, cumulative_pause_ns=excluded.cumulative_pause_ns,
@@ -229,8 +229,8 @@ func (s *SQLiteStore) createTestIfAbsentWithExecutor(executor testSaveExecutor, 
 	if err := lockActiveReleaseForNewTest(executor, test); err != nil {
 		return false, err
 	}
-	result, err := executor.Exec(`INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := executor.Exec(`INSERT INTO tests (id, ref_key, materialization_key, name, status, application_id, release_id, scenario_id, project_id, folder_id, scenario_mode, termination_mode, shakeout_enabled, resource_baseline_enabled, start_delay, assignment_json, total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, cumulative_pause_ns, capacity_window_start_at, capacity_window_end_at, baseline_pinned, baseline_pinned_at, end_time, error, created_by_subject, created_by_display_name, started_by_subject, started_by_display_name, stopped_by_subject, stopped_by_display_name, groups_json, data_pools_json, runtime_settings_json, goal_config_json, traffic_profile_json, elk_capture_json, dynatrace_capture_json, start_authorization_json, execution_plan_approval_json, initial_provenance_json, timeslot_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO NOTHING`, args...)
 	if err != nil {
 		return false, err
@@ -342,7 +342,7 @@ func prepareTestSaveArgs(test *TestRecord) ([]any, error) {
 	if test.InitialProvenance != nil {
 		initialProvenanceValue = initialProvenanceJSON
 	}
-	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.StartedAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, dataPoolsJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceValue, nullableStringPointer(test.TimeslotID)}, nil
+	return []any{test.ID, test.RefKey, test.MaterializationKey, test.Name, test.Status, test.ApplicationID, test.ReleaseID, nullableString(test.ScenarioID), test.ProjectID, nullableStringPointer(test.FolderID), test.ScenarioMode, test.TerminationMode, test.ScriptShakeout, test.ResourceBaseline, test.StartDelay, assignmentJSON, test.TotalVUsers, test.Duration, test.StartTime, test.ScheduledStartAt, test.StartedAt, test.PendingSince, test.PausedAt, test.CumulativePause, test.CapacityWindowStartAt, test.CapacityWindowEndAt, test.BaselinePinned, test.BaselinePinnedAt, test.EndTime, test.Error, test.CreatedBySubject, test.CreatedByDisplayName, test.StartedBySubject, test.StartedByDisplayName, test.StoppedBySubject, test.StoppedByDisplayName, groupsJSON, dataPoolsJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceValue, nullableStringPointer(test.TimeslotID)}, nil
 }
 
 // validateTestPlacement locks and verifies every durable tenant-bearing parent
@@ -876,7 +876,7 @@ func (s *SQLiteStore) ListTestCapacityBindings(testIDs []string) ([]TestCapacity
 }
 
 func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id`
+	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id`
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
@@ -890,7 +890,7 @@ type rowScanner interface {
 func scanTest(scanner rowScanner) (TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, dataPoolsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceJSON string
-	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &initialProvenanceJSON, &test.TimeslotID); err != nil {
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.TerminationMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &initialProvenanceJSON, &test.TimeslotID); err != nil {
 		return test, err
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &test.Groups); err != nil {
@@ -2082,23 +2082,24 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 	}
 	type summaryEnvelope struct {
-		Timestamp       time.Time                             `json:"timestamp"`
-		ActiveVUsers    int64                                 `json:"active_vusers"`
-		TPS             float64                               `json:"tps"`
-		AvgResponseMs   float64                               `json:"avg_response_ms"`
-		ErrorPct        float64                               `json:"error_pct"`
-		TotalTx         int64                                 `json:"total_transactions"`
-		TotalErrors     int64                                 `json:"total_errors"`
-		P50Ms           float64                               `json:"p50_ms"`
-		P90Ms           float64                               `json:"p90_ms"`
-		P95Ms           float64                               `json:"p95_ms"`
-		P99Ms           float64                               `json:"p99_ms"`
-		Transactions    map[string]*IntervalTransactionRecord `json:"transactions,omitempty"`
-		ByRegion        map[string]*IntervalTransactionRecord `json:"by_region,omitempty"`
-		Browser         *browserEnvelope                      `json:"browser,omitempty"`
-		BrowserByDevice map[string]*browserDeviceEnvelope     `json:"browser_by_device,omitempty"`
-		Latency         *NetworkLatencySummaryRecord          `json:"latency,omitempty"`
-		Telemetry       *telemetryEnvelope                    `json:"telemetry,omitempty"`
+		CompletedIterations int64                                 `json:"completed_iterations,omitempty"`
+		Timestamp           time.Time                             `json:"timestamp"`
+		ActiveVUsers        int64                                 `json:"active_vusers"`
+		TPS                 float64                               `json:"tps"`
+		AvgResponseMs       float64                               `json:"avg_response_ms"`
+		ErrorPct            float64                               `json:"error_pct"`
+		TotalTx             int64                                 `json:"total_transactions"`
+		TotalErrors         int64                                 `json:"total_errors"`
+		P50Ms               float64                               `json:"p50_ms"`
+		P90Ms               float64                               `json:"p90_ms"`
+		P95Ms               float64                               `json:"p95_ms"`
+		P99Ms               float64                               `json:"p99_ms"`
+		Transactions        map[string]*IntervalTransactionRecord `json:"transactions,omitempty"`
+		ByRegion            map[string]*IntervalTransactionRecord `json:"by_region,omitempty"`
+		Browser             *browserEnvelope                      `json:"browser,omitempty"`
+		BrowserByDevice     map[string]*browserDeviceEnvelope     `json:"browser_by_device,omitempty"`
+		Latency             *NetworkLatencySummaryRecord          `json:"latency,omitempty"`
+		Telemetry           *telemetryEnvelope                    `json:"telemetry,omitempty"`
 	}
 
 	payload, err := json.Marshal(metrics)
@@ -2110,20 +2111,21 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		return IntervalSummaryRecord{}, err
 	}
 	record := IntervalSummaryRecord{
-		SchemaVersion: intervalSummarySchemaVersion,
-		Timestamp:     summary.Timestamp,
-		ActiveVUsers:  summary.ActiveVUsers,
-		TPS:           summary.TPS,
-		AvgResponseMs: summary.AvgResponseMs,
-		ErrorPct:      summary.ErrorPct,
-		TotalTx:       summary.TotalTx,
-		TotalErrors:   summary.TotalErrors,
-		P50Ms:         summary.P50Ms,
-		P90Ms:         summary.P90Ms,
-		P95Ms:         summary.P95Ms,
-		P99Ms:         summary.P99Ms,
-		Transactions:  compactIntervalSummaryTransactions(summary.Transactions),
-		ByRegion:      compactIntervalSummaryTransactions(summary.ByRegion),
+		CompletedIterations: summary.CompletedIterations,
+		SchemaVersion:       intervalSummarySchemaVersion,
+		Timestamp:           summary.Timestamp,
+		ActiveVUsers:        summary.ActiveVUsers,
+		TPS:                 summary.TPS,
+		AvgResponseMs:       summary.AvgResponseMs,
+		ErrorPct:            summary.ErrorPct,
+		TotalTx:             summary.TotalTx,
+		TotalErrors:         summary.TotalErrors,
+		P50Ms:               summary.P50Ms,
+		P90Ms:               summary.P90Ms,
+		P95Ms:               summary.P95Ms,
+		P99Ms:               summary.P99Ms,
+		Transactions:        compactIntervalSummaryTransactions(summary.Transactions),
+		ByRegion:            compactIntervalSummaryTransactions(summary.ByRegion),
 	}
 	if summary.Browser != nil {
 		record.Browser = &BrowserMetricsSummaryRecord{

@@ -24,7 +24,7 @@ func validateEventHubsScriptIssues(script *Script) []string {
 	}
 
 	eh := script.Config.EventHubs
-	if !eh.Mock {
+	if !eh.Mock && !isBlockedJMeterMessagingDraft(script) {
 		// A non-mock run needs a reachable namespace and a real adapter. The
 		// connection string may be supplied inline or via a secret reference.
 		hasNamespace := strings.TrimSpace(eh.Namespace) != ""

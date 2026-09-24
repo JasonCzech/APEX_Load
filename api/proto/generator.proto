@@ -168,6 +168,8 @@ message WorkAssignment {
   // Frozen dense logical data-allocation coordinates; independent of sparse VUser IDs.
   uint32 parameter_population = 35;
   uint32 parameter_offset = 36;
+  // Explicit fixed-population iteration completion; omission retains duration mode.
+  string termination_mode = 37;
 }
 
 message WorkCommitRequest {
@@ -477,6 +479,7 @@ message TransactionMetric {
 }
 
 message GeneratorStats {
+ int64 completed_iterations = 38;
   int32 active_vusers = 1;
   double cpu_percent = 2;
   int64 memory_bytes = 3;

@@ -13,7 +13,7 @@ import (
 func validateKafkaScriptIssues(script *Script) []string {
 	var issues []string
 	kafka := script.Config.Kafka
-	if !kafka.Mock {
+	if !kafka.Mock && !isBlockedJMeterMessagingDraft(script) {
 		if len(kafka.Brokers) == 0 {
 			issues = append(issues, "config.kafka.brokers is required when mock mode is disabled")
 		}
@@ -50,7 +50,7 @@ func validateKafkaScriptIssues(script *Script) []string {
 		if !eventHubsProfile && !strings.Contains(strings.ToLower(kafka.SecurityProtocol), "ssl") {
 			issues = append(issues, "config.kafka.sasl_mechanism oauthbearer requires a TLS security_protocol (e.g. sasl_ssl)")
 		}
-		if !eventHubsProfile {
+		if !eventHubsProfile && !isBlockedJMeterMessagingDraft(script) {
 			issues = append(issues, "config.kafka managed-identity oauthbearer requires profile eventhubs")
 		}
 		if kafka.TLS != nil && kafka.TLS.InsecureSkipVerify {

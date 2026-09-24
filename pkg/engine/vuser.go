@@ -32,6 +32,7 @@ type VUser struct {
 	Variables              map[string]string
 	DataProvider           *DataProvider
 	Parameters             *ParameterRuntime
+	sourceParameters       *sourceParameterState
 	SecretResolver         SecretResolver
 	RedactionConfig        *RedactionConfig
 	// runtimeRedaction publishes immutable redaction snapshots to protocol
@@ -1051,6 +1052,9 @@ func (vu *VUser) Run(ctx context.Context) {
 		releaseReservedActionTransaction()
 
 		iteration++
+		if vu.Metrics != nil {
+			vu.Metrics.current.completedIterations.Add(1)
+		}
 
 	}
 
@@ -1128,6 +1132,10 @@ func (vu *VUser) prepareRuntimeState() error {
 		vu.Parameters = NewParameterRuntime(vu.Script.Parameters, vu.DataProvider, vu.ID)
 	}
 	if vu.Parameters != nil {
+		vu.Parameters.sourceState = vu.sourceParameters
+		if vu.Script.Config.JMeter != nil {
+			vu.Parameters.sourcePlan = vu.Script.Config.JMeter.SourcePlanID
+		}
 		vu.Parameters.Prime()
 	}
 	if err := vu.loadDataRow(); err != nil {

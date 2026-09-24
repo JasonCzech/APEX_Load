@@ -63,7 +63,7 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
 	"har":      "418097ed4a2784af2f85a88f180c744db2f7ef5b7a00bfff24c3eb540f28ecfa",
-	"jmeter":   "7219c9c4b6d8dbb7bb66ff2fcd3d96e63a79bac520817717839b0a1a49bfde92",
+	"jmeter":   "fc0f52174deee6271b23701660521038bd76a2355ecd8f265b4ce9a4468984e0",
 	"k6":       "83fa7df58e867e39d7544c6b4c0a5124ede5ae3b4a3ebcfb51de6a7736b69c59",
 	"openapi":  "282ad40974d2d7ecc3dda22a77b490e2a36149cb0584e7dc43722639c8780041",
 	"postman":  "fa2639cd6e22229d0b471fc02dc9a79a29c21ed7a6bb13e23e00b368e17ca38a",
@@ -79,6 +79,9 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			wantHash := frozenImportContractHashes[importer.name]
 			if wantHash == "" {
 				t.Fatalf("no committed frozen contract hash for %s", importer.name)
+			}
+			if importer.name == "jmeter" {
+				requireIntentionalDelta(t, "jmeter_stable_source_identity")
 			}
 			if importer.name == "wsdl" {
 				requireIntentionalDelta(t, "wsdl_incomplete_skeletons_are_blocked")
@@ -581,6 +584,7 @@ var intentionalDeltaAllowlist = map[string]string{
 	"raw_http_explicit_http11_runtime_mode":          "A raw capture containing only HTTP/1.1 requests now selects exact native HTTP/1.1 mode so connection-specific header semantics remain faithful.",
 	"har_request_http_version_fidelity":              "HAR request protocol versions now reach the shared request model and select an exact script-wide native version when every request agrees.",
 	"http_imports_disable_implicit_traceparent":      "HTTP-producing imports without an explicit source choice persist traceparent=false so runtime defaults cannot add an unauthored wire header.",
+	"jmeter_stable_source_identity":                  "JMeter provenance retains content-addressed plan and source group identities, stable source mapping IDs, and separate workload and contributor counts for regeneration and scoped compatibility behavior.",
 	"script_results_contract":                        "The optional bounded result-detail policy adds an empty results object to imported script configuration while preserving legacy runtime behavior.",
 }
 

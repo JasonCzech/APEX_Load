@@ -122,6 +122,14 @@ func parseJSONExtractors(node *xmlNode) []dsl.Extractor {
 		prop(node, "JSONPostProcessor.jsonPathExprs"),
 		prop(node, "JSONPostProcessor.json_path_exprs"),
 	))
+	defaults := strings.Split(prop(node, "JSONPostProcessor.defaultValues"), ";")
+	hasDefault := false
+	for _, child := range node.Children {
+		if child.Attrs["name"] == "JSONPostProcessor.defaultValues" {
+			hasDefault = true
+			defaults = strings.Split(child.Text, ";")
+		}
+	}
 	count := min(len(names), len(expressions))
 	if count == 0 {
 		return nil
@@ -131,11 +139,20 @@ func parseJSONExtractors(node *xmlNode) []dsl.Extractor {
 		if names[i] == "" || expressions[i] == "" {
 			continue
 		}
+		var fallback *string
+		onMiss := ""
+		if hasDefault && i < len(defaults) {
+			value := convertVariables(defaults[i])
+			fallback = &value
+			onMiss = "default"
+		}
 		out = append(out, dsl.Extractor{
-			Name:       names[i],
-			Source:     "body",
-			Type:       "jsonpath",
-			Expression: expressions[i],
+			DefaultValue: fallback,
+			OnMiss:       onMiss,
+			Name:         names[i],
+			Source:       "body",
+			Type:         "jsonpath",
+			Expression:   expressions[i],
 		})
 	}
 	if len(out) == 0 {

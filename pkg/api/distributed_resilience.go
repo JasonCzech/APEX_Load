@@ -132,6 +132,9 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	if tr == nil || test == nil {
 		return nil, fmt.Errorf("test runner state is unavailable")
 	}
+	if test.TerminationMode == "iterations" {
+		return nil, fmt.Errorf("iteration work is incomplete after generator loss; replay or evacuation requires a progress checkpoint and is unsupported")
+	}
 	unlockControl := tr.lockDistributedTopologyControl(test.ID)
 	topologyLocked := true
 	releaseTopology := func() {

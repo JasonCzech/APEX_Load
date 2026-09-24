@@ -625,7 +625,7 @@ export function setRuntimeBrowser(
 }
 
 export function getEffectiveRunDuration(scenario?: StoredScenario | null, overrides?: RunDefaultOverrides) {
-  return overrides?.duration?.trim() || scenario?.duration || ''
+  return scenario?.termination_mode === 'iterations' ? '' : overrides?.duration?.trim() || scenario?.duration || ''
 }
 
 export function getEffectiveResourceBaseline(scenario?: StoredScenario | null, overrides?: RunDefaultOverrides) {
@@ -919,8 +919,8 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
   return [
     {
       key: 'duration',
-      label: 'Duration',
-      value: duration,
+      label: scenario.termination_mode === 'iterations' ? 'Completion' : 'Duration',
+      value: scenario.termination_mode === 'iterations' ? 'All per-user iterations' : duration,
       scenarioValue: scenario.duration,
       isDefault: false,
       isOverridden: hasOwnKey(overrides, 'duration'),

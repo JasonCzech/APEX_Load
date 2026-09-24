@@ -176,25 +176,17 @@ func validateScriptStructureIssues(script *Script) []string {
 		if current.action.Control == nil {
 			continue
 		}
-		nestedCount := len(current.action.Control.Steps) + len(current.action.Control.Else) + len(current.action.Control.Default)
-		for _, switchCase := range current.action.Control.Cases {
-			nestedCount += len(switchCase.Steps)
+		branches := current.action.Control.ActionBranches()
+		nestedCount := 0
+		for _, branch := range branches {
+			nestedCount += len(branch.Actions)
 		}
 		if definitions+len(stack)+nestedCount > MaxScriptActionDefinitions {
 			return []string{fmt.Sprintf("script action/request definitions must not exceed %d", MaxScriptActionDefinitions)}
 		}
-		for i := range current.action.Control.Steps {
-			stack = append(stack, pendingAction{action: current.action.Control.Steps[i], depth: current.depth + 1})
-		}
-		for i := range current.action.Control.Else {
-			stack = append(stack, pendingAction{action: current.action.Control.Else[i], depth: current.depth + 1})
-		}
-		for i := range current.action.Control.Default {
-			stack = append(stack, pendingAction{action: current.action.Control.Default[i], depth: current.depth + 1})
-		}
-		for caseIndex := len(current.action.Control.Cases) - 1; caseIndex >= 0; caseIndex-- {
-			for i := range current.action.Control.Cases[caseIndex].Steps {
-				stack = append(stack, pendingAction{action: current.action.Control.Cases[caseIndex].Steps[i], depth: current.depth + 1})
+		for _, branch := range branches {
+			for _, action := range branch.Actions {
+				stack = append(stack, pendingAction{action: action, depth: current.depth + 1})
 			}
 		}
 	}
@@ -263,6 +255,12 @@ func CanonicalPacingType(value string) string {
 // library callers instead of silently falling back to a different model.
 func ValidateWorkloadSettingsIssues(runLogic RunLogicConfig, pacing PacingConfig) []string {
 	issues := validateRunLogicIssues(runLogic)
+	if mode := CanonicalTerminationMode(runLogic.TerminationMode); mode != TerminationDuration && mode != TerminationIterations {
+		issues = append(issues, "termination_mode must be duration or iterations")
+	}
+	if runLogic.TerminationMode == TerminationIterations && (runLogic.Iterations <= 0 || CanonicalWorkloadModel(runLogic.WorkloadModel) != "closed" || runLogic.GlobalIterations != 0 || runLogic.MaxTransactions != 0) {
+		issues = append(issues, "iteration termination requires positive per-user iterations, closed workload, and no shared execution limits")
+	}
 	workloadModel := CanonicalWorkloadModel(runLogic.WorkloadModel)
 	if !isAllowedValue(workloadModel, "closed", "open") {
 		issues = append(issues, "config.run_logic.workload_model must be closed or open")
@@ -370,6 +368,8 @@ func validateExecutionResourceIssues(script *Script) []string {
 		return nil
 	}
 	issues := validateParameterIssues(script)
+	issues = append(issues, ValidateJMeterCompatibility(script)...)
+	issues = append(issues, validateCSVExports(script)...)
 	issues = append(issues, ValidateWorkloadSettingsIssues(script.Config.RunLogic, script.Config.Pacing)...)
 	issues = append(issues, validateThinkTimeResourceIssues("config.think_time", script.Config.ThinkTime)...)
 	issues = append(issues, validateErrorHandlingResourceIssues(script.Config.ErrorHandling)...)
@@ -831,9 +831,18 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 			issues = append(issues, fmt.Sprintf("%s: extractors[%d] expression must not exceed %d bytes", label, i, httpprotocol.MaxExtractorExpressionBytes))
 		}
 		switch ext.OnMiss {
-		case "", "ignore", "fail", "empty":
+		case "", "ignore", "fail", "empty", "default":
 		default:
-			issues = append(issues, fmt.Sprintf("%s: extractors[%d] on_miss must be \"\", \"ignore\", \"empty\", or \"fail\" (got %q)", label, i, ext.OnMiss))
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] on_miss must be \"\", \"ignore\", \"empty\", \"default\", or \"fail\" (got %q)", label, i, ext.OnMiss))
+		}
+		if ext.OnMiss == "default" && !enforceSourceType {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] on_miss default is supported only by HTTP-family protocols", label, i))
+		}
+		if ext.OnMiss == "default" && ext.DefaultValue == nil {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] default_value is required for on_miss default", label, i))
+		}
+		if ext.DefaultValue != nil && (ext.OnMiss != "default" || len(*ext.DefaultValue) > httpprotocol.MaxExtractorExpressionBytes) {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] default_value requires on_miss default and a bounded value", label, i))
 		}
 		switch ext.Mode {
 		case "":
@@ -1262,12 +1271,9 @@ func visitScriptActions(script *Script, visit func(path string, action Action)) 
 			if action.Control == nil {
 				continue
 			}
-			walk(path+".control.steps", action.Control.Steps)
-			walk(path+".control.else", action.Control.Else)
-			for caseIndex, switchCase := range action.Control.Cases {
-				walk(fmt.Sprintf("%s.control.cases[%d].steps", path, caseIndex), switchCase.Steps)
+			for _, branch := range action.Control.ActionBranches() {
+				walk(path+".control."+branch.Path, branch.Actions)
 			}
-			walk(path+".control.default", action.Control.Default)
 		}
 	}
 	walk("init", script.Init)

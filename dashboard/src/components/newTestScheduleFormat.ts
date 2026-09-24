@@ -25,6 +25,7 @@ export function formatLaunchTimestamp(value?: string) {
 export function formatLaunchWindow(preflight?: LaunchPreflightResponse | null) {
   const window = preflight?.candidate_window
   if (!window) return 'Pending preflight'
+  if (window.open_ended) return `${formatLaunchTimestamp(window.start_at)} — until all iterations complete`
   return `${formatLaunchTimestamp(window.start_at)} - ${formatLaunchTimestamp(window.end_at)}`
 }
 
@@ -73,6 +74,7 @@ export function formatTimeslotLabel(slot: CapacityTimeslot) {
 export function formatReservationWindow(preflight?: LaunchPreflightResponse | null) {
   const window = preflight?.candidate_window
   if (!window) return 'Pending preflight'
+  if (window.open_ended) return 'Iteration runs cannot reserve a duration-based timeslot'
   const startISO = reservationStartISO(preflight)
   const start = new Date(startISO)
   const end = new Date(start.getTime() + window.duration_seconds * 1000)

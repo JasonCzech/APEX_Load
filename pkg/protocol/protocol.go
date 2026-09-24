@@ -581,15 +581,16 @@ func (t *ServerTelemetry) HasMeasuredSample() bool {
 //
 // Example: Extract session token from JSON response for use in subsequent requests.
 type Extractor struct {
-	Name       string `json:"name"`                  // Variable name
-	Source     string `json:"source"`                // "body", "header", etc.
-	Type       string `json:"type"`                  // "json", "xpath", "regex", etc.
-	Expression string `json:"expression"`            // JSONPath, XPath, regex pattern, etc.
-	OnMiss     string `json:"on_miss,omitempty"`     // ""/"ignore": leave unset; "fail": fail the request
-	Mode       string `json:"mode,omitempty"`        // "": single value; "all": name_1..name_N + name_count
-	SaveOffset int    `json:"save_offset,omitempty"` // skip leading bytes of each matched value
-	SaveLength int    `json:"save_length,omitempty"` // truncate each value to at most N bytes (0 = entire)
-	Convert    string `json:"convert,omitempty"`     // "url_encode" | "url_decode" | "html_decode"
+	Name         string  `json:"name"`       // Variable name
+	Source       string  `json:"source"`     // "body", "header", etc.
+	Type         string  `json:"type"`       // "json", "xpath", "regex", etc.
+	Expression   string  `json:"expression"` // JSONPath, XPath, regex pattern, etc.
+	DefaultValue *string `json:"default_value,omitempty"`
+	OnMiss       string  `json:"on_miss,omitempty"`     // ""/"ignore": leave unset; "fail": fail the request
+	Mode         string  `json:"mode,omitempty"`        // "": single value; "all": name_1..name_N + name_count
+	SaveOffset   int     `json:"save_offset,omitempty"` // skip leading bytes of each matched value
+	SaveLength   int     `json:"save_length,omitempty"` // truncate each value to at most N bytes (0 = entire)
+	Convert      string  `json:"convert,omitempty"`     // "url_encode" | "url_decode" | "html_decode"
 }
 
 // Assertion validates a response matches expected conditions.
@@ -635,6 +636,9 @@ type ThinkTimeConfig struct {
 // This says nothing about Extractions below, which IS carried to the engine and
 // whose sensitively-named entries are still registered for redaction.
 type Result struct {
+	// CSVExportIDs binds finalized samples to declared exports before display-name redaction.
+	CSVExportIDs             []string
+	ExtractionsIncomplete    bool     `json:"extractions_incomplete,omitempty"`
 	ContentCheckErrorMatches int      `json:"content_check_error_matches,omitempty"`
 	ContentCheckInfoMatches  int      `json:"content_check_info_matches,omitempty"`
 	WarningCodes             []string `json:"warning_codes,omitempty"` // bounded protocol policy warnings

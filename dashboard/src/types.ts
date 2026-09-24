@@ -751,6 +751,7 @@ export interface RunArchiveErrorPattern {
 }
 
 export interface TestSummary {
+  termination_mode?: "duration" | "iterations"
   id: string
   ref_key?: string
   name: string
@@ -919,6 +920,7 @@ export interface TestNote {
 }
 
 export interface RunArchiveManifest {
+  csv_exports?: Array<{ id: string; group: string; file_name: string; status: string; rows: number; error?: string }>
   termination_reason?: string
 
   schema_version: string
@@ -1939,6 +1941,7 @@ export interface ScenarioDraftRevisionContext {
 }
 
 export interface ScenarioDraft {
+  terminationMode?: 'duration' | 'iterations'
   name: string
   duration: string
   startDelay: string
@@ -1969,6 +1972,7 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  completed_iterations?: number
   timestamp: string
   active_vusers: number
   tps: number
@@ -2617,8 +2621,9 @@ export interface ArchiveRetentionPlanResponse {
 }
 
 export interface LaunchWindow {
+  open_ended?: boolean
   start_at: string
-  end_at: string
+  end_at?: string
   duration_seconds: number
 }
 

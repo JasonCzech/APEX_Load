@@ -40,7 +40,7 @@ import (
 // log it and surface it in the pre-launch runtime-settings review instead of
 // silently changing what the operator asked for.
 func applyScheduleIterationAuthority(script *dsl.Script, explicitIterations *int) int {
-	if script == nil || explicitIterations != nil {
+	if script == nil || explicitIterations != nil || script.Config.RunLogic.TerminationMode == dsl.TerminationIterations {
 		return 0
 	}
 	scriptCap := script.Config.RunLogic.Iterations

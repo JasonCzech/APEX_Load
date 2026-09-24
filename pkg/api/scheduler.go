@@ -3465,6 +3465,9 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	if !ok {
 		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
 	}
+	if scenario.TerminationMode == "iterations" {
+		return nil, fmt.Errorf("iteration-only scenarios cannot reserve duration-dependent schedules")
+	}
 	quotaProbe := &ManagedTest{ProjectID: scenario.ProjectID, Assignment: scenario.Assignment}
 	if _, ok := projectQuota.quotaFor(quotaProbe); !ok {
 		return nil, fmt.Errorf("scenario project or pool assignment changed while quota evidence was loaded; retry")

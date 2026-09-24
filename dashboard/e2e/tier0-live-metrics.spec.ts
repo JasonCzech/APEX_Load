@@ -64,7 +64,7 @@ test('[U12] the run view renders live metrics for an executing run', async ({ pa
   // Assert on the run's own identity rather than on chrome: a shell that mounts
   // while the run's data call fails would satisfy a chrome-only assertion.
   await expect(
-    page.getByText(run.testId, { exact: false }).first(),
+    page.getByRole('heading', { level: 1, name: 'tier0-live-view-run', exact: true }),
     'the run view must identify the run it was opened for',
   ).toBeVisible({ timeout: 30_000 })
 })

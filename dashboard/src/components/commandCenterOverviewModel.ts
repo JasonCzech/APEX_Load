@@ -30,6 +30,7 @@ export function commandRunHealth(run: TestSummary, now: number) {
 export function commandRunTiming(run: TestSummary, now: number) {
   const started = recordedTime(run.started_at || run.start_time)
   if (commandRunWaiting(run)) return { elapsed: 'Not started', remaining: run.duration || 'Unavailable' }
+  if (run.termination_mode === 'iterations') return { elapsed: formatElapsedSeconds(started === undefined ? undefined : Math.max(0, (now-started)/1000)), remaining: `${run.live_metrics?.completed_iterations ?? 0} / ${(run.groups || []).reduce((n,g) => n + g.vusers * (g.iterations || 0),0)} iterations` }
   const elapsed = started === undefined ? undefined : Math.max(0, (now - started) / 1000)
   // The summary has no cumulative paused-duration field. Do not present a
   // wall-clock subtraction as an authoritative execution countdown.

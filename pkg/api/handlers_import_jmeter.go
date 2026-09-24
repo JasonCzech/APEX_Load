@@ -4,6 +4,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
@@ -117,6 +119,13 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		}
 	}
 
+	var bindings map[string]string
+	if raw := r.FormValue("variable_bindings"); raw != "" {
+		if len(raw) > 16384 || json.Unmarshal([]byte(raw), &bindings) != nil || len(bindings) > 128 {
+			writeError(w, http.StatusBadRequest, "invalid variable_bindings object")
+			return nil, false
+		}
+	}
 	if len(data) == 0 {
 		writeError(w, http.StatusBadRequest, "empty file uploaded")
 		return nil, false
@@ -137,6 +146,7 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		return &jmeterImportRequest{
 			Data: data, Documents: documents, ProjectID: authorizedImportProjectID(r),
 			Opts: jmeter.ConvertOptions{
+				TimeMode: r.FormValue("time_mode"), Timezone: r.FormValue("timezone"), VariableBindings: bindings,
 				ScriptName: r.FormValue("name"), BaseURL: r.FormValue("base_url"),
 				IncludeAssertions: r.FormValue("include_assertions") == "true",
 				ScenarioDraft:     r.FormValue("scenario_draft") == "true", FileName: fileName, SidecarFiles: sidecarFiles,
@@ -148,6 +158,7 @@ func readJMeterImportRequest(w http.ResponseWriter, r *http.Request) (*jmeterImp
 		Data:      data,
 		ProjectID: authorizedImportProjectID(r),
 		Opts: jmeter.ConvertOptions{
+			TimeMode: r.FormValue("time_mode"), Timezone: r.FormValue("timezone"), VariableBindings: bindings,
 			ScriptName:        r.FormValue("name"),
 			BaseURL:           r.FormValue("base_url"),
 			IncludeAssertions: r.FormValue("include_assertions") == "true",
@@ -241,6 +252,13 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 		if err != nil {
 			return nil, fmt.Errorf("convert JMeter ZIP entry %q: %w", document.FileName, err)
 		}
+		if len(documents) > 1 && opts.ScenarioDraft {
+			for _, script := range converted.Scripts {
+				if script.Config.JMeter != nil {
+					return nil, fmt.Errorf("messaging scenario import requires one JMX document; combining independent source schedules is not supported")
+				}
+			}
+		}
 		attachSourceReviewToScripts(converted.Scripts, "jmeter", document.FileName, converted.SourceReview)
 		for _, script := range converted.Scripts {
 			if script.Metadata == nil {
@@ -267,6 +285,12 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 		combined.Assumptions = append(combined.Assumptions, converted.Assumptions...)
 		combined.Findings = append(combined.Findings, converted.Findings...)
 		combined.SecretRequirements = append(combined.SecretRequirements, converted.SecretRequirements...)
+		combined.Stats.EnabledWorkloadSamplers += converted.Stats.EnabledWorkloadSamplers
+		combined.Stats.DisabledWorkloadSamplers += converted.Stats.DisabledWorkloadSamplers
+		combined.Stats.ConvertedWorkloadSamplers += converted.Stats.ConvertedWorkloadSamplers
+		combined.Stats.BlockedWorkloadSamplers += converted.Stats.BlockedWorkloadSamplers
+		combined.Stats.ConfigurationContributors += converted.Stats.ConfigurationContributors
+		combined.Stats.IgnoredReportingElements += converted.Stats.IgnoredReportingElements
 		combined.Stats.ThreadGroups += converted.Stats.ThreadGroups
 		combined.Stats.Samplers += converted.Stats.Samplers
 		combined.Stats.TotalSamplers += converted.Stats.TotalSamplers
@@ -539,36 +563,21 @@ func buildJMeterProtocolCompatReport(result *jmeter.ConvertResult, unsupported [
 	if result == nil {
 		return nil
 	}
-	reviewDiagnostics := countJMeterReviewDiagnostics(result)
-	reviewGated := len(unsupported) + reviewDiagnostics
+	reviewGated := result.Stats.ReviewRequired + result.Stats.AdapterRequired
 	status := protocolPromotionStatus("executable", reviewGated, len(result.Warnings))
 	return &protocolCompatReport{
 		SourceFormat:         "JMeter JMX",
 		CanonicalProtocol:    "jmeter",
 		ImportMode:           "executable",
-		MappedSteps:          result.Stats.ConvertedActions,
+		MappedSteps:          result.Stats.Mapped,
 		ReviewGatedSteps:     reviewGated,
-		UnsupportedFragments: uniqueSortedStrings(append(append([]string(nil), unsupported...), jmeterReviewDiagnosticFragments(result)...)),
+		UnsupportedFragments: uniqueSortedStrings(jmeterReviewDiagnosticFragments(result)),
 		RuntimeParity:        protocolRuntimeParityFromScript(result.Script),
 		DataSources:          result.Stats.CSVSources,
 		CorrelationCoverage:  protocolCorrelationCoverage(countJMeterExtractors(result), result.Stats.Samplers),
 		PromotionStatus:      status,
 		NextActions:          protocolNextActions(status, "Validate converted JMeter thread groups and scenario draft before promotion."),
 	}
-}
-
-func countJMeterReviewDiagnostics(result *jmeter.ConvertResult) int {
-	if result == nil {
-		return 0
-	}
-	count := 0
-	for _, item := range result.Unsupported {
-		switch strings.ToLower(strings.TrimSpace(string(item.Severity))) {
-		case "warning", "blocker":
-			count++
-		}
-	}
-	return count
 }
 
 func jmeterReviewDiagnosticFragments(result *jmeter.ConvertResult) []string {
@@ -580,6 +589,13 @@ func jmeterReviewDiagnosticFragments(result *jmeter.ConvertResult) []string {
 		switch strings.ToLower(strings.TrimSpace(string(item.Severity))) {
 		case "warning", "blocker":
 			fragments = append(fragments, item.String())
+		}
+	}
+	if result.SourceReview != nil {
+		for _, m := range result.SourceReview.Mappings {
+			if m.Status == "review_only" || m.Status == "unsupported" {
+				fragments = append(fragments, m.Function+" at "+m.TargetPath+": "+m.Notes)
+			}
 		}
 	}
 	return fragments
@@ -1109,6 +1125,12 @@ func cloneJMeterScenarioDraft(draft *jmeter.ScenarioDraft) *jmeter.ScenarioDraft
 	}
 	clone := *draft
 	clone.Groups = append([]jmeter.ScenarioDraftGroup(nil), draft.Groups...)
+	for i := range clone.Groups {
+		clone.Groups[i].SamplerSchedules = append([]dsl.SamplerSchedule(nil), draft.Groups[i].SamplerSchedules...)
+		for j := range clone.Groups[i].SamplerSchedules {
+			clone.Groups[i].SamplerSchedules[j].Segments = append([]dsl.SamplerRateSegment(nil), draft.Groups[i].SamplerSchedules[j].Segments...)
+		}
+	}
 	if draft.Metadata != nil {
 		clone.Metadata = make(map[string]interface{}, len(draft.Metadata))
 		for key, value := range draft.Metadata {
@@ -1143,6 +1165,7 @@ func buildJMeterScenarioRequest(
 	}
 
 	groups := make([]CreateGroupEntry, 0, len(draft.Groups))
+	seenMessagingGroups := make(map[string]bool)
 	for index, group := range draft.Groups {
 		scriptName := strings.TrimSpace(group.ScriptName)
 		if scriptName == "" {
@@ -1152,6 +1175,27 @@ func buildJMeterScenarioRequest(
 		script := scriptsByName[scriptIdentity]
 		if script == nil {
 			return nil, fmt.Errorf("scenario group %d references unknown imported script %q", index+1, scriptName)
+		}
+		if script.Config.JMeter != nil {
+			if group.SourceGroupID == "" || group.SourceGroupID != script.Config.JMeter.SourceGroupID {
+				return nil, fmt.Errorf("scenario group %d requires the imported source identity", index+1)
+			}
+			if seenMessagingGroups[scriptIdentity] {
+				return nil, fmt.Errorf("scenario duplicates imported messaging group %q", scriptName)
+			}
+			seenMessagingGroups[scriptIdentity] = true
+		}
+		if group.SourceGroupID != "" {
+			if script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved["source_group_id"] != group.SourceGroupID {
+				return nil, fmt.Errorf("scenario group %d source identity does not match imported script", index+1)
+			}
+		}
+		if script.Config.JMeter != nil || len(group.SamplerSchedules) > 0 {
+			actual, _ := json.Marshal(script.Config.SamplerSchedules)
+			requested, _ := json.Marshal(group.SamplerSchedules)
+			if string(actual) != string(requested) {
+				return nil, fmt.Errorf("scenario group %d sampler schedules do not match imported script", index+1)
+			}
 		}
 		groupName := group.Name
 		if groupName == "" {
@@ -1175,13 +1219,56 @@ func buildJMeterScenarioRequest(
 			VUsers:       vusers,
 			RampUp:       group.RampUp,
 			InitStrategy: initialization,
+			Iterations: func() *int {
+				if script.Config.RunLogic.Iterations > 0 {
+					n := script.Config.RunLogic.Iterations
+					return &n
+				}
+				return nil
+			}(),
 		})
 	}
+	for identity, script := range scriptsByName {
+		if script.Config.JMeter != nil && !seenMessagingGroups[identity] {
+			return nil, fmt.Errorf("scenario omits imported messaging group %q", script.Name)
+		}
+	}
 	request := CreateScenarioRequest{
-		Name:         firstNonEmpty(draft.Name, "Imported JMeter Scenario"),
-		Duration:     firstNonEmpty(draft.Duration, "5m"),
-		ScenarioMode: firstNonEmpty(draft.ScenarioMode, "vuser_driven"),
-		Groups:       groups,
+		Name:            firstNonEmpty(draft.Name, "Imported JMeter Scenario"),
+		Duration:        draft.Duration,
+		TerminationMode: draft.TerminationMode,
+		ScenarioMode:    firstNonEmpty(draft.ScenarioMode, "vuser_driven"),
+		Groups:          groups,
+	}
+	affinity := draft.GeneratorAffinity
+	var sourceScheduleDuration time.Duration
+	for _, script := range scripts {
+		if script.Config.JMeter != nil {
+			affinity = "single_generator"
+			for _, schedule := range script.Config.SamplerSchedules {
+				if schedule.Duration() > sourceScheduleDuration {
+					sourceScheduleDuration = schedule.Duration()
+				}
+			}
+		}
+	}
+	if affinity != "" {
+		if affinity != "single_generator" {
+			return nil, fmt.Errorf("unsupported JMeter generator affinity")
+		}
+		request.Assignment = &GeneratorAssignmentSettings{SourceAffinity: affinity}
+		if sourceScheduleDuration > 0 {
+			parsed, err := time.ParseDuration(request.Duration)
+			if err != nil || parsed != sourceScheduleDuration {
+				return nil, fmt.Errorf("JMeter messaging scenario duration must preserve source sampler schedules")
+			}
+		}
+		if request.Duration == "" {
+			return nil, fmt.Errorf("JMeter messaging scenario requires an explicit schedule duration")
+		}
+	}
+	if request.Duration == "" && request.TerminationMode != dsl.TerminationIterations {
+		request.Duration = "5m"
 	}
 	return &request, nil
 }

@@ -833,6 +833,7 @@ type Release struct {
 }
 
 type Scenario struct {
+	TerminationMode  string    `json:"termination_mode,omitempty"`
 	ID               string    `json:"id"`
 	RefKey           string    `json:"ref_key,omitempty"`
 	Name             string    `json:"name"`
@@ -1316,6 +1317,7 @@ type ScriptRecordingStatusRecord struct {
 
 // TestRecord represents a persisted test run.
 type TestRecord struct {
+	TerminationMode       string                    `json:"termination_mode,omitempty"`
 	ID                    string                    `json:"id"`
 	RefKey                string                    `json:"ref_key,omitempty"`
 	MaterializationKey    string                    `json:"materialization_key,omitempty"`

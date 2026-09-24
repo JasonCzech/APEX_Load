@@ -690,6 +690,21 @@ describe('useExecutionArchiveModel', () => {
     expect(downloadBlob).toHaveBeenCalledWith(blob, 'checkout-journey-test-1-browser-diagnostics.zip')
   })
 
+  it('preserves a declared CSV export filename in browser and native downloads', async () => {
+    const report = buildEmptyArchiveReport()
+    apiMock.getTestArchiveReport.mockResolvedValue({ ...report, manifest: { ...report.manifest, csv_exports: [{ id: 'trace', group: 'users', file_name: 'traceId-results.csv', status: 'complete', rows: 6 }] } })
+    const blob = new Blob(['traceId,latencyMs\n'])
+    apiMock.downloadTestArchiveArtifact.mockResolvedValue(blob)
+    let model: ReturnType<typeof useExecutionArchiveModel> | null = null
+    const archived = buildArchivedTest()
+    function DownloadHarness() { model = useExecutionArchiveModel(archived); return null }
+    await act(async () => { root.render(<DownloadHarness />) })
+    await flushPromises()
+    await act(async () => { await model?.onDownloadArchiveArtifact('traceId-results.csv') })
+    expect(downloadBlob).toHaveBeenCalledWith(blob, 'traceId-results.csv')
+    expect(saveApiResourceViaBridge).toHaveBeenCalledWith('/api/v1/tests/test-1/archive/files/traceId-results.csv', 'traceId-results.csv')
+  })
+
   it('streams archive downloads through the native bridge without creating browser blobs', async () => {
     vi.mocked(saveApiResourceViaBridge).mockResolvedValue('saved')
     let model: ReturnType<typeof useExecutionArchiveModel> | null = null

@@ -34,7 +34,7 @@ export default function TestExecutionRunState({ test, groupMetrics, remainingSec
       <dl className="advanced-fact-grid">
         <div><dt>Planned load</dt><dd>{test.total_vusers} VUsers</dd></div>
         <div><dt>Observed load</dt><dd>{test.live_metrics?.active_vusers ?? 'No observation'}</dd></div>
-        <div><dt>Remaining</dt><dd>{remaining}</dd></div>
+        {test.termination_mode === 'iterations' ? <><div><dt>Completed / expected iterations</dt><dd>{test.live_metrics?.completed_iterations ?? 0} / {(test.groups || []).reduce((sum, group) => sum + group.vusers * (group.iterations || 0), 0)}</dd></div><div><dt>Elapsed</dt><dd>{test.started_at ? formatTimeCompact(Math.max(0, ((test.ended_at ? Date.parse(test.ended_at) : Date.now()) - Date.parse(test.started_at)) / 1000)) : 'Not started'}</dd></div></> : <div><dt>Remaining</dt><dd>{remaining}</dd></div>}
         <div><dt>Last telemetry</dt><dd>{test.live_metrics ? 'Live sample received' : 'No live sample'}</dd></div>
       </dl>
       <div className="advanced-group-table-wrap">

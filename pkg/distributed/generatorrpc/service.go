@@ -32,7 +32,10 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
+const FeatureIterationTerminationV1 = "iteration_termination_v1"
+
 type assignedTest struct {
+	terminationMode                 string
 	testID                          string
 	lifecycle                       assignmentLifecycleState
 	executionGeneration             uint64
@@ -1334,7 +1337,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1)
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeatureIterationTerminationV1)
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
 		generatorNow := time.Now()
 		if err := stream.Send(&pb.HeartbeatPong{
@@ -1804,24 +1807,25 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		avgResponse = totalDuration / float64(totalAttempts)
 	}
 	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
-		Timestamp:       time.UnixMilli(batch.TimestampUnixMs),
-		ActiveVUsers:    int64(batch.GetStats().GetActiveVusers()),
-		TPS:             float64(totalSuccess) / windowSecondsFromMs(batch.GetWindowMs()),
-		AvgResponseMs:   avgResponse,
-		ErrorPct:        errorPct(totalErrors, totalSuccess+totalErrors),
-		TotalTx:         totalSuccess,
-		TotalErrors:     totalErrors,
-		P50Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.50),
-		P90Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.90),
-		P95Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.95),
-		P99Ms:           quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.99),
-		DurationDigest:  tdigestSnapshotFromProto(batch.GetFleetMetrics().GetDurationDigest()),
-		Groups:          archiveSummaryGroupsFromBatch(batch),
-		Transactions:    archiveSummaryTransactionsFromBatch(batch.GetTransactionMetrics()),
-		ByRegion:        archiveSummaryTransactionsFromBatch(batch.GetRegionMetrics()),
-		Browser:         archiveSummaryBrowserFromBatch(batch),
-		BrowserByDevice: archiveSummaryBrowserDevicesFromBatch(batch),
-		Telemetry:       archiveSummaryTelemetryFromBatch(batch),
+		CompletedIterations: batch.GetStats().GetCompletedIterations(),
+		Timestamp:           time.UnixMilli(batch.TimestampUnixMs),
+		ActiveVUsers:        int64(batch.GetStats().GetActiveVusers()),
+		TPS:                 float64(totalSuccess) / windowSecondsFromMs(batch.GetWindowMs()),
+		AvgResponseMs:       avgResponse,
+		ErrorPct:            errorPct(totalErrors, totalSuccess+totalErrors),
+		TotalTx:             totalSuccess,
+		TotalErrors:         totalErrors,
+		P50Ms:               quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.50),
+		P90Ms:               quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.90),
+		P95Ms:               quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.95),
+		P99Ms:               quantileFromMetricAggregate(batch.FleetMetrics, batch.Transactions, 0.99),
+		DurationDigest:      tdigestSnapshotFromProto(batch.GetFleetMetrics().GetDurationDigest()),
+		Groups:              archiveSummaryGroupsFromBatch(batch),
+		Transactions:        archiveSummaryTransactionsFromBatch(batch.GetTransactionMetrics()),
+		ByRegion:            archiveSummaryTransactionsFromBatch(batch.GetRegionMetrics()),
+		Browser:             archiveSummaryBrowserFromBatch(batch),
+		BrowserByDevice:     archiveSummaryBrowserDevicesFromBatch(batch),
+		Telemetry:           archiveSummaryTelemetryFromBatch(batch),
 	})
 	if archiveErr := writer.claimRecordingFailure(); archiveErr != nil {
 		// The engine's result-sink contract is non-blocking and intentionally
@@ -2490,6 +2494,9 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	}
 	if snapshotOK {
 		stats = generatorStatsFromResources(snapshot.Resources, int32(snapshot.ActiveVUsers))
+	}
+	if exec.engine != nil {
+		stats.CompletedIterations = exec.engine.CompletedIterations()
 	}
 	droppedSubscriberBatches := s.metricsBroker.droppedCount()
 	changes := classifyExecutionMetricsChanges(previous, snapshot, snapshotOK, stats, droppedSubscriberBatches, false)

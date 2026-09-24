@@ -505,8 +505,10 @@ type WorkAssignment struct {
 	// Frozen dense logical data-allocation coordinates; independent of sparse VUser IDs.
 	ParameterPopulation uint32 `protobuf:"varint,35,opt,name=parameter_population,json=parameterPopulation,proto3" json:"parameter_population,omitempty"`
 	ParameterOffset     uint32 `protobuf:"varint,36,opt,name=parameter_offset,json=parameterOffset,proto3" json:"parameter_offset,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// Explicit fixed-population iteration completion; omission retains duration mode.
+	TerminationMode string `protobuf:"bytes,37,opt,name=termination_mode,json=terminationMode,proto3" json:"termination_mode,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -789,6 +791,13 @@ func (x *WorkAssignment) GetParameterOffset() uint32 {
 		return x.ParameterOffset
 	}
 	return 0
+}
+
+func (x *WorkAssignment) GetTerminationMode() string {
+	if x != nil {
+		return x.TerminationMode
+	}
+	return ""
 }
 
 type WorkCommitRequest struct {
@@ -3314,6 +3323,7 @@ func (x *TransactionMetric) GetPageName() string {
 
 type GeneratorStats struct {
 	state                             protoimpl.MessageState `protogen:"open.v1"`
+	CompletedIterations               int64                  `protobuf:"varint,38,opt,name=completed_iterations,json=completedIterations,proto3" json:"completed_iterations,omitempty"`
 	ActiveVusers                      int32                  `protobuf:"varint,1,opt,name=active_vusers,json=activeVusers,proto3" json:"active_vusers,omitempty"`
 	CpuPercent                        float64                `protobuf:"fixed64,2,opt,name=cpu_percent,json=cpuPercent,proto3" json:"cpu_percent,omitempty"`
 	MemoryBytes                       int64                  `protobuf:"varint,3,opt,name=memory_bytes,json=memoryBytes,proto3" json:"memory_bytes,omitempty"`
@@ -3383,6 +3393,13 @@ func (x *GeneratorStats) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GeneratorStats.ProtoReflect.Descriptor instead.
 func (*GeneratorStats) Descriptor() ([]byte, []int) {
 	return file_api_proto_generator_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *GeneratorStats) GetCompletedIterations() int64 {
+	if x != nil {
+		return x.CompletedIterations
+	}
+	return 0
 }
 
 func (x *GeneratorStats) GetActiveVusers() int32 {
@@ -4682,7 +4699,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0ePodCapacityAck\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12<\n" +
-	"\bsnapshot\x18\x03 \x01(\v2 .apexload.v1.PodCapacitySnapshotR\bsnapshot\"\xb5\x0f\n" +
+	"\bsnapshot\x18\x03 \x01(\v2 .apexload.v1.PodCapacitySnapshotR\bsnapshot\"\xe0\x0f\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -4725,7 +4742,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x1emessage_detail_max_total_bytes\x18! \x01(\x03R\x1amessageDetailMaxTotalBytes\x12F\n" +
 	" transaction_response_time_sla_ms\x18\" \x01(\x01R\x1ctransactionResponseTimeSlaMs\x121\n" +
 	"\x14parameter_population\x18# \x01(\rR\x13parameterPopulation\x12)\n" +
-	"\x10parameter_offset\x18$ \x01(\rR\x0fparameterOffset\x1a>\n" +
+	"\x10parameter_offset\x18$ \x01(\rR\x0fparameterOffset\x12)\n" +
+	"\x10termination_mode\x18% \x01(\tR\x0fterminationMode\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
@@ -4974,8 +4992,9 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fnetwork_profile\x18\x15 \x01(\tR\x0enetworkProfile\x12\x1c\n" +
 	"\thierarchy\x18\x16 \x01(\tR\thierarchy\x12\x14\n" +
 	"\x05phase\x18\x17 \x01(\tR\x05phase\x12\x1b\n" +
-	"\tpage_name\x18\x18 \x01(\tR\bpageName\"\xc4\r\n" +
-	"\x0eGeneratorStats\x12#\n" +
+	"\tpage_name\x18\x18 \x01(\tR\bpageName\"\xf7\r\n" +
+	"\x0eGeneratorStats\x121\n" +
+	"\x14completed_iterations\x18& \x01(\x03R\x13completedIterations\x12#\n" +
 	"\ractive_vusers\x18\x01 \x01(\x05R\factiveVusers\x12\x1f\n" +
 	"\vcpu_percent\x18\x02 \x01(\x01R\n" +
 	"cpuPercent\x12!\n" +

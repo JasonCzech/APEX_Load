@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -13,22 +14,34 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
+const maxJMeterXMLDepth = 256
+const maxJMeterXMLNodes = 250000
+
 func parseXML(data []byte) (*xmlNode, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	content := string(data)
 	lineIndex := sourceview.NewLineIndex(content)
 	var stack []*xmlNode
+	var root *xmlNode
+	nodes := 0
 	for {
 		tok, err := decoder.Token()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if err == io.EOF {
 				break
 			}
 			return nil, fmt.Errorf("parse JMX XML: %w", err)
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
-			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}, StartLine: lineIndex.LineForOffset(int(decoder.InputOffset()))}
+			if len(stack) == 0 && root != nil {
+				return nil, fmt.Errorf("JMX XML must contain one root element")
+			}
+			nodes++
+			if len(stack) >= maxJMeterXMLDepth || nodes > maxJMeterXMLNodes {
+				return nil, fmt.Errorf("JMX XML exceeds structural limits")
+			}
+			node := &xmlNode{Name: t.Name.Local, Attrs: map[string]string{}, StartOffset: int(decoder.InputOffset()), StartLine: lineIndex.LineForOffset(int(decoder.InputOffset()))}
 			for _, attr := range t.Attr {
 				node.Attrs[attr.Name.Local] = attr.Value
 			}
@@ -38,6 +51,9 @@ func parseXML(data []byte) (*xmlNode, error) {
 			}
 			stack = append(stack, node)
 		case xml.CharData:
+			if len(stack) == 0 && strings.TrimSpace(string(t)) != "" {
+				return nil, fmt.Errorf("JMX XML contains text outside its root element")
+			}
 			if len(stack) > 0 {
 				stack[len(stack)-1].Text += string(t)
 			}
@@ -47,10 +63,13 @@ func parseXML(data []byte) (*xmlNode, error) {
 			}
 			stack[len(stack)-1].EndLine = lineIndex.LineForOffset(int(decoder.InputOffset()))
 			if len(stack) == 1 {
-				return stack[0], nil
+				root = stack[0]
 			}
 			stack = stack[:len(stack)-1]
 		}
+	}
+	if root != nil {
+		return root, nil
 	}
 	return nil, fmt.Errorf("empty JMX XML")
 }

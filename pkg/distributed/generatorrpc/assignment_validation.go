@@ -88,8 +88,14 @@ func validateWorkAssignment(assignment *pb.WorkAssignment, scriptCacheLimit int6
 	if err != nil {
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if startOffset > targetDuration {
+	if assignment.GetTerminationMode() != "iterations" && startOffset > targetDuration {
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "start_offset begins after the assignment target_duration")
+	}
+	if mode := assignment.GetTerminationMode(); mode != "" && mode != "duration" && mode != "iterations" {
+		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "unsupported termination_mode")
+	}
+	if assignment.GetTerminationMode() == "iterations" && (targetDuration != 0 || requestedDurationOffset != 0 || rampDown != 0 || assignment.GetVuserCount() <= 0) {
+		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "iteration termination requires fixed positive users without duration, duration offset, or ramp-down")
 	}
 	preBaseline, err := validatedAssignmentDuration(assignment.GetPreBaseline(), 0, "pre_baseline", true)
 	if err != nil {

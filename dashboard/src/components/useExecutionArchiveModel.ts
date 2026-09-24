@@ -460,7 +460,8 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
   const onDownloadArchiveArtifact = useCallback(async (artifactName: string) => {
     if (!test) return
     try {
-      const filename = `${buildArchiveDownloadName(test)}-${artifactName}`
+      const declaredCSV = archiveReport?.manifest?.csv_exports?.some(exported => exported.file_name === artifactName && exported.status === 'complete')
+      const filename = declaredCSV ? artifactName : `${buildArchiveDownloadName(test)}-${artifactName}`
       const resourcePath = `/api/v1/tests/${encodeURIComponent(test.id)}/archive/files/${encodeURIComponent(artifactName)}`
       const nativeOutcome = await saveApiResourceViaBridge(resourcePath, filename)
       if (nativeOutcome !== 'unavailable') return
@@ -473,7 +474,7 @@ export function useExecutionArchiveModel(test: TestSummary | null, includeReleas
     } catch (error: unknown) {
       setArchiveError(getErrorMessage(error, `Unable to download ${artifactName}`))
     }
-  }, [api, test])
+  }, [api, test, archiveReport])
 
   return {
     hasArchive,

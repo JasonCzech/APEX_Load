@@ -27,7 +27,19 @@ func importExecutionGateError(script *dsl.Script, operation string) error {
 	}
 
 	var issues []string
+	if script.Config.JMeter != nil || len(script.Config.SamplerSchedules) > 0 {
+		issues = append(issues, "JMeter messaging runtime compatibility is unavailable; reference conformance is unverified")
+	}
+	for _, p := range script.Parameters {
+		if p.Scope == "source_engine" || p.ScopeID != "" || p.RandomAlgorithm != "" {
+			issues = append(issues, "shared JMeter parameter compatibility is unavailable")
+			break
+		}
+	}
 	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action != nil && len(ref.Action.PacingIDs) > 0 {
+			issues = append(issues, ref.Path+" requires unsupported JMeter sampler pacing")
+		}
 		codes := executionBlockerCodes(ref.Metadata())
 		if len(codes) > 0 {
 			issues = append(issues, formatImportExecutionGateIssue(

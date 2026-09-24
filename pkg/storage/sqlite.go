@@ -122,6 +122,7 @@ type NetworkLatencyTargetRecord struct {
 }
 
 type IntervalSummaryRecord struct {
+	CompletedIterations      int64                                  `json:"completed_iterations,omitempty"`
 	SchemaVersion            string                                 `json:"schema_version,omitempty"`
 	Timestamp                time.Time                              `json:"timestamp"`
 	ActiveVUsers             int64                                  `json:"active_vusers"`

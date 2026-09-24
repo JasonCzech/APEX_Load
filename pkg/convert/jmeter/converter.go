@@ -24,6 +24,9 @@ import (
 )
 
 type ConvertOptions struct {
+	TimeMode          string
+	Timezone          string
+	VariableBindings  map[string]string
 	ScriptName        string
 	BaseURL           string
 	IncludeAssertions bool
@@ -51,17 +54,23 @@ type ConvertResult struct {
 }
 
 type ConvertStats struct {
-	ThreadGroups     int `json:"thread_groups"`
-	Samplers         int `json:"samplers"`
-	TotalSamplers    int `json:"total_samplers,omitempty"`
-	SkippedSamplers  int `json:"skipped_samplers,omitempty"`
-	ConvertedActions int `json:"converted_actions"`
-	Headers          int `json:"headers"`
-	Variables        int `json:"variables"`
-	CSVSources       int `json:"csv_sources"`
-	Assertions       int `json:"assertions"`
-	Timers           int `json:"timers"`
-	Unsupported      int `json:"unsupported"`
+	EnabledWorkloadSamplers   int `json:"enabled_workload_samplers"`
+	DisabledWorkloadSamplers  int `json:"disabled_workload_samplers"`
+	ConvertedWorkloadSamplers int `json:"converted_workload_samplers"`
+	BlockedWorkloadSamplers   int `json:"blocked_workload_samplers"`
+	ConfigurationContributors int `json:"configuration_contributors"`
+	IgnoredReportingElements  int `json:"ignored_reporting_elements"`
+	ThreadGroups              int `json:"thread_groups"`
+	Samplers                  int `json:"samplers"`
+	TotalSamplers             int `json:"total_samplers,omitempty"`
+	SkippedSamplers           int `json:"skipped_samplers,omitempty"`
+	ConvertedActions          int `json:"converted_actions"`
+	Headers                   int `json:"headers"`
+	Variables                 int `json:"variables"`
+	CSVSources                int `json:"csv_sources"`
+	Assertions                int `json:"assertions"`
+	Timers                    int `json:"timers"`
+	Unsupported               int `json:"unsupported"`
 	// Four-way classification of converted JMeter elements (samplers and
 	// top-level controllers), derived from the source mappings. Contributors
 	// (extractors/assertions/timers) and informational elements (listeners,
@@ -80,19 +89,24 @@ type ImportSummary struct {
 }
 
 type ScenarioDraft struct {
-	Name         string                 `json:"name"`
-	Duration     string                 `json:"duration"`
-	ScenarioMode string                 `json:"scenario_mode"`
-	Groups       []ScenarioDraftGroup   `json:"groups"`
-	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+	GeneratorAffinity string                 `json:"generator_affinity,omitempty"`
+	TerminationMode   string                 `json:"termination_mode,omitempty"`
+	Name              string                 `json:"name"`
+	Duration          string                 `json:"duration"`
+	ScenarioMode      string                 `json:"scenario_mode"`
+	Groups            []ScenarioDraftGroup   `json:"groups"`
+	Metadata          map[string]interface{} `json:"metadata,omitempty"`
 }
 
 type ScenarioDraftGroup struct {
-	Name           string `json:"name"`
-	ScriptName     string `json:"script_name"`
-	VUsers         int    `json:"vusers"`
-	RampUp         string `json:"ramp_up,omitempty"`
-	Initialization string `json:"initialization"`
+	SourceGroupID    string                `json:"source_group_id,omitempty"`
+	SamplerSchedules []dsl.SamplerSchedule `json:"sampler_schedules,omitempty"`
+	Iterations       int                   `json:"iterations,omitempty"`
+	Name             string                `json:"name"`
+	ScriptName       string                `json:"script_name"`
+	VUsers           int                   `json:"vusers"`
+	RampUp           string                `json:"ramp_up,omitempty"`
+	Initialization   string                `json:"initialization"`
 }
 
 type SupportMatrix struct {
@@ -103,12 +117,13 @@ type SupportMatrix struct {
 }
 
 type xmlNode struct {
-	Name      string
-	Attrs     map[string]string
-	Text      string
-	Children  []*xmlNode
-	StartLine int
-	EndLine   int
+	StartOffset int
+	Name        string
+	Attrs       map[string]string
+	Text        string
+	Children    []*xmlNode
+	StartLine   int
+	EndLine     int
 }
 
 type treeNode struct {
@@ -117,11 +132,12 @@ type treeNode struct {
 }
 
 type convertContext struct {
+	contributors           []*treeNode
 	defaultProtocol        string
 	defaultDomain          string
 	defaultPort            string
 	defaultPath            string
-	effectiveBaseURL       string
+	endpoint               *jmeterEndpointState
 	headers                dsl.HeaderList
 	variableScope          *jmeterVariableScope
 	provenVariables        map[string]struct{}
@@ -144,6 +160,8 @@ type convertContext struct {
 	databaseConfig *dsl.DatabaseConfig
 	networkConfig  *dsl.NetworkConfig
 }
+
+type jmeterEndpointState struct{ baseURL string }
 
 type jmeterAuth struct {
 	URL        string
@@ -170,6 +188,10 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		return nil, fmt.Errorf("jmeter plan is empty")
 	}
 
+	timeValues, err := prepareTimeValues(trees, opts)
+	if err != nil {
+		return nil, err
+	}
 	result := &ConvertResult{
 		Scripts:     []*dsl.Script{},
 		Warnings:    []string{},
@@ -275,6 +297,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}
 		}
 		ctx := convertContext{
+			endpoint:        &jmeterEndpointState{},
 			variableScope:   variableScope,
 			provenVariables: make(map[string]struct{}),
 			actionNames:     make(map[string]int),
@@ -284,6 +307,8 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			credentialNames: credentialNames,
 			importErr:       &importErr,
 		}
+		ancestorTimerSources, _ := jmeterAncestorScopeTimers(trees, tg)
+		ctx.contributors = append(ctx.contributors, ancestorTimerSources...)
 		threadName := attrOr(tg.Element, "testname", fmt.Sprintf("Thread Group %d", i+1))
 		scriptName := opts.ScriptName
 		if scriptName != "" && len(threadGroups) > 1 {
@@ -310,6 +335,9 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				Source:           "jmeter",
 				SourceScriptName: threadName,
 				Preserved: map[string]any{
+					"source_plan_id":     sourcePlanID(data),
+					"source_group_id":    messagingNodeID(sourcePlanID(data), tg.Element),
+					"source_group_line":  tg.Element.StartLine,
 					"file_name":          opts.FileName,
 					"original_file_name": opts.FileName,
 					"imported_at":        importedAt,
@@ -332,13 +360,27 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				!counted,
 			)
 			countedAncestorConfigs[config] = struct{}{}
+			ctx.contributors = append(ctx.contributors, config)
 		}
 		if heterogeneous {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: mixed-protocol thread group converted as %s; samplers from other protocols were review-gated. Split them into separate scripts to run natively.", threadName, script.Protocol))
 			result.Assumptions = append(result.Assumptions, "Mixed-protocol thread groups are not interleaved in one script; the dominant protocol is converted and other-protocol samplers are review-gated.")
 		}
 
+		messagingAncestors, _ := messagingAncestorNodes(trees, tg)
+		ctx.contributors = append(ctx.contributors, messagingAncestors...)
 		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
+		for j := range script.Config.Results.CSVExports {
+			script.Config.Results.CSVExports[j].ID = fmt.Sprintf("jmeter_csv_%d", j+1)
+		}
+		applyThreadGroupTermination(tg, script, &diagnostics, sourceFileName, &sourceMappings)
+		timeValues.apply(script, &diagnostics, sourceFileName)
+		if opts.TimeMode != "" {
+			script.Metadata.Import.Preserved["time_resolution"] = map[string]string{"mode": opts.TimeMode, "timezone": opts.Timezone}
+		}
+		if len(opts.VariableBindings) > 0 {
+			script.Metadata.Import.Preserved["variable_bindings"] = opts.VariableBindings
+		}
 		if importErr != nil {
 			return nil, importErr
 		}
@@ -347,7 +389,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				script.Config.BaseURL = opts.BaseURL
 			}
 			if script.Config.BaseURL == "" {
-				script.Config.BaseURL = ctx.effectiveBaseURL
+				script.Config.BaseURL = ctx.endpoint.baseURL
 			}
 			if script.Config.BaseURL == "" {
 				script.Config.BaseURL = detectBaseURL(script.Actions)
@@ -406,6 +448,22 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 			}
 		}
+		if script.Config.JMeter != nil {
+			_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+				gateJMeterAction(ref.Action, "jmeter_messaging_compatibility_unverified", ref.Path)
+				return nil
+			})
+		}
+		gateJMeterMaskedValues(script, &diagnostics, sourceFileName)
+		reconcileJMeterReviewMappings(script, sourceMappings[mappingStart:])
+		if script.Config.JMeter != nil {
+			script.Config.JMeter.Timezone = opts.Timezone
+			if opts.TimeMode == "utc" {
+				script.Config.JMeter.Timezone = "UTC"
+			}
+			script.Metadata.Import.Preserved["reference_context"] = map[string]any{"proposed_timezone": "UTC", "proposed_property_overrides": map[string]string{}, "confirmed": false, "strict_parity": "unverified"}
+			messagingAdvisories(script, result)
+		}
 		rebaseJMeterBatchMappingPaths(sourceMappings[mappingStart:], len(result.Scripts))
 		result.Scripts = append(result.Scripts, script)
 	}
@@ -413,6 +471,21 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		unbaseJMeterSingleScriptMappingPaths(sourceMappings)
 	}
 
+	draft := buildScenarioDraft(threadGroups, result.Scripts)
+	for i, script := range result.Scripts {
+		prefix := fmt.Sprintf("scripts[%d].", i)
+		for j := range sourceMappings {
+			if len(result.Scripts) > 1 {
+				sourceMappings[j].TargetPath = strings.TrimPrefix(sourceMappings[j].TargetPath, prefix)
+			}
+		}
+		reconcileJMeterReviewMappings(script, sourceMappings)
+		for j := range sourceMappings {
+			if len(result.Scripts) > 1 && sourceMappings[j].TargetPath != "" && !strings.HasPrefix(sourceMappings[j].TargetPath, "scripts[") {
+				sourceMappings[j].TargetPath = prefix + sourceMappings[j].TargetPath
+			}
+		}
+	}
 	for name := range unsupported {
 		result.UnsupportedElements = append(result.UnsupportedElements, name)
 	}
@@ -425,6 +498,17 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		diagnostics.Add(diag.Warning, "JMeter completeness guard", convertutil.FirstNonEmpty(opts.FileName, "JMX plan"), fmt.Sprintf("%d sampler(s) were detected but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
+	for _, diagnostic := range result.Unsupported {
+		if diagnostic.Severity == diag.Warning {
+			result.Warnings = append(result.Warnings, diagnostic.Detail)
+		}
+	}
+	for _, node := range findEnabledTreeNodes(trees, "ResultCollector") {
+		if strings.Contains(node.Element.Attrs["guiclass"], "ViewResults") {
+			result.Warnings = append(result.Warnings, "View Results Tree is enabled in the source; it is reporting-only and may affect reference-generator overhead.")
+		}
+	}
+	result.Warnings = uniqueJMeterStrings(result.Warnings)
 	result.Stats.Mapped, result.Stats.ReviewRequired, result.Stats.AdapterRequired = tallyJMeterCategories(sourceMappings)
 	for _, script := range result.Scripts {
 		if script.Metadata == nil {
@@ -443,15 +527,39 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result.Script = result.Scripts[0]
 	}
 	if opts.ScenarioDraft && len(result.Scripts) > 0 {
-		result.ScenarioDraft = buildScenarioDraft(threadGroups, result.Scripts)
+		result.ScenarioDraft = draft
 	}
 	for _, script := range result.Scripts {
 		uniquify.DeduplicateActionNames(script)
+		_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+			if indices, ok := ref.Action.Metadata["jmeter_csv_export_indices"].([]int); ok {
+				for _, index := range indices {
+					script.Config.Results.CSVExports[index].ActionName = ref.Action.Name
+				}
+				delete(ref.Action.Metadata, "jmeter_csv_export_indices")
+			}
+			return nil
+		})
 	}
 	reconcileJMeterBatchSourceMappingNames(result.Scripts, sourceMappings)
 	result.Findings = importreview.NormalizeFindings(allFindings)
 	result.SecretRequirements = publicJMeterCredentialRequirements(allRequirements)
-	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: string(data)}, sourceMappings)
+	populateJMeterWorkloadAccounting(trees, sourceMappings, &result.Stats)
+	for _, script := range result.Scripts {
+		if script.Config.JMeter != nil {
+			// Batch imports can contain different plans with the same filename and
+			// XML offsets. Keep their review identities distinct and repeatable.
+			for i := range sourceMappings {
+				sourceMappings[i].ID = sourcePlanID(data) + ":" + sourceMappings[i].ID
+			}
+			break
+		}
+	}
+	sourceContent, sourceRedacted := redactMessagingSource(root, string(data))
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: sourceContent}, sourceMappings)
+	if sourceRedacted {
+		markJMeterSourceReviewRedacted(result.SourceReview, sourceFileName)
+	}
 	return result, nil
 }
 
@@ -608,6 +716,9 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 	// the timer appears relative to the sampler. Add the scope total up front and
 	// remove it on return so nested scopes inherit it without leaking it to later
 	// siblings. Flow Control/TestAction pauses remain positional one-shot state.
+	previousContributors := ctx.contributors
+	ctx.contributors = append(append([]*treeNode(nil), ctx.contributors...), node.Children...)
+	defer func() { ctx.contributors = previousContributors }()
 	scopeTimerMs := jmeterDirectScopeTimerMs(node)
 	ctx.timerMs += scopeTimerMs
 	defer func() {
@@ -644,6 +755,11 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			continue
 		}
 		switch child.Element.Name {
+		case diKafkaSampler, pnopEventHubsSampler:
+			handleJMeterMessagingSampler(child, ctx, script, result, diagnostics, sourceFileName, sourceMappings)
+			continue
+		case diKafkaConfig, "CounterConfig", "RandomVariableConfig", throughputShapingTimer:
+			continue
 		case "TestAction":
 			if pauseMs := parseTestActionPauseMs(child); pauseMs > 0 {
 				ctx.oneShotTimerMs += pauseMs
@@ -689,11 +805,13 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			if action != nil {
 				actionIndex := len(script.Actions)
 				script.Actions = append(script.Actions, *action)
-				appendJMeterActionSourceMappings(sourceMappings, sourceFileName, child, actionIndex, action)
+				reviewSamplerChildren(child.Children, &script.Actions[actionIndex], script, diagnostics, unsupported, sourceFileName, sourceMappings, actionIndex)
+				sourceNode := *child
+				sourceNode.Children = append(append([]*treeNode(nil), ctx.contributors...), child.Children...)
+				appendJMeterActionSourceMappings(sourceMappings, sourceFileName, &sourceNode, actionIndex, &script.Actions[actionIndex])
 				result.Stats.ConvertedActions++
 			}
 			ctx.oneShotTimerMs = 0
-			diagnoseJMeterChildren(child.Children, diagnostics, unsupported)
 		case "ThreadGroup", "TestPlan":
 			walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 			continue
@@ -709,6 +827,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			// TestAction is positional rather than controller-scoped. If the first
 			// sampler lived inside this controller, propagate its consumption so the
 			// pause is not replayed again by the next sibling sampler.
+
 			ctx.oneShotTimerMs = next.oneShotTimerMs
 			var csvConflicts []jmeterCSVSourceConflict
 			ctx.csvSources, csvConflicts = mergeJMeterCSVSources(ctx.csvSources, next.csvSources)
@@ -869,7 +988,12 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				} else {
 					unsupported[child.Element.Name] = struct{}{}
 					diagnoseJMeterElement(child.Element, diagnostics)
-					*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "unsupported", "review_only", "JMeter element was not converted into executable APEX Load DSL."))
+					targetPath := ""
+					if isJMeterSamplerElement(child.Element.Name) {
+						index := appendJMeterSourceReviewPlaceholder(script, child.Element.Name, jmeterElementLocation(child.Element), sourceFileName, "unsupported_jmeter_sampler")
+						targetPath = fmt.Sprintf("actions[%d]", index)
+					}
+					*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, targetPath, jmeterElementLocation(child.Element), "unsupported", "review_only", "JMeter element was retained for review; no executable equivalent was generated."))
 				}
 			}
 		}
@@ -1106,13 +1230,40 @@ func collectJMeterChildActions(node *treeNode, ctx *convertContext, parentScript
 	next := *ctx
 	next.csvSources = append([]dsl.DataSource(nil), ctx.csvSources...)
 	next.provenVariables = jmeterProvenVariables(ctx)
-	tempScript := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{DefaultHeaders: map[string]string{}}}}
+	tempScript := &dsl.Script{Name: parentScript.Name, Protocol: parentScript.Protocol, Metadata: parentScript.Metadata, Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{DefaultHeaders: map[string]string{}}}}
+	if parentScript.Protocol == "kafka" || parentScript.Protocol == "eventhubs" || parentScript.Config.JMeter != nil {
+		tempScript.Config = parentScript.Config
+		tempScript.Parameters = append([]dsl.Parameter(nil), parentScript.Parameters...)
+	}
 	var tempMappings []sourceview.Mapping
 	walkThreadGroup(node, &next, tempScript, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, &tempMappings)
+	if tempScript.Config.JMeter != nil {
+		parentScript.Config.JMeter = tempScript.Config.JMeter
+		parentScript.Config.Kafka = tempScript.Config.Kafka
+		parentScript.Config.EventHubs = tempScript.Config.EventHubs
+		parentScript.Config.SamplerSchedules = tempScript.Config.SamplerSchedules
+		parentScript.Parameters = tempScript.Parameters
+	}
 	ctx.oneShotTimerMs = next.oneShotTimerMs
 	var csvConflicts []jmeterCSVSourceConflict
 	ctx.csvSources, csvConflicts = mergeJMeterCSVSources(ctx.csvSources, next.csvSources)
 	applyJMeterCSVSourceConflicts(parentScript, result, diagnostics, sourceFileName, jmeterElementLocation(node.Element), csvConflicts)
+	exportOffset := len(parentScript.Config.Results.CSVExports)
+	_ = dslwalk.WalkActions(tempScript, func(ref dslwalk.ActionRef) error {
+		if indices, ok := ref.Action.Metadata["jmeter_csv_export_indices"].([]int); ok {
+			for i := range indices {
+				indices[i] += exportOffset
+			}
+		}
+		return nil
+	})
+	parentScript.Config.Results.CSVExports = append(parentScript.Config.Results.CSVExports, tempScript.Config.Results.CSVExports...)
+	for i := range tempMappings {
+		var index int
+		if _, err := fmt.Sscanf(tempMappings[i].TargetPath, "config.results.csv_exports[%d]", &index); err == nil {
+			tempMappings[i].TargetPath = fmt.Sprintf("config.results.csv_exports[%d]", exportOffset+index)
+		}
+	}
 	mergeJMeterRuntimeParity(parentScript, tempScript)
 	if len(tempScript.Init) > 0 {
 		gateIndex := len(parentScript.Init)

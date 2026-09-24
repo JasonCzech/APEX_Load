@@ -1,0 +1,7 @@
+{
+  "jdk": "17.0.16+8",
+  "jmeter": "5.4.1",
+  "source_sha256": "0005802979b0ea46426471915e0701bc67afe0037ecd46522f5b6ea6aaab4556",
+  "vectors_sha256": "03ba43cdc8e0d938aadf653b89a2ffd958b868c1c2fd44c9ae6735f6c2686983",
+  "live_conformance": "unverified"
+}

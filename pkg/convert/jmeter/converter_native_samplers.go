@@ -27,6 +27,10 @@ import (
 // and intentionally excluded so they don't affect homogeneity.
 func samplerProtocol(name string) (string, bool) {
 	switch name {
+	case diKafkaSampler:
+		return "kafka", true
+	case pnopEventHubsSampler:
+		return "eventhubs", true
 	case "HTTPSamplerProxy":
 		return "http", true
 	case "JDBCSampler":
@@ -77,7 +81,7 @@ func resolveGroupProtocol(counts map[string]int) (string, bool) {
 			return protocol, false
 		}
 	}
-	for _, protocol := range []string{"http", "database", "network", "jms"} {
+	for _, protocol := range []string{"http", "database", "network", "kafka", "eventhubs", "jms"} {
 		if counts[protocol] > 0 {
 			return protocol, true
 		}
@@ -91,7 +95,7 @@ func resolveGroupProtocol(counts map[string]int) (string, bool) {
 // and is dropped; their samplers are captured as diagnostics.
 func nativeScriptProtocol(groupProtocol string) string {
 	switch groupProtocol {
-	case "database", "network":
+	case "database", "network", "kafka", "eventhubs":
 		return groupProtocol
 	default:
 		return "http"

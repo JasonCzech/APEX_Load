@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "reference_only": true,
+  "strict_parity": "unverified",
+  "baseline": {
+    "jmeter": "5.4.1",
+    "jdk": "Temurin 17.0.16+8 macOS aarch64",
+    "kafka": "3.3.1",
+    "di_kafkameter_revision": "8c2dcc9c3c5452ff7cbbcdb33303ca7d74e79b71",
+    "pnop_eventhubs": "0.2.8",
+    "pnop_revision": "7fe06c76bb3b729da994e4a168895ba27a72abbd",
+    "throughput_shaping_timer": "2.6",
+    "tst_source_revision": "29337a1c41c5eda0b660ca932b47379a73e88526"
+  },
+  "source_and_toolchain_artifacts": [
+    {
+      "name": "jdk17.tar.gz",
+      "sha256": "f9845abc8403f1d489402201064e7b9f2c57605d8717b85a95a15d94f882eeb7"
+    },
+    {
+      "name": "maven.tar.gz",
+      "sha256": "7a9cdf674fc1703d6382f5f330b3d110ea1b512b51f1652846d9e4e8a588d766"
+    },
+    {
+      "name": "di-source.tar.gz",
+      "sha256": "d85df8f2c4e9b29be4952173fc31a09e180a0114ccf8719b6a0aab9e52134cc0"
+    },
+    {
+      "name": "pnop-source.tar.gz",
+      "sha256": "a7890e3ba3c77bae9f3c002184432e424f0cbf9ae70e30c824801950d7d37438"
+    },
+    {
+      "name": "di-pom.xml",
+      "sha256": "7b8e53e1fbe4953cedee2a2b27a3ce39decc95f0a37d6e78f7ddafbe6fc592b7"
+    },
+    {
+      "name": "pnop-pom.xml",
+      "sha256": "185cc60f71c30aa558722a740d0499607335ad3e51a04a42e3b39bc51ee52b57"
+    },
+    {
+      "name": "tst-pom.xml",
+      "sha256": "a2e9b2d1e569574899525f36960fcf0df9e08b8d7f5c52f02ed0d011347dd7c7"
+    },
+    {
+      "name": "jmeter-5.4.1/bin/saveservice.properties",
+      "sha256": "79b613d7036188fa99f329670134fac437012d21d552db23bbd490facbc007ef"
+    },
+    {
+      "name": "jmeter-5.4.1/bin/jmeter.properties",
+      "sha256": "a341b0a7a63f9414ec99b448df14f8b35e142fed116cadd2e02ddcebdf472314"
+    },
+    {
+      "name": "jmeter-5.4.1/bin/upgrade.properties",
+      "sha256": "c9fab3dfdb4b71b1ae07281044060448fdae154ef1a041faf266ebfb74f142ff"
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "pkg/convert/jmeter/testdata/messaging_repaired.jmx",
+      "sha256": "20b1903b90b595ea958b309fbc2b96db1f84aa45355a9734dacaa8df4a78e504"
+    },
+    {
+      "path": "pkg/convert/jmeter/testdata/messaging_original.jmx",
+      "sha256": "843dde9a1a6109cc2b71c35af69434e5c8bace7eb8158f75e2b05e97f168ef98"
+    }
+  ],
+  "shaded_dependency_coordinates": [
+    "com.azure:azure-core-amqp:2.9.12",
+    "com.azure:azure-core-http-netty:1.15.7",
+    "com.azure:azure-core:1.54.1",
+    "com.azure:azure-identity:1.14.2",
+    "com.azure:azure-json:1.3.0",
+    "com.azure:azure-messaging-eventhubs:5.19.2",
+    "com.fasterxml.jackson.core:jackson-annotations:2.17.2",
+    "com.fasterxml.jackson.core:jackson-core:2.17.2",
+    "com.fasterxml.jackson.core:jackson-databind:2.17.2",
+    "com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.2",
+    "com.github.stephenc.jcip:jcip-annotations:1.0-1",
+    "com.google.code.gson:gson:2.11.0",
+    "com.microsoft.azure:msal4j-persistence-extension:1.3.0",
+    "com.microsoft.azure:msal4j:1.17.2",
+    "com.nimbusds:content-type:2.3",
+    "com.nimbusds:nimbus-jose-jwt:9.40",
+    "com.nimbusds:oauth2-oidc-sdk:11.18",
+    "io.netty:netty-buffer:4.1.115.Final",
+    "io.netty:netty-codec-dns:4.1.112.Final",
+    "io.netty:netty-codec-http2:4.1.115.Final",
+    "io.netty:netty-codec-http:4.1.115.Final",
+    "io.netty:netty-codec:4.1.115.Final",
+    "io.netty:netty-common:4.1.115.Final",
+    "io.netty:netty-handler-proxy:4.1.115.Final",
+    "io.netty:netty-handler:4.1.115.Final",
+    "io.netty:netty-resolver-dns:4.1.112.Final",
+    "io.netty:netty-resolver:4.1.115.Final",
+    "io.netty:netty-transport-native-unix-common:4.1.115.Final",
+    "io.netty:netty-transport:4.1.115.Final",
+    "jp.co.pnop:jmeter-plugins-azure-ad:0.3.0",
+    "jp.co.pnop:jmeter-plugins-azure-amqp:0.2.2",
+    "jp.co.pnop:jmeter-plugins-azure-eventhubs:0.2.8",
+    "org.apache.qpid:proton-j:0.34.1",
+    "org.jctools:jctools-core:4.0.5"
+  ]
+}

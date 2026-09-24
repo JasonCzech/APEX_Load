@@ -26,6 +26,7 @@ export interface ScriptExtractorDefinition {
   expression: string
   /** "" / "ignore": leave the variable unset on no match; "empty": assign ""; "fail": fail the request. */
   on_miss?: string
+  default_value?: string
   /** "" extracts one value; "all" saves every match as name_1..name_N plus name_count. */
   mode?: string
   /** Skip this many leading bytes of each matched value. */
@@ -82,6 +83,7 @@ export interface SuggestedExtractor {
   expression: string
   convert?: string
   on_miss?: string
+  default_value?: string
 }
 
 export interface CorrelationRepairSuggestion {
@@ -115,6 +117,7 @@ export interface CorrelationDiagnoseResponse {
 }
 
 export interface ScriptActionDefinition {
+  pacing_ids?: string[]
   name: string
   type: string
   method?: string
@@ -200,6 +203,7 @@ export interface ScriptMessageDetailConfig {
 }
 
 export interface ScriptResultsConfig {
+  csv_exports?: Array<{ id: string; file_name: string; action_name: string; columns: Array<{ name: string; extraction?: string; metric?: "latency_ms"; default_value?: string }> }>
 	message_detail?: ScriptMessageDetailConfig
 }
 
@@ -228,6 +232,7 @@ export interface PacingConfig {
 }
 
 export interface RunLogicConfig {
+  termination_mode?: "duration" | "iterations"
   iterations?: number
   global_iterations?: number
   max_transactions?: number
@@ -754,6 +759,17 @@ export type ScriptGoalConfig = Pick<GoalConfig,
 >
 
 export interface ScriptConfig {
+  jmeter?: {
+    profile: string
+    source_plan_id: string
+    source_group_id: string
+    timezone?: string
+    context_confirmed?: boolean
+  }
+  sampler_schedules?: Array<{
+    id: string
+    segments: Array<{ start_rps: number; end_rps: number; duration_seconds: number }>
+  }>
   base_url: string
   think_time?: ThinkTimeConfig
   pacing?: PacingConfig

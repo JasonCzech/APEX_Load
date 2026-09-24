@@ -43,9 +43,23 @@ func (req *LaunchPreflightRequest) UnmarshalJSON(data []byte) error {
 }
 
 type LaunchWindow struct {
+	OpenEnded       bool      `json:"open_ended,omitempty"`
 	StartAt         time.Time `json:"start_at"`
-	EndAt           time.Time `json:"end_at"`
+	EndAt           time.Time `json:"end_at,omitempty"`
 	DurationSeconds int       `json:"duration_seconds"`
+}
+
+// Open-ended capacity occupancy has no predicted finish or execution cutoff.
+func (w LaunchWindow) MarshalJSON() ([]byte, error) {
+	type plain LaunchWindow
+	var end *time.Time
+	if !w.OpenEnded {
+		end = &w.EndAt
+	}
+	return json.Marshal(struct {
+		plain
+		End *time.Time `json:"end_at,omitempty"`
+	}{plain(w), end})
 }
 
 type LaunchConflict struct {
@@ -128,6 +142,14 @@ func launchCapacityAt(event launchCapacityEvent, sample time.Time) (int, int) {
 }
 
 func launchGroupCapacities(test *ManagedTest, start, now time.Time) []launchGroupCapacity {
+	if test != nil && test.TerminationMode == "iterations" {
+		groups := make([]launchGroupCapacity, 0, len(test.Groups))
+		for _, g := range test.Groups {
+			groups = append(groups, launchGroupCapacity{StartAt: start, EndAt: time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC), VUsers: g.VUsers})
+		}
+		return groups
+	}
+
 	if test == nil {
 		return nil
 	}
@@ -939,6 +961,9 @@ func launchWindowForTest(test *ManagedTest, start time.Time) LaunchWindow {
 
 func launchWindowForTestAt(test *ManagedTest, start time.Time, now time.Time) LaunchWindow {
 	start = start.UTC()
+	if test != nil && test.TerminationMode == "iterations" {
+		return LaunchWindow{OpenEnded: true, StartAt: start, EndAt: time.Date(9999, 12, 31, 0, 0, 0, 0, time.UTC)}
+	}
 	now = now.UTC()
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test != nil && test.ResourceBaseline)
 	startDelay := time.Duration(0)

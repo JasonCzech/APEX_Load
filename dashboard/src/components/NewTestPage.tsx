@@ -1347,6 +1347,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     return {
       name: runName.trim() || scenario.name,
       duration,
+      termination_mode: scenario.termination_mode,
       application_id: activeApplication.id,
       release_id: releaseId || undefined,
       scenario_id: scenario.id,
@@ -3218,7 +3219,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                                     </td>
                                     <td className="cell-muted">{formatDate(item.last_run_at)}</td>
                                     <td>{totalScenarioVUsers(item)}</td>
-                                    <td>{item.duration || 'Not set'}</td>
+                                    <td>{item.termination_mode === 'iterations' ? 'All iterations' : item.duration || 'Not set'}</td>
                                     <td>{item.scripts.length}</td>
                                     <td>
                                       <div className="new-test-release-token-list">
@@ -3415,6 +3416,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                         key={card.key}
                         type="button"
                         className={`new-test-default-card ${card.isOverridden ? 'overridden' : ''}`}
+                        disabled={scenario.termination_mode === 'iterations' && card.key === 'duration'}
                         onClick={() => openRunDefaultEditor(card.key)}
                       >
                         <span>{card.label}</span>
@@ -3438,7 +3440,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                           key={card.key}
                           type="button"
                           className={`new-test-default-card ${card.isOverridden ? 'overridden' : ''}`}
-                          onClick={() => openRunDefaultEditor(card.key)}
+                          disabled={scenario.termination_mode === 'iterations' && card.key === 'duration'}
+                        onClick={() => openRunDefaultEditor(card.key)}
                         >
                           <span>{card.label}</span>
                           <strong>{card.value}</strong>

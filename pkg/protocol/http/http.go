@@ -464,8 +464,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			traceTLSTime = time.Since(tlsStart)
 			traceMu.Unlock()
 		},
-		GotConn:              func(info httptrace.GotConnInfo) { traceMu.Lock(); connectionReused = info.Reused; traceMu.Unlock() },
-		GotFirstResponseByte: func() { traceMu.Lock(); traceTTFB = time.Since(startTime); traceMu.Unlock() },
+		GotConn: func(info httptrace.GotConnInfo) { traceMu.Lock(); connectionReused = info.Reused; traceMu.Unlock() },
+		GotFirstResponseByte: func() {
+			traceMu.Lock()
+			if traceTTFB == 0 {
+				traceTTFB = time.Since(startTime)
+			}
+			traceMu.Unlock()
+		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
 	client := *h.client
@@ -731,6 +737,11 @@ extractors:
 				result.ErrorMessage = fmt.Sprintf("extractor %q output rejected: %v", ext.Name, err)
 				break
 			}
+			if ext.OnMiss == "default" && (ext.DefaultValue == nil || (err != nil && !errors.Is(err, protocol.ErrExtractionMiss))) {
+				result.Success = false
+				result.ErrorMessage = fmt.Sprintf("extractor %q default rejected: %v", ext.Name, err)
+				continue
+			}
 			if err == nil && len(values) > 0 {
 				for i, value := range values {
 					if !storeHTTPExtraction(result, ext, fmt.Sprintf("%s_%d", ext.Name, i+1), value) {
@@ -757,6 +768,11 @@ extractors:
 			if !storeHTTPExtraction(result, ext, ext.Name+"_count", "0") {
 				break
 			}
+			if ext.OnMiss == "default" && ext.DefaultValue != nil {
+				if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
+					break extractors
+				}
+			}
 			if ext.OnMiss == "empty" {
 				// Mirror single-value "empty" semantics: assign the base
 				// variable an empty string so {{var.name}} expands to "" rather
@@ -781,6 +797,17 @@ extractors:
 			continue
 		}
 		switch ext.OnMiss {
+		case "default":
+			if ext.DefaultValue == nil || !errors.Is(err, protocol.ErrExtractionMiss) {
+				result.Success = false
+				result.ErrorMessage = fmt.Sprintf("extractor %q failed: %v", ext.Name, err)
+				continue
+			}
+			if ext.DefaultValue != nil {
+				if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
+					break extractors
+				}
+			}
 		case "fail":
 			if result.Success {
 				result.Success = false

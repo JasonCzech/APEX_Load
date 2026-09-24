@@ -1295,6 +1295,7 @@ export default function TestExecutionArchive({
 
           {showReportAssetsView && (
             <div className="archive-artifact-row">
+              {archiveReport.manifest?.csv_exports?.map(exported => <div className="archive-artifact-group" key={`${exported.group}:${exported.id}`}><span className="archive-artifact-label">{exported.group} · {exported.rows} rows</span>{exported.status === 'complete' ? <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(exported.file_name)}>Download {exported.file_name}</button> : <p role="status">{exported.file_name}: incomplete — {exported.error}</p>}</div>)}
               {archiveReport.overview.browser && (
                 <div className="archive-artifact-group">
                   <span className="archive-artifact-label">Browser</span>

@@ -1,4 +1,6 @@
 import JMeterScenarioRuntimeEditor from './JMeterScenarioRuntimeEditor'
+import { importActionEntries } from './importReviewIssues'
+import JMeterMessagingPreview from './JMeterMessagingPreview'
 import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
@@ -140,6 +142,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const [options, setOptions] = useState({
     name: '',
     base_url: '',
+    time_mode: '',
+    timezone: '',
+    variable_bindings: {} as Record<string, string>,
     include_assertions: true,
     scenario_draft: true,
   })
@@ -147,6 +152,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   useEffect(() => {
     if (previousProjectIdRef.current === projectId) return
     previousProjectIdRef.current = projectId
+    repairEvidenceRef.current = null
     invalidateReview()
   }, [invalidateReview, projectId])
   const supportMatrixSections = summarizeSupportMatrix(supportMatrix)
@@ -154,6 +160,10 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const extractorSummary = summarizeImportExtractors(result?.scripts || [])
   const primaryScript = getPrimaryScript(result)
   const sourceReview = sourceReviewForJMeter(result, primaryScript)
+  const repairEvidenceRef = useRef<ImportResult | null>(null)
+  if (result) repairEvidenceRef.current = result
+  const unresolvedVariables = [...new Set((repairEvidenceRef.current?.scripts || []).flatMap(script => importActionEntries(script).flatMap(({ action }) => Array.isArray(action.metadata?.missing_variables) ? action.metadata.missing_variables.filter((name): name is string => typeof name === 'string') : [])))]
+  const declaredVariables = repairEvidenceRef.current?.summary?.variables_discovered || []
   const parameterization = result?.parameterization
   const resultScripts = result?.scripts || []
   const safeParameterizationScriptIndex = Math.min(parameterizationScriptIndex, Math.max(0, resultScripts.length - 1))
@@ -208,6 +218,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
       return false
     }
     invalidateReview()
+    repairEvidenceRef.current = null
+    setOptions(prev => ({ ...prev, variable_bindings: {} }))
     setFile(nextFile)
     setError('')
     setNotice('')
@@ -291,6 +303,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
+        time_mode: options.time_mode,
+        timezone: options.timezone,
+        variable_bindings: Object.fromEntries(Object.entries(options.variable_bindings).filter(([, value]) => value)),
       })
       if (!requestIsCurrent()) {
         sourceSecretSessions.discardUnaccepted(sourceProjectId, response.source_secret_session_id)
@@ -336,6 +351,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         base_url: options.base_url || undefined,
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
+        time_mode: options.time_mode,
+        timezone: options.timezone,
+        variable_bindings: Object.fromEntries(Object.entries(options.variable_bindings).filter(([, value]) => value)),
       })
       if (!requestIsCurrent()) {
         sourceSecretSessions.discardUnaccepted(sourceProjectId, response.source_secret_session_id)
@@ -625,6 +643,14 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
           <label><span>Base URL Override</span>
             <input value={options.base_url} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, base_url: event.target.value })) }} placeholder="Default: HTTP Request Defaults or first sampler" />
           </label>
+          <label><span>Timestamp policy</span>
+            <select aria-label="Timestamp policy" value={options.time_mode} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, time_mode: event.target.value })) }}>
+              <option value="">Require review for ambiguous timestamps</option>
+              <option value="utc">Normalize to UTC with milliseconds</option>
+              <option value="source">Preserve wall clock and acknowledge literal Z suffix</option>
+            </select>
+          </label>
+          {options.time_mode === 'source' && <label><span>Source timezone (IANA)</span><input aria-label="Source timezone" value={options.timezone} placeholder="America/New_York" disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, timezone: event.target.value })) }} /></label>}
           <label className="lr-checkbox">
             <input type="checkbox" checked={options.include_assertions} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, include_assertions: event.target.checked })) }} />
             <span>Add default status_code assertions</span>
@@ -640,6 +666,10 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         HTTP plans convert most completely. Homogeneous JDBC, FTP, and TCP thread groups now convert into native database/network scripts, safe JSR223/BeanShell statements are translated, and anything that needs a provider/adapter (such as JMS) or manual review is classified rather than dropped.
       </div>
 
+      {(unresolvedVariables.length > 0 || Object.keys(options.variable_bindings).length > 0) && <div className="settings-notice">
+        <datalist id="jmeter-declared-variables">{declaredVariables.map(name => <option key={name} value={name} />)}</datalist><h4>Variable name repairs</h4><p>Declared source names: {declaredVariables.join(', ') || 'none'}. Select each binding explicitly, then inspect again to regenerate the server-validated draft. Masked values still require a usable secret binding.</p>
+        {[...new Set([...unresolvedVariables, ...Object.keys(options.variable_bindings)])].map(name => <label key={name}><span>Unresolved reference: {name}</span><input list="jmeter-declared-variables" placeholder="Declared name or {{secret.NAME}}" aria-label={`Bind ${name}`} value={options.variable_bindings[name] || ''} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, variable_bindings: { ...prev.variable_bindings, [name]: event.target.value } })) }} />{options.variable_bindings[name] && <p>Before: {'${' + name + '}'} → After: {options.variable_bindings[name].startsWith('{{secret.') ? options.variable_bindings[name] : '${' + options.variable_bindings[name] + '}'}</p>}</label>)}
+      </div>}
       <div className="import-workflow-actions">
         <details><summary>Advanced validation only</summary>        <button className="btn btn-secondary btn-lg" onClick={handleValidate} disabled={!file || workingMode !== null || saving}>
           {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
@@ -863,14 +893,15 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
                   <div className="lr-preserved-card">
                     <span className="lr-preserved-label">Scenario Draft</span>
                     <strong>{result.scenario_draft.groups?.length || 0} groups</strong>
-                    <small>{result.scenario_draft.duration || 'Duration not set'}</small>
+                    <small>{result.scenario_draft.termination_mode === 'iterations' ? 'Iteration completion' : result.scenario_draft.duration || 'Duration not set'}</small>
                   </div>
                 )}
               </div>
             </div>
+            <JMeterMessagingPreview result={result} />
             <ImportConversionDetails facts={[
               { label: 'Actions', value: result.stats.converted_actions },
-              { label: 'HTTP Samplers', value: result.stats.samplers },
+              { label: 'Converted Samplers', value: result.stats.samplers },
               { label: 'Total Samplers', value: result.stats.total_samplers ?? result.stats.samplers },
               { label: 'Skipped Samplers', value: result.stats.skipped_samplers ?? 0 },
               { label: 'Thread Groups', value: result.stats.thread_groups },

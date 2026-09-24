@@ -4,6 +4,7 @@ package jmeter
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -78,9 +79,21 @@ func appendJMeterActionSourceMappings(mappings *[]sourceview.Mapping, sourceFile
 		"JMeter HTTP sampler was converted into a generated APEX Load action.",
 	))
 	for index, extractor := range action.Extractors {
+		origin := node.Element
+		for _, child := range node.Children {
+			if !jmeterElementEnabled(child.Element) {
+				continue
+			}
+			exts, _ := parseSamplerExtractors(&treeNode{Children: []*treeNode{child}}, nil)
+			for _, ext := range exts {
+				if ext.Name == extractor.Name && ext.Expression == extractor.Expression {
+					origin = child.Element
+				}
+			}
+		}
 		*mappings = append(*mappings, jmeterSourceMapping(
 			sourceFile,
-			node.Element,
+			origin,
 			"jmeter_extractor",
 			fmt.Sprintf("actions[%d].extractors[%d]", actionIndex, index),
 			extractor.Name,
@@ -90,9 +103,20 @@ func appendJMeterActionSourceMappings(mappings *[]sourceview.Mapping, sourceFile
 		))
 	}
 	for index, assertion := range action.Assertions {
+		origin := node.Element
+		for _, child := range node.Children {
+			if child.Element.Name != "ResponseAssertion" || !jmeterElementEnabled(child.Element) {
+				continue
+			}
+			for _, a := range parseResponseAssertions(child.Element, nil) {
+				if reflect.DeepEqual(a, assertion) {
+					origin = child.Element
+				}
+			}
+		}
 		*mappings = append(*mappings, jmeterSourceMapping(
 			sourceFile,
-			node.Element,
+			origin,
 			"jmeter_assertion",
 			fmt.Sprintf("actions[%d].assertions[%d]", actionIndex, index),
 			assertion.Type,
@@ -102,17 +126,14 @@ func appendJMeterActionSourceMappings(mappings *[]sourceview.Mapping, sourceFile
 		))
 	}
 	if action.ThinkTimeAfter {
-		*mappings = append(*mappings, jmeterSourceMapping(
-			sourceFile,
-			node.Element,
-			"jmeter_timer",
-			fmt.Sprintf("actions[%d].think_time", actionIndex),
-			"Think Time",
-			"config",
-			"contributor",
-			"JMeter timer contributed to this generated think-time setting.",
-		))
+		for _, origin := range node.Children {
+			if origin == nil || origin.Element == nil || !jmeterElementEnabled(origin.Element) || !strings.Contains(origin.Element.Name, "Timer") {
+				continue
+			}
+			*mappings = append(*mappings, jmeterSourceMapping(sourceFile, origin.Element, "jmeter_timer", fmt.Sprintf("actions[%d].think_time", actionIndex), "Think Time", "config", "contributor", "JMeter timer contributed to this generated think-time setting."))
+		}
 	}
+
 }
 
 func jmeterSourceMapping(sourceFile string, element *xmlNode, function string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
@@ -126,6 +147,7 @@ func jmeterSourceMapping(sourceFile string, element *xmlNode, function string, t
 		}
 	}
 	return sourceview.Mapping{
+		ID:         jmeterMappingIdentity(element, function),
 		SourceFile: sourceFile,
 		StartLine:  startLine,
 		EndLine:    endLine,
@@ -152,6 +174,9 @@ func isJMeterSamplerElement(name string) bool {
 
 func diagnoseJMeterChildren(nodes []*treeNode, diagnostics *diag.Collector, unsupported map[string]struct{}) {
 	for _, child := range nodes {
+		if child == nil || child.Element == nil || !jmeterElementEnabled(child.Element) {
+			continue
+		}
 		if diagnoseJMeterElement(child.Element, diagnostics) {
 			unsupported[child.Element.Name] = struct{}{}
 		}
@@ -237,21 +262,133 @@ func buildScenarioDraft(threadGroups []*treeNode, scripts []*dsl.Script) *Scenar
 		Groups:       []ScenarioDraftGroup{},
 		Metadata:     map[string]interface{}{"source": "jmeter"},
 	}
-	for i, script := range scripts {
-		tg := threadGroups[min(i, len(threadGroups)-1)]
+	authoredDurations := map[string]bool{}
+	var messagingDuration time.Duration
+	for _, script := range scripts {
+		var tg *treeNode
+		if script.Metadata != nil && script.Metadata.Import != nil {
+			sourceID, _ := script.Metadata.Import.Preserved["source_group_id"].(string)
+			planID, _ := script.Metadata.Import.Preserved["source_plan_id"].(string)
+			for _, candidate := range threadGroups {
+				if messagingNodeID(planID, candidate.Element) == sourceID {
+					tg = candidate
+					break
+				}
+			}
+		}
+		if tg == nil {
+			continue
+		}
 		vusers := parseInt(convertutil.FirstNonEmpty(prop(tg.Element, "ThreadGroup.num_threads"), "1"))
 		rampSeconds := parseInt(prop(tg.Element, "ThreadGroup.ramp_time"))
 		durationSeconds := parseInt(prop(tg.Element, "ThreadGroup.duration"))
-		if durationSeconds > 0 {
+		if durationSeconds > 0 && strings.EqualFold(prop(tg.Element, "ThreadGroup.scheduler"), "true") {
 			draft.Duration = (time.Duration(durationSeconds) * time.Second).String()
+			authoredDurations[draft.Duration] = true
+		}
+		if script.Config.JMeter != nil {
+			draft.GeneratorAffinity = "single_generator"
+			var duration time.Duration
+			for _, schedule := range script.Config.SamplerSchedules {
+				if schedule.Duration() > duration {
+					duration = schedule.Duration()
+				}
+			}
+			if duration > 0 {
+				if duration > messagingDuration {
+					messagingDuration = duration
+				}
+				draft.Duration = duration.String()
+				authoredDurations[draft.Duration] = true
+			}
+			draft.Metadata["strict_parity"] = "unverified"
+			draft.Metadata["reference_context"] = "UTC and no property overrides require explicit confirmation"
 		}
 		draft.Groups = append(draft.Groups, ScenarioDraftGroup{
-			Name:           attrOr(tg.Element, "testname", script.Name),
-			ScriptName:     script.Name,
-			VUsers:         max(vusers, 1),
-			RampUp:         (time.Duration(rampSeconds) * time.Second).String(),
-			Initialization: "at_runtime",
+			SourceGroupID:    script.Metadata.Import.Preserved["source_group_id"].(string),
+			SamplerSchedules: script.Config.SamplerSchedules,
+			Name:             attrOr(tg.Element, "testname", script.Name),
+			ScriptName:       script.Name,
+			Iterations:       script.Config.RunLogic.Iterations,
+			VUsers:           max(vusers, 1),
+			RampUp:           (time.Duration(rampSeconds) * time.Second).String(),
+			Initialization:   "at_runtime",
 		})
 	}
+
+	if draft.GeneratorAffinity != "" {
+		// Later, shorter groups must not truncate an earlier source schedule.
+		// An absent messaging schedule must not acquire the legacy 5m default.
+		if messagingDuration > 0 {
+			draft.Duration = messagingDuration.String()
+		} else if len(authoredDurations) == 0 {
+			draft.Duration = ""
+		}
+	}
+	allIterations := len(scripts) > 0
+	anyIterations := false
+	for _, script := range scripts {
+		finite := script.Config.RunLogic.TerminationMode == dsl.TerminationIterations
+		allIterations = allIterations && finite
+		anyIterations = anyIterations || finite
+	}
+	if allIterations {
+		draft.TerminationMode = dsl.TerminationIterations
+		draft.Duration = ""
+	} else if anyIterations || len(authoredDurations) > 1 {
+		for _, script := range scripts {
+			for i := range script.Actions {
+				gateJMeterAction(&script.Actions[i], "jmeter_mixed_termination_modes", script.Name)
+			}
+		}
+	}
 	return draft
+}
+
+func jmeterMappingIdentity(e *xmlNode, function string) string {
+	if e == nil {
+		return ""
+	}
+	return fmt.Sprintf("jmeter-%d-%s", e.StartOffset, function)
+}
+func populateJMeterWorkloadAccounting(nodes []*treeNode, mappings []sourceview.Mapping, stats *ConvertStats) {
+	byID := map[string]sourceview.Mapping{}
+	for _, m := range mappings {
+		if m.TargetPath != "" {
+			byID[m.ID] = m
+		}
+	}
+	var walk func([]*treeNode, bool)
+	walk = func(nodes []*treeNode, parentEnabled bool) {
+		for _, n := range nodes {
+			if n == nil || n.Element == nil {
+				continue
+			}
+			e := n.Element
+			enabled := parentEnabled && jmeterElementEnabled(e)
+			if isJMeterSamplerElement(e.Name) && e.Name != "DebugSampler" {
+				if !enabled {
+					stats.DisabledWorkloadSamplers++
+				} else {
+					stats.EnabledWorkloadSamplers++
+					m, ok := byID[jmeterMappingIdentity(e, e.Name)]
+					if ok && m.TargetKind != "unsupported" && (m.Status == "converted" || m.Status == "review_only") {
+						stats.ConvertedWorkloadSamplers++
+					}
+					if !ok || m.Status != "converted" {
+						stats.BlockedWorkloadSamplers++
+					}
+				}
+			} else if enabled {
+				if isJMeterListenerElement(e.Name) || e.Name == "DebugSampler" {
+					stats.IgnoredReportingElements++
+				}
+				if isMessagingContributor(e.Name) || isJMeterDirectScopeConfig(e.Name) || strings.Contains(e.Name, "Timer") {
+					stats.ConfigurationContributors++
+				}
+			}
+			walk(n.Children, enabled)
+		}
+	}
+	walk(nodes, true)
 }

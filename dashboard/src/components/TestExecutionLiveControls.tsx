@@ -151,7 +151,7 @@ export default function TestExecutionLiveControls({
                         ? maxTargetVusers
                         : Math.min(maxTargetVusers, Math.max(currentVusers * 3, targetVusers * 2, 100))}
                       value={targetVusers}
-                      disabled={groupAction !== 'run'}
+                      disabled={test.termination_mode === 'iterations' || groupAction !== 'run'}
                       aria-label={`${group.name} VUser target`}
                       onChange={(e) => onVuserTargetChange(
                         group.name,
@@ -164,7 +164,7 @@ export default function TestExecutionLiveControls({
                       min={0}
                       max={maxTargetVusers}
                       value={targetVusers}
-                      disabled={groupAction !== 'run'}
+                      disabled={test.termination_mode === 'iterations' || groupAction !== 'run'}
                       aria-label={`${group.name} VUser target value`}
                       onChange={(e) => onVuserTargetChange(
                         group.name,
@@ -174,7 +174,7 @@ export default function TestExecutionLiveControls({
                     <button
                       className="btn btn-sm btn-accent"
                       onClick={() => onScaleVUsers(group.name)}
-                      disabled={isApplyDisabled}
+                      disabled={test.termination_mode === 'iterations' || isApplyDisabled}
                     >
                       {groupAction === 'run' ? 'Apply' : 'Pause'}
                     </button>
@@ -203,7 +203,7 @@ export default function TestExecutionLiveControls({
               </div>
 
               <div className="control-group control-group-nested">
-                <h4 className="control-title">Test Duration</h4>
+                <h4 className="control-title">{test.termination_mode === 'iterations' ? 'Fixed iteration completion — duration and scaling disabled' : 'Test Duration'}</h4>
                 <div className="duration-control-row">
                   <span className="control-label">Target</span>
                   <DurationField
@@ -212,9 +212,10 @@ export default function TestExecutionLiveControls({
                     showPresets
                     compact
                     className="live-duration-field"
+                    disabled={test.termination_mode === 'iterations'}
                     onChange={onDurationInputChange}
                   />
-                  <button className="btn btn-sm btn-accent" onClick={onAdjustDuration} disabled={durationInputInvalid}>
+                  <button className="btn btn-sm btn-accent" onClick={onAdjustDuration} disabled={test.termination_mode === 'iterations' || durationInputInvalid}>
                     Apply
                   </button>
                 </div>
@@ -244,9 +245,9 @@ export default function TestExecutionLiveControls({
                   <span className="preview-metric-detail">projected VUsers</span>
                 </div>
                 <div className="preview-metric-card">
-                  <span className="preview-metric-label">Remaining</span>
-                  <span className="preview-metric-value">{formatTimeLong(liveControlPreview.remainingSeconds)}</span>
-                  <span className="preview-metric-detail">to stop</span>
+                  <span className="preview-metric-label">{test.termination_mode === 'iterations' ? 'Completed iterations' : 'Remaining'}</span>
+                  <span className="preview-metric-value">{test.termination_mode === 'iterations' ? test.live_metrics?.completed_iterations ?? 0 : formatTimeLong(liveControlPreview.remainingSeconds)}</span>
+                  <span className="preview-metric-detail">{test.termination_mode === 'iterations' ? 'finishes after the fixed count' : 'to stop'}</span>
                 </div>
               </div>
 

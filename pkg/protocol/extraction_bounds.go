@@ -81,6 +81,11 @@ func ApplyExtraction(result *Result, extractor Extractor, value string, extracti
 		return fmt.Errorf("extractor %q found no match: %w", extractor.Name, extractionErr)
 	case "empty":
 		return StoreExtraction(result, extractor.Name, "")
+	case "default":
+		if extractor.DefaultValue == nil {
+			return fmt.Errorf("extractor %q requires default_value", extractor.Name)
+		}
+		return StoreExtraction(result, extractor.Name, *extractor.DefaultValue)
 	default:
 		return nil
 	}

@@ -30,6 +30,7 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
+	TerminationMode              string
 	TestID                       string
 	ExecutionGeneration          uint64
 	ScenarioID                   string
@@ -423,8 +424,9 @@ const FeatureControlParallelV1 = "control_parallel_v1"
 const FeatureMessageDetailControlParallelV1 = "message_detail_control_parallel_v1"
 
 type GeneratorStats struct {
-	ActiveVUsers int32
-	CPUPercent   float64
+	CompletedIterations int64
+	ActiveVUsers        int32
+	CPUPercent          float64
 	// CPUProcessPctMax is the worst-pod process CPU% across the fleet. It is
 	// populated controller-side during multi-generator aggregation; per a single
 	// generator it is left zero (the per-pod value is CPUPercent).
@@ -1378,6 +1380,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		GroupName:                 assignment.GroupName,
 		TargetDurationSeconds:     compatibilityDurationSeconds(targetDuration),
 		TargetDuration:            preciseDurationProto(targetDuration, 0),
+		TerminationMode:           assignment.TerminationMode,
 		DurationOffset:            preciseDurationProto(assignment.DurationOffset, 0),
 		ScriptId:                  assignment.ScriptID,
 		ExpectedScriptHash:        assignment.ExpectedScriptHash,
@@ -1688,6 +1691,7 @@ func browserDeviceMetricsToProto(values []BrowserDeviceMetrics) []*pb.BrowserDev
 
 func toProtoStats(stats GeneratorStats) *pb.GeneratorStats {
 	return &pb.GeneratorStats{
+		CompletedIterations:               stats.CompletedIterations,
 		ActiveVusers:                      stats.ActiveVUsers,
 		CpuPercent:                        stats.CPUPercent,
 		MemoryBytes:                       stats.MemoryBytes,
@@ -1733,6 +1737,7 @@ func generatorStatsFromProto(stats *pb.GeneratorStats) GeneratorStats {
 		return GeneratorStats{}
 	}
 	return GeneratorStats{
+		CompletedIterations:               stats.GetCompletedIterations(),
 		ActiveVUsers:                      stats.GetActiveVusers(),
 		CPUPercent:                        stats.GetCpuPercent(),
 		MemoryBytes:                       stats.GetMemoryBytes(),

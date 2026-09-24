@@ -1109,6 +1109,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	if !ok {
 		return scaleTransitionDecision{err: status.Error(codes.NotFound, "test assignment not found")}
 	}
+	if assignment.terminationMode == "iterations" {
+		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "iteration runs do not support scaling")}
+	}
 	if _, stopping := coordinator.stoppingTests[testID]; stopping {
 		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "test assignment is stopping")}
 	}
@@ -1597,6 +1600,9 @@ func (coordinator *assignmentLifecycleCoordinator) planDurationWithTokenLocked(s
 	assignment, ok := service.assignments[testID]
 	if !ok {
 		return durationTransitionDecision{err: status.Error(codes.NotFound, "test assignment not found")}
+	}
+	if assignment.terminationMode == "iterations" {
+		return durationTransitionDecision{err: status.Error(codes.FailedPrecondition, "iteration runs do not support duration adjustment")}
 	}
 	if _, stopping := coordinator.stoppingTests[testID]; stopping {
 		return durationTransitionDecision{err: status.Error(codes.FailedPrecondition, "test assignment is stopping")}

@@ -508,6 +508,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		Timestamp:                  timestamp,
 		SampleWindowSeconds:        batchWindowSeconds(batch.WindowMs),
 		ActiveVUsers:               int64(batch.Stats.ActiveVUsers),
+		CompletedIterations:        batch.Stats.CompletedIterations,
 		Transactions:               make(map[string]*TxMetrics),
 		DependencyHealth:           make(map[string]*TxMetrics),
 		SOAPOperations:             make(map[string]*TxMetrics),

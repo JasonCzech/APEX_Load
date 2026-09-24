@@ -45,6 +45,7 @@ export interface StoredScript {
 }
 
 export interface StoredScenario {
+  termination_mode?: 'duration' | 'iterations'
   id: string
   ref_key?: string
   name: string

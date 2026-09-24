@@ -1,0 +1,920 @@
+<?xml version='1.0' encoding='utf-8'?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.4.1">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Azure Event Hubs Test Plan" enabled="true">
+      <stringProp name="TestPlan.comments" />
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments" />
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath" />
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Kafka payments" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <intProp name="LoopController.loops">-1</intProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">100</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+        <stringProp name="ThreadGroup.duration" />
+        <stringProp name="ThreadGroup.delay" />
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="TestPlan.comments">100k</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="CSV Data Set Config" enabled="false">
+          <stringProp name="filename">fixture.csv</stringProp>
+          <stringProp name="fileEncoding" />
+          <stringProp name="variableNames">Eddms_BAN_Wireless</stringProp>
+          <boolProp name="ignoreFirstLine">false</boolProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet>
+        <hashTree />
+        <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig" testname="PartitionID" enabled="true">
+          <stringProp name="CounterConfig.start">0</stringProp>
+          <stringProp name="CounterConfig.end">5</stringProp>
+          <stringProp name="CounterConfig.incr">1</stringProp>
+          <stringProp name="CounterConfig.name">p_PartitionID</stringProp>
+          <stringProp name="CounterConfig.format" />
+          <boolProp name="CounterConfig.per_user">false</boolProp>
+        </CounterConfig>
+        <hashTree />
+        <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig" testname="TraceID" enabled="true">
+          <stringProp name="CounterConfig.start">1</stringProp>
+          <stringProp name="CounterConfig.end">99999999</stringProp>
+          <stringProp name="CounterConfig.incr">1</stringProp>
+          <stringProp name="CounterConfig.name">p_TraceID</stringProp>
+          <stringProp name="CounterConfig.format" />
+          <boolProp name="CounterConfig.per_user">false</boolProp>
+        </CounterConfig>
+        <hashTree />
+        <com.di.jmeter.kafka.config.KafkaProducerConfig guiclass="TestBeanGUI" testclass="com.di.jmeter.kafka.config.KafkaProducerConfig" testname="Kafka Producer Config" enabled="false">
+          <stringProp name="batchSize">9999999</stringProp>
+          <stringProp name="clientId" />
+          <collectionProp name="extraConfigs">
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">sasl.jaas.config</stringProp>
+              <stringProp name="configValue">org.apache.kafka.common.security.plain.PlainLoginModule required username='fixture' password=***;;</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">group</stringProp>
+              <stringProp name="configValue">fixture-group</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">security.protocol</stringProp>
+              <stringProp name="configValue">SASL_SSL</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">sasl.mechanism</stringProp>
+              <stringProp name="configValue">PLAIN</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">max.block.ms</stringProp>
+              <stringProp name="configValue">30000</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">acks</stringProp>
+              <stringProp name="configValue">all</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">retries</stringProp>
+              <stringProp name="configValue">1</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">batch.size</stringProp>
+              <stringProp name="configValue">16384</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">linger.ms</stringProp>
+              <stringProp name="configValue">1</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">session.timeout.ms</stringProp>
+              <stringProp name="configValue">4500</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">heartbeat.interval.ms</stringProp>
+              <stringProp name="configValue">3000</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">buffer.memory</stringProp>
+              <stringProp name="configValue">33554432</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">enable.idempotence</stringProp>
+              <stringProp name="configValue">false</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">ssl.enabled.protocols</stringProp>
+              <stringProp name="configValue">TLSv1.2</stringProp>
+            </elementProp>
+          </collectionProp>
+          <stringProp name="kafkaBrokers">broker.fixture.test:9092</stringProp>
+          <stringProp name="kafkaProducerClientVariableName">KafkaProducerClient</stringProp>
+          <stringProp name="kafkaSslKeystore" />
+          <stringProp name="kafkaSslKeystorePassword" />
+          <stringProp name="kafkaSslPrivateKeyPass" />
+          <stringProp name="kafkaSslTruststore" />
+          <stringProp name="kafkaSslTruststorePassword" />
+          <stringProp name="securityType">securityType.plaintext</stringProp>
+          <stringProp name="serializerKey">org.apache.kafka.common.serialization.StringSerializer</stringProp>
+          <stringProp name="serializerValue">org.apache.kafka.common.serialization.StringSerializer</stringProp>
+          <boolProp name="isSsl">false</boolProp>
+        </com.di.jmeter.kafka.config.KafkaProducerConfig>
+        <hashTree />
+        <com.di.jmeter.kafka.config.KafkaProducerConfig guiclass="TestBeanGUI" testclass="com.di.jmeter.kafka.config.KafkaProducerConfig" testname="Kafka Producer Config" enabled="true">
+          <stringProp name="batchSize">9999999</stringProp>
+          <stringProp name="clientId" />
+          <collectionProp name="extraConfigs">
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">sasl.jaas.config</stringProp>
+              <stringProp name="configValue">org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required cid="***" cs="***" scope="00000000-0000-0000-0000-000000000001/.default";</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">group</stringProp>
+              <stringProp name="configValue">fixture-group</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">security.protocol</stringProp>
+              <stringProp name="configValue">SASL_SSL</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">sasl.mechanism</stringProp>
+              <stringProp name="configValue">OAUTHBEARER</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">max.block.ms</stringProp>
+              <stringProp name="configValue">30000</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">acks</stringProp>
+              <stringProp name="configValue">all</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">retries</stringProp>
+              <stringProp name="configValue">1</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">batch.size</stringProp>
+              <stringProp name="configValue">16384</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">linger.ms</stringProp>
+              <stringProp name="configValue">1</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">session.timeout.ms</stringProp>
+              <stringProp name="configValue">4500</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">heartbeat.interval.ms</stringProp>
+              <stringProp name="configValue">3000</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">buffer.memory</stringProp>
+              <stringProp name="configValue">33554432</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">enable.idempotence</stringProp>
+              <stringProp name="configValue">false</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">ssl.enabled.protocols</stringProp>
+              <stringProp name="configValue">TLSv1.2</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">sasl.oauthbearer.token.endpoint.url</stringProp>
+              <stringProp name="configValue">https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/oauth2/v2.0/token</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="com.di.jmeter.kafka.utils.VariableSettings">
+              <stringProp name="configKey">sasl.login.callback.handler.class</stringProp>
+              <stringProp name="configValue">org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerLoginCallbackHandler</stringProp>
+            </elementProp>
+          </collectionProp>
+          <stringProp name="kafkaBrokers">broker.fixture.test:9092</stringProp>
+          <stringProp name="kafkaProducerClientVariableName">KafkaProducerClient</stringProp>
+          <stringProp name="kafkaSslKeystore" />
+          <stringProp name="kafkaSslKeystorePassword" />
+          <stringProp name="kafkaSslPrivateKeyPass" />
+          <stringProp name="kafkaSslTruststore" />
+          <stringProp name="kafkaSslTruststorePassword" />
+          <stringProp name="securityType">securityType.plaintext</stringProp>
+          <stringProp name="serializerKey">org.apache.kafka.common.serialization.StringSerializer</stringProp>
+          <stringProp name="serializerValue">org.apache.kafka.common.serialization.StringSerializer</stringProp>
+          <boolProp name="isSsl">false</boolProp>
+        </com.di.jmeter.kafka.config.KafkaProducerConfig>
+        <hashTree />
+        <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig" testname="BAN" enabled="true">
+          <stringProp name="CounterConfig.start">111</stringProp>
+          <stringProp name="CounterConfig.end">999</stringProp>
+          <stringProp name="CounterConfig.incr">1</stringProp>
+          <stringProp name="CounterConfig.name">p_BAN</stringProp>
+          <stringProp name="CounterConfig.format" />
+          <boolProp name="CounterConfig.per_user">false</boolProp>
+        </CounterConfig>
+        <hashTree />
+        <com.di.jmeter.kafka.sampler.KafkaProducerSampler guiclass="TestBeanGUI" testclass="com.di.jmeter.kafka.sampler.KafkaProducerSampler" testname="fixture-181" enabled="false">
+          <stringProp name="kafkaMessage">{
+  "communication": [
+    {
+      "sourceId": "fixture",
+      "isAccountSynchReq": true,
+      "domain": "fixture",
+      "customers": [
+        {
+          "mode": "fixture",
+          "serviceType": "fixture",
+          "subCategory": "fixture",
+          "customerType": "fixture",
+          "langPreference": "fixture",
+          "emailId": [
+            "fixture"
+          ],
+          "eventSentTime": "${__time(yyyy-MM-dd,)}T${__time(HH:mm:ss.S,)}Z",
+          "ctn": [
+            "fixture"
+          ],
+          "priority": "fixture",
+          "ban": "fixture",
+          "complexVal": [
+            {
+              "name": "fixture",
+              "value": "fixture"
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": 8080
+                },
+                {
+                  "name": "fixture",
+                  "value": 5678
+                },
+                {
+                  "name": "fixture",
+                  "value": 12.34
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": 6986
+                }
+              ]
+            },
+            {
+              "name": "fixture",
+              "value": "fixture"
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            },
+            {
+              "name": "fixture",
+              "value": "fixture"
+            }
+          ]
+        }
+      ],
+      "destinationId": "fixture"
+    }
+  ]
+}</stringProp>
+          <stringProp name="kafkaMessageKey">1</stringProp>
+          <stringProp name="kafkaProducerClientVariableName">KafkaProducerClient</stringProp>
+          <stringProp name="kafkaTopic">fixture.events</stringProp>
+          <collectionProp name="messageHeaders" />
+          <stringProp name="partitionString" />
+        </com.di.jmeter.kafka.sampler.KafkaProducerSampler>
+        <hashTree />
+        <com.di.jmeter.kafka.sampler.KafkaProducerSampler guiclass="TestBeanGUI" testclass="com.di.jmeter.kafka.sampler.KafkaProducerSampler" testname="fixture-189" enabled="false">
+          <stringProp name="kafkaMessage">{
+  "communication": [
+    {
+      "sourceId": "fixture",
+      "isAccountSynchReq": true,
+      "domain": "fixture",
+      "customers": [
+        {
+          "mode": "fixture",
+          "notificationInfo": [
+            {
+              "fromAlias": "fixture",
+              "subject": "fixture"
+            }
+          ],
+          "subCategory": "fixture",
+          "customerType": "fixture",
+          "langPreference": "fixture",
+          "emailId": [
+            "fixture"
+          ],
+          "eventSentTime": "${__time(yyyy-MM-dd,)}T${__time(HH:mm:ss.S,)}Z",
+          "priority": "fixture",
+          "ban": "${eddmsBAN}",
+          "complexVal": [
+            {
+              "name": "fixture",
+              "value": "fixture"
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": 5156
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            },
+            {
+              "name": "fixture",
+              "value": "fixture"
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            },
+            {
+              "name": "fixture",
+              "value": "eddms_perf_${p_TraceID}"
+            }
+          ]
+        }
+      ],
+      "destinationId": "fixture",
+      "isAccountTypeReq": true
+    }
+  ]
+}</stringProp>
+          <stringProp name="kafkaMessageKey">1</stringProp>
+          <stringProp name="kafkaProducerClientVariableName">KafkaProducerClient</stringProp>
+          <stringProp name="kafkaTopic">fixture.events</stringProp>
+          <collectionProp name="messageHeaders" />
+          <stringProp name="partitionString" />
+        </com.di.jmeter.kafka.sampler.KafkaProducerSampler>
+        <hashTree />
+        <com.di.jmeter.kafka.sampler.KafkaProducerSampler guiclass="TestBeanGUI" testclass="com.di.jmeter.kafka.sampler.KafkaProducerSampler" testname="fixture-197" enabled="true">
+          <stringProp name="kafkaMessage">{
+  "communication": [
+    {
+      "sourceId": "fixture",
+      "isAccountSynchReq": true,
+      "domain": "fixture",
+      "customers": [
+        {
+          "serviceType": "fixture",
+          "fname": "fixture",
+          "subCategory": "fixture",
+          "emailId": [
+            "fixture"
+          ],
+          "eventSentTime": "${__time(yyyy-MM-dd,)}T${__time(HH:mm:ss.S,)}Z",
+          "priority": "fixture",
+          "ban": "fixture",
+          "notificationInfo": [
+            {
+              "marketCode": "fixture",
+              "billIndicator": "fixture"
+            }
+          ],
+          "complexVal": [
+            {
+              "name": "fixture",
+              "value": "fixture"
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": 1234
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": 100.0
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": 3214
+                }
+              ]
+            },
+            {
+              "name": "fixture",
+              "value": "fixture"
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            }
+          ],
+          "mode": "fixture",
+          "lname": "fixture",
+          "customerType": "fixture",
+          "langPreference": "fixture",
+          "ctn": [
+            "fixture"
+          ]
+        }
+      ],
+      "destinationId": "fixture"
+    }
+  ]
+}</stringProp>
+          <stringProp name="kafkaMessageKey" />
+          <stringProp name="kafkaProducerClientVariableName">KafkaProducerClient</stringProp>
+          <stringProp name="kafkaTopic">fixture.events</stringProp>
+          <collectionProp name="messageHeaders" />
+          <stringProp name="partitionString">${p_PartitionID}</stringProp>
+        </com.di.jmeter.kafka.sampler.KafkaProducerSampler>
+        <hashTree>
+          <kg.apc.jmeter.timers.VariableThroughputTimer guiclass="kg.apc.jmeter.timers.VariableThroughputTimerGui" testclass="kg.apc.jmeter.timers.VariableThroughputTimer" testname="jp@gc - Throughput Shaping Timer" enabled="true">
+            <collectionProp name="load_profile">
+              <collectionProp name="-609426340">
+                <stringProp name="49">1</stringProp>
+                <stringProp name="1788">84</stringProp>
+                <stringProp name="50547">300</stringProp>
+              </collectionProp>
+              <collectionProp name="451796357">
+                <stringProp name="1788">84</stringProp>
+                <stringProp name="1788">84</stringProp>
+                <stringProp name="1572771">3600</stringProp>
+              </collectionProp>
+            </collectionProp>
+          </kg.apc.jmeter.timers.VariableThroughputTimer>
+          <hashTree />
+        </hashTree>
+        <DebugSampler guiclass="TestBeanGUI" testclass="DebugSampler" testname="Debug Sampler" enabled="false">
+          <boolProp name="displayJMeterProperties">false</boolProp>
+          <boolProp name="displayJMeterVariables">true</boolProp>
+          <boolProp name="displaySystemProperties">false</boolProp>
+        </DebugSampler>
+        <hashTree />
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Event Hubs east" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <intProp name="LoopController.loops">-1</intProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">50</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+        <stringProp name="ThreadGroup.duration" />
+        <stringProp name="ThreadGroup.delay" />
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="TestPlan.comments">Billing System = TLG</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <RandomVariableConfig guiclass="TestBeanGUI" testclass="RandomVariableConfig" testname="Partition Random Variable" enabled="true">
+          <stringProp name="maximumValue">5</stringProp>
+          <stringProp name="minimumValue">0</stringProp>
+          <stringProp name="outputFormat" />
+          <boolProp name="perThread">false</boolProp>
+          <stringProp name="randomSeed" />
+          <stringProp name="variableName">ConfirmPartition</stringProp>
+        </RandomVariableConfig>
+        <hashTree />
+        <jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler guiclass="jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.gui.AzEventHubsSamplerGui" testclass="jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler" testname="fixture-242" enabled="true">
+          <stringProp name="namespaceName">fixture-east.servicebus.windows.net</stringProp>
+          <stringProp name="authType">Shared access signature</stringProp>
+          <stringProp name="sharedAccessKeyName">write</stringProp>
+          <stringProp name="sharedAccessKey">***</stringProp>
+          <stringProp name="eventHubName">fixture-hub</stringProp>
+          <stringProp name="partitionType">ID</stringProp>
+          <stringProp name="partitionValue">${ConfirmPartition}</stringProp>
+          <elementProp name="messages" elementType="jp.co.pnop.jmeter.protocol.amqp.sampler.AzAmqpMessages" guiclass="jp.co.pnop.jmeter.protocol.amqp.sampler.gui.AzAmqpMessagesPanel" testclass="jp.co.pnop.jmeter.protocol.amqp.sampler.AzAmqpMessages" testname="[res_key=Azure Event Hubs Default]" enabled="true">
+            <collectionProp name="Messages.messages">
+              <elementProp name="fixture message" elementType="jp.co.pnop.jmeter.protocol.amqp.sampler.AzAmqpMessage">
+                <stringProp name="Message.messageType">String</stringProp>
+                <stringProp name="Message.message">{
+  "communication": [
+    {
+      "sourceId": "fixture",
+      "destinationId": "fixture",
+      "domain": "fixture",
+      "isAccountSynchReq": true,
+      "isCPNIEmailReq": false,
+      "isNumberValReq": false,
+      "isPreferenceReq": false,
+      "isShortUrlReq": false,
+      "customers": [
+        {
+          "billingSystem": "fixture",
+          "subCategory": "fixture",
+          "ban": "fixture",
+          "fname": "fixture",
+          "lname": "fixture",
+          "emailId": [
+            "fixture"
+          ],
+          "serviceType": "fixture",
+          "mode": "fixture",
+          "priority": "fixture",
+          "eventSentTime": "${__time(yyyy-MM-dd,)}T${__time(HH:mm:ss.S,)}Z",
+          "langPreference": "fixture",
+          "notificationInfo": [
+            {
+              "marketCode": "fixture",
+              "billIndicator": "fixture"
+            }
+          ],
+          "complexVal": [
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}</stringProp>
+                <stringProp name="Message.partitionKey" />
+                <stringProp name="Message.messageId" />
+                <stringProp name="Message.groupId" />
+                <stringProp name="Message.customProperties" />
+                <stringProp name="Message.contentType" />
+                <stringProp name="Message.label" />
+                <stringProp name="Message.standardProperties" />
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">idpTraceId</stringProp>
+                <stringProp name="Header.value">${__Random(100000,999999,randNum)}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree />
+          <kg.apc.jmeter.timers.VariableThroughputTimer guiclass="kg.apc.jmeter.timers.VariableThroughputTimerGui" testclass="kg.apc.jmeter.timers.VariableThroughputTimer" testname="jp@gc - Throughput Shaping Timer" enabled="true">
+            <collectionProp name="load_profile">
+              <collectionProp name="-610610509">
+                <stringProp name="49">1</stringProp>
+                <stringProp name="1662">42</stringProp>
+                <stringProp name="50547">300</stringProp>
+              </collectionProp>
+              <collectionProp name="413902949">
+                <stringProp name="1662">42</stringProp>
+                <stringProp name="1662">42</stringProp>
+                <stringProp name="1572771">3600</stringProp>
+              </collectionProp>
+            </collectionProp>
+          </kg.apc.jmeter.timers.VariableThroughputTimer>
+          <hashTree />
+        </hashTree>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Event Hubs west" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <intProp name="LoopController.loops">-1</intProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">50</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <boolProp name="ThreadGroup.scheduler">false</boolProp>
+        <stringProp name="ThreadGroup.duration" />
+        <stringProp name="ThreadGroup.delay" />
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="TestPlan.comments">Billing System = TLG</stringProp>
+      </ThreadGroup>
+      <hashTree>
+        <RandomVariableConfig guiclass="TestBeanGUI" testclass="RandomVariableConfig" testname="Partition Random Variable" enabled="true">
+          <stringProp name="maximumValue">5</stringProp>
+          <stringProp name="minimumValue">0</stringProp>
+          <stringProp name="outputFormat" />
+          <boolProp name="perThread">false</boolProp>
+          <stringProp name="randomSeed" />
+          <stringProp name="variableName">ConfirmPartition</stringProp>
+        </RandomVariableConfig>
+        <hashTree />
+        <jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler guiclass="jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.gui.AzEventHubsSamplerGui" testclass="jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler" testname="fixture-301" enabled="true">
+          <stringProp name="namespaceName">fixture-west.servicebus.windows.net</stringProp>
+          <stringProp name="authType">Shared access signature</stringProp>
+          <stringProp name="sharedAccessKeyName">write</stringProp>
+          <stringProp name="sharedAccessKey">***</stringProp>
+          <stringProp name="eventHubName">fixture-hub</stringProp>
+          <stringProp name="partitionType">ID</stringProp>
+          <stringProp name="partitionValue">${ConfirmPartition}</stringProp>
+          <elementProp name="messages" elementType="jp.co.pnop.jmeter.protocol.amqp.sampler.AzAmqpMessages" guiclass="jp.co.pnop.jmeter.protocol.amqp.sampler.gui.AzAmqpMessagesPanel" testclass="jp.co.pnop.jmeter.protocol.amqp.sampler.AzAmqpMessages" testname="[res_key=Azure Event Hubs Default]" enabled="true">
+            <collectionProp name="Messages.messages">
+              <elementProp name="fixture message" elementType="jp.co.pnop.jmeter.protocol.amqp.sampler.AzAmqpMessage">
+                <stringProp name="Message.messageType">String</stringProp>
+                <stringProp name="Message.message">{
+  "communication": [
+    {
+      "sourceId": "fixture",
+      "destinationId": "fixture",
+      "domain": "fixture",
+      "isAccountSynchReq": true,
+      "isCPNIEmailReq": false,
+      "isNumberValReq": false,
+      "isPreferenceReq": false,
+      "isShortUrlReq": false,
+      "customers": [
+        {
+          "billingSystem": "fixture",
+          "subCategory": "fixture",
+          "ban": "fixture",
+          "fname": "fixture",
+          "lname": "fixture",
+          "emailId": [
+            "fixture"
+          ],
+          "serviceType": "fixture",
+          "mode": "fixture",
+          "priority": "fixture",
+          "eventSentTime": "${__time(yyyy-MM-dd,)}T${__time(HH:mm:ss.S,)}Z",
+          "langPreference": "fixture",
+          "notificationInfo": [
+            {
+              "marketCode": "fixture",
+              "billIndicator": "fixture"
+            }
+          ],
+          "complexVal": [
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                },
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            },
+            {
+              "name": "fixture",
+              "value": [
+                {
+                  "name": "fixture",
+                  "value": "fixture"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}</stringProp>
+                <stringProp name="Message.partitionKey" />
+                <stringProp name="Message.messageId" />
+                <stringProp name="Message.groupId" />
+                <stringProp name="Message.customProperties" />
+                <stringProp name="Message.contentType" />
+                <stringProp name="Message.label" />
+                <stringProp name="Message.standardProperties" />
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">idpTraceId</stringProp>
+                <stringProp name="Header.value">${__Random(100000,999999,randNum)}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree />
+          <kg.apc.jmeter.timers.VariableThroughputTimer guiclass="kg.apc.jmeter.timers.VariableThroughputTimerGui" testclass="kg.apc.jmeter.timers.VariableThroughputTimer" testname="jp@gc - Throughput Shaping Timer" enabled="true">
+            <collectionProp name="load_profile">
+              <collectionProp name="-610610509">
+                <stringProp name="49">1</stringProp>
+                <stringProp name="1662">42</stringProp>
+                <stringProp name="50547">300</stringProp>
+              </collectionProp>
+              <collectionProp name="413902949">
+                <stringProp name="1662">42</stringProp>
+                <stringProp name="1662">42</stringProp>
+                <stringProp name="1572771">3600</stringProp>
+              </collectionProp>
+            </collectionProp>
+          </kg.apc.jmeter.timers.VariableThroughputTimer>
+          <hashTree />
+        </hashTree>
+      </hashTree>
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time>
+            <latency>true</latency>
+            <timestamp>true</timestamp>
+            <success>true</success>
+            <label>true</label>
+            <code>true</code>
+            <message>true</message>
+            <threadName>true</threadName>
+            <dataType>true</dataType>
+            <encoding>true</encoding>
+            <assertions>true</assertions>
+            <subresults>true</subresults>
+            <responseData>true</responseData>
+            <samplerData>true</samplerData>
+            <xml>true</xml>
+            <fieldNames>true</fieldNames>
+            <responseHeaders>true</responseHeaders>
+            <requestHeaders>true</requestHeaders>
+            <responseDataOnError>true</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes>
+            <sentBytes>true</sentBytes>
+            <url>true</url>
+            <threadCounts>true</threadCounts>
+            <idleTime>true</idleTime>
+            <connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename" />
+      </ResultCollector>
+      <hashTree />
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>
