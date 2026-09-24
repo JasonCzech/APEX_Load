@@ -35,6 +35,7 @@ type scriptImportResponseOptions struct {
 	Correlations        any
 	Assumptions         []string
 	UnsupportedElements []string
+	ReviewSummary       *jmeter.ReviewSummary
 	Diagnostics         diag.Diagnostics
 	ReviewSections      []scriptImportReviewSection
 	RepairSuggestions   []scriptImportRepairSuggestion
@@ -265,6 +266,10 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"parameterization":            parameterization,
 		"shared_values":               sharedValues,
 		"preflight":                   importResponseValue(opts.Preflight),
+	}
+
+	if opts.ReviewSummary != nil {
+		response["review_summary"] = opts.ReviewSummary
 	}
 	if !opts.Accounting.Empty() {
 		response["accounting"] = opts.Accounting

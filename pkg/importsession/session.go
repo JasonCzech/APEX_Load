@@ -494,3 +494,30 @@ func validSessionID(id string) bool {
 }
 
 var _ Lifecycle = (*Manager)(nil)
+
+// PublishReceipt fences publication against a replaced claim epoch. Backends
+// without this atomic boundary cannot support batch repairs.
+func (m *Manager) PublishReceipt(ctx context.Context, claim Claim, receipt SessionDescriptor, payload []byte, maxBytes int64) error {
+	if m == nil || m.backend == nil {
+		return errors.New("protected import session store is required")
+	}
+	if err := validateClaim(claim); err != nil {
+		return err
+	}
+	if err := validateScope(scopeFromDescriptor(receipt)); err != nil {
+		return err
+	}
+	if err := validatePayloadBound(maxBytes); err != nil {
+		return err
+	}
+	if int64(len(payload)) > maxBytes || !receipt.ExpiresAt.After(time.Now().UTC()) {
+		return ErrSessionExpired
+	}
+	backend, ok := m.backend.(interface {
+		PublishClaimReceipt(context.Context, Scope, string, SessionDescriptor, []byte, int64) error
+	})
+	if !ok {
+		return errors.New("atomic session publication is unavailable")
+	}
+	return backend.PublishClaimReceipt(ctx, claim.Scope, claim.Token, receipt, payload, maxBytes)
+}

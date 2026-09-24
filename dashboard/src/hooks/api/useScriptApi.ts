@@ -1,3 +1,4 @@
+import type { JMeterBatchRepairRequest, JMeterBatchRepairResponse } from '../../types/scriptImports'
 import { useCallback, useMemo } from 'react'
 
 import {
@@ -855,6 +856,13 @@ export function useScriptApi() {
     [],
   )
 
+  const repairJMeterBatch = useCallback(
+    (payload: JMeterBatchRepairRequest, apply = false) => apply
+      ? request<JMeterBatchRepairResponse>('/scripts/import/repairs/apply', { method: 'POST', body: JSON.stringify(payload) })
+      : request<JMeterBatchRepairResponse>('/scripts/import/repairs/preview', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const saveJMeterImport = useCallback(
     (payload: SaveJMeterImportRequest) =>
       request<SaveJMeterImportResponse>('/scripts/import/jmeter/save', { method: 'POST', body: JSON.stringify(payload) }),
@@ -1613,6 +1621,7 @@ export function useScriptApi() {
       getBrokerConfigSupportMatrix,
       getOracleEBusinessSupportMatrix,
       saveJMeterImport,
+      repairJMeterBatch,
       saveEnterpriseArchiveImport,
       savePostmanImport,
       commitOpenAPIImport,
@@ -1736,6 +1745,7 @@ export function useScriptApi() {
       getBrokerConfigSupportMatrix,
       getOracleEBusinessSupportMatrix,
       saveJMeterImport,
+      repairJMeterBatch,
       saveEnterpriseArchiveImport,
       savePostmanImport,
       commitOpenAPIImport,

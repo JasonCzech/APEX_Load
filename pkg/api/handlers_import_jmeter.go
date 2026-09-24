@@ -46,7 +46,7 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
-	s.writeJMeterImportResponse(w, r, http.StatusOK, result)
+	s.writeJMeterImportResponse(w, r, http.StatusOK, result, importReq)
 }
 
 func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +70,7 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 
-	s.writeJMeterImportResponse(w, r, http.StatusOK, result)
+	s.writeJMeterImportResponse(w, r, http.StatusOK, result, importReq)
 }
 
 func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -272,6 +272,7 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 			}
 			script.Metadata.Import.Preserved["source_zip_entry"] = document.FileName
 		}
+		combined.ReviewOutcomes = append(combined.ReviewOutcomes, converted.ReviewOutcomes...)
 		combined.Scripts = append(combined.Scripts, converted.Scripts...)
 		if combined.Script == nil {
 			combined.Script = converted.Script
@@ -334,6 +335,7 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 	}
 	combined.Summary.VariablesDiscovered = uniqueSortedStrings(combined.Summary.VariablesDiscovered)
 	combined.Summary.CSVSourcesDiscovered = uniqueSortedStrings(combined.Summary.CSVSourcesDiscovered)
+	combined.SetReviewEvidence(combined.ReviewOutcomes)
 	return combined, nil
 }
 
@@ -559,46 +561,32 @@ func normalizeJMeterMultipartSidecarName(value string) string {
 	return cleaned
 }
 
-func buildJMeterProtocolCompatReport(result *jmeter.ConvertResult, unsupported []string) *protocolCompatReport {
+func buildJMeterProtocolCompatReport(result *jmeter.ConvertResult) *protocolCompatReport {
 	if result == nil {
 		return nil
 	}
 	reviewGated := result.Stats.ReviewRequired + result.Stats.AdapterRequired
-	status := protocolPromotionStatus("executable", reviewGated, len(result.Warnings))
+	if result.ReviewSummary != nil {
+		reviewGated = result.ReviewSummary.BlockingBehaviors + result.ReviewSummary.ReviewBehaviors
+	}
+	warningCount := len(result.Warnings)
+	if result.ReviewSummary != nil {
+		warningCount = result.ReviewSummary.Warnings
+	}
+	status := protocolPromotionStatus("executable", reviewGated, warningCount)
 	return &protocolCompatReport{
 		SourceFormat:         "JMeter JMX",
 		CanonicalProtocol:    "jmeter",
 		ImportMode:           "executable",
 		MappedSteps:          result.Stats.Mapped,
 		ReviewGatedSteps:     reviewGated,
-		UnsupportedFragments: uniqueSortedStrings(jmeterReviewDiagnosticFragments(result)),
+		UnsupportedFragments: append([]string{}, result.UnsupportedElements...),
 		RuntimeParity:        protocolRuntimeParityFromScript(result.Script),
 		DataSources:          result.Stats.CSVSources,
 		CorrelationCoverage:  protocolCorrelationCoverage(countJMeterExtractors(result), result.Stats.Samplers),
 		PromotionStatus:      status,
 		NextActions:          protocolNextActions(status, "Validate converted JMeter thread groups and scenario draft before promotion."),
 	}
-}
-
-func jmeterReviewDiagnosticFragments(result *jmeter.ConvertResult) []string {
-	if result == nil {
-		return nil
-	}
-	fragments := make([]string, 0)
-	for _, item := range result.Unsupported {
-		switch strings.ToLower(strings.TrimSpace(string(item.Severity))) {
-		case "warning", "blocker":
-			fragments = append(fragments, item.String())
-		}
-	}
-	if result.SourceReview != nil {
-		for _, m := range result.SourceReview.Mappings {
-			if m.Status == "review_only" || m.Status == "unsupported" {
-				fragments = append(fragments, m.Function+" at "+m.TargetPath+": "+m.Notes)
-			}
-		}
-	}
-	return fragments
 }
 
 func countJMeterExtractors(result *jmeter.ConvertResult) int {
@@ -623,13 +611,13 @@ func countJMeterExtractors(result *jmeter.ConvertResult) int {
 	return total
 }
 
-func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Request, status int, result *jmeter.ConvertResult) {
+func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Request, status int, result *jmeter.ConvertResult, requests ...*jmeterImportRequest) {
 	// Every preview gets a public, opaque operation identity. Normal clients
 	// echo it with the scripts on save, allowing a lost successful response to
 	// converge without collapsing two intentional previews of identical input.
 	stampJMeterDirectImportOperation(result, uuid.NewString())
-	unsupportedElements := uniqueSortedStrings(append(append([]string{}, result.UnsupportedElements...), result.Unsupported.Strings()...))
-	protocolCompat := buildJMeterProtocolCompatReport(result, unsupportedElements)
+	unsupportedElements := append([]string{}, result.UnsupportedElements...)
+	protocolCompat := buildJMeterProtocolCompatReport(result)
 	for _, script := range result.Scripts {
 		persistProtocolCompatReport(script, "jmeter", protocolCompat)
 	}
@@ -640,19 +628,33 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		Script:           result.Script,
 		Scripts:          result.Scripts,
 		SourceReview:     result.SourceReview,
-		Unsupported:      result.Unsupported,
+		Unsupported:      result.Diagnostics,
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
 	}
 	augmented := draft.augment(r)
 	result.Warnings = augmented.Warnings
-	s.writeScriptImportResponseWithSourceSecrets(w, r, status, scriptImportResponseOptions{
+	applyJMeterReviewPreflight(augmented.Preflight, result)
+	if len(result.Scripts) == 1 {
+		attachImportReplayPreflight(result.Script, "jmeter", augmented.Preflight)
+	}
+	batch, batchErr := s.newJMeterBatch(r, result, requests)
+	if batchErr != nil {
+		writeError(w, 503, "Cannot secure JMeter batch")
+		return
+	}
+	if batch != nil {
+		r = withImportBatchExpiry(r, batch.ExpiresAt)
+	}
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:                 result,
 		Scripts:                result.Scripts,
 		Script:                 result.Script,
 		ScenarioDraft:          result.ScenarioDraft,
 		Warnings:               result.Warnings,
 		UnsupportedElements:    unsupportedElements,
+		Diagnostics:            result.Diagnostics,
+		ReviewSummary:          result.ReviewSummary,
 		ReviewSections:         augmented.Sections,
 		Assumptions:            result.Assumptions,
 		Stats:                  result.Stats,
@@ -663,6 +665,28 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		Parameterization:       buildMultiScriptParameterization(result.Scripts),
 		Preflight:              augmented.Preflight,
 	})
+	if batch != nil && response[importDraftResponseFailureKey] == nil {
+		if err := s.saveJMeterBatch(r, batch); err != nil {
+			writeError(w, 503, "Cannot secure JMeter batch")
+			return
+		}
+		response["batch"] = batch.Identity
+		projected := make([]*dsl.Script, len(batch.Scripts))
+		for i, script := range batch.Scripts {
+			projected[i] = batchDisclosure(script)
+			if projected[i] == nil {
+				writeError(w, 500, "Cannot project protected batch")
+				return
+			}
+		}
+		response["scripts"] = projected
+		response["script"] = projected[0]
+		if nested, ok := response["result"].(map[string]any); ok {
+			nested["scripts"] = projected
+			nested["script"] = projected[0]
+		}
+	}
+	writeScriptImportResponse(w, status, response)
 }
 
 // jmeterDraftProjectID is the scope the handler already applied to the plan's
@@ -907,7 +931,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			}
 			continue
 		}
-		claim, claimErr := s.claimImportDraftAttestation(r, script)
+		claim, claimErr := s.claimImportDraftAttestation(withJMeterBatchSave(r), script)
 		if claimErr != nil || claim == nil || claim.Script == nil ||
 			!strings.EqualFold(strings.TrimSpace(claim.Profile), "jmeter") {
 			if claim != nil {
@@ -937,6 +961,18 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		claims[index] = claim
 	}
 
+	for i, claim := range claims {
+		if claim != nil {
+			if _, ok := scriptBatch(&req.Scripts[i]); ok {
+				ensureScriptImportPreserved(&req.Scripts[i], "jmeter")[importDraftAttestationMetadataKey] = claim.Token
+			}
+		}
+	}
+	if err := s.fenceJMeterBatchSave(r, req.Scripts, req.ScenarioDraft); err != nil {
+		writeError(w, http.StatusConflict, "JMeter batch revision conflict: "+err.Error())
+		return
+	}
+
 	// Prepare and validate the whole import before the first durable write. This
 	// dedicated, authorized import commit is the trust boundary for retaining the
 	// source's executable credentials: the operator already supplied those bytes,
@@ -951,6 +987,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "failed to prepare imported script: "+err.Error())
 			return
 		}
+		finalizeJMeterBatchScript(safeScript)
 		if issues := validateScript(safeScript); len(issues) > 0 {
 			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 			return
@@ -1305,6 +1342,7 @@ func recoveredJMeterImportIdentityMatches(
 			normalizedRequested.Version = "1"
 		}
 		ensureCredentialPreservingImportMetadata(normalizedRequested, "jmeter")
+		finalizeJMeterBatchScript(normalizedRequested)
 		storedDigest, storedErr := canonicalImportDraftStructureDigest(stored.Script)
 		requestedDigest, requestedErr := canonicalImportDraftStructureDigest(normalizedRequested)
 		if storedErr != nil || requestedErr != nil || storedDigest != requestedDigest {

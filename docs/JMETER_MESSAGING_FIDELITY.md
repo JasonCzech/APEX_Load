@@ -125,3 +125,12 @@ The subsequent code review found no additional actionable defects in these chang
 A further edge-case pass reproduced an unsaveable blocked draft when an Event Hubs sampler contained no messages. The importer now retains that sampler, its zero-message source evidence and its specific execution blocker without emitting an invalid native message-list parameter. The regression fails before the fix and passes after it; a subsequent review found no further actionable issues. Final validation was restarted after this correction.
 
 Final review validation: the complete Go suite passed on the final production tree. Full engine/HTTP OAuth/Kafka/Event Hubs race suites and both messaging real-adapter tag suites passed; cancellation/shared-parameter regressions also passed 20 repeated race runs. All four pinned offline oracle vector/evidence sets reproduced exactly. The full dashboard cycle passed type checking, lint, 4,472 unit tests, the fresh embedded build, and dev-admin workflows (137 passed, four skipped). Local-auth reported 56 passed, one skipped, and one Author editor validation-message click timeout at `workflow-author-experience.spec.ts:51`, outside the messaging changes. That exact workflow passed three consecutive reruns at the normal timeout. This diagnostic pass does not make the full dashboard cycle a clean pass. No frontend behavior was modified during this review, and strict/live conformance remains unverified.
+
+### Distributed source ownership and atomic repair batches
+
+The source-plan manifest and single-engine commit path now group all source
+threads on one generator. Protected messaging previews can apply a complete
+scripts-plus-scenario repair revision atomically. See
+[the source-plan and repair contract](JMETER_SOURCE_PLAN_REPAIRS.md) for fencing,
+retry, storage and operator behavior. These additions do not remove the strict
+compatibility gate or resolve the remaining protocol/live-conformance gaps.

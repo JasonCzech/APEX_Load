@@ -30,6 +30,7 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
+	SourcePlan                   *pb.SourcePlanManifest
 	TerminationMode              string
 	TestID                       string
 	ExecutionGeneration          uint64
@@ -469,9 +470,15 @@ type GeneratorStats struct {
 	DiskInProgress                    uint64
 }
 
+type sourcePlanClientKey struct {
+	testID     string
+	generation uint64
+}
+
 type Client struct {
-	conn *grpc.ClientConn
-	rpc  pb.GeneratorControlClient
+	sourcePlans sync.Map
+	conn        *grpc.ClientConn
+	rpc         pb.GeneratorControlClient
 
 	clockMu       sync.RWMutex
 	clockEstimate generatorClockEstimate
@@ -539,7 +546,11 @@ func NewClient(conn *grpc.ClientConn) *Client {
 }
 
 func (c *Client) Close() error {
-	if c == nil || c.conn == nil {
+	if c == nil {
+		return nil
+	}
+	c.sourcePlans.Clear()
+	if c.conn == nil {
 		return nil
 	}
 	return c.conn.Close()
@@ -644,6 +655,9 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 
 func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (AssignmentResult, error) {
 	ack, err := c.rpc.AssignWork(ctx, toProtoAssignment(assignment))
+	if err == nil && ack.GetAccepted() && assignment.SourcePlan != nil {
+		c.sourcePlans.Store(sourcePlanClientKey{assignment.TestID, assignment.ExecutionGeneration}, SourcePlanDigest(assignment.SourcePlan))
+	}
 	if err != nil {
 		return AssignmentResult{}, err
 	}
@@ -672,6 +686,9 @@ func (c *Client) CommitWorkSupervisedAt(ctx context.Context, testID string, gene
 
 func (c *Client) commitWorkAt(ctx context.Context, testID string, generation uint64, startAt time.Time, token []byte) (WorkCommitResult, error) {
 	request := &pb.WorkCommitRequest{TestId: testID, ExecutionGeneration: generation}
+	if digest, ok := c.sourcePlans.Load(sourcePlanClientKey{testID, generation}); ok {
+		request.SourcePlanDigest = digest.(string)
+	}
 	request.RunSupervisionToken = append([]byte(nil), token...)
 	if !startAt.IsZero() {
 		clockEstimate, err := c.ensureCoordinatedStartClockEstimate(ctx)
@@ -948,6 +965,15 @@ func (c *Client) StopTestAtGenerationWithToken(ctx context.Context, testID strin
 		return StopResult{}, err
 	}
 
+	if ack.GetAcknowledged() {
+		c.sourcePlans.Range(func(key, _ any) bool {
+			source := key.(sourcePlanClientKey)
+			if source.testID == testID && (generation == 0 || source.generation == generation) {
+				c.sourcePlans.Delete(key)
+			}
+			return true
+		})
+	}
 	return StopResult{
 		Acknowledged:  ack.GetAcknowledged(),
 		PendingVUsers: ack.GetPendingVusers(),
@@ -1375,6 +1401,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	targetDuration := resolvedPreciseDuration(assignment.TargetDuration, assignment.TargetDurationSeconds)
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{
+		SourcePlan:                assignment.SourcePlan,
 		TestId:                    assignment.TestID,
 		ExecutionGeneration:       assignment.ExecutionGeneration,
 		ScenarioId:                assignment.ScenarioID,

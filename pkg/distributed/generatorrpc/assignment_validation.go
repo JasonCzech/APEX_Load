@@ -39,6 +39,9 @@ func validateWorkAssignment(assignment *pb.WorkAssignment, scriptCacheLimit int6
 	if assignment == nil {
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "assignment is required")
 	}
+	if err := validateSourcePlanAssignment(assignment); err != nil {
+		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, err.Error())
+	}
 	if assignment.GetTestId() == "" {
 		return validatedWorkAssignment{}, status.Error(codes.InvalidArgument, "test_id is required")
 	}

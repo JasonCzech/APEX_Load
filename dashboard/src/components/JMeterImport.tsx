@@ -1,6 +1,7 @@
-import JMeterScenarioRuntimeEditor from './JMeterScenarioRuntimeEditor'
+import JMeterBatchRepairs from './JMeterBatchRepairs'
 import { importActionEntries } from './importReviewIssues'
 import JMeterMessagingPreview from './JMeterMessagingPreview'
+import JMeterScenarioRuntimeEditor from './JMeterScenarioRuntimeEditor'
 import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
@@ -487,25 +488,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   }
 
   const applyScenarioRuntimeRule = (scenarioDraft: NonNullable<ImportResult['scenario_draft']>) => {
-    const resolvedCode = /jmeter_unbounded_thread_group/i
-    setResult(previous => {
-      if (!previous) return previous
-      const reviewSections = previous.review_sections.flatMap(section => {
-        if (resolvedCode.test(`${section.key} ${section.title} ${section.summary}`)) return []
-        const items = section.items.filter(item => !resolvedCode.test(item))
-        if (items.length === 0 && section.items.some(item => resolvedCode.test(item))) return []
-        return [{ ...section, items }]
-      })
-      return {
-        ...previous,
-        scenario_draft: scenarioDraft,
-        review_sections: reviewSections,
-        diagnostics: previous.diagnostics?.filter(item => !resolvedCode.test(`${item.element} ${item.location || ''} ${item.detail}`)),
-        warnings: previous.warnings.filter(item => !resolvedCode.test(item)),
-        unsupported_elements: previous.unsupported_elements.filter(item => !resolvedCode.test(item)),
-      }
-    })
-    setNotice('Finite JMeter runtime settings were applied to this review draft.')
+    setResult(previous => previous ? { ...previous, scenario_draft: scenarioDraft } : previous)
+    setNotice('Runtime settings were updated. Existing review findings remain until server-side revalidation resolves them.')
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
@@ -758,12 +742,19 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
       {result && (
         <div className="lr-result">
+          {result.batch && <JMeterBatchRepairs key={result.batch.revision} result={result} projectId={projectId || result.scripts[0]?.project_id || ''} disabled={operationBusy || Boolean(savedResult)} onBusyChange={setCredentialActionInProgress} onApplied={updated => {
+            advanceReviewGeneration()
+            setResult(previous => previous ? { ...previous, diagnostics: updated.diagnostics, review_summary: updated.review_summary, warnings: updated.warnings || [], unsupported_elements: updated.unsupported_elements || [], preflight: updated.preflight, batch: updated.batch, scripts: updated.scripts, script: updated.scripts[0], scenario_draft: updated.scenario_draft, secret_binding_requirements: updated.secret_binding_requirements || [] } : previous)
+            setNotice('The complete import was updated. Remaining replay blockers are still enforced.')
+          }} />}
+
           <ScriptImportReview
             tabbed
             onSettingsBusyChange={setSettingsEditing}
             onSettingsApplied={updated => handleParameterizationApplied(0)(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])}
-            settingsDisabled={Boolean(savedResult)}
-            dataContent={(parameterization?.suggestions.length || extractorSummary.length) ? <>
+            settingsDisabled={Boolean(savedResult) || Boolean(result.batch)}
+            showCredentials={!result.batch}
+            dataContent={!result.batch && (parameterization?.suggestions.length || extractorSummary.length) ? <>
             {parameterization && parameterization.suggestions.length > 0 && parameterizationScript && (
               <>
                 {resultScripts.length > 1 && (
@@ -825,7 +816,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             )}
 
             </> : undefined}
-            runtimeContent={<JMeterScenarioRuntimeEditor scenario={result.scenario_draft} onApply={applyScenarioRuntimeRule} disabled={operationBusy || Boolean(savedResult)} />}
+            runtimeContent={<JMeterScenarioRuntimeEditor scenario={result.scenario_draft} onApply={applyScenarioRuntimeRule} disabled={operationBusy || Boolean(savedResult) || Boolean(result.batch)} />}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
             reviewGeneration={reviewScope}
             subtitle={savedResult ? 'Saved to the Script Library. Open a saved script above or import more files.' : reviewMode === 'validation'
@@ -836,10 +827,12 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             unsupportedElements={result.unsupported_elements}
+            diagnostics={result.diagnostics}
+            reviewSummary={result.review_summary}
             reviewSections={result.review_sections}
             secretBindingRequirements={result.secret_binding_requirements}
             onSecretBindingsApply={handleSecretBindingsApply}
-            sharedValues={result.shared_values}
+            sharedValues={result.batch ? undefined : result.shared_values}
             sharedValueScripts={result.scripts}
             onSharedValuesApplied={handleSharedValuesApplied}
             projectId={projectId}

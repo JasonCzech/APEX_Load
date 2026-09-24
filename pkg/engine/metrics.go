@@ -48,8 +48,9 @@ type liveCounters struct {
 }
 
 type groupRunCounters struct {
-	totalTransactions atomic.Int64
-	totalErrors       atomic.Int64
+	completedIterations atomic.Int64
+	totalTransactions   atomic.Int64
+	totalErrors         atomic.Int64
 }
 
 type MetricsSnapshot struct {
@@ -1326,3 +1327,17 @@ func finalizeBrowserDeviceMetrics(summary *BrowserDeviceMetrics) {
 }
 
 func (mc *MetricsCollector) CompletedIterations() int64 { return mc.current.completedIterations.Load() }
+
+func (mc *MetricsCollector) RecordCompletedIteration(group string) {
+	mc.current.completedIterations.Add(1)
+	if group != "" {
+		value, _ := mc.groupRunTotals.LoadOrStore(group, &groupRunCounters{})
+		value.(*groupRunCounters).completedIterations.Add(1)
+	}
+}
+func (mc *MetricsCollector) GroupCompletedIterations(group string) int64 {
+	if value, ok := mc.groupRunTotals.Load(group); ok {
+		return value.(*groupRunCounters).completedIterations.Load()
+	}
+	return 0
+}

@@ -1,3 +1,4 @@
+import type { JMeterReviewSummary } from '../types/scriptImports'
 import ImportCredentialPlacement from './ImportCredentialPlacement'
 import CodeLineWrapToggle from './CodeLineWrapToggle'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
@@ -437,7 +438,8 @@ interface Props {
   previewData?: unknown
   warnings?: string[]
   warningsTitle?: string
-  diagnostics?: {element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string}[]
+  reviewSummary?: JMeterReviewSummary
+  diagnostics?: {code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string}[]
   unsupportedElements?: string[]
   reviewSections?: ImportReviewSection[]
   // Collection-wide values, applied across every script of the import at once.
@@ -516,6 +518,7 @@ export default function ScriptImportReview({
   warningsTitle = 'Warnings',
   unsupportedElements = [],
   diagnostics,
+  reviewSummary,
   reviewSections = [],
   sharedValues,
   sharedValueScripts,
@@ -917,7 +920,7 @@ export default function ScriptImportReview({
           source: 'Import review',
         }])
   const diagnosticStrings = diagnostics?.length ? diagnostics.map(item => `${item.element}${item.location ? ` at ${item.location}` : ''} [${item.severity}]: ${item.detail}`) : unsupportedElements
-  const conversionNotes: IssueDetail[] = diagnosticStrings.filter(item => /\[info\]/i.test(item)).map((item, index) => ({ id: `conversion-note-${index}`, severity: 'info', title: 'Conversion note', description: redactPreviewText(item), source: 'Import conversion' }))
+  const conversionNotes: IssueDetail[] = (reviewSummary && diagnostics != null ? [] : diagnosticStrings).filter(item => /\[info\]/i.test(item)).map((item, index) => ({ id: `conversion-note-${index}`, severity: 'info', title: 'Conversion note', description: redactPreviewText(item), source: 'Import conversion' }))
   const unsupportedDetails: IssueDetail[] = diagnosticStrings.filter(item => !/\[(info|blocker)\]/i.test(item)).map((item, index) => ({
     id: `unsupported-${index}`,
     severity: 'warning' as const,
@@ -928,8 +931,21 @@ export default function ScriptImportReview({
   for (const [index, item] of diagnosticStrings.filter(item => /\[blocker\]/i.test(item)).entries()) {
     if (!blockerDetails.some(existing => existing.description === redactPreviewText(item))) blockerDetails.push({id: `conversion-blocker-${index}`, severity: 'blocker', title: 'Blocking conversion failure', description: redactPreviewText(item), source: 'Import conversion'})
   }
-  const actionableReviewIssues = [...blockerDetails, ...warningDetails, ...infoDetails, ...unsupportedDetails]
-  const groupedReviewIssueCount = groupImportWorkspaceIssues(actionableReviewIssues).length
+  const normalizedDiagnostics = reviewSummary && diagnostics != null
+  const actionableReviewIssues: IssueDetail[] = normalizedDiagnostics
+    ? diagnostics.map((item, index) => ({
+        id: `jmeter-${item.source_ref || item.location || index}-${item.code || index}`,
+        identity: `jmeter-${item.source_ref || item.location || index}-${item.code || index}`,
+        onSelect: () => setActiveReviewTab('source'),
+        severity: item.severity,
+        title: item.element,
+        description: redactPreviewText(item.detail),
+        source: redactPreviewText([item.source_ref, item.location].filter(Boolean).join(' · ') || 'Import conversion'),
+      }))
+    : [...blockerDetails, ...warningDetails, ...infoDetails, ...unsupportedDetails]
+  const groupedReviewIssueCount = normalizedDiagnostics
+    ? reviewSummary.blocking_behaviors + reviewSummary.review_behaviors
+    : groupImportWorkspaceIssues(actionableReviewIssues).length
   const suggestedDataChangeCount = (parameterization?.suggestions?.length || 0) + (sharedValues?.candidates?.length || 0)
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
@@ -1007,9 +1023,10 @@ export default function ScriptImportReview({
         <button type="button" onClick={() => setActiveReviewTab('data')}><strong>{suggestedDataChangeCount}</strong> suggested data change{suggestedDataChangeCount === 1 ? '' : 's'}</button>
         <span>Saving preserves a draft; controlled replay is still required.</span>
       </div>}
+      {normalizedDiagnostics && <p aria-label="JMeter review summary">{reviewSummary.blocking_behaviors} blocking behaviors · {reviewSummary.review_behaviors} behaviors requiring review · {reviewSummary.unsupported_behaviors} unsupported behaviors · {reviewSummary.warnings} warnings · {reviewSummary.informational} informational findings</p>}
       {reviewNavigation}
       {!tabbed && onSettingsApplied && <div hidden={!showDataReview}><ImportParameterInventory script={script} /></div>}
-      {showOriginalDiagnostics && actionableReviewIssues.length > 0 && <div hidden={tabbed && activeReviewTab !== 'review'}><ImportIssueWorkspace issues={actionableReviewIssues} onNavigate={setActiveReviewTab} /></div>}
+      {showOriginalDiagnostics && actionableReviewIssues.length > 0 && <div hidden={tabbed && activeReviewTab !== 'review'}><ImportIssueWorkspace normalizedEvidence={Boolean(normalizedDiagnostics)} issues={actionableReviewIssues} onNavigate={setActiveReviewTab} /></div>}
       <div hidden={tabbed && activeReviewTab !== 'review'}>{children}</div>
       {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{onSettingsApplied && <ImportRuntimeSettingsTable script={script} />}{runtimeContent || (!onSettingsApplied && <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>)}</div>}
       {!tabbed && runtimeContent}

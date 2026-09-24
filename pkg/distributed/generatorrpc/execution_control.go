@@ -301,6 +301,21 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 	if assignment.requireTestExecutionLease && !service.testExecutionLeaseCurrentLocked(testID, assignment.executionGeneration, now) {
 		return commitTransition{err: status.Error(codes.FailedPrecondition, "test assignment execution lease is missing or expired")}
 	}
+	if assignment.sourcePlan != nil {
+		if request.SourcePlanDigest != SourcePlanDigest(assignment.sourcePlan) {
+			return commitTransition{err: status.Error(codes.FailedPrecondition, "source-plan commit digest mismatch")}
+		}
+		if len(assignment.groups) != len(assignment.sourcePlan.Groups) {
+			return commitTransition{err: status.Error(codes.FailedPrecondition, "source-plan membership is incomplete")}
+		}
+		for _, g := range assignment.sourcePlan.Groups {
+			if assignment.groups[g.GroupName] != g.Vusers {
+				return commitTransition{err: status.Error(codes.FailedPrecondition, "source-plan membership changed")}
+			}
+		}
+	} else if request.SourcePlanDigest != "" {
+		return commitTransition{err: status.Error(codes.FailedPrecondition, "unexpected source-plan commit digest")}
+	}
 	committed, lifecycleErr := coordinator.commit(assignment)
 	if lifecycleErr != nil {
 		return commitTransition{err: status.Error(codes.FailedPrecondition, lifecycleErr.Error())}
@@ -395,12 +410,31 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 				}
 			}
 		}
+		var owner *sourcePlanExecution
+		var ownerCtx context.Context
+		var ownerCancel context.CancelFunc
+		if assignment.sourcePlan != nil && !assignment.committed {
+			var err error
+			owner, err = assembleSourcePlan(executions)
+			if err != nil {
+				return commitTransition{err: status.Error(codes.FailedPrecondition, err.Error())}
+			}
+			ownerCtx, ownerCancel = context.WithCancel(apptelemetry.Detach(ctx))
+		}
 		for _, groupName := range groupNames {
 			execution := executions[groupName]
 			if execution.started.Load() {
 				continue
 			}
-			executionContext, cancel := context.WithCancel(apptelemetry.Detach(ctx))
+			var executionContext context.Context
+			var cancel context.CancelFunc
+			if owner != nil {
+				executionContext, cancel = ownerCtx, ownerCancel
+				execution.owner = owner
+				execution.engine = owner.engine
+			} else {
+				executionContext, cancel = context.WithCancel(apptelemetry.Detach(ctx))
+			}
 			execution.cancel = cancel
 			execution.startAt = startAt
 			execution.started.Store(true)
@@ -425,7 +459,12 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 
 // CommitWork delegates its complete state decision to the lifecycle
 // coordinator, publishes the resulting event, and only then starts engines.
-func (service *Service) CommitWork(ctx context.Context, request *pb.WorkCommitRequest) (*pb.WorkCommitAck, error) {
+func (service *Service) CommitWork(ctx context.Context, request *pb.WorkCommitRequest) (ack *pb.WorkCommitAck, callErr error) {
+	defer func() {
+		if request != nil && (callErr != nil || !ack.GetAccepted()) {
+			service.abortSourcePlanStage(request.TestId, request.ExecutionGeneration, request.RunSupervisionToken)
+		}
+	}()
 	if request == nil || strings.TrimSpace(request.GetTestId()) == "" {
 		return nil, status.Error(codes.InvalidArgument, "test_id is required")
 	}
@@ -564,7 +603,12 @@ func (service *Service) startExecutionEvent(event executionStartEvent) {
 		// RunAt owns the release barrier. Enter it immediately so zero-baseline
 		// assignments can prepare protocol instances during the controller's
 		// commit lead time, then publish user traffic on the shared epoch.
-		_, runErr := event.execution.engine.RunAt(event.ctx, event.execution.startAt)
+		var runErr error
+		if event.execution.owner != nil {
+			runErr = event.execution.owner.run(event.ctx, event.execution)
+		} else {
+			_, runErr = event.execution.engine.RunAt(event.ctx, event.execution.startAt)
+		}
 		service.completeExecutionCallbacks(event.testID, event.groupName, event.execution, runErr)
 	}()
 }
@@ -851,6 +895,7 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(serv
 	}
 
 	participants := make([]enginePauseParticipant, 0)
+	seenEngines := map[*engine.MultiGroupEngine]bool{}
 	if service.executionEnabled {
 		executions := service.executions[testID]
 		groupNames := make([]string, 0, len(executions))
@@ -863,7 +908,8 @@ func (coordinator *assignmentLifecycleCoordinator) planPauseWithTokenLocked(serv
 			if execution != nil && !execution.started.Load() {
 				return pauseTransitionDecision{err: status.Error(codes.FailedPrecondition, "test has staged groups that are not committed")}
 			}
-			if execution != nil && execution.engine != nil {
+			if execution != nil && execution.engine != nil && !seenEngines[execution.engine] {
+				seenEngines[execution.engine] = true
 				participants = append(participants, enginePauseParticipant{engine: execution.engine})
 			}
 		}
@@ -1108,6 +1154,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	assignment, ok := service.assignments[testID]
 	if !ok {
 		return scaleTransitionDecision{err: status.Error(codes.NotFound, "test assignment not found")}
+	}
+	if assignment.sourcePlan != nil {
+		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "source-plan population is fixed")}
 	}
 	if assignment.terminationMode == "iterations" {
 		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "iteration runs do not support scaling")}
@@ -1600,6 +1649,9 @@ func (coordinator *assignmentLifecycleCoordinator) planDurationWithTokenLocked(s
 	assignment, ok := service.assignments[testID]
 	if !ok {
 		return durationTransitionDecision{err: status.Error(codes.NotFound, "test assignment not found")}
+	}
+	if assignment.sourcePlan != nil {
+		return durationTransitionDecision{err: status.Error(codes.FailedPrecondition, "source-plan duration is fixed")}
 	}
 	if assignment.terminationMode == "iterations" {
 		return durationTransitionDecision{err: status.Error(codes.FailedPrecondition, "iteration runs do not support duration adjustment")}

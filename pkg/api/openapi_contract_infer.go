@@ -374,6 +374,25 @@ func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerCon
 			// empty section is the supported reset form.
 			schema.Required = nil
 		}
+		if override.requestType == "ImportRepairRequest" {
+			single, batch := schema, schema
+			single.Properties = make(map[string]oasSchema)
+			batch.Properties = make(map[string]oasSchema)
+			for key, value := range schema.Properties {
+				switch key {
+				case "batch_id", "operations", "preview_digest":
+					batch.Properties[key] = value
+				case "candidate_id", "operation", "action_path", "finding":
+					single.Properties[key] = value
+				default:
+					single.Properties[key] = value
+					batch.Properties[key] = value
+				}
+			}
+			single.Required = []string{"candidate_id", "revision", "project_id", "operation"}
+			batch.Required = []string{"batch_id", "revision", "project_id", "operations"}
+			schema = oasSchema{OneOf: []oasSchema{single, batch}}
+		}
 		if override.requestType == "ExecutionTargetRequest" {
 			schema = executionTargetRequestUnion(schema)
 		}
@@ -389,6 +408,10 @@ func applyExplicitRouteContractTypes(route discoveredRoute, analysis *handlerCon
 		if typeName == "SystemSettings" {
 			removeSystemSettingsInternalRevision(&schema)
 			addSystemSettingsResponseProjectionFields(&schema)
+		}
+		if typeName == "ImportRepairResponse" {
+			batch := openAPISchemaForASTType(explicitOpenAPITypeExpression("JMeterBatchRepairResponse"), typeDefinitions, map[string]bool{}, 0)
+			schema = oasSchema{OneOf: []oasSchema{schema, batch}}
 		}
 		schema.Description = override.responseDescription
 		analysis.jsonResponse = true

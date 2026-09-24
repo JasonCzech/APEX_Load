@@ -15,10 +15,12 @@ const (
 )
 
 type Diagnostic struct {
-	Element  string   `json:"element"`
-	Detail   string   `json:"detail"`
-	Severity Severity `json:"severity"`
-	Location string   `json:"location,omitempty"`
+	Code      string   `json:"code,omitempty"`
+	SourceRef string   `json:"source_ref,omitempty"`
+	Element   string   `json:"element"`
+	Detail    string   `json:"detail"`
+	Severity  Severity `json:"severity"`
+	Location  string   `json:"location,omitempty"`
 }
 
 type Diagnostics []Diagnostic

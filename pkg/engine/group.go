@@ -2771,6 +2771,11 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 // AdjustDuration extends or shortens the remaining test duration.
 // The new duration is relative to the original start time.
 func (mge *MultiGroupEngine) AdjustDuration(newDuration time.Duration) error {
+	for i := range mge.groups {
+		if dsl.RequiresJMeterMessaging(mge.groups[i].Script) {
+			return fmt.Errorf("JMeter source-plan duration is fixed")
+		}
+	}
 	if mge.terminationMode == dsl.TerminationIterations {
 		return fmt.Errorf("duration adjustment is unavailable for iteration termination")
 	}
@@ -3115,8 +3120,8 @@ func (mge *MultiGroupEngine) LatestSnapshot() (MetricsSnapshot, bool) {
 
 func (mge *MultiGroupEngine) GroupNames() []string {
 	names := make([]string, len(mge.groups))
-	for i, g := range mge.groups {
-		names[i] = g.Name
+	for i := range mge.groups {
+		names[i] = mge.groups[i].Name
 	}
 	return names
 }
@@ -3128,3 +3133,7 @@ func groupParameterAllocation(group GroupConfig, local int) *ParameterAllocation
 }
 
 func (mge *MultiGroupEngine) CompletedIterations() int64 { return mge.metrics.CompletedIterations() }
+
+func (mge *MultiGroupEngine) GroupCompletedIterations(group string) int64 {
+	return mge.metrics.GroupCompletedIterations(group)
+}

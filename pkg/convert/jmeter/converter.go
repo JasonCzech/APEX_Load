@@ -39,11 +39,14 @@ type ConvertOptions struct {
 }
 
 type ConvertResult struct {
+	Diagnostics         diag.Diagnostics               `json:"diagnostics"`
+	ReviewSummary       *ReviewSummary                 `json:"review_summary,omitempty"`
+	ReviewOutcomes      []ReviewOutcome                `json:"-"`
 	Scripts             []*dsl.Script                  `json:"scripts"`
 	Script              *dsl.Script                    `json:"script,omitempty"`
 	ScenarioDraft       *ScenarioDraft                 `json:"scenario_draft,omitempty"`
 	Warnings            []string                       `json:"warnings,omitempty"`
-	UnsupportedElements []string                       `json:"unsupported_elements,omitempty"`
+	UnsupportedElements []string                       `json:"unsupported_elements"`
 	Unsupported         diag.Diagnostics               `json:"unsupported,omitempty"`
 	Assumptions         []string                       `json:"assumptions,omitempty"`
 	Findings            []importreview.Finding         `json:"findings,omitempty"`
@@ -560,6 +563,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if sourceRedacted {
 		markJMeterSourceReviewRedacted(result.SourceReview, sourceFileName)
 	}
+	result.NormalizeReviewEvidence()
 	return result, nil
 }
 
@@ -607,6 +611,9 @@ func reconcileJMeterBatchSourceMappingNames(
 		})
 	}
 	for index := range mappings {
+		if mappings[index].TargetKind != "action" {
+			continue
+		}
 		if name := namesByPath[strings.TrimSpace(mappings[index].TargetPath)]; name != "" {
 			mappings[index].TargetName = name
 		}

@@ -42,3 +42,11 @@ The sanitized original and repaired regression sources are under `pkg/convert/jm
 The browser workflow runs in both dev-admin and local-auth profiles. It imports the original fixture, regenerates explicit repairs, saves a small repaired iteration scenario, executes six loopback samples, and downloads the seven-line CSV through the results UI. The source endpoint is never used by these tests.
 
 For messaging plugin imports, see [Kafka / Event Hubs draft fidelity and remaining conformance work](JMETER_MESSAGING_FIDELITY.md).
+
+## Review evidence
+
+New JMeter imports and validation responses include a `review_summary` with distinct source-behavior counts: `blocking_behaviors`, nonblocking `review_behaviors`, `unsupported_behaviors`, `warnings`, and `informational`. Unsupported behaviors are a subset of the affected behaviors, not another count to add to the review total. Sampler/action totals and legacy classification statistics remain separate.
+
+The `diagnostics` array contains typed severity, stable reason codes, source references, and actionable details; an import without findings returns an empty array. Review sections and compatibility evidence use the same normalized findings. `unsupported_elements` and compatibility `unsupported_fragments` contain only enabled source behaviors lacking a faithful implementation. Translated CSV exports, reporting listeners, ordinary warnings, and repairable timezone or credential configuration problems do not belong in these lists.
+
+The dashboard counts blocking behaviors and explicit review decisions separately from warning and informational findings. Marking an item reviewed or editing scenario settings does not remove a server-authored gate. Reinspect with explicit repair choices to regenerate the evidence. Existing saved imports are unchanged; reimport them to obtain the normalized evidence. No storage migration is required.

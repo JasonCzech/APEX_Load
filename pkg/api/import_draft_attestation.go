@@ -457,6 +457,15 @@ func (s *Server) claimProtectedImportDraftAttestation(
 		}
 	}()
 
+	if expected, batched := scriptBatch(candidate.Script); batched {
+		if allowed, _ := r.Context().Value(jmeterBatchSaveContextKey{}).(bool); !allowed {
+			return nil, errImportDraftAttestationInvalid
+		}
+		supplied, ok := scriptBatch(script)
+		if !ok || supplied != expected {
+			return nil, errImportDraftAttestationInvalid
+		}
+	}
 	attestedFingerprint, err := fingerprintImportDraftCredentials(candidate.Script)
 	if err != nil {
 		return nil, errImportDraftAttestationInvalid
@@ -471,7 +480,11 @@ func (s *Server) claimProtectedImportDraftAttestation(
 	restored := cloneScriptDefinition(script)
 	if requiresExactRepairDraft(candidate.Script) {
 		submittedDigest, digestErr := fullImportDraftExecutionDigest(script)
-		projectedDigest, projectionErr := fullImportDraftExecutionDigest(repairDisclosure(candidate.Script))
+		projection := repairDisclosure(candidate.Script)
+		if _, ok := scriptBatch(candidate.Script); ok {
+			projection = batchDisclosure(candidate.Script)
+		}
+		projectedDigest, projectionErr := fullImportDraftExecutionDigest(projection)
 		if digestErr == nil && projectionErr == nil && submittedDigest == projectedDigest {
 			restored = cloneScriptDefinition(candidate.Script)
 			restored.ID = script.ID

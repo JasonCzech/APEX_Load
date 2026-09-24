@@ -2,6 +2,14 @@
   "assumptions": [
     "JMeter controller structure was flattened into script action order where safe."
   ],
+  "diagnostics": [],
+  "review_summary": {
+    "blocking_behaviors": 0,
+    "informational": 0,
+    "review_behaviors": 0,
+    "unsupported_behaviors": 0,
+    "warnings": 0
+  },
   "script": {
     "actions": [
       {
@@ -77,6 +85,14 @@
           "file_name": "health.jmx",
           "import_value_policy": "preserve",
           "imported_at": "<TIMESTAMP>",
+          "jmeter_review_diagnostics": [],
+          "jmeter_review_summary": {
+            "blocking_behaviors": 0,
+            "informational": 0,
+            "review_behaviors": 0,
+            "unsupported_behaviors": 0,
+            "warnings": 0
+          },
           "original_file_name": "health.jmx",
           "source_group_id": "jmx:6dc1fa514e286dc20f57df8a2fcd0515ea1bedb883b6857cfd1fdd8d7a5aaa68:115:ThreadGroup",
           "source_group_line": 1,
@@ -169,6 +185,14 @@
             "file_name": "health.jmx",
             "import_value_policy": "preserve",
             "imported_at": "<TIMESTAMP>",
+            "jmeter_review_diagnostics": [],
+            "jmeter_review_summary": {
+              "blocking_behaviors": 0,
+              "informational": 0,
+              "review_behaviors": 0,
+              "unsupported_behaviors": 0,
+              "warnings": 0
+            },
             "original_file_name": "health.jmx",
             "source_group_id": "jmx:6dc1fa514e286dc20f57df8a2fcd0515ea1bedb883b6857cfd1fdd8d7a5aaa68:115:ThreadGroup",
             "source_group_line": 1,
@@ -236,5 +260,6 @@
     "file_name": "health.jmx",
     "sampler_count": 1,
     "thread_group_count": 1
-  }
+  },
+  "unsupported_elements": []
 }

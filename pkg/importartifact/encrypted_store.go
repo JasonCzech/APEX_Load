@@ -662,6 +662,18 @@ func (s *EncryptedStore) SaveSessionBytes(ctx context.Context, descriptor Sessio
 }
 
 func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDescriptor, persistPayload func() (*StoredObject, error)) error {
+	// Session payloads are content-addressed. Keep publication under the same
+	// cross-process lock as claim cleanup so a concurrent finalizer cannot
+	// delete a deduplicated payload between Put and descriptor publication.
+	unlockClaims, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlockClaims() }()
+	return s.saveSessionLocked(ctx, descriptor, persistPayload)
+}
+
+func (s *EncryptedStore) saveSessionLocked(ctx context.Context, descriptor SessionDescriptor, persistPayload func() (*StoredObject, error)) error {
 	if s.readOnly {
 		return errors.New("Bruno artifact store is read-only")
 	}
@@ -681,14 +693,6 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 	if deleted {
 		return ErrProjectDeleted
 	}
-	// Session payloads are content-addressed. Keep publication under the same
-	// cross-process lock as claim cleanup so a concurrent finalizer cannot
-	// delete a deduplicated payload between Put and descriptor publication.
-	unlockClaims, err := s.lockSessionClaims()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = unlockClaims() }()
 	slot, err := s.reserveSessionCapacity(descriptor)
 	if err != nil {
 		deleted, deletedErr := s.projectDeleted(descriptor.ProjectID)

@@ -697,6 +697,10 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	script := &wrapper.Script
+	if _, batched := scriptBatch(script); batched {
+		writeError(w, http.StatusConflict, "Save this JMeter import through the complete batch workflow")
+		return
+	}
 	if wrapper.ProjectID != "" {
 		script.ProjectID = wrapper.ProjectID
 	}

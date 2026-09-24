@@ -35,6 +35,7 @@ import (
 const FeatureIterationTerminationV1 = "iteration_termination_v1"
 
 type assignedTest struct {
+	sourcePlan                      *pb.SourcePlanManifest
 	terminationMode                 string
 	testID                          string
 	lifecycle                       assignmentLifecycleState
@@ -78,6 +79,8 @@ const (
 type ServiceOption func(*Service)
 
 type groupExecution struct {
+	owner               *sourcePlanExecution
+	stagedConfig        *engine.MultiGroupConfig
 	groupName           string
 	executionGeneration uint64
 	engine              *engine.MultiGroupEngine
@@ -1338,7 +1341,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeatureIterationTerminationV1)
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeatureIterationTerminationV1, FeatureSourcePlanV1)
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
 		generatorNow := time.Now()
 		if err := stream.Send(&pb.HeartbeatPong{
@@ -1611,7 +1614,11 @@ func (s *Service) activeVUsersLocked() int32 {
 func (s *Service) activeVUsers64Locked() int64 {
 	total := s.runSupervisionDrainingVUsers
 	for _, assignment := range s.assignments {
-		total += int64(assignment.vuserCount)
+		if assignment.sourcePlan != nil && !assignment.committed {
+			total += sourcePlanUsers(assignment.sourcePlan)
+		} else {
+			total += int64(assignment.vuserCount)
+		}
 	}
 	return total
 }
@@ -2488,6 +2495,9 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	snapshotOK := false
 	if exec.engine != nil {
 		snapshot, snapshotOK = exec.engine.LatestSnapshot()
+		if exec.owner != nil && snapshotOK {
+			snapshot = exec.owner.groupSnapshot(snapshot, exec.groupName)
+		}
 	}
 	stats := GeneratorStats{GoroutineCount: int32(runtime.NumGoroutine())}
 	if previous != nil {
@@ -2497,8 +2507,10 @@ func (s *Service) collectExecutionMetricsWithIdle(exec *groupExecution, includeI
 	if snapshotOK {
 		stats = generatorStatsFromResources(snapshot.Resources, int32(snapshot.ActiveVUsers))
 	}
-	if exec.engine != nil {
+	if exec.engine != nil && exec.owner == nil {
 		stats.CompletedIterations = exec.engine.CompletedIterations()
+	} else if exec.owner != nil {
+		stats.CompletedIterations = exec.engine.GroupCompletedIterations(exec.groupName)
 	}
 	droppedSubscriberBatches := s.metricsBroker.droppedCount()
 	changes := classifyExecutionMetricsChanges(previous, snapshot, snapshotOK, stats, droppedSubscriberBatches, false)

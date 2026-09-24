@@ -152,6 +152,12 @@ func (s *Server) registerImportCandidateSessionInternal(
 	_, actor, _ := s.resolveAuditActor(r)
 	now := time.Now().UTC()
 	publicExpiresAt := now.Add(importCandidateSessionTTL)
+	if expiry, ok := r.Context().Value(importBatchExpiryContextKey{}).(time.Time); ok {
+		if disableExpiration || !expiry.After(now) || expiry.After(publicExpiresAt) {
+			return "", time.Time{}, errors.New("invalid protected batch expiry")
+		}
+		publicExpiresAt = expiry
+	}
 	storedExpiresAt := publicExpiresAt
 	if disableExpiration {
 		publicExpiresAt = time.Time{}

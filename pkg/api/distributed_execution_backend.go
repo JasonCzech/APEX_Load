@@ -1193,6 +1193,26 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	for i, group := range test.Groups {
 		allocationByGroup[group.Name] = allocations[i]
 	}
+	sourcePlan, sourceErr := distributedSourcePlan(test.Groups, test.ProjectID, executionGeneration)
+	if sourceErr != nil {
+		failStartup(sourceErr.Error())
+		return
+	}
+	if sourcePlan != nil {
+		selected := ""
+		for _, g := range test.Groups {
+			shards := peakGroupShards[g.Name]
+			if len(shards) != 1 || selected != "" && selected != shards[0].Target {
+				failStartup("source-plan groups require one generator")
+				return
+			}
+			selected = shards[0].Target
+		}
+		if !stringSliceContainsEqualFold(loadByTarget[selected].CompatibleFeatures, generatorrpc.FeatureSourcePlanV1) {
+			failStartup("generator lacks source_plan_execution_v1; no traffic was started")
+			return
+		}
+	}
 	projectSecretResolvers := make(map[string]engine.SecretResolver)
 	var shardNamespaceBase uint64
 	for _, group := range test.Groups {
@@ -1302,6 +1322,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				ContentHash:         contentHash,
 			},
 			generatorrpc.Assignment{
+				SourcePlan:                 sourcePlan,
 				TerminationMode:            test.TerminationMode,
 				TestID:                     test.ID,
 				ExecutionGeneration:        executionGeneration,

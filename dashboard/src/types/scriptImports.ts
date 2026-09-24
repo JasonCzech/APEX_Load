@@ -248,6 +248,14 @@ export interface ApplySecretBindingsResponse {
   import_draft_expires_at?: string
 }
 
+export interface JMeterReviewSummary {
+  blocking_behaviors: number
+  review_behaviors: number
+  unsupported_behaviors: number
+  warnings: number
+  informational: number
+}
+
 export interface ScriptImportResult<
   TStats = Record<string, unknown>,
   TCorrelation = unknown,
@@ -261,7 +269,8 @@ export interface ScriptImportResult<
   scenario_drafts?: TScenarioDraft[]
   warnings: string[]
   unsupported_elements: string[]
-  diagnostics?: { element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string }[]
+  review_summary?: JMeterReviewSummary
+  diagnostics?: { code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string }[]
   assumptions: string[]
   review_sections: ImportReviewSection[]
   repair_suggestions: ImportRepairSuggestion[]
@@ -832,7 +841,45 @@ export interface RecorderCorrelation {
 }
 
 export type EnterpriseArchiveImportResult = ScriptImportResult<EnterpriseArchiveConvertStats, unknown, ScriptDefinition, unknown, EnterpriseArchiveImportSummary>
-export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary>
+export interface JMeterBatchIdentity { id: string; revision: string }
+export interface JMeterBatchOperation {
+  type: string
+  source_group_id?: string
+  source_node_id?: string
+  secret_name?: string
+  client_id_secret?: string
+  payload_pointer?: string
+  message_index?: number
+  parameter?: import('./scripts').ScriptParameterDefinition
+  property_name?: string
+  property_value?: string
+  uuid?: boolean
+  timezone?: string
+  confirm_no_overrides?: boolean
+}
+export interface JMeterBatchRepairRequest {
+  batch_id: string
+  revision: string
+  project_id: string
+  operations: JMeterBatchOperation[]
+  preview_digest?: string
+}
+export interface JMeterBatchRepairResponse {
+  diagnostics?: ScriptImportResult['diagnostics']
+  review_summary?: JMeterReviewSummary
+  warnings?: string[]
+  unsupported_elements?: string[]
+  preflight?: ReplayPreflight
+  batch: JMeterBatchIdentity
+  preview_digest: string
+  before: ScriptDefinition[]
+  scripts: ScriptDefinition[]
+  scenario_draft?: JMeterScenarioDraft
+  findings: Record<string, unknown[]>
+  readiness: Record<string, unknown>
+  secret_binding_requirements?: SecretBindingRequirement[]
+}
+export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary> & { batch?: JMeterBatchIdentity }
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>
 export type DevWebImportResult = ScriptImportResult<DevWebImportStats, unknown>
 export type HARImportResult = ScriptImportResult<HARImportStats, SampleCorrelation, ScriptDefinition, unknown, HARImportSummary>

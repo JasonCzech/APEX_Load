@@ -2,6 +2,7 @@ import type { IssueDetail, IssueDetailSeverity } from './IssueDetailsDialog'
 import type { ImportReviewTab } from './ImportReviewTabs'
 
 export interface ImportWorkspaceIssue extends IssueDetail {
+  identity?: string
   targetTab?: ImportReviewTab
   actionLabel?: string
 }
@@ -31,7 +32,7 @@ export function groupImportWorkspaceIssues(issues: ImportWorkspaceIssue[]): Grou
   const groups = new Map<string, GroupedImportWorkspaceIssue>()
   for (const rawIssue of issues) {
     const issue = issuePresentation(rawIssue)
-    const key = `${issue.title.trim().toLowerCase()}::${diagnosticCode(issue)}`
+    const key = issue.identity || `${issue.title.trim().toLowerCase()}::${diagnosticCode(issue)}`
     const current = groups.get(key)
     if (!current) {
       groups.set(key, { ...issue, occurrences: [issue] })

@@ -22,6 +22,7 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 		return fingerprintDigest(h)
 	}
 	fingerprintWriteBool(h, true)
+	fingerprintWriteString(h, SourcePlanDigest(assignment.GetSourcePlan()))
 	fingerprintWriteString(h, assignment.GetTestId())
 	fingerprintWriteString(h, assignment.GetTerminationMode())
 	fingerprintWriteString(h, assignment.GetGroupName())

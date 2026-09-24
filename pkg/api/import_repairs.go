@@ -37,12 +37,15 @@ type ImportRepairOperation struct {
 	Iterations   int            `json:"iterations,omitempty"`
 }
 type ImportRepairRequest struct {
-	CandidateID string                `json:"candidate_id"`
-	Revision    string                `json:"revision"`
-	ProjectID   string                `json:"project_id"`
-	Finding     string                `json:"finding"`
-	ActionPath  string                `json:"action_path"`
-	Operation   ImportRepairOperation `json:"operation"`
+	BatchID       string                 `json:"batch_id,omitempty"`
+	PreviewDigest string                 `json:"preview_digest,omitempty"`
+	Operations    []JMeterBatchOperation `json:"operations,omitempty"`
+	CandidateID   string                 `json:"candidate_id"`
+	Revision      string                 `json:"revision"`
+	ProjectID     string                 `json:"project_id"`
+	Finding       string                 `json:"finding"`
+	ActionPath    string                 `json:"action_path"`
+	Operation     ImportRepairOperation  `json:"operation"`
 }
 type ImportRepairResponse struct {
 	SecretBindingRequirements []SecretBindingRequirement          `json:"secret_binding_requirements"`
@@ -99,6 +102,14 @@ func (s *Server) handleImportRepair(w http.ResponseWriter, r *http.Request, appl
 	}
 }
 func (s *Server) processImportRepair(w http.ResponseWriter, r *http.Request, apply bool, req ImportRepairRequest) {
+	if req.BatchID != "" {
+		if req.CandidateID != "" || req.Operation.Type != "" {
+			writeError(w, 400, "Choose a batch or single-script repair")
+			return
+		}
+		s.processJMeterBatchRepair(w, r, apply, req)
+		return
+	}
 	if req.CandidateID == "" || req.Revision != req.CandidateID || !strings.HasPrefix(req.CandidateID, importDraftProtectedTokenPrefix) {
 		writeError(w, 409, "A current protected candidate and revision are required; re-import if expired")
 		return
@@ -135,6 +146,10 @@ func (s *Server) processImportRepair(w http.ResponseWriter, r *http.Request, app
 	}
 	defer clearProtectedImportCandidate(candidate)
 	defer s.releaseImportCandidateClaim(claim)
+	if _, batched := scriptBatch(candidate.Script); batched {
+		writeError(w, 409, "Use the protected batch repair workflow for this candidate")
+		return
+	}
 	lease := s.startImportCandidateClaimLease(claim)
 	defer lease.stop()
 	before := repairDisclosure(candidate.Script)
@@ -431,6 +446,9 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 }
 
 func requiresExactRepairDraft(s *dsl.Script) bool {
+	if _, ok := scriptBatch(s); ok {
+		return true
+	}
 	if s == nil || s.Metadata == nil || s.Metadata.Import == nil {
 		return false
 	}

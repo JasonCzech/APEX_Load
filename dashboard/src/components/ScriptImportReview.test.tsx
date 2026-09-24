@@ -82,6 +82,37 @@ describe('ScriptImportReview', () => {
     expect(container.querySelector('pre')!.textContent).not.toContain('Create Order')
   })
 
+  it('uses normalized behavior counts and renders each diagnostic once with source navigation', () => {
+    const diagnostics = [
+      { code: 'jmeter_timestamp_timezone_required', source_ref: 'plan.jmx:77', element: 'Request', detail: 'Choose a timestamp policy', severity: 'blocker' as const, location: 'actions[0]' },
+      { code: 'import_missing_variables', source_ref: 'plan.jmx:77', element: 'Request', detail: 'Bind client_id, client_secret', severity: 'blocker' as const, location: 'actions[0]' },
+      { code: 'csv_export', source_ref: 'plan.jmx:161', element: 'CSV export', detail: 'Translated CSV download', severity: 'info' as const },
+    ]
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="JMeter review" script={script}
+      diagnostics={diagnostics} reviewSummary={{ blocking_behaviors: 2, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 1 }}
+      warnings={['Duplicate legacy warning']} unsupportedElements={['Duplicate unsupported text']}
+      reviewSections={[{ key: 'old', title: 'Old summary', severity: 'blocker', summary: 'Duplicate', items: ['Choose a timestamp policy'] }]} />))
+    expect(container.querySelector('[aria-label="JMeter review summary"]')?.textContent).toContain('2 blocking behaviors')
+    expect(container.querySelector('[aria-label="JMeter review summary"]')?.textContent).toContain('0 unsupported behaviors')
+    expect(container.querySelectorAll('.shared-import-issue-list > button')).toHaveLength(3)
+    expect(container.querySelector('.shared-import-issue-workspace')?.textContent).not.toContain('Duplicate')
+    const reviewed = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Mark reviewed with limitation')!
+    act(() => reviewed.click())
+    expect(container.querySelector('[aria-label="JMeter review summary"]')?.textContent).toContain('2 blocking behaviors')
+    const source = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Open related source')!
+    expect(source).toBeDefined()
+    act(() => source.click())
+    expect(container.querySelector('[aria-label="Source Mapping"]')?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('falls back to legacy findings when a summary has no structured evidence', () => {
+    act(() => root.render(<ScriptImportReview tabbed compactReview title="JMeter review" script={script}
+      reviewSummary={{ blocking_behaviors: 0, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }}
+      warnings={['Legacy warning still matters']} />))
+    expect(container.querySelector('.shared-import-issue-workspace')?.textContent).toContain('Legacy warning still matters')
+    expect(container.querySelector('[aria-label="JMeter review summary"]')).toBeNull()
+  })
+
   it('omits original diagnostics when the importer supplies its own issue workspace', () => {
     const render = (show: boolean) => act(() => root.render(<ScriptImportReview compactReview title="Archive review" script={script}
       showCredentials={false} showDataReview={false} showPreview={false} showPreviewAside={false} showOriginalDiagnostics={show}

@@ -117,7 +117,12 @@ type preparedAssignmentStage struct {
 // AssignWork is the transport facade for the two-phase staging transition:
 // bounded request validation, one coordinator reservation, unlocked execution
 // preparation, and an atomic coordinator commit or rollback.
-func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (*pb.AssignmentAck, error) {
+func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (ack *pb.AssignmentAck, callErr error) {
+	defer func() {
+		if assignment != nil && (callErr != nil || !ack.GetAccepted()) {
+			service.abortSourcePlanStage(assignment.TestId, assignment.ExecutionGeneration, assignment.RunSupervisionToken)
+		}
+	}()
 	validated, err := validateWorkAssignment(assignment, service.scriptCache.maxBytes(), TransportSecurityFromEnv().AllowsSecretDelivery())
 	if err != nil {
 		return nil, err
@@ -309,6 +314,14 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 	}
 
 	current, currentExists := service.assignments[request.GetTestId()]
+	if currentExists && SourcePlanDigest(current.sourcePlan) != SourcePlanDigest(request.SourcePlan) {
+		return rejectedAssignmentStage("source-plan manifest changed", available)
+	}
+	if current.committed && current.sourcePlan != nil {
+		if _, exists := current.groups[request.GroupName]; !exists {
+			return rejectedAssignmentStage("source-plan membership is sealed", available)
+		}
+	}
 	if !currentExists && service.archiveManager.retainedTest(request.GetTestId()) {
 		return rejectedAssignmentStage("test id already has a retained completed archive", available)
 	}
@@ -390,7 +403,14 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 			}
 		}
 	}
-	if service.activeVUsers64Locked()+coordinator.pendingVUsersLocked()+int64(request.GetVuserCount()) > int64(service.maxVUsers) {
+	additional := int64(request.GetVuserCount())
+	if request.SourcePlan != nil {
+		additional = sourcePlanUsers(request.SourcePlan)
+		if currentExists {
+			additional = 0
+		}
+	}
+	if service.activeVUsers64Locked()+coordinator.pendingVUsersLocked()+additional > int64(service.maxVUsers) {
 		return rejectedAssignmentStage("insufficient generator capacity", available)
 	}
 
@@ -437,7 +457,7 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		executionGeneration:     request.GetExecutionGeneration(),
 		scriptID:                request.GetScriptId(),
 		protocol:                cached.protocol,
-		vusers:                  request.GetVuserCount(),
+		vusers:                  int32(additional),
 		persistentJavaLifecycle: cached.requiresPhaseLifecycle,
 		legacyJavaLifecycle:     strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
 		persistentJavaDemand:    persistentJavaDemand,
@@ -556,6 +576,14 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 		return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, err.Error())
 	}
 	current, currentExists := service.assignments[request.GetTestId()]
+	if currentExists && SourcePlanDigest(current.sourcePlan) != SourcePlanDigest(request.SourcePlan) {
+		return nil, service.availableCapacityLocked(), status.Error(codes.Aborted, "source-plan manifest changed")
+	}
+	if current.committed && current.sourcePlan != nil {
+		if _, exists := current.groups[request.GroupName]; !exists {
+			return nil, service.availableCapacityLocked(), status.Error(codes.Aborted, "source-plan membership is sealed")
+		}
+	}
 	if currentExists != plan.hadCurrent || !sameSHA256Digest(assignmentControlFingerprint(current, currentExists), plan.currentGuard) {
 		return nil, service.availableCapacityLocked(), status.Error(codes.Aborted, "test assignment changed while execution was prepared")
 	}
@@ -605,6 +633,9 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	}
 
 	next := cloneAssignmentForStage(current)
+	if request.SourcePlan != nil {
+		next.sourcePlan = cloneSourcePlan(request.SourcePlan)
+	}
 	next.testID = request.GetTestId()
 	next.terminationMode = request.GetTerminationMode()
 	next.lifecycle = plan.nextLifecycle
@@ -849,6 +880,10 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err := json.Unmarshal(plan.scriptContent, &script); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
+	if err := validateSourcePlanScript(request, &script); err != nil {
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+
 	applyAssignmentMessageDetailBudget(&script, request)
 	if instance, getErr := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol))); getErr == nil {
 		if strings.EqualFold(script.Protocol, "java_vuser") {
@@ -1010,7 +1045,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if engine.HasAllocatedParameters(&script) && (request.GetParameterPopulation() == 0 || uint64(request.GetParameterOffset())+uint64(request.GetVuserCount()) > uint64(request.GetParameterPopulation())) {
 		return nil, fmt.Errorf("invalid distributed parameter allocation")
 	}
-	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
+	groupConfig := engine.MultiGroupConfig{
 		TerminationMode: request.GetTerminationMode(),
 		Groups: []engine.GroupConfig{{
 			Name:                         request.GetGroupName(),
@@ -1040,7 +1075,8 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		PreBaseline:  plan.validated.preBaseline,
 		PostBaseline: plan.validated.postBaseline,
 		StartPaused:  plan.startPaused,
-	})
+	}
+	mge, err := engine.NewMultiGroup(groupConfig)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "build execution engine: %v", err)
 	}
@@ -1050,6 +1086,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		}
 	}
 	prepared.execution = &groupExecution{
+		stagedConfig:        &groupConfig,
 		groupName:           request.GetGroupName(),
 		executionGeneration: request.GetExecutionGeneration(),
 		engine:              mge,

@@ -1068,7 +1068,7 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		iteration++
 		if vu.Metrics != nil {
-			vu.Metrics.current.completedIterations.Add(1)
+			vu.Metrics.RecordCompletedIteration(vu.Group)
 		}
 
 	}

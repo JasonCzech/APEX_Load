@@ -577,6 +577,25 @@ func deprecatedRoute(path string) bool {
 
 func openAPIComponentSchemas() map[string]oasSchema {
 	schemas := map[string]oasSchema{
+		"JMeterReviewSummary": {
+			Type: "object", Description: "Distinct source behavior counts. Unsupported behaviors are a subset; sampler and action statistics are separate.",
+			Properties: map[string]oasSchema{
+				"blocking_behaviors": {Type: "integer"}, "review_behaviors": {Type: "integer"}, "unsupported_behaviors": {Type: "integer"}, "warnings": {Type: "integer"}, "informational": {Type: "integer"},
+			}, Required: []string{"blocking_behaviors", "review_behaviors", "unsupported_behaviors", "warnings", "informational"},
+		},
+		"JMeterReviewDiagnostic": {
+			Type: "object", Properties: map[string]oasSchema{
+				"code": {Type: "string"}, "source_ref": {Type: "string"}, "element": {Type: "string"}, "detail": {Type: "string"}, "location": {Type: "string"}, "severity": {Type: "string", Enum: []string{"blocker", "warning", "info"}},
+			}, Required: []string{"element", "detail", "severity"},
+		},
+		"JMeterImportReviewResponse": {
+			Type: "object", AdditionalProperties: boolPointer(true),
+			Properties: map[string]oasSchema{
+				"review_summary":       {Ref: "#/components/schemas/JMeterReviewSummary"},
+				"diagnostics":          {Type: "array", Items: &oasSchema{Ref: "#/components/schemas/JMeterReviewDiagnostic"}},
+				"unsupported_elements": {Type: "array", Items: &oasSchema{Type: "string"}, Description: "Only enabled source behaviors without a faithful implementation; excludes configuration repairs and information."},
+			}, Required: []string{"review_summary", "diagnostics", "unsupported_elements"},
+		},
 		"ErrorResponse": {
 			Type: "object",
 			Properties: map[string]oasSchema{
@@ -1432,6 +1451,8 @@ func responseSchemasForRoute(method, path string, responses map[string]oasRespon
 		return responses
 	}
 	switch {
+	case method == http.MethodPost && (path == "/api/v1/scripts/import/jmeter" || path == "/api/v1/scripts/import/jmeter/validate"):
+		setJSONResponseSchema(responses, "200", "JMeterImportReviewResponse")
 	case method == http.MethodGet && path == "/api/v1/system/readiness":
 		return systemReadinessOpenAPIResponses()
 	case method == http.MethodGet && path == "/api/v1/projects/{id}/releases":
