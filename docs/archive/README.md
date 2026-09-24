@@ -8,7 +8,7 @@ Material here is preserved for audit and design history. It is not current produ
 
 | File | Status | Current reference |
 | --- | --- | --- |
-| [plans/DYNATRACE_SAAS_MONITORING_PLAN.md](plans/DYNATRACE_SAAS_MONITORING_PLAN.md) | Implemented (archived 2026-09-24) | [DYNATRACE_SAAS_MONITORING.md](../DYNATRACE_SAAS_MONITORING.md) |
+| [plans/DYNATRACE_SAAS_MONITORING_PLAN.md](plans/DYNATRACE_SAAS_MONITORING_PLAN.md) | Implemented (archived 2026-09-24) | [MONITORING_INTEGRATIONS.md](../MONITORING_INTEGRATIONS.md) |
 | [plans/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](plans/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md) | Implemented, all phases (archived 2026-09-24) | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](../ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) |
 | [plans/AUTH_RBAC_FOLLOW_UP_TICKETS.md](plans/AUTH_RBAC_FOLLOW_UP_TICKETS.md) | Implemented, all tickets (archived 2026-09-24) | [AUTH_RBAC_OPERATIONS_RUNBOOK.md](../AUTH_RBAC_OPERATIONS_RUNBOOK.md) |
 | [plans/RUN_REPORT_IMPLEMENTATION_PLAN.md](plans/RUN_REPORT_IMPLEMENTATION_PLAN.md) | Implemented (RunReportPage and related components exist) | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md) |

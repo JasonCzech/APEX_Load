@@ -1,6 +1,6 @@
 # Optional Dynatrace SaaS In-Flight Monitoring
 
-Status: Implemented (archived 2026-09-24). Current behavior is documented in [DYNATRACE_SAAS_MONITORING.md](../../DYNATRACE_SAAS_MONITORING.md); this plan is retained as design history.
+Status: Implemented (archived 2026-09-24). Current behavior is documented in [MONITORING_INTEGRATIONS.md](../../MONITORING_INTEGRATIONS.md); this plan is retained as design history.
 
 ## Summary
 

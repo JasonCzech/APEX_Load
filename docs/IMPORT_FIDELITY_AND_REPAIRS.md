@@ -2,7 +2,7 @@
 
 Status: Current. Behavior reference for imported JMeter plans and LoadRunner archives: fidelity semantics, source-plan execution, and protected guided repair.
 
-Source note: consolidated 2026-09-24 from the former `JMETER_IMPORT_FIDELITY.md`, `JMETER_SOURCE_PLAN_REPAIRS.md` and `LOADRUNNER_IMPORT_REPAIR.md`. Messaging plugin imports are covered separately in [JMETER_MESSAGING_FIDELITY.md](JMETER_MESSAGING_FIDELITY.md).
+Source note: consolidated 2026-09-24 from the former `JMETER_IMPORT_FIDELITY.md`, `JMETER_SOURCE_PLAN_REPAIRS.md` and `LOADRUNNER_IMPORT_REPAIR.md`. Messaging plugin imports are covered separately in [JMeter messaging fidelity](MESSAGING_SUPPORT.md#jmeter-messaging-fidelity).
 
 Contents: [JMeter import fidelity](#jmeter-import-fidelity) · [JMeter source-plan execution and batch repairs](#jmeter-source-plan-execution-and-reviewed-batch-repairs) · [LoadRunner import fidelity and guided repair](#loadrunner-import-fidelity-and-guided-repair)
 
@@ -51,7 +51,7 @@ The sanitized original and repaired regression sources are under `pkg/convert/jm
 
 The browser workflow runs in both dev-admin and local-auth profiles. It imports the original fixture, regenerates explicit repairs, saves a small repaired iteration scenario, executes six loopback samples, and downloads the seven-line CSV through the results UI. The source endpoint is never used by these tests.
 
-For messaging plugin imports, see [Kafka / Event Hubs draft fidelity and remaining conformance work](JMETER_MESSAGING_FIDELITY.md).
+For messaging plugin imports, see [Kafka / Event Hubs draft fidelity and remaining conformance work](MESSAGING_SUPPORT.md#jmeter-messaging-fidelity).
 
 ### Review evidence
 

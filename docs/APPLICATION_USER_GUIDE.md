@@ -878,7 +878,7 @@ GitHub.com with OIDC and GHES with a scoped API key.
 | **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | Settings → Integrations → GitHub |
 | **Kubernetes clusters** | Register AKS/EKS/generic control planes so an administrator can place generator pools on them with per-pool CPU, memory, and node placement | Admin cluster registry |
 
-Each has its own reference document: [Prometheus metrics](PROMETHEUS_METRICS.md), [Power BI](POWERBI_INTEGRATION.md), [Dynatrace webhooks](DYNATRACE_WEBHOOKS.md), [OpenTelemetry](OPENTELEMETRY.md), [GitHub integration](GITHUB_INTEGRATION.md), and [Cluster connections](CLUSTER_CONNECTIONS.md).
+Each has its own reference document: [Prometheus metrics](PROMETHEUS_METRICS.md), [Power BI](POWERBI_INTEGRATION.md), [Dynatrace webhooks and monitoring](MONITORING_INTEGRATIONS.md), [OpenTelemetry](OPENTELEMETRY.md), [GitHub integration](GITHUB_INTEGRATION.md), and [Cluster connections](CLUSTER_CONNECTIONS.md).
 
 ## Troubleshooting And FAQ
 

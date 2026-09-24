@@ -562,7 +562,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 - **API handlers**: `pkg/api/handlers.go` — Endpoint implementations
 - **Runtime telemetry SLA plan**: `docs/ROADMAP.md#runtime-telemetry-sla` — Telemetry capture, streaming, and storage hardening roadmap
 - **Prometheus metrics catalog**: `docs/PROMETHEUS_METRICS.md` — Controller scrape series, labels, and telemetry troubleshooting
-- **Dynatrace webhook setup**: `docs/DYNATRACE_WEBHOOKS.md` — Events API webhook configuration and retry behavior
+- **Dynatrace webhook setup**: `docs/MONITORING_INTEGRATIONS.md` — Dynatrace Events API webhooks, Dynatrace SaaS monitoring, and Elastic (ELK) monitoring
 - **OpenTelemetry tracing**: `docs/OPENTELEMETRY.md` — OTLP configuration, span coverage, sampling, propagation, and data-safety behavior
 - **Browser and mobile support**: `docs/BROWSER_AND_MOBILE_SUPPORT.md` — Current browser canary, mobile emulation, client metrics, and benchmark evidence guidance
 

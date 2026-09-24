@@ -34,7 +34,7 @@ const sources = import.meta.glob<string>([
   '../../docs/recording-agent.md',
   '../../docs/PROMETHEUS_METRICS.md',
   '../../docs/POWERBI_INTEGRATION.md',
-  '../../docs/DYNATRACE_WEBHOOKS.md',
+  '../../docs/MONITORING_INTEGRATIONS.md',
   '../../docs/GITHUB_INTEGRATION.md',
   '../../docs/ACCESS_SURFACES.md',
   '../../deployments/README.md',

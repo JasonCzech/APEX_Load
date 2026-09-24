@@ -26,12 +26,12 @@ kept for planning or audit context only.
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API workflows for operators and automation |
 | [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) | Current | Script source-to-run lifecycle |
 | [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md) | Current | Browser canaries, mobile emulation, client metrics, benchmark evidence |
-| [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md) | Current | JMS, Kafka, AsyncAPI, and Event Hubs support summary |
-| [AUTH_RBAC_OPERATIONS_RUNBOOK.md](AUTH_RBAC_OPERATIONS_RUNBOOK.md) | Current | Auth/RBAC operations |
+| [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md) | Current | JMS, Kafka, AsyncAPI, and Event Hubs support summary, JMS Solace sidecar bridge, and JMeter Kafka/Event Hubs import fidelity |
+| [AUTH_RBAC_OPERATIONS_RUNBOOK.md](AUTH_RBAC_OPERATIONS_RUNBOOK.md) | Current | Auth/RBAC operations and open work / backlog |
 | [GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md](GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md) | Current | Signed releases, protected deployments, rollback operations, GitHub Enterprise Server compatibility/mirroring/qualification, and the release evidence manifest |
 | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) | Current | Enterprise storage/cache/archive operations |
 | [PROMETHEUS_METRICS.md](PROMETHEUS_METRICS.md) | Current | Prometheus scrape metrics |
-| [DYNATRACE_WEBHOOKS.md](DYNATRACE_WEBHOOKS.md) | Current | Dynatrace event webhook setup |
+| [MONITORING_INTEGRATIONS.md](MONITORING_INTEGRATIONS.md) | Current | Dynatrace SaaS monitoring, Dynatrace lifecycle webhooks, and Elastic (ELK) in-flight monitoring |
 | [POWERBI_INTEGRATION.md](POWERBI_INTEGRATION.md) | Current | Publishing run results to a Power BI push dataset: setup, schema, dedupe, report layout |
 | [OPENTELEMETRY.md](OPENTELEMETRY.md) | Current | Opt-in OTLP tracing, propagation, sampling, privacy, and deployment configuration |
 | [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md) | Current | Harness-overhead benchmark, versioned local performance evidence harness and target-scope caveats, browser benchmark artifact manifest, and the mobile browser benchmark runbook |
@@ -44,14 +44,10 @@ These focused references are also current. They are kept separate from the prima
 
 | Document | Purpose |
 | --- | --- |
-| [JMETER_MESSAGING_FIDELITY.md](JMETER_MESSAGING_FIDELITY.md) | Kafka/Event Hubs import preservation, pinned compatibility evidence, and remaining execution gates (status: in progress) |
 | [IMPORT_FIDELITY_AND_REPAIRS.md](IMPORT_FIDELITY_AND_REPAIRS.md) | JMeter and LoadRunner import fidelity, finite iteration execution, native CSV exports, source-plan execution, protected guided repair, and regression coverage (status: current) |
 | [NATIVE_ARCHIVE_COMPATIBILITY.md](NATIVE_ARCHIVE_COMPATIBILITY.md) | Native archive runtime-setting mappings, PAC proxy mode, and re-import behavior (includes review notes) |
 | [LIBRARY_ASSIGNMENTS.md](LIBRARY_ASSIGNMENTS.md) | Assigning scripts and scenarios to applications and releases from the libraries |
-| [DYNATRACE_SAAS_MONITORING.md](DYNATRACE_SAAS_MONITORING.md) | Optional project-scoped Dynatrace SaaS in-flight monitoring (metrics, problems, Grail logs) |
-| [ELK_MONITORING.md](ELK_MONITORING.md) | Optional project-scoped Elastic (ELK) in-flight monitoring |
 | [JAVA_VUSER_RUNTIME.md](JAVA_VUSER_RUNTIME.md) | Governed Java Vuser runner contract and operations |
-| [JMS_SIDECAR.md](JMS_SIDECAR.md) | JMS Solace external sidecar bridge: operator environment, transports, and containment |
 | [ACCESS_SURFACES.md](ACCESS_SURFACES.md) | Supported hosted, desktop, and CLI access surfaces |
 | [AI_ASSISTED_WORKFLOWS.md](AI_ASSISTED_WORKFLOWS.md) | Governed assisted-authoring workflow and API contract |
 | [CICD_INTEGRATION.md](CICD_INTEGRATION.md) | CI/CD gate integration patterns and examples |
@@ -97,7 +93,6 @@ not the source of truth for current API or DSL contracts.
 | [BROWSER_ROADMAP.md](BROWSER_ROADMAP.md) | Roadmap/detail |
 | [MESSAGING_PLAN.md](MESSAGING_PLAN.md) | Roadmap/detail: messaging open work (IBM MQ, Solace SMF, Event Hubs deployment), landed-work record, and Kafka/AsyncAPI design record |
 | [ROADMAP.md](ROADMAP.md) | Roadmap: runtime telemetry SLA, protocol telemetry parity, script authoring consolidation, proposed PT Analysis Parquet import, CloudTest program status |
-| [AUTH_RBAC_BACKLOG.md](AUTH_RBAC_BACKLOG.md) | Roadmap/detail |
 | [CLOUDTEST_PARITY_PROGRAM.md](CLOUDTEST_PARITY_PROGRAM.md) | CloudTest outcome-parity evidence ledger, implementation sequencing, and migration gates |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record, live risk register and release test checklist |
 | [qa/STATUS.md](qa/STATUS.md) | Live milestone state and headline metrics for the test program (tracker-enforced) |

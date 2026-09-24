@@ -367,8 +367,8 @@
   {
     "id": "dynatrace",
     "area": "user-guide",
-    "title": "Dynatrace webhooks",
-    "path": "docs/DYNATRACE_WEBHOOKS.md",
+    "title": "Monitoring integrations",
+    "path": "docs/MONITORING_INTEGRATIONS.md",
     "group": "Reference",
     "owner": "APEX Load maintainers"
   },

@@ -1,6 +1,6 @@
 # Auth / RBAC Follow-Up Tickets
 
-Status: Implemented (archived 2026-09-24). All tickets are complete; see [AUTH_RBAC_OPERATIONS_RUNBOOK.md](../../AUTH_RBAC_OPERATIONS_RUNBOOK.md) and [AUTH_RBAC_BACKLOG.md](../../AUTH_RBAC_BACKLOG.md).
+Status: Implemented (archived 2026-09-24). All tickets are complete; see [AUTH_RBAC_OPERATIONS_RUNBOOK.md](../../AUTH_RBAC_OPERATIONS_RUNBOOK.md) (open items are in its "Open work / backlog" section).
 
 This document records the Workstream 4 Auth/RBAC follow-up decisions made after the native OIDC implementation pass. The planned W4 scope is now complete; future changes should be treated as release hardening or enterprise-directory expansion rather than missing foundational auth/RBAC work. The current codebase supports:
 
