@@ -107,6 +107,6 @@ Historical material is preserved for audit context, is excluded from current-doc
 | Location | Contents |
 | --- | --- |
 | [reviews/README.md](reviews/README.md) | Point-in-time reviews still referenced (status table with live trackers) |
-| [archive/reviews/README.md](archive/reviews/README.md) | Older, fully remediated reviews |
-| [archive/README.md](archive/README.md) | Archived implemented plans (`archive/plans/`), session handoffs (`archive/handoffs/`) and the review archive |
+| [archive/reviews/README.md](archive/reviews/README.md) | Whole-application review 2026-08-02 (older June/July reviews were removed; see README) |
+| [archive/README.md](archive/README.md) | Archived implemented plans (`archive/plans/`), QA reviews (`archive/qa-reviews/`) and the retired DSL guide |
 | [qa/reviews/README.md](qa/reviews/README.md) | Index of dated UX/QA review reports still carrying open items, with captured evidence (completed reviews are in `archive/qa-reviews/`) |
