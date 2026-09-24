@@ -1,5 +1,7 @@
 # APEX Load REST API vs LoadRunner Enterprise 26.x — API-Layer Comparison
 
+> Point-in-time (rechecked June 2026); [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) is authoritative.
+
 **Audience:** internal engineering, product, evaluators, and integration partners.
 
 This document compares the **REST API / integration layer** of APEX Load against **OpenText

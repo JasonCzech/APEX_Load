@@ -10,6 +10,16 @@
 
 ---
 
+## Open items (rechecked 2026-09-24)
+
+Most items in this plan have landed (shared messaging session/correlation, Kafka serde/Schema Registry/OAUTHBEARER, native Event Hubs adapter, Event Hubs terraform, CI tag lanes); sections below describe them as designed and carry "Status: landed" notes where verified. The genuinely unbuilt work is:
+
+- **P2.5 — IBM MQ native adapter** (no real adapter; mock/authoring only).
+- **P2.6 — Solace native SMF transport** (Solace is JMS-over-AMQP only).
+- Event Hubs deployment env vars `APEXLOAD_EVENTHUBS_AUTH` / `APEXLOAD_EVENTHUBS_PROBE_CONSUMER_GROUP` and `docs/EVENT_HUBS_HOWTO.md` are planned but not created.
+
+---
+
 ## Context
 
 Why this is being done: APEX Load advertises broad message-queue support, but an evaluation against
@@ -27,8 +37,9 @@ for the deeper spec-parity work. Three structural facts drive everything below:
    (`jms_servicebus_real`), and native Azure Event Hubs (`eventhubs_real`). *(This is scoped to
    message brokers — HTTP/2, gRPC, WebSocket, SOAP, DB, and the network protocols all have real
    default-build transport.)*
-2. **IBM MQ has no real adapter at all** — permanent `unavailableIbmMqAdapter`
-   (`pkg/protocol/jms/jms.go`); **Solace is JMS-over-AMQP only** (no native SMF).
+2. **IBM MQ has no real adapter at all** — registered for authoring and mock replay only; non-mock
+   scripts fail validation/initialization (see `MESSAGING_SUPPORT.md`; the former
+   `unavailableIbmMqAdapter` symbol no longer exists); **Solace is JMS-over-AMQP only** (no native SMF).
 3. **Results are messaging-aware for throughput + latency, with newer reliability fields, but still
    shallow compared with broker-native consoles.** Native Event Hubs and Kafka endpoint rows now have
    dashboard surfaces, but trend widgets and SLAs remain uneven: consumer lag is still not a unified
@@ -199,7 +210,7 @@ Returns `true` in `capabilities_kafka_real.go` (`//go:build kafka_real`), `false
 - NEW `pkg/dsl/capabilities_kafka_default.go` — `//go:build !kafka_real`, returns `false`.
 - EDIT `pkg/dsl/validate.go` — wrap the rejection in `if !KafkaRealAdapterAvailable() { ... }`; keep the `len(kafka.Brokers) == 0` check unconditional. Update the message to add `"...or build with -tags kafka_real"` (mirror the Solace wording). **Done.**
 - NEW/EDIT `pkg/dsl/validate_kafka_test.go` (or extend existing kafka validate test) — table-driven, plus a `kafka_real`-tagged variant.
-- EDIT `.github/workflows/go-protocol-tags.yml` — add a `kafka-real` job mirroring the `jms-solace-real` job.
+- EDIT `.github/workflows/go-protocol-tags.yml` — add a `kafka-real` job mirroring the `jms-solace-real` job. *(Landed differently: that workflow file never existed; the `kafka` profile of the `protocol-tags` job in `.github/workflows/ci.yml` and `.github/workflows/protocol-integration.yml` now cover `kafka_real`.)*
 - VERIFY-ONLY (no edit): `cmd/apexctl/run_overrides.go`, `pkg/protocol/kafka/realclient_default.go` — confirm direct-run + fail-closed stub already correct.
 
 **Build tags / dependencies** — No `go.mod` additions (franz-go already vendored for `kafka_real`). New build tag `kafka_real` is already used by the protocol package; this extends it to `pkg/dsl`. CI matrix: add a job that runs `go test -tags kafka_real ./pkg/dsl ./pkg/protocol/kafka` and a default `go test ./pkg/dsl` to prove both gating directions.
@@ -267,6 +278,8 @@ AbortCount         int `json:"abort_count,omitempty"`
 
 ### P1.2 — Shared ack / transaction / session state machine
 
+**Status: landed as `pkg/protocol/messaging/session.go`.**
+
 **Problem / current state** — Today the settlement actions are pure no-ops. In `pkg/protocol/jms/jms.go:240-241`, the `jms_ack`, `jms_commit`, and `jms_rollback` cases only stamp `result.Extractions["jms_operation"] = action.Type` and return success — no acknowledgement, commit, or redelivery happens. Identically, `pkg/protocol/kafka/kafka.go:165-166` handles `kafka_commit`/`kafka_seek` with a lone `result.Extractions["kafka_operation"]` stamp. Acknowledgement mode is parsed (`jms.go:138`, defaulted to `auto` at `jms.go:155-157`) but **never threaded to any settlement call**. The `brokerAdapter` interface (`jms.go:71-77`) exposes only `Publish/Consume/RequestReply/HealthCheck/Teardown` — there is no concept of an unsettled message, a session, or a transaction handle. The franz Kafka client (`realclient_franz.go:108-138`) returns records but tracks no offset cursor for later commit; consume is effectively auto-commit-on-poll. Net effect: a script can "ack" a poisoned message and "rollback" a transaction with zero broker-side consequence, and no Commit/Abort counts exist to surface.
 
 **Goal** — A real per-VUser session/ack/transaction state machine, extracted into a new shared `pkg/protocol/messaging` package, supporting JMS-equivalent `auto`, `client`, `dups_ok`, and `transacted` modes plus Kafka transactional/offset-commit semantics, with rollback-driven redelivery mapped onto each SDK's settlement API. Settlement actions become real and emit `CommitCount`/`AbortCount`/redelivery telemetry consumed by P1.1.
@@ -324,6 +337,8 @@ Extend `brokerAdapter` (`jms.go:71-77`) with `Settle(ctx, op SettleOp, deliverie
 **Effort / dependencies / risks** — Effort **XL**. Depends on **P1.1** (CommitCount/AbortCount telemetry fields + the relaxed `validate.go:854` real-Kafka gate). Risks: (1) franz-go transactional + consumer-group offset semantics are subtle — eager-commit-on-poll in current `Consume` (`realclient_franz.go:117`) must change to deferred commit, risking duplicate delivery if mis-sequenced; (2) azservicebus lock-expiry can invalidate a settler before a deferred ack — needs lock-renewal or bounded session lifetime; (3) IBM MQ stays unavailable (`jms.go:189-190`), so transacted-mode coverage there is intentionally absent and must fail-closed; (4) per-VUser session state increases memory — bound `pending` length to avoid the leak class tracked in prior audits.
 
 ### P1.3 — Request-reply correlation primitive with safe requeue
+
+**Status: landed as `pkg/protocol/messaging/correlation.go` (with `session.go` for the P1.2 ack/transaction session) — not the `pkg/protocol/msgreply` package named in the design below; read `msgreply` as `messaging`.**
 
 **Problem / current state** — Request-reply is implemented three times with divergent correctness. The JMS dispatcher (`pkg/protocol/jms/jms.go:315-344`) builds the request, defaults `CorrelationID` to the message ID, and delegates to `adapter.RequestReply`. Two of three real adapters are already correct: the Solace AMQP adapter (`pkg/protocol/jms/realadapter_amqp.go:75-122`) loops, matches via the shared-but-amqp-tagged `correlationMatches` (`realadapter_amqp.go:124-132`), and **safely requeues** non-matching replies with `receiver.ReleaseMessage` (line 117); the Kafka franz client (`pkg/protocol/kafka/realclient_franz.go:140-167`) filters within a fetch without committing offsets, so unmatched records stay claimable. **The bug is Service Bus** (`pkg/protocol/jms/realadapter_servicebus.go:88-118`): its loop calls `a.Consume` (line 109), and `Consume` (lines 62-85) unconditionally `CompleteMessage`s the received message at line 81 unless `receive_and_delete`. An uncorrelated reply belonging to another VUser is therefore **permanently destroyed** before the line 113 correlation check runs — under concurrent VUsers on a shared reply queue this drops replies and causes spurious timeouts. Secondary issues: `correlationMatches` is duplicated logic gated behind the `jms_solace_real` tag (untested in default builds); there is no temporary/dynamic reply-destination support — every script must hardcode a shared `reply_to` (`pkg/dsl/catalog_jms.go:38`), the root cause of cross-VUser contention.
 
@@ -510,6 +525,8 @@ EnableIdempotence *bool; TransactionalID string; IsolationLevel string; MaxPollR
 **Effort / dependencies / risks** — Effort **XL**. Depends on **P1.2** (config-plumbing/properties pass) and **P1.4** (validate gating / real-adapter-available seam). Risks: franz idempotence/transaction interaction with `RequiredAcks` is order-sensitive (must be `AllISRAcks` for txns, easy to misconfigure); per-VUser transactional.id must be unique per producer or brokers fence each other — derive a VUser-suffixed id; mock-broker txn/isolation semantics are an approximation and could diverge from real broker behavior (document as best-effort); the `validate.go:854` change is fail-open-adjacent if the build-tag seam is wrong — test both build variants explicitly.
 
 ### P2.2 — Schema Registry / Avro / Protobuf / JSON-Schema serde
+
+**Status: largely landed in `pkg/protocol/kafka/` (`serde.go`, `avro_serde.go`, `schemaregistry.go`); the text below is the original design baseline. Protobuf/JSON-Schema coverage was not re-audited here.**
 
 **Problem / current state** — Kafka records are opaque byte payloads end-to-end. `kafkaRecord.Value` is `[]byte` (`pkg/protocol/kafka/broker.go:29`), built directly from `action.Body` (`pkg/protocol/kafka/kafka.go:295`) and written/read raw by the franz adapter (`realclient_franz.go:85`, `:137`). Extractors run against the raw bytes (`kafka.go:421-427` regex/JSONPath over `rec.Value`). There is no Confluent wire framing (magic byte `0x00` + 4-byte schema-id), no Schema Registry client, and no Avro/Protobuf/JSON-Schema codec. `config` (`kafka.go:41-64`) and `KafkaConfig` (`pkg/dsl/types.go:223-242`) carry no schema fields. The AsyncAPI importer explicitly punts: `asyncapi-payload-avro` is `review_required` and `asyncapi-schema-registry` is `not_executable` with note "Schema registry integration (Avro/Protobuf encode/decode) is not yet implemented" (`pkg/convert/asyncapi/support.go:25,28,37`).
 
@@ -765,7 +782,7 @@ Populate existing telemetry: set `ServerTelemetry.RedeliveryCount` (NEW int fiel
 - EDIT `pkg/protocol/protocol.go:174-193` (`RedeliveryCount`), `api/proto/generator.proto`, `pkg/api/distributed_metrics.go` (merge)
 - EDIT `go.mod` / `go.sum`
 
-**Build tags / dependencies** — Add `solace.dev/go/messaging` to go.mod. New build tag `jms_solace_smf` (real) with `!jms_solace_smf` fail-closed default; integration tag `jms_solace_smf_integration`. CI matrix (`deployments/ci/`) gains a `jms_solace_smf` build/vet/test lane; integration lane runs against a `solace/solace-pubsub-standard` testcontainer. No change to the default generator/controller build (stub compiled in via existing blank imports at cmd/{generator,controller,apexctl}/main.go:21-24).
+**Build tags / dependencies** — Add `solace.dev/go/messaging` to go.mod. New build tag `jms_solace_smf` (real) with `!jms_solace_smf` fail-closed default; integration tag `jms_solace_smf_integration`. CI matrix (the `protocol-tags` job in `.github/workflows/ci.yml`; there is no `deployments/ci/` directory) gains a `jms_solace_smf` build/vet/test lane; integration lane runs against a `solace/solace-pubsub-standard` testcontainer. No change to the default generator/controller build (stub compiled in via existing blank imports at cmd/{generator,controller,apexctl}/main.go:21-24).
 
 **Test plan** — Unit (table-driven, default build): config→builder option mapping (transport/delivery_mode/ack-window/compression/replay/exclusivity/max_redelivery), URL-scheme acceptance (`smf(s)`/`tcp(s)` accepted, `amqp` routed to AMQP), validate.go range/replay rules, default-stub fail-closed error text. Integration (tag `jms_solace_smf jms_solace_smf_integration`, `solace/solace-pubsub-standard` testcontainer): direct vs guaranteed publish+ack; consumer-flow window backpressure; `*`/`>` wildcard delivery; topic→queue mapping; partitioned-queue key affinity; exclusive vs non-exclusive consumer competition; DMQ landing after max-redelivery; replay all/msg-id/timestamp; TLS + Message-VPN connect. Run `go test ./...` (default) plus the tagged lane. Dashboard: verify SMF `jms_*` rows + `RedeliveryCount`/replay markers render in `TestExecution*.tsx`/`testExecutionMetricsModel.ts` (browser-checked per policy, gated on P1.2/P2.3).
 
@@ -813,7 +830,7 @@ parity tracked in EH.3+ and live Azure coverage breadth.
 - NEW `pkg/dsl/presets.go` + `pkg/dsl/presets_test.go`.
 - EDIT `pkg/dsl/catalog*.go` (doc-string examples) → regenerate `docs/dsl.schema.json`, `docs/DSL_ACTION_REFERENCE.md`.
 - EDIT `pkg/convert/asyncapi/support.go:19,27` (matrix note for Event Hubs auto-detect) + `GetSupportMatrixNotes` (`:33`).
-- NEW `docs/EVENT_HUBS_HOWTO.md` (connection-string secret setup, `kafka_real` build requirement, mechanism table).
+- NEW `docs/EVENT_HUBS_HOWTO.md` *(to be written; the file was never created — see `MESSAGING_SUPPORT.md` and `KAFKA_MESSAGING_AND_ASYNCAPI_PLAN.md` for current Event Hubs guidance)* (connection-string secret setup, `kafka_real` build requirement, mechanism table).
 
 **Build tags / dependencies** — None. No `go.mod` additions; no new build tags; runtime path is the existing `kafka_real` (`realclient_franz.go`). CI tag matrix unaffected — detection/preset compile under the default (mock) build. Note in docs that *execution* needs the `kafka_real` binary (`validate.go:850-853` still blocks non-mock on default builds; not in scope to change here).
 
@@ -830,7 +847,7 @@ parity tracked in EH.3+ and live Azure coverage breadth.
 - [ ] The import emits an Event-Hubs-specific review warning naming the connection-string secret and the `kafka_real` build requirement.
 - [ ] Non-Event-Hubs Kafka imports are byte-for-byte unchanged (regression test green).
 - [ ] `go generate ./pkg/dsl` produces no diff beyond the intended doc-string examples; `schemagen` + support-matrix freshness tests pass.
-- [ ] `docs/EVENT_HUBS_HOWTO.md` documents secret setup, the `$ConnectionString` username, and the build/validation gate.
+- [ ] *(to be written)* `docs/EVENT_HUBS_HOWTO.md` documents secret setup, the `$ConnectionString` username, and the build/validation gate.
 - [ ] `go test ./...` green.
 
 **Effort / dependencies / risks** — Effort: **S**. Done for the Kafka-endpoint path. Remaining risk:
@@ -840,6 +857,8 @@ requires a `kafka_real` build; the generated warning and docs must keep that req
 Spec written to /Users/jasonczech/.claude/plans/whimsical-moseying-phoenix-agent-ac10f5f48c7dd5ed9.md.
 
 ### EH.2 — OAUTHBEARER / Microsoft Entra ID SASL for the Kafka adapter
+
+**Status: landed as `pkg/protocol/kafka/oauth_client_credentials.go` and `realclient_oauth_real.go`; the text below is the original design baseline.**
 
 **Problem / current state** — The franz adapter's `saslMechanism()` (`pkg/protocol/kafka/realclient_franz.go:201-213`) handles only `scram-sha-256` and `scram-sha-512` explicitly; its `default:` branch (line 210-211) maps *everything else* — including `oauthbearer` and `plain` — to `plain.Auth{}`. So `oauthbearer` is a silent downgrade to PLAIN. Meanwhile `oauthbearer` is advertised as a legal value in three places: the DSL doc comment (`pkg/dsl/types.go:226`), the validator allow-list (`pkg/dsl/validate.go:859` accepts `"oauthbearer"`), and there is no token-source config anywhere. The franz import block (`realclient_franz.go:20-23`) pulls in `sasl`, `sasl/plain`, `sasl/scram` but not `sasl/oauth`. `azidentity v1.13.1` and `azcore v1.20.0` are already direct deps (`go.mod:64-65`). Config plumbing flows DSL `KafkaConfig` → `appendKafkaConfig` (`pkg/engine/config_protocols.go:452-470`) → flat `cfg` map → `config` struct (`pkg/protocol/kafka/kafka.go:41-64,74-104`); there is no field carrying a token source.
 
@@ -901,7 +920,7 @@ guided through `config.kafka.profile: eventhubs`.
 
 **Goal** — A first-class `pkg/protocol/eventhubs` protocol (its own package, NOT a JMS provider) using the `azeventhubs` Go SDK, giving authors native producer batching, partitioned consume with start positions, and checkpoint-based exclusive consumption — matching the public capability spec (EventDataBatch with PartitionKey vs PartitionID, ~1 MB batch / 20 MB throughput-unit caps, `ErrEventDataTooLarge`; `StartPosition` earliest/latest/offset/sequence/enqueued-time + prefetch; `Processor` + Blob `CheckpointStore` ownership claim/steal + `UpdateCheckpoint`; epoch/owner-level exclusivity).
 
-**Design** — Mirror the Service Bus adapter exactly so the architecture is consistent. Build-tag split: `realadapter_eventhubs.go` (`//go:build eventhubs_real`) holds the real `azeventhubs.ProducerClient`/`ConsumerClient`/`Processor`; `realadapter_default.go` (`//go:build !eventhubs_real`) returns a loud `unavailableEventHubsAdapter` (fail-closed, mirrors `realadapter_servicebus_default.go`). `eventhubs.go` is the protocol entry point (always compiled): implements `protocol.Protocol` (Name/Init/Execute/Teardown/HealthCheck per `pkg/protocol/protocol.go:34-53`), self-registers via `init()→protocol.Register("eventhubs", …)` (mirroring `kafka.go:24-28`), parses the `cfg map[string]any` into a typed `config`, and dispatches `eh_*` actions to a `brokerAdapter`-style interface. A ref-counted `producerClientPool`/`consumerClientPool` keyed by `sha256(authMode + namespace + entity)` shards N clients (reuse the `serviceBusShardCount`/`serviceBusPoolKey` pattern). Dual auth in `newEventHubsClient`: connection-string → `azeventhubs.NewProducerClientFromConnectionString`, else `azidentity.NewDefaultAzureCredential` → `NewProducerClient(fqns, eventHub, cred, …)`. Producer batches via `EventDataBatch.AddEventData` until `ErrEventDataTooLarge`, then `SendEventDataBatch`; PartitionKey and PartitionID are mutually exclusive (validated). Consume uses `PartitionClient` with `StartPosition` mapped from a string enum. Checkpointed mode uses `Processor` + `checkpoints.BlobStore` (azblob container). Results flow through the existing protocol-neutral pipeline: populate `protocol.ServerTelemetry.MessagesSent/MessagesReceived/ConsumerLagMs/MessageLatencyMs` (`protocol.go:186-191`) — these already aggregate into `ProtocolSummary.MessagesSent/AvgConsumerLagMs/MaxConsumerLagMs` (`metrics.go:118-123,821-849`) and the distributed merge, so no telemetry-schema change is required. Critically, compute real **offset lag** (last enqueued sequence − checkpoint sequence) into `ConsumerLagMs`-adjacent fields rather than wall-clock, fixing the Kafka design flaw at the source. **Rejected:** (a) modeling Event Hubs as a Kafka `kafka_real` endpoint — loses partition ownership/checkpoint/epoch semantics and inherits the OAUTHBEARER downgrade; (b) a JMS-over-AMQP provider — Event Hubs has no JMS broker semantics and the message model is partitioned streams. Dashboard already renders Kafka/JMS messaging rows; the messaging surface filter must add `eventhubs`/`eh_*` (one-line change in `testExecutionMetricsModel.ts`).
+**Design** — Mirror the Service Bus adapter exactly so the architecture is consistent. Build-tag split: `realclient_eventhubs.go` (originally `realadapter_eventhubs.go`; `//go:build eventhubs_real`) holds the real `azeventhubs.ProducerClient`/`ConsumerClient`/`Processor`; `realclient_default.go` (originally `realadapter_default.go`; `//go:build !eventhubs_real`) returns a loud `unavailableEventHubsAdapter` (fail-closed, mirrors `realadapter_servicebus_default.go`). `eventhubs.go` is the protocol entry point (always compiled): implements `protocol.Protocol` (Name/Init/Execute/Teardown/HealthCheck per `pkg/protocol/protocol.go:34-53`), self-registers via `init()→protocol.Register("eventhubs", …)` (mirroring `kafka.go:24-28`), parses the `cfg map[string]any` into a typed `config`, and dispatches `eh_*` actions to a `brokerAdapter`-style interface. A ref-counted `producerClientPool`/`consumerClientPool` keyed by `sha256(authMode + namespace + entity)` shards N clients (reuse the `serviceBusShardCount`/`serviceBusPoolKey` pattern). Dual auth in `newEventHubsClient`: connection-string → `azeventhubs.NewProducerClientFromConnectionString`, else `azidentity.NewDefaultAzureCredential` → `NewProducerClient(fqns, eventHub, cred, …)`. Producer batches via `EventDataBatch.AddEventData` until `ErrEventDataTooLarge`, then `SendEventDataBatch`; PartitionKey and PartitionID are mutually exclusive (validated). Consume uses `PartitionClient` with `StartPosition` mapped from a string enum. Checkpointed mode uses `Processor` + `checkpoints.BlobStore` (azblob container). Results flow through the existing protocol-neutral pipeline: populate `protocol.ServerTelemetry.MessagesSent/MessagesReceived/ConsumerLagMs/MessageLatencyMs` (`protocol.go:186-191`) — these already aggregate into `ProtocolSummary.MessagesSent/AvgConsumerLagMs/MaxConsumerLagMs` (`metrics.go:118-123,821-849`) and the distributed merge, so no telemetry-schema change is required. Critically, compute real **offset lag** (last enqueued sequence − checkpoint sequence) into `ConsumerLagMs`-adjacent fields rather than wall-clock, fixing the Kafka design flaw at the source. **Rejected:** (a) modeling Event Hubs as a Kafka `kafka_real` endpoint — loses partition ownership/checkpoint/epoch semantics and inherits the OAUTHBEARER downgrade; (b) a JMS-over-AMQP provider — Event Hubs has no JMS broker semantics and the message model is partitioned streams. Dashboard already renders Kafka/JMS messaging rows; the messaging surface filter must add `eventhubs`/`eh_*` (one-line change in `testExecutionMetricsModel.ts`).
 
 **DSL & catalog changes** — New `pkg/dsl/catalog_eventhubs.go` declaring `ActionSpec`s with `Protocols: []string{"eventhubs"}`, mirroring `catalog_kafka.go`:
 - `eh_send` — fields `target` (event hub), `body`, `body_file`, `headers`, `params.partition_key`, `params.partition_id`, `params.batch` (bool, accumulate-then-flush).
@@ -943,8 +962,8 @@ No proto change needed — `ServerTelemetry`/`ProtocolSummary` already carry the
 
 **Files to touch**
 - NEW `pkg/protocol/eventhubs/eventhubs.go` — protocol + `init()` registration + config parse + action dispatch.
-- NEW `pkg/protocol/eventhubs/realadapter_eventhubs.go` (`//go:build eventhubs_real`) — azeventhubs ProducerClient/ConsumerClient/Processor + client pools.
-- NEW `pkg/protocol/eventhubs/realadapter_default.go` (`//go:build !eventhubs_real`) — `unavailableEventHubsAdapter` fail-closed stub.
+- NEW `pkg/protocol/eventhubs/realadapter_eventhubs.go` *(landed as `realclient_eventhubs.go`)* (`//go:build eventhubs_real`) — azeventhubs ProducerClient/ConsumerClient/Processor + client pools.
+- NEW `pkg/protocol/eventhubs/realadapter_default.go` *(landed as `realclient_default.go`)* (`//go:build !eventhubs_real`) — `unavailableEventHubsAdapter` fail-closed stub.
 - NEW `pkg/protocol/eventhubs/eventhubs_config.go` — conn resolve (connection-string vs namespace), shard count, pool key, start-position mapping (template: `servicebus_config.go`).
 - NEW `pkg/dsl/catalog_eventhubs.go` — `eventHubsActionSpecs()`.
 - EDIT `pkg/dsl/catalog.go` — wire `eventHubsActionSpecs()` into the aggregate spec list (find where `kafkaActionSpecs()` is appended).
@@ -965,7 +984,7 @@ No proto change needed — `ServerTelemetry`/`ProtocolSummary` already carry the
 - Dashboard/browser: after the `testExecutionMetricsModel.ts` filter change, run a mock/local `eventhubs` test and confirm the messaging table renders `eh_*` rows with messages-sent/received and consumer-lag columns (type-check alone is insufficient per policy).
 
 **Acceptance criteria**
-- [ ] `pkg/protocol/eventhubs` exists with `eventhubs.go`, `realadapter_eventhubs.go` (`eventhubs_real`), `realadapter_default.go` (`!eventhubs_real`); `go build ./...` (default) and `go build -tags eventhubs_real ./...` both pass.
+- [ ] `pkg/protocol/eventhubs` exists with `eventhubs.go`, `realclient_eventhubs.go` (`eventhubs_real`), `realclient_default.go` (`!eventhubs_real`) (originally named `realadapter_*.go`); `go build ./...` (default) and `go build -tags eventhubs_real ./...` both pass.
 - [ ] `protocol.Register("eventhubs", …)` fires via `init()`; protocol is listed by the standard binaries through `pkg/protocol/builtin`.
 - [ ] Default build is fail-closed: any non-mock `eh_*` script returns a loud, actionable unavailable error; no AMQP/azeventhubs symbols linked into the default binary.
 - [ ] `eh_send`/`eh_send_batch`/`eh_receive`/`eh_checkpoint` exist in the catalog; `go generate ./pkg/dsl` is clean and the schemagen freshness test passes.
@@ -1378,12 +1397,12 @@ Clone the JMS layout (`pkg/protocol/jms/`). `apexctl` bundles kafka/jms today, s
   models **partitions/offsets/consumer-groups/checkpoints** (richer than the kafka mock, so
   per-partition metrics + checkpoint can be unit-tested without a live namespace). Seed from
   `pkg/protocol/kafka/broker.go`.
-- **New `pkg/protocol/eventhubs/realadapter.go`** (`//go:build eventhubs_real`): `azeventhubs`
+- **New `pkg/protocol/eventhubs/realadapter.go`** *(landed as `realclient_eventhubs.go`)* (`//go:build eventhubs_real`): `azeventhubs`
   `ProducerClient`/`ConsumerClient` (+ optional checkpoint store); connection-string **or**
   `DefaultAzureCredential` selection; client pooling keyed by auth+namespace+entity (copy
   `pkg/protocol/jms/realadapter_servicebus.go` pool); populate `PerPartition`, `AmqpLinkCredit`,
   throttle (on `amqp:resource-limit-exceeded`), bytes, and E2E latency telemetry.
-- **New `pkg/protocol/eventhubs/realadapter_default.go`** (`//go:build !eventhubs_real`):
+- **New `pkg/protocol/eventhubs/realadapter_default.go`** *(landed as `realclient_default.go`)* (`//go:build !eventhubs_real`):
   fail-closed unavailable stub (copy `realadapter_servicebus_default.go`).
 - **`cmd/{controller,generator,apexctl}/main.go`**: add blank import
   `_ "github.com/jasonczech/apexload/pkg/protocol/eventhubs"`.
@@ -1464,7 +1483,7 @@ Use the existing **JMS consumer-lag precedent** as the template.
 
 #### Phase 8 — Deployments, secrets, CI, docs
 
-- **New `deployments/azure/terraform/eventhubs.tf`**: `azurerm_eventhub_namespace`,
+- **New `deployments/azure/terraform/eventhubs.tf`** *(landed: file exists; the exact resource set was not re-audited here)*: `azurerm_eventhub_namespace`,
   `azurerm_eventhub`, and two `azurerm_eventhub_authorization_rule`s — a **Send** rule (producers)
   and a **Listen** rule (observer probe); write both connection strings/SAS to Key Vault.
   `azurerm_role_assignment`: **Azure Event Hubs Data Sender** on the controller + generator
@@ -1472,10 +1491,10 @@ Use the existing **JMS consumer-lag precedent** as the template.
   `keyvault.tf`).
 - **`deployments/k8s/aks/configmap.yaml`**: `APEXLOAD_EVENTHUBS_NAMESPACE`,
   `APEXLOAD_EVENTHUBS_AUTH`, and `APEXLOAD_EVENTHUBS_PROBE_CONSUMER_GROUP` (reuse the
-  already-wired workload identity).
+  already-wired workload identity). *(Planned / unimplemented: only `APEXLOAD_EVENTHUBS_NAMESPACE` is referenced in the repo (a terraform output description); `_AUTH` and `_PROBE_CONSUMER_GROUP` do not exist in code or manifests.)*
 - **`deployments/helm/apexload/values.yaml` + templates**: Event Hubs env/secret examples.
-- **`.github/workflows/go-protocol-tags.yml` + `Dockerfile`**: add `eventhubs_real` (and ensure
-  `kafka_real`) to the build-tag compile/test matrix so the tagged paths don't rot.
+- **`protocol-tags` job in `.github/workflows/ci.yml` (+ `protocol-integration.yml`) + `Dockerfile`**: add `eventhubs_real` (and ensure
+  `kafka_real`) to the build-tag compile/test matrix so the tagged paths don't rot. *(Landed: `.github/workflows/go-protocol-tags.yml` never existed; the matrix is in `ci.yml` and the enterprise Dockerfile profile builds all four tags.)*
 - Docs: update `CLAUDE.md` protocol list + `docs/COMPETITIVE_COMPARISON.md` if claims change.
 
 ---

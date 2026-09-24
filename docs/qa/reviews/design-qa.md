@@ -1,5 +1,7 @@
 # Execution Results design QA
 
+Status: Historical QA log (moved from the repository root 2026-09-24).
+
 final result: passed
 
 ## Findings

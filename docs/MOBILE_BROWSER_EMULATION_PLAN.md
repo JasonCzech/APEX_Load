@@ -6,13 +6,13 @@
 ## Objective
 Add mobile device emulation to APEX Load's existing browser protocol so that the same engine used for desktop browser tests can run mobile web tests with accurate device simulation.
 
-This is positioned as a configuration extension of the existing `pkg/protocol/browser` implementation, not a new protocol. The current implementation now uses a browser-family-aware runtime split: Chromium-backed execution continues through `chromedp`/CDP, while iOS/iPadOS-style WebKit execution uses Playwright. The public DSL surface remains the singular `browser` protocol.
+This is positioned as a configuration extension of the existing `pkg/protocol/browser` implementation, not a new protocol. The current implementation now uses a browser-family-aware runtime split: all engines (Chromium and WebKit) execute through Playwright (`playwright-go`), with CDP sessions used for Chromium-only telemetry. The original design sketched below used `chromedp`; that dependency is no longer in `go.mod`. The public DSL surface remains the singular `browser` protocol.
 
 ## Relationship To Other Plans
 - **Browser Client Metrics** (`docs/BROWSER_CLIENT_METRICS_PLAN.md`): That plan focuses on collecting user-perceived performance telemetry from browser sessions. Mobile emulation adds device simulation beneath it. Both features compose naturally — mobile emulation controls the browser environment, client metrics collect the telemetry.
 - **Protocol Extension** (`docs/PROTOCOL_EXTENSION_PLAN.md`): SOAP and Java-over-HTTP are separate protocol implementations. Mobile emulation stays within the existing browser protocol boundary.
 
-## Status Snapshot (May 2026)
+## Status Snapshot (rechecked 2026-09-24)
 
 ### Implemented
 - Named device profiles are compiled into `pkg/protocol/browser/devices.go`, including browser-family metadata, orientation defaults, CPU throttle defaults, network presets, and device tiers.
@@ -49,9 +49,9 @@ Rules that are already enforced:
 
 ### Capacity Guidance
 
-APEX Load capacity estimates now classify scenarios as `http`, `browser`, or `mixed`. Browser VUsers use conservative per-generator density caps based on device tier:
+APEX Load capacity estimates classify scenarios as `http`, `browser`, or `mixed`. The per-tier VUser figures below are **internal engineering ceilings** (`browserCapacityProfileForTier` in `pkg/api/capacity_planning.go`), not published density. The published density is capped at the diagnostic canary maximum of 5 browser VUsers per generator (`publishedBrowserDensityPerGenerator`; `pkg/api/browser_benchmark_evidence.go`), with a recommended start of 1-2 and a maximum of 5. See `docs/BROWSER_BENCHMARK_ARTIFACTS.md` and `docs/BROWSER_AND_MOBILE_SUPPORT.md` for the published envelope.
 
-| Device Tier | Max Browser VUsers / Generator | Memory Estimate / VUser | CPU Estimate / VUser |
+| Device Tier | Internal ceiling (VUsers / Generator; not published) | Memory Estimate / VUser | CPU Estimate / VUser |
 |:---|---:|---:|---:|
 | low | 40 | 180 MB | 0.055 cores |
 | mid | 32 | 220 MB | 0.070 cores |
@@ -64,7 +64,9 @@ This guidance is intentionally conservative. Mobile/browser VUsers should be use
 
 APEX Load should currently position browser device-profile runs as low-concurrency diagnostic workloads, not as high-density browser load generation.
 
-Recommended starting envelope per generator or local controller process:
+Superseded for published guidance: the recommended canary density is 1-2 browser VUsers per generator with a maximum of 5 (`docs/BROWSER_BENCHMARK_ARTIFACTS.md`). The per-profile ranges below are the original engineering starting points for local, non-published investigation only.
+
+Original starting envelope per generator or local controller process:
 
 - Desktop Chromium (`desktop_1080p`): start at `1-15` concurrent browser VUsers.
 - Mobile Chromium (`pixel_8`, `galaxy_s24`): start at `1-10` concurrent browser VUsers.
@@ -83,7 +85,7 @@ Scaling guidance:
 ### What The Browser Protocol Already Supports
 The existing `pkg/protocol/browser` implementation provides:
 
-- Chromium execution via `chromedp` and WebKit execution via Playwright, both under the same `browser` protocol surface
+- Chromium and WebKit execution both via Playwright (`playwright-go`), under the same `browser` protocol surface
 - Headless and headed modes
 - Custom user agent via `config["browser_user_agent"]`
 - Custom viewport dimensions via `config["browser_viewport_width"]` and `config["browser_viewport_height"]`
@@ -341,6 +343,8 @@ case "browser_long_press":
     actionErr = b.dispatchLongPress(actionCtx, selector, time.Duration(durationMs)*time.Millisecond)
 ```
 
+> The Go samples in this section are illustrative of the original `chromedp` design; the shipped runtime performs the equivalent calls through Playwright pages and CDP sessions.
+
 #### Auto Click-to-Tap
 When `touchMode` is enabled, `browser_click` automatically dispatches touch events:
 
@@ -490,11 +494,13 @@ The executable harness for these measurements lives in `pkg/protocol/browser/mob
 | Touch events don't trigger all mobile JS handlers | Some mobile interactions may not replay correctly | Test against real responsive web apps; provide fallback to direct JS execution |
 | Memory per mobile VUser exceeds expectations | Lower concurrency than planned | Document mobile browser VUsers as diagnostic, not bulk-load; recommend hybrid HTTP + browser canary model |
 | Device profile presets become stale | User agents and viewport sizes change with new device releases | Make profiles data-driven and easily extensible; support custom profile override |
-| CDP emulation API changes | Breaking changes in chromedp dependency | Pin chromedp version; test against stable Chrome releases |
+| CDP emulation API changes | Breaking changes in Playwright / CDP behavior | Pin the Playwright driver version (Dockerfile `PLAYWRIGHT_DRIVER_VERSION`); test against stable Chromium releases |
 
 ## 10. Dependencies
 
 ### Go Packages
+> Historical design note: the runtime now uses `github.com/mxschmitt/playwright-go`; the `chromedp` packages below are not in `go.mod`.
+
 - `github.com/chromedp/cdproto/emulation` — device metric override, touch emulation
 - `github.com/chromedp/cdproto/input` — touch event dispatch
 - Existing: `github.com/chromedp/chromedp`, `github.com/chromedp/cdproto/network`, `github.com/chromedp/cdproto/fetch`, `github.com/chromedp/cdproto/runtime`

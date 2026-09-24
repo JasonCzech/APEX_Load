@@ -27,8 +27,10 @@ go run ./cmd/apexctl run --script test.json --vusers 50 --duration 2m
 ### Building
 
 ```bash
-# Build all binaries
+# Build default binaries (generator, controller, apexctl, record-agent, collector-agent) into ./bin
 make build
+
+# Other targets: make generate | desktop | clients | java-vuser-runner | performance-smoke
 
 # Build only controller
 go build -o bin/controller ./cmd/controller
@@ -93,39 +95,26 @@ The full route list is generated from the controller route catalog.
 
 ```json
 {
-  "config": {
+  "script": {
+    "name": "Products_API",
+    "version": "1.0.0",
     "protocol": "http",
-    "base_url": "https://api.example.com",
-    "timeout_seconds": 30
-  },
-  "data_sources": [
-    {
-      "name": "users",
-      "type": "csv",
-      "path": "users.csv",
-      "cycling": "sequential"
-    }
-  ],
-  "init": [
-    {
-      "name": "login",
-      "type": "http",
-      "method": "POST",
-      "target": "/auth/login",
-      "body": "{\"user\": \"{{data.users.email}}\", \"pass\": \"{{data.users.password}}\"}"
-    }
-  ],
-  "actions": [
-    {
-      "name": "get_profile",
-      "type": "http",
-      "method": "GET",
-      "target": "/profile"
-    }
-  ],
-  "teardown": []
+    "config": {
+      "base_url": "https://api.example.com"
+    },
+    "actions": [
+      {
+        "name": "get_profile",
+        "type": "GET",
+        "target": "/profile",
+        "assertions": [{ "type": "status_code", "expected": 200 }]
+      }
+    ]
+  }
 }
 ```
+
+`protocol` belongs on the top-level `script` object, and HTTP actions use the method as `type`. For `init`, `teardown`, `data_sources`, and `goal_config`, see the full skeleton in [README.md](README.md#dsl-script-structure) and `examples/simple-http.json`.
 
 **Supported protocol surfaces:** `http`, `soap`, `java_http`, `java_vuser`, `bruno`, `browser`,
 `websocket`, `grpc`, `jms-solace`, `jms-ibmmq`, `jms-servicebus`, `kafka`, `eventhubs`, `database`, and `network` families. Real broker adapters are opt-in
@@ -135,43 +124,47 @@ behind build tags; see [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
 
 ```json
 {
-  "protocol": "browser",
-  "config": {
-    "base_url": "https://www.example.com",
-    "browser": {
-      "engine": "webkit",
-      "device_profile": "iphone_15_pro",
-      "touch_mode": true,
-      "orientation": "portrait",
-      "client_metrics": true,
-      "slow_mo_ms": 50,
-      "viewport": {
-        "width": 393,
-        "height": 852
+  "script": {
+    "name": "Mobile_Home",
+    "version": "1.0.0",
+    "protocol": "browser",
+    "config": {
+      "base_url": "https://www.example.com",
+      "browser": {
+        "engine": "webkit",
+        "device_profile": "iphone_15_pro",
+        "touch_mode": true,
+        "orientation": "portrait",
+        "client_metrics": true,
+        "slow_mo_ms": 50,
+        "viewport": {
+          "width": 393,
+          "height": 852
+        }
       }
-    }
-  },
-  "actions": [
-    {
-      "name": "open-home",
-      "type": "browser_navigate",
-      "target": "/"
     },
-    {
-      "name": "open-menu",
-      "type": "browser_tap",
-      "selector": "button[data-testid='menu-toggle']"
-    },
-    {
-      "name": "swipe-carousel",
-      "type": "browser_swipe",
-      "selector": "[data-testid='hero-carousel']",
-      "params": {
-        "direction": "left",
-        "distance": 220
+    "actions": [
+      {
+        "name": "open-home",
+        "type": "browser_navigate",
+        "target": "/"
+      },
+      {
+        "name": "open-menu",
+        "type": "browser_tap",
+        "selector": "button[data-testid='menu-toggle']"
+      },
+      {
+        "name": "swipe-carousel",
+        "type": "browser_swipe",
+        "selector": "[data-testid='hero-carousel']",
+        "params": {
+          "direction": "left",
+          "distance": 220
+        }
       }
-    }
-  ]
+    ]
+  }
 }
 ```
 
@@ -329,11 +322,28 @@ go run ./cmd/apexctl run \
 | `--api` | (none) | Execute through the controller API |
 | `--env, -env` | (repeatable) | Runtime placeholder override (`KEY=value`) |
 | `--base-url` | (none) | Override the script base URL |
+| `--junit` | (none) | Write a JUnit XML report to this path |
+| `--timeout` | duration + 30m | API run wait timeout (with `--api`) |
+| `--transaction-rule` | (repeatable) | Exact per-transaction SLA rule `transaction\|metric\|comparator\|threshold\|severity` (requires `--api`) |
+| `--transaction-rules-file` | (none) | JSON file of transaction SLA rules (requires `--api`) |
 | `--p95-latency-ms` | (none) | Fail the run if P95 latency exceeds this threshold |
 | `--max-error-pct` | (none) | Fail the run if error rate exceeds this threshold |
 | `--max-avg-server-processing-ms` | (none) | Fail the run if average server processing exceeds this threshold |
 | `--max-avg-transfer-ms` | (none) | Fail the run if average transfer exceeds this threshold |
 | `--max-error-count` | (none) | Fail the run if total error count exceeds this threshold |
+
+### Other apexctl commands
+
+| Command | Purpose |
+|---------|---------|
+| `ci` | CI performance gate, locally or through a controller |
+| `script` | Validate or explain a JSON DSL script |
+| `status` / `wait` | Print or await a test's status and SLA verdict |
+| `archive` | Inspect an archived run (`verify` re-checks artifact integrity) |
+| `record` / `record-agent` | Browser recording and the localhost recording bridge |
+| `github` | GitHub Enterprise sync/check workflows |
+| `import` / `library` | Bruno/Grafana import; portable project library bundles |
+| `version` | Print version information |
 
 ---
 
@@ -354,8 +364,17 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 ## Environment Variables
 
+The complete list lives in the [README Environment Variables section](README.md#environment-variables). Most common:
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
+| `APEXLOAD_ADDR` | `127.0.0.1:8080` locally; `:8080` when `APEXLOAD_ENV=production\|prod` | HTTP server bind address |
+| `APEXLOAD_DB` | `apexload.db` | SQLite database path |
+| `APEXLOAD_GENERATORS` | unset | Comma-separated generator gRPC targets; when set, the controller uses the distributed backend |
+| `APEXLOAD_GENERATOR_LISTEN_ADDR` | `:9090` | Generator gRPC bind address; each generator process on the same host needs a distinct address |
+| `APEXLOAD_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error` |
+
+----------|---------|---------|
 | `APEXLOAD_ADDR` | `:8080` | HTTP server bind address |
 | `APEXLOAD_DB` | `apexload.db` | SQLite database path |
 | `APEXLOAD_LOG_LEVEL` | `info` | Controller/generator logging level (`debug`, `info`, `warn`, `error`); `LOG_LEVEL` is a legacy alias |
@@ -380,8 +399,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 ## Performance Tips
 
-- **Increase throughput**: Raise `connection_pool_size` in config
-- **Reduce errors**: Lower VUsers or increase `timeout_seconds`
+- **Reduce errors**: Lower VUsers or check target capacity and per-action timeouts
 - **Faster ramp**: Reduce `--ramp-up` duration (trade-off: less stable)
 - **Smaller memory**: Reduce `--vusers` or test duration
 - **Better accuracy**: Increase test duration (more stable metrics)
@@ -390,8 +408,9 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 
 ## Documentation Map
 
-| Document | For |
-|----------|-----|
+See [docs/INDEX.md](docs/INDEX.md) for the canonical documentation map.
+
+----------|-----|
 | [README.md](README.md) | Overview, quick start, basic usage |
 | [docs/INDEX.md](docs/INDEX.md) | Canonical documentation map |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development setup, conventions, architecture internals |
@@ -422,7 +441,7 @@ See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed solutions.
 → Close other processes: pkill -f "cmd/controller"
 
 "Invalid script: protocol required"
-→ Add config.protocol to your script JSON
+→ Add "protocol" to the top-level script object (not config)
 
 "No tests currently running"
 → Dashboard is working; just no active tests

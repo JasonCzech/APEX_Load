@@ -1,5 +1,7 @@
 # YAML / Bruno import — re-review round 2 (2026-07-16)
 
+Status: Historical (archived 2026-09-24).
+
 Follow-up to [BRUNO_YAML_IMPORT_REVIEW_2026-07-16.md](BRUNO_YAML_IMPORT_REVIEW_2026-07-16.md). Another agent
 applied a large fix pass (~4,100 changed lines across the feature). This round re-verified all 36 original
 findings against the current code and scanned the fix hunks for regressions. Method: 7 area agents (fix-status +

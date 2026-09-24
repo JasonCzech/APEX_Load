@@ -73,10 +73,12 @@ common contract and a shared post-pass (parameterization + source-traceability).
 
 Each lives in `pkg/convert/<format>/` and exposes a `Convert(...) (*ConvertResult, error)`:
 `har`, `jmeter`, `k6`, `devweb`, `openapi`, `postman`, `wsdl`, `asyncapi`, `raml`,
-`enterprisearchive`, `trueclient`. The HTTP-family formats (HAR, DevWeb, k6, raw HTTP,
+`enterprisearchive`, `trueclient`, `bruno`, `cloudtest`, `salesforce`, `agentforce`, `mulesoft`,
+`eventhubscapture`, `brokerconfig`, `grafana` (monitoring dashboards), and `recorderjson`. Shared
+helpers (`sample`, `paramize`, `correlate`, `importreview`, `sourceview`, …) live beside them. The HTTP-family formats (HAR, DevWeb, k6, raw HTTP,
 cURL) funnel through a single shared core:
 
-- **`pkg/convert/sample/converter.go` → `Convert(req ImportRequest)` (`:89`).** It parses
+- **`pkg/convert/sample/converter.go` → `Convert(req ImportRequest)`.** It parses
   the source into canonical request/response `exchange` pairs, detects the base URL, runs
   **correlation detection** (values that appear in a response and are reused in a later
   request), builds one `dsl.Action` per exchange (method / target / headers / body), adds
@@ -115,7 +117,7 @@ flowchart TD
 ### 1.4 Parameterization pass (`pkg/convert/paramize`)
 
 Runs **after** conversion, on **every** import, in
-`pkg/convert/paramize/paramize.go → Suggest(script, opts)` (`:126`). It proposes three
+`pkg/convert/paramize/paramize.go → Suggest(script, opts)`. It proposes three
 kinds of edits so the script is data-driven rather than hard-coded:
 
 | Kind | What it finds | Replacement |
@@ -124,7 +126,7 @@ kinds of edits so the script is data-driven rather than hard-coded:
 | `data_param` | parameterizable literals (user id, email, search term) | `{{data.*}}` / a `Parameter` |
 | `secret` | credential-shaped values (passwords, tokens, keys) | `{{secret.*}}` |
 
-Suggestions at or above `autoApplyConfidence = 0.8` (`paramize.go:37`) are pre-selected;
+Suggestions at or above `autoApplyConfidence = 0.8` (in `paramize.go`) are pre-selected;
 high-confidence correlations may already be wired into the draft (`PreApplied`). The user
 accepts/rejects, then applies via `POST /api/v1/scripts/import/parameterize/apply`.
 
@@ -135,12 +137,12 @@ The flagship on-ramp is the embedded browser recorder:
 1. **Capture** — `pkg/recorder/browser/capture.js` is injected into every frame. It
    listens for user interactions, builds shadow-DOM-aware CSS/XPath selectors, and posts
    each event to Go via the exposed binding `window.__apexloadRecord(JSON.stringify(...))`
-   (`capture.js:81`). Pause/resume and the element-picker are driven from Go through
+   (in `capture.js`). Pause/resume and the element-picker are driven from Go through
    `window.__apexloadRecorder*` globals.
 2. **Session model** — `pkg/recorder/recorder.go` accumulates `Session` /
    `RecordedRequest` (method, URL, headers, body, status, timings, transaction/step
    annotations, WebSocket messages).
-3. **Convert** — `pkg/recorder/converter.go → ConvertSession(session, name)` (`:46`)
+3. **Convert** — `pkg/recorder/converter.go → ConvertSession(session, name)`
    produces a `dsl.Script` (HTTP or WebSocket actions), extracts correlations, optionally
    parameterizes recorded inputs, and can export a side-car HAR (`pkg/recorder/har.go`).
 
@@ -208,7 +210,7 @@ type ActionSpec struct {
 ```
 
 Specs are assembled per-protocol in `catalog_*.go` (one file per protocol, mirroring the
-`pkg/protocol/*` layout) and collected by `actionCatalogSeeds()` (`catalog.go:93`). This
+`pkg/protocol/*` layout) and collected by `actionCatalogSeeds()` (`catalog.go`). This
 **one catalog** feeds: the validator, `GET /api/v1/dsl/actions`, the dashboard script
 editor, and the generated docs (`docs/dsl.schema.json` + [`DSL_ACTION_REFERENCE.md`](DSL_ACTION_REFERENCE.md)).
 
@@ -247,24 +249,24 @@ the `dsl.Script` data structure.
 
 ### 3.1 One goroutine per VUser
 
-`pkg/engine/engine.go → Engine.Run` (`:104`) launches `vusers` goroutines with ramp-up
-(`for i := 0; i < e.vusers; i++ { … go func(){…}() }`, `:151`/`:177`). Each goroutine runs
+`pkg/engine/engine.go → Engine.Run` launches `vusers` goroutines with ramp-up
+(`for i := 0; i < e.vusers; i++ { … go func(){…}() }`). Each goroutine runs
 one `VUser` (`pkg/engine/vuser.go`, ~2–4 KB stack), holding a pointer to the parsed
 `*dsl.Script` and a `protocol.Protocol` handler.
 
 ### 3.2 The interpreter loop
 
-`VUser.Run(ctx)` (`vuser.go:79`) executes the script's phases: **`Init` once → loop over
-`Actions` → `Teardown` once**. Inside the loop, the `runOne` closure (`vuser.go:233`) is
+`VUser.Run(ctx)` (`vuser.go`) executes the script's phases: **`Init` once → loop over
+`Actions` → `Teardown` once**. Inside the loop, the `runOne` closure (a local function value inside `VUser.Run` in `vuser.go`) is
 the action-dispatch switch:
 
 - `control_if` / `control_loop` — evaluated *at runtime* via `vu.evalCondition`
-  (`pkg/engine/control_flow.go:31`), which supports both a legacy `left/op/right` form and
-  CEL expressions (`pkg/engine/condition_expr.go:38`, normalized in
+  (`pkg/engine/control_flow.go`), which supports both a legacy `left/op/right` form and
+  CEL expressions (`pkg/engine/condition_expr.go`, normalized in
   `pkg/dsl/condition_expr.go`). The closure recurses into the chosen branch / loop body via
-  `runActions` (`vuser.go:400`).
-- **engine-level actions** — `vu.handleEngineAction` (`vuser.go:305` →
-  `pkg/engine/vuser_source_actions.go:22`) handles `rendezvous`, `source_transaction`,
+  `runActions`, a sibling closure declared in the same function in `vuser.go` (not a package-level function).
+- **engine-level actions** — `vu.handleEngineAction` (`vuser.go` →
+  `pkg/engine/vuser_source_actions.go`) handles `rendezvous`, `source_transaction`,
   `http_oauth2_token`, `source_*`, etc. without touching a protocol.
 - **everything else** — resolved and dispatched to a protocol handler.
 
@@ -300,7 +302,7 @@ sequenceDiagram
 
 ### 3.3 Resolution & templating (runtime)
 
-Just before a protocol action runs, `vu.resolveAction` (`pkg/engine/vuser_resolve.go:152`)
+Just before a protocol action runs, `vu.resolveAction` (`pkg/engine/vuser_resolve.go`)
 expands every template in `target`, `headers`, `body`, and `params` via
 `interpolateWithSecrets`, producing a `*protocol.Action` with fully-resolved strings (plus
 redacted copies for logging). Namespaces:
@@ -316,7 +318,7 @@ redacted copies for logging). Namespaces:
 
 ### 3.4 Protocol dispatch
 
-All protocols implement one interface — `pkg/protocol/protocol.go:34`:
+All protocols implement one interface — `pkg/protocol/protocol.go` (the `Protocol` interface):
 
 ```go
 type Protocol interface {
@@ -330,22 +332,22 @@ type Protocol interface {
 
 Handlers are **compiled in and registered at `init()`** via `pkg/protocol/registry.go`
 (`Register`/`Get`) — these are *not* Go runtime plugins; the registry just maps a protocol
-name to a factory. Worked example, HTTP (`pkg/protocol/http/http.go → Execute`, `:98`):
+name to a factory. Worked example, HTTP (`pkg/protocol/http/http.go → Execute`):
 build the `*http.Request` → send via `net/http` (with DNS/TLS/TTFB trace timing) → read the
 response → run extractors (JSONPath/XPath/regex) → evaluate assertions → return a
 `*protocol.Result`.
 
 ### 3.5 The correlation feedback loop
 
-A protocol's `Result.Extractions` (`protocol.go:246`, `map[string]string`) is merged back
-into `vu.Variables` by `vu.mergeExtractions` (`vuser_resolve.go:345`). That's what lets a
+A protocol's `Result.Extractions` (`protocol.go`, `map[string]string`) is merged back
+into `vu.Variables` by `vu.mergeExtractions` (`vuser_resolve.go`). That's what lets a
 token extracted from one response resolve a `{{var.token}}` in the next action — the same
 correlation an importer detected at Stage 1, now closing at runtime.
 
 ### 3.6 Metrics & pacing
 
 Results are recorded through a **buffered channel** (cap 10,000) via
-`MetricsCollector.Record` (`pkg/engine/metrics.go:244`) to keep the hot path lock-free;
+`MetricsCollector.Record` (`pkg/engine/metrics.go`) to keep the hot path lock-free;
 percentiles are computed with a streaming t-digest. Think-time and inter-iteration pacing
 live in `pkg/engine/pacing.go`.
 
@@ -356,17 +358,17 @@ live in `pkg/engine/pacing.go`.
 A test is created and started through the API/runner, then executed either in-process or
 fanned out to generator pods.
 
-- `POST /api/v1/tests` → `handleCreateTest` (`pkg/api/handlers.go:36`) →
-  `TestRunner.CreateTest` (`pkg/api/testcreation.go:64`).
+- `POST /api/v1/tests` → `handleCreateTest` (`pkg/api/handlers.go`) →
+  `TestRunner.CreateTest` (`pkg/api/testcreation.go`).
 - `POST /api/v1/tests/{id}/start` → `TestRunner.StartTestWithOptions`
-  (`pkg/api/testexecution.go:26`).
+  (`pkg/api/testexecution.go`).
 - In-process runs build a `*engine.MultiGroupEngine` via `buildRunEngine` →
-  `engine.NewMultiGroup` (`pkg/api/testexecution.go:836`/`:839`).
+  `engine.NewMultiGroup` (`pkg/api/testexecution.go`).
 
 For multi-pod runs the controller ships each generator an `Assignment` whose
-`ScriptContent []byte` is the **raw DSL JSON** (`pkg/distributed/generatorrpc/client.go:18`).
+`ScriptContent []byte` is the **raw DSL JSON** (`pkg/distributed/generatorrpc/client.go`).
 The generator service does exactly what the in-process path does
-(`pkg/distributed/generatorrpc/service.go:1188`):
+(`pkg/distributed/generatorrpc/service.go`):
 
 ```go
 var script dsl.Script

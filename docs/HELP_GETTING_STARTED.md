@@ -29,7 +29,7 @@ Save as sample_target.py and run `python3 sample_target.py`. Keep it running unt
 
 ## Create and prove the script
 
-Open [Scripts](#/scripts), create a script and use the JSON editor to load the example below. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
+Open [Scripts](#/scripts), create a script and use the JSON editor to load the example below. The editor accepts the wrapped form shown here (`{"script": {...}}`, the shape API requests use) or the bare script object. Save it in the selected project. The example sends only one GET per iteration and includes explicit response checks.
 
 ```json
 {

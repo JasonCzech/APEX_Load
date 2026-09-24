@@ -3,7 +3,7 @@
 Rolling log for the test program. Two sources feed it:
 
 1. **Inherited** — the 11 defects left open by
-   [`docs/reviews/WHOLE_APP_REVIEW_2026-08-02.md`](../reviews/WHOLE_APP_REVIEW_2026-08-02.md).
+   [`docs/archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md`](../archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md).
    Each is *partly* fixed; the review records exactly which half remains.
 2. **Found** — anything this program's suites catch, logged as `QA-nnn`.
 

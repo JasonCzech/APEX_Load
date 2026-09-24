@@ -39,6 +39,6 @@ Passed `cd dashboard && npm run test:cycle` after all production changes and rev
 - **8 local-auth browser workflows passed.**
 - `git diff --check` passed.
 
-All 110 final matrix screenshots are retained in `theme-matrix/`, with review sheets for each theme/width. The populated-workspace before/after comparisons and final Results capture are recorded in the root `design-qa.md`. The final Light Command Center screenshot was reopened to confirm the transition-state capture was replaced; final Solarized Light and Monokai Results captures were inspected at full size after the selection-bar correction.
+All 110 final matrix screenshots are retained in `theme-matrix/`, with review sheets for each theme/width. The populated-workspace before/after comparisons and final Results capture are recorded in [`design-qa.md`](../design-qa.md). The final Light Command Center screenshot was reopened to confirm the transition-state capture was replaced; final Solarized Light and Monokai Results captures were inspected at full size after the selection-bar correction.
 
 The preview is restored to Dashboard in Dark theme at normal viewport size. Temporary onboarding input and result selection were cleared; no existing users or real runs were changed. The existing controller was not restarted. No original-scope work items remain open in this completion record; domain-specific exceptions are documented above.

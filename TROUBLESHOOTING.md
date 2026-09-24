@@ -32,8 +32,8 @@ npm run build
 
 2. If connection shows error:
    ```bash
-   # Check controller logs for WebSocket errors
-   grep -i "websocket" controller.log
+   # Check controller logs (wherever you redirect them) for WebSocket errors
+   grep -i "websocket" <controller-log-file>
    ```
 
 3. Verify API server is responding:
@@ -74,7 +74,7 @@ npm run build
 - Some enterprise proxies/intermediaries still present legacy chains that trigger this path.
 
 **Solutions:**
-1. Enable compatibility mode through controller startup flags:
+1. Enable compatibility mode through controller environment variables:
    ```bash
    APEXLOAD_ENABLE_TLS_COMPAT=true go run ./cmd/controller
    ```
@@ -148,7 +148,7 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
 3. Check protocol availability:
    ```bash
    # Inspect the code-owned action catalog exposed by the running controller
-   curl -fsS "$APEXLOAD_URL/api/v1/dsl/actions" | jq '.protocols'
+   curl -fsS "http://localhost:8080/api/v1/dsl/actions" | jq '.protocols'
    ```
 
 4. Try restarting controller and retry
@@ -199,16 +199,7 @@ APEXLOAD_ADDR=:9000 go run ./cmd/controller
    curl -v http://target-system/endpoint
    ```
 
-2. Increase request timeout:
-   ```json
-   {
-     "config": {
-       "timeout_seconds": 60
-     }
-   }
-   ```
-
-3. Reduce VUsers to find breaking point:
+2. Reduce VUsers to find breaking point:
    - Start with 10 VUsers
    - Gradually increase (10 → 50 → 100)
    - Identify where error rate jumps
@@ -265,7 +256,7 @@ go build -o apexctl ./cmd/apexctl
    ```
 
 2. Check required fields:
-   - config.protocol must be set
+   - `protocol` must be set on the top-level `script` object (not in `config`)
    - actions array must not be empty
    - All template variables must be defined
 
@@ -352,20 +343,11 @@ go test ./...
 **Symptom:** Only getting 100 req/sec with 1000 VUsers
 
 **Causes and solutions:**
-1. **Connection pool too small:**
-   ```json
-   {
-     "config": {
-       "connection_pool_size": 50
-     }
-   }
-   ```
-
-2. **Think time too high:**
+1. **Think time too high:**
    - Check script think_time config
    - Reduce or set `ignore: true` for performance testing
 
-3. **Target system bottleneck:**
+2. **Target system bottleneck:**
    - Test target directly: `ab -n 10000 http://target/endpoint`
    - Increase target server capacity
 
@@ -438,10 +420,10 @@ sqlite3 apexload.db
 SELECT id, name, protocol, created_at FROM scripts;
 
 # Check tests
-SELECT id, name, status, vusers, started_at FROM tests;
+SELECT id, name, status, total_vusers, started_at FROM tests;
 
-# Check results
-SELECT id, test_id, total_transactions, total_errors FROM results;
+# Check run archives (per-run result data lives in the archive; imported external results are in external_result_imports)
+SELECT test_id, transaction_count, completed_at FROM run_archives;
 
 # Exit
 .quit
@@ -468,11 +450,11 @@ curl -w '@curl-format.txt' -o /dev/null -s http://localhost:8080/api/v1/scripts
 
 ```bash
 # CPU profile
-go test -cpuprofile=cpu.prof -bench=BenchmarkEngine ./pkg/engine
+go test -run='^$' -cpuprofile=cpu.prof -bench=BenchmarkHarnessOverhead ./pkg/engine
 go tool pprof cpu.prof
 
 # Memory profile
-go test -memprofile=mem.prof -bench=BenchmarkEngine ./pkg/engine
+go test -run='^$' -memprofile=mem.prof -bench=BenchmarkHarnessOverhead ./pkg/engine
 go tool pprof mem.prof
 ```
 
@@ -486,7 +468,7 @@ When reporting issues:
    ```bash
    # Controller logs
    go run ./cmd/controller > controller.log 2>&1 &
-   # Let it run, then attach controller.log
+   # Let it run, then attach the log file
    ```
 
 2. **Include details:**

@@ -45,49 +45,49 @@ P1 means a functional defect that can misdirect or misinform an operator. P2 mea
 
 Real BOBPM scope has no active runs. The empty state is calm and readable, but gives no direct New Test action, no explicit scope in its message, and no distinction between no selection and no active runs. Open analysis changes only the toolbar. Open Results successfully navigates, then stops at the missing-release prerequisite. That extra prerequisite should be explained or resolved before handoff.
 
-![Empty Command Center](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/04-empty.png)
+![Empty Command Center](../../../../docs/qa/reviews/command-center-audit-2026-09-12/04-empty.png)
 
-![Analysis controls with no run](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/05-empty-analysis.png)
+![Analysis controls with no run](../../../../docs/qa/reviews/command-center-audit-2026-09-12/05-empty-analysis.png)
 
-![Results handoff without a selected release](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/06-empty-results-destination.png)
+![Results handoff without a selected release](../../../../docs/qa/reviews/command-center-audit-2026-09-12/06-empty-results-destination.png)
 
 ### 2. Two queued runs and a selected planned run — mostly sound
 
 The two real queued runs are distinguishable by name and reference. Selecting one reveals planned load and clear no-sample states. Start Test, Abort, notes, and advanced details are present. The picker does not explain whether a queued item is awaiting a manual start, a schedule, or capacity; it surfaces creation dates rather than a wait reason. The compact planned-load value truncates visually, although the accessible text and explanatory panel preserve the meaning.
 
-![Two queued runs](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/02-multiple-queued-desktop.png)
+![Two queued runs](../../../../docs/qa/reviews/command-center-audit-2026-09-12/02-multiple-queued-desktop.png)
 
-![Selected queued run](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/03-queued-run.png)
+![Selected queued run](../../../../docs/qa/reviews/command-center-audit-2026-09-12/03-queued-run.png)
 
 ### 3. Six active runs — inadequate for triage
 
 Controlled example with four RUNNING, one PAUSED, and one PENDING item. The entire row is clickable and all states have text labels. The list lacks health and scale information even though the selected-run screen can show those metrics. Similar names are severely shortened in the compact topbar. The two chips show recent running entries rather than the error-heavy test. Lifecycle RUNNING should remain distinct from a health assessment.
 
-![Six active runs](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/10-multiple-runs-compact.png)
+![Six active runs](../../../../docs/qa/reviews/command-center-audit-2026-09-12/10-multiple-runs-compact.png)
 
 ### 4. Select an active run and return/reload — controls strong, navigation weak
 
 The peak-traffic run opens via click and Enter. Its controls identify the name/reference and surface load, remaining time, TPS, and error rate. The URL remains the generic Command Center URL. Sidebar Command Center does not return to the chooser; reload does. The selected peak-traffic run does not appear in either of the two topbar chips. No All active runs control is available here.
 
-![Selected active run](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/09-selected-active-run.png)
+![Selected active run](../../../../docs/qa/reviews/command-center-audit-2026-09-12/09-selected-active-run.png)
 
 ### 5. Pause confirmation — good safeguard
 
 The dialog names Checkout API — peak traffic and AUDIT-RUN-2, explains that VUsers pause at their next action boundary, and initially focuses Cancel. Escape dismisses the dialog. No pause request was submitted. This is a pattern worth preserving as run switching improves.
 
-![Pause confirmation](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/11-pause-confirmation.png)
+![Pause confirmation](../../../../docs/qa/reviews/command-center-audit-2026-09-12/11-pause-confirmation.png)
 
 ### 6. Active-run overflow — broken destination
 
 Clicking +4 runs navigates to Scenario Library, confirmed by the heading, URL, and saved-scenario table. This is a route mapping defect, not simply an unclear label. The overflow link should reveal the other active runs without making the operator hunt through saved scenarios.
 
-![Overflow opens Scenario Library](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/08-overflow-scenario-library.png)
+![Overflow opens Scenario Library](../../../../docs/qa/reviews/command-center-audit-2026-09-12/08-overflow-scenario-library.png)
 
 ### 7. Active-run catalog fails — misleading empty state
 
 Returning HTTP 503 from the active-run catalog yields the same No active run selected message and start-test guidance as a legitimate empty result. No catalog error or retry action appears in the Command Center. Source confirms the catch handler clears discovered runs. The synthetic fixture's disconnected transport indicator is not the evidence for this finding; the missing catalog error is.
 
-![Catalog failure appears as empty state](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/command-center-audit-2026-09-12/12-discovery-failure.png)
+![Catalog failure appears as empty state](../../../../docs/qa/reviews/command-center-audit-2026-09-12/12-discovery-failure.png)
 
 ## Accessibility observations and limits
 
@@ -99,12 +99,12 @@ Full Tab order, screen-reader output, focus restoration for every dialog, contra
 
 ## Source anchors
 
-- [Overflow routing](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/App.tsx:3210)
-- [Discovery error handling](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.tsx:735)
-- [Transient selection wiring](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.tsx:1316)
-- [Empty-state content/actions](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.tsx:1541)
-- [Unconditional analysis controls](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/CommandCenterPrototype.tsx:1296)
-- [Discovery scope](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/commandCenterRunDiscovery.ts:24)
+- [Overflow routing](../../../../dashboard/src/App.tsx#L3210)
+- [Discovery error handling](../../../../dashboard/src/components/CommandCenterPrototype.tsx#L735)
+- [Transient selection wiring](../../../../dashboard/src/components/CommandCenterPrototype.tsx#L1316)
+- [Empty-state content/actions](../../../../dashboard/src/components/CommandCenterPrototype.tsx#L1541)
+- [Unconditional analysis controls](../../../../dashboard/src/components/CommandCenterPrototype.tsx#L1296)
+- [Discovery scope](../../../../dashboard/src/components/commandCenterRunDiscovery.ts#L24)
 
 Additional source-only concern: discovery filters project and application but has no release parameter, while a release is displayed in the sidebar and Results requires release scope. Define and communicate whether Command Center is application-wide or release-specific; cross-release behavior was not directly exercised in this audit.
 

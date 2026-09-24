@@ -44,13 +44,13 @@ Primary seams:
 
 - `pkg/dsl/types.go` for explicit browser metric capture settings
 - `pkg/protocol/protocol.go` for optional result fields
-- `pkg/protocol/browser/browser.go` for runtime collection via chromedp/CDP
+- `pkg/protocol/browser/browser.go` for runtime collection via Playwright and CDP sessions
 - `pkg/engine/metrics.go` for summarized browser KPI aggregation
 - `pkg/api/runner.go` for live metric transport
 - `pkg/api/archive.go` for archived per-action browser metric persistence
 - `dashboard/src/types.ts` and browser replay UI surfaces for presentation
 
-## Status Snapshot (May 2026)
+## Status Snapshot (rechecked 2026-09-24)
 
 ### Implemented
 - Product scope is locked to browser web applications running through the existing `browser` protocol.

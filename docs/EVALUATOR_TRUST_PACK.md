@@ -1,5 +1,7 @@
 # APEX Load Evaluator Trust Pack
 
+> Point-in-time (rechecked June 2026); [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) is authoritative.
+
 This pack gives evaluators a short, reproducible path through the current competitive claims without implying unsupported parity.
 
 ## One-Command Seed

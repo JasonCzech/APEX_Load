@@ -10,7 +10,6 @@ import HelpWorkspace from './HelpWorkspace'
 import { useHelpHash } from '../hooks/useHelpHash'
 import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
 import dslSchemaURL from '../../../docs/dsl.schema.json?url'
-import dslReferenceGuideDocxURL from '../../../docs/APEX_Load_DSL_Reference_Guide_v2.1.docx?url'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 
 const CloudTestParityDashboard = lazy(() => import('./CloudTestParityDashboard'))
@@ -85,7 +84,6 @@ function HelpArticleContent({ article, section, isAdmin }: { article: HelpArticl
       <p>New to APEX Load scripting? Start with <a href="#/docs?guide=user-guide&article=dsl-operator-guide">DSL scripting for LoadRunner & JMeter operators</a> for a worked example and an explanation of how virtual users execute it.</p>
       <p><a href={dslSchemaURL} download="dsl.schema.json">Download the generated DSL JSON schema</a></p>
     </>}
-    {article.id === 'first-test' && <p><a href={dslReferenceGuideDocxURL} download="APEX_Load_DSL_Reference_Guide_v2.1.docx">Download the APEX Load DSL Reference Guide (.docx)</a></p>}
     {article.id === 'api-overview' && <label className="help-controller-url">Controller API URL
       <input type="url" value={controllerURL} onChange={event => setControllerURL(event.target.value)} aria-invalid={!validURL} />
       <span>{validURL ? 'Examples below use this URL. No request is sent.' : 'Enter an HTTP(S) URL without credentials, query parameters or shell characters.'}</span>

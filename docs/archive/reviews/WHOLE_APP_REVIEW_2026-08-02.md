@@ -1,5 +1,7 @@
 # Whole-Application Review — 2026-08-02
 
+Status: Historical (archived 2026-09-24).
+
 **Branch:** main @ dc05008ab (clean tree, == origin/main) · **Scope achieved: COMPLETE — all 38 planned areas** (~572k of ~620k first-party LOC, plus six whole-tree cross-cutting sweeps) — the ENTIRE Go backend and ops surface, the ENTIRE dashboard frontend, and every cross-cutting sweep (concurrency, storage-dialect parity, generated-artifact/API-contract, test-quality, docs-accuracy, dependency-upgrade regressions): the pkg/api control plane (fully partitioned), the recording/replay pipeline, all importer families, pkg/engine, pkg/storage, pkg/distributed, the transform + data-protection libraries, the full pkg/protocol tree, CLI/controller/deployments/mcp, and all nine dashboard areas. Nothing in the planned area map is outstanding (storage-dialect parity, CC-2, was folded into AREA-21 where `rewriteSQL` and the Postgres FK derivation were audited directly).
 **Method:** 38 area finders over a git-archive snapshot of HEAD; 428 raw findings → 423 after dedup → **412 confirmed** (323 defects + 89 opportunities) / 11 refuted. **Two verification protocols were used and are labelled per finding.** Backend areas (AREA-01..23) ran a token-constrained lean pass: 1 independent adversarial verifier per claimed-Critical/High finding and per suspected regression, batched single-vote verification for Medium/Low and opportunities. The dashboard areas (AREA-24..32) ran the full protocol: semantic dedup, **2 independent verifiers plus a tiebreaker** on every High and regression suspect, a completeness critic, and 5 targeted gap probes (GAPFE-1..5) whose findings were verified the same way. Prior-findings ledger (316 entries from the July reviews) tags rediscoveries instead of double-reporting them.
 
@@ -893,7 +895,7 @@ Chain established at HEAD.
 3. Server returns every request: `handleGetRecording` → `GetSessionWithOptions(id, true, 0)` → `snapshot()` copies all `s.Requests` (`pkg/recorder/recorder.go:611-641,648-668`); `Body`/`ResponseBody`/`WebSocketMessages` are JSON fields (`recorder.go:65,86,101`), captured up to 512 KiB each by default (`recorder.go:33,312-314`), up to 10,000 requests / 256 MiB of bodies (`recorder.go:35-36`). `sanitizeRecorderSessionForResponse` re-scrubs every body per poll but does not strip them (`pkg/api/handlers_recorder.go:243-266`). No gzip (`writeJSON`, `pkg/api/handlers.go:1569`).
 4. Client does `res.text()` + `JSON.parse` (`apiClient.ts:299-310`), then `mergeRecordingSession` rebuilds a Map and sorts the whole array (`RecordingStudio.tsx:162-181`) — to render `request_count` plus `[...requests].reverse().slice(0,20)` (`:3306-3340`).
 
-Refuting guards found but insufficient: `document.hidden` skips the poll (`:1092`) and an in-flight guard prevents overlapping requests (`:1085-1091`) — so ticks serialize instead of piling up, and a backgrounded dashboard tab is spared. Not a regression: the incremental `since=last_seq` path was deliberately reverted to fix W59 (docs/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:562-566); the correctness fix is what reintroduced the unbounded cost.
+Refuting guards found but insufficient: `document.hidden` skips the poll (`:1092`) and an in-flight guard prevents overlapping requests (`:1085-1091`) — so ticks serialize instead of piling up, and a backgrounded dashboard tab is spared. Not a regression: the incremental `since=last_seq` path was deliberately reverted to fix W59 (docs/archive/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:562-566); the correctness fix is what reintroduced the unbounded cost.
 
 ---
 
@@ -1776,7 +1778,7 @@ Chain, all at snapshot HEAD dc05008ab:
 3. `List` (334-353) returns `session.summary()`; handler pkg/api/handlers_browser_recorder.go:334 exposes it as GET sessions list.
 4. Dashboard renders it: dashboard/src/components/RecordingStudio.tsx:1106 (listBrowserRecordings) and :2805 `{session.network_request_count || 0} requests`.
 
-Mitigations found: single-session GET/stop responses use `fullSnapshot` (correct), and the list still shows a nonzero step count — so "operator concludes capture failed and deletes it" is overstated; the misreporting itself is real. Prior item W44 (docs/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:442) is late graceful-stop artifact recovery — a different defect, not a regression.
+Mitigations found: single-session GET/stop responses use `fullSnapshot` (correct), and the list still shows a nonzero step count — so "operator concludes capture failed and deletes it" is overstated; the misreporting itself is real. Prior item W44 (docs/archive/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:442) is late graceful-stop artifact recovery — a different defect, not a regression.
 
 </details>
 
@@ -7091,7 +7093,7 @@ Chain verified at HEAD, every hop:
 3. **Click is a no-op.** `RunReportPage.tsx:208-210`: `const current = annotations; if (!current) return false` — returns before any request and before `setAnnotationsError('')`; no state change at all.
 4. **No feedback.** `RunReportVerdictBanner.tsx:31-37` sets `message` only when the promise resolves true; there is no false branch. No test pins the opposite (`RunReportPage.test.tsx` mocks the banner out; `getTestReportAnnotations` always resolves there).
 
-**Prior-report relation:** WEEK_REVIEW_2026-07-02 W20 (`docs/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:239-245`) covered the *rejected-save* path; that fix landed (catch at `:225-230` plus the banner comment at `:33-34`). This is a distinct residual gap in the same function, **not a regression**.
+**Prior-report relation:** WEEK_REVIEW_2026-07-02 W20 (`docs/archive/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:239-245`) covered the *rejected-save* path; that fix landed (catch at `:225-230` plus the banner comment at `:33-34`). This is a distinct residual gap in the same function, **not a regression**.
 
 **Mitigation found (partial, not refuting):** `RunReportPage.tsx:283` renders `annotationsError` as `role="alert"` immediately above the banner, so an error is on screen — but its wording ("Unable to load report annotations") is load-scoped and no feedback is tied to the Save click.
 
@@ -7128,7 +7130,7 @@ Chain traced at HEAD in the snapshot.
 3. No other refresh exists: `useExecutionTestPolling` (`dashboard/src/components/useExecutionTestPolling.ts:66-71, 108`) sets `stopped = true` and clears the interval once the run is terminal *and* has an archive, and RunReportPage early-returns unless `test.archive` (:251-262). The visibilitychange re-load is also gated on `!stopped`. Baseline/analysis effects (:120-168) key off `effectiveCompareId`, unchanged by the pin.
 4. No feedback: `runReport/RunReportCompareBar.tsx:49` renders `baselineName` (already loaded pre-pin), `:66-68` only toggles "Pinning...", "Use pinned" is hidden while `compareId` is set, and success sets nothing but `setBaselineError('')`.
 
-Reachability: `compare` is in the executive/engineer fallback sections (`runReport/reportSectionLens.ts:63-65`). Prior W20 (`docs/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:239-243`) covered the *rejection* path only — the try/catch is present, so this is a distinct residual, not a regression. Server-side pin does succeed and is durable, so impact is feedback-only: severity low.
+Reachability: `compare` is in the executive/engineer fallback sections (`runReport/reportSectionLens.ts:63-65`). Prior W20 (`docs/archive/reviews/WEEK_REVIEW_2026-07-02_to_2026-07-07.md:239-243`) covered the *rejection* path only — the try/catch is present, so this is a distinct residual, not a regression. Server-side pin does succeed and is durable, so impact is feedback-only: severity low.
 
 ---
 

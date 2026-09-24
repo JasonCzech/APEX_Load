@@ -38,4 +38,4 @@ Monitoring uses cancellable background workers; live metrics and test controls o
 
 ## API
 
-Project administrators manage and test connections under `/api/v1/projects/{project_id}/monitoring/dynatrace-connections`. Editors may list ready connections and attach one with `dynatrace_capture.connection_id` during test creation. Viewers see only the safe selected connection name and captured results. See the generated [OpenAPI specification](swagger.yaml) for the complete contract.
+Project administrators manage and test connections under `/api/v1/projects/{id}/monitoring/dynatrace-connections`. Editors may list ready connections and attach one with `dynatrace_capture.connection_id` during test creation. Viewers see only the safe selected connection name and captured results. See the generated [OpenAPI specification](swagger.yaml) for the complete contract.

@@ -1,6 +1,7 @@
 # Implementation Plan: Advanced Protocol Support
 
-> Status: Roadmap/detail. For current protocol and messaging support summaries,
+> Status: Implemented (SOAP/java_http exist in pkg/protocol); Phase 0 decisions retained for record.
+> For current protocol and messaging support summaries,
 > start with [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md) and
 > [WEB_API_EXECUTION_SUPPORT_MATRIX.md](WEB_API_EXECUTION_SUPPORT_MATRIX.md).
 

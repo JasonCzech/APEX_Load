@@ -1,5 +1,7 @@
 # YAML / Bruno import — code review (2026-07-16)
 
+Status: Historical (archived 2026-09-24).
+
 Scope: the uncommitted Bruno/YAML import feature — `pkg/convert/bruno`, `pkg/protocol/bruno`,
 `pkg/brunoartifact`, `pkg/api/handlers_bruno_import.go`, `pkg/storage/*bruno*`, `pkg/dsl/catalog_bruno.go`,
 `cmd/apexctl/bruno_import.go`, `runners/bruno` (Node sidecar), the dashboard `BrunoImport.tsx` /

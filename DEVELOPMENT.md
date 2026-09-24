@@ -4,33 +4,20 @@
 
 ```
 apexload/
-├── cmd/                     # Executable entry points
-│   ├── controller/          # REST API + dashboard server (port 8080)
-│   ├── generator/           # Distributed load generator (Kubernetes pod)
-│   ├── apexctl/             # CLI for local script execution
-│   └── dslschema/           # Generates docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
-├── pkg/                    # Reusable packages
-│   ├── engine/            # Core VUser engine, pacing, metrics
-│   ├── protocol/          # Protocol interface + implementations (HTTP, SOAP, WebSocket, gRPC, JMS, Kafka, database, network, browser)
-│   ├── dsl/              # Script parser, types, action catalog
-│   ├── api/              # REST handlers, WebSocket, test runner
-│   ├── config/           # Configuration types
-│   ├── controller/       # Test orchestration logic
-│   ├── distributed/      # Generator-side gRPC worker
-│   ├── storage/          # SQLite (default) / PostgreSQL persistence
-│   ├── recorder/         # HTTP recording, HAR conversion, browser recording
-│   ├── convert/          # Multi-format import hub (LR, JMeter, k6, DevWeb, HAR, OpenAPI, WSDL, Postman, AsyncAPI, TruClient)
-│   ├── selector/         # Shared element-selector model + replay self-heal
-│   ├── scrub/            # PII/credential redaction for artifacts and HAR exports
-│   ├── refkey/           # Human-readable reference keys
-│   └── buildinfo/        # Build metadata (version/commit/build-time)
+├── cmd/                     # Executable entry points (controller, generator, apexctl, apexbench,
+│                            #   apexload-collector-agent, apexload-java-vuser-runner,
+│                            #   apexload-record-agent, dslschema, openapits, swaggergen, webcoverage)
+├── pkg/                     # Reusable Go packages (engine, protocol, dsl, api, config, controller,
+│                            #   distributed, storage, recorder, convert, and more)
 ├── api/proto/            # Protocol Buffer definitions (gRPC)
 ├── dashboard/            # React 18 + TypeScript SPA
 ├── desktop/             # Wails native client shell (embeds controller API + dashboard)
 ├── mcp/                 # Python MCP server exposing the REST API as agent tools
-├── deployments/          # Kustomize manifests, Helm chart, Docker Compose, Azure Terraform/IaC, CI templates
+├── deployments/          # Kustomize manifests, Helm chart, Docker Compose, Azure/AWS Terraform, CI templates
 └── examples/            # Sample scripts, HAR files
 ```
+
+See [AGENTS.md](AGENTS.md) for the complete `cmd/` and `pkg/` inventory.
 
 ## Go Packages Overview
 
@@ -41,9 +28,8 @@ The **VUser execution engine** — the heart of load generation.
 **Key Types:**
 - `Engine`: Main orchestrator; manages goroutine lifecycle, pacing, metrics collection
 - `VUser`: Individual goroutine representing a single user
-- `MetricsCollector`: Aggregates latency, throughput, errors; produces t-digest percentiles
-- `MetricsCollector`: Aggregates latency, throughput, errors; now also exposes dropped-result telemetry so hot-path loss is visible
-- `Pacing`: Ramp-up scheduling (linear, stepped, immediate)
+- `MetricsCollector`: Aggregates latency, throughput, errors; produces t-digest percentiles and exposes dropped-result telemetry so hot-path loss is visible
+- `dsl.PacingConfig`: Per-script pacing between iterations (`none`, `fixed_delay`, `random_delay`, `fixed_interval`, `random_interval`, `tps`); the engine enforces it (see `pkg/engine/pacing.go`)
 
 **Hot Path Behavior:**
 - Metrics use **buffered channels** (capacity 10,000) for zero-lock collection
@@ -108,7 +94,7 @@ The controller, generator, and `apexctl` binaries bundle all of the above throug
 **DSL parser** converts JSON scripts to runtime `Script` structures.
 
 **Script Sections:**
-- **config**: Global settings (timeouts, SSL, connection pooling)
+- **config**: Global settings (`base_url`, think time, pacing, and protocol-specific blocks such as `http`, `browser`, `grpc`)
 - **data_sources**: CSV and DAT files for row-based data-driven testing
 - **parameters**: named generated values and file/list-backed bindings for VuGen-style parameterization
 - **init**: Setup actions (login, session init)
@@ -125,29 +111,19 @@ The controller, generator, and `apexctl` binaries bundle all of the above throug
 **Example Script:**
 ```json
 {
-  "config": {
+  "script": {
+    "name": "Browse_Products",
+    "version": "1.0.0",
     "protocol": "http",
-    "base_url": "https://api.example.com"
-  },
-  "init": [
-    {
-      "name": "login",
-      "type": "http",
-      "method": "POST",
-      "target": "/auth/login",
-      "body": "{\"user\": \"{{data.users.username}}\", \"pass\": \"{{data.users.password}}\"}"
-    }
-  ],
-  "actions": [
-    {
-      "name": "browse_products",
-      "type": "http",
-      "method": "GET",
-      "target": "/products"
-    }
-  ]
+    "config": { "base_url": "https://api.example.com" },
+    "actions": [
+      { "name": "browse_products", "type": "GET", "target": "/products" }
+    ]
+  }
 }
 ```
+
+`protocol` is set on the top-level `script` object, and HTTP actions use the method as `type`. See the full skeleton in [README.md](README.md#dsl-script-structure) and `examples/simple-http.json`.
 
 ### `pkg/api`
 
@@ -155,8 +131,7 @@ The controller, generator, and `apexctl` binaries bundle all of the above throug
 
 **Key Components:**
 - `server.go`: HTTP server setup, route registration
-- `handlers.go`: RESTful endpoints (scripts, tests, projects, health)
-- `handlers_start_test.go`: Test queueing and execution
+- `handlers.go`: RESTful endpoints (scripts, tests, projects, health), including test start (`handleStartTest`); start/queueing tests live in `handlers_start_test_test.go`
 - `websocket.go`: Real-time metrics streaming (JSON with `type` field)
 - `runner.go`: Test orchestration loop and in-memory distributed execution state
 - `distributed_execution_backend.go`: Controller-side remote generator orchestration, metrics aggregation, archive staging
@@ -178,12 +153,10 @@ test_failed       — test encountered error
 test_stopping     — graceful stop initiated
 ```
 
-Live execution telemetry now preserves generator collection and publish timestamps for distributed runs, stamps controller receipt and publish times, and lets the dashboard show generator lag, transport lag, controller fan-out lag, client delivery lag, and end-to-end freshness separately from websocket drop pressure.
-When that telemetry becomes stale or starts dropping samples/messages, the controller now emits sampled `telemetry_diagnostic` events so Monitoring can show degradation details without inflating the main live metrics envelope.
-Interval history is now persisted as typed summary rows in SQLite, and distributed generator batches now carry generator-side telemetry fields so dropped-result and freshness signals survive remote aggregation instead of being reconstructed only at the controller edge.
-HTTP and JMS results now also stamp first-class correlation IDs plus dependency type/target metadata, which the engine rolls into bounded live transaction summaries and the archive layer preserves in JSONL, Parquet, and archive query filters.
-Those sampled `telemetry_diagnostic` events now also include bounded slow/error transaction hotspot samples derived from live transaction rollups, so the Monitoring page can show protocol-aware problem transactions without expanding the main `metrics_update` envelope.
-Typed interval-summary rows now carry an explicit schema version in SQLite, and store initialization backfills legacy typed summary plus archive rows so telemetry-family migrations can evolve without depending on implicit column shape alone. The latest interval-summary schema version also persists distributed lag-stage timestamps so stored execution history matches the live telemetry model.
+Live execution telemetry preserves generator collection and publish timestamps for distributed runs and stamps controller receipt and publish times, so the dashboard can show generator lag, transport lag, controller fan-out lag, client delivery lag, and end-to-end freshness separately from websocket drop pressure.
+When telemetry becomes stale or starts dropping samples/messages, the controller emits sampled `telemetry_diagnostic` events so Monitoring can show degradation details without inflating the main live metrics envelope. These events include bounded slow/error transaction hotspot samples derived from live transaction rollups.
+Interval history is persisted as typed summary rows carrying an explicit schema version; store initialization backfills legacy typed summary and archive rows, and the latest schema version also persists distributed lag-stage timestamps. Distributed generator batches carry generator-side telemetry fields so dropped-result and freshness signals survive remote aggregation.
+HTTP and JMS results stamp first-class correlation IDs plus dependency type/target metadata, which the engine rolls into bounded live transaction summaries and the archive layer preserves in JSONL, Parquet, and archive query filters.
 
 ### `pkg/engine` metrics (`pkg/engine/metrics.go`)
 
@@ -302,7 +275,7 @@ For current route names, access rules, and generated summaries, use the generate
 **Terminal 1: Start the backend**
 ```bash
 go run ./cmd/controller
-# Listens on :8080, serves dashboard from pkg/api/static/
+# Listens on 127.0.0.1:8080, serves dashboard from pkg/api/static/
 ```
 
 **Terminal 2: Start the dashboard dev server** (optional for frontend dev)
@@ -324,8 +297,9 @@ npm run dev
 ### Enterprise npm and network defaults
 
 - `dashboard/.npmrc` is an optional, local-only file (gitignored) for an enterprise npm registry; create it only when your environment requires one.
-- `.env.example` is intentionally not published in this public repository. Create a local env file from your organization's approved non-secret proxy, CA-path, and endpoint defaults.
-- The Go binaries, helper scripts, and MCP client read process environment directly; they do not auto-load local env files, so export values into your shell or CI job before running `go`, `npm`, Docker, or MCP commands.
+- `.env.example` is gitignored (it carries organization-specific proxy/registry defaults), so it is not in the repository. Create a local `.env` from your organization's approved non-secret proxy, CA-path, and endpoint defaults.
+- `cmd/controller`, `cmd/generator`, and `cmd/apexctl` auto-load `.env` from the working directory at startup via `config.LoadDotEnv`. Values never override variables already in the environment, and loading is skipped when `APEXLOAD_ENV=production|prod`.
+- Helper scripts, `npm`, Docker, and the MCP client do not read `.env`; export values into your shell or CI job before running them.
 
 ### 2. Making Changes
 
@@ -343,8 +317,8 @@ npm run dev
 
 **Go Tests:**
 ```bash
-# Run all tests with race detector
-go test ./...
+# Run all tests with race detector (as CI does)
+make test   # go test -race -count=1 ./...
 
 # Run specific package
 go test ./pkg/engine
@@ -368,8 +342,10 @@ npm run test
 ```bash
 make build
 # Outputs to ./bin/controller, ./bin/generator, ./bin/apexctl,
-# and ./bin/apexload-record-agent
+# ./bin/apexload-record-agent, and ./bin/apexload-collector-agent
 ```
+
+Other useful targets: `make generate` (regenerate DSL schema and OpenAPI artifacts), `make desktop` / `make clients` (Wails desktop app), `make java-vuser-runner`, `make performance-smoke`, and the `k8s-*` deployment targets (see [deployments/README.md](deployments/README.md)).
 
 **Package the production Recording Agent:**
 ```bash
@@ -408,7 +384,7 @@ npm run build
 
 - **Goroutine scaling**: 1 VUser = 1 goroutine (~2–4 KB stack). 10,000 VUsers = ~40–80 MB overhead.
 - **Metrics hot path**: Buffered channel (10,000) avoids locks; aggregated periodically.
-- **Database**: SQLite adequate for metadata; scale horizontally with multiple controllers if needed.
+- **Database**: SQLite is adequate for single-controller metadata. Running multiple controller replicas requires `APEXLOAD_CONTROLLER_HA`, PostgreSQL, Redis/Valkey, and shared archive storage (see [ARCHITECTURE.md](ARCHITECTURE.md)).
 - **Memory**: Reuse buffers via `sync.Pool` to reduce GC pressure during high-throughput runs.
 
 ### Frontend
@@ -421,7 +397,7 @@ npm run build
 
 **All new features and bug fixes MUST include corresponding tests.**
 
-- **Go**: Unit tests in `*_test.go` files alongside source; aim for >80% coverage
+- **Go**: Unit tests in `*_test.go` files alongside source; CI publishes a coverage baseline report (the ratchet in `.github/workflows/ci.yml` is currently report-only), so avoid lowering coverage in touched packages
 - **React**: Component tests using React Testing Library; test user interactions, not implementation details
 - **Edge cases**: Empty inputs, error conditions, boundary values, concurrency scenarios
 
@@ -483,7 +459,10 @@ golangci-lint run ./...
 go fmt ./...
 
 # Benchmark engine performance
-go test -bench=BenchmarkEngine ./pkg/engine -benchmem
+go test -run='^$' -bench=BenchmarkHarnessOverhead -benchmem ./pkg/engine/
+
+# Or run the apexbench smoke profile
+make performance-smoke
 
 # Generate test coverage HTML
 go test -cover -coverprofile=coverage.out ./...
@@ -493,6 +472,6 @@ go tool cover -html=coverage.out
 ## References
 
 - **AGENTS.md**: High-level architecture and tech stack
-- **CLAUDE.md**: Project context and conventions (if present)
+- **CLAUDE.md**: Compatibility pointer to AGENTS.md
 - **pkg/dsl/parser.go**: DSL parsing logic
 - **pkg/api/server.go**: Route setup and middleware

@@ -1,5 +1,7 @@
 # Uncommitted Change-Set Review — 2026-07-22
 
+Status: Historical; all 48 findings were fixed the same day (archived 2026-09-24).
+
 **Branch:** `codex/fix-dashboard-audit` (uncommitted working tree) · **Scope:** 149 modified files + 16 new untracked files, ~20.6k insertions / ~2.3k deletions
 
 **Method:** 12 focused reviewer agents (9 area + security/concurrency/API-contract lenses) over pre-extracted diffs; 60 raw findings deduplicated to 46; every finding adversarially verified against the working tree (3-lens panel — correctness / reachability / impact — for high & critical); a completeness critic then audited coverage gaps, and its two high-severity claims were re-verified directly, plus two targeted gap checks (one found a new confirmed bug, one cleared a suspect). 78 workflow agents + 2 gap agents total. 1 claim was refuted and dropped.

@@ -1,5 +1,7 @@
 # APEX Load Performance Review - 2026-07-06
 
+Status: Historical (archived 2026-09-24).
+
 Generated from the verified multi-agent performance review output so the findings survive cleanup of the original temporary task artifacts.
 
 ## Source

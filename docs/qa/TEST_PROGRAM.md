@@ -159,7 +159,7 @@ time.
 1. **Enforce the coverage ratchet.** Take one green CI run's `coverage-current.json`, re-baseline,
    delete `continue-on-error`. Cheapest high-value item outstanding.
 2. **Fix the 6 → 8 untested-package regression**, or record each as a deliberate exclusion.
-3. **Close M1** — the per-step assertions are green; the full-arc browser smoke is the gap.
+3. **Close M1** — the per-step assertions are green and the U01 full-arc smoke exists (`workflow-local-auth.spec.ts`); confirm it is a required per-PR gate.
 4. **Start Track B's long-lead items in parallel**, beginning with the local scale ladder on kind
    (M5), which needs no cloud spend and is the prerequisite for every later infrastructure gate.
 
@@ -183,7 +183,7 @@ pollute every later signal.
 | 1 | Stand up `docs/qa/` + `status_inventory_test.go`. Baseline per-package coverage (exclude `.claude/worktrees/`). Publish the first dashboard artifact. | 8 |
 | 2 | Coverage gate: add a `coverage` job to `ci.yml` enforcing a **ratchet** (floor = current, never decreases) plus a diff-coverage floor on changed files. Record baselines in `evidence/M0/coverage-baseline.json`. | 8 |
 | 3 | **Deterministic time harness.** Extend the repository's injected `now func() time.Time` convention from epoch fencing through scheduler and execution leadership; do not introduce a competing clock abstraction. Run repeated Go and Playwright flake hunts nightly and seed `FLAKE_LOG.md`. | 8 |
-| 4 | Enable `bodyclose`, `sqlclosecheck`, `rowserrcheck`, `nilerr` in `.golangci.yml` and fix the ~40 violations its header already enumerates. Triage the 11 open items in `docs/reviews/WHOLE_APP_REVIEW_2026-08-02.md` into `DEFECTS.md`. | 7 |
+| 4 | Enable `bodyclose`, `sqlclosecheck`, `rowserrcheck`, `nilerr` in `.golangci.yml` and fix the ~40 violations its header already enumerates. Triage the 11 open items in `docs/archive/reviews/WHOLE_APP_REVIEW_2026-08-02.md` into `DEFECTS.md`. | 7 |
 
 **Key files:** `.github/workflows/ci.yml`, `.golangci.yml`, `docs/qa/*`, `pkg/api/scheduler.go`,
 `pkg/api/execution_leadership.go`, `pkg/distributed/generatorrpc/execution_epoch.go`.
@@ -311,9 +311,9 @@ only some have a Postgres twin test. **Dialect drift is the single highest-value
 | Week | Work | Hrs |
 |---|---|---|
 | 1 | Run the **entire** suite under `APEXLOAD_STORE=postgres` against a real PG 16 container (CI already stands one up in the `deployment-artifacts` job). Catalogue and fix every dialect divergence. | 8 |
-| 2 | **Build the SQLite→Postgres migrator** (`cmd/apexload-migrate` or `scripts/`). Supply the DSN by environment variable, default to dry-run, require `--apply` for mutation, and support resumable checkpoints. Derive an ordered entity plan and emit count reconciliation plus final verification automatically. | 8 |
-| 3 | **Schema version ledger.** `pkg/storage/sqlite_schema.go` applies ~100+ `ALTER TABLE ADD COLUMN` on *every* startup, idempotent only by string-matching `"duplicate column name"`. No version table, no ordering, no dry-run, and startup time grows with the list. Add a version table + `--dry-run`, keeping the additive/idempotent policy. Test upgrade *and* rollback across the last 3 release tags. | 8 |
-| 4 | Scripted backup/restore drill: managed-PG backup → restore into an isolated DB → validate counts → point a controller at it. Also archive-store (Blob) recovery. Commit as `scripts/restore-drill.sh` + evidence. | 7 |
+| 2 | **Build the SQLite→Postgres migrator** (`cmd/apexload-migrate` or `scripts/`; *to be created, neither exists yet*). Supply the DSN by environment variable, default to dry-run, require `--apply` for mutation, and support resumable checkpoints. Derive an ordered entity plan and emit count reconciliation plus final verification automatically. | 8 |
+| 3 | **Schema version ledger.** `pkg/storage/sqlite_schema.go` applies ~100+ `ALTER TABLE ADD COLUMN` on *every* startup, idempotent only by string-matching `"duplicate column name"`. Since this plan was written a `schema_migrations` version ledger has landed (`pkg/storage/schema_migrations.go`); ordering, `--dry-run` and the release-tag upgrade/rollback tests are still open. Add `--dry-run`, keeping the additive/idempotent policy. Test upgrade *and* rollback across the last 3 release tags. | 8 |
+| 4 | Scripted backup/restore drill: managed-PG backup → restore into an isolated DB → validate counts → point a controller at it. Also archive-store (Blob) recovery. Commit as `scripts/restore-drill.sh` + evidence (*to be created; the script does not exist yet*). | 7 |
 
 **Exit gate:** full suite green on Postgres · migrator validated on a real database with count
 parity · restore drill scripted and executed once · schema version introspectable.
@@ -422,7 +422,7 @@ make docker-local-up && make k8s-kind-apply && make k8s-smoke-test
 - **M1:** every assertion in `TIER0_ASSERTION_MATRIX.md` is green against a freshly built controller; the generated route contract matrix passes.
 - **M2:** `go test ./pkg/convert/...` green with goldens; a deliberate converter tweak produces a golden diff.
 - **M3:** `evidence/M3/soak-24h/` shows flat goroutine and heap curves; archive verify exits 0.
-- **M4:** full suite green under `APEXLOAD_STORE=postgres`; migrator count parity; `scripts/restore-drill.sh` exits 0.
+- **M4:** full suite green under `APEXLOAD_STORE=postgres`; migrator count parity once the migrator exists; restore drill executed with evidence (target: a `scripts/restore-drill.sh` exiting 0, once created).
 - **M5:** 10-generator kind run reproducible from one script; perf JSON shows 2 targets measured.
 - **M6:** `evidence/M6/aks-gates.md` shows 10/10; failover transcripts show a single execution owner and monotonic lease generations.
 - **M7:** a 2-region run whose per-region archive numbers reconcile with per-generator data; perf JSON shows 4/4 measured.

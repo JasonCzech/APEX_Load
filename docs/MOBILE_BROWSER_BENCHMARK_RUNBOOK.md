@@ -17,8 +17,8 @@ WebKit profiles are included for launch and action-latency coverage. RSS attribu
 ## Prerequisites
 
 - Record the host shape: CPU model, core count, memory, OS, container limits, Chrome/Chromium version, Playwright version, and APEX Load commit SHA.
-- Install Chromium/Chrome for `chromedp`.
-- Install Playwright WebKit assets if WebKit-backed device profiles are part of the evidence run.
+- Install a Chromium/Chrome binary that Playwright can drive (`npx playwright install chromium`, or point `APEXLOAD_BROWSER_EXECUTABLE` at a system Chromium as the container image does).
+- Install Playwright WebKit assets (`npx playwright install webkit`) if WebKit-backed device profiles are part of the evidence run.
 - Run on an otherwise quiet host. Browser benchmarks are sensitive to CPU contention, thermal throttling, and background browser processes.
 
 ## Commands

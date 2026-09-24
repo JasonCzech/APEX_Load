@@ -1,5 +1,7 @@
 # Second-Opinion Review — GitHub Actions CI Production-Readiness Change Set
 
+Status: Historical (archived 2026-09-24).
+
 **Date:** 2026-07-16
 **Scope:** Uncommitted working tree on `main` (post-PR #83) — CI run orchestration (`pkg/api/ci_*`), GitHub client/auth/checks, storage (`sqlite_github.go`), release/deploy workflows and scripts, `apexctl ci`, protocol request policy — plus codebase-wide sweeps (auth, secrets, injection, storage integrity, runtime hot paths). Bruno-importer work explicitly excluded per request.
 **Method:** 16-lens multi-agent finder pass + 3-verifier adversarial panel per finding (majority vote) + completeness critic + gap round; 44 raw findings → 35 after dedup → 25 confirmed, 17 refuted. Because the working tree was being actively fixed in a parallel session during the review, every confirmed finding was then **re-checked against the final tree**: 20 remain live, 5 were fixed mid-day. Ground truth: `go build ./...` passes; `go test ./pkg/api/ ./pkg/storage/ ./cmd/apexctl/ ./pkg/protocol/... ./scripts/` all green on the final tree.

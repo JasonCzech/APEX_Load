@@ -10,12 +10,12 @@ The controller supports two writable production providers:
 
 | Provider | Configuration | Persistence |
 |---|---|---|
-| Encrypted database | Configure `APEXLOAD_WRAPPING_MASTER_KEY`, or a versioned `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`. | Encrypted value records in the configured SQLite/PostgreSQL store. |
+| Encrypted database | Configure `APEXLOAD_WRAPPING_MASTER_KEY` (local AES key), a versioned Azure Key Vault key in `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`, or an AWS KMS key in `APEXLOAD_WRAPPING_KMS_KEY_ID`. Set at most one of the Key Vault and KMS ids; setting both is a startup error. | Encrypted value records in the configured SQLite/PostgreSQL store. |
 | Azure Key Vault | Set `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true` and `APEXLOAD_AZURE_KEY_VAULT_URL`; use workload/managed identity. | Values in Key Vault; managed logical-name metadata in the APEX Load database. |
 
-The `APEXLOAD_BRUNO_*` wrapping-key names are shared with encrypted Bruno source
-artifacts for compatibility. A writable encrypted database Project Secrets
-store requires the wrapping key even when Bruno execution is disabled.
+The `APEXLOAD_WRAPPING_*` key settings are shared with encrypted Bruno source
+artifacts. A writable encrypted database Project Secrets store requires one of
+them even when Bruno execution is disabled.
 
 Generate a local wrapping key with:
 

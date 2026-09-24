@@ -9,7 +9,7 @@ has passed a production AKS disruption test.
 ## Verified Baseline
 
 The following checks were last run against the repository during the AKS
-readiness pass:
+readiness pass (run date not recorded; this table was last edited in commit `098986604`, 2026-07-20, and the checks were not re-run as part of the 2026-09-24 documentation review):
 
 | Check | Result |
 | --- | --- |

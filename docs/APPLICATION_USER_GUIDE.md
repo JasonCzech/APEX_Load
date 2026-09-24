@@ -48,39 +48,22 @@ APEX Load meets you where you work through three surfaces:
 
 ## Quick Start: Your First Test
 
-This is the shortest honest path from an empty workspace to a report. Budget about
-fifteen minutes.
+The shortest path from an empty workspace to a report is a step-by-step walkthrough in
+[Your first test](HELP_GETTING_STARTED.md), which includes a local sample target and a
+ready-to-load script. In outline:
 
-1. **Set your scope.** At the top of the left sidebar, choose a **Domain**, then a
-   **Project**, then an **Application/Release**. Nothing else in the app makes sense
-   until this is right — scripts, scenarios, and results are all filtered by it.
-2. **Create a script.** Go to **Scripts** and create a new script, or drop an existing
-   HAR/Postman/JMeter/LoadRunner export into the import drop zone. For a first pass,
-   a two-action HTTP script against a known-good endpoint is enough.
-3. **Point it at your target.** In the Script Editor, set `config.base_url`, then add
-   one action per request. Give each action a meaningful `name` — that name is the
-   transaction label you will see in the report.
-4. **Add at least one assertion.** HTTP 4xx/5xx responses fail by default; assertions also check expected business behavior. `status_code` plus `response_time_ms` is the minimum that makes a
-   run meaningful.
-5. **Validate.** Click **Validate**. This checks structure and settings without
-   sending a single request. Fix everything it reports before going further.
-6. **Replay once.** Click **Replay** to execute the script for exactly one user. Step
-   through the actions and confirm each request sent what you expected and each
-   response was what you assumed. Use the evidence to correct request, data and correlation mistakes.
-7. **Build a scenario.** Go to **Scenarios**, create one, and add a single group:
-   your script, a small VUser count (10 is plenty for a first run), a short ramp-up
-   (30s), and a short duration (2m). Run **Validate the load model**.
-8. **Launch.** Go to **New Test**, pick the scenario, confirm the target application
-   and release, and start.
-9. **Watch it.** The run opens in **Command Center**. Watch throughput, the p95/p99
-   response times, and the error rate together — a fast run with a 40% error rate is
-   not a fast run.
-10. **Read the report.** When the run reaches `COMPLETE`, open it from **Results**.
-    Check the verdict, then the per-transaction breakdown.
-11. **Pin a baseline.** Pin this run as the comparison baseline for the release, so
-    every later run has something to be measured against.
+1. Set your **Domain**, **Project**, and **Application/Release** in the left sidebar;
+   scripts, scenarios, and results are all filtered by it.
+2. Create or import a script, add at least one assertion, then **Validate** and
+   **Replay** it once (see [Validating And Replaying](#validating-and-replaying)).
+3. Build a one-group scenario, launch it from **New Test**, and watch it in
+   **Command Center**.
+4. When the run reaches `COMPLETE`, read the report from **Results** and pin it as the
+   release baseline.
 
-From here, the rest of this guide fills in each of those steps properly.
+The sections that follow explain each step in depth.
+
+---
 
 ## Signing In And Getting Oriented
 
@@ -312,7 +295,7 @@ Useful extractor options: `on_miss` (`fail` to fail the request when nothing mat
 
 ### Checking Responses With Assertions
 
-HTTP responses outside 200–399 fail by default even without assertions. Assertions add checks for expected status, content and timing. HTTP supports:
+HTTP responses outside 200–399 fail by default even without assertions (see the [DSL operator guide](HELP_DSL_OPERATOR_GUIDE.md#correlate-and-check-responses) for the canonical statement). Assertions add checks for expected status, content and timing. HTTP supports:
 
 | Assertion `type` | Fields | Passes when |
 | --- | --- | --- |
@@ -350,9 +333,14 @@ The engine has real control flow, valid in every protocol:
   `while` a condition holds. Each pass exposes a 1-based `{{var.loop_index}}`.
   `do_while` runs the body once before the predicate is first evaluated.
 - `control_break` and `control_continue` — exit or skip a pass of the nearest loop.
+- `control_switch` — ordered cases; runs the first matching case, or the default
+  branch when none match.
+- `control_parallel` — run two or more named, isolated branches concurrently
+  (`control.concurrency` defaults to 4, max 16; optional `fail_fast`). Variables
+  extracted in a branch merge under `var.parallel.<branch>.*`.
 
 Conditions accept either the legacy `left`/`op`/`right` form or a CEL `expr` over the
-`var`, `data`, `env`, `param`, and `secret` namespaces.
+`var`, `data`, and `env` namespaces (`param` and `secret` are not available in `expr`).
 
 Other engine actions worth knowing: `rendezvous` (hold VUsers until enough have
 arrived, then release them together for a true concurrency spike), `cache_clear` and
@@ -527,16 +515,16 @@ If you already have tests in another tool, import them instead of rewriting. Ope
 | WSDL / SOAP | Contracts & collections | Executable SOAP draft |
 | AsyncAPI / Kafka | Contracts & collections | Messaging draft |
 | RAML / Anypoint | Contracts & collections | API draft |
-| HAR traffic | Traffic & samples | Executable HTTP DSL after auth and data review |
+| HAR traffic (Salesforce traffic is auto-detected) | Traffic & samples | Executable HTTP DSL after auth and data review; a native Salesforce draft when detected |
 | Recorder export / Playwright codegen | Traffic & samples | Executable browser script |
 | Request / response sample | Traffic & samples | Executable single-request draft |
 | LoadRunner script archive | Legacy & tool exports | Depends on the source protocol — see below |
 | JMeter test plan | Legacy & tool exports | Executable |
+| Akamai CloudTest Export | Legacy & tool exports | Review draft: Clip scripts and Composition scenarios need fixtures |
 | k6 script | Legacy & tool exports | Executable (a constrained HTTP subset) |
 | DevWeb source | Legacy & tool exports | Executable |
 | Event Hubs capture | Messaging & cloud artifacts | Messaging draft |
 | Broker config | Messaging & cloud artifacts | Messaging draft |
-| Salesforce | Traffic & samples | Executable API draft |
 | Oracle E-Business / Siebel | Enterprise app reviews | Review draft |
 
 Every import runs through a guided **review** flow rather than dumping a script on you.
@@ -629,6 +617,7 @@ The status badge shows the raw state name. These are the ones you will see:
 | `RESERVED` | Holding a launch window that has not opened yet | Start, abort |
 | `SCHEDULED` | Will start automatically at its scheduled time | Start, abort |
 | `PENDING` | Awaiting admission | Abort |
+| `STARTING` | Transient: the controller has accepted a start and is launching the run | Wait; abort if it does not advance |
 | `SHAKEOUT` | Running the single-pass canary | Abort |
 | `SHAKEOUT_REVIEW` | The canary failed; waiting for a human decision | Review evidence, override and continue, or cancel |
 | `INITIALIZING` | Generators are starting and VUsers are being placed | Stop, abort |
@@ -758,9 +747,9 @@ A report is assembled from a registry of sections, selected by profile:
 
 | Profile | Contains | Export formats |
 | --- | --- | --- |
-| **Executive Summary** | Verdict, overview, graphs, dashboard panels, SLA rollup, release trend, risk summary, run context, recommendations, sign-off | HTML, JSON, CSV, PDF |
-| **Detailed Technical** (default) | 21 sections including root cause, raw exports, generator manifest, completeness, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases | HTML, JSON, CSV, PDF, JSONL, Parquet |
-| **Audit** | Official outcome, audit identity, authorization, governance, provenance, evidence tiers, completeness, change attribution, artifact integrity, report authorship | HTML, JSON, CSV, PDF |
+| **Executive Summary** | Verdict, overview, graphs, dashboard panels, SLA rollup, release trend, risk summary, run context, recommendations, sign-off | HTML, JSON, CSV, PDF, DOCX |
+| **Detailed Technical** (default) | 21 sections including root cause, raw exports, generator manifest, completeness, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases | HTML, JSON, CSV, PDF, DOCX, JSONL, Parquet |
+| **Audit** | Official outcome, audit identity, authorization, governance, provenance, evidence tiers, completeness, change attribution, artifact integrity, report authorship | HTML, JSON, CSV, PDF, DOCX |
 
 PDF is offered only for profiles that declare it; a PDF request against a profile
 without it is refused rather than silently downgraded.
@@ -840,17 +829,25 @@ apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5 --
 | `record-agent` | Start the localhost browser recording bridge |
 | `github` | Inspect and run GitHub Enterprise sync/check workflows |
 | `import` | Import Bruno collections or Grafana dashboards |
+| `library` | Export or import library bundles (scripts, scenarios, results) |
+| `version` | Print the `apexctl` version |
 
 ### Gating A Pipeline
 
 Exit codes are designed so a non-zero exit fails the build with no extra scripting:
 
-| Command | Exit 0 | Exit 1 | Exit 2+ |
-| --- | --- | --- | --- |
-| `apexctl ci run` | Passed | SLA breach | Configuration, execution, timeout, or cancellation |
-| `apexctl run` | Ran, no SLA breach | Execution error or SLA breach | — |
-| `apexctl status` | Not breached, not failed | Breached, or `FAILED`/`ABORTED` | Bad arguments or fetch error |
-| `apexctl wait` | Terminal `COMPLETE`, not breached | Breach, `FAILED`/`ABORTED`, or timeout | Bad arguments |
+`apexctl` uses one exit-code contract:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success: the run passed, or the test reached a terminal state with no failed status and no SLA breach |
+| `1` | Test or SLA failure: an evaluated SLA breach, terminal status `FAILED`/`ABORTED`, or (for a local `apexctl run`) an engine execution error |
+| `2` | Usage or configuration error: bad flags or arguments, an unwritable `--junit` path, or (for `ci run`) a configuration error |
+| `3` | Controller or transport failure: the controller was unreachable or returned an error, `status` could not fetch results, or `wait` timed out before a terminal state |
+
+`apexctl ci run` maps its outcome the same way: passed is `0`, SLA breach is `1`,
+configuration error is `2`, and any other outcome (execution, timeout, cancellation)
+is `3`. A controller-backed `run --api` that hits an observation error is `3`.
 
 Add `--format json` for a machine-readable result object (`status`, `sla_evaluated`,
 `sla_breached`, `sla_details`, `transactions`, `errors`, `tps`, `duration_ms`), and

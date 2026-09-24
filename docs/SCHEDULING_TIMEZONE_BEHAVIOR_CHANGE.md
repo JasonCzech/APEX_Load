@@ -1,5 +1,7 @@
 # Behavior change: scenario schedules now fire in their declared timezone
 
+> Change record (kept for history): documents a past behavior change and is not a living specification; see the scheduling docs and code for current behavior.
+
 ## What changed
 
 Previously, a scenario schedule's cron expression was evaluated in **UTC**, even
