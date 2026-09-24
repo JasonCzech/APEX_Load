@@ -390,7 +390,7 @@ func TestHelmRestartControlsUpgradeRunbook(t *testing.T) {
   --set restartControls.enabled=false`
 	for _, path := range []string{
 		"../helm/apexload/README.md",
-		"../../docs/KUBERNETES_RESTART_CONTROLS.md",
+		"../../docs/CLUSTERS_AND_CLOUD.md",
 	} {
 		raw, err := os.ReadFile(filepath.Clean(path))
 		if err != nil {
@@ -401,7 +401,7 @@ func TestHelmRestartControlsUpgradeRunbook(t *testing.T) {
 		}
 	}
 
-	raw, err := os.ReadFile(filepath.Clean("../../docs/KUBERNETES_RESTART_CONTROLS.md"))
+	raw, err := os.ReadFile(filepath.Clean("../../docs/CLUSTERS_AND_CLOUD.md"))
 	if err != nil {
 		t.Fatalf("read Helm restart-controls runbook: %v", err)
 	}

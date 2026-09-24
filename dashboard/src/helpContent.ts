@@ -6,36 +6,22 @@ export type HelpArticle = { id: string; area: HelpAreaID; title: string; path: s
 export const helpArticles = catalog as HelpArticle[]
 // Explicit catalogue membership is the trust boundary. Sources load in separate chunks.
 const sources = import.meta.glob<string>([
-  '../../docs/HELP_GETTING_STARTED.md',
   '../../docs/APPLICATION_USER_GUIDE.md',
+  '../../docs/HELP_CENTER.md',
+  '../../docs/PROTOCOL_SUPPORT.md',
+  '../../docs/OBSERVABILITY_INTEGRATIONS.md',
+  '../../docs/CLUSTERS_AND_CLOUD.md',
+  '../../docs/ENTERPRISE_PLATFORM_RUNBOOK.md',
   '../../docs/ADMIN_USER_GUIDE.md',
-  '../../docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md',
-  '../../docs/ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md',
   '../../docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md',
-  '../../docs/CLUSTER_CONNECTIONS.md',
-  '../../docs/KUBERNETES_RESTART_CONTROLS.md',
-  '../../docs/SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md',
-  '../../docs/OPENTELEMETRY.md',
-  '../../docs/HELP_API_OVERVIEW.md',
   '../../docs/API_USER_GUIDE.md',
   '../../docs/CICD_INTEGRATION.md',
   '../../mcp/README.md',
-  '../../docs/HELP_TROUBLESHOOTING.md',
-  '../../docs/HELP_CAPABILITIES.md',
   '../../docs/HELP_DSL_OPERATOR_GUIDE.md',
   '../../docs/DSL_ACTION_REFERENCE.md',
-  '../../docs/MESSAGING_SUPPORT.md',
-  '../../docs/BROWSER_AND_MOBILE_SUPPORT.md',
-  '../../docs/JAVA_VUSER_RUNTIME.md',
   '../../docs/RUNTIME_SETTINGS_PARITY.md',
   '../../docs/SCRIPT_DEBUGGER_GUIDE.md',
-  '../../docs/HELP_CHANGES.md',
-  '../../docs/HELP_SUPPORT.md',
   '../../docs/recording-agent.md',
-  '../../docs/PROMETHEUS_METRICS.md',
-  '../../docs/POWERBI_INTEGRATION.md',
-  '../../docs/MONITORING_INTEGRATIONS.md',
-  '../../docs/GITHUB_INTEGRATION.md',
   '../../docs/ACCESS_SURFACES.md',
   '../../deployments/README.md',
   '../../deployments/k8s/local/README.md',
@@ -80,6 +66,9 @@ export function articleForSection(path: string, section: string, source: string)
   }
   return undefined
 }
+function sectionSlug(value: string): string {
+  return value.toLowerCase().replace(/&/g, '').replace(/[^a-z0-9 -]/g, '').trim().replace(/\s+/g, '-')
+}
 export function resolveHelpLink(href: string, current: HelpArticle, source: string): string {
   if (href.startsWith('#/')) return href
   if (/^(https?:|mailto:)/i.test(href)) return href // Renderer validates credentials/protocol again.
@@ -98,7 +87,8 @@ export function resolveHelpLink(href: string, current: HelpArticle, source: stri
     else if (part && part !== '.') parts.push(part)
   }
   const path = parts.join('/')
-  const target = helpArticles.find(article => article.path === path)
+  const candidates = helpArticles.filter(article => article.path === path)
+  const target = (section ? candidates.find(article => article.sections?.some(name => sectionSlug(name) === sectionSlug(section))) : undefined) || candidates[0]
   if (target) return helpArticleHash(target, section)
   if (path === 'docs/swagger.yaml' || path === 'docs/api-endpoint-catalog.json') return '#/swagger'
   if (path === 'docs/dsl.schema.json') return '#/docs?guide=user-guide&article=dsl'

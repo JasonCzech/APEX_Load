@@ -130,7 +130,7 @@ func buildAPMIntegrationProfiles(settings SystemSettings, tracing telemetry.Stat
 			SupportedSignals:  otelSignals,
 			CorrelationFields: baseFields,
 			RequiredSettings:  otelRequiredSettings,
-			Evidence:          []string{"pkg/telemetry/tracing.go", "pkg/telemetry/http.go", "docs/OPENTELEMETRY.md"},
+			Evidence:          []string{"pkg/telemetry/tracing.go", "pkg/telemetry/http.go", "docs/OBSERVABILITY_INTEGRATIONS.md"},
 			SetupActions:      otelSetupActions,
 		},
 		{
@@ -153,7 +153,7 @@ func buildAPMIntegrationProfiles(settings SystemSettings, tracing telemetry.Stat
 			SupportedSignals:  []string{"logs", "errors", "numeric_log_fields"},
 			CorrelationFields: []string{"test_id", "trace_id", "timestamp"},
 			RequiredSettings:  []string{"project ELK connection", "Elasticsearch read privileges", "project-secret authentication references", "per-test opt-in"},
-			Evidence:          []string{"pkg/api/elk_monitoring.go", "docs/MONITORING_INTEGRATIONS.md"},
+			Evidence:          []string{"pkg/api/elk_monitoring.go", "docs/OBSERVABILITY_INTEGRATIONS.md"},
 			SetupActions:      []string{"Create an intentionally incomplete project connection in Monitoring → Telemetry.", "Add endpoint, field mappings, and project-secret references when connectivity is available.", "Test the connection, enable it, and opt individual tests into capture."},
 		},
 		{

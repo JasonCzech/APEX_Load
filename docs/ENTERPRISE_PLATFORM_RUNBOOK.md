@@ -1,8 +1,105 @@
-# Enterprise Platform Architecture Runbook
+# Help Center
+
+A guided collection of operator articles for the APEX Load dashboard.
+
+
+## Enterprise Data Platform Operations Runbook
+
+This runbook covers the production data platform split used by HA APEX Load deployments:
+
+- PostgreSQL is the authoritative metadata store.
+- Redis or Valkey is ephemeral live state, idempotency, rate-limit, and websocket fanout coordination.
+- Object storage owns immutable run archive evidence.
+- Prometheus-compatible remote-write owns long-term operational metrics.
+
+SQLite, filesystem archives, and in-memory cache remain supported for local development and single-controller evaluations.
+
+### Readiness Gate
+
+Use `GET /api/v1/system/readiness` before adding a controller pod to service. A production-ready response should include:
+
+| Check | Expected production state |
+| --- | --- |
+| `metadata_store` | `ready`, `store_type=postgres`, migration version present, lease capability enabled |
+| `archive_writer` | `ready`, object backend configured, staging directory writable |
+| `cache_backend` | `ready`, `cache_backend=redis`, Redis URL configured, fanout channel visible |
+| `generator_rpc` | `ready` or `degraded` only when a known generator is temporarily unreachable |
+| `telemetry_fanout` | `ready`, websocket hub initialized |
+| `auth_mode` | `ready`, trusted-header or OIDC mode for production |
+| `scheduler_state` | `ready` or `degraded` with explicit schedule errors |
+
+`cache_backend=redis` returning `not_ready` means the controller should stay out of service. Redis is not durable state, but losing it in HA mode breaks shared live state, fanout, API-key throttling, and idempotency protection.
+
+### PostgreSQL Backup And Restore
+
+Use managed PostgreSQL point-in-time recovery where possible. At minimum:
+
+1. Enable continuous WAL archiving and daily logical dumps.
+2. Retain backups longer than the longest audit and reporting retention policy.
+3. Test restore into an isolated database before each major release.
+4. Validate counts after restore for domains, repositories, categories, projects, releases, scripts, scenarios, tests, schedules, schedule occurrences, approvals, audit events, service accounts, usage snapshots, and archive metadata.
+
+PostgreSQL is the only source of truth for scheduler leases and schedule occurrence reconciliation. Do not use Redis locks as a substitute for database leases.
+
+### Object Archive Recovery
+
+Run archives are immutable evidence. Configure bucket/container versioning and lifecycle rules outside APEX Load:
+
+- Keep `manifest.json`, transaction CSV/JSONL, resource samples, summaries, reports, browser evidence, and Parquet artifacts under the same run prefix.
+- Use retention apply events from APEX Load as the audit trail for prune/delete decisions.
+- For accidental object deletion, restore the complete run prefix before serving archive downloads.
+- If only local staging data is lost, APEX Load can materialize missing local files from object storage when archive metadata includes object URIs.
+
+### Redis Or Valkey Loss
+
+Redis/Valkey stores ephemeral state only. A cache restart may lose:
+
+- active run snapshots used by dashboards,
+- generator inventory cache entries,
+- idempotency reservations,
+- service-account rate-limit counters,
+- websocket fanout messages in flight.
+
+Expected recovery:
+
+1. Controllers reconnect and readiness returns to `ready`.
+2. Fresh live metrics repopulate active run snapshots.
+3. Generator inventory cache repopulates on the next inventory/readiness pass.
+4. Duplicate idempotency protection starts from an empty window after cache loss.
+5. Durable run state, schedules, approvals, and archives remain intact in PostgreSQL/object storage.
+
+For HA production, run Redis/Valkey as a managed service or use a replicated operator. The checked-in `deployments/k8s/ha/redis-valkey.example.yaml` is a reference baseline, not a complete managed-cache replacement.
+
+### Metrics Retention
+
+APEX Load exposes compact runtime metrics and writes typed summaries to SQL/archive evidence. Long-term high-cardinality operational analysis belongs in the Prometheus-compatible backend.
+
+Recommended retention boundaries:
+
+- Live dashboard: seconds to minutes, websocket/cache backed.
+- SQL interval summaries: release comparison and report queries.
+- Prometheus remote-write: fleet, controller, and generator operations over weeks/months.
+- Object archives: immutable run evidence according to compliance class.
+
+### HA Controller Notes
+
+Use at least two controller replicas with:
+
+- shared PostgreSQL,
+- shared Redis/Valkey,
+- shared object archive backend,
+- readiness probe on `/api/v1/system/readiness`,
+- pod anti-affinity across nodes,
+- durable scheduler leases in PostgreSQL.
+
+The example HA deployment is in `deployments/k8s/ha/controller-ha-deployment.example.yaml`.
+
+
+## Enterprise Platform Architecture Runbook
 
 This runbook defines the production reference architecture for APEX Load as a shared enterprise performance testing platform.
 
-## Reference Architecture
+### Reference Architecture
 
 | Component | Primary responsibility | Durable state ownership |
 | --- | --- | --- |
@@ -16,7 +113,7 @@ This runbook defines the production reference architecture for APEX Load as a sh
 
 Generators are replaceable workers. The controller and metadata store own intent, governance, scheduling decisions, and run history. Archive artifacts are immutable evidence once a run completes.
 
-## State Ownership
+### State Ownership
 
 | State family | Owner | Scope | Restart contract |
 | --- | --- | --- | --- |
@@ -31,7 +128,7 @@ Generators are replaceable workers. The controller and metadata store own intent
 | Run archives | Archive writer/store | Test run | Immutable once finalized; metadata points to manifest path |
 | Audit events | Controller API and metadata store | Global/project | Persisted with actor, action, target, and outcome |
 
-## HA Controller Behavior
+### HA Controller Behavior
 
 APEX Load can run multiple controller API replicas when they share PostgreSQL,
 Redis/Valkey, and the configured archive backend. Execution is intentionally
@@ -64,7 +161,7 @@ All reconciler loops must be idempotent:
 - Generator inventory reconciliation replaces observations rather than accumulating stale capacity.
 - Archive retention never rewrites completed manifests; it only updates retention metadata or removes eligible artifacts after policy checks.
 
-## Restart Contracts
+### Restart Contracts
 
 | Condition | Expected behavior |
 | --- | --- |
@@ -75,7 +172,7 @@ All reconciler loops must be idempotent:
 | Archive writer restarts mid-run | Preserve partial files for diagnosis; final manifest is written only after successful finalize |
 | Dashboard static assets missing | API remains available; readiness reports dashboard/static asset state once that check is added |
 
-## Production Readiness Endpoint
+### Production Readiness Endpoint
 
 `GET /api/v1/system/readiness` returns a machine-readable readiness response:
 
@@ -90,7 +187,7 @@ Overall status is `ready`, `degraded`, or `not_ready`. `not_ready` returns HTTP 
 
 The dashboard renders this payload in Settings > General and as a compact Monitoring card, including the aggregate state, per-check state, messages, and detail fields. Use these surfaces before release windows or controller maintenance to confirm the backend readiness probe matches what platform users will see.
 
-## Upgrade And Migration Policy
+### Upgrade And Migration Policy
 
 Metadata migrations must be additive, idempotent, and safe to run at controller startup. SQLite remains suitable for local development and single-node evaluation. PostgreSQL is the production target for shared enterprise deployments because controller replicas and singleton leases need shared transactional coordination.
 
@@ -104,7 +201,7 @@ Rollback expectations:
 - Older binaries may ignore newer optional archive fields.
 - Destructive migrations require an explicit backup and release note.
 
-## Failure Modes And Recovery
+### Failure Modes And Recovery
 
 | Failure | Detection | Recovery |
 | --- | --- | --- |
@@ -116,7 +213,7 @@ Rollback expectations:
 | Scheduler has prior errors | `scheduler_state=degraded` | Inspect schedule `last_error`, scenario references, release references, and capacity policy |
 | Controller restart during run | Terminal run shows interruption or reattached state | Review audit events, generator logs, and archive completeness before promoting results |
 
-## Operator Checklist
+### Operator Checklist
 
 Before promoting an environment:
 
@@ -131,7 +228,7 @@ Before promoting an environment:
    durable generator state, and failover evidence in
    the AKS README [Integration readiness](../deployments/k8s/aks/README.md#integration-readiness) section.
 
-## Plan Mapping
+### Plan Mapping
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
@@ -140,3 +237,102 @@ Before promoting an environment:
 | P1.3 Production readiness checks | Complete for initial API surface and dashboard operator visibility; extend as new dependencies land | `/api/v1/system/readiness`, Settings > General, Monitoring |
 | P1.4 Upgrade and migration policy | Complete | Upgrade and migration policy section |
 | P1.5 Operator architecture runbook | Complete | This runbook |
+
+
+## SQLite To PostgreSQL Migration Guide
+
+APEX Load supports SQLite for local development and PostgreSQL for shared enterprise deployments. Use this guide when promoting an existing SQLite-backed controller to PostgreSQL.
+
+### Preconditions
+
+- Stop all controllers that write to the SQLite database.
+- Back up the SQLite file and archive directory.
+- Provision PostgreSQL 16 or newer.
+- Set object archive storage before migrating production evidence when possible.
+- Run the target controller once against PostgreSQL in a staging environment to initialize schema migrations.
+
+### Export
+
+Create a consistent SQLite export:
+
+```bash
+sqlite3 "$APEXLOAD_DB" ".backup apexload-migration.sqlite"
+sqlite3 apexload-migration.sqlite ".dump" > apexload-migration.sql
+```
+
+For large databases, prefer a small migration utility that copies table-by-table with typed inserts instead of replaying raw SQLite DDL. The SQL dialects differ; the important artifact is the data, not the SQLite schema syntax.
+
+### Import Strategy
+
+1. Start with an empty PostgreSQL database.
+2. Run the APEX Load controller once with:
+
+```bash
+APEXLOAD_STORE=postgres
+APEXLOAD_DATABASE_URL=postgres://apexload:***@postgresql:5432/apexload?sslmode=require
+```
+
+3. Stop the controller after schema initialization succeeds.
+4. Copy data in dependency order:
+
+| Order | Data |
+| --- | --- |
+| 1 | domains, application repositories, repository categories |
+| 2 | projects, applications compatibility rows, releases, folders |
+| 3 | scripts, authoring sessions, data pools |
+| 4 | scenarios, scenario scripts, schedules |
+| 5 | schedule occurrences, approvals, scheduler leases |
+| 6 | tests/runs, interval summaries, usage snapshots |
+| 7 | run archive records, retention events, audit events |
+| 8 | service accounts, service-account roles, settings |
+
+5. Preserve IDs exactly. Existing scripts, scenarios, runs, archive metadata, RBAC grants, and dashboard links depend on stable IDs.
+
+### Validation Counts
+
+After import, compare source and target counts for:
+
+- domains
+- application repositories
+- repository categories
+- projects
+- releases
+- folders
+- scripts
+- authoring sessions
+- data pools and rows
+- scenarios and scenario scripts
+- schedules, occurrences, and approvals
+- tests/runs
+- interval summaries
+- run archive records and retention events
+- audit events
+- service accounts and role mappings
+- usage snapshots
+- settings
+
+Then call:
+
+```bash
+curl -fsS "$APEXLOAD_URL/api/v1/system/readiness"
+curl -fsS "$APEXLOAD_URL/api/v1/system/inventory"
+```
+
+Expected production values include `metadata_store=postgres`, a reachable archive backend, and `cache_backend=redis` for HA.
+
+### Cutover
+
+1. Configure all controllers with the same PostgreSQL URL, shared object archive backend, Redis/Valkey URL, production auth mode, and `APEXLOAD_CONTROLLER_HA=true`. Do not add replicas until PostgreSQL, shared archives, Redis/Valkey coordination, and the execution lease are healthy.
+2. Start one controller and verify readiness.
+3. Start additional controller replicas with `APEXLOAD_CONTROLLER_HA=true` and identical shared-service settings. See [HA Controller Behavior](ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior) for the execution-leader lease contract.
+4. Verify scripts, scenarios, schedules, recent runs, reports, archive downloads, service accounts, and audit queries.
+5. Keep the SQLite backup until at least one full reporting and retention cycle completes.
+
+### Rollback
+
+Rollback is a service-level decision:
+
+- Stop PostgreSQL-backed controllers.
+- Restore the original SQLite file and filesystem archives.
+- Start a single SQLite-backed controller.
+- Do not run SQLite and PostgreSQL controllers against the same production traffic at the same time.

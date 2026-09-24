@@ -162,7 +162,7 @@ combined persistent Java imports fail sidecar capability preflight with
 `persistent_lifecycle_unavailable`. Do not add a privileged host-cgroup mount
 as a workaround. Persistent lifecycle execution requires a separately governed
 Windows runner or Linux runner with a narrowly delegated cgroup subtree. See
-[Java Vuser Runtime](../docs/JAVA_VUSER_RUNTIME.md) for the platform
+[Java Vuser Runtime](../docs/PROTOCOL_SUPPORT.md#java-vuser-execution) for the platform
 and containment contract.
 
 The sidecar separates those credentials from reviewed Java code; it is not a

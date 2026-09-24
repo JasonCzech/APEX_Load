@@ -12,6 +12,20 @@ Material here is preserved for audit and design history. It is not current produ
 | `qa-reviews/<audit-folder>/` | Evidence only (screenshots, logs, JSON, DOM inventories) referenced from `AUDITS_2026-09.md`: `ux-consistency-2026-09-08`, `post-test-reporting-2026-09-08`, `end-to-end-ux-2026-09-09`, `access-audit-2026-09-12`, `command-center-audit-2026-09-12`, `dashboard-audit-2026-09-12`, `import-source-audit-2026-09-12`, `new-test-audit-2026-09-12`, `results-repository-audit-2026-09-12`, `scenario-builder-evaluation-2026-09-12`, `script-scenario-audit-2026-09-12`, `import-consistency-2026-09-19`, `user-settings-2026-09-09` |
 | [APEX_Load_DSL_Reference_Guide_v2.1.docx](APEX_Load_DSL_Reference_Guide_v2.1.docx) | Retired 2026-09-24. Hand-maintained snapshot (pinned to commit f757e96) that contradicted the code on loop caps, `pop` exhaustion, unknown action types and `fn.*()` calls. Use the generated [DSL_ACTION_REFERENCE.md](../DSL_ACTION_REFERENCE.md) and [HELP_DSL_OPERATOR_GUIDE.md](../HELP_DSL_OPERATOR_GUIDE.md) instead |
 
+## Consolidated current documentation (2026-09-24)
+
+The following focused guides were folded into their catalog parents to reduce
+navigation duplication while preserving their in-app article sections. Recover
+the pre-merge source from the branch parent `7234a9b1` with
+`git show 7234a9b1:docs/<path>`:
+
+- `HELP_GETTING_STARTED.md`, `HELP_CAPABILITIES.md`, `HELP_SUPPORT.md`, `HELP_CHANGES.md`, and `HELP_TROUBLESHOOTING.md` → `HELP_CENTER.md`; `HELP_API_OVERVIEW.md` → `API_USER_GUIDE.md`.
+- `LIBRARY_ASSIGNMENTS.md` and `PROJECT_SECRETS.md` → `ADMIN_USER_GUIDE.md`; `RUNTIME_CAPTURE_DIAGNOSTICS.md` → `SCRIPT_DEBUGGER_GUIDE.md`.
+- `WEB_API_EXECUTION_SUPPORT_MATRIX.md`, `BROWSER_AND_MOBILE_SUPPORT.md`, `MESSAGING_SUPPORT.md`, `JAVA_VUSER_RUNTIME.md`, and `SAPGUI_RUNNER_SPEC.md` → `PROTOCOL_SUPPORT.md`; `NATIVE_ARCHIVE_COMPATIBILITY.md` → `IMPORT_FIDELITY_AND_REPAIRS.md`.
+- `PROMETHEUS_METRICS.md`, `OPENTELEMETRY.md`, `POWERBI_INTEGRATION.md`, and `MONITORING_INTEGRATIONS.md` → `OBSERVABILITY_INTEGRATIONS.md`.
+- `CLUSTER_CONNECTIONS.md`, `KUBERNETES_RESTART_CONTROLS.md`, and `MULTI_CLOUD_PAAS.md` → `CLUSTERS_AND_CLOUD.md`.
+- `ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md`, `ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md`, and `SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md` → `ENTERPRISE_PLATFORM_RUNBOOK.md`; `GITHUB_INTEGRATION.md` → `CICD_INTEGRATION.md`; `OPTIN_TEST_SUITES.md` → `qa/TEST_PROGRAM.md`.
+
 ## Removed 2026-09-24 (recoverable from git)
 
 These documents were fully implemented, remediated or superseded and were deleted. Restore any of them with `git show <hash>:<path>`.
@@ -23,9 +37,9 @@ Restore with `git show 587d279b8:docs/archive/plans/<file>`.
 | File | Note | Current reference |
 | --- | --- | --- |
 | AUTH_RBAC_FOLLOW_UP_TICKETS.md | Workstream 4 auth/RBAC follow-up decisions; all tickets implemented | [AUTH_RBAC_OPERATIONS_RUNBOOK.md](../AUTH_RBAC_OPERATIONS_RUNBOOK.md) |
-| DYNATRACE_SAAS_MONITORING_PLAN.md | Optional Dynatrace SaaS in-flight monitoring; implemented | [MONITORING_INTEGRATIONS.md](../MONITORING_INTEGRATIONS.md) |
-| ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md | PostgreSQL, Prometheus, object storage and Redis upgrade; all phases shipped | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](../ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) |
-| PROTOCOL_EXTENSION_PLAN.md | SOAP and Java-over-HTTP protocol support; implemented | [MESSAGING_SUPPORT.md](../MESSAGING_SUPPORT.md), [WEB_API_EXECUTION_SUPPORT_MATRIX.md](../WEB_API_EXECUTION_SUPPORT_MATRIX.md) |
+| DYNATRACE_SAAS_MONITORING_PLAN.md | Optional Dynatrace SaaS in-flight monitoring; implemented | [OBSERVABILITY_INTEGRATIONS.md](../OBSERVABILITY_INTEGRATIONS.md) |
+| ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md | PostgreSQL, Prometheus, object storage and Redis upgrade; all phases shipped | [ENTERPRISE_PLATFORM_RUNBOOK.md](../ENTERPRISE_PLATFORM_RUNBOOK.md) |
+| PROTOCOL_EXTENSION_PLAN.md | SOAP and Java-over-HTTP protocol support; implemented | [PROTOCOL_SUPPORT.md](../PROTOCOL_SUPPORT.md), [PROTOCOL_SUPPORT.md](../PROTOCOL_SUPPORT.md) |
 | RUN_REPORT_IMPLEMENTATION_PLAN.md | Answer-first Run Report page for completed runs; `RunReportPage` and related components exist | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md) |
 | SCRIPT_EDITOR_INTERACTION_MODEL.md | Script editor decision memo (Author outline, Action editor, Source tab); shipped | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md#authoring-a-script) |
 

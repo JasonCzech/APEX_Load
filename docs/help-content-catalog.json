@@ -3,8 +3,11 @@
     "id": "first-test",
     "area": "getting-started",
     "title": "Your first test",
-    "path": "docs/HELP_GETTING_STARTED.md",
-    "owner": "APEX Load maintainers"
+    "path": "docs/HELP_CENTER.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Build and run your first test"
+    ]
   },
   {
     "id": "orientation",
@@ -135,7 +138,7 @@
     "id": "operations",
     "area": "admin-guide",
     "title": "Backup, recovery & retention",
-    "path": "docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md",
+    "path": "docs/ENTERPRISE_PLATFORM_RUNBOOK.md",
     "owner": "APEX Load maintainers",
     "group": "Runbooks"
   },
@@ -143,7 +146,7 @@
     "id": "platform",
     "area": "admin-guide",
     "title": "Deployment & HA",
-    "path": "docs/ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md",
+    "path": "docs/ENTERPRISE_PLATFORM_RUNBOOK.md",
     "owner": "APEX Load maintainers",
     "group": "Runbooks"
   },
@@ -159,40 +162,55 @@
     "id": "clusters",
     "area": "admin-guide",
     "title": "Cluster connections",
-    "path": "docs/CLUSTER_CONNECTIONS.md",
+    "path": "docs/CLUSTERS_AND_CLOUD.md",
     "owner": "APEX Load maintainers",
-    "group": "Runbooks"
+    "group": "Runbooks",
+    "sections": [
+      "Cluster connections & host resource allocation"
+    ]
   },
   {
     "id": "restart",
     "area": "admin-guide",
     "title": "Generator restart controls",
-    "path": "docs/KUBERNETES_RESTART_CONTROLS.md",
+    "path": "docs/CLUSTERS_AND_CLOUD.md",
     "owner": "APEX Load maintainers",
-    "group": "Runbooks"
+    "group": "Runbooks",
+    "sections": [
+      "Kubernetes Restart Controls"
+    ]
   },
   {
     "id": "migration",
     "area": "admin-guide",
     "title": "SQLite to PostgreSQL migration",
-    "path": "docs/SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md",
+    "path": "docs/ENTERPRISE_PLATFORM_RUNBOOK.md",
     "owner": "APEX Load maintainers",
-    "group": "Runbooks"
+    "group": "Runbooks",
+    "sections": [
+      "SQLite To PostgreSQL Migration Guide"
+    ]
   },
   {
     "id": "telemetry",
     "area": "admin-guide",
     "title": "OpenTelemetry traces",
-    "path": "docs/OPENTELEMETRY.md",
+    "path": "docs/OBSERVABILITY_INTEGRATIONS.md",
     "owner": "APEX Load maintainers",
-    "group": "Runbooks"
+    "group": "Runbooks",
+    "sections": [
+      "OpenTelemetry tracing"
+    ]
   },
   {
     "id": "api-overview",
     "area": "general",
     "title": "Overview & first API calls",
-    "path": "docs/HELP_API_OVERVIEW.md",
-    "owner": "APEX Load maintainers"
+    "path": "docs/API_USER_GUIDE.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Start with the REST API"
+    ]
   },
   {
     "id": "authentication",
@@ -256,8 +274,11 @@
     "id": "troubleshooting",
     "area": "troubleshooting",
     "title": "Diagnose a problem",
-    "path": "docs/HELP_TROUBLESHOOTING.md",
-    "owner": "APEX Load maintainers"
+    "path": "docs/HELP_CENTER.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Troubleshoot a run"
+    ]
   },
   {
     "id": "faq",
@@ -273,9 +294,12 @@
     "id": "capabilities",
     "area": "user-guide",
     "title": "Capabilities & limitations",
-    "path": "docs/HELP_CAPABILITIES.md",
+    "path": "docs/HELP_CENTER.md",
     "owner": "APEX Load maintainers",
-    "group": "Reference"
+    "group": "Reference",
+    "sections": [
+      "Check current capabilities"
+    ]
   },
   {
     "id": "dsl",
@@ -289,25 +313,34 @@
     "id": "messaging",
     "area": "user-guide",
     "title": "Messaging support",
-    "path": "docs/MESSAGING_SUPPORT.md",
+    "path": "docs/PROTOCOL_SUPPORT.md",
     "owner": "APEX Load maintainers",
-    "group": "Reference"
+    "group": "Reference",
+    "sections": [
+      "Broker and messaging support"
+    ]
   },
   {
     "id": "browser",
     "area": "user-guide",
     "title": "Browser & mobile support",
-    "path": "docs/BROWSER_AND_MOBILE_SUPPORT.md",
+    "path": "docs/PROTOCOL_SUPPORT.md",
     "owner": "APEX Load maintainers",
-    "group": "Reference"
+    "group": "Reference",
+    "sections": [
+      "Browser execution and mobile emulation"
+    ]
   },
   {
     "id": "java",
     "area": "user-guide",
     "title": "Java VUser runtime",
-    "path": "docs/JAVA_VUSER_RUNTIME.md",
+    "path": "docs/PROTOCOL_SUPPORT.md",
     "owner": "APEX Load maintainers",
-    "group": "Reference"
+    "group": "Reference",
+    "sections": [
+      "Java Vuser execution"
+    ]
   },
   {
     "id": "runtime",
@@ -329,16 +362,22 @@
     "id": "changes",
     "area": "getting-started",
     "title": "Documentation changes & version",
-    "path": "docs/HELP_CHANGES.md",
+    "path": "docs/HELP_CENTER.md",
     "owner": "APEX Load maintainers",
-    "group": "Reference"
+    "group": "Reference",
+    "sections": [
+      "Documentation version notes"
+    ]
   },
   {
     "id": "support",
     "area": "troubleshooting",
     "title": "Contact support & collect evidence",
-    "path": "docs/HELP_SUPPORT.md",
-    "owner": "APEX Load maintainers"
+    "path": "docs/HELP_CENTER.md",
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Prepare a support request"
+    ]
   },
   {
     "id": "recording-agent",
@@ -352,33 +391,45 @@
     "id": "prometheus",
     "area": "user-guide",
     "title": "Prometheus metrics",
-    "path": "docs/PROMETHEUS_METRICS.md",
+    "path": "docs/OBSERVABILITY_INTEGRATIONS.md",
     "group": "Reference",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Prometheus scrape endpoint"
+    ]
   },
   {
     "id": "powerbi",
     "area": "user-guide",
     "title": "Power BI integration",
-    "path": "docs/POWERBI_INTEGRATION.md",
+    "path": "docs/OBSERVABILITY_INTEGRATIONS.md",
     "group": "Reference",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "Power BI publishing workflow"
+    ]
   },
   {
     "id": "dynatrace",
     "area": "user-guide",
     "title": "Monitoring integrations",
-    "path": "docs/MONITORING_INTEGRATIONS.md",
+    "path": "docs/OBSERVABILITY_INTEGRATIONS.md",
     "group": "Reference",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "External monitoring integrations"
+    ]
   },
   {
     "id": "github",
     "area": "general",
     "title": "GitHub integration",
-    "path": "docs/GITHUB_INTEGRATION.md",
+    "path": "docs/CICD_INTEGRATION.md",
     "group": "Reference",
-    "owner": "APEX Load maintainers"
+    "owner": "APEX Load maintainers",
+    "sections": [
+      "GitHub Enterprise Integration"
+    ]
   },
   {
     "id": "surfaces",
@@ -505,5 +556,16 @@
     "area": "user-guide",
     "group": "Reference",
     "owner": "APEX Load maintainers"
+  },
+  {
+    "id": "sap-gui",
+    "area": "user-guide",
+    "title": "SAP GUI runner specification",
+    "path": "docs/PROTOCOL_SUPPORT.md",
+    "owner": "APEX Load maintainers",
+    "group": "Reference",
+    "sections": [
+      "SAP GUI Runner Bridge Spec"
+    ]
   }
 ]

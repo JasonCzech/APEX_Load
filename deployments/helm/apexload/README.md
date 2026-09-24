@@ -25,7 +25,7 @@ the shared ConfigMap or Secret cannot re-enable the integration. An HA
 controller still receives the separate projected token required for
 EndpointSlice leadership, without restart permissions.
 Registered remote clusters still require their own RBAC; see
-[Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
+[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md).
 
 | Value | Default | Purpose |
 |---|---|---|
@@ -85,7 +85,7 @@ contains the OpenTelemetry header string (for example under
 key differs, `tracing.headersSecretKey`. The chart projects that key as
 `OTEL_EXPORTER_OTLP_HEADERS` into both controller and generator containers;
 the credential is never copied into values or the shared ConfigMap. See
-[OpenTelemetry tracing](../../../docs/OPENTELEMETRY.md) for configuration and
+[OpenTelemetry tracing](../../../docs/OBSERVABILITY_INTEGRATIONS.md) for configuration and
 data-handling details.
 
 Set `controller.ha.enabled=true` before setting more than one controller
@@ -142,7 +142,7 @@ To store managed values in Azure Key Vault instead, set
 `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true` in the controller ConfigMap; the
 controller workload identity must have `Key Vault Secrets Officer`. Generators
 never receive the write-enable setting. See
-[Project Secrets](../../../docs/PROJECT_SECRETS.md) for security and runtime
+[Project Secrets](../../../docs/ADMIN_USER_GUIDE.md#project-secrets) for security and runtime
 delivery details.
 
 Java Vuser execution is also opt-in. Set `javaVuser.enabled=true` to add the
@@ -162,7 +162,7 @@ enterprise profile. Set an explicit runner tag for a signed custom image.
 Supply precompiled classes/JARs through that image or set
 `javaVuser.assets.existingClaim` to a read-only PVC; source compilation and
 artifact upload are intentionally out of scope. See
-[`docs/JAVA_VUSER_RUNTIME.md`](../../../docs/JAVA_VUSER_RUNTIME.md) for the JDK,
+[`docs/PROTOCOL_SUPPORT.md`](../../../docs/PROTOCOL_SUPPORT.md) for the JDK,
 classpath, and trust contract.
 
 Bruno source import is available independently of runner deployment. Enable it

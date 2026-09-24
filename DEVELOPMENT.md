@@ -558,9 +558,9 @@ actions use the method as `type`):
 For `init`, `teardown`, `data_sources`, and `goal_config`, see the README
 [DSL Script Structure](README.md#dsl-script-structure) and `examples/simple-http.json`.
 Browser/mobile DSL keys and actions are in
-[docs/BROWSER_AND_MOBILE_SUPPORT.md](docs/BROWSER_AND_MOBILE_SUPPORT.md#browser-dsl-quick-reference);
+[docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md#browser-dsl-quick-reference);
 real broker adapters are opt-in behind build tags
-([docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md)).
+([docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)).
 
 ### Common errors
 

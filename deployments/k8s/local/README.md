@@ -40,7 +40,7 @@ Audited Kubernetes restart controls are enabled by default through
 [restart-controls.yaml](restart-controls.yaml). Only the controller mounts a
 default Kubernetes API token; generator pods receive no Kubernetes API token or
 restart RBAC. See
-[Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
+[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md).
 
 ## Prerequisites
 

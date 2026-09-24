@@ -637,8 +637,7 @@ func TestHiddenEvidenceUploadsOptInNarrowly(t *testing.T) {
 	}{
 		{path: "../.github/workflows/deploy-aks.yml", wantCount: 1},
 		{path: "../.github/workflows/deploy-appservice.yml", wantCount: 1},
-		{path: "../docs/CICD_INTEGRATION.md", wantCount: 2},
-		{path: "../docs/GITHUB_INTEGRATION.md", wantCount: 1},
+		{path: "../docs/CICD_INTEGRATION.md", wantCount: 3},
 	}
 	for _, test := range tests {
 		content, err := os.ReadFile(test.path)

@@ -2,7 +2,7 @@
 
 Status: Current
 
-Consolidated generator fleet, autoscaling, capacity, and run-supervision reference. Merged from the former ENTERPRISE_GENERATOR_FLEET_MODEL, ENTERPRISE_AUTOSCALING_SIGNALS, GENERATOR_RUN_SUPERVISION, and POD_CAPACITY_RESERVATIONS documents. The platform architecture and data-platform runbooks remain separate: see [ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md](ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md) and [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md).
+Consolidated generator fleet, autoscaling, capacity, and run-supervision reference. Merged from the former ENTERPRISE_GENERATOR_FLEET_MODEL, ENTERPRISE_AUTOSCALING_SIGNALS, GENERATOR_RUN_SUPERVISION, and POD_CAPACITY_RESERVATIONS documents. The platform architecture and data-platform runbooks remain separate: see the [platform architecture section](ENTERPRISE_PLATFORM_RUNBOOK.md#enterprise-platform-architecture-runbook) and [data platform operations section](ENTERPRISE_PLATFORM_RUNBOOK.md#enterprise-data-platform-operations-runbook).
 
 Contents:
 

@@ -167,7 +167,7 @@ func powerBIPublishConflict(latest *storage.PowerBIPublish, datasetID string, fo
 		// that pushed nothing. This is necessarily optimistic: the service may
 		// have applied a single-attempt chunk before the client crashed or saw an
 		// ambiguous response. A forced re-publish remains distinguishable by its
-		// new publish_id, as documented in docs/POWERBI_INTEGRATION.md.
+		// new publish_id, as documented in docs/OBSERVABILITY_INTEGRATIONS.md.
 		if latest.TransactionRowsPushed > 0 || latest.RunRowsPushed > 0 {
 			return true, "a previous publish attempt pushed rows but never completed; re-publishing appends duplicates — pass force=true to continue"
 		}

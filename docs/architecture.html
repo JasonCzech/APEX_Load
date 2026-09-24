@@ -1033,7 +1033,7 @@ const COMPONENTS = {
     &bull; Azure Service Bus: real adapter opt-in via <code>-tags jms_servicebus_real</code><br/>
     &bull; IBM MQ: <strong>mock/in-memory only</strong> &mdash; no real IBM MQ adapter exists in this build</p>`,
     connections: ['VUser Engine &mdash; Execute() calls', 'Message Broker &mdash; JMS connections (mock by default)'],
-    files: ['pkg/protocol/jms/', 'docs/MESSAGING_SUPPORT.md']
+    files: ['pkg/protocol/jms/', 'docs/PROTOCOL_SUPPORT.md']
   },
   'proto-db': {
     title: 'Database Protocol',
@@ -1132,7 +1132,7 @@ const COMPONENTS = {
     layer: 'engine',
     body: `<p>External-runner container used by the <code>java_vuser</code> protocol. It runs governed JVM Vusers outside the generator process. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator.</p>`,
     connections: ['Java Vuser Protocol &mdash; runner bridge', 'Generator &mdash; sidecar host'],
-    files: ['cmd/apexload-java-vuser-runner/main.go', 'pkg/javarunner/', 'pkg/javasidecar/', 'docs/JAVA_VUSER_RUNTIME.md', 'deployments/k8s/components/java-vuser-runner/']
+    files: ['cmd/apexload-java-vuser-runner/main.go', 'pkg/javarunner/', 'pkg/javasidecar/', 'docs/PROTOCOL_SUPPORT.md', 'deployments/k8s/components/java-vuser-runner/']
   },
   collectoragent: {
     title: 'Collector Agent',
@@ -1185,7 +1185,7 @@ const COMPONENTS = {
     &bull; ELK monitoring<br/>
     &bull; Grafana dashboards and Prometheus graph data sources<br/>
     &bull; OpenTelemetry traces (opt-in)</p>
-    <p>See <code>docs/MONITORING_INTEGRATIONS.md</code>, <code>docs/PROMETHEUS_METRICS.md</code>, <code>docs/OPENTELEMETRY.md</code>.</p>`,
+    <p>See <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>.</p>`,
     connections: ['REST API Server &mdash; connection management', 'Telemetry Export &mdash; event/metric emission'],
     files: ['pkg/api/dynatrace_monitoring.go', 'pkg/api/elk_monitoring.go', 'pkg/api/graph_datasource_grafana.go', 'pkg/storage/sqlite_dynatrace_connections.go']
   },
@@ -1194,7 +1194,7 @@ const COMPONENTS = {
     subtitle: 'GitHub Actions + Power BI',
     layer: 'storage',
     body: `<p>CI/CD: GitHub (including Enterprise Server) integration, GitHub OIDC exchange for CI runs, and <code>apexctl</code> CI commands with SLA-based exit codes and JUnit output. BI: Power BI dataset publishing of run results.</p>
-    <p>See <code>docs/GITHUB_INTEGRATION.md</code>, <code>docs/CICD_INTEGRATION.md</code>, <code>docs/POWERBI_INTEGRATION.md</code>.</p>`,
+    <p>See <code>docs/CICD_INTEGRATION.md</code>, <code>docs/CICD_INTEGRATION.md</code>, <code>docs/OBSERVABILITY_INTEGRATIONS.md</code>.</p>`,
     connections: ['REST API Server &mdash; /api/v1/ci/runs, GitHub handlers', 'apexctl &mdash; CI client'],
     files: ['pkg/api/github_handlers.go', 'pkg/api/github_oauth.go', 'pkg/api/powerbi_publish.go', 'cmd/apexctl/ci.go']
   },
@@ -1236,7 +1236,7 @@ const COMPONENTS = {
     layer: 'protocol',
     body: `<p>Governed JVM sidecar runner (<code>java_vuser</code>) for Java Vuser scripts. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator; capacity is reserved per pod.</p>`,
     connections: ['VUser Engine &mdash; Execute() calls', 'Java Vuser Runner &mdash; external-runner bridge'],
-    files: ['pkg/protocol/java_vuser/', 'pkg/javarunner/', 'docs/JAVA_VUSER_RUNTIME.md']
+    files: ['pkg/protocol/java_vuser/', 'pkg/javarunner/', 'docs/PROTOCOL_SUPPORT.md']
   },
   'conv-bruno': {
     title: 'Bruno Converter',

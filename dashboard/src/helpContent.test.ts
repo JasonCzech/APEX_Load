@@ -82,7 +82,8 @@ describe('Help catalogue and content contracts', () => {
   })
   it('resolves source-relative and section links through the explicit catalogue', async () => {
     const source = await loadHelpSource(first)
-    expect(resolveHelpLink('HELP_SUPPORT.md', first, source)).toContain('article=support')
+    expect(resolveHelpLink('HELP_CENTER.md#prepare-a-support-request', first, source)).toContain('article=support')
+    expect(resolveHelpLink('HELP_CENTER.md#prepare-a-support-request', first, source)).toContain('section=prepare-a-support-request')
     expect(resolveHelpLink('missing.md', first, source)).toBe('')
     expect(resolveHelpLink('#create-and-prove-the-script', first, source)).toContain('section=create-and-prove-the-script')
     expect(resolveHelpLink('dsl.schema.json', first, source)).toContain('article=dsl')

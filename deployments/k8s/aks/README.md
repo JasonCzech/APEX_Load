@@ -46,7 +46,7 @@ Audited Kubernetes restart controls are enabled by default through
 default Kubernetes API token. Generator pods receive no Kubernetes API token or
 restart RBAC; the workload-identity webhook separately injects its cloud-audience
 token for Azure APIs. See
-[Kubernetes restart controls](../../../docs/KUBERNETES_RESTART_CONTROLS.md).
+[Kubernetes restart controls](../../../docs/CLUSTERS_AND_CLOUD.md).
 
 ## Fresh deployment
 

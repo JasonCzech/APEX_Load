@@ -62,10 +62,10 @@ The current controller can run in either local or distributed mode without chang
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — System architecture, data flow diagrams, engine internals, metrics collection, performance characteristics
 - **[docs/API_USER_GUIDE.md](docs/API_USER_GUIDE.md)** — Operator and CI/CD API workflows; generated Swagger/Endpoint Map remain the exhaustive route source
 - **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — Common issues, debugging techniques, solutions
-- **[docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](docs/ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md)** — Current enterprise storage, cache, archive, and telemetry operations
+- **[docs/ENTERPRISE_PLATFORM_RUNBOOK.md](docs/ENTERPRISE_PLATFORM_RUNBOOK.md)** — Current enterprise storage, cache, archive, and telemetry operations
 - **[docs/COMPETITIVE_COMPARISON.md](docs/COMPETITIVE_COMPARISON.md)** — How APEX Load compares to LoadRunner/LRE, k6, NeoLoad, JMeter, and DevWeb; honest leads/matches/trails; migration and import reference (RTS mappings, protocol routing, bundle coverage)
-- **[docs/BROWSER_AND_MOBILE_SUPPORT.md](docs/BROWSER_AND_MOBILE_SUPPORT.md)** — Current browser canary, mobile emulation, client metrics, and benchmark guidance
-- **[docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md)** — Current JMS, Kafka, AsyncAPI, and Event Hubs support summary
+- **[docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)** — Current browser canary, mobile emulation, client metrics, and benchmark guidance
+- **[docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md)** — Current JMS, Kafka, AsyncAPI, and Event Hubs support summary
 - **[docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md](docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md)** — Self-hosted auth/RBAC operations, break-glass recovery, service-account handling, and audit export guidance
 - **[docs/ACCESS_SURFACES.md](docs/ACCESS_SURFACES.md)** — Hosted browser, desktop workspace, CLI, deployment identity, binding defaults, and desktop promotion governance
 - **[docs/recording-agent.md](docs/recording-agent.md)** — Production packaging and deployment guidance for the local browser Recording Agent
@@ -218,7 +218,7 @@ Controller runtime configuration:
 - `APEXLOAD_DB`: SQLite DB path (default `apexload.db`)
 - `APEXLOAD_DATABASE_URL`: PostgreSQL connection URL when `APEXLOAD_STORE=postgres`
 - `APEXLOAD_DATABASE_MAX_OPEN_CONNS`, `APEXLOAD_DATABASE_MAX_IDLE_CONNS`, `APEXLOAD_DATABASE_CONN_MAX_LIFETIME`: production PostgreSQL pool tuning
-- `APEXLOAD_CONTROLLER_HA`: set `true` (or `1`/`yes`/`on`/`enabled`) before running more than one controller replica; it installs the durable execution-leader lease so only the lease holder runs tests and followers answer `503` on execution routes. When it is unset every replica behaves as its own leader and independently runs the scheduler sweep, queued-run promotion/reconciliation, provisioning recovery, archive finalization recovery, and retention mutations. Replicas must also share PostgreSQL, Redis/Valkey, and the archive backend. See [HA Controller Behavior](docs/ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md#ha-controller-behavior)
+- `APEXLOAD_CONTROLLER_HA`: set `true` (or `1`/`yes`/`on`/`enabled`) before running more than one controller replica; it installs the durable execution-leader lease so only the lease holder runs tests and followers answer `503` on execution routes. When it is unset every replica behaves as its own leader and independently runs the scheduler sweep, queued-run promotion/reconciliation, provisioning recovery, archive finalization recovery, and retention mutations. Replicas must also share PostgreSQL, Redis/Valkey, and the archive backend. See [HA Controller Behavior](docs/ENTERPRISE_PLATFORM_RUNBOOK.md#ha-controller-behavior)
 - `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION`: how long terminal scenario and execution-plan schedule occurrences are retained (default `2160h`, or 90 days); set `0` to disable pruning. `APEXLOAD_SCHEDULE_OCCURRENCE_RETENTION_INTERVAL` controls the leader-only prune cadence (default `6h`). Each pass removes at most 1,000 rows from each occurrence table.
 - `APEXLOAD_GENERATORS`: comma-separated generator gRPC targets; when set, the controller uses the distributed backend. `dns://host:port` entries enable dynamic discovery of a Kubernetes headless service
 - `APEXLOAD_GENERATOR_DISCOVERY_INTERVAL`: re-resolve interval for `dns://` generator entries (default `15s`)
@@ -236,7 +236,7 @@ Controller runtime configuration:
 - `APEXLOAD_DISABLE_TLS_COMPAT`: set `true` to disable automatic TLS compatibility defaults in all environments.
 - `APEXLOAD_DISABLE_DEV_TLS_COMPAT`: legacy alias for disabling dev-mode TLS compatibility defaults; `APEXLOAD_DISABLE_TLS_COMPAT` is preferred for new setups.
 - `APEXLOAD_PROMETHEUS_URL`: Prometheus base URL used by dashboard graph overlays; independent from the controller `/metrics` scrape endpoint
-- `APEXLOAD_OTEL_ENABLED`: explicit opt-in for controller/generator OpenTelemetry tracing (default `false`). Enabling it also requires `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`; see [OpenTelemetry tracing](docs/OPENTELEMETRY.md)
+- `APEXLOAD_OTEL_ENABLED`: explicit opt-in for controller/generator OpenTelemetry tracing (default `false`). Enabling it also requires `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`; see [OpenTelemetry tracing](docs/OBSERVABILITY_INTEGRATIONS.md)
 - `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`: OTLP transport, `http/protobuf` (default) or `grpc`; standard OTLP headers, TLS, timeout, compression, service/resource, and sampler variables are honored
 - `APEXLOAD_OTEL_ACTION_SAMPLE_RATIO`: independent sampled fraction for high-volume engine action spans (default `0.01`, range `0..1`)
 - `APEXLOAD_BROWSER_EXECUTABLE`: path to a system Chromium/Chrome for browser-protocol runs (set to `/usr/bin/google-chrome` in the generator image, where Playwright's managed glibc Chromium cannot run on musl)
@@ -251,7 +251,7 @@ Controller runtime configuration:
 - `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
 - `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
 
-See [Project Secrets](docs/PROJECT_SECRETS.md) for provider setup, import
+See [Project Secrets](docs/ADMIN_USER_GUIDE.md#project-secrets) for provider setup, import
 migration governance, and secure distributed delivery requirements.
 
 Note: If you run with `APEXLOAD_ENV=production|prod` or enable `APEXLOAD_REQUIRE_AUTH`, the persisted authentication mode (Settings → Authentication, stored as `auth.mode`) must not be `dev`, `disabled`, or the fixed-credential `local` test-login mode. The controller refuses to start in that combination by design; use `oidc` or `trusted_headers`.
@@ -541,7 +541,7 @@ any target is cited as achieved.
 - ✅ Generator-loss detection and controlled failure handling during distributed execution
 - ✅ Runtime telemetry SLA hardening baseline now includes visible drop counters, bounded live history, end-to-end freshness, sampled telemetry diagnostics for transaction hotspots, schema-versioned typed telemetry retention, distributed telemetry propagation, first-class correlation/dependency metadata, and distributed lag-stage breakdowns from generator capture through controller fan-out
 - ✅ Browser client metrics for web-app synthetic UX telemetry are implemented for the current browser contract; WebKit process attribution and broader benchmark publication remain evidence/hardening work.
-- 🟡 Messaging protocols are mixed maturity: Kafka and Azure Event Hubs have opt-in real adapters, Solace/Service Bus are build-tag gated, IBM MQ is mock-only with fail-fast real-mode validation, and deeper broker-native parity is tracked in [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
+- 🟡 Messaging protocols are mixed maturity: Kafka and Azure Event Hubs have opt-in real adapters, Solace/Service Bus are build-tag gated, IBM MQ is mock-only with fail-fast real-mode validation, and deeper broker-native parity is tracked in [docs/PROTOCOL_SUPPORT.md](docs/PROTOCOL_SUPPORT.md).
 - ✅ GitHub Actions CI/CD gating: controller-native `apexctl ci run`, signed canonical action releases, JUnit/JSON evidence, and active immutable deployment workflows (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
 - ✅ Evaluator trust pack: one-command demo seeding plus bounded k6 HTTP subset import/export (see [docs/COMPETITIVE_COMPARISON.md](docs/COMPETITIVE_COMPARISON.md#evaluator-trust-pack))
 - ✅ Correlation rules engine + replay-failure detection, response-family rule packs, stale-literal evidence, and guided/batch repair (`/api/v1/correlations/diagnose`)
@@ -561,10 +561,10 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 - **DSL types**: `pkg/dsl/types.go` — Script structures
 - **API handlers**: `pkg/api/handlers.go` — Endpoint implementations
 - **Runtime telemetry SLA plan**: `docs/ROADMAP.md#runtime-telemetry-sla` — Telemetry capture, streaming, and storage hardening roadmap
-- **Prometheus metrics catalog**: `docs/PROMETHEUS_METRICS.md` — Controller scrape series, labels, and telemetry troubleshooting
-- **Dynatrace webhook setup**: `docs/MONITORING_INTEGRATIONS.md` — Dynatrace Events API webhooks, Dynatrace SaaS monitoring, and Elastic (ELK) monitoring
-- **OpenTelemetry tracing**: `docs/OPENTELEMETRY.md` — OTLP configuration, span coverage, sampling, propagation, and data-safety behavior
-- **Browser and mobile support**: `docs/BROWSER_AND_MOBILE_SUPPORT.md` — Current browser canary, mobile emulation, client metrics, and benchmark evidence guidance
+- **Prometheus metrics catalog**: `docs/OBSERVABILITY_INTEGRATIONS.md` — Controller scrape series, labels, and telemetry troubleshooting
+- **Dynatrace webhook setup**: `docs/OBSERVABILITY_INTEGRATIONS.md` — Dynatrace Events API webhooks, Dynatrace SaaS monitoring, and Elastic (ELK) monitoring
+- **OpenTelemetry tracing**: `docs/OBSERVABILITY_INTEGRATIONS.md` — OTLP configuration, span coverage, sampling, propagation, and data-safety behavior
+- **Browser and mobile support**: `docs/PROTOCOL_SUPPORT.md` — Current browser canary, mobile emulation, client metrics, and benchmark evidence guidance
 
 ## License
 
