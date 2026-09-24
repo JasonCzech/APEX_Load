@@ -67,10 +67,7 @@ These focused references are also current. They are kept separate from the prima
 | [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
 | [RUNTIME_CAPTURE_DIAGNOSTICS.md](RUNTIME_CAPTURE_DIAGNOSTICS.md) | Imported setting reasons and bounded HTTP/resource capture |
 | [SCRIPT_DEBUGGER_GUIDE.md](SCRIPT_DEBUGGER_GUIDE.md) | Script replay debugger workflow and routes |
-| [LOADRUNNER_WEB_FUNCTION_COVERAGE.md](LOADRUNNER_WEB_FUNCTION_COVERAGE.md) | Generated LoadRunner Web conversion coverage |
-| [LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md](LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md) | Generated Java LR function coverage |
-| [LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md](LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md) | Generated Java Vuser import coverage |
-| [LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md](LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md) | Generated TruClient step coverage |
+| [LOADRUNNER_COVERAGE.md](LOADRUNNER_COVERAGE.md) | Generated LoadRunner coverage: Web functions, Java `lr` functions, TruClient steps, Java Vuser import surfaces |
 
 Every Markdown file directly under `docs/`, other than this index itself, appears in one of the tables on this page — current guide, specialized reference, generated artifact, or roadmap/planning material. That is machine-enforced: `check_index_membership` in `scripts/check-docs.py` fails the CI documentation job if a `docs/*.md` file is not linked from a table row here, so adding a document means adding a row — a mention in prose does not satisfy the check. Listing is not itself a claim that a file is a current product contract; the Status column says that. Point-in-time material under `docs/reviews/` and `docs/archive/` is excluded from both this index and the check.
 

@@ -45,9 +45,7 @@ const sources = import.meta.glob<string>([
   '../../deployments/docker/README.md',
   '../../deployments/azure/terraform/README.md',
   '../../deployments/k8s/monitoring/README.md',
-  '../../docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md',
-  '../../docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md',
-  '../../docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md',
+  '../../docs/LOADRUNNER_COVERAGE.md',
 ], { query: '?raw', import: 'default' })
 const pending = new Map<string, Promise<string>>()
 export function loadHelpSource(article: HelpArticle): Promise<string> {

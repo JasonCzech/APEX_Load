@@ -455,7 +455,10 @@
   {
     "id": "lr-web",
     "title": "LoadRunner web coverage",
-    "path": "docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md",
+    "path": "docs/LOADRUNNER_COVERAGE.md",
+    "sections": [
+      "Web function coverage"
+    ],
     "area": "user-guide",
     "group": "Reference",
     "owner": "APEX Load maintainers"
@@ -463,7 +466,10 @@
   {
     "id": "lr-java",
     "title": "LoadRunner Java lr coverage",
-    "path": "docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md",
+    "path": "docs/LOADRUNNER_COVERAGE.md",
+    "sections": [
+      "Java LR function coverage"
+    ],
     "area": "user-guide",
     "group": "Reference",
     "owner": "APEX Load maintainers"
@@ -471,7 +477,10 @@
   {
     "id": "lr-truclient",
     "title": "TruClient step coverage",
-    "path": "docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md",
+    "path": "docs/LOADRUNNER_COVERAGE.md",
+    "sections": [
+      "TruClient step coverage"
+    ],
     "area": "user-guide",
     "group": "Reference",
     "owner": "APEX Load maintainers"

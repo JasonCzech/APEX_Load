@@ -2,20 +2,21 @@ package enterprisearchive
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
-const javaLRCoverageDocPath = "../../../docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md"
+const javaLRCoverageDocPath = "../../../docs/LOADRUNNER_COVERAGE.md"
 
 // TestJavaLRCoverageDocIsFresh enforces that the committed Java lr coverage doc
-// matches the generator output. Run `go generate ./pkg/convert/enterprisearchive`.
+// section matches the generator output. Run `go generate ./pkg/convert/enterprisearchive`.
 func TestJavaLRCoverageDocIsFresh(t *testing.T) {
 	committed, err := os.ReadFile(javaLRCoverageDocPath)
 	if err != nil {
 		t.Fatalf("read coverage doc: %v (run go generate ./pkg/convert/enterprisearchive)", err)
 	}
-	if got := RenderJavaLRFunctionCoverageMarkdown(); got != string(committed) {
-		t.Fatalf("%s is stale — run `go generate ./pkg/convert/enterprisearchive` (cmd/webcoverage -set java)", javaLRCoverageDocPath)
+	if got := RenderJavaLRFunctionCoverageMarkdown(); !strings.Contains(string(committed), got) {
+		t.Fatalf("%s is stale — run `go generate ./pkg/convert/enterprisearchive` (cmd/webcoverage)", javaLRCoverageDocPath)
 	}
 }
 

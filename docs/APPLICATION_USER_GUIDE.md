@@ -544,7 +544,7 @@ together with the next action for each one. Map source values, confirm secret bi
 and save the reviewed draft.
 
 Coverage for the big legacy sources is documented and evidence-backed rather than
-claimed: see the [LoadRunner Web Function Coverage](LOADRUNNER_WEB_FUNCTION_COVERAGE.md), [LoadRunner Java lr Function Coverage](LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md), and [LoadRunner TruClient Step Coverage](LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md) references for exactly which
+claimed: see the [LoadRunner Coverage](LOADRUNNER_COVERAGE.md) reference (Web functions, Java `lr` functions, TruClient steps, Java Vuser imports) for exactly which
 functions convert, which are no-ops, and which are preserved for review.
 
 ## Building A Scenario
