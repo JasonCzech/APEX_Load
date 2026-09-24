@@ -1,5 +1,7 @@
 # APEX Load Competitive Evaluator One-Pager
 
+> Point-in-time (rechecked June 2026); [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) is authoritative.
+
 ## Positioning
 
 APEX Load is a self-hosted, Kubernetes-native performance testing platform for HTTP/API-heavy enterprise workloads. It is strongest where teams need open JSON DSL assets, controller APIs, governance, CI gates, migration paths, and auditable archives.

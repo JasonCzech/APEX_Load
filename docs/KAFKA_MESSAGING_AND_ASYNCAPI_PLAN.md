@@ -28,7 +28,9 @@ KAFKA_BROKERS=localhost:9092 go test -tags "kafka_real kafka_integration" ./pkg/
 The build-tagged seam is `newRealClient(config)` — `realclient_default.go` (default) returns
 the unavailable stub; `realclient_franz.go` (`//go:build kafka_real`) returns the franz
 client. The default `go test ./...` exercises only the mock path; the franz path is
-compile-verified under the tag but, by design, is not run in default CI.
+built and tested under `-tags kafka_real` by the `kafka` profile of the `protocol-tags`
+job in `.github/workflows/ci.yml` (and the `kafka_real,kafka_integration` lane in
+`.github/workflows/protocol-integration.yml`).
 
 ## Current Implementation Status
 The Kafka runtime is no longer just planned. The following are implemented in the Go

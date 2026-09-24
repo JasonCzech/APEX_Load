@@ -8,11 +8,11 @@ Position APEX Load as a **synthetic digital experience platform** — capable of
 
 This plan is the strategic umbrella that aligns the existing `MOBILE_BROWSER_EMULATION_PLAN.md` and `BROWSER_CLIENT_METRICS_PLAN.md` under one long-term trajectory. Both plans remain valid as tactical implementation guides — this document ensures they converge toward the same product goal rather than diverging into disconnected features.
 
-## Status Snapshot (May 2026)
+## Status Snapshot (rechecked 2026-09-24)
 
 ### Implemented
 - Layer 1 foundation is in place: named device profiles, browser-family compatibility rules, orientation/touch configuration, mobile gesture actions, and script-editor authoring support are all shipped.
-- Real WebKit execution is now available through a Playwright-backed runtime path for iOS/iPadOS-style profiles, alongside the existing Chromium path for Android and desktop profiles.
+- Real WebKit execution is now available through a Playwright-backed runtime path for iOS/iPadOS-style profiles, alongside Playwright-driven Chromium for Android and desktop profiles.
 - Layer 2 collection is in place for the current browser metric contract: per-action `ClientMetrics`, optional `browser.client_metrics`, live `browser` and `browser_by_device` summaries, archive persistence, canonical archive `browser_by_engine` / `browser_by_platform` / `browser_by_device` rollups, and dashboard drilldown are implemented.
 - Validation and replay now surface actionable WebKit prerequisite warnings before execution, and saved scripts can be validated directly from the editor.
 
@@ -152,7 +152,7 @@ Two complementary data sources:
 
 | Source | What It Provides | Collection Method |
 |:---|:---|:---|
-| **CDP `Performance.getMetrics`** | JS heap, layout/paint counts, script duration, task duration | Go call via chromedp after each action |
+| **CDP `Performance.getMetrics`** | JS heap, layout/paint counts, script duration, task duration | Go call via a Playwright CDP session after each action |
 | **CDP `PerformanceObserver` (injected JS)** | LCP, FCP, CLS, INP, long tasks, resource timing | JavaScript injected at page load, results extracted via `Runtime.evaluate` |
 | **CDP `Network` domain** | Resource waterfall, blocking detection | Already captured in browser protocol |
 | **CDP `Performance.enable` timeline** | Detailed trace events | Optional — heavy, for diagnostic drills only |
@@ -254,6 +254,8 @@ The existing plans define tactical phases. This section maps them to the strateg
 ## Metric Collection Implementation Detail
 
 ### Core Web Vitals via Injected JavaScript
+> The Go snippets in this section are illustrative-historical (`chromedp` era). The shipped runtime evaluates equivalent scripts via Playwright `page.Evaluate` and CDP sessions; `chromedp` is not a dependency.
+
 After each navigation action, inject a PerformanceObserver and extract results:
 
 ```go

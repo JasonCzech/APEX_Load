@@ -10,7 +10,9 @@
 > **How to use:** pick an item, read its *Approach* + *Acceptance*, follow the
 > [Cross-cutting conventions](#cross-cutting-conventions) at the bottom (route catalog, swagger
 > regen, Postgres `rewriteSQL`, HA-leader gating, FULL vitest). File anchors are accurate as of
-> 2026-06-26 but line numbers drift — search by symbol.
+> 2026-09-24 but line numbers drift — search by symbol.
+
+**Completed (no longer backlog):** A18 — atomic user onboarding (`POST /api/v1/auth/users/onboard`; user + initial bindings in one transaction; the Access page `createUser` uses it).
 
 ## Status legend & effort
 
@@ -23,7 +25,6 @@
 |----|------|--------|--------|-----------|
 | **A16b** | Split `AccessPage.tsx` into workspace components | L | TODO | — (utils already extracted) |
 | **A14** | Explicit service-account scopes + freshness enforcement | S/M | TODO (low value) | route-catalog scope foundation |
-| **A18** | Atomic user onboarding (user + bindings) | M | DONE | — |
 | **A20** | Usage-accounting ramp/abort accuracy + archive-bytes cache | M | TODO | ManagedTest schema |
 | **A19** | Unify audit views (Settings vs Access) | — | WONT-DO | — |
 | **A21** | Move logout CSRF token out of status body | — | WONT-DO | — |
@@ -47,7 +48,7 @@
 
 **Why deferred:** the safe half of A16 shipped — 683 lines (25%) of pure code were extracted into
 `dashboard/src/components/accessTypes.ts`, `accessUtils.ts`, and `SortHeader.tsx`, dropping
-`AccessPage.tsx` from 2745 → ~2090 lines. The remaining split into `UsersWorkspace` /
+`AccessPage.tsx` from 2745 → ~2090 lines at that point (it has since grown back to ~2761 lines as of 2026-09-24, so the split remains warranted). The remaining split into `UsersWorkspace` /
 `ServiceAccountsWorkspace` / `ActivityWorkspace` is a deep state restructure (~1500 lines of
 prop-threading) with real regression risk, best done as its own focused, reviewable change rather
 than bundled with feature work.
@@ -107,15 +108,6 @@ are catalog-derived + test-enforced, no SA regressions. **Anchors:** `pkg/api/ro
 (`withRouteServiceAccountScope`), `pkg/api/auth_resolution.go` (`requiredServiceAccountScope`,
 `serviceAccountAllowsRequest`, `normalizeAuthenticatedServiceAccountScopes`),
 `pkg/api/middleware.go` (`grantIfScopeAllows`).
-
-### A18 — Atomic user onboarding (M, DONE)
-
-**Status:** Implemented. `POST /api/v1/auth/users/onboard` creates the user and initial bindings in
-one storage transaction, and the Access page uses that endpoint instead of a client-side binding loop.
-
-**Acceptance:** a failed binding mid-onboard leaves no orphaned half-configured user; invalid
-binding scopes return 400; duplicate subjects return 409. **Anchors:** `dashboard/src/components/AccessPage.tsx` (`createUser`),
-`pkg/api/handlers_auth.go` (user + binding handlers), `pkg/storage` (transaction support).
 
 ### A20 — Usage-accounting accuracy + archive-bytes cache (M, TODO)
 

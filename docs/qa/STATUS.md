@@ -1,6 +1,6 @@
 # Test Program — Status
 
-Updated weekly. Scope is defined by [TEST_PROGRAM.md](TEST_PROGRAM.md); this file records only
+Point-in-time narrative; the generated [DASHBOARD.md](DASHBOARD.md) and [HEADLINE_METRICS.md](HEADLINE_METRICS.md) are the current state and are not hand-edited. Scope is defined by [TEST_PROGRAM.md](TEST_PROGRAM.md); this file records only
 *state*. Enforced by `status_inventory_test.go` — a milestone cannot be marked `DONE` without a
 populated `evidence/M<n>/` directory.
 
@@ -43,8 +43,9 @@ QA-owned diff.
 
 M1 is underway. `scripts/run-e2e.sh` reproduces CI's browser-smoke recipe locally against a fresh
 controller and throwaway database. Completion is tracked by
-[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1–S12 are green and the
-full arc remains missing. S1 uses a separate local-auth controller
+[TIER0_ASSERTION_MATRIX.md](TIER0_ASSERTION_MATRIX.md), not spec count: S1–S12 are green. A continuous U01 full-arc smoke
+is implemented in `dashboard/e2e/workflow-local-auth.spec.ts` (see the final paragraph of the matrix);
+whether it is enforced on every PR has not been re-verified here. S1 uses a separate local-auth controller
 profile and drives both rejected and successful seeded administrator login.
 
 The generated M1 API contract matrix now inventories the endpoint catalog without embedding a
@@ -54,7 +55,7 @@ metadata exists. Legacy recorder/replay middleware now consumes the same viewer/
 profiles used by generated documentation, eliminating role-list drift while retaining each
 server-instance session-to-project lookup. Metrics, recording-bridge, and collector-token routes
 have explicit handler-level anonymous/authenticated cases. The route matrix and all per-step Tier-0
-assertions are `GREEN`; M1 remains open on the full-arc browser smoke.
+assertions are `GREEN`; M1 closure now depends on confirming the U01 full-arc smoke is a required per-PR gate (the spec exists).
 
 M2 is underway with one explicit-update golden harness and a backend-registry-derived inventory.
 All 15 converter surfaces now have separate valid-output and invalid/diagnostic goldens, and every
@@ -83,7 +84,9 @@ real PostgreSQL reconciliation, and restore drill remain open.
 Every number is generated from tracked files or committed evidence in
 [HEADLINE_METRICS.md](HEADLINE_METRICS.md). `STATUS.md` no longer carries a hand-maintained copy.
 
-### Reference counts (baseline, 2026-08-18)
+### Reference counts (baseline, 2026-08-18; not current)
+
+These are the program-start baseline. Current values (e.g. 44 Playwright spec files) are in the generated [HEADLINE_METRICS.md](HEADLINE_METRICS.md).
 
 Derived by `scripts/qa-baseline-counts.sh` — quote that script, never a hand-run glob. These
 numbers first disagreed across three files because they were gathered ad hoc; the dashboard figure

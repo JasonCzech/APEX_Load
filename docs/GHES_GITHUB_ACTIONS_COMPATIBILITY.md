@@ -4,7 +4,7 @@ APEX Load implements a GitHub.com path and a GHES capability profile instead of
 assuming GitHub.com services are present. A GHES line is not considered
 qualified until its staging drill is recorded. The table below is reviewed
 against GitHub's [release and minimum-runner table](https://docs.github.com/en/enterprise-server@3.21/admin/all-releases)
-as of 2026-07-15.
+as of 2026-09-24.
 
 | GHES line | GitHub support closes | Minimum runner | APEX qualification |
 | --- | --- | --- | --- |
@@ -12,11 +12,12 @@ as of 2026-07-15.
 | 3.20 | 2027-03-17 | 2.330.0 | Target; drill pending |
 | 3.19 | 2026-12-09 | 2.328.0 | Target; drill pending |
 | 3.18 | 2026-10-14 | 2.324.0 | Target; drill pending |
-| 3.17 | 2026-08-25 | 2.322.0 | Target; drill pending |
 
 Do not advertise any row as compatible while its status is `Target; drill
-pending`. Remove 3.17 from the target matrix after its closing date unless a
+pending`. Remove a line from the target matrix after its closing date unless a
 documented exception is approved; unsupported legacy releases are out of scope.
+3.17 closed 2026-08-25 and was removed on 2026-09-24 (no exception recorded);
+3.18 closes 2026-10-14 and is the next row due for removal.
 
 ## Capability matrix
 
