@@ -336,7 +336,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"/api/v1/scripts/browser-replay/sessions",
 				"/api/v1/system/browser-benchmarks",
 				browserBenchmarkArtifactEvidence,
-				"docs/BROWSER_ROADMAP.md",
+				"docs/ROADMAP.md#browser-and-mobile",
 			},
 			Remaining: []string{
 				"Attach controlled raw benchmark artifacts for each release generator image before increasing browser density envelopes.",
@@ -382,7 +382,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				competitiveSupportMatrixEvidence,
 				"docs/COMPETITIVE_COMPARISON.md#specialized-enterprise-protocols",
 				"docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md",
-				"docs/BROWSER_ROADMAP.md#vision-and-architecture",
+				"docs/ROADMAP.md#browser-and-mobile",
 			},
 			Remaining: []string{
 				"Complete customer-backed demand assessment and publish explicit non-goal or coexistence guidance for unsupported legacy protocols.",
@@ -420,7 +420,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Summary:     "APEX scripts already provide reusable ordered action clips and scenario groups provide multi-script composition, while active-time group offsets, a shared visual timeline, switch branching, and bounded parallel containers remain staged work.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
-				"docs/CLOUDTEST_PARITY_PROGRAM.md",
+				"docs/ROADMAP.md#cloudtest-outcome-parity",
 				"https://techdocs.akamai.com/cloudtest/docs/test-composition",
 			},
 			Remaining: []string{
@@ -437,7 +437,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Summary:     "APEX has live metrics, archived transaction filtering and redacted request/response inspection, HTTP page resources, network timing entries, streaming-response pacing, and PDF reporting; regional live aggregation and policy-bounded success detail are not yet complete.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
-				"docs/CLOUDTEST_PARITY_PROGRAM.md",
+				"docs/ROADMAP.md#cloudtest-outcome-parity",
 				"https://techdocs.akamai.com/cloudtest/docs/analytics",
 				"/api/v1/tests/{id}/archive/transactions",
 			},
@@ -455,7 +455,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Summary:     "APEX already has authenticated restricted-network collector registration, heartbeat metric packs, and live visibility. The outcome-parity design extends that collector instead of allowing the controller to dial customer infrastructure.",
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
-				"docs/CLOUDTEST_PARITY_PROGRAM.md",
+				"docs/ROADMAP.md#cloudtest-outcome-parity",
 				"/api/v1/monitoring/collectors",
 				"cmd/apexload-collector-agent",
 			},

@@ -81,4 +81,4 @@ Update density guidance only when repeated controlled runs justify it.
 
 The following files are retained for implementation history and tactical detail:
 
-- [BROWSER_ROADMAP.md](BROWSER_ROADMAP.md)
+- [ROADMAP.md](ROADMAP.md#browser-and-mobile)

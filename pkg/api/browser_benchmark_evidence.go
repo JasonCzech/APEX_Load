@@ -139,7 +139,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 				compileCommand,
 				benchmarkCommand,
 			},
-			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", browserBenchmarkArtifactEvidence, "docs/BROWSER_ROADMAP.md"},
+			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", browserBenchmarkArtifactEvidence, "docs/ROADMAP.md#browser-and-mobile"},
 			ReleaseGate:             true,
 			HighDensityClaimAllowed: false,
 			Notes:                   []string{"Touch and network shaping evidence must be reviewed with replay screenshots and client metrics before promotion."},

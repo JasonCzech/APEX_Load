@@ -306,14 +306,14 @@ func TestCloudTestParityCatalogIsCompleteAndUsesControlledVocabulary(t *testing.
 }
 
 func TestCloudTestProgramDocumentsEveryCanonicalCapability(t *testing.T) {
-	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "docs", "CLOUDTEST_PARITY_PROGRAM.md"))
+	contentBytes, err := os.ReadFile(filepath.Join("..", "..", "docs", "ROADMAP.md"))
 	if err != nil {
-		t.Fatalf("read CloudTest parity program: %v", err)
+		t.Fatalf("read CloudTest parity roadmap: %v", err)
 	}
 	content := string(contentBytes)
 	for _, capability := range cloneCloudTestParityCatalog() {
 		if !strings.Contains(content, "`"+capability.ID+"`") {
-			t.Errorf("CloudTest parity program is missing capability id %q", capability.ID)
+			t.Errorf("CloudTest parity roadmap is missing capability id %q", capability.ID)
 		}
 	}
 }

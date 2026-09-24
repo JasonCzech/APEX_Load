@@ -77,7 +77,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | Native APEX Load JSON DSL | Supported | `pkg/dsl`, `/api/v1/scripts`, `docs/DSL_ACTION_REFERENCE.md` | More first-party examples. |
 | Dashboard guided script creation | Supported | `ScriptEditor.tsx`, `/api/v1/scripts/authoring/sessions` | Expand packaged demo projects. |
 | Enterprise Script Archive HTTP import | Supported | `/api/v1/scripts/import/enterprise-script-archive`, `pkg/convert/enterprisearchive` | Long-tail historical protocol families outside planned scope. |
-| TrueClient Mobile Web | Partial | `docs/BROWSER_ROADMAP.md` | Browser VUsers are diagnostic canaries; desktop TruClient parity is out of scope. |
+| TrueClient Mobile Web | Partial | `docs/ROADMAP.md#browser-and-mobile` | Browser VUsers are diagnostic canaries; desktop TruClient parity is out of scope. |
 | JMeter plan import | Supported | `/api/v1/scripts/import/jmeter`, `/api/v1/scripts/import/jmeter/support-matrix` | Expand fixture coverage and trend overlays. |
 | OpenAPI import | Supported | `/api/v1/scripts/import/openapi`, `pkg/convert/openapi` | Dashboard guided create flow. |
 | WSDL import | Supported | `/api/v1/scripts/import/wsdl`, `pkg/convert/wsdl` | Complex XSD payload synthesis remains review-scaffolded. |
@@ -103,7 +103,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | Kafka / event streaming | Supported (mock default; real adapter opt-in) | Extensions | Enterprise | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | Mock broker + AsyncAPI import; live execution via `-tags kafka_real`. |
 | WebSocket | Supported | Supported | Supported | `pkg/protocol/websocket` | More subscription-protocol fixtures. |
 | gRPC | Supported | Supported | Varies | `pkg/protocol/grpc` | Service-specific proto fixtures. |
-| Browser UX canaries | Partial | k6 browser (Playwright-based) | RealBrowser (packaged) | `/api/v1/system/browser-benchmarks`, `docs/BROWSER_ROADMAP.md` | Attach benchmark artifacts before raising density claims. |
+| Browser UX canaries | Partial | k6 browser (Playwright-based) | RealBrowser (packaged) | `/api/v1/system/browser-benchmarks`, `docs/ROADMAP.md#browser-and-mobile` | Attach benchmark artifacts before raising density claims. |
 | High-density browser load | Non-goal until evidence | Resource intensive | Packaged sizing guidance | — | Do not claim without hardware-specific benchmark evidence. |
 | SAP GUI / Citrix / Oracle Forms | Gap / non-goal | Not core | Packaged | — | Complete demand assessment first. |
 
@@ -148,8 +148,8 @@ composition, execution, analytics, monitoring, automation, and migration
 workflows using APEX's scripts, scenario groups, collectors, archives, and
 Kubernetes-native capacity model. It does not copy CloudTest repository types or
 its Band/Maestro/alpha-instance architecture. The canonical status and evidence
-ledger is [CloudTest Outcome-Parity and Migration
-Program](CLOUDTEST_PARITY_PROGRAM.md) and is also published by
+ledger is [CloudTest outcome parity
+roadmap](ROADMAP.md#cloudtest-outcome-parity) and is also published by
 `GET /api/v1/system/parity-status`.
 
 Current official evidence confirms visual composition, reusable Clips,
@@ -375,7 +375,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 **Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC, HAR, JMeter, DevWeb, AsyncAPI, and enterprise script archive migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
 
-**Evidence:** `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md`, `docs/BROWSER_ROADMAP.md#vision-and-architecture`, `/api/v1/protocol-bundles/support-matrix`
+**Evidence:** `docs/WEB_API_EXECUTION_SUPPORT_MATRIX.md`, `docs/ROADMAP.md#browser-and-mobile`, `/api/v1/protocol-bundles/support-matrix`
 
 **Remaining:** Complete customer-backed demand assessment. Publish explicit non-goals or coexistence guidance for unsupported legacy protocols. JMS/broker-specific diagnostics (queue depth, DLQ, consumer lag) are partially implemented.
 
