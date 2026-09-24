@@ -177,7 +177,7 @@
   .canvas-inner {
     position: relative;
     min-width: 1000px;
-    min-height: 880px;
+    min-height: 1930px;
     margin: 0 auto;
   }
 
@@ -400,6 +400,7 @@
   <h1><span>APEX</span> Load — Technical Architecture</h1>
   <div class="header-meta">Kubernetes-native Performance Testing Platform &middot; Go + React + gRPC</div>
 </div>
+<div style="background:#3a2f0b;color:#f5d97a;padding:8px 24px;font-size:0.8rem;border-bottom:1px solid #6b5514;">Reviewed 2026-09-24 against <a href="../ARCHITECTURE.md" style="color:#f5d97a">ARCHITECTURE.md</a> and the code (<code>cmd/</code>, <code>pkg/protocol/</code>, <code>pkg/api</code>, <code>pkg/storage</code>, <code>deployments/</code>). This is a simplified overview, not an exhaustive map: build-tag-gated real adapters (Kafka, Event Hubs, Service Bus, Solace) and the JMS IBM MQ protocol (mock only) are called out in node details.</div>
 
 <div class="layout">
   <div class="sidebar" id="sidebar">
@@ -461,76 +462,83 @@
       </svg>
 
       <!-- Layer backgrounds -->
-      <div class="layer-group" style="left:20px;top:10px;width:960px;height:130px;border-color:#6c8cff" data-layer="client"></div>
+      <div class="layer-group" style="left:20px;top:10px;width:960px;height:312px;border-color:#6c8cff" data-layer="client"></div>
       <div class="layer-label" style="left:30px;top:18px;color:#6c8cff">Client Layer</div>
 
-      <div class="layer-group" style="left:20px;top:160px;width:960px;height:170px;border-color:#4ade80" data-layer="api"></div>
-      <div class="layer-label" style="left:30px;top:168px;color:#4ade80">API / Control Plane</div>
+      <div class="layer-group" style="left:20px;top:344px;width:960px;height:170px;border-color:#4ade80" data-layer="api"></div>
+      <div class="layer-label" style="left:30px;top:352px;color:#4ade80">API / Control Plane</div>
 
-      <div class="layer-group" style="left:20px;top:350px;width:620px;height:170px;border-color:#f59e0b" data-layer="engine"></div>
-      <div class="layer-label" style="left:30px;top:358px;color:#f59e0b">Execution Engine</div>
+      <div class="layer-group" style="left:20px;top:536px;width:960px;height:326px;border-color:#f59e0b" data-layer="engine"></div>
+      <div class="layer-label" style="left:30px;top:544px;color:#f59e0b">Execution Engine &amp; Agents</div>
 
-      <div class="layer-group" style="left:20px;top:540px;width:960px;height:120px;border-color:#a78bfa" data-layer="protocol"></div>
-      <div class="layer-label" style="left:30px;top:548px;color:#a78bfa">Protocol Plugins</div>
+      <div class="layer-group" style="left:20px;top:1251px;width:960px;height:320px;border-color:#a78bfa" data-layer="protocol"></div>
+      <div class="layer-label" style="left:30px;top:1259px;color:#a78bfa">Protocol Plugins</div>
 
-      <div class="layer-group" style="left:660px;top:350px;width:320px;height:170px;border-color:#2dd4bf" data-layer="storage"></div>
-      <div class="layer-label" style="left:670px;top:358px;color:#2dd4bf">Storage & Telemetry</div>
+      <div class="layer-group" style="left:20px;top:884px;width:960px;height:345px;border-color:#2dd4bf" data-layer="storage"></div>
+      <div class="layer-label" style="left:30px;top:892px;color:#2dd4bf">Storage &amp; Telemetry</div>
 
-      <div class="layer-group" style="left:20px;top:680px;width:960px;height:120px;border-color:#f472b6" data-layer="convert"></div>
-      <div class="layer-label" style="left:30px;top:688px;color:#f472b6">Script Import / Conversion</div>
+      <div class="layer-group" style="left:20px;top:1593px;width:960px;height:313px;border-color:#f472b6" data-layer="convert"></div>
+      <div class="layer-label" style="left:30px;top:1601px;color:#f472b6">Script Import / Conversion</div>
 
       <!-- CLIENT LAYER -->
-      <div class="node" id="dashboard" data-layer="client" style="left:40px;top:42px;min-width:155px">
+      <div class="node" id="dashboard" data-layer="client" style="left:40px;top:44px;min-width:155px">
         <div class="node-icon">&#9672;</div>
         <div class="node-title">Dashboard</div>
         <div class="node-sub">React 18 + TypeScript + Recharts</div>
         <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">SPA</div>
       </div>
 
-      <div class="node" id="apexctl" data-layer="client" style="left:260px;top:42px;min-width:130px">
+      <div class="node" id="apexctl" data-layer="client" style="left:274px;top:44px;min-width:130px">
         <div class="node-icon">&#9654;</div>
         <div class="node-title">apexctl</div>
         <div class="node-sub">CLI Tool</div>
         <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Go Binary</div>
       </div>
 
-      <div class="node" id="websocket" data-layer="client" style="left:450px;top:42px;min-width:155px">
+      <div class="node" id="websocket" data-layer="client" style="left:422px;top:44px;min-width:155px">
         <div class="node-icon">&#8644;</div>
         <div class="node-title">WebSocket Client</div>
         <div class="node-sub">Real-time metric streams</div>
         <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Bidirectional</div>
       </div>
 
-      <div class="node" id="agentic" data-layer="client" style="left:680px;top:42px;min-width:160px">
+      <div class="node" id="agentic" data-layer="client" style="left:612px;top:44px;min-width:150px;max-width:190px">
         <div class="node-icon">&#10036;</div>
-        <div class="node-title">Agentic Script Engine</div>
-        <div class="node-sub">Python + Azure OpenAI</div>
-        <div class="node-badge" style="background:rgba(168,85,247,0.15);color:#c084fc">LLM-Powered</div>
+        <div class="node-title">Assisted Authoring</div>
+        <div class="node-sub">Go, deterministic-local (LLM policy-gated)</div>
+        <div class="node-badge" style="background:rgba(168,85,247,0.15);color:#c084fc">Governed AI</div>
+      </div>
+
+      <div class="node" id="mcp" data-layer="client" style="left:40px;top:189px;min-width:150px">
+        <div class="node-icon">&#9881;</div>
+        <div class="node-title">MCP Server</div>
+        <div class="node-sub">FastMCP bridge to REST API</div>
+        <div class="node-badge" style="background:rgba(108,140,255,0.15);color:#6c8cff">Python</div>
       </div>
 
       <!-- API / CONTROL PLANE LAYER -->
-      <div class="node" id="restapi" data-layer="api" style="left:40px;top:195px;min-width:200px">
+      <div class="node" id="restapi" data-layer="api" style="left:40px;top:378px;min-width:200px">
         <div class="node-icon">&#9881;</div>
         <div class="node-title">REST API Server</div>
-        <div class="node-sub">:8080 &middot; Chi Router &middot; OIDC Auth</div>
+        <div class="node-sub">:8080 &middot; net/http mux &middot; Auth/RBAC</div>
         <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Control Plane</div>
       </div>
 
-      <div class="node" id="wshub" data-layer="api" style="left:310px;top:195px;min-width:170px">
+      <div class="node" id="wshub" data-layer="api" style="left:274px;top:378px;min-width:170px">
         <div class="node-icon">&#8634;</div>
         <div class="node-title">WebSocket Hub</div>
-        <div class="node-sub">Fan-out to all subscribers</div>
+        <div class="node-sub">Fan-out (Redis bus in HA)</div>
         <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Pub/Sub</div>
       </div>
 
-      <div class="node" id="testrunner" data-layer="api" style="left:545px;top:195px;min-width:170px">
+      <div class="node" id="testrunner" data-layer="api" style="left:467px;top:378px;min-width:170px">
         <div class="node-icon">&#9654;</div>
         <div class="node-title">Test Runner</div>
         <div class="node-sub">Orchestrates test lifecycle</div>
         <div class="node-badge" style="background:rgba(74,222,128,0.15);color:#4ade80">Core</div>
       </div>
 
-      <div class="node" id="scheduler" data-layer="api" style="left:780px;top:195px;min-width:160px">
+      <div class="node" id="scheduler" data-layer="api" style="left:663px;top:378px;min-width:160px">
         <div class="node-icon">&#128339;</div>
         <div class="node-title">Scheduler</div>
         <div class="node-sub">Cron + scenario schedules</div>
@@ -538,133 +546,259 @@
       </div>
 
       <!-- ENGINE LAYER -->
-      <div class="node" id="engine" data-layer="engine" style="left:40px;top:385px;min-width:165px">
+      <div class="node" id="engine" data-layer="engine" style="left:40px;top:570px;min-width:165px">
         <div class="node-icon">&#9889;</div>
         <div class="node-title">VUser Engine</div>
         <div class="node-sub">1 goroutine = 1 VUser</div>
         <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">~2-4 KB stack</div>
       </div>
 
-      <div class="node" id="metrics" data-layer="engine" style="left:260px;top:385px;min-width:175px">
+      <div class="node" id="metrics" data-layer="engine" style="left:223px;top:570px;min-width:175px">
         <div class="node-icon">&#128200;</div>
         <div class="node-title">Metrics Collector</div>
         <div class="node-sub">Buffered channels (cap 10k)</div>
         <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">Zero-Lock</div>
       </div>
 
-      <div class="node" id="tdigest" data-layer="engine" style="left:490px;top:385px;min-width:145px">
+      <div class="node" id="tdigest" data-layer="engine" style="left:429px;top:570px;min-width:145px">
         <div class="node-icon">&#9733;</div>
         <div class="node-title">T-Digest</div>
         <div class="node-sub">Streaming percentiles</div>
         <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">p50/p95/p99</div>
       </div>
 
+      <div class="node" id="generator" data-layer="engine" style="left:601px;top:570px;min-width:165px;max-width:190px">
+        <div class="node-icon">&#128260;</div>
+        <div class="node-title">Generator</div>
+        <div class="node-sub">Remote worker &middot; gRPC to controller</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">StatefulSet</div>
+      </div>
+
+      <div class="node" id="javarunner" data-layer="engine" style="left:40px;top:719px;min-width:175px;max-width:190px">
+        <div class="node-icon">&#9749;</div>
+        <div class="node-title">Java Vuser Runner</div>
+        <div class="node-sub">JVM sidecar bridge</div>
+        <div class="node-badge" style="background:rgba(245,158,11,0.15);color:#f59e0b">Opt-in</div>
+      </div>
+
+      <div class="node" id="collectoragent" data-layer="engine" style="left:233px;top:719px;min-width:145px;max-width:140px">
+        <div class="node-icon">&#128225;</div>
+        <div class="node-title">Collector Agent</div>
+        <div class="node-sub">Host-metric packs</div>
+      </div>
+
+      <div class="node" id="recordagent" data-layer="engine" style="left:396px;top:719px;min-width:165px;max-width:190px">
+        <div class="node-icon">&#9210;</div>
+        <div class="node-title">Record Agent</div>
+        <div class="node-sub">Workstation recording bridge</div>
+      </div>
+
+      <div class="node" id="devtools" data-layer="engine" style="left:604px;top:719px;min-width:175px;max-width:200px">
+        <div class="node-icon">&#128295;</div>
+        <div class="node-title">Dev Tooling</div>
+        <div class="node-sub">apexbench, dslschema, swaggergen, openapits, webcoverage</div>
+      </div>
+
       <!-- STORAGE LAYER -->
-      <div class="node" id="sqlite" data-layer="storage" style="left:680px;top:385px;min-width:130px">
+      <div class="node" id="sqlite" data-layer="storage" style="left:40px;top:918px;min-width:130px">
         <div class="node-icon">&#128451;</div>
         <div class="node-title">SQLite / PostgreSQL</div>
         <div class="node-sub">Scripts, tests, metadata</div>
         <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Persistence</div>
       </div>
 
-      <div class="node" id="otel" data-layer="storage" style="left:860px;top:385px;min-width:100px">
+      <div class="node" id="otel" data-layer="storage" style="left:230px;top:918px;min-width:100px;max-width:120px">
         <div class="node-icon">&#128225;</div>
         <div class="node-title">Telemetry Export</div>
-        <div class="node-sub">Prometheus scrape / webhooks</div>
+        <div class="node-sub">Prometheus, OTLP traces</div>
         <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Export</div>
       </div>
 
+      <div class="node" id="redis" data-layer="storage" style="left:368px;top:918px;min-width:130px;max-width:170px">
+        <div class="node-icon">&#9889;</div>
+        <div class="node-title">Redis / Valkey</div>
+        <div class="node-sub">Live state, fanout (HA)</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Optional</div>
+      </div>
+
+      <div class="node" id="archive" data-layer="storage" style="left:544px;top:918px;min-width:100px;max-width:120px">
+        <div class="node-icon">&#128193;</div>
+        <div class="node-title">Archive Store</div>
+        <div class="node-sub">FS / S3 / Blob / GCS</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Evidence</div>
+      </div>
+
+      <div class="node" id="integrations" data-layer="storage" style="left:682px;top:918px;min-width:130px;max-width:170px">
+        <div class="node-icon">&#128279;</div>
+        <div class="node-title">Integrations</div>
+        <div class="node-sub">Dynatrace, ELK, Grafana</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Monitoring</div>
+      </div>
+
+      <div class="node" id="cibi" data-layer="storage" style="left:40px;top:1067px;min-width:100px;max-width:120px">
+        <div class="node-icon">&#128736;</div>
+        <div class="node-title">CI &amp; BI</div>
+        <div class="node-sub">GitHub Actions, PowerBI</div>
+        <div class="node-badge" style="background:rgba(45,212,191,0.15);color:#2dd4bf">Automation</div>
+      </div>
+
       <!-- PROTOCOL LAYER -->
-      <div class="node" id="proto-http" data-layer="protocol" style="left:40px;top:570px;min-width:90px">
+      <div class="node" id="proto-http" data-layer="protocol" style="left:40px;top:1285px;min-width:90px;max-width:120px">
         <div class="node-icon">&#127760;</div>
         <div class="node-title">HTTP</div>
         <div class="node-sub">HTTP/1.1 + HTTP/2</div>
       </div>
 
-      <div class="node" id="proto-ws" data-layer="protocol" style="left:160px;top:570px;min-width:85px">
+      <div class="node" id="proto-javahttp" data-layer="protocol" style="left:178px;top:1285px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#9749;</div>
+        <div class="node-title">java_http</div>
+        <div class="node-sub">Java-over-HTTP codec</div>
+      </div>
+
+      <div class="node" id="proto-ws" data-layer="protocol" style="left:316px;top:1285px;min-width:90px;max-width:120px">
         <div class="node-icon">&#8644;</div>
         <div class="node-title">WebSocket</div>
         <div class="node-sub">WS protocol</div>
       </div>
 
-      <div class="node" id="proto-grpc" data-layer="protocol" style="left:275px;top:570px;min-width:75px">
+      <div class="node" id="proto-grpc" data-layer="protocol" style="left:446px;top:1285px;min-width:90px;max-width:120px">
         <div class="node-icon">&#9741;</div>
         <div class="node-title">gRPC</div>
         <div class="node-sub">Protobuf</div>
       </div>
 
-      <div class="node" id="proto-browser" data-layer="protocol" style="left:380px;top:570px;min-width:85px">
+      <div class="node" id="proto-browser" data-layer="protocol" style="left:554px;top:1285px;min-width:90px;max-width:120px">
         <div class="node-icon">&#128187;</div>
         <div class="node-title">Browser</div>
-        <div class="node-sub">Headless CDP</div>
+        <div class="node-sub">Playwright</div>
       </div>
 
-      <div class="node" id="proto-soap" data-layer="protocol" style="left:495px;top:570px;min-width:75px">
+      <div class="node" id="proto-soap" data-layer="protocol" style="left:666px;top:1285px;min-width:90px;max-width:120px">
         <div class="node-icon">&#128230;</div>
         <div class="node-title">SOAP</div>
         <div class="node-sub">XML/WSDL</div>
       </div>
 
-      <div class="node" id="proto-jms" data-layer="protocol" style="left:600px;top:570px;min-width:75px">
-        <div class="node-icon">&#128233;</div>
-        <div class="node-title">JMS</div>
-        <div class="node-sub">Solace / IBM MQ</div>
-      </div>
-
-      <div class="node" id="proto-db" data-layer="protocol" style="left:710px;top:570px;min-width:85px">
+      <div class="node" id="proto-db" data-layer="protocol" style="left:782px;top:1285px;min-width:90px;max-width:120px">
         <div class="node-icon">&#128450;</div>
         <div class="node-title">Database</div>
         <div class="node-sub">SQL drivers</div>
       </div>
 
-      <div class="node" id="proto-net" data-layer="protocol" style="left:830px;top:570px;min-width:85px">
+      <div class="node" id="proto-jms" data-layer="protocol" style="left:40px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128233;</div>
+        <div class="node-title">JMS</div>
+        <div class="node-sub">Solace / Service Bus / IBM MQ (mock)</div>
+      </div>
+
+      <div class="node" id="proto-kafka" data-layer="protocol" style="left:178px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128228;</div>
+        <div class="node-title">Kafka</div>
+        <div class="node-sub">Produce / consume</div>
+      </div>
+
+      <div class="node" id="proto-eventhubs" data-layer="protocol" style="left:316px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#9729;</div>
+        <div class="node-title">Event Hubs</div>
+        <div class="node-sub">Azure AMQP</div>
+      </div>
+
+      <div class="node" id="proto-bruno" data-layer="protocol" style="left:447px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#128054;</div>
+        <div class="node-title">Bruno</div>
+        <div class="node-sub">Node sidecar runner</div>
+      </div>
+
+      <div class="node" id="proto-javavuser" data-layer="protocol" style="left:585px;top:1415px;min-width:90px;max-width:120px">
+        <div class="node-icon">&#9749;</div>
+        <div class="node-title">Java Vuser</div>
+        <div class="node-sub">JVM sidecar runner</div>
+      </div>
+
+      <div class="node" id="proto-net" data-layer="protocol" style="left:723px;top:1415px;min-width:90px;max-width:120px">
         <div class="node-icon">&#128268;</div>
         <div class="node-title">Network</div>
         <div class="node-sub">TCP/UDP raw</div>
       </div>
 
       <!-- CONVERTER LAYER -->
-      <div class="node" id="conv-lr" data-layer="convert" style="left:40px;top:710px;min-width:120px">
+      <div class="node" id="conv-lr" data-layer="convert" style="left:40px;top:1627px;min-width:120px;max-width:140px">
         <div class="node-icon">&#128257;</div>
         <div class="node-title">LoadRunner</div>
         <div class="node-sub">C parser &rarr; DSL</div>
       </div>
 
-      <div class="node" id="conv-har" data-layer="convert" style="left:195px;top:710px;min-width:95px">
+      <div class="node" id="conv-har" data-layer="convert" style="left:180px;top:1627px;min-width:95px;max-width:140px">
         <div class="node-icon">&#128196;</div>
         <div class="node-title">HAR</div>
         <div class="node-sub">HTTP Archive</div>
       </div>
 
-      <div class="node" id="conv-jmeter" data-layer="convert" style="left:325px;top:710px;min-width:95px">
+      <div class="node" id="conv-jmeter" data-layer="convert" style="left:309px;top:1627px;min-width:95px;max-width:140px">
         <div class="node-icon">&#9874;</div>
         <div class="node-title">JMeter</div>
         <div class="node-sub">JMX import</div>
       </div>
 
-      <div class="node" id="conv-openapi" data-layer="convert" style="left:455px;top:710px;min-width:100px">
+      <div class="node" id="conv-openapi" data-layer="convert" style="left:427px;top:1627px;min-width:100px;max-width:140px">
         <div class="node-icon">&#128220;</div>
         <div class="node-title">OpenAPI</div>
         <div class="node-sub">Swagger spec</div>
       </div>
 
-      <div class="node" id="conv-wsdl" data-layer="convert" style="left:590px;top:710px;min-width:95px">
+      <div class="node" id="conv-wsdl" data-layer="convert" style="left:558px;top:1627px;min-width:95px;max-width:140px">
         <div class="node-icon">&#128195;</div>
         <div class="node-title">WSDL</div>
         <div class="node-sub">SOAP services</div>
       </div>
 
-      <div class="node" id="conv-sample" data-layer="convert" style="left:720px;top:710px;min-width:100px">
+      <div class="node" id="conv-sample" data-layer="convert" style="left:692px;top:1627px;min-width:100px;max-width:140px">
         <div class="node-icon">&#128203;</div>
         <div class="node-title">Sample Scripts</div>
-        <div class="node-sub">Built-in templates</div>
+        <div class="node-sub">Templates, cURL, raw HTTP</div>
       </div>
 
-      <div class="node" id="dslparser" data-layer="convert" style="left:860px;top:710px;min-width:100px">
+      <div class="node" id="dslparser" data-layer="convert" style="left:40px;top:1757px;min-width:100px;max-width:120px">
         <div class="node-icon">&#128218;</div>
         <div class="node-title">DSL Parser</div>
         <div class="node-sub">JSON DSL &rarr; Script</div>
         <div class="node-badge" style="background:rgba(244,114,182,0.15);color:#f472b6">Core</div>
+      </div>
+
+      <div class="node" id="conv-bruno" data-layer="convert" style="left:178px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128054;</div>
+        <div class="node-title">Bruno</div>
+        <div class="node-sub">Collections</div>
+      </div>
+
+      <div class="node" id="conv-postman" data-layer="convert" style="left:294px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128235;</div>
+        <div class="node-title">Postman</div>
+        <div class="node-sub">Collections</div>
+      </div>
+
+      <div class="node" id="conv-k6" data-layer="convert" style="left:410px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#9201;</div>
+        <div class="node-title">k6</div>
+        <div class="node-sub">JS scripts</div>
+      </div>
+
+      <div class="node" id="conv-asyncapi" data-layer="convert" style="left:523px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128232;</div>
+        <div class="node-title">AsyncAPI</div>
+        <div class="node-sub">Kafka / JMS plans</div>
+      </div>
+
+      <div class="node" id="conv-devweb" data-layer="convert" style="left:674px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#127760;</div>
+        <div class="node-title">DevWeb</div>
+        <div class="node-sub">Script import</div>
+      </div>
+
+      <div class="node" id="conv-other" data-layer="convert" style="left:800px;top:1757px;min-width:95px;max-width:140px">
+        <div class="node-icon">&#128218;</div>
+        <div class="node-title">Other</div>
+        <div class="node-sub">RAML, CloudTest, MuleSoft, Salesforce</div>
       </div>
 
       <!-- Performance targets -->
@@ -721,32 +855,37 @@ const COMPONENTS = {
     files: ['dashboard/src/hooks/useWebSocket.ts', 'pkg/api/websocket.go']
   },
   agentic: {
-    title: 'Agentic Script Engine',
-    subtitle: 'Python + Azure OpenAI',
+    title: 'Assisted Authoring',
+    subtitle: 'Go, deterministic-local provider',
     layer: 'client',
-    body: `<p>LLM-powered script generation engine (Phase 4). Generates JSON DSL test scripts from multiple input sources:</p>
-    <p>&bull; Jira user stories &rarr; test scenarios<br/>
-    &bull; OpenAPI/Swagger specs &rarr; API test scripts<br/>
-    &bull; HAR recordings &rarr; realistic user flows<br/>
-    &bull; Natural language descriptions &rarr; load profiles</p>
-    <p>Uses Azure OpenAI with guardrails for safe, validated output. Generated scripts pass through the DSL validator before storage.</p>`,
-    connections: ['REST API Server &mdash; script upload endpoint', 'DSL Parser &mdash; output validation'],
+    body: `<p>Governed assisted-authoring service. Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider, and returns explanations, policy checks, a review queue, and evidence-bound root-cause summaries.</p>
+    <p>External LLM providers are policy-gated and <strong>not wired by default</strong>. Output passes through the DSL validator and AI guardrails before storage. The MCP server exposes these flows to agents.</p>`,
+    connections: ['REST API Server &mdash; authoring endpoints', 'DSL Parser &mdash; output validation', 'MCP Server &mdash; agent tool surface'],
     files: ['pkg/api/ai_assistance.go', 'pkg/api/authoring_ai_guardrails.go', 'pkg/api/authoring_templates.go']
+  },
+  mcp: {
+    title: 'MCP Server',
+    subtitle: 'FastMCP bridge',
+    layer: 'client',
+    body: `<p>Python FastMCP bridge that lets agents and automation call the documented REST API (scripts, imports, scenarios, runs, archives, assisted authoring). Authenticates with service-account API keys.</p>`,
+    connections: ['REST API Server &mdash; documented REST contract', 'Assisted Authoring &mdash; agent tools'],
+    files: ['mcp/server.py', 'mcp/apexload_mcp/', 'mcp/README.md']
   },
   restapi: {
     title: 'REST API Server',
     subtitle: 'Control Plane',
     layer: 'api',
-    body: `<p>Central API server serving on <code>:8080</code>. Built on Chi router with middleware for OIDC auth, audit logging, CORS, and project scoping.</p>
+    body: `<p>Central API server serving on <code>:8080</code>. Built on the standard-library <code>net/http</code> ServeMux (method+path patterns) with middleware for CORS, logging, auth (dev, trusted-header, or OIDC modes plus service-account API keys), domain/repository/project RBAC, rate limits, idempotency keys, and audit logging.</p>
     <p>Key endpoint groups:</p>
     <p>&bull; <code>/api/v1/tests/*</code> &mdash; Test CRUD, start, stop, abort<br/>
     &bull; <code>/api/v1/scripts/*</code> &mdash; Script management, import, validate<br/>
     &bull; <code>/api/v1/scenarios/*</code> &mdash; Reusable test scenarios + scheduling<br/>
     &bull; <code>/api/v1/projects/*</code> &mdash; Multi-project isolation<br/>
-    &bull; <code>/api/v1/system/health</code> &mdash; Health + readiness probes</p>
+    &bull; <code>/api/v1/system/health</code> (liveness) and <code>/api/v1/system/readiness</code> (production traffic gate: store, archive, cache, generator RPC, auth, scheduler)<br/>
+    &bull; <code>/api/v1/system/inventory</code> &mdash; controller/generator/data-platform config (no secrets)</p>
     <p>Also serves the embedded dashboard SPA from <code>pkg/api/static/</code>.</p>`,
-    connections: ['Test Runner &mdash; delegates test lifecycle', 'WebSocket Hub &mdash; broadcasts events', 'SQLite/PostgreSQL &mdash; persistence', 'Scheduler &mdash; schedule management'],
-    files: ['pkg/api/handlers.go', 'pkg/api/server.go', 'pkg/api/routes.go', 'pkg/api/auth_oidc.go', 'pkg/api/audit.go']
+    connections: ['Test Runner &mdash; delegates test lifecycle', 'WebSocket Hub &mdash; broadcasts events', 'SQLite/PostgreSQL &mdash; persistence', 'Scheduler &mdash; schedule management', 'MCP Server / apexctl / Dashboard &mdash; clients'],
+    files: ['pkg/api/handlers.go', 'pkg/api/server.go', 'pkg/api/route_catalog.go', 'pkg/api/auth_oidc.go', 'pkg/api/audit.go']
   },
   wshub: {
     title: 'WebSocket Hub',
@@ -754,8 +893,9 @@ const COMPONENTS = {
     layer: 'api',
     body: `<p>Manages all active WebSocket connections and fans out events to subscribers. Supports both global subscriptions (all events) and per-test subscriptions (filtered stream).</p>
     <p>Design: hub goroutine reads from an internal broadcast channel. Each client connection has a dedicated write goroutine with a buffered send channel to prevent slow consumers from blocking the hub.</p>
+    <p>In HA mode (<code>APEXLOAD_CONTROLLER_HA</code>) a Redis/Valkey fanout envelope propagates events between controller replicas; each replica still filters locally by project/test.</p>
     <p>Events originate from the Test Runner whenever test state changes or new metrics arrive (~1s interval during active tests).</p>`,
-    connections: ['Dashboard &mdash; WebSocket clients', 'Test Runner &mdash; event source', 'Metrics Collector &mdash; periodic snapshots'],
+    connections: ['Dashboard &mdash; WebSocket clients', 'Test Runner &mdash; event source', 'Metrics Collector &mdash; periodic snapshots', 'Redis / Valkey &mdash; multi-controller fanout'],
     files: ['pkg/api/websocket.go']
   },
   testrunner: {
@@ -764,32 +904,33 @@ const COMPONENTS = {
     layer: 'api',
     body: `<p>Core orchestration component managing the full test lifecycle: QUEUED &rarr; INITIALIZING &rarr; RUNNING &rarr; RAMPING_DOWN &rarr; COMPLETE (or FAILED/ABORTED).</p>
     <p>Responsibilities:</p>
-    <p>&bull; Creates and configures engine instances per test<br/>
+    <p>&bull; Runs locally in-process, or through the distributed backend<br/>
+    &bull; Creates and configures engine instances per test<br/>
     &bull; Distributes VUsers across generator pods (distributed mode)<br/>
     &bull; Aggregates metrics from all generators via gRPC streams<br/>
     &bull; Evaluates SLA/goal conditions for auto-stop<br/>
     &bull; Manages runtime adjustments (VUser scaling, duration changes)<br/>
-    &bull; Persists test records and results to storage</p>`,
-    connections: ['VUser Engine &mdash; local execution', 'Generator Pods &mdash; gRPC distribution', 'WebSocket Hub &mdash; event broadcast', 'SQLite/PostgreSQL &mdash; test persistence'],
+    &bull; Persists test records and results to storage and finalizes archives</p>`,
+    connections: ['VUser Engine &mdash; local execution', 'Generator &mdash; gRPC distribution (when APEXLOAD_GENERATORS is set)', 'WebSocket Hub &mdash; event broadcast', 'SQLite/PostgreSQL &mdash; test persistence'],
     files: ['pkg/api/runner.go', 'pkg/api/execution_backend.go', 'pkg/api/distributed_execution_backend.go', 'pkg/api/load_model_support.go']
   },
   scheduler: {
     title: 'Scheduler',
     subtitle: 'Cron-based Test Scheduling',
     layer: 'api',
-    body: `<p>Lease-based scheduler for recurring and one-time test executions. Uses database-backed distributed locking to ensure only one controller instance owns the scheduler at a time.</p>
+    body: `<p>Lease-based scheduler for recurring and one-time test executions. Uses durable database leases (not Redis-only locks) to ensure only one controller instance owns the scheduler at a time.</p>
     <p>Features: cron expression schedules, scenario-based scheduling (multiple scripts in one run), approval workflows, occurrence tracking with retry logic.</p>`,
     connections: ['Test Runner &mdash; triggers scheduled tests', 'SQLite/PostgreSQL &mdash; schedule persistence', 'REST API &mdash; schedule management endpoints'],
-    files: ['pkg/api/scheduler.go', 'pkg/storage/sqlite_schedules_test.go']
+    files: ['pkg/api/scheduler.go', 'pkg/storage/sqlite_schedules.go']
   },
   engine: {
     title: 'VUser Engine',
     subtitle: 'Goroutine-based Load Generator',
     layer: 'engine',
-    body: `<p>The core execution engine. Each virtual user (VUser) runs as a single goroutine with a ~2-4 KB stack, enabling 10,000+ concurrent users per pod on 4 vCPU / 8 GB.</p>
+    body: `<p>The core execution engine. Each virtual user (VUser) runs as a single goroutine with a ~2-4 KB stack, targeting 10,000 concurrent HTTP users per pod on 4 vCPU / 8 GB (a design target; browser VUsers are diagnostic canaries, not high-density).</p>
     <p>Execution phases: Init (protocol setup + init actions) &rarr; Ramp-up (gradual VUser activation via pacing config) &rarr; Steady-state (actions loop until duration expires) &rarr; Teardown (cleanup actions, graceful shutdown).</p>
     <p>Key optimizations: <code>sync.Pool</code> for request/response buffer reuse (reduces GC pressure), pacing algorithms (constant, random, percentile-based), rendezvous points for synchronized load spikes.</p>`,
-    connections: ['Metrics Collector &mdash; buffered channel results', 'Protocol Plugins &mdash; Execute() per action', 'DSL Parser &mdash; script interpretation', 'Test Runner &mdash; lifecycle control'],
+    connections: ['Metrics Collector &mdash; buffered channel results', 'Protocol Plugins &mdash; Execute() per action (registry: pkg/protocol/registry.go)', 'DSL Parser &mdash; script interpretation', 'Test Runner &mdash; lifecycle control'],
     files: ['pkg/engine/engine.go', 'pkg/engine/vuser.go', 'pkg/engine/pacing.go', 'pkg/engine/group.go', 'pkg/engine/rendezvous.go']
   },
   metrics: {
@@ -797,7 +938,7 @@ const COMPONENTS = {
     subtitle: 'Zero-lock Hot Path',
     layer: 'engine',
     body: `<p>Collects execution results from all VUsers via buffered channels (capacity 10,000). The zero-lock design ensures the metrics pipeline never blocks the hot execution path.</p>
-    <p>Aggregation: per-action metrics (TPS, latency, errors), per-group metrics, per-dependency-target breakdown, SOAP operation breakdown, network profile breakdown. Browser protocol adds device-level and Web Vitals metrics.</p>
+    <p>Aggregation: per-action metrics (TPS, latency, errors), per-group metrics, per-dependency-target breakdown, SOAP operation breakdown, network profile breakdown. Browser protocol adds device-level and Web Vitals metrics (LCP, CLS, INP, TTFB). Full-fidelity transaction evidence goes to archive artifacts, not SQL.</p>
     <p>Live counters use <code>atomic.Int64</code> for lock-free increments. Periodic snapshots (1s) are pushed to the WebSocket Hub for real-time dashboard updates.</p>`,
     connections: ['VUser Engine &mdash; result channel input', 'T-Digest &mdash; percentile computation', 'WebSocket Hub &mdash; snapshot broadcast', 'Telemetry Export &mdash; scrape endpoint'],
     files: ['pkg/engine/metrics.go', 'pkg/engine/sys_metrics.go']
@@ -816,23 +957,24 @@ const COMPONENTS = {
     title: 'SQLite / PostgreSQL',
     subtitle: 'Persistent Storage',
     layer: 'storage',
-    body: `<p>Pluggable storage backend with a common <code>Store</code> interface. SQLite for single-node/dev mode; PostgreSQL 16 for production multi-replica deployments.</p>
-    <p>Stores: scripts, test records, scenarios, schedules, projects, folders, domains, applications, releases, audit events, data pools, archive metadata.</p>
+    body: `<p>Pluggable storage backend with a common <code>Store</code> interface. SQLite for single-node/dev mode; PostgreSQL 16+ (via pgx) for production and HA multi-replica deployments (<code>APEXLOAD_STORE</code>, <code>APEXLOAD_DATABASE_URL</code>). Scheduler and execution leases are durable database leases.</p>
+    <p>Stores: domains, application repositories, categories, projects, releases, folders, scripts, imports, scenarios, schedules and occurrences, test records, audit events, data pools, fleet/cluster connections, archive metadata.</p>
     <p>Factory pattern selects backend based on config. Connection pooling and WAL mode (SQLite) for concurrent read/write performance.</p>`,
     connections: ['REST API Server &mdash; CRUD operations', 'Test Runner &mdash; test record persistence', 'Scheduler &mdash; schedule + lease storage'],
-    files: ['pkg/storage/storage.go', 'pkg/storage/sqlite.go', 'pkg/storage/factory.go']
+    files: ['pkg/storage/storage.go', 'pkg/storage/sqlite.go', 'pkg/storage/factory.go', 'pkg/storage/deployment_lease.go']
   },
   otel: {
     title: 'Telemetry Export',
-    subtitle: 'Vendor-neutral Telemetry',
+    subtitle: 'Prometheus + OTLP traces',
     layer: 'storage',
-    body: `<p>Controller telemetry is exposed through a Prometheus scrape endpoint and event webhooks:</p>
-    <p>&bull; Prometheus (pull-based scraping)<br/>
-    &bull; Dynatrace Events API webhooks<br/>
-    &bull; W3C traceparent propagation on load traffic</p>
-    <p>External metrics ingestion: scripts can configure <code>observability.external_metrics</code> to pull server-side metrics (CPU, memory, custom counters) from Prometheus endpoints and overlay them on the dashboard charts.</p>`,
-    connections: ['Metrics Collector &mdash; metric snapshots', 'Prometheus &mdash; scrape endpoint', 'Dynatrace &mdash; Events webhook'],
-    files: ['pkg/engine/metrics.go', 'pkg/api/external_metrics.go']
+    body: `<p>Controller telemetry surfaces:</p>
+    <p>&bull; Prometheus scrape (<code>/metrics</code>, optional dedicated metrics port) and Prometheus-compatible remote-write<br/>
+    &bull; Opt-in OTLP traces (<code>APEXLOAD_OTEL_ENABLED</code>) for controller HTTP, test lifecycle, sampled engine actions, and controller&harr;generator gRPC<br/>
+    &bull; W3C <code>traceparent</code> propagation on load traffic<br/>
+    &bull; Dynatrace event webhooks (see Integrations)</p>
+    <p>OpenTelemetry metrics/log export is not implemented. Scripts can configure <code>observability.external_metrics</code> to pull server-side metrics from Prometheus endpoints and overlay them on dashboard charts.</p>`,
+    connections: ['Metrics Collector &mdash; metric snapshots', 'Prometheus / Mimir / Thanos &mdash; scrape and remote-write', 'Integrations &mdash; Dynatrace, ELK, Grafana'],
+    files: ['pkg/api/prometheus_exposition.go', 'pkg/telemetry/tracing.go', 'pkg/api/external_metrics.go', 'deployments/k8s/monitoring/']
   },
   'proto-http': {
     title: 'HTTP Protocol',
@@ -861,17 +1003,17 @@ const COMPONENTS = {
     title: 'gRPC Protocol',
     subtitle: 'Protobuf-based',
     layer: 'protocol',
-    body: `<p>gRPC protocol plugin supporting unary RPCs, server streaming, client streaming, and bidirectional streaming. Uses dynamic protobuf reflection for runtime schema loading.</p>`,
+    body: `<p>gRPC protocol plugin supporting unary and server-streaming calls, with server reflection for runtime schema discovery (bounded descriptor size). Receive sizes are bounded by DSL limits.</p>`,
     connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; gRPC calls'],
     files: ['pkg/protocol/grpc/']
   },
   'proto-browser': {
     title: 'Browser Protocol',
-    subtitle: 'Headless Chrome via CDP',
+    subtitle: 'Playwright-driven browser',
     layer: 'protocol',
-    body: `<p>Real browser protocol using Chrome DevTools Protocol (CDP) for full browser-based load testing. Captures Web Vitals (LCP, FID, CLS, TTFB), network waterfall, and device-specific metrics.</p>
-    <p>Supports multiple device profiles, viewport simulation, and true end-to-end user flow testing including JavaScript rendering.</p>`,
-    connections: ['VUser Engine &mdash; Execute() calls', 'Headless Chrome &mdash; CDP connection'],
+    body: `<p>Real browser protocol driven through Playwright (<code>playwright-go</code>) for browser-based replay. Captures Web Vitals (LCP, CLS, INP, TTFB), network/HAR evidence, and device-emulation metrics; supports mobile device profiles, touch actions, and request policy controls.</p>
+    <p>Browser VUsers are diagnostic canaries, not high-density load generators.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Playwright browser &mdash; automation session'],
     files: ['pkg/protocol/browser/']
   },
   'proto-soap': {
@@ -884,12 +1026,14 @@ const COMPONENTS = {
   },
   'proto-jms': {
     title: 'JMS Protocol',
-    subtitle: 'Solace + IBM MQ',
+    subtitle: 'Solace, Service Bus, IBM MQ (mock)',
     layer: 'protocol',
-    body: `<p>JMS messaging protocol with two backend implementations: Solace PubSub+ and IBM MQ. Supports publish, subscribe, request-reply, and queue browsing patterns.</p>
-    <p>Phase 5 feature &mdash; designed for enterprise messaging load testing with durable subscriptions and topic hierarchies.</p>`,
-    connections: ['VUser Engine &mdash; Execute() calls', 'Message Broker &mdash; JMS connections'],
-    files: ['pkg/protocol/jms/']
+    body: `<p>Provider-neutral messaging protocol registered as <code>jms-solace</code>, <code>jms-ibmmq</code>, and <code>jms-servicebus</code>. Supports publish, consume, request-reply, and transacted/rollback patterns.</p>
+    <p>&bull; Solace: real AMQP adapter (<code>-tags jms_solace_real</code>) or operator-configured sidecar (<code>APEXLOAD_JMS_SIDECAR_COMMAND</code>)<br/>
+    &bull; Azure Service Bus: real adapter opt-in via <code>-tags jms_servicebus_real</code><br/>
+    &bull; IBM MQ: <strong>mock/in-memory only</strong> &mdash; no real IBM MQ adapter exists in this build</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Message Broker &mdash; JMS connections (mock by default)'],
+    files: ['pkg/protocol/jms/', 'docs/JMS_SIDECAR.md', 'docs/MESSAGING_SUPPORT.md']
   },
   'proto-db': {
     title: 'Database Protocol',
@@ -903,7 +1047,7 @@ const COMPONENTS = {
     title: 'Network Protocol',
     subtitle: 'Raw TCP/UDP',
     layer: 'protocol',
-    body: `<p>Low-level network protocol for raw TCP and UDP testing. Supports custom payloads, binary protocols, and network-level latency measurement without application protocol overhead.</p>`,
+    body: `<p>Low-level network protocol for raw TCP and UDP request/send actions (including Winsock-style LoadRunner aliases), custom payloads, and network-level latency measurement without application protocol overhead.</p>`,
     connections: ['VUser Engine &mdash; Execute() calls', 'Target System &mdash; TCP/UDP sockets'],
     files: ['pkg/protocol/network/']
   },
@@ -911,7 +1055,7 @@ const COMPONENTS = {
     title: 'Enterprise Script Archive Importer',
     subtitle: 'C Parser &rarr; JSON DSL',
     layer: 'convert',
-    body: `<p>Converts enterprise script archive ZIPs containing C-based virtual-user scripts into APEX Load JSON DSL format. Features a Go-based C AST parser that handles:</p>
+    body: `<p>Converts enterprise script archive ZIPs (LoadRunner/VuGen) containing C-based virtual-user scripts into APEX Load JSON DSL format. Features a Go-based C AST parser that handles:</p>
     <p>&bull; <code>web_url()</code>, <code>web_submit_data()</code>, <code>web_custom_request()</code><br/>
     &bull; Correlation functions (<code>web_reg_save_param</code>)<br/>
     &bull; Transaction markers (<code>lr_start/end_transaction</code>)<br/>
@@ -957,9 +1101,9 @@ const COMPONENTS = {
     title: 'Sample Scripts',
     subtitle: 'Built-in Templates',
     layer: 'convert',
-    body: `<p>Library of pre-built script templates for common testing patterns: REST API CRUD, GraphQL queries, WebSocket echo, browser page load, and more. Used for onboarding and quick-start scenarios.</p>`,
+    body: `<p>Sample packs and request-based importers (raw HTTP, cURL, REST JSON) that build JSON DSL scripts, including HTTP, java_http, and GraphQL request bodies. Used for onboarding and quick-start scenarios.</p>`,
     connections: ['Dashboard &mdash; script creation wizard', 'DSL Parser &mdash; template instantiation'],
-    files: ['pkg/convert/sample/']
+    files: ['pkg/convert/sample/', 'pkg/convert/requestimport/']
   },
   dslparser: {
     title: 'DSL Parser',
@@ -971,6 +1115,176 @@ const COMPONENTS = {
     <p>Validation covers: required fields, protocol compatibility, action type validity, correlation reference integrity, data source binding checks.</p>`,
     connections: ['All Converters &mdash; output target', 'VUser Engine &mdash; script interpretation', 'REST API &mdash; /scripts/validate endpoint'],
     files: ['pkg/dsl/types.go', 'pkg/dsl/parser.go', 'pkg/dsl/validate.go', 'pkg/dsl/parameters.go']
+  },
+  generator: {
+    title: 'Generator',
+    subtitle: 'Remote worker (cmd/generator)',
+    layer: 'engine',
+    body: `<p>Remote worker binary deployed as StatefulSet pods. Executes assigned groups with the same engine as local mode and streams <code>MetricsBatch</code> snapshots and archive artifacts to the controller over gRPC.</p>
+    <p>Enabled by setting <code>APEXLOAD_GENERATORS</code> on the controller. Targets are static <code>host:port</code> or <code>dns://host:port</code> (re-resolved every <code>APEXLOAD_GENERATOR_DISCOVERY_INTERVAL</code>, default 15s) so KEDA/HPA-scaled pods join and leave automatically. The channel supports TLS/mTLS and shared-token auth (<code>APEXLOAD_GRPC_TLS_*</code>, <code>APEXLOAD_GRPC_AUTH_TOKEN</code>); unconfigured it is plaintext and unauthenticated.</p>
+    <p>Stop, abort, pause, resume, duration and per-group VUser scale are routed to the owning generator. Deployed via <code>deployments/k8s/</code> (local, on-prem, AKS, EKS, HA overlays), Helm, and Terraform for Azure and AWS.</p>`,
+    connections: ['Test Runner &mdash; gRPC distribution and control', 'VUser Engine &mdash; executes assigned groups', 'Archive Store &mdash; staged artifacts'],
+    files: ['cmd/generator/main.go', 'pkg/distributed/generatorrpc/', 'deployments/k8s/', 'deployments/helm/apexload/']
+  },
+  javarunner: {
+    title: 'Java Vuser Runner',
+    subtitle: 'JVM sidecar bridge',
+    layer: 'engine',
+    body: `<p>External-runner container used by the <code>java_vuser</code> protocol. It runs governed JVM Vusers outside the generator process. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator.</p>`,
+    connections: ['Java Vuser Protocol &mdash; runner bridge', 'Generator &mdash; sidecar host'],
+    files: ['cmd/apexload-java-vuser-runner/main.go', 'pkg/javarunner/', 'pkg/javasidecar/', 'docs/JAVA_VUSER_RUNTIME.md', 'deployments/k8s/components/java-vuser-runner/']
+  },
+  collectoragent: {
+    title: 'Collector Agent',
+    subtitle: 'Monitoring collector',
+    layer: 'engine',
+    body: `<p>Monitoring collector agent that sends controller heartbeats and host-metric packs from monitored hosts so server-side metrics can be correlated with load runs.</p>`,
+    connections: ['REST API Server &mdash; heartbeat and metric ingest'],
+    files: ['cmd/apexload-collector-agent/main.go', 'pkg/collectoragent/']
+  },
+  recordagent: {
+    title: 'Record Agent',
+    subtitle: 'Workstation recording bridge',
+    layer: 'engine',
+    body: `<p>Local browser-recording bridge that runs on operator workstations and relays captured traffic to the controller. Recordings convert to JSON DSL through the HAR/recorder converters.</p>`,
+    connections: ['REST API Server &mdash; recording bridge', 'HAR Converter &mdash; captured traffic'],
+    files: ['cmd/apexload-record-agent/main.go', 'pkg/recordagent/', 'docs/recording-agent.md']
+  },
+  devtools: {
+    title: 'Dev Tooling',
+    subtitle: 'Generators and harnesses',
+    layer: 'engine',
+    body: `<p>Developer/CI binaries, not part of the runtime path: <code>apexbench</code> (controlled local performance-evidence harness), <code>dslschema</code> (generates <code>docs/dsl.schema.json</code> and the action reference), <code>swaggergen</code> (generates <code>docs/swagger.yaml</code> and the endpoint catalog), <code>openapits</code> (dashboard TypeScript API contract), and <code>webcoverage</code> (LoadRunner import coverage docs).</p>`,
+    connections: ['DSL Parser &mdash; schema generation', 'REST API Server &mdash; OpenAPI generation'],
+    files: ['cmd/apexbench/', 'cmd/dslschema/', 'cmd/swaggergen/', 'cmd/openapits/', 'cmd/webcoverage/']
+  },
+  redis: {
+    title: 'Redis / Valkey',
+    subtitle: 'Optional live state and fanout',
+    layer: 'storage',
+    body: `<p>Optional cache backend (<code>APEXLOAD_CACHE_BACKEND</code>, <code>APEXLOAD_REDIS_URL</code>). Holds live run snapshots, generator inventory cache, idempotency keys, API-key rate limits, and the WebSocket fanout bus for multi-controller HA (<code>APEXLOAD_CONTROLLER_HA=true</code>).</p>
+    <p>Memory is the local default. Redis/Valkey is <strong>not</strong> authoritative durable state; PostgreSQL holds metadata and leases.</p>`,
+    connections: ['WebSocket Hub &mdash; fanout bus', 'REST API Server &mdash; idempotency and rate limits', 'Test Runner &mdash; live snapshots'],
+    files: ['pkg/api/cache_backend.go', 'pkg/config/config.go', 'deployments/k8s/ha/']
+  },
+  archive: {
+    title: 'Archive Store',
+    subtitle: 'Immutable run evidence',
+    layer: 'storage',
+    body: `<p>Completed runs write archive bundles: manifests, transaction/resource/summary datasets, browser diagnostics, JSONL/CSV/Parquet exports, and HTML/JSON/CSV reports. Backends: local filesystem (default), or S3, Azure Blob, and GCS for enterprise (<code>APEXLOAD_ARCHIVE_BACKEND</code>).</p>
+    <p>High-cardinality raw transaction evidence belongs here, not in SQL or Redis.</p>`,
+    connections: ['Test Runner &mdash; archive finalization', 'Generator &mdash; artifact staging', 'REST API Server &mdash; reports and comparisons'],
+    files: ['pkg/storage/sqlite_archives.go', 'pkg/api/execution_backend.go', 'pkg/distributed/generatorrpc/archive.go']
+  },
+  integrations: {
+    title: 'Integrations',
+    subtitle: 'Monitoring systems',
+    layer: 'storage',
+    body: `<p>External monitoring integrations configured per project/domain:</p>
+    <p>&bull; Dynatrace (SaaS monitoring, event webhooks)<br/>
+    &bull; ELK monitoring<br/>
+    &bull; Grafana dashboards and Prometheus graph data sources<br/>
+    &bull; OpenTelemetry traces (opt-in)</p>
+    <p>See <code>docs/DYNATRACE_SAAS_MONITORING.md</code>, <code>docs/DYNATRACE_WEBHOOKS.md</code>, <code>docs/ELK_MONITORING.md</code>, <code>docs/PROMETHEUS_METRICS.md</code>, <code>docs/OPENTELEMETRY.md</code>.</p>`,
+    connections: ['REST API Server &mdash; connection management', 'Telemetry Export &mdash; event/metric emission'],
+    files: ['pkg/api/dynatrace_monitoring.go', 'pkg/api/elk_monitoring.go', 'pkg/api/graph_datasource_grafana.go', 'pkg/storage/sqlite_dynatrace_connections.go']
+  },
+  cibi: {
+    title: 'CI &amp; BI',
+    subtitle: 'GitHub Actions + Power BI',
+    layer: 'storage',
+    body: `<p>CI/CD: GitHub (including Enterprise Server) integration, GitHub OIDC exchange for CI runs, and <code>apexctl</code> CI commands with SLA-based exit codes and JUnit output. BI: Power BI dataset publishing of run results.</p>
+    <p>See <code>docs/GITHUB_INTEGRATION.md</code>, <code>docs/CICD_INTEGRATION.md</code>, <code>docs/POWERBI_INTEGRATION.md</code>.</p>`,
+    connections: ['REST API Server &mdash; /api/v1/ci/runs, GitHub handlers', 'apexctl &mdash; CI client'],
+    files: ['pkg/api/github_handlers.go', 'pkg/api/github_oauth.go', 'pkg/api/powerbi_publish.go', 'cmd/apexctl/ci.go']
+  },
+  'proto-javahttp': {
+    title: 'java_http Protocol',
+    subtitle: 'Java-over-HTTP codec',
+    layer: 'protocol',
+    body: `<p>Bounded Java-over-HTTP codec support layered on the HTTP protocol, used for Java serialized/encoded payloads imported from Java-based scripts. Reuses the HTTP transport.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'HTTP Protocol &mdash; underlying transport'],
+    files: ['pkg/protocol/java_http/']
+  },
+  'proto-kafka': {
+    title: 'Kafka Protocol',
+    subtitle: 'Produce / consume / request-reply',
+    layer: 'protocol',
+    body: `<p>Kafka messaging protocol with produce, consume, and request-reply actions. Uses an in-memory mock broker by default; the real franz-go adapter is opt-in via <code>-tags kafka_real</code>.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Kafka broker &mdash; real adapter only with kafka_real'],
+    files: ['pkg/protocol/kafka/', 'docs/KAFKA_MESSAGING_AND_ASYNCAPI_PLAN.md']
+  },
+  'proto-eventhubs': {
+    title: 'Azure Event Hubs Protocol',
+    subtitle: 'eventhubs',
+    layer: 'protocol',
+    body: `<p>Producer-first Event Hubs protocol (<code>eventhubs</code>) with observer consumption and batching. The in-memory broker is the default; the real AMQP adapter is opt-in via <code>-tags eventhubs_real</code>.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Azure Event Hubs &mdash; real adapter only with eventhubs_real'],
+    files: ['pkg/protocol/eventhubs/']
+  },
+  'proto-bruno': {
+    title: 'Bruno Protocol',
+    subtitle: 'Governed Node sidecar runner',
+    layer: 'protocol',
+    body: `<p>Governed Node sidecar runner (<code>bruno</code>) that executes imported Bruno collections. Distributed execution is disabled unless <code>APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED</code> is set and a governed egress broker is configured.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Bruno Converter &mdash; collection import'],
+    files: ['pkg/protocol/bruno/', 'pkg/convert/bruno/']
+  },
+  'proto-javavuser': {
+    title: 'Java Vuser Protocol',
+    subtitle: 'Governed JVM sidecar runner',
+    layer: 'protocol',
+    body: `<p>Governed JVM sidecar runner (<code>java_vuser</code>) for Java Vuser scripts. Disabled unless an operator sets <code>APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true</code> on the generator; capacity is reserved per pod.</p>`,
+    connections: ['VUser Engine &mdash; Execute() calls', 'Java Vuser Runner &mdash; external-runner bridge'],
+    files: ['pkg/protocol/java_vuser/', 'pkg/javarunner/', 'docs/JAVA_VUSER_RUNTIME.md']
+  },
+  'conv-bruno': {
+    title: 'Bruno Converter',
+    subtitle: 'Bruno collections',
+    layer: 'convert',
+    body: `<p>Imports Bruno collections (native and bundle forms) into JSON DSL or the governed <code>bruno</code> runner target, preserving credential-handling policy.</p>`,
+    connections: ['REST API &mdash; Bruno import endpoints', 'Bruno Protocol &mdash; runner target', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/bruno/', 'pkg/api/handlers_bruno_import.go']
+  },
+  'conv-postman': {
+    title: 'Postman Converter',
+    subtitle: 'Postman collections',
+    layer: 'convert',
+    body: `<p>Converts Postman collections into JSON DSL scripts through the web/API import registry.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/postman/', 'pkg/api/import_registry.go']
+  },
+  'conv-k6': {
+    title: 'k6 Converter',
+    subtitle: 'k6 JS scripts',
+    layer: 'convert',
+    body: `<p>Imports k6 scripts into JSON DSL.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/k6/', 'pkg/api/handlers_import_devweb_k6.go']
+  },
+  'conv-asyncapi': {
+    title: 'AsyncAPI Converter',
+    subtitle: 'Messaging specs',
+    layer: 'convert',
+    body: `<p>Converts AsyncAPI specifications into Kafka/JMS/messaging test scripts.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'Kafka / JMS Protocols &mdash; target actions', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/asyncapi/']
+  },
+  'conv-devweb': {
+    title: 'DevWeb Converter',
+    subtitle: 'DevWeb scripts',
+    layer: 'convert',
+    body: `<p>Imports DevWeb scripts into JSON DSL.</p>`,
+    connections: ['REST API &mdash; import endpoint', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/devweb/', 'pkg/api/handlers_import_devweb_k6.go']
+  },
+  'conv-other': {
+    title: 'Other Importers',
+    subtitle: 'RAML, CloudTest, MuleSoft, Salesforce',
+    layer: 'convert',
+    body: `<p>Additional importers under <code>pkg/convert</code>: RAML, CloudTest, MuleSoft, Salesforce/Agentforce, TrueClient, and Grafana dashboard import. Each routes executable content to native targets and creates review artifacts for anything unsupported.</p>`,
+    connections: ['REST API &mdash; import registry', 'DSL Parser &mdash; output script'],
+    files: ['pkg/convert/raml/', 'pkg/convert/cloudtest/', 'pkg/convert/mulesoft/', 'pkg/convert/salesforce/', 'pkg/api/import_registry.go']
   }
 };
 
@@ -1007,6 +1321,32 @@ const CONNECTIONS = [
   { from: 'conv-sample', to: 'dslparser', type: 'solid' },
   { from: 'dslparser', to: 'engine', type: 'solid' },
   { from: 'restapi', to: 'conv-lr', type: 'solid' },
+  { from: 'agentic', to: 'dslparser', type: 'solid' },
+  { from: 'mcp', to: 'restapi', type: 'solid' },
+  { from: 'testrunner', to: 'generator', type: 'grpc' },
+  { from: 'generator', to: 'engine', type: 'solid' },
+  { from: 'generator', to: 'metrics', type: 'grpc' },
+  { from: 'generator', to: 'javarunner', type: 'solid' },
+  { from: 'collectoragent', to: 'restapi', type: 'solid' },
+  { from: 'recordagent', to: 'restapi', type: 'solid' },
+  { from: 'wshub', to: 'redis', type: 'solid' },
+  { from: 'restapi', to: 'redis', type: 'solid' },
+  { from: 'testrunner', to: 'archive', type: 'solid' },
+  { from: 'otel', to: 'integrations', type: 'solid' },
+  { from: 'restapi', to: 'cibi', type: 'solid' },
+  { from: 'apexctl', to: 'cibi', type: 'solid' },
+  { from: 'engine', to: 'proto-javahttp', type: 'solid' },
+  { from: 'engine', to: 'proto-kafka', type: 'solid' },
+  { from: 'engine', to: 'proto-eventhubs', type: 'solid' },
+  { from: 'engine', to: 'proto-bruno', type: 'solid' },
+  { from: 'engine', to: 'proto-javavuser', type: 'solid' },
+  { from: 'proto-javavuser', to: 'javarunner', type: 'solid' },
+  { from: 'conv-bruno', to: 'dslparser', type: 'solid' },
+  { from: 'conv-postman', to: 'dslparser', type: 'solid' },
+  { from: 'conv-k6', to: 'dslparser', type: 'solid' },
+  { from: 'conv-asyncapi', to: 'dslparser', type: 'solid' },
+  { from: 'conv-devweb', to: 'dslparser', type: 'solid' },
+  { from: 'conv-other', to: 'dslparser', type: 'solid' },
 ];
 
 let selectedNode = null;
