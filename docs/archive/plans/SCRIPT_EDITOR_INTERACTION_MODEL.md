@@ -1,12 +1,12 @@
 # Script Editor Interaction Model — Decision Memo & Re-Architecture Plan
 
-**Status:** Implemented design record. The direction approved on 2026-06-18 has shipped: the editor no longer
+**Status:** Implemented (archived 2026-09-24). Design record. The direction approved on 2026-06-18 has shipped: the editor no longer
 leads with raw JSON. Author mode provides an **Author outline**, an **Action editor**, and a **Source** tab
 (with **Edit in Full Script JSON** for whole-document edits); see
-[Authoring A Script](APPLICATION_USER_GUIDE.md#authoring-a-script). This memo is kept as the rationale for
+[Authoring A Script](../../APPLICATION_USER_GUIDE.md#authoring-a-script). This memo is kept as the rationale for
 that design; the sections below keep their original decision-time wording.
 **Audience:** Script-editor product owner + engineering.
-**Related:** [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) (why the DSL is an interpreted action list, not code).
+**Related:** [SCRIPT_LIFECYCLE.md](../../SCRIPT_LIFECYCLE.md) (why the DSL is an interpreted action list, not code).
 
 ---
 
