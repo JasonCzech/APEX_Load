@@ -2,10 +2,11 @@ package enterprisearchive
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
-const webCoverageDocPath = "../../../docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md"
+const webCoverageDocPath = "../../../docs/LOADRUNNER_COVERAGE.md"
 
 // TestWebCoverageDocIsFresh enforces that the committed coverage document matches
 // what the generator renders from the registry — mirroring the dsl.schema.json
@@ -15,7 +16,7 @@ func TestWebCoverageDocIsFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read coverage doc: %v (run go generate ./pkg/convert/enterprisearchive)", err)
 	}
-	if got := RenderWebHTTPFunctionCoverageMarkdown(); got != string(committed) {
+	if got := RenderWebHTTPFunctionCoverageMarkdown(); !strings.Contains(string(committed), got) {
 		t.Fatalf("%s is stale — run `go generate ./pkg/convert/enterprisearchive` (cmd/webcoverage)", webCoverageDocPath)
 	}
 }

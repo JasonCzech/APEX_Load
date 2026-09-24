@@ -11,4 +11,4 @@ Status: Historical index. Files here are dated evidence, not current product doc
 
 ## Archived from this folder (2026-09-24)
 
-These reviews were fully remediated or superseded and now live in [../archive/reviews/](../archive/reviews/README.md): `PERF_REVIEW_2026-07-06`, `PERF_BASELINES_2026-07-06`, `UNCOMMITTED_REVIEW_2026-07-22` (all 48 findings fixed the same day), `WEEK_REVIEW_2026-07-02_to_2026-07-07`, `BRUNO_YAML_IMPORT_REVIEW_2026-07-16` (+ `_ROUND2`), `GITHUB_ACTIONS_CI_SECOND_OPINION_2026-07-16`, and `WHOLE_APP_REVIEW_2026-08-02` (312 of 323 defects fixed; the 11 open ones are in [../qa/DEFECTS.md](../qa/DEFECTS.md)).
+These reviews were fully remediated or superseded. `WHOLE_APP_REVIEW_2026-08-02` lives in [../archive/reviews/](../archive/reviews/README.md); `PERF_REVIEW_2026-07-06`, `PERF_BASELINES_2026-07-06`, `UNCOMMITTED_REVIEW_2026-07-22`, `WEEK_REVIEW_2026-07-02_to_2026-07-07`, `BRUNO_YAML_IMPORT_REVIEW_2026-07-16` (+ `_ROUND2`) and `GITHUB_ACTIONS_CI_SECOND_OPINION_2026-07-16` were deleted on 2026-09-24 and can be restored from git (see the archive README) (312 of 323 defects fixed; the 11 open ones are in [../qa/DEFECTS.md](../qa/DEFECTS.md)).

@@ -544,7 +544,7 @@ together with the next action for each one. Map source values, confirm secret bi
 and save the reviewed draft.
 
 Coverage for the big legacy sources is documented and evidence-backed rather than
-claimed: see the [LoadRunner Web Function Coverage](LOADRUNNER_WEB_FUNCTION_COVERAGE.md), [LoadRunner Java lr Function Coverage](LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md), and [LoadRunner TruClient Step Coverage](LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md) references for exactly which
+claimed: see the [LoadRunner Coverage](LOADRUNNER_COVERAGE.md) reference (Web functions, Java `lr` functions, TruClient steps, Java Vuser imports) for exactly which
 functions convert, which are no-ops, and which are preserved for review.
 
 ## Building A Scenario
@@ -878,7 +878,7 @@ GitHub.com with OIDC and GHES with a scoped API key.
 | **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | Settings → Integrations → GitHub |
 | **Kubernetes clusters** | Register AKS/EKS/generic control planes so an administrator can place generator pools on them with per-pool CPU, memory, and node placement | Admin cluster registry |
 
-Each has its own reference document: [Prometheus metrics](PROMETHEUS_METRICS.md), [Power BI](POWERBI_INTEGRATION.md), [Dynatrace webhooks](DYNATRACE_WEBHOOKS.md), [OpenTelemetry](OPENTELEMETRY.md), [GitHub integration](GITHUB_INTEGRATION.md), and [Cluster connections](CLUSTER_CONNECTIONS.md).
+Each has its own reference document: [Prometheus metrics](PROMETHEUS_METRICS.md), [Power BI](POWERBI_INTEGRATION.md), [Dynatrace webhooks and monitoring](MONITORING_INTEGRATIONS.md), [OpenTelemetry](OPENTELEMETRY.md), [GitHub integration](GITHUB_INTEGRATION.md), and [Cluster connections](CLUSTER_CONNECTIONS.md).
 
 ## Troubleshooting And FAQ
 

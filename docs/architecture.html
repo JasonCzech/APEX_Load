@@ -1033,7 +1033,7 @@ const COMPONENTS = {
     &bull; Azure Service Bus: real adapter opt-in via <code>-tags jms_servicebus_real</code><br/>
     &bull; IBM MQ: <strong>mock/in-memory only</strong> &mdash; no real IBM MQ adapter exists in this build</p>`,
     connections: ['VUser Engine &mdash; Execute() calls', 'Message Broker &mdash; JMS connections (mock by default)'],
-    files: ['pkg/protocol/jms/', 'docs/JMS_SIDECAR.md', 'docs/MESSAGING_SUPPORT.md']
+    files: ['pkg/protocol/jms/', 'docs/MESSAGING_SUPPORT.md']
   },
   'proto-db': {
     title: 'Database Protocol',
@@ -1185,7 +1185,7 @@ const COMPONENTS = {
     &bull; ELK monitoring<br/>
     &bull; Grafana dashboards and Prometheus graph data sources<br/>
     &bull; OpenTelemetry traces (opt-in)</p>
-    <p>See <code>docs/DYNATRACE_SAAS_MONITORING.md</code>, <code>docs/DYNATRACE_WEBHOOKS.md</code>, <code>docs/ELK_MONITORING.md</code>, <code>docs/PROMETHEUS_METRICS.md</code>, <code>docs/OPENTELEMETRY.md</code>.</p>`,
+    <p>See <code>docs/MONITORING_INTEGRATIONS.md</code>, <code>docs/PROMETHEUS_METRICS.md</code>, <code>docs/OPENTELEMETRY.md</code>.</p>`,
     connections: ['REST API Server &mdash; connection management', 'Telemetry Export &mdash; event/metric emission'],
     files: ['pkg/api/dynatrace_monitoring.go', 'pkg/api/elk_monitoring.go', 'pkg/api/graph_datasource_grafana.go', 'pkg/storage/sqlite_dynatrace_connections.go']
   },

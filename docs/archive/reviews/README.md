@@ -2,29 +2,31 @@
 
 Status: Historical
 
-These files are preserved as dated review evidence and implementation memory.
-They are not current product documentation, API references, or release claims.
-
+Only the one review that current QA tooling still cites is kept in this folder.
 For current documentation, start with [docs/INDEX.md](../../INDEX.md).
 
-## Archived Reviews
+## Kept
 
-- [Full codebase review, 2026-06-15](CODE_REVIEW_REPORT.md)
-- [Recording/import/replay memory](apex_load_recording_import_replay_review.md) (updated 2026-07-03 with round-2 fixes: proxy startup/token safety, browser recording retention/HAR temp files, replay/correlation regressions, dashboard import/recording UX regressions; this replaces the former MEMORY.md index)
-- [Fleet management review](FLEET_MANAGEMENT_REVIEW.md)
-- [WSDL/SOAP import + replay review](WSDL_SOAP_IMPORT_REPLAY_REVIEW.md)
-- [Refactoring opportunities, 2026-06-27](REFACTORING_OPPORTUNITIES_2026-06-27.md)
-- [Two-week review re-verification, 2026-07-02](TWO_WEEK_REVIEW_REVERIFY_2026-07-02.md)
-- [Recording/import/replay review, 2026-07-02](RECORDING_IMPORT_REPLAY_REVIEW_2026-07-02.md)
-- [Two-week code review, 2026-06-17 to 2026-06-29](TWO_WEEK_REVIEW_2026-06-17_to_2026-06-29.md)
+- [Whole-application review, 2026-08-02](WHOLE_APP_REVIEW_2026-08-02.md) (312 of 323 defects fixed; open items live in [docs/qa/DEFECTS.md](../../qa/DEFECTS.md)). Cited by `docs/qa/DEFECTS.md`, `docs/qa/TEST_PROGRAM.md` and `docs/qa/status_inventory_test.go`.
 
-## Archived from `docs/reviews/` (2026-09-24)
+## Removed 2026-09-24 (recoverable from git)
 
-All are historical: fully remediated or superseded.
+The June and July 2026 reviews below were fully remediated or superseded and were
+deleted. Restore any of them with `git show 780f032b4:docs/archive/reviews/<file>`
+(handoff: `docs/archive/handoffs/<file>`). Links to them inside
+`WHOLE_APP_REVIEW_2026-08-02.md` are intentionally left as historical text.
 
-- [Performance review, 2026-07-06](PERF_REVIEW_2026-07-06.md) and its [baselines](PERF_BASELINES_2026-07-06.md)
-- [Uncommitted-changes review, 2026-07-22](UNCOMMITTED_REVIEW_2026-07-22.md) (all 48 findings fixed the same day)
-- [Week review, 2026-07-02 to 2026-07-07](WEEK_REVIEW_2026-07-02_to_2026-07-07.md)
-- [Bruno YAML import review, 2026-07-16](BRUNO_YAML_IMPORT_REVIEW_2026-07-16.md) and [round 2](BRUNO_YAML_IMPORT_REVIEW_2026-07-16_ROUND2.md)
-- [GitHub Actions CI second opinion, 2026-07-16](GITHUB_ACTIONS_CI_SECOND_OPINION_2026-07-16.md)
-- [Whole-application review, 2026-08-02](WHOLE_APP_REVIEW_2026-08-02.md) (312 of 323 defects fixed; open items live in [docs/qa/DEFECTS.md](../../qa/DEFECTS.md))
+| File | Note |
+| --- | --- |
+| CODE_REVIEW_REPORT.md | Full codebase review, 2026-06-15 |
+| REFACTORING_OPPORTUNITIES_2026-06-27.md | Refactoring opportunities |
+| TWO_WEEK_REVIEW_2026-06-17_to_2026-06-29.md, TWO_WEEK_REVIEW_REVERIFY_2026-07-02.md | Two-week review and re-verification |
+| FLEET_MANAGEMENT_REVIEW.md | Fleet management review |
+| WSDL_SOAP_IMPORT_REPLAY_REVIEW.md | WSDL/SOAP import and replay |
+| RECORDING_IMPORT_REPLAY_REVIEW_2026-07-02.md, apex_load_recording_import_replay_review.md | Recording/import/replay reviews and memory |
+| PERF_REVIEW_2026-07-06.md, PERF_BASELINES_2026-07-06.md | Performance review and baselines |
+| WEEK_REVIEW_2026-07-02_to_2026-07-07.md | Week review |
+| BRUNO_YAML_IMPORT_REVIEW_2026-07-16.md (+ _ROUND2) | Bruno YAML import review |
+| GITHUB_ACTIONS_CI_SECOND_OPINION_2026-07-16.md | CI second opinion |
+| UNCOMMITTED_REVIEW_2026-07-22.md | Uncommitted-changes review (all 48 findings fixed same day) |
+| ../handoffs/SESSION_FEATURE_HANDOFF_APPLIED_2026-07-24.md | One-off session report |

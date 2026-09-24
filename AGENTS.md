@@ -31,7 +31,7 @@ cmd/
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
   swaggergen/    — Code generator for docs/swagger.yaml + docs/api-endpoint-catalog.json
   openapits/     — Code generator for the dashboard's TypeScript API contract from the OpenAPI document
-  webcoverage/   — Generator for the LoadRunner import coverage docs (`docs/LOADRUNNER_*_COVERAGE.md`)
+  webcoverage/   — Generator for the LoadRunner import coverage docs (`docs/LOADRUNNER_COVERAGE.md`)
 pkg/
   protocol/      — Protocol plugin interface + registry
   protocol/http/ — HTTP/1.1 + HTTP/2 protocol implementation

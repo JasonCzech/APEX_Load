@@ -8,18 +8,12 @@ Material here is preserved for audit and design history. It is not current produ
 
 | File | Status | Current reference |
 | --- | --- | --- |
-| [plans/DYNATRACE_SAAS_MONITORING_PLAN.md](plans/DYNATRACE_SAAS_MONITORING_PLAN.md) | Implemented (archived 2026-09-24) | [DYNATRACE_SAAS_MONITORING.md](../DYNATRACE_SAAS_MONITORING.md) |
+| [plans/DYNATRACE_SAAS_MONITORING_PLAN.md](plans/DYNATRACE_SAAS_MONITORING_PLAN.md) | Implemented (archived 2026-09-24) | [MONITORING_INTEGRATIONS.md](../MONITORING_INTEGRATIONS.md) |
 | [plans/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](plans/ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md) | Implemented, all phases (archived 2026-09-24) | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](../ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) |
 | [plans/AUTH_RBAC_FOLLOW_UP_TICKETS.md](plans/AUTH_RBAC_FOLLOW_UP_TICKETS.md) | Implemented, all tickets (archived 2026-09-24) | [AUTH_RBAC_OPERATIONS_RUNBOOK.md](../AUTH_RBAC_OPERATIONS_RUNBOOK.md) |
 | [plans/RUN_REPORT_IMPLEMENTATION_PLAN.md](plans/RUN_REPORT_IMPLEMENTATION_PLAN.md) | Implemented (RunReportPage and related components exist) | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md) |
 | [plans/PROTOCOL_EXTENSION_PLAN.md](plans/PROTOCOL_EXTENSION_PLAN.md) | Implemented (SOAP/java_http exist; archived 2026-09-24) | [MESSAGING_SUPPORT.md](../MESSAGING_SUPPORT.md), [WEB_API_EXECUTION_SUPPORT_MATRIX.md](../WEB_API_EXECUTION_SUPPORT_MATRIX.md) |
 | [plans/SCRIPT_EDITOR_INTERACTION_MODEL.md](plans/SCRIPT_EDITOR_INTERACTION_MODEL.md) | Implemented (archived 2026-09-24) | [APPLICATION_USER_GUIDE.md](../APPLICATION_USER_GUIDE.md#authoring-a-script) |
-
-## Session handoffs (`handoffs/`)
-
-| File | Status |
-| --- | --- |
-| [handoffs/SESSION_FEATURE_HANDOFF_APPLIED_2026-07-24.md](handoffs/SESSION_FEATURE_HANDOFF_APPLIED_2026-07-24.md) | Historical record of applied working-tree changes (moved from the repository root) |
 
 ## Retired reference (`APEX_Load_DSL_Reference_Guide_v2.1.docx`)
 
@@ -38,4 +32,4 @@ Material here is preserved for audit and design history. It is not current produ
 
 ## Reviews (`reviews/`)
 
-See [reviews/README.md](reviews/README.md).
+Only the whole-application review is kept; the rest of the June and July 2026 reviews and the session handoff were deleted on 2026-09-24 and are recoverable from git. See [reviews/README.md](reviews/README.md).

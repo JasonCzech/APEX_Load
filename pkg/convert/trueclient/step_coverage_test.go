@@ -2,20 +2,21 @@ package trueclient
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
-const stepCoverageDocPath = "../../../docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md"
+const stepCoverageDocPath = "../../../docs/LOADRUNNER_COVERAGE.md"
 
 // TestTrueClientStepCoverageDocIsFresh enforces that the committed coverage doc
-// matches the generator output. Run `go generate ./pkg/convert/trueclient`.
+// section matches the generator output. Run `go generate ./pkg/convert/trueclient`.
 func TestTrueClientStepCoverageDocIsFresh(t *testing.T) {
 	committed, err := os.ReadFile(stepCoverageDocPath)
 	if err != nil {
-		t.Fatalf("read coverage doc: %v (run go generate ./pkg/convert/trueclient)", err)
+		t.Fatalf("read coverage doc: %v (run go generate ./pkg/convert/enterprisearchive)", err)
 	}
-	if got := RenderStepCoverageMarkdown(); got != string(committed) {
-		t.Fatalf("%s is stale — run `go generate ./pkg/convert/trueclient` (cmd/webcoverage -set trueclient)", stepCoverageDocPath)
+	if got := RenderStepCoverageMarkdown(); !strings.Contains(string(committed), got) {
+		t.Fatalf("%s is stale — run `go generate ./pkg/convert/enterprisearchive` (cmd/webcoverage)", stepCoverageDocPath)
 	}
 }
 

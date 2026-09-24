@@ -34,7 +34,7 @@ const sources = import.meta.glob<string>([
   '../../docs/recording-agent.md',
   '../../docs/PROMETHEUS_METRICS.md',
   '../../docs/POWERBI_INTEGRATION.md',
-  '../../docs/DYNATRACE_WEBHOOKS.md',
+  '../../docs/MONITORING_INTEGRATIONS.md',
   '../../docs/GITHUB_INTEGRATION.md',
   '../../docs/ACCESS_SURFACES.md',
   '../../deployments/README.md',
@@ -45,9 +45,7 @@ const sources = import.meta.glob<string>([
   '../../deployments/docker/README.md',
   '../../deployments/azure/terraform/README.md',
   '../../deployments/k8s/monitoring/README.md',
-  '../../docs/LOADRUNNER_WEB_FUNCTION_COVERAGE.md',
-  '../../docs/LOADRUNNER_JAVA_LR_FUNCTION_COVERAGE.md',
-  '../../docs/LOADRUNNER_TRUCLIENT_STEP_COVERAGE.md',
+  '../../docs/LOADRUNNER_COVERAGE.md',
 ], { query: '?raw', import: 'default' })
 const pending = new Map<string, Promise<string>>()
 export function loadHelpSource(article: HelpArticle): Promise<string> {

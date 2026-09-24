@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-const javaSurfaceCoverageDocPath = "../../../docs/LOADRUNNER_JAVA_VUSER_IMPORT_COVERAGE.md"
+const javaSurfaceCoverageDocPath = "../../../docs/LOADRUNNER_COVERAGE.md"
 
 func TestJavaSurfaceCoverageDocIsFresh(t *testing.T) {
 	committed, err := os.ReadFile(javaSurfaceCoverageDocPath)
 	if err != nil {
 		t.Fatalf("read coverage doc: %v (run go generate ./pkg/convert/enterprisearchive)", err)
 	}
-	if got := RenderJavaImportSurfaceCoverageMarkdown(); got != string(committed) {
-		t.Fatalf("%s is stale; run `go generate ./pkg/convert/enterprisearchive` (cmd/webcoverage -set java-surfaces)", javaSurfaceCoverageDocPath)
+	if got := RenderJavaImportSurfaceCoverageMarkdown(); !strings.Contains(string(committed), got) {
+		t.Fatalf("%s is stale; run `go generate ./pkg/convert/enterprisearchive` (cmd/webcoverage)", javaSurfaceCoverageDocPath)
 	}
 }
 
