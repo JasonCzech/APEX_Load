@@ -1,13 +1,15 @@
 import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
+import ImportIssueWorkspace from './ImportIssueWorkspace'
+import { groupImportWorkspaceIssues, type ImportWorkspaceIssue } from './importIssueWorkspaceModel'
 import { useEffect, useRef, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type OracleEBusinessReviewResponse } from '../types/scriptImports'
 import { getErrorMessage } from '../utils/errorUtils'
-import IssueDetailsDialog, { type IssueDetail, type IssueDetailSeverity } from './IssueDetailsDialog'
+import { type IssueDetailSeverity } from './IssueDetailsDialog'
 import './SampleScriptImport.css'
 import './ScriptImportReview.css'
 
@@ -34,7 +36,6 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
   const [files, setFiles] = useState<Array<{ name: string; content: string }>>([])
   const [supportNotes, setSupportNotes] = useState<string[]>([])
   const [messageError, setMessageError] = useState('')
-  const [reviewDetailsOpen, setReviewDetailsOpen] = useState(false)
   const [readingFiles, setReadingFiles] = useState(false)
   const fileReadGeneration = useRef(0)
   const operationBusy = reviewTask.pending || readingFiles
@@ -43,7 +44,6 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
   const invalidateReview = () => {
     resetReview()
     setMessageError('')
-    setReviewDetailsOpen(false)
   }
 
   useEffect(() => {
@@ -53,7 +53,6 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
     setName('')
     setPackageName('')
     setMessageError('')
-    setReviewDetailsOpen(false)
     setReadingFiles(false)
     return () => { fileReadGeneration.current += 1 }
   }, [projectId, resetReview])
@@ -111,7 +110,7 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
 
   const [activeTab, setActiveTab] = useState<ImportReviewTab>('review')
   const review = reviewTask.value
-  const reviewIssues: IssueDetail[] = (review?.review_sections || []).flatMap(section => {
+  const reviewIssues: ImportWorkspaceIssue[] = (review?.review_sections || []).flatMap(section => {
     const severity = ['blocker', 'error', 'warning', 'info'].includes(section.severity || '')
       ? section.severity as IssueDetailSeverity
       : 'info'
@@ -122,8 +121,11 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
       title: section.title,
       description: item,
       source: section.summary && section.summary !== item ? section.summary : undefined,
+      targetTab: /correlation|parameter|data/i.test(`${section.title} ${item}`) ? 'data' : /runtime|execution|runner/i.test(`${section.title} ${item}`) ? 'runtime' : 'source',
+      actionLabel: /correlation|parameter|data/i.test(`${section.title} ${item}`) ? 'Review correlation and data guidance' : /runtime|execution|runner/i.test(`${section.title} ${item}`) ? 'Review execution posture' : 'Inspect source guidance',
     }))
   })
+  const groupedReviewIssueCount = groupImportWorkspaceIssues(reviewIssues).length
 
   return (
     <div className="sample-import">
@@ -137,6 +139,8 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
 
       <ImportWorkflowGuide stage={review ? 'review' : 'source'} reviewOnly />
 
+      <details className="import-source-setup" open={!review}>
+      <summary>Source & review options — changing these requires a new review</summary>
       <fieldset className="sample-import-card import-operation-gate" disabled={operationBusy} aria-label="Review source" aria-busy={operationBusy}>
         <div className="sample-import-grid two-col">
           <label className="sample-import-field">
@@ -169,6 +173,7 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
           {files.length > 0 && <button className="btn btn-secondary" type="button" onClick={() => { invalidateReview(); setFiles([]) }}>Remove source files</button>}
         </div>
       </fieldset>
+      </details>
 
       <div className="sample-import-actions">
         <button className="btn btn-primary btn-lg" type="button" onClick={handleReview} disabled={operationBusy || (!sourceText.trim() && files.length === 0)}>
@@ -193,7 +198,7 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
 
       {review && (
         <div className="sample-import-result">
-          <ImportReviewTabs active={activeTab} onChange={setActiveTab} counts={{ review: reviewIssues.length }}>
+          <ImportReviewTabs active={activeTab} onChange={setActiveTab} counts={{ review: groupedReviewIssueCount }} visibleTabs={['review', 'data', 'runtime', 'source']}>
             <p role="status">Review only — this report does not create a script or verify replay.</p>
             <div hidden={activeTab !== 'review'} className="script-import-review">
             <div className="script-import-review-header">
@@ -208,15 +213,7 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
               { label: 'posture', value: (review.execution_posture?.posture || 'review').replace(/_/g, ' ') },
               { label: 'suggestions', value: review.repair_suggestions?.length || 0 }
             ]} />
-            {review.review_sections?.length ? (
-              <div className="script-import-review-sections">
-                <h4>Review Sections ({review.review_sections.length})</h4>
-                <p className="setting-desc">Open the focused review window for source signals, context, and required follow-up.</p>
-                <button className="btn btn-secondary" type="button" onClick={() => setReviewDetailsOpen(true)}>
-                  Review details ({reviewIssues.length})
-                </button>
-              </div>
-            ) : null}
+            <ImportIssueWorkspace issues={reviewIssues} onNavigate={setActiveTab} />
             {review.next_actions?.length ? (
               <div className="script-import-review-unsupported">
                 <h4>Next Actions</h4>
@@ -224,21 +221,12 @@ export default function OracleEBusinessReviewImport({ projectId, onClose, onOper
               </div>
             ) : null}
           </div>
-          {activeTab === 'credentials' && <p className="import-review-empty">This review does not create credential bindings. Configure credentials in the selected importer or saved script before replay.</p>}
-          {activeTab === 'data' && <><p>Confirm correlation extractors and parameter/data-source fit in the executable script. This review pack cannot apply those changes.</p><button type="button" className="btn btn-secondary" onClick={() => setReviewDetailsOpen(true)}>Review correlation and data findings</button></>}
+          {activeTab === 'data' && <p>Confirm correlation extractors and parameter/data-source fit in the executable script. This review pack cannot apply those changes; use the issue handoffs on Review to open the appropriate importer.</p>}
           {activeTab === 'runtime' && <p>Execution posture: {(review.execution_posture?.posture || 'review only').replace(/_/g, ' ')}. A supported runner and controlled replay evidence are required before promotion. This page does not configure or start a runner.</p>}
-          {activeTab === 'dsl' && <p className="import-review-empty">No executable DSL was generated by this review-only flow.</p>}
-          {activeTab === 'source' && <><p>No source-to-DSL mapping is available because this flow generates findings rather than a script.</p><button type="button" className="btn btn-secondary" onClick={() => setReviewDetailsOpen(true)}>Inspect source findings</button></>}
+          {activeTab === 'source' && <p>No source-to-DSL mapping is available because this flow generates findings rather than a script. Source evidence and package signals remain visible in the Review issue workspace.</p>}
           {onClose && <p><button type="button" className="btn btn-secondary" onClick={onClose}>Choose an importer</button> Use the appropriate script importer to create a draft, resolve these findings, and attach controlled replay evidence.</p>}
           </ImportReviewTabs>
         </div>
-      )}
-      {reviewDetailsOpen && (
-        <IssueDetailsDialog
-          title="Oracle E-Business review details"
-          issues={reviewIssues}
-          onClose={() => setReviewDetailsOpen(false)}
-        />
       )}
     </div>
   )

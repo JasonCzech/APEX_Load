@@ -1,3 +1,4 @@
+import JMeterScenarioRuntimeEditor from './JMeterScenarioRuntimeEditor'
 import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
@@ -467,6 +468,28 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     onEdit?.(currentScript)
   }
 
+  const applyScenarioRuntimeRule = (scenarioDraft: NonNullable<ImportResult['scenario_draft']>) => {
+    const resolvedCode = /jmeter_unbounded_thread_group/i
+    setResult(previous => {
+      if (!previous) return previous
+      const reviewSections = previous.review_sections.flatMap(section => {
+        if (resolvedCode.test(`${section.key} ${section.title} ${section.summary}`)) return []
+        const items = section.items.filter(item => !resolvedCode.test(item))
+        if (items.length === 0 && section.items.some(item => resolvedCode.test(item))) return []
+        return [{ ...section, items }]
+      })
+      return {
+        ...previous,
+        scenario_draft: scenarioDraft,
+        review_sections: reviewSections,
+        diagnostics: previous.diagnostics?.filter(item => !resolvedCode.test(`${item.element} ${item.location || ''} ${item.detail}`)),
+        warnings: previous.warnings.filter(item => !resolvedCode.test(item)),
+        unsupported_elements: previous.unsupported_elements.filter(item => !resolvedCode.test(item)),
+      }
+    })
+    setNotice('Finite JMeter runtime settings were applied to this review draft.')
+  }
+
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
     if (!result) return
     const sourceGeneration = reviewGenerationRef.current
@@ -772,7 +795,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             )}
 
             </> : undefined}
-            runtimeContent={<><h4>Imported scenario settings</h4>{result.scenario_draft ? <><p>Duration: {result.scenario_draft.duration} · Mode: {result.scenario_draft.scenario_mode.replace(/_/g, ' ')}</p><ul>{result.scenario_draft.groups.map((group, index) => <li key={index}>{group.name}: {group.vusers} VUsers · ramp-up {group.ramp_up || 'not specified'}</li>)}</ul></> : <p>No scenario draft was generated.</p>}<p>Review timers and data allocation in the generated DSL and saved scenario before execution. Scenario settings can be edited after saving.</p></>}
+            runtimeContent={<JMeterScenarioRuntimeEditor scenario={result.scenario_draft} onApply={applyScenarioRuntimeRule} disabled={operationBusy || Boolean(savedResult)} />}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
             reviewGeneration={reviewScope}
             subtitle={savedResult ? 'Saved to the Script Library. Open a saved script above or import more files.' : reviewMode === 'validation'

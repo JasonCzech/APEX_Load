@@ -450,3 +450,33 @@ describe('ParameterizationReview', () => {
     expect(container.textContent).not.toContain('parameter_0')
   })
 })
+
+it('requires a fresh guided preview after selection or draft changes and masks secret values', async () => {
+  const container = document.createElement('div'); const root = createRoot(container)
+  const parameterization = buildParameterization([
+    suggestion({ id: 'auto', auto_apply: true }),
+    suggestion({ id: 'secret', kind: 'secret', var_name: 'PASSWORD', literal_value: 'never-show-this', sample_value: 'never-show-this', high_risk: true }),
+  ])
+  const onApplied = vi.fn()
+  const render = (draft = script) => root.render(<ParameterizationReview guided parameterization={parameterization} script={draft} onApplied={onApplied} />)
+  const button = (name: string) => Array.from(container.querySelectorAll('button')).find(b => b.textContent === name)!
+  applyMock.mockReset()
+  try {
+    act(() => render())
+    act(() => button('Preview parameter changes').click())
+    expect(container.querySelector('[aria-label="Parameter suggestion preview"]')).not.toBeNull()
+    expect(applyMock).not.toHaveBeenCalled()
+    act(() => container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1].click())
+    expect(container.querySelector('[aria-label="Parameter suggestion preview"]')).toBeNull()
+    act(() => button('Preview parameter changes').click())
+    expect(container.textContent).not.toContain('never-show-this')
+    expect(container.textContent).toContain('High risk: explicitly selected')
+    act(() => render({ ...script, name: 'Changed draft' }))
+    expect(container.querySelector('[aria-label="Parameter suggestion preview"]')).toBeNull()
+    act(() => button('Preview parameter changes').click())
+    applyMock.mockResolvedValueOnce({ script, diffs: [], applied_count: 2 })
+    await act(async () => button('Apply reviewed parameter changes').click())
+    expect(applyMock).toHaveBeenCalledOnce()
+    expect(onApplied).toHaveBeenCalledOnce()
+  } finally { act(() => root.unmount()) }
+})

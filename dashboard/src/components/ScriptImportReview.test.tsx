@@ -87,23 +87,21 @@ describe('ScriptImportReview', () => {
       showCredentials={false} showDataReview={false} showPreview={false} showPreviewAside={false} showOriginalDiagnostics={show}
       warnings={['Original runtime warning']} />))
     render(false)
-    expect(container.querySelector('.script-import-review-original-diagnostics')).toBeNull()
+    expect(container.querySelector('.shared-import-issue-workspace')).toBeNull()
     render(true)
-    const diagnostics = container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')!
-    expect(diagnostics.hidden).toBe(false)
-    expect(diagnostics.open).toBe(false)
-    expect(diagnostics.querySelector('summary')?.textContent).toBe('Original import diagnostics')
-    act(() => diagnostics.querySelector<HTMLButtonElement>('button')!.click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Original runtime warning')
+    const workspace = container.querySelector<HTMLElement>('.shared-import-issue-workspace')!
+    expect(workspace).not.toBeNull()
+    expect(workspace.textContent).toContain('Original runtime warning')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 
   it('keeps original diagnostics on Review in the shared tabbed importer', () => {
     act(() => root.render(<ScriptImportReview tabbed compactReview title="Import review" script={script} warnings={['Original runtime warning']} />))
-    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(false)
+    expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(false)
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Runtime settings"]')!.click())
-    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(true)
+    expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(true)
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="Review"]')!.click())
-    expect(container.querySelector<HTMLDetailsElement>('.script-import-review-original-diagnostics')?.hidden).toBe(false)
+    expect(container.querySelector<HTMLElement>('.shared-import-issue-workspace')?.parentElement?.hidden).toBe(false)
   })
 
   it('redacts arbitrary credential paths in the correct multi-script preview', () => {
@@ -174,9 +172,9 @@ describe('ScriptImportReview', () => {
       {element:'unsupported adapter',detail:'No execution adapter',severity:'warning'},
       {element:'invalid source',detail:'Cannot convert',severity:'blocker'},
     ]} />))
-    expect(container.textContent).toContain('1 conversion note')
-    expect(container.textContent).toContain('1 unsupported')
-    expect(container.textContent).toContain('1 blocker')
+    expect(container.textContent).toContain('Conversion reference (1)')
+    expect(container.textContent).toContain('Unsupported element')
+    expect(container.textContent).toContain('Blocking conversion failure')
     expect(container.querySelector('[aria-label="View 2 unsupported import elements"]')).toBeNull()
     expect(document.activeElement).toBe(container.querySelector('.script-import-review-header'))
   })
@@ -428,25 +426,14 @@ describe('ScriptImportReview', () => {
       )
     })
 
-    expect(container.textContent).toContain('1 warning')
-    expect(container.textContent).toContain('1 unsupported')
-    expect(container.textContent).not.toContain('schema reference external.yaml')
-    expect(container.textContent).not.toContain('Multipart file upload needs a governed file value.')
+    expect(container.textContent).toContain('2 grouped issues')
+    expect(container.textContent).toContain('Import Diagnostics')
+    expect(container.textContent).toContain('Multipart file upload needs a governed file value.')
     expect(container.querySelector('.script-import-review-section')).toBeNull()
-
-    const warningButton = Array.from(container.querySelectorAll('button'))
-      .find(button => button.textContent?.trim() === '1 warning') as HTMLButtonElement
-    act(() => warningButton.click())
-    const dialog = document.body.querySelector('[role="dialog"]')
-    expect(dialog?.textContent).toContain('Import Diagnostics')
-    expect(dialog?.textContent).toContain('Multipart file upload needs a governed file value.')
-    act(() => {
-      ;(dialog?.querySelector('button') as HTMLButtonElement).click()
-    })
     const unsupportedButton = Array.from(container.querySelectorAll('button'))
-      .find(button => button.textContent?.trim() === '1 unsupported') as HTMLButtonElement
+      .find(button => button.textContent?.includes('Unsupported element')) as HTMLButtonElement
     act(() => unsupportedButton.click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('schema reference external.yaml')
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('schema reference external.yaml')
   })
 
   it('opens blocker and conversion-warning summaries independently', () => {
@@ -468,15 +455,11 @@ describe('ScriptImportReview', () => {
       )
     })
 
-    const button = (label: string) => Array.from(container.querySelectorAll('button'))
-      .find(candidate => candidate.textContent?.trim() === label) as HTMLButtonElement
-    act(() => button('1 blocker').click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Configure an approved external runner.')
-    act(() => {
-      ;(document.body.querySelector('[role="dialog"] button') as HTMLButtonElement).click()
-    })
-    act(() => button('1 warning').click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('A generated placeholder needs review.')
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('Configure an approved external runner.')
+    const warning = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row'))
+      .find(candidate => candidate.textContent?.includes('Warnings'))!
+    act(() => warning.click())
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('A generated placeholder needs review.')
   })
 
   it('pages ten thousand modal findings and resets the stale modal for a new review generation', () => {
@@ -492,23 +475,20 @@ describe('ScriptImportReview', () => {
       )
     })
 
-    const warningButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === '10000 warnings')!
-    act(() => warningButton.click())
-    let dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!
-    expect(dialog.querySelectorAll('.issue-details-item')).toHaveLength(100)
-    expect(dialog.textContent).toContain('Finding 00000')
-    expect(dialog.textContent).not.toContain('Finding 00100')
-    expect(dialog.querySelector('.issue-details-pagination')?.textContent)
-      .toContain('Showing 1–100 of 10000. Page 1 of 100.')
+    let workspace = container.querySelector<HTMLElement>('.shared-import-issue-workspace')!
+    expect(workspace.querySelectorAll('.shared-import-issue-evidence section')).toHaveLength(100)
+    expect(workspace.textContent).toContain('Finding 00000')
+    expect(workspace.textContent).not.toContain('Finding 00100')
+    expect(workspace.querySelector('.shared-import-issue-pagination')?.textContent)
+      .toContain('Showing 1–100 of 10000')
 
-    const next = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button'))
+    const next = Array.from(workspace.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Next 100'))!
     act(() => next.click())
-    dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!
-    expect(dialog.querySelectorAll('.issue-details-item')).toHaveLength(100)
-    expect(dialog.textContent).toContain('Finding 00100')
-    expect(dialog.textContent).not.toContain('Finding 00000')
+    workspace = container.querySelector<HTMLElement>('.shared-import-issue-workspace')!
+    expect(workspace.querySelectorAll('.shared-import-issue-evidence section')).toHaveLength(100)
+    expect(workspace.textContent).toContain('Finding 00100')
+    expect(workspace.textContent).not.toContain('Finding 00000')
 
     act(() => {
       root.render(
@@ -520,7 +500,8 @@ describe('ScriptImportReview', () => {
         />,
       )
     })
-    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.textContent).toContain('New finding')
+    expect(container.textContent).not.toContain('Finding 00100')
   })
 
   it('renders an explicit accessible reason whenever the owner disables saving', () => {

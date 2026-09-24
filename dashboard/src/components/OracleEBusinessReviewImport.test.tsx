@@ -78,16 +78,13 @@ describe('OracleEBusinessReviewImport', () => {
       source_text: 'GET /OA_HTML/OA.jsp?page=checkout',
     }))
     expect(container.textContent).toContain('Checkout Review')
-    expect(container.textContent).not.toContain('ICX session identifiers detected.')
-    const reviewDetails = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Review details'))
-    expect(reviewDetails).toBeDefined()
-    await act(async () => {
-      reviewDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    expect(document.body.textContent).toContain('Oracle E-Business Signals')
-    expect(document.body.textContent).toContain('ICX session identifiers detected.')
-    expect(document.body.textContent).toContain('icx_ticket correlation candidate')
+    expect(container.querySelector('.shared-import-issue-workspace')?.textContent).toContain('Oracle E-Business Signals')
+    expect(container.querySelector('.shared-import-issue-workspace')?.textContent).toContain('ICX session identifiers detected.')
+    expect(container.querySelector('.shared-import-issue-workspace')?.textContent).toContain('icx_ticket correlation candidate')
     expect(container.textContent).toContain('Confirm Oracle E-Business runtime settings before saving reusable assets.')
+    expect(container.querySelector<HTMLDetailsElement>('.import-source-setup')?.open).toBe(false)
+    expect(Array.from(container.querySelectorAll('[role="tab"]')).map(tab => tab.getAttribute('aria-label')))
+      .toEqual(['Review', 'Data & parameters', 'Runtime settings', 'Source Mapping'])
 
     // Review-only surface: there must be no save / save-to-library control.
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => /save/i.test(button.textContent || ''))

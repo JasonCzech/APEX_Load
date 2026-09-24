@@ -11,6 +11,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import './ParameterizationReview.css'
 
 interface Props {
+  guided?: boolean
   parameterization: Parameterization
   script: ScriptDefinition
   // Restricts the panel to suggestions scoped to one script of a multi-script
@@ -70,7 +71,7 @@ function diffDisplayValue(
   return '••••••'
 }
 
-export default function ParameterizationReview({ parameterization, script, scriptName, reviewGeneration = 0, disabled = false, onApplyingChange, onApplied }: Props) {
+export default function ParameterizationReview({ parameterization, script, scriptName, reviewGeneration = 0, guided = false, disabled = false, onApplyingChange, onApplied }: Props) {
   const api = useApi()
   const suggestions = useMemo(
     () => (parameterization.suggestions ?? []).filter(s => !scriptName || !s.script_name || s.script_name === scriptName),
@@ -78,6 +79,8 @@ export default function ParameterizationReview({ parameterization, script, scrip
   )
   const [selected, setSelected] = useState<Record<string, boolean>>(() => initialSelection(suggestions))
   const [applying, setApplying] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
+  useEffect(() => setReviewing(false), [script])
   const [applied, setApplied] = useState(false)
   const [diffs, setDiffs] = useState<ParameterizationDiff[]>([])
   const [suggestionPage, setSuggestionPage] = useState(0)
@@ -128,6 +131,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
       onApplyingChangeRef.current?.(false)
       return
     }
+    setReviewing(false)
     setSelected(initialSelection(suggestions))
     setApplying(false)
     onApplyingChangeRef.current?.(false)
@@ -156,6 +160,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
 
   const toggle = (suggestion: ParameterizationSuggestion) => {
     if (suggestion.pre_applied || applying || disabled) return
+    setReviewing(false)
     setSelected(prev => ({ ...prev, [suggestion.id]: !prev[suggestion.id] }))
     if (applied) {
       setApplied(false)
@@ -164,7 +169,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
   }
 
   const handleApply = async () => {
-    if (selectedIds.length === 0 || applying || disabled) return
+    if (selectedIds.length === 0 || applying || disabled || (guided && !reviewing)) return
     const sourceIdentity = activeReviewIdentityRef.current
     const requestIsCurrent = () => mountedRef.current && activeReviewIdentityRef.current === sourceIdentity
     setApplying(true)
@@ -188,6 +193,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
       setDiffs(response.diffs ?? [])
       setDiffPage(0)
       setApplied(true)
+      setReviewing(false)
       selfAppliedSourceIdentityRef.current = sourceIdentity
       window.setTimeout(() => {
         if (
@@ -212,15 +218,15 @@ export default function ParameterizationReview({ parameterization, script, scrip
     <div className="paramize-review">
       <div className="paramize-review-header">
         <div>
-          <h4>Parameterization Review{scriptName ? ` — ${scriptName}` : ''} ({suggestions.length})</h4>
+          <h4>{guided ? 'Parameter suggestions' : 'Parameterization Review'}{scriptName ? ` — ${scriptName}` : ''} ({suggestions.length})</h4>
           <p>
             Suggestions to review before running at load. Confirm whether each value is test data, application configuration, or session data.
             High-confidence suggestions are pre-selected; review each row, then apply the selection.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={handleApply} disabled={disabled || applying || selectedIds.length === 0}>
+        {!guided && <button className="btn btn-primary" onClick={handleApply} disabled={disabled || applying || selectedIds.length === 0}>
           {applying ? 'Applying...' : `${applied ? 'Reapply' : 'Apply'} Selected (${selectedIds.length})`}
-        </button>
+        </button>}
         {applied && <span className="paramize-applied-badge">Applied {diffs.length} change(s)</span>}
       </div>
 
@@ -293,6 +299,18 @@ export default function ParameterizationReview({ parameterization, script, scrip
           </ul>
         </details>
       ))}
+
+      {guided && reviewing && <section className="import-review-suggestion-preview" aria-label="Parameter suggestion preview">
+        <h4>Review selected parameter changes</h4>
+        <p>{selectedIds.length} selected suggestions. These are proposed replacements; the server validates the changes when applied.</p>
+        <ul>{suggestions.filter(item => selectedIds.includes(item.id)).slice(0, SUGGESTION_PAGE_SIZE).map(item => <li key={item.id}><strong>{item.var_name}</strong>: <code>{suggestionDisplayValue(item)}</code> → <code>{item.replacement}</code>{item.high_risk && ' · High risk: explicitly selected'}</li>)}</ul>
+        {selectedIds.length > SUGGESTION_PAGE_SIZE && <p>Showing the first {SUGGESTION_PAGE_SIZE}. Use the suggestion pages above to inspect all {selectedIds.length} selected changes.</p>}
+      </section>}
+      {guided && <div className="import-review-suggestion-actions">
+        <button type="button" className="btn btn-secondary btn-sm" disabled={disabled || applying || selectedIds.length === 0} onClick={() => { if (reviewing) void handleApply(); else setReviewing(true) }}>{applying ? 'Applying…' : reviewing ? 'Apply reviewed parameter changes' : 'Preview parameter changes'}</button>
+        {reviewing && <button type="button" className="btn btn-secondary btn-sm" disabled={applying} onClick={() => setReviewing(false)}>Back to selection</button>}
+        <small>Nothing changes until you apply.</small>
+      </div>}
 
       {applied && diffs.length > 0 && (
         <details className="paramize-diffs" open>

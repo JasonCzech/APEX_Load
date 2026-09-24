@@ -28,7 +28,9 @@ import SecretBindingReview, {
   type SecretBindingReviewHandle,
 } from './SecretBindingReview'
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
-import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
+import type { IssueDetail } from './IssueDetailsDialog'
+import ImportIssueWorkspace from './ImportIssueWorkspace'
+import { groupImportWorkspaceIssues } from './importIssueWorkspaceModel'
 import LinkedCodePane from './LinkedCodePane'
 import './ScriptImportReview.css'
 import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
@@ -575,7 +577,6 @@ export default function ScriptImportReview({
   const [sharedValuesApplying, setSharedValuesApplying] = useState(false)
   const [importDraftExpiryGeneration, setImportDraftExpiryGeneration] = useState(0)
   const [previewExportError, setPreviewExportError] = useState('')
-  const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   const [configuredCredentialReviewIdentity, setConfiguredCredentialReviewIdentity] = useState('')
   const saveDisabledReasonId = useId()
   const parameterizationApplyingRef = useRef(false)
@@ -696,10 +697,6 @@ export default function ScriptImportReview({
   useEffect(() => {
     handleSharedValuesApplyingChange(false)
   }, [handleSharedValuesApplyingChange, sharedValues, reviewIdentity])
-
-  useEffect(() => {
-    setIssueDialog(null)
-  }, [reviewIdentity])
 
   useEffect(() => {
     const expiry = Date.parse(importDraftExpiresAt || '')
@@ -931,6 +928,9 @@ export default function ScriptImportReview({
   for (const [index, item] of diagnosticStrings.filter(item => /\[blocker\]/i.test(item)).entries()) {
     if (!blockerDetails.some(existing => existing.description === redactPreviewText(item))) blockerDetails.push({id: `conversion-blocker-${index}`, severity: 'blocker', title: 'Blocking conversion failure', description: redactPreviewText(item), source: 'Import conversion'})
   }
+  const actionableReviewIssues = [...blockerDetails, ...warningDetails, ...infoDetails, ...unsupportedDetails]
+  const groupedReviewIssueCount = groupImportWorkspaceIssues(actionableReviewIssues).length
+  const suggestedDataChangeCount = (parameterization?.suggestions?.length || 0) + (sharedValues?.candidates?.length || 0)
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
   const importDraftExpired = importDraftExpiry?.expired === true
@@ -1001,14 +1001,15 @@ export default function ScriptImportReview({
         </div>
       )}
 
-      {tabbed && <p role="status">Saving preserves a draft; it does not verify replay. {configureLaterCount > 0 ? `${configureLaterCount} secret${configureLaterCount === 1 ? '' : 's'} still need configuration before replay.` : 'Check the Review tab for remaining execution requirements.'}</p>}
-      {tabbed && <nav className="import-review-links" aria-label="Resolve import requirements">
-        <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('review')}>Review requirements</button>
-        <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('credentials')}>Configure credentials</button>
-        <button type="button" className="btn btn-secondary" onClick={() => setActiveReviewTab('data')}>Configure data & parameters</button>
-      </nav>}
+      {tabbed && <div className="import-review-readiness" role="status">
+        <span><strong>{groupedReviewIssueCount}</strong> review issue{groupedReviewIssueCount === 1 ? '' : 's'}</span>
+        <button type="button" onClick={() => setActiveReviewTab('credentials')}><strong>{secretBindingRequirements.length}</strong> credential requirement{secretBindingRequirements.length === 1 ? '' : 's'}</button>
+        <button type="button" onClick={() => setActiveReviewTab('data')}><strong>{suggestedDataChangeCount}</strong> suggested data change{suggestedDataChangeCount === 1 ? '' : 's'}</button>
+        <span>Saving preserves a draft; controlled replay is still required.</span>
+      </div>}
       {reviewNavigation}
       {!tabbed && onSettingsApplied && <div hidden={!showDataReview}><ImportParameterInventory script={script} /></div>}
+      {showOriginalDiagnostics && actionableReviewIssues.length > 0 && <div hidden={tabbed && activeReviewTab !== 'review'}><ImportIssueWorkspace issues={actionableReviewIssues} onNavigate={setActiveReviewTab} /></div>}
       <div hidden={tabbed && activeReviewTab !== 'review'}>{children}</div>
       {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{onSettingsApplied && <ImportRuntimeSettingsTable script={script} />}{runtimeContent || (!onSettingsApplied && <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>)}</div>}
       {!tabbed && runtimeContent}
@@ -1045,54 +1046,7 @@ export default function ScriptImportReview({
 
       </ImportCredentialPlacement>
 
-      {showOriginalDiagnostics && (conversionNotes.length > 0 || blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && <details open={!compactReview} className="script-import-review-original-diagnostics" hidden={(tabbed ? activeReviewTab !== 'review' : compactReview && (showDataReview || showCredentials || showPreview || showPreviewAside))}><summary hidden={!compactReview}>Original import diagnostics</summary>
-      {conversionNotes.length > 0 && <button type="button" className="script-health-token issue-pill-button" onClick={() => setIssueDialog({ title: 'Conversion notes', issues: conversionNotes })}>{conversionNotes.length} conversion note{conversionNotes.length === 1 ? '' : 's'}</button>}
-      {(blockerDetails.length > 0 || warningDetails.length > 0 || infoDetails.length > 0 || unsupportedDetails.length > 0) && (
-        <div className="script-import-review-issue-summary" aria-label="Import issue summary">
-          {blockerDetails.length > 0 && (
-            <button
-              type="button"
-              className="script-health-token danger issue-pill-button"
-              aria-label={`View ${blockerDetails.length} import blocker ${blockerDetails.length === 1 ? 'detail' : 'details'}`}
-              onClick={() => setIssueDialog({ title: 'Import blockers', issues: blockerDetails })}
-            >
-              {blockerDetails.length} blocker{blockerDetails.length === 1 ? '' : 's'}
-            </button>
-          )}
-          {warningDetails.length > 0 && (
-            <button
-              type="button"
-              className="script-health-token warning issue-pill-button"
-              aria-label={`View ${warningDetails.length} import warning ${warningDetails.length === 1 ? 'detail' : 'details'}`}
-              onClick={() => setIssueDialog({ title: 'Import warnings', issues: warningDetails })}
-            >
-              {warningDetails.length} warning{warningDetails.length === 1 ? '' : 's'}
-            </button>
-          )}
-          {infoDetails.length > 0 && (
-            <button
-              type="button"
-              className="script-health-token issue-pill-button"
-              aria-label={`View ${infoDetails.length} import review ${infoDetails.length === 1 ? 'detail' : 'details'}`}
-              onClick={() => setIssueDialog({ title: 'Import review details', issues: infoDetails })}
-            >
-              {infoDetails.length} review detail{infoDetails.length === 1 ? '' : 's'}
-            </button>
-          )}
-          {unsupportedDetails.length > 0 && (
-            <button
-              type="button"
-              className="script-health-token warning issue-pill-button"
-              aria-label={`View ${unsupportedDetails.length} unsupported import ${unsupportedDetails.length === 1 ? 'element' : 'elements'}`}
-              onClick={() => setIssueDialog({ title: 'Unsupported elements', issues: unsupportedDetails })}
-            >
-              {unsupportedDetails.length} unsupported
-            </button>
-          )}
-        </div>
-      )}
-
-      </details>}
+      {showOriginalDiagnostics && conversionNotes.length > 0 && <details className="script-import-review-original-diagnostics" hidden={tabbed && activeReviewTab !== 'review'}><summary>Conversion reference ({conversionNotes.length})</summary><p>Technical converter notes are retained here for traceability. Actionable findings are grouped in Resolve import issues above.</p><ul>{conversionNotes.map(note => <li key={note.id}><strong>{note.title}:</strong> {note.description}</li>)}</ul></details>}
 
       <div hidden={!showDataReview}>
       {tabbed && onSettingsApplied && <ImportParameterInventory script={script} />}
@@ -1140,15 +1094,8 @@ export default function ScriptImportReview({
         </div>
       )}
       {showPreviewAside && onSettingsApplied && <ImportSourceInventory script={script} />}
-      {issueDialog && (
-        <IssueDetailsDialog
-          title={issueDialog.title}
-          issues={issueDialog.issues}
-          onClose={() => setIssueDialog(null)}
-        />
-      )}
     </div>
   )
-  const reviewContent = tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: blockerDetails.length + warningDetails.length + unsupportedDetails.length, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
+  const reviewContent = tabbed ? <>{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: groupedReviewIssueCount, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : content
   return <ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider>
 }

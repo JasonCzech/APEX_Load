@@ -774,6 +774,17 @@ describe('ProtocolAssetImport', () => {
     }))
   })
 
+  it('requires project scope before HAR inspection and explains the disabled action', async () => {
+    await act(async () => root.render(<ProtocolAssetImport kind="har" />))
+    const status = container.querySelector<HTMLElement>('#har-project-scope-required')
+    expect(status?.textContent).toContain('Select a project from the workspace context')
+    const inspect = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Inspect & review')!
+    expect(inspect.disabled).toBe(true)
+    expect(inspect.getAttribute('aria-describedby')).toBe('har-project-scope-required')
+    expect(apiMock.importHAR).not.toHaveBeenCalled()
+  })
+
   afterEach(async () => {
     await act(async () => {
       root.unmount()
@@ -856,21 +867,12 @@ describe('ProtocolAssetImport', () => {
 
     expect(apiMock.importOpenAPI).toHaveBeenCalledWith(file, expect.objectContaining({ project_id: 'project-1' }))
     expect(container.textContent).toContain('Review Generated Script')
-    expect(container.textContent).toContain('1 unsupported')
-    expect(container.textContent).not.toContain('schema reference external.yaml')
-    expect(container.textContent).toContain('1 warning')
-    expect(container.textContent).not.toContain('file bytes must be supplied before replay')
-    const warningDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === '1 warning')!
-    await act(async () => warningDetails.click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('file bytes must be supplied before replay')
-    await act(async () => {
-      ;(document.body.querySelector('[role="dialog"] button') as HTMLButtonElement).click()
-    })
-    const unsupportedDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === '1 unsupported')!
+    expect(container.querySelector('.shared-import-issue-workspace')?.textContent).toContain('Import Diagnostics')
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('file bytes must be supplied before replay')
+    const unsupportedDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row'))
+      .find(button => button.textContent?.includes('Unsupported element'))!
     await act(async () => unsupportedDetails.click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('schema reference external.yaml')
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('schema reference external.yaml')
     expect(container.textContent).toContain('Needs attention')
     expect(container.textContent).toContain('Data source readiness')
     expect(container.textContent).toContain('missing file bytes')
@@ -3455,11 +3457,8 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('1 degraded')
     expect(container.textContent).toContain('1 unsupported')
     expect(container.textContent).toContain('Chrome customStep requires manual review')
-    expect(container.textContent).not.toContain('chrome_recorder_step:customStep')
-    const unsupported = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === '1 unsupported')!
-    await act(async () => unsupported.click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('chrome_recorder_step:customStep')
+    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Review"]')?.click() })
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('chrome_recorder_step:customStep')
   })
 
   it('requires replay validation before normal recorder import save and attaches evidence', async () => {
@@ -4066,13 +4065,8 @@ describe('ProtocolAssetImport', () => {
       soap_version: '1.2',
     }))
     expect(container.textContent).toContain('Review Generated Script')
-    expect(container.textContent).toContain('1 review detail')
-    expect(container.textContent).not.toContain('WSDL Operations')
-    const reviewDetails = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => button.textContent?.trim() === '1 review detail')!
-    await act(async () => reviewDetails.click())
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('WSDL Operations')
-    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('GetAccount')
+    expect(container.querySelector('.shared-import-issue-workspace')?.textContent).toContain('WSDL Operations')
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent).toContain('GetAccount')
     await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Source Mapping"]')?.click() })
     expect(container.textContent).toContain('Source Comparison')
   })

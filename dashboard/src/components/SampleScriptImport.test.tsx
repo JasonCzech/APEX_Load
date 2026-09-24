@@ -353,18 +353,9 @@ describe('SampleScriptImport', () => {
     expect(container.textContent).toContain('actions[0]')
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
     expect(container.textContent).toContain('session_id')
-    const warningDetails = container.querySelector<HTMLButtonElement>('button[aria-label="View 1 import warning detail"]')
-    expect(warningDetails).not.toBeNull()
-    await act(async () => {
-      warningDetails?.click()
-    })
-    expect(document.body.querySelector('[role="dialog"]')?.textContent)
+    expect(container.querySelector('.shared-import-issue-workspace')).not.toBeNull()
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent)
       .toContain('no reusable correlation values were detected across the provided samples')
-    await act(async () => {
-      Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
-        .find(button => button.textContent?.trim() === 'Close')
-        ?.click()
-    })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
@@ -838,18 +829,9 @@ describe('SampleScriptImport', () => {
       project_id: undefined,
       format: 'raw_http',
     }))
-    const warningDetails = container.querySelector<HTMLButtonElement>('button[aria-label^="View "][aria-label*=" import warning"]')
-    expect(warningDetails).not.toBeNull()
-    await act(async () => {
-      warningDetails?.click()
-    })
-    expect(document.body.querySelector('[role="dialog"]')?.textContent)
+    expect(container.querySelector('.shared-import-issue-workspace')).not.toBeNull()
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent)
       .toContain('Java-over-HTTP imports assume request and response payloads are already base64-encoded serialized Java bytes')
-    await act(async () => {
-      Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
-        .find(button => button.textContent?.trim() === 'Close')
-        ?.click()
-    })
 
     const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
     expect(saveButton).toBeDefined()
@@ -966,12 +948,8 @@ describe('SampleScriptImport', () => {
     })
     await flushPromises()
 
-    const warningDetails = container.querySelector<HTMLButtonElement>('button[aria-label^="View "][aria-label*=" import warning"]')
-    expect(warningDetails).not.toBeNull()
-    await act(async () => {
-      warningDetails?.click()
-    })
-    expect(document.body.querySelector('[role="dialog"]')?.textContent)
+    expect(container.querySelector('.shared-import-issue-workspace')).not.toBeNull()
+    expect(container.querySelector('.shared-import-issue-detail')?.textContent)
       .toContain('do not decode to a Java serialized object stream')
   })
 

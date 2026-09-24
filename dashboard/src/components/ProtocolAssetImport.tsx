@@ -917,6 +917,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     || replayTask.pending
   const sourceMutationLocked = settingsEditing || persistenceInProgress || saveTask.pending || saveAllPreparing
   const saveTargetLocked = sourceMutationLocked || internalReviewBusy
+  const projectScopeRequired = kind === 'har' && (!projectId || projectId === 'unassigned')
   // A credential action can await several API calls before onSave runs. Freeze
   // the replace target at the moment that action becomes busy so the eventual
   // commit cannot close over a target selected after credential preparation.
@@ -1026,6 +1027,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const handleConvert = async (mode: 'conversion' | 'validation' = 'conversion', overrides?: { salesforceNative?: boolean }) => {
     if (!file) {
       setMessageError(`Please upload ${uploadNounForKind(kind)}.`)
+      return
+    }
+    if (projectScopeRequired) {
+      setMessageError('Select a project from the workspace context before inspecting HAR traffic. HAR review stores protected source evidence inside that project.')
       return
     }
     resetAsyncAPISavedScripts()
@@ -2285,12 +2290,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       </div>
 
       <div className="sample-import-actions">
+        {projectScopeRequired && <p id="har-project-scope-required" className="sample-import-error" role="status">Select a project from the workspace context before inspecting HAR traffic.</p>}
         {kind !== 'asyncapi' && (
-          <details><summary>Advanced validation only</summary><p>Run the validator to inspect a draft without saving. Review its findings before choosing whether to save.</p><button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || sourceMutationLocked || !file}>
+          <details><summary>Advanced validation only</summary><p>Run the validator to inspect a draft without saving. Review its findings before choosing whether to save.</p><button className="btn btn-secondary btn-lg" onClick={() => handleConvert('validation')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired}>
             {convertTask.pending && reviewMode === 'validation' ? <><span className="spinner" /> Validating...</> : 'Validate Only'}
           </button></details>
         )}
-        <button className="btn btn-primary btn-lg" onClick={() => handleConvert('conversion')} disabled={convertTask.pending || sourceMutationLocked || !file}>
+        <button className="btn btn-primary btn-lg" onClick={() => handleConvert('conversion')} disabled={convertTask.pending || sourceMutationLocked || !file || projectScopeRequired} aria-describedby={projectScopeRequired ? 'har-project-scope-required' : undefined}>
           {convertTask.pending && reviewMode === 'conversion' ? <><span className="spinner" /> Inspecting...</> : 'Inspect & review'}
         </button>
       </div>

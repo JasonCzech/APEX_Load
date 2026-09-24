@@ -118,7 +118,7 @@ const BRUNO_INSPECTION_TABS: ReadonlyArray<{ id: BrunoInspectionTab; label: stri
   { id: 'summary', label: 'Review' },
   { id: 'credentials', label: 'Credentials' },
   { id: 'data', label: 'Data & parameters' },
-  { id: 'runtime', label: 'Runtime & source settings' },
+  { id: 'runtime', label: 'Runtime settings' },
   { id: 'dsl', label: 'DSL Preview' },
   { id: 'source', label: 'Source Mapping' },
 ]
@@ -1993,7 +1993,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                       document.getElementById(`bruno-inspection-tab-${nextTab.id}`)?.focus()
                     }}
                   >
-                    {tab.label}{['summary', 'credentials', 'data'].includes(tab.id) && <span aria-hidden="true" className="bruno-tab-count"> {tab.id === 'credentials' ? deferredSecretCount : tab.id === 'data' ? selectedNativeMissingVariables.length : unacknowledgedFindingIds.length}</span>}
+                    {tab.label}{(() => { const count = tab.id === 'credentials' ? deferredSecretCount : tab.id === 'data' ? selectedNativeMissingVariables.length : tab.id === 'summary' ? unacknowledgedFindingIds.length : 0; return count > 0 ? <span aria-hidden="true" className="bruno-tab-count"> {count}</span> : null })()}
                   </button>
                 ))}
               </TabList>
@@ -2238,7 +2238,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                   {!committed && <BrunoDataReview candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired} />}
               </section>
               {(['runtime', 'dsl', 'source'] as const).map(section => <section key={section} className="bruno-tab-panel" role="tabpanel" id={`bruno-inspection-panel-${section}`} aria-labelledby={`bruno-inspection-tab-${section}`} hidden={activeInspectionTab !== section}>
-                {activeInspectionTab === section && (section === 'runtime' ? <><h3>Runtime & source settings</h3><p>Native scripts use converted HTTP settings. Source preservation does not establish runtime parity. Review conversion requirements before replay.</p><p>Detected request types: {inspection.result.capabilities.request_types.join(', ') || 'None'}. Required sandbox for canonical replay: {inspection.result.capabilities.required_sandbox}.</p><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('summary')}>Review migration requirements</button><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button></> : <>
+                {activeInspectionTab === section && (section === 'runtime' ? <><h3>Runtime settings</h3><p>Native scripts use converted HTTP settings. Source preservation does not establish runtime parity. Review conversion requirements before replay.</p><p>Detected request types: {inspection.result.capabilities.request_types.join(', ') || 'None'}. Required sandbox for canonical replay: {inspection.result.capabilities.required_sandbox}.</p><button type="button" className="btn btn-secondary" onClick={() => goToReviewTab('summary')}>Review migration requirements</button><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button></> : <>
                   <label>API evidence<select value={nativeCandidates.some(candidate => candidate.candidate_id === evidenceCandidateId) ? evidenceCandidateId : nativeCandidates[0]?.candidate_id || ''} onChange={event => setEvidenceCandidateId(event.target.value)}>{nativeCandidates.map(candidate => <option key={candidate.candidate_id} value={candidate.candidate_id}>{candidate.source_path}</option>)}</select></label>
                   {(() => { const candidate = nativeCandidates.find(item => item.candidate_id === evidenceCandidateId) || nativeCandidates[0]; if (!candidate) return <p>No API evidence was generated.</p>; return section === 'dsl' ? <><p>Redacted inspection draft. Pending input and credential choices apply when saving.</p><SourceCodeViewer ariaLabel="Bruno DSL preview" sourcePath="draft.json" value={JSON.stringify(candidate.script, null, 2)} /></> : <><p>Source provenance for {candidate.source_path}. This inventory is not a line-by-line parity guarantee.</p><button type="button" className="btn btn-secondary" onClick={() => setNativeSourceCandidateId(candidate.candidate_id)}>Inspect sanitized source</button><SourceCodeViewer ariaLabel="Bruno source mappings" sourcePath="source-mappings.json" value={JSON.stringify(candidate.source_mappings || [], null, 2)} /></> })()}
                 </>)}
@@ -2390,7 +2390,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 
               <h3>Required runtime inputs</h3><p>{inspection.result.missing_variables?.length ? inspection.result.missing_variables.join(', ') : 'No missing variables were reported.'}</p><p>Configure unresolved inputs through Bruno environments or supported APEX bindings before replay. Dynamic expressions require verified runtime behavior, not static guesses.</p>
             </div>
-            <div hidden={canonicalTab !== 'runtime'}><h3>Runtime & source settings</h3><p>Sandbox: {sandbox}. Selection: {runOptions.selection}. These source execution choices are captured in the inspected draft.</p><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button><p>{inspection.execution_preflight?.ready ? 'Runner preflight reported ready; controlled replay remains required.' : 'Runner prerequisites have not passed. Review the execution profile and operator prerequisites before replay.'}</p></div>
+            <div hidden={canonicalTab !== 'runtime'}><h3>Runtime settings</h3><p>Sandbox: {sandbox}. Selection: {runOptions.selection}. These source execution choices are captured in the inspected draft.</p><button type="button" className="btn btn-secondary" onClick={() => setSetupOpen(true)}>Change source execution profile</button><p>{inspection.execution_preflight?.ready ? 'Runner preflight reported ready; controlled replay remains required.' : 'Runner prerequisites have not passed. Review the execution profile and operator prerequisites before replay.'}</p></div>
             {canonicalTab === 'dsl' && inspection.result.output_mode === 'canonical' && <><p>Redacted canonical inspection draft.</p><SourceCodeViewer ariaLabel="Canonical Bruno DSL preview" sourcePath="draft.json" value={JSON.stringify(inspection.result.script, null, 2)} /></>}
             {canonicalTab === 'source' && <><h3>Source bundle provenance</h3><p>Canonical replay preserves the source bundle. This manifest identifies retained files; it is not a native line-by-line conversion map.</p><SourceCodeViewer ariaLabel="Canonical source manifest" sourcePath="manifest.json" value={JSON.stringify(inspection.result.manifest, null, 2)} /></>}
             </ImportReviewTabs>

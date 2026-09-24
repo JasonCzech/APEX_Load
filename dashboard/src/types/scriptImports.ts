@@ -643,6 +643,8 @@ export interface JMeterImportSummary {
 }
 
 export interface JMeterScenarioDraftGroup {
+  source_group_id?: string
+  iterations?: number
   name: string
   script_name: string
   vusers: number
@@ -651,6 +653,7 @@ export interface JMeterScenarioDraftGroup {
 }
 
 export interface JMeterScenarioDraft {
+  termination_mode?: string
   name: string
   duration: string
   scenario_mode: string

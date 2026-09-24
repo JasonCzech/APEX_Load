@@ -20,7 +20,7 @@ test('transaction names survive archive import without requiring secret bindings
   const markers = script.actions.filter(action => action.type === 'source_transaction')
   expect(markers).toHaveLength(2)
   expect(markers.every(action => action.params?.args?.[0] === label)).toBe(true)
-  await expect(page.getByRole('region', { name: 'Guided import repair' })).toContainText('0 grouped issues block replay')
+  await expect(page.locator('.lr-tab-readiness')).toContainText('0 grouped issues block replay')
   await expect(page.locator('.secret-binding-review')).toHaveCount(0)
   await page.getByRole('tab', { name: 'DSL Preview', exact: true }).click()
   await expect(page.getByRole('tabpanel', { name: 'DSL Preview' })).toContainText(label)

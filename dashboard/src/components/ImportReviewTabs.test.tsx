@@ -39,3 +39,48 @@ it('keeps edits while keyboard navigation selects the labelled review panel', ()
     container.remove()
   }
 })
+
+it('shows only applicable tabs and omits zero-count badges', () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  try {
+    act(() => root.render(<ImportReviewTabs
+      active="review"
+      onChange={() => {}}
+      visibleTabs={['review', 'runtime', 'source']}
+      counts={{ review: 2, runtime: 0 }}
+    ><p>Review content</p></ImportReviewTabs>))
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual(['Review', 'Runtime settings', 'Source Mapping'])
+    expect(tabs[0].textContent).toContain('2')
+    expect(tabs[1].querySelector('span')).toBeNull()
+    expect(tabs[1].getAttribute('aria-describedby')).toBeNull()
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})
+
+it('falls back to the first applicable tab when the requested tab is hidden', () => {
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  function RestrictedReview() {
+    const [active, setActive] = useState<ImportReviewTab>('credentials')
+    return <ImportReviewTabs active={active} onChange={setActive} visibleTabs={['review', 'runtime']}>
+      <p>{active === 'review' ? 'Review content' : 'Hidden content'}</p>
+    </ImportReviewTabs>
+  }
+  try {
+    act(() => root.render(<RestrictedReview />))
+    const review = container.querySelector<HTMLButtonElement>('[role=tab][aria-label="Review"]')!
+    expect(review.getAttribute('aria-selected')).toBe('true')
+    expect(review.tabIndex).toBe(0)
+    expect(container.querySelector('[role=tabpanel]')?.getAttribute('aria-labelledby')).toBe(review.id)
+    expect(container.querySelector('[role=tabpanel]')?.textContent).toBe('Review content')
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})
