@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-const browserBenchmarkArtifactEvidence = "docs/BROWSER_BENCHMARK_ARTIFACTS.md"
+const browserBenchmarkArtifactEvidence = "docs/PERFORMANCE_BENCHMARKS.md"
 
 type BrowserBenchmarkEvidenceResponse struct {
 	GeneratedAt       time.Time                    `json:"generated_at"`
@@ -111,7 +111,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 				compileCommand,
 				benchmarkCommand,
 			},
-			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", "docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md", browserBenchmarkArtifactEvidence},
+			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", browserBenchmarkArtifactEvidence},
 			ReleaseGate:             true,
 			HighDensityClaimAllowed: false,
 			Notes:                   []string{"Use as the desktop UX sentinel beside protocol load groups; do not substitute for HTTP density load."},
@@ -139,7 +139,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 				compileCommand,
 				benchmarkCommand,
 			},
-			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", "docs/MOBILE_BROWSER_EMULATION_PLAN.md", browserBenchmarkArtifactEvidence},
+			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", browserBenchmarkArtifactEvidence, "docs/BROWSER_ROADMAP.md"},
 			ReleaseGate:             true,
 			HighDensityClaimAllowed: false,
 			Notes:                   []string{"Touch and network shaping evidence must be reviewed with replay screenshots and client metrics before promotion."},
@@ -166,7 +166,7 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 				compileCommand,
 				benchmarkCommand,
 			},
-			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", "docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md", browserBenchmarkArtifactEvidence},
+			Evidence:                []string{"pkg/protocol/browser/mobile_benchmark_test.go", browserBenchmarkArtifactEvidence},
 			ReleaseGate:             true,
 			HighDensityClaimAllowed: false,
 			Notes:                   []string{"WebKit RSS is not attributed through CDP; keep density bounded by host telemetry and replay reliability."},
@@ -203,7 +203,6 @@ func buildBrowserBenchmarkEvidence(now time.Time) BrowserBenchmarkEvidenceRespon
 		Evidence: []string{
 			"/api/v1/system/browser-benchmarks",
 			browserBenchmarkArtifactEvidence,
-			"docs/MOBILE_BROWSER_BENCHMARK_RUNBOOK.md",
 			"pkg/protocol/browser/mobile_benchmark_test.go",
 		},
 	}

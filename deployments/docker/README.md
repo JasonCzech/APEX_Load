@@ -56,7 +56,7 @@ The compose stack stores controller state in the `controller-data` Docker volume
 Generator fencing state and terminal evidence are retained in the
 `generator-data` volume. The local stack uses the same mandatory 60-second
 run-supervision TTL, 10-second renewal, and 5-second abandonment drain as the
-production manifests. See [Generator run supervision](../../docs/GENERATOR_RUN_SUPERVISION.md)
+production manifests. See [Generator run supervision](../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision)
 for the failure drill and why Compose relies on process exit/restart rather than
 a controller-connectivity healthcheck.
 

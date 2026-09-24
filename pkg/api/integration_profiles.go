@@ -253,7 +253,7 @@ func (s *Server) handleListInfrastructureMonitorPacks(w http.ResponseWriter, r *
 				Source:       "JMS/gRPC protocol telemetry and external metrics",
 				ResourceType: "messaging",
 				Signals:      []string{"message latency", "consumer lag", "messages sent", "messages received", "broker saturation"},
-				Evidence:     []string{"pkg/api/runner.go", "docs/PROTOCOL_TELEMETRY_PARITY_PLAN.md"},
+				Evidence:     []string{"pkg/api/runner.go", "docs/ROADMAP.md#protocol-telemetry-parity"},
 				SetupActions: []string{"Publish broker metrics with queue.* or broker.* prefixes for root-cause correlation."},
 			},
 		},

@@ -855,7 +855,7 @@ func buildFleetLoadZones(inventory SystemInventoryResponse, tests []*ManagedTest
 				CostLabel:           "self-hosted",
 				Tags:                []string{"self-hosted", "region:" + region},
 				BenchmarkEvidenceID: "protocol-density-envelope:" + firstNonEmpty(protocolName, "mixed"),
-				BenchmarkEvidence:   []string{"docs/ENTERPRISE_AUTOSCALING_SIGNALS.md#protocol-density-envelopes", "/api/v1/fleet/capacity", "/api/v1/system/inventory"},
+				BenchmarkEvidence:   []string{"docs/ENTERPRISE_FLEET_AND_CAPACITY.md#protocol-density-envelopes", "/api/v1/fleet/capacity", "/api/v1/system/inventory"},
 			}
 			byID[zoneID] = zone
 			protocols[zoneID] = map[string]struct{}{}

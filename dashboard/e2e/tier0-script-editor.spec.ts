@@ -38,7 +38,7 @@ function isScriptUpdate(response: Response, scriptId: string): boolean {
     && new URL(response.url()).pathname === `/api/v1/scripts/${scriptId}`
 }
 
-// Tier-0 journey step S4 (docs/qa/TIER0_JOURNEY.md): an imported script opens
+// Tier-0 journey step S4 (docs/qa/E2E_SUITES.md): an imported script opens
 // action-list-first, keeps unsaved edits across workbench tabs, persists them,
 // and can be reopened from the Script Library without losing its actions.
 test('[U21] the imported script editor preserves tab state and saved changes across reopen', async ({ page, request }) => {

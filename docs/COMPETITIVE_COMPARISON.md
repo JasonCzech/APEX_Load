@@ -4,7 +4,7 @@
 
 APEX Load is a Kubernetes-native HTTP/API load testing platform built on goroutine-based VUsers, an open JSON DSL, and first-class migration paths from enterprise script archives, JMeter, DevWeb, and HAR. It is architecturally cleaner and more usable than LoadRunner Enterprise for day-to-day HTTP/API testing. It trails in correlation intelligence, browser fidelity, offline analysis depth, and battle-tested scale.
 
-This document consolidates all competitor positioning, support matrices, and migration/import reference into one place. The [Migration and Import Reference](#migration-and-import-reference) appendix contains the functional tables (RTS mappings, protocol routing, protocol bundle coverage) that the product's evidence API cites.
+This document consolidates all competitor positioning, support matrices, the evaluator summary/trust pack, the REST API comparison, and migration/import reference into one place. The [Migration and Import Reference](#migration-and-import-reference) appendix contains the functional tables (RTS mappings, protocol routing, protocol bundle coverage) that the product's evidence API cites.
 
 ---
 
@@ -24,6 +24,10 @@ This document consolidates all competitor positioning, support matrices, and mig
   - [Packaging, Samples, and Trust](#packaging-samples-and-trust)
 - [Gap Analysis](#gap-analysis)
   - [APM Observability Correlation](#apm-observability-correlation)
+- [Evaluator Summary and Trust Pack](#evaluator-summary-and-trust-pack)
+  - [One-page summary](#one-page-summary)
+  - [Evaluator trust pack](#evaluator-trust-pack)
+- [REST API Comparison](#rest-api-comparison)
 - [Migration and Import Reference](#migration-and-import-reference)
   - [Enterprise Script Archive Routing](#enterprise-script-archive-routing)
   - [Enterprise Archive Runtime Settings Reference](#enterprise-archive-runtime-settings-reference)
@@ -70,10 +74,10 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 
 | Source flow | APEX Load status | Evidence | Remaining gap |
 | --- | --- | --- | --- |
-| Native APEX Load JSON DSL | Supported | `pkg/dsl`, `/api/v1/scripts`, `API_AND_DSL_REFERENCE.md` | More first-party examples. |
+| Native APEX Load JSON DSL | Supported | `pkg/dsl`, `/api/v1/scripts`, `docs/DSL_ACTION_REFERENCE.md` | More first-party examples. |
 | Dashboard guided script creation | Supported | `ScriptEditor.tsx`, `/api/v1/scripts/authoring/sessions` | Expand packaged demo projects. |
 | Enterprise Script Archive HTTP import | Supported | `/api/v1/scripts/import/enterprise-script-archive`, `pkg/convert/enterprisearchive` | Long-tail historical protocol families outside planned scope. |
-| TrueClient Mobile Web | Partial | `docs/MOBILE_BROWSER_EMULATION_PLAN.md` | Browser VUsers are diagnostic canaries; desktop TruClient parity is out of scope. |
+| TrueClient Mobile Web | Partial | `docs/BROWSER_ROADMAP.md` | Browser VUsers are diagnostic canaries; desktop TruClient parity is out of scope. |
 | JMeter plan import | Supported | `/api/v1/scripts/import/jmeter`, `/api/v1/scripts/import/jmeter/support-matrix` | Expand fixture coverage and trend overlays. |
 | OpenAPI import | Supported | `/api/v1/scripts/import/openapi`, `pkg/convert/openapi` | Dashboard guided create flow. |
 | WSDL import | Supported | `/api/v1/scripts/import/wsdl`, `pkg/convert/wsdl` | Complex XSD payload synthesis remains review-scaffolded. |
@@ -99,7 +103,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | Kafka / event streaming | Supported (mock default; real adapter opt-in) | Extensions | Enterprise | `pkg/protocol/kafka`, `pkg/convert/asyncapi` | Mock broker + AsyncAPI import; live execution via `-tags kafka_real`. |
 | WebSocket | Supported | Supported | Supported | `pkg/protocol/websocket` | More subscription-protocol fixtures. |
 | gRPC | Supported | Supported | Varies | `pkg/protocol/grpc` | Service-specific proto fixtures. |
-| Browser UX canaries | Partial | k6 browser (Playwright-based) | RealBrowser (packaged) | `/api/v1/system/browser-benchmarks`, `docs/MOBILE_BROWSER_EMULATION_PLAN.md` | Attach benchmark artifacts before raising density claims. |
+| Browser UX canaries | Partial | k6 browser (Playwright-based) | RealBrowser (packaged) | `/api/v1/system/browser-benchmarks`, `docs/BROWSER_ROADMAP.md` | Attach benchmark artifacts before raising density claims. |
 | High-density browser load | Non-goal until evidence | Resource intensive | Packaged sizing guidance | — | Do not claim without hardware-specific benchmark evidence. |
 | SAP GUI / Citrix / Oracle Forms | Gap / non-goal | Not core | Packaged | — | Complete demand assessment first. |
 
@@ -109,7 +113,7 @@ These dimensions are returned by `GET /api/v1/system/parity-status` in the `comp
 | --- | --- | --- | --- |
 | Open + closed workload, pacing, think time | Supported | `pkg/engine/open_workload.go`, `pacing.go` | Benchmark-backed goal evidence. |
 | Staged ramps and arrival modeling | Supported | `pkg/engine`, `/api/v1/scenarios/validate-load-model` | Published benchmark evidence. |
-| Thresholds, SLAs, release gates | Partial | `docs/RUNTIME_TELEMETRY_SLA_PLAN.md`, archive report endpoints | First-class dashboard authoring for checks/thresholds. |
+| Thresholds, SLAs, release gates | Partial | `docs/ROADMAP.md#runtime-telemetry-sla`, archive report endpoints | First-class dashboard authoring for checks/thresholds. |
 | Distributed execution | Supported | `pkg/api/distributed_execution_backend.go`, `/api/v1/fleet/load-zones` | Publish benchmark envelopes per named self-hosted load zone. |
 | Scheduling and governance | Supported | `/api/v1/scenarios/{id}/schedules`, `/api/v1/schedules/health` | External environment calendar/conflict evidence. |
 | Auth, RBAC, audit, service accounts | Supported | `docs/AUTH_RBAC_OPERATIONS_RUNBOOK.md`, `/api/v1/auth/access-matrix` | Native SAML out of scope; trusted-header/OIDC is the path. |
@@ -201,7 +205,7 @@ classified `executable_exact`, `executable_bounded`, `blocked_draft`, or
 
 **One-line verdict:** APEX wins on architecture and day-to-day usability; LRE wins on migration intelligence, analysis depth, and battle-tested scale.
 
-> **REST API / integration layer:** for a focused comparison of the programmable surface (auth, versioning, streaming, test-as-code, results extraction, CI/webhooks) and the bidirectional API gap analysis, see [APEX_LOAD_REST_API_COMPARISON.md](APEX_LOAD_REST_API_COMPARISON.md). The rows below cover product capability; that doc covers the API layer.
+> **REST API / integration layer:** for a focused comparison of the programmable surface (auth, versioning, streaming, test-as-code, results extraction, CI/webhooks) and the bidirectional API gap analysis, see [REST API Comparison](#rest-api-comparison). The rows below cover product capability; that section covers the API layer.
 
 #### Capability Matrix
 
@@ -371,7 +375,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 **Status: Gap.** APEX Load covers HTTP/API, SOAP, Java-over-HTTP, JMS, Kafka, WebSocket, gRPC, HAR, JMeter, DevWeb, AsyncAPI, and enterprise script archive migration paths. SAP GUI, Citrix, Oracle Forms, and desktop UI protocols are demand-gated non-goals.
 
-**Evidence:** `docs/PROTOCOL_EXTENSION_PLAN.md`, `docs/BROWSER_CLIENT_METRICS_PLAN.md#non-goals`, `/api/v1/protocol-bundles/support-matrix`
+**Evidence:** `docs/archive/plans/PROTOCOL_EXTENSION_PLAN.md`, `docs/BROWSER_ROADMAP.md#vision-and-architecture`, `/api/v1/protocol-bundles/support-matrix`
 
 **Remaining:** Complete customer-backed demand assessment. Publish explicit non-goals or coexistence guidance for unsupported legacy protocols. JMS/broker-specific diagnostics (queue depth, DLQ, consumer lag) are partially implemented.
 
@@ -383,7 +387,7 @@ These areas correspond to the `competitive_parity` dimensions in `GET /api/v1/sy
 
 **Status: Partial.** APEX Load has docs, a support matrix, CI templates, dashboard workflows, canonical sample projects, one-command demo seeding, and release evidence manifests. Evaluators still need release-specific benchmark deltas attached before scale claims are raised.
 
-**Evidence:** `README.md#quick-start`, `docs/CICD_INTEGRATION.md`, `docs/EVALUATOR_TRUST_PACK.md`, `docs/EVALUATOR_COMPETITIVE_ONE_PAGER.md`, `docs/RELEASE_EVIDENCE_MANIFEST.md`, `scripts/seed-evaluator-demo.sh`
+**Evidence:** `README.md#quick-start`, `docs/CICD_INTEGRATION.md`, `docs/COMPETITIVE_COMPARISON.md#evaluator-summary-and-trust-pack`, `docs/GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md#release-evidence-manifest`, `scripts/seed-evaluator-demo.sh`
 
 **Remaining:** Attach release notes with benchmark deltas for each release candidate.
 
@@ -417,6 +421,278 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 **Evidence:** `/metrics`, `/api/v1/integrations/apm/profiles`, `/api/v1/monitoring/packs`, `pkg/api/notifications.go`
 
 **Remaining:** Deepen vendor-specific causal scoring. OTLP span export is implemented for controller HTTP, lifecycle/orchestration, sampled actions, and controller↔generator gRPC; OpenTelemetry metrics/log export and desktop OTLP export remain deferred.
+
+---
+
+## Evaluator Summary and Trust Pack
+
+Point-in-time (rechecked June 2026); this document is authoritative. Consolidated 2026-09-24 from the former evaluator one-pager and trust pack.
+
+### One-page summary
+
+#### Positioning
+
+APEX Load is a self-hosted, Kubernetes-native performance testing platform for HTTP/API-heavy enterprise workloads. It is strongest where teams need open JSON DSL assets, controller APIs, governance, CI gates, migration paths, and auditable archives.
+
+#### Supported Today
+
+| Area | Status |
+| --- | --- |
+| HTTP/API, SOAP, WebSocket, gRPC, Java-over-HTTP | Supported |
+| JMeter, Enterprise Script Archive HTTP, HAR, OpenAPI, WSDL, DevWeb import-review workflows | Supported for documented scopes |
+| CI/CD gating with JSON and JUnit XML | Supported |
+| Live metrics, archive reports, comparison, release trends, Prometheus/Dynatrace hooks | Supported for current scope |
+| Self-hosted named load zones | Supported as region-derived generator pools |
+
+#### Partial / Evidence-Gated
+
+| Area | Current boundary |
+| --- | --- |
+| k6 compatibility | Constrained HTTP import/export and result ingestion only; APEX does not run k6 JavaScript. |
+| Browser testing | Diagnostic browser canaries paired with protocol load; no high-density browser claim without release benchmark artifacts. |
+| LoadRunner correlation parity | Rules, replay diagnostics, and guided repair exist; VuGen-class breadth remains deeper. |
+| Published scale | Design targets require release evidence before customer-facing claims. |
+
+#### Non-Goals Unless Customer-Backed
+
+- Managed SaaS load-zone control plane.
+- SAP GUI, Citrix, Oracle Forms, and native desktop UI protocols.
+- Full k6 JavaScript runtime compatibility.
+- Full TruClient/native desktop automation parity.
+
+#### Fast Evaluation Path
+
+1. Seed demos with `./scripts/seed-evaluator-demo.sh`.
+2. Validate local authoring with `apexctl script validate`.
+3. Inspect `/api/v1/system/parity-status` and `/api/v1/fleet/load-zones`.
+4. Run HTTP/API protocol load with a small browser canary group.
+5. Review archive report, comparison, and CI/JUnit output.
+
+### Evaluator trust pack
+
+This pack gives evaluators a short, reproducible path through the current competitive claims without implying unsupported parity.
+
+#### One-Command Seed
+
+Run a controller locally, then seed the canonical demo assets:
+
+```bash
+APEXLOAD_API=http://localhost:8080 PROJECT_ID=default ./scripts/seed-evaluator-demo.sh
+```
+
+The seed script loads:
+
+| Area | Asset |
+| --- | --- |
+| HTTP/API | `examples/web-api/ecommerce-http.json` |
+| Mixed protocol + browser canary | `examples/web-api/browser-canary-plus-protocol-load.json` |
+| SOAP | `examples/web-api/soap-account-service.json` |
+| gRPC | `examples/web-api/grpc-inventory.json` |
+| WebSocket | `examples/web-api/websocket-order-feed.json` |
+| JMS | `examples/web-api/jms-order-flow.json` |
+
+#### Evidence Rules
+
+- Treat browser VUsers as diagnostic canaries unless a release evidence manifest includes controlled raw benchmark output.
+- Treat load zones as self-hosted named generator pools, not managed SaaS infrastructure.
+- Treat k6 compatibility as constrained import/export and result ingestion, not JavaScript runtime compatibility.
+- Treat SAP GUI, Citrix, Oracle Forms, and native desktop automation as demand-gated non-goals.
+
+#### Acceptance Checklist
+
+- `/api/v1/system/parity-status` shows the competitive parity dimensions and evidence levels.
+- `/api/v1/fleet/load-zones` returns named self-hosted load zones derived from generator regions.
+- `apexctl script validate --script examples/web-api/ecommerce-http.json --format json` returns `valid: true`.
+- `POST /api/v1/scripts/import/k6` returns executable HTTP DSL for statically parseable k6 HTTP scripts and review diagnostics for unsupported JavaScript/browser constructs.
+
+---
+
+## REST API Comparison
+
+Scope: the **REST API / integration layer** of APEX Load against **OpenText LoadRunner Enterprise (LRE) 26.x**: how each platform is driven as-code and wired into automation, and where each falls short of the other. Non-API dimensions (VuGen correlation depth, desktop-protocol breadth, offline Analysis depth, proven scale) are in the [LoadRunner](#loadrunner) section. Point-in-time (evidence rechecked 2026-06-15); LRE's REST surface varies by patch level and some admin resources are deployment-specific. This section is also the **living scorecard** for the API-parity program: its "APEX trails" rows map to dimensions in `GET /api/v1/system/parity-status` (see [Parity program linkage](#parity-program-linkage)).
+
+### Legend
+
+Verdict (APEX-relative): **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ APEX trails badly**
+
+Status vocabulary (shared with the competitive matrix): **Supported** · **Partial** · **Gap** ·
+**Evidence required** · **Non-goal**.
+
+
+### REST API verdict
+
+- **APEX leads on modern API ergonomics and test-as-code.** Stateless OIDC + scoped API-key auth,
+  explicit `/api/v1` versioning, generated OpenAPI, JSON throughout, WebSocket live-metrics streaming,
+  full script/test CRUD via REST + open JSON DSL, JSON KPI/transaction/trend extraction, and native
+  GitHub/GitOps with PR check-runs.
+- **LRE leads on enterprise resource governance exposed at the admin layer** — first-class timeslot
+  reservations, domain/project administration, test-sets/test-instances, host pools, AUT registry, and
+  ALM/Quality Center traceability — backed by a maintained CI-marketplace plugin ecosystem (Jenkins,
+  Azure DevOps).
+- **The headline asymmetry:** LRE's REST API **cannot create or modify test/script definitions** (VuGen/
+  UI only) and **cannot stream live metrics** (poll-only; KPIs locked in proprietary `.lrr`/`.lra`
+  result archives). APEX's REST API **lacks a forward-booking reservation resource** and a managed
+  fleet/host-pool admin surface. Those two gaps define most of the build-out below.
+
+
+### Chart A — API ergonomics & protocol design
+
+| Dimension | LRE 26.x | APEX Load | Verdict |
+| --- | --- | --- | --- |
+| Resource model / base path | Domains → Projects → Tests → Runs; `/LoadTest/rest/domains/{domain}/projects/{project}/...` | Flat `/api/v1/...` with project/domain scoping via params + RBAC | **=** |
+| Authentication | LWSSO cookie (stateful); HTTP Basic → `Set-Cookie: LWSSO_COOKIE_KEY`; re-auth on mid-flight 401 | Stateless: OIDC sessions, `Authorization: Bearer`/`X-APEXLoad-API-Key` (SHA-256-hashed), trusted-header mode (`pkg/api/middleware.go`) | **▲** |
+| Authorization / RBAC | Domain/project roles, ALM-linked permissions | 4 roles (`system_admin`/`project_admin`/`editor`/`viewer`) × global/project/domain/repo scopes, single-source policy (`pkg/api/access_policy.go`) | **=** |
+| Multi-tenancy | Domains + Projects (strong, mature) | Projects (primary) + Domains (app-repo sharing) | **=** |
+| API versioning | None in path; implicit cross-version compatibility | Explicit `/api/v1` prefix | **▲** |
+| Machine-readable contract | No published OpenAPI/Swagger | Generated OpenAPI 3.0.3 (`docs/swagger.yaml` via `cmd/swaggergen`, freshness test-enforced) | **▲** |
+| Response schemas in contract | n/a (no spec) | Present but mostly generic `200 Successful operation` (concrete schemas in progress) | **▲** (caveated) |
+| Payload format | JSON (`Accept: application/json`) | JSON; multipart for uploads; CSV export on some endpoints | **=** |
+| Error envelope | `{ExceptionMessage, ErrorMessage, Message, ErrorCode}` | `{error, ref}`; opaque `ref` + server log on 5xx (`writeError`, `pkg/api/handlers.go`) | **=** |
+| Live metrics over API | Not REST-exposed; online stats behind the run dashboard | `GET /api/v1/tests/{id}/metrics` snapshot + WebSocket streams | **▲** |
+| Async / streaming | Polling only (no webhooks/SSE/WebSocket) | Polling + WebSocket (`/api/v1/ws`, `/api/v1/tests/{id}/stream`); async jobs poll (GitHub sync-jobs) | **▲** |
+| Inbound webhooks | None documented | GitHub receiver with HMAC-SHA256 (`POST /api/v1/integrations/github/webhook`) | **▲** |
+| Outbound completion webhooks | None | None (Dynatrace is dry-run only) — shared gap | **=** |
+| Idempotency | Convention only (`RunComment` marker) | `Idempotency-Key` header, actor-scoped, 409 on conflict (coordination store) | **▲** |
+| Rate limiting | Not documented | Per-service-account `X-RateLimit-*` headers (env-configurable) | **▲** |
+| Pagination / filtering | `?query={...}` server filter; no cursor/limit/offset | Offset (`limit`/`offset`) on some lists, not yet standardized; no cursor | **=** |
+| CORS / browser security | n/a (server-rendered) | Allow-list CORS, CSP/HSTS/`nosniff`/`DENY` headers (`pkg/api/middleware.go`) | **▲** |
+| Request size limits | Not documented | Global 128 MiB backstop + per-route `MaxBytesReader` overrides | **▲** |
+| Agent-tool surface (MCP/LLM) | None | MCP server exposes the REST API as tools with confirm/reason gating (`mcp/apexload_mcp/`) | **▲** |
+
+
+### Chart B — Capability surface (what each API can actually do)
+
+| Capability | LRE 26.x | APEX Load | Verdict |
+| --- | --- | --- | --- |
+| Test/script definition as code | **Cannot** create/modify test or script definitions via REST (VuGen/UI only) | Full CRUD + validate + replay + export over JSON DSL (`/api/v1/scripts*`) | **▲▲** |
+| Run lifecycle control | Create+start, stop, abort; duration/VUsers fixed at creation | Start/stop/abort/pause/resume **plus** mid-run scale-VUsers, adjust duration, adjust goal targets | **▲** |
+| Capacity model | First-class **timeslot reservation** (forward booking, calendar, conflict prevention) | Real-time admission control + estimate/preflight + scenario schedules/approvals, **plus load-bearing forward-booking timeslots** (`/api/v1/capacity/timeslots`: CRUD, availability/conflict, approval, atomic bind) — a run binds a `timeslot_id` strictly at create and admission control is **reservation-aware** (an approved, bound timeslot reserves generators for its window; other tenants are held PENDING) | **≈** (at parity) |
+| Results & KPI extraction | Download result zip; parse proprietary `.lrr`/`.lra`/Analysis; only `RunSLAStatus` on the run entity | JSON metrics/transactions/trend/comparison endpoints; Parquet/JSONL archives; error evidence | **▲** |
+| Trend / regression analysis | Analysis tool (offline); limited REST | `GET /api/v1/releases/{id}/trend` (+ export), pinned-baseline comparison, SLA governance | **▲** |
+| Scheduling / run calendar | Timeslot calendar (reservation-centric) | Cron schedules, occurrences, approvals, governance windows, `/api/v1/run-calendar` | **=** |
+| Test-set / ordered execution | Test Sets / Test Instances (ordered collections) | **Execution plans** (`/api/v1/execution-plans`): ordered scenario entries with per-entry data-pool/timeslot/runtime overrides + failure policy; **dependency-gated sequential execution** (run N+1 awaits run N's terminal state) with persisted, queryable plan-run progress | **✓** (parity) |
+| Imports / interop | LR-native; one-way archive import | 11 formats (LR archive, JMeter, k6, HAR, OpenAPI, RAML, AsyncAPI, Postman, WSDL, Salesforce, Oracle EBS) | **▲** |
+| Fleet / host administration | Host pools, load generators, monitor-over-firewall, SiteScope (admin layer) | Managed pools, persistent generator metadata/labels/cordon, provisioning requests (`/api/v1/fleet/pools\|generators\|provision-requests`), a **real in-cluster Kubernetes provisioner** that scales the generator StatefulSet, pool-aware inventory + pool-scoped run assignment (cloud backends future) | **✓** (parity) |
+| Monitoring integration | SiteScope + monitor-over-firewall agents (registered collectors) | Inbound monitoring **plus a full collector loop** (`/api/v1/monitoring/collectors`: register, SHA-256 scoped token + rotation, metric packs, health) with **collector-token heartbeat/metric ingestion** (`…/{id}/heartbeat`, `…/{id}/metrics`) routed to live monitoring + a **dependency-free agent runtime** (`cmd/apexload-collector-agent`) | **✓** (parity) |
+| Entitlements / consumption | License-tier model + usage | **Read-only entitlements** (`/api/v1/system/entitlements[/usage]`, `/api/v1/projects/{id}/entitlements/usage`): edition, enabled bundles, per-limit used-vs-cap (concurrent tests + active VUsers, global and per project), per-bundle historical consumption, and a per-project breakdown (surfaced, not enforced) | **=** (read parity; APEX doesn't enforce by design) |
+| Correlation as-code | Per-protocol rules engine + design studio (persistent, learned) | detect/diagnose/diff engine (`pkg/convert/correlate/`) + persisted per-script recorded baselines (`/api/v1/scripts/{id}/recording/status`, `/api/v1/scripts/{id}/diagnose-replay`) **plus learned, reusable project-scoped correlation rulesets** (`/api/v1/correlation-rulesets`) — `discover-from-script` saves the correlations a baseline reveals, `{id}/apply-to-script` previews or writes the extractors + value-templating into a target script | **≈** (at parity) |
+| Browser object repository | VuGen/TruClient object repository | Selector model + **persisted project-scoped object repositories** (`/api/v1/object-repositories`, seedable `from-script`) with **script↔repository binding** (action `object_ref`, resolved controller-side into selectors + fallbacks for replay and load) and **repair-on-replay write-back** (self-heals feed the working locator back into the bound object) | **≈** (at parity) |
+| CI/CD integration | Maintained Jenkins + Azure DevOps marketplace plugins | GitHub-native (push/pull, PR check-runs, webhooks, sync-jobs) + CI templates; **no marketplace plugins** | **=** |
+| Git / GitOps | No native Git script sync | Native GitHub script push/pull, drift status, project policy | **▲** |
+| ALM / requirements traceability | Quality Center / ALM integration | None (out of scope) | **▼** |
+
+
+### Where APEX falls short of LRE (and what closes it)
+
+These are the API-layer gaps the parity program addresses. Each maps to a build family.
+
+1. **Forward-booking capacity reservation — *supported*.** APEX exposes timeslot reservations
+   (`/api/v1/capacity/timeslots`: CRUD, availability/conflict checks, an approval state, atomic
+   single-test binding — `pkg/api/handlers_timeslots.go`, `pkg/storage/sqlite_timeslots.go`) that are
+   now **load-bearing**: `POST /api/v1/tests` accepts a `timeslot_id` and binds it strictly at create
+   (the create fails if it can't be bound), and `pkg/api/capacity.go` admission control is
+   **reservation-aware** — an approved, bound timeslot reserves generators for its window
+   (`pkg/api/timeslot_reservation.go`), so other tenants are held PENDING for that capacity. Tracked
+   as the `capacity_reservation` dimension (now `supported`) in `parity-status`.
+2. **Fleet pool & provisioning management — *supported*.** APEX exposes managed generator pools,
+   persistent generator metadata (labels/region/cordon/pool membership), and provisioning requests
+   (`/api/v1/fleet/pools|generators|provision-requests`). A **real in-cluster Kubernetes provisioner**
+   (`APEXLOAD_GENERATOR_PROVISIONER=kubernetes`) scales the generator StatefulSet's replicas via the
+   controller service account on `POST /fleet/provision-requests` (lifecycle `provisioning → success/failed`
+   with events — **no new cloud credentials**; same RBAC as `/system/restart`). The live inventory is
+   **pool-aware** (`GeneratorInventoryEntry.fleet_pool_id/pool_name/cordoned` from persisted metadata) and a
+   run can target a pool (`assignment.pool_id`, resolved to the pool's members at placement)
+   (`pkg/api/fleet_provisioner.go`, `pkg/kubeops/client.go`). Cloud (AWS/Azure/GCP) backends remain future via
+   the `GeneratorProvisioner` registry. Tracked as `fleet_management` (now `supported`).
+3. **Ordered cross-run execution plan — *supported*.** APEX exposes execution plans
+   (`/api/v1/execution-plans`: CRUD + `POST /{id}/runs`) with per-entry runtime overrides, **per-entry
+   data-pool overrides**, **optional per-entry timeslot binding**, and failure policy. **Sequential plans
+   are dependency-gated** — each entry's run starts only after the prior run reaches a terminal state
+   (honoring halt/skip), driven by an in-memory orchestrator on the runner
+   (`pkg/api/execution_plan_orchestrator.go`); parallel plans stage all entries. Plan-run progress is
+   persisted and queryable (`GET /{id}/runs`, `GET /{id}/runs/{runId}`) and streamed via
+   `execution_plan_*` WebSocket events. Tracked as `execution_planning` (now `supported`).
+4. **Monitoring collectors — *supported*.** Restricted-network collectors register via
+   `/api/v1/monitoring/collectors` with SHA-256 scoped tokens (one-time issue + rotation) and allowed metric
+   packs, then push **collector-token-authenticated heartbeats** (`POST …/{id}/heartbeat`) that record
+   health + last-seen and ingest **in-scope** metric packs; the latest snapshot is routed to live monitoring
+   (`monitoring_collector_heartbeat` WebSocket event + `GET …/{id}/metrics`). A dependency-free **agent
+   runtime** (`cmd/apexload-collector-agent`) collects host metrics and pushes on an interval
+   (`pkg/api/collector_metrics.go`, `pkg/collectoragent`). Live snapshot is in-memory (like running-test
+   metrics); durable history is future work. Tracked as `monitoring_collectors` (now `supported`).
+5. **Entitlements read model — *supported*.** `/api/v1/system/entitlements[/usage]` and
+   `/api/v1/projects/{id}/entitlements/usage` project edition, enabled bundles, **per-limit used-vs-cap**
+   (concurrent tests + active VUsers, global and per project), **per-bundle historical consumption**, and
+   a **per-project breakdown** — a pure read-only projection over existing usage accounting + quota config
+   (`pkg/api/entitlement_usage.go`, `handlers_entitlements.go`). Surfaced, never enforced (no licensing
+   engine by design). Tracked as `entitlements` (now `supported`).
+6. **Object repositories and correlation rulesets are both load-bearing (supported).**
+   Project-scoped object repositories are stored, bound to scripts by logical name (action
+   `object_ref`, resolved controller-side into selectors + fallbacks for replay and load), and
+   replay self-heals write the working locator back into the bound object. Per-script recorded
+   correlation baselines are stored, and learned **reusable project-scoped correlation rulesets**
+   are discoverable from a baseline and applicable to other scripts (preview or write the extractors
+   + value-templating into a new version).
+   → Cross-project / org-wide ruleset sharing (future).
+7. **No ALM/Quality Center traceability and no CI-marketplace plugins.** Out of scope for this program;
+   GitOps/PR-check-runs are the deliberate alternative. ALM remains a documented non-goal.
+
+Note: LRE's most cited advantages (VuGen correlation, desktop protocols, offline Analysis depth, proven scale) are **not REST-API features**; see [LoadRunner](#loadrunner).
+
+### Where LRE falls short of APEX (deliberately not "fixed" — APEX advantages to keep)
+
+1. **No test-as-code.** The REST API cannot create/modify test or script definitions; everything must
+   pre-exist in VuGen/UI. APEX is API-first over an open JSON DSL.
+2. **Stateful, token-less auth.** LWSSO cookie + Basic, no API keys/JWT/scoped service accounts.
+3. **No API versioning and no OpenAPI spec.** Clients reverse-engineer; no codegen, no contract tests.
+4. **No live-metrics REST surface and no streaming.** Poll-only; no WebSocket/SSE. KPIs require
+   downloading and parsing proprietary `.lrr`/`.lra` Analysis archives — there are no JSON
+   KPI/transaction/trend endpoints.
+5. **No native Git / GitOps / PR check integration.**
+6. **No idempotency keys** (only the `RunComment` marker convention) and **no documented rate-limit
+   contract**.
+7. **No agent-tool (MCP) surface.**
+
+The build program explicitly **does not** chase these — they are documented as APEX-ahead so effort
+isn't spent regressing toward LRE's model.
+
+### Shared gaps / parity
+
+- Neither offers cursor pagination (LRE has none; APEX has offset on some lists, not standardized).
+- Neither emits outbound test-completion webhooks.
+- Neither publishes rate-limit SLOs (APEX at least emits `X-RateLimit-*`).
+- Both are JSON-over-HTTP at the wire level.
+
+
+### Parity program linkage
+
+The "▼ APEX trails" rows above are tracked as dimensions in `GET /api/v1/system/parity-status`
+(`pkg/api/parity_status.go`): `capacity_reservation`, `fleet_management`, `execution_planning`,
+`monitoring_collectors`, `entitlements`, `correlation_persistence`, `object_repository`. As each family
+lands, its dimension flips `gap → partial → supported`, and the corresponding row here is updated in the
+same change so this scorecard never drifts from the endpoint.
+
+### Honesty caveats
+
+- **LRE's admin REST surface is broader than a minimal run-orchestration client exercises.** Timeslots,
+  hosts, test-sets, AUT, and monitor management exist at the administration layer in LRE; exact
+  availability is patch-/deployment-specific. This doc represents them as present without claiming an
+  exhaustive 26.x endpoint inventory.
+- **APEX claims are code-grounded.** Every APEX row cites `pkg/...` or `/api/v1/...`. Where a capability
+  is partial (response schemas, entitlements, pagination standardization), it is marked partial, not
+  supported.
+- **API-scope only.** Verdicts here rate the *programmable surface*, not the underlying engine,
+  analysis depth, or proven scale.
+
+### Evidence & sources
+
+- **APEX Load (code-owned):** `pkg/api/server.go`, `pkg/api/access_policy.go`, `pkg/api/middleware.go`,
+  `pkg/api/handlers.go`, `pkg/api/capacity.go`, `pkg/api/parity_status.go`, `docs/swagger.yaml`,
+  `docs/API_USER_GUIDE.md`, `mcp/apexload_mcp/`.
+- **LoadRunner Enterprise 26.x:** OpenText LoadRunner Enterprise REST API Reference
+  (admhelp.microfocus.com / OpenText documentation portal); LWSSO/run/results wire behavior corroborated
+  against an internal LRE orchestration adapter.
+- **Companion:** [COMPETITIVE_COMPARISON.md](#loadrunner) (non-API dimensions).
 
 ---
 
@@ -505,7 +781,7 @@ Code-owned source of truth: `pkg/convert/enterprisearchive/rts_support.go`. Publ
 **Web Services (SOAP) RTS:** WSDL definitions map to `pkg/protocol/soap`. WS-Security configurations map to automated header management in the Go engine. Transport-level settings (proxy, HTTP version, keep-alive, timeouts, SOAP fault content check) map to standard HTTP protocol config.
 
 **Intentional caveats:**
-- `iterations` is subject to scenario-schedule authority: a duration-driven scenario ignores a script-only per-VUser cap (imported RTS iteration counts included) so no group retires before the schedule ends, exactly as LoadRunner Controller does. Set iterations on the scenario or group to pin a fixed count. See [ENTERPRISE_LOAD_MODEL_CONTRACT.md](ENTERPRISE_LOAD_MODEL_CONTRACT.md#schedule-authority-over-script-iteration-caps).
+- `iterations` is subject to scenario-schedule authority: a duration-driven scenario ignores a script-only per-VUser cap (imported RTS iteration counts included) so no group retires before the schedule ends, exactly as LoadRunner Controller does. Set iterations on the scenario or group to pin a fixed count. See [ENTERPRISE_CONTRACTS.md](ENTERPRISE_CONTRACTS.md#schedule-authority-over-script-iteration-caps).
 - `download_resources = recorded` depends on recorded-resource URL metadata in the import/recording flow.
 - Streaming/media settings execute at HTTP response pacing level; no full browser media player.
 - DFE parity is bounded to APEX Load's supported HTTP response transform chain.

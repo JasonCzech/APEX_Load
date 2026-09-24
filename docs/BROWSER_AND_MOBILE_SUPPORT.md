@@ -35,10 +35,40 @@ JMS, Kafka, or other high-density protocol groups.
   higher envelope.
 - Treat mobile emulation as web UX simulation, not native mobile app automation.
 
+## Browser DSL Quick Reference
+
+Protocol `browser`; a mobile example sets `config.browser` to
+`{"engine": "webkit", "device_profile": "iphone_15_pro", "touch_mode": true,
+"orientation": "portrait", "client_metrics": true, "slow_mo_ms": 50,
+"viewport": {"width": 393, "height": 852}}`.
+
+- Actions: `browser_navigate`, `browser_click`, `browser_fill` (`value` = text),
+  `browser_select` (`value` = option value, text, or label), `browser_wait`,
+  `browser_screenshot`, `browser_tap`, `browser_long_press`
+  (`params.duration_ms`), and `browser_swipe` (`params.direction` of `left`,
+  `right`, `up`, `down`; `params.distance` in positive pixels).
+- Engines and presets: `chromium` supports `desktop_1080p`, `galaxy_s24`,
+  `pixel_8`; `webkit` supports `ipad_air`, `iphone_15_pro`, `iphone_se` and
+  requires Playwright WebKit assets on the controller host.
+- Config keys: `config.browser.engine`, `device_profile`, `touch_mode`,
+  `orientation` (`portrait`/`landscape`), `client_metrics`.
+- Summary metrics: `avg_fcp_ms`, `avg_lcp_ms`, `avg_cls_score`, `avg_inp_ms`,
+  `avg_blocking_resources`, `avg_long_task_count`, `avg_js_heap_used_mb`; Chromium
+  with `client_metrics` also reports `browser_process_cpu_pct` /
+  `browser_process_mem_mb` per transaction and `avg_browser_process_cpu_pct` /
+  `avg_browser_process_mem_mb` on summaries.
+- Live and archived summaries appear under `metrics.browser` and
+  `metrics.browser_by_device`. Evidence bundles download from
+  `/api/v1/tests/{id}/archive/browser-diagnostics` (`browser_diagnostics.json`
+  plus screenshot and HTML artifacts when available).
+- Java-over-HTTP reuses the HTTP transport with the `java_serialized_object_base64`
+  codec; sample imports are limited to raw HTTP and cURL bodies that already
+  contain base64-encoded serialized Java bytes.
+
 ## Evidence And Benchmarks
 
-- Benchmark artifact: [BROWSER_BENCHMARK_ARTIFACTS.md](BROWSER_BENCHMARK_ARTIFACTS.md)
-- Benchmark runbook: [MOBILE_BROWSER_BENCHMARK_RUNBOOK.md](MOBILE_BROWSER_BENCHMARK_RUNBOOK.md)
+- Benchmark artifact: [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md#browser-benchmark-artifacts)
+- Benchmark runbook: [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md#browser-benchmark-runbook)
 - Opt-in harness:
 
 ```bash
@@ -51,7 +81,4 @@ Update density guidance only when repeated controlled runs justify it.
 
 The following files are retained for implementation history and tactical detail:
 
-- [MOBILE_BROWSER_EMULATION_PLAN.md](MOBILE_BROWSER_EMULATION_PLAN.md)
-- [BROWSER_CLIENT_METRICS_PLAN.md](BROWSER_CLIENT_METRICS_PLAN.md)
-- [MOBILE_UX_PLATFORM_STRATEGY.md](MOBILE_UX_PLATFORM_STRATEGY.md)
-- [BROWSER_REPLAY_HAR_CAPTURE_PLAN.md](BROWSER_REPLAY_HAR_CAPTURE_PLAN.md)
+- [BROWSER_ROADMAP.md](BROWSER_ROADMAP.md)

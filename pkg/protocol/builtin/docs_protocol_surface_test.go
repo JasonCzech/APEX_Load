@@ -33,7 +33,7 @@ var protocolDocAliases = map[string][]string{
 
 // protocolSurfaceDocs are the documents that enumerate the runtime protocol
 // surface; a contributor scoping a cross-protocol change reads one of them.
-var protocolSurfaceDocs = []string{"AGENTS.md", "ARCHITECTURE.md", "DEVELOPMENT.md", "QUICK_REFERENCE.md"}
+var protocolSurfaceDocs = []string{"AGENTS.md", "ARCHITECTURE.md", "DEVELOPMENT.md"}
 
 func TestProtocolDocAliasesCoverRegistry(t *testing.T) {
 	for _, name := range protocol.List() {

@@ -54,7 +54,7 @@ This implementation does not by itself certify an AKS deployment. Keep one
 controller by default. Before enabling multiple production replicas, pass a real
 pod-termination/network-disruption exercise with PostgreSQL, Redis, the object
 archive backend, and generators. The deterministic repository soak is described
-in `AKS_INTEGRATION_READINESS.md` and is a process-loss simulation, not that
+in the AKS README [Integration readiness](../deployments/k8s/aks/README.md#integration-readiness) section and is a process-loss simulation, not that
 production evidence.
 
 All reconciler loops must be idempotent:
@@ -129,14 +129,14 @@ Before promoting an environment:
 7. Keep one controller replica unless HA prerequisites are configured. For HA,
    verify the shared PostgreSQL/Redis/archive backends, active EndpointSlice,
    durable generator state, and failover evidence in
-   `AKS_INTEGRATION_READINESS.md`.
+   the AKS README [Integration readiness](../deployments/k8s/aks/README.md#integration-readiness) section.
 
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
 | P1.1 Control-plane boundaries | Complete | This runbook |
-| P1.2 HA controller behavior | Opt-in implementation complete; production AKS disruption evidence remains an operational gate | HA behavior and restart contract sections; `AKS_INTEGRATION_READINESS.md` |
+| P1.2 HA controller behavior | Opt-in implementation complete; production AKS disruption evidence remains an operational gate | HA behavior and restart contract sections; [AKS README, Integration readiness](../deployments/k8s/aks/README.md#integration-readiness) |
 | P1.3 Production readiness checks | Complete for initial API surface and dashboard operator visibility; extend as new dependencies land | `/api/v1/system/readiness`, Settings > General, Monitoring |
 | P1.4 Upgrade and migration policy | Complete | Upgrade and migration policy section |
 | P1.5 Operator architecture runbook | Complete | This runbook |

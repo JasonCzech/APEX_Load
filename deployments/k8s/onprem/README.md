@@ -5,7 +5,7 @@ counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
 `deployments/k8s/aks`. What it adds over the dev set:
 
 Controller-loss fencing is mandatory. Follow the maintenance-window rollout
-gate and acceptance drill in [Generator run supervision](../../../docs/GENERATOR_RUN_SUPERVISION.md)
+gate and acceptance drill in [Generator run supervision](../../../docs/ENTERPRISE_FLEET_AND_CAPACITY.md#generator-run-supervision)
 when upgrading from a tokenless release.
 
 | Control | Where |

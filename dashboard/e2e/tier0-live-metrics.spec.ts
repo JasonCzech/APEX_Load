@@ -2,7 +2,7 @@ import type { APIRequestContext } from '@playwright/test'
 
 import { expect, test } from './support/liveRun'
 
-// Tier-0 journey step S7 (docs/qa/TIER0_JOURNEY.md): watching a run.
+// Tier-0 journey step S7 (docs/qa/E2E_SUITES.md): watching a run.
 //
 // The assertion that matters is that metrics ADVANCE, not that a panel renders.
 // A dashboard frozen on a stale sample renders perfectly and is completely

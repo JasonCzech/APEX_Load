@@ -8,7 +8,7 @@ import (
 )
 
 const competitiveSupportMatrixEvidence = "docs/COMPETITIVE_COMPARISON.md#support-matrix"
-const apiComparisonEvidence = "docs/APEX_LOAD_REST_API_COMPARISON.md"
+const apiComparisonEvidence = "docs/COMPETITIVE_COMPARISON.md#rest-api-comparison"
 
 //go:embed cloudtest_parity_catalog.json
 var cloudTestParityCatalogJSON []byte
@@ -136,7 +136,7 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 			Name:        "Browser Testing",
 			Status:      "partial",
 			Summary:     "Browser replay, mobile profiles, client metrics, archive evidence, mobile browser conversion, Web 2.0 browser-profile review evidence, selector/wait repair guidance, and code-owned benchmark artifacts support diagnostic browser canaries.",
-			Evidence:    []string{"/api/v1/system/browser-benchmarks", "/api/v1/browser-replay/sessions/{session_id}", "/api/v1/scripts/browser-to-http/preview", "docs/BROWSER_BENCHMARK_ARTIFACTS.md", "docs/COMPETITIVE_COMPARISON.md#web-20-browser-profile", "examples/web-api/browser-canary-plus-protocol-load.json"},
+			Evidence:    []string{"/api/v1/system/browser-benchmarks", "/api/v1/browser-replay/sessions/{session_id}", "/api/v1/scripts/browser-to-http/preview", "docs/PERFORMANCE_BENCHMARKS.md", "docs/COMPETITIVE_COMPARISON.md#web-20-browser-profile", "examples/web-api/browser-canary-plus-protocol-load.json"},
 			Remaining:   []string{"Attach controlled raw benchmark output for each release generator image before raising browser density envelopes."},
 			ReleaseGate: true,
 		},
@@ -190,7 +190,7 @@ func buildParityStatus(now time.Time) ParityStatusResponse {
 
 // buildAPIParityProgram returns the in-flight LoadRunner Enterprise REST API-parity
 // build dimensions. These are the "▼ APEX trails" rows from
-// docs/APEX_LOAD_REST_API_COMPARISON.md, tracked here so the scorecard doc and the
+// docs/COMPETITIVE_COMPARISON.md#rest-api-comparison, tracked here so the scorecard doc and the
 // endpoint never drift. Each flips gap → partial → supported as its family lands.
 // They are intentionally separate from Areas (shipped platform state) and do not
 // participate in release-gate aggregation.
@@ -293,8 +293,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"/api/v1/fleet/capacity",
 				"/api/v1/fleet/load-zones",
 				"/api/v1/fleet/alerts",
-				"docs/ENTERPRISE_GENERATOR_FLEET_MODEL.md",
-				"docs/ENTERPRISE_AUTOSCALING_SIGNALS.md",
+				"docs/ENTERPRISE_FLEET_AND_CAPACITY.md",
 			},
 			Remaining: []string{
 				"Attach benchmark-backed density envelopes to each named self-hosted load zone before raising scale claims.",
@@ -317,8 +316,8 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"/api/v1/scripts/authoring/components",
 				"/api/v1/correlations/rules",
 				"/api/v1/correlations/diagnose",
-				"docs/ENTERPRISE_AUTHORING_CONTRACT.md",
-				"docs/SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md",
+				"docs/ENTERPRISE_CONTRACTS.md",
+				"docs/ROADMAP.md#script-authoring-consolidation",
 			},
 			Remaining: []string{
 				"Expand public demo packs, competitive fixtures, and richer recorder examples so evaluators can reproduce the supported workflow quickly.",
@@ -337,8 +336,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"/api/v1/scripts/browser-replay/sessions",
 				"/api/v1/system/browser-benchmarks",
 				browserBenchmarkArtifactEvidence,
-				"docs/MOBILE_BROWSER_EMULATION_PLAN.md",
-				"docs/BROWSER_CLIENT_METRICS_PLAN.md",
+				"docs/BROWSER_ROADMAP.md",
 			},
 			Remaining: []string{
 				"Attach controlled raw benchmark artifacts for each release generator image before increasing browser density envelopes.",
@@ -365,7 +363,7 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"/api/v1/releases/{id}/sla-governance",
 				"/api/v1/reports/profiles",
 				"/api/v1/results/import",
-				"docs/RUNTIME_TELEMETRY_SLA_PLAN.md",
+				"docs/ROADMAP.md#runtime-telemetry-sla",
 				"docs/COMPETITIVE_COMPARISON.md#apm-observability-correlation",
 			},
 			Remaining: []string{
@@ -383,8 +381,8 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 			Evidence: []string{
 				competitiveSupportMatrixEvidence,
 				"docs/COMPETITIVE_COMPARISON.md#specialized-enterprise-protocols",
-				"docs/PROTOCOL_EXTENSION_PLAN.md",
-				"docs/BROWSER_CLIENT_METRICS_PLAN.md#non-goals",
+				"docs/archive/plans/PROTOCOL_EXTENSION_PLAN.md",
+				"docs/BROWSER_ROADMAP.md#vision-and-architecture",
 			},
 			Remaining: []string{
 				"Complete customer-backed demand assessment and publish explicit non-goal or coexistence guidance for unsupported legacy protocols.",
@@ -403,9 +401,9 @@ func buildCompetitiveParityStatus() []CompetitiveParityArea {
 				"README.md#quick-start",
 				"docs/COMPETITIVE_COMPARISON.md#packaging-samples-and-trust",
 				"docs/COMPETITIVE_COMPARISON.md#enterprise-archive-runtime-settings-reference",
-				"docs/EVALUATOR_TRUST_PACK.md",
-				"docs/EVALUATOR_COMPETITIVE_ONE_PAGER.md",
-				"docs/RELEASE_EVIDENCE_MANIFEST.md",
+				"docs/COMPETITIVE_COMPARISON.md#evaluator-trust-pack",
+				"docs/COMPETITIVE_COMPARISON.md#one-page-summary",
+				"docs/GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md#release-evidence-manifest",
 				"scripts/seed-evaluator-demo.sh",
 			},
 			Remaining: []string{

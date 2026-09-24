@@ -51,13 +51,13 @@ def open_inherited_defects(defects: str) -> int:
 def render(root: Path) -> str:
     qa = root / "docs" / "qa"
     baseline = json.loads((qa / "evidence" / "M0" / "coverage-baseline.json").read_text())
-    matrix_states = tier0_states((qa / "TIER0_ASSERTION_MATRIX.md").read_text())
+    matrix_states = tier0_states((qa / "E2E_SUITES.md").read_text())
     ci = (root / ".github" / "workflows" / "ci.yml").read_text()
     coverage_step = ci.split("- name: Coverage ratchet", 1)[1].split("- name:", 1)[0]
     coverage_enforced = "continue-on-error: true" not in coverage_step
     enabled_linters = set(re.findall(r"^    - ([a-z0-9]+)", (root / ".golangci.yml").read_text(), re.MULTILINE))
     leak_enabled = len(enabled_linters & {"bodyclose", "sqlclosecheck", "rowserrcheck", "nilerr"})
-    performance = (root / "docs" / "PERFORMANCE_BENCHMARK_EVIDENCE.md").read_text()
+    performance = (root / "docs" / "PERFORMANCE_BENCHMARKS.md").read_text()
     measured_perf = 4 - len(re.findall(r"\| `not_evaluated` \|", performance))
     return "\n".join([
         "# QA Headline Metrics",

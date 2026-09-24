@@ -239,7 +239,7 @@ asset bytes or filenames, verify `SHA256SUMS.sig` at ingestion, mirror the APEX
 action and every nested pinned action commit, and configure `release-base-url`
 plus the matching public key as shown above. The consumer needs no APEX source
 or Go toolchain. See
-[GHES_GITHUB_ACTIONS_COMPATIBILITY.md](GHES_GITHUB_ACTIONS_COMPATIBILITY.md)
+[GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md](GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md#github-enterprise-server-compatibility)
 for runner/tool mirrors and the qualification gate.
 
 ## Deployment pipelines
@@ -289,3 +289,44 @@ visible in the test UI rather than buried in the build log:
 
 - **GitHub Actions:** `dorny/test-reporter` (reporter `java-junit`) or upload as
   an artifact.
+
+## Migration history
+
+GitHub Actions is the sole CI/CD system for APEX Load; Jenkins, Azure Pipelines
+templates, and dormant copy-to-activate deployment templates were removed when
+the active workflows replaced them. The cutover is complete only after observed
+parity, not merely after workflow files merge:
+
+1. Establish a clean `main` baseline and run the authoritative `CI` workflow on
+   five representative documentation, Go, dashboard, deployment, and protocol
+   changes. Resolve flakes before enforcement.
+2. Configure the `main` ruleset and merge queue to require only `CI / Required`
+   (a stable aggregate that avoids branch-protection drift). Keep the default
+   `GITHUB_TOKEN` read-only.
+3. Publish a signed `v1.0.0-rc.1`, then invoke the canonical
+   `owner/repository/.github/actions/apexload-run@v1.0.0-rc.1` from a separate
+   fixture repository with no APEX source and no Go toolchain.
+4. Complete GitHub.com and GHES staging release, controller-backed execution,
+   deployment, evidence, and rollback drills
+   ([GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md](GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md)).
+5. Publish the signed stable release, move the protected signed `v1` action tag,
+   and activate production environment reviewers and tag restrictions.
+6. Confirm no workflow, documentation example, or deployment path invokes
+   Jenkins or Azure Pipelines.
+
+Trust rules that survive the cutover: fork pull requests are untrusted and run
+only `fork-static` (patch-whitespace and JSON/DSL syntax checks using
+runner-provided `git` and `jq`; no checked-out scripts, binaries, tests, or
+source), all full CI lanes must be skipped, and `CI / Required` verifies that
+exact success/skipped contract. Same-repository pull requests, including
+Dependabot, get full CI. GitHub.com uses only the hard-coded ephemeral
+`ubuntu-24.04` runner; GHES requires a dedicated ephemeral pool labelled
+`apexload-ci-unprivileged` and never falls back to a trusted runner. Trusted
+self-hosted runner groups are restricted at the organization/enterprise layer to
+selected workflows pinned to protected refs; controller-backed performance gates
+need a trusted same-repository ref or a protected manual workflow with
+independent approval; `pull_request_target` is prohibited for any workflow that
+checks out or executes repository content. Required reviewers, prevent-self-review,
+protected-tag deployment restrictions, OIDC federated credentials, GitHub App
+permissions, rulesets, and KMS/HSM identities live outside Git and must be
+configured and audited by administrators before production activation.

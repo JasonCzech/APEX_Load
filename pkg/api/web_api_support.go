@@ -219,12 +219,12 @@ func webAPIStatusCounts(matrix []webAPIExecutionSupportEntry) map[string]int {
 func webAPIBenchmarkEnvelopes() []webAPIBenchmarkEnvelope {
 	browserEnvelope := browserDiagnosticCanaryEnvelope()
 	envelopes := []webAPIBenchmarkEnvelope{
-		{Protocol: "http", RecommendedVUsers: 10000, Envelope: "10k VUsers/generator on 4 vCPU / 8 GB", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md", Notes: "Primary density load protocol."},
-		{Protocol: "grpc", RecommendedVUsers: 12000, Envelope: "12k gRPC VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
-		{Protocol: "websocket", RecommendedVUsers: 6000, Envelope: "6k socket VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
-		{Protocol: "soap", RecommendedVUsers: 5000, Envelope: "5k SOAP VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
-		{Protocol: "java_http", RecommendedVUsers: 7000, Envelope: "7k Java-over-HTTP VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
-		{Protocol: "jms-solace", RecommendedVUsers: 3000, Envelope: "3k JMS VUsers/generator", CalibrationSource: "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md"},
+		{Protocol: "http", RecommendedVUsers: 10000, Envelope: "10k VUsers/generator on 4 vCPU / 8 GB", CalibrationSource: "docs/ENTERPRISE_FLEET_AND_CAPACITY.md", Notes: "Primary density load protocol."},
+		{Protocol: "grpc", RecommendedVUsers: 12000, Envelope: "12k gRPC VUsers/generator", CalibrationSource: "docs/ENTERPRISE_FLEET_AND_CAPACITY.md"},
+		{Protocol: "websocket", RecommendedVUsers: 6000, Envelope: "6k socket VUsers/generator", CalibrationSource: "docs/ENTERPRISE_FLEET_AND_CAPACITY.md"},
+		{Protocol: "soap", RecommendedVUsers: 5000, Envelope: "5k SOAP VUsers/generator", CalibrationSource: "docs/ENTERPRISE_FLEET_AND_CAPACITY.md"},
+		{Protocol: "java_http", RecommendedVUsers: 7000, Envelope: "7k Java-over-HTTP VUsers/generator", CalibrationSource: "docs/ENTERPRISE_FLEET_AND_CAPACITY.md"},
+		{Protocol: "jms-solace", RecommendedVUsers: 3000, Envelope: "3k JMS VUsers/generator", CalibrationSource: "docs/ENTERPRISE_FLEET_AND_CAPACITY.md"},
 		{
 			Protocol:          "browser",
 			RecommendedVUsers: browserEnvelope.RecommendedCanaryVUsersPerGenerator,

@@ -739,7 +739,7 @@ func protocolDensityEnvelope(protocol string) ProtocolDensityEnvelope {
 
 func protocolDensityEnvelopeWithBenchmark(envelope ProtocolDensityEnvelope, profile string) ProtocolDensityEnvelope {
 	envelope.BenchmarkProfile = profile
-	envelope.BenchmarkEvidence = "docs/ENTERPRISE_AUTOSCALING_SIGNALS.md#protocol-density-envelopes"
+	envelope.BenchmarkEvidence = "docs/ENTERPRISE_FLEET_AND_CAPACITY.md#protocol-density-envelopes"
 	envelope.CalibrationSource = "apexload_benchmark_catalog"
 	envelope.CalibratedAt = "2026-05-18"
 	return envelope

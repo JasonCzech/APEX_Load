@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-// Tier-0 journey step S1 (docs/qa/TIER0_JOURNEY.md): authenticate in the
+// Tier-0 journey step S1 (docs/qa/E2E_SUITES.md): authenticate in the
 // explicitly selected E2E mode, land on Dashboard, and prove the live shell
 // exposes the navigation granted to the default dev-admin preview.
 test('lands in the explicit dev-admin workspace with a live connection', async ({ page, request }) => {

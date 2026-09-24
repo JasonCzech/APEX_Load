@@ -134,7 +134,7 @@ compiled — otherwise that group's VUsers retire mid-run while the rest of the
 scenario keeps loading, which is the same precedence LoadRunner Controller
 applies. Set `iterations` on the scenario group or in scenario/group
 `runtime_settings` to pin a fixed count; see
-[ENTERPRISE_LOAD_MODEL_CONTRACT.md](ENTERPRISE_LOAD_MODEL_CONTRACT.md#schedule-authority-over-script-iteration-caps).
+[ENTERPRISE_CONTRACTS.md](ENTERPRISE_CONTRACTS.md#schedule-authority-over-script-iteration-caps).
 
 `block_scheduling` and `action_sequence` are migration evidence, not current
 execution controls. An executable migration policy should include

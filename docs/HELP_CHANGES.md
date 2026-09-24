@@ -26,6 +26,16 @@ This documentation ships with the dashboard build shown below each article. It d
 - Preserved the existing General, Quick Start, Authentication, MCP, Swagger and Repository Guide URLs as navigation aliases.
 - Added the import fixture matrix evidence to [Capabilities & limitations](HELP_CAPABILITIES.md): canonical Bruno, real Kafka/Solace round trips, enterprise execution constraints, the Solace authentication correction, and the four remaining provider/customer validation gaps.
 
+## June 25, 2026 scenario schedule timezone behavior change
+
+A scenario schedule's cron expression is now evaluated in the schedule's declared `timezone` instead of UTC. Previously a `0 9 * * *` schedule in `America/Chicago` fired at 09:00 UTC (03:00/04:00 local); the timezone was honored only for blackout, maintenance and availability windows.
+
+- `next_run_at` is still stored in UTC but now corresponds to the correct local wall-clock time.
+- DST is handled: a time that does not exist on a spring-forward day (for example `30 2 * * *` America/Chicago on the second Sunday of March) is skipped to the next valid day; on a fall-back day the earliest matching instant wins. An empty or unparseable `timezone` evaluates in UTC.
+- POSIX day-of-month / day-of-week semantics are fixed: when both fields are restricted, a run fires when either matches (`0 9 15 * 1` fires at 09:00 on the 15th or any Monday).
+- Operator impact: existing schedules with a non-UTC timezone shift from their old UTC time to their declared local time. No data migration is needed. A schedule's already-stored `next_run_at` is used for its first post-upgrade firing; edit and re-save the schedule to recompute immediately. UTC schedules are unaffected.
+- The run calendar (Monitoring, Schedules) renders event times in each event's declared timezone with a short zone label instead of the browser's local zone.
+
 This is a documentation change log, not an exhaustive product release history. Your deployment's release notes remain the source for upgrade-specific changes.
 
 ## Keeping guidance current

@@ -138,7 +138,7 @@ Bruno collections are importable and executable through the version-pinned Bruno
 compatibility runner. Execution is disabled until the runner and project egress policy are
 configured; it does not share the high-density native HTTP envelope.
 
-The Web/API support endpoint mirrors the protocol density envelopes in `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md`. These are design/planning targets, not measured benchmark results.
+The Web/API support endpoint mirrors the protocol density envelopes in `docs/ENTERPRISE_FLEET_AND_CAPACITY.md`. These are design/planning targets, not measured benchmark results.
 
 | Protocol | Default envelope |
 | --- | ---: |
@@ -190,7 +190,7 @@ The sample pack is intentionally small and reviewable. It exists to let evaluato
 | W1.1 Web/API execution support matrix | Complete | `GET /api/v1/scripts/web-api/support-matrix`, `pkg/api/web_api_support.go` |
 | W1.2 OpenAPI import/authoring review | Complete for backend import/review foundation | `POST /api/v1/scripts/import/openapi`, `pkg/convert/openapi` |
 | W1.3 WSDL-assisted SOAP authoring | Complete for backend import/review foundation | `POST /api/v1/scripts/import/wsdl`, `pkg/convert/wsdl` |
-| W1.4 Benchmark-calibrated density envelopes | Complete for code-owned publication of existing envelopes | Support endpoint plus `docs/ENTERPRISE_AUTOSCALING_SIGNALS.md` |
+| W1.4 Benchmark-calibrated density envelopes | Complete for code-owned publication of existing envelopes | Support endpoint plus `docs/ENTERPRISE_FLEET_AND_CAPACITY.md` |
 | W1.5 Execution smoke fixtures | Complete for sample pack, archive-signal fixture contract, and import/API tests; live archived-report publication remains benchmark evidence | `examples/web-api`, converter/API tests |
 | W1.6 DevWeb construct support matrix | Complete | `GET /api/v1/scripts/import/devweb/support-matrix`, `pkg/convert/devweb/support.go` |
 | W1.7 Protocol-specific diagnostics | Complete for code-owned support publication using existing live/archive signals | Support endpoint diagnostics plus protocol archive implementations |

@@ -1,7 +1,7 @@
 import { type APIRequestContext, type APIResponse } from '@playwright/test'
 
 // Seeds the workspace hierarchy a Tier-0 journey needs: Domain -> Project ->
-// Application -> Release. See docs/qa/TIER0_JOURNEY.md step S2.
+// Application -> Release. See docs/qa/E2E_SUITES.md step S2.
 //
 // It is built through the API rather than by driving the UI, for the same
 // reason liveRun.ts seeds runs through the API: a spec that has to click its
