@@ -35,4 +35,4 @@ The implementation review fixed duplicate tab activation, a repeated-delete race
 
 ## Evidence
 
-The `after-*.jpg` captures in this directory record rendered verification. Matching reference/implementation images were opened together for Notes, project creation, dashboard, script library/editor, Monitoring, schedules, Repository, API Guide, Command Center and Settings. See the application-wide section in the root `design-qa.md` for comparison findings and verification limits.
+The `after-*.jpg` captures in this directory record rendered verification. Matching reference/implementation images were opened together for Notes, project creation, dashboard, script library/editor, Monitoring, schedules, Repository, API Guide, Command Center and Settings. See the application-wide section in [`design-qa.md`](../design-qa.md) for comparison findings and verification limits.

@@ -1,5 +1,7 @@
 # PT Analysis Dashboard: Native Parquet Import Plan
 
+Status: Proposed (Roadmap) — no DuckDB/Arrow dependency exists in go.mod yet.
+
 ## Recommendation
 
 Support native Parquet import, but do not analyze arbitrary Parquet schemas directly.

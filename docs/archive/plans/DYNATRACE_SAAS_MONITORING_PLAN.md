@@ -1,5 +1,7 @@
 # Optional Dynatrace SaaS In-Flight Monitoring
 
+Status: Implemented (archived 2026-09-24). Current behavior is documented in [DYNATRACE_SAAS_MONITORING.md](../../DYNATRACE_SAAS_MONITORING.md); this plan is retained as design history.
+
 ## Summary
 
 Add a project-scoped Dynatrace SaaS monitoring connection that is inert until configured. Editors can opt an individual test into capture; the controller then reads selected Dynatrace metrics, active problems, and optional Grail log evidence during the run without adding work to the VUser path.

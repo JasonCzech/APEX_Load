@@ -14,8 +14,6 @@ kept for planning or audit context only.
 | [HELP_CAPABILITIES.md](HELP_CAPABILITIES.md) | Current | In-app help: capabilities |
 | [HELP_CHANGES.md](HELP_CHANGES.md) | Current | In-app help: changes |
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |
-| [JMETER_MESSAGING_FIDELITY.md](JMETER_MESSAGING_FIDELITY.md) | In progress | Kafka/Event Hubs import preservation, pinned compatibility evidence, and remaining execution gates |
-| [JMETER_IMPORT_FIDELITY.md](JMETER_IMPORT_FIDELITY.md) | Current | JMeter review repairs, finite iteration execution, native CSV exports, and regression coverage |
 | [HELP_GETTING_STARTED.md](HELP_GETTING_STARTED.md) | Current | In-app help: getting started |
 | [HELP_SUPPORT.md](HELP_SUPPORT.md) | Current | In-app help: support |
 | [HELP_TROUBLESHOOTING.md](HELP_TROUBLESHOOTING.md) | Current | In-app help: troubleshooting |
@@ -24,8 +22,8 @@ kept for planning or audit context only.
 | [DEVELOPMENT.md](../DEVELOPMENT.md) | Current | Developer setup, package guide, testing policy |
 | [QUICK_REFERENCE.md](../QUICK_REFERENCE.md) | Current | Commands, DSL examples, common fixes |
 | [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) | Current | Operational troubleshooting |
-| [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application (rendered in-app as API Guide → User Guide) |
-| [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator guide: users, RBAC, fleet, settings, governance (rendered in-app as API Guide → Admin Guide) |
+| [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application (rendered in the in-app Help area: User Guide) |
+| [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator guide: users, RBAC, fleet, settings, governance (rendered in the in-app Help area: Administration, for administrators) |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API workflows for operators and automation |
 | [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) | Current | Script source-to-run lifecycle |
 | [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md) | Current | Browser canaries, mobile emulation, client metrics, benchmark evidence |
@@ -33,7 +31,7 @@ kept for planning or audit context only.
 | [AUTH_RBAC_OPERATIONS_RUNBOOK.md](AUTH_RBAC_OPERATIONS_RUNBOOK.md) | Current | Auth/RBAC operations |
 | [GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md](GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md) | Current | Signed releases, protected deployments, and rollback operations |
 | [GHES_GITHUB_ACTIONS_COMPATIBILITY.md](GHES_GITHUB_ACTIONS_COMPATIBILITY.md) | Current | GHES capability matrix, mirroring, trust, and qualification |
-| [GITHUB_ACTIONS_CUTOVER.md](GITHUB_ACTIONS_CUTOVER.md) | Current | GitHub Actions enforcement and Jenkins retirement sequence |
+| [GITHUB_ACTIONS_CUTOVER.md](GITHUB_ACTIONS_CUTOVER.md) | Current | GitHub Actions is the sole CI/CD system; observed-parity cutover steps, required-check enforcement, fork-PR trust rules, and runner policy (Jenkins and Azure Pipelines templates are already removed) |
 | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) | Current | Enterprise storage/cache/archive operations |
 | [PROMETHEUS_METRICS.md](PROMETHEUS_METRICS.md) | Current | Prometheus scrape metrics |
 | [DYNATRACE_WEBHOOKS.md](DYNATRACE_WEBHOOKS.md) | Current | Dynatrace event webhook setup |
@@ -49,6 +47,14 @@ These focused references are also current. They are kept separate from the prima
 
 | Document | Purpose |
 | --- | --- |
+| [JMETER_MESSAGING_FIDELITY.md](JMETER_MESSAGING_FIDELITY.md) | Kafka/Event Hubs import preservation, pinned compatibility evidence, and remaining execution gates (status: in progress) |
+| [JMETER_IMPORT_FIDELITY.md](JMETER_IMPORT_FIDELITY.md) | JMeter review repairs, finite iteration execution, native CSV exports, and regression coverage (status: current) |
+| [JMETER_SOURCE_PLAN_REPAIRS.md](JMETER_SOURCE_PLAN_REPAIRS.md) | JMeter source-plan execution (one generator, one source-engine session) and reviewed batch repairs |
+| [LOADRUNNER_IMPORT_REPAIR.md](LOADRUNNER_IMPORT_REPAIR.md) | LoadRunner import fidelity and guided repair; re-import semantics |
+| [NATIVE_ARCHIVE_COMPATIBILITY.md](NATIVE_ARCHIVE_COMPATIBILITY.md) | Native archive runtime-setting mappings, PAC proxy mode, and re-import behavior (review: [reviews/NATIVE_ARCHIVE_COMPATIBILITY_REVIEW.md](reviews/NATIVE_ARCHIVE_COMPATIBILITY_REVIEW.md)) |
+| [LIBRARY_ASSIGNMENTS.md](LIBRARY_ASSIGNMENTS.md) | Assigning scripts and scenarios to applications and releases from the libraries |
+| [DYNATRACE_SAAS_MONITORING.md](DYNATRACE_SAAS_MONITORING.md) | Optional project-scoped Dynatrace SaaS in-flight monitoring (metrics, problems, Grail logs) |
+| [ELK_MONITORING.md](ELK_MONITORING.md) | Optional project-scoped Elastic (ELK) in-flight monitoring |
 | [JAVA_VUSER_RUNTIME.md](JAVA_VUSER_RUNTIME.md) | Governed Java Vuser runner contract and operations |
 | [JMS_SIDECAR.md](JMS_SIDECAR.md) | JMS Solace external sidecar bridge: operator environment, transports, and containment |
 | [ACCESS_SURFACES.md](ACCESS_SURFACES.md) | Supported hosted, desktop, and CLI access surfaces |
@@ -115,15 +121,13 @@ not the source of truth for current API or DSL contracts.
 | [BROWSER_REPLAY_HAR_CAPTURE_PLAN.md](BROWSER_REPLAY_HAR_CAPTURE_PLAN.md) | Roadmap/detail |
 | [KAFKA_MESSAGING_AND_ASYNCAPI_PLAN.md](KAFKA_MESSAGING_AND_ASYNCAPI_PLAN.md) | Roadmap/detail |
 | [MESSAGING_COVERAGE_AND_PLAN.md](MESSAGING_COVERAGE_AND_PLAN.md) | Roadmap/detail |
-| [PROTOCOL_EXTENSION_PLAN.md](PROTOCOL_EXTENSION_PLAN.md) | Roadmap/detail |
+| [PROTOCOL_EXTENSION_PLAN.md](PROTOCOL_EXTENSION_PLAN.md) | Implemented (SOAP/java_http exist); Phase 0 decisions retained for record |
 | [PROTOCOL_TELEMETRY_PARITY_PLAN.md](PROTOCOL_TELEMETRY_PARITY_PLAN.md) | Roadmap/detail |
 | [AUTH_RBAC_BACKLOG.md](AUTH_RBAC_BACKLOG.md) | Roadmap/detail |
-| [AUTH_RBAC_FOLLOW_UP_TICKETS.md](AUTH_RBAC_FOLLOW_UP_TICKETS.md) | Roadmap/detail |
-| [ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md](ENTERPRISE_DATA_PLATFORM_UPGRADE_PLAN.md) | Roadmap/detail |
 | [SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md](SCRIPT_AUTHORING_CONSOLIDATION_ROADMAP.md) | Roadmap/detail |
 | [RUNTIME_TELEMETRY_SLA_PLAN.md](RUNTIME_TELEMETRY_SLA_PLAN.md) | Roadmap/detail |
-| [RUN_REPORT_IMPLEMENTATION_PLAN.md](RUN_REPORT_IMPLEMENTATION_PLAN.md) | Proposed implementation plan |
-| [SCRIPT_EDITOR_INTERACTION_MODEL.md](SCRIPT_EDITOR_INTERACTION_MODEL.md) | Approved design direction and phased plan |
+| [SCRIPT_EDITOR_INTERACTION_MODEL.md](SCRIPT_EDITOR_INTERACTION_MODEL.md) | Implemented; retained as the historical design record and decision memo |
+| [PT_ANALYSIS_PARQUET_IMPORT_PLAN.md](PT_ANALYSIS_PARQUET_IMPORT_PLAN.md) | Proposed (Roadmap): native Parquet import for PT Analysis; no DuckDB/Arrow dependency in go.mod yet |
 | [CLOUDTEST_PARITY_PROGRAM.md](CLOUDTEST_PARITY_PROGRAM.md) | CloudTest outcome-parity evidence ledger, implementation sequencing, and migration gates |
 | [qa/TEST_PROGRAM.md](qa/TEST_PROGRAM.md) | Nine-month progressive test and infrastructure-readiness program; scope of record |
 | [qa/STATUS.md](qa/STATUS.md) | Live milestone state and headline metrics for the test program (tracker-enforced) |
@@ -134,7 +138,11 @@ not the source of truth for current API or DSL contracts.
 
 ## Historical
 
-Point-in-time reviews live under `docs/reviews/`; older reviews are archived under
-[archive/reviews](archive/reviews/README.md). Both locations are preserved for
-audit context and are excluded from current-document freshness checks. They
-should not be treated as current product documentation.
+Historical material is preserved for audit context, is excluded from current-document freshness checks, and should not be treated as current product documentation.
+
+| Location | Contents |
+| --- | --- |
+| [reviews/README.md](reviews/README.md) | Point-in-time reviews still referenced (status table with live trackers) |
+| [archive/reviews/README.md](archive/reviews/README.md) | Older, fully remediated reviews |
+| [archive/README.md](archive/README.md) | Archived implemented plans (`archive/plans/`), session handoffs (`archive/handoffs/`) and the review archive |
+| [qa/reviews/README.md](qa/reviews/README.md) | Dated UX/QA review folders with captured evidence |

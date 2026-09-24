@@ -1,5 +1,7 @@
 # Native compatibility code review
 
+Status: Historical review; all listed findings were fixed. Companion to [NATIVE_ARCHIVE_COMPATIBILITY.md](../NATIVE_ARCHIVE_COMPATIBILITY.md).
+
 Reviewed the compatibility implementation against the saved pre-implementation working-tree baseline. Existing unrelated edits were retained. Review covered HTTP refresh/read/content-check paths, PAC isolation and network handling, source decoding, logging, callback lifecycle, browser configuration, and configuration/override plumbing.
 
 ## Findings fixed

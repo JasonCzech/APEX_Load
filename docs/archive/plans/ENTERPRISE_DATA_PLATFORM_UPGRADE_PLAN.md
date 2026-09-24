@@ -1,5 +1,7 @@
 # Enterprise Data Platform Upgrade Plan
 
+Status: Implemented (archived 2026-09-24). All phases shipped; see [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](../../ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) for current operations.
+
 ## Summary
 
 Upgrade APEX Load's production data platform from the current local-first SQLite/filesystem/in-memory model to an enterprise-ready split:

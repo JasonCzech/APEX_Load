@@ -19,7 +19,7 @@ The implementation review additionally fixed missing-data sparklines, baseline c
 ## Verification
 
 - `go test ./...`: passed on the final backend changes (`/tmp/report-go-complete.log`).
-- Dashboard unit, type, lint, embedded build and browser workflow checks are recorded in the final QA entry in the project-root `design-qa.md`.
+- Dashboard unit, type, lint, embedded build and browser workflow checks are recorded in the final QA entry in [`design-qa.md`](../design-qa.md).
 - Browser evidence: `09-implemented-summary.jpg`, `10-implemented-preview.jpg`, `11-implemented-no-samples.jpg`, `12-implemented-diagnostics.jpg`, `13-implemented-evidence.jpg`.
 - Existing unrelated workspace edits were retained.
 

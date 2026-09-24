@@ -1,5 +1,7 @@
 # APEX Load Performance Baselines - 2026-07-06
 
+Status: Historical (archived 2026-09-24).
+
 Baseline captured before applying the staged performance changes in `PERF_REVIEW_2026-07-06.md`.
 
 ## Local Controller Endpoint Payloads

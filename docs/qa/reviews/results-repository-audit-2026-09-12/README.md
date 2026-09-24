@@ -31,7 +31,7 @@ The UI's promise and the operation's scope disagree. This is particularly conseq
 
 **Acceptance:** With 27 matches and page size 10, the header checkbox selects 10. Selecting all matches requires a separate action. Bulk operations use exactly that selection; changes of page or filter cannot silently broaden it.
 
-**Implementation evidence:** [selection model](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ApplicationRepositoryPage.tsx:541), [selection handler](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ApplicationRepositoryPage.tsx:771), and [global pagination hiding rows](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/TablePaginationManager.tsx:80). The repository model treats all filtered rows as visible while the pagination manager hides some rows afterward.
+**Implementation evidence:** [selection model](../../../../dashboard/src/components/ApplicationRepositoryPage.tsx#L541), [selection handler](../../../../dashboard/src/components/ApplicationRepositoryPage.tsx#L771), and [global pagination hiding rows](../../../../dashboard/src/components/TablePaginationManager.tsx#L80). The repository model treats all filtered rows as visible while the pagination manager hides some rows afterward.
 
 ### R2 — Medium: Repository discovery does not consistently lead to asset inspection
 
@@ -43,7 +43,7 @@ The UI's promise and the operation's scope disagree. This is particularly conseq
 
 **Acceptance:** A pool found in CSI opens that pool in CSI; a release opens its structure/detail; a scenario can be inspected before creating a test. Returning restores the originating catalog context.
 
-**Implementation evidence:** [row actions](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ApplicationRepositoryPage.tsx:1033). This is a workflow gap on Repository, not a claim that data editing or scenario editing is absent elsewhere in the product.
+**Implementation evidence:** [row actions](../../../../dashboard/src/components/ApplicationRepositoryPage.tsx#L1033). This is a workflow gap on Repository, not a claim that data editing or scenario editing is absent elsewhere in the product.
 
 ### R3 — Medium: Results uses different duration meanings without sufficient labeling
 
@@ -55,7 +55,7 @@ These can be different legitimate measurements, but the library's single Duratio
 
 **Acceptance:** Both reviewed runs display mutually consistent, explicitly named durations. Sorting by observed duration handles missing observations explicitly.
 
-**Implementation evidence:** [duration calculation and fallback](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ResultsPage.tsx:120), [row construction](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ResultsPage.tsx:746), and [execution facts](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/runReport/executionPresentation.ts:18).
+**Implementation evidence:** [duration calculation and fallback](../../../../dashboard/src/components/ResultsPage.tsx#L120), [row construction](../../../../dashboard/src/components/ResultsPage.tsx#L746), and [execution facts](../../../../dashboard/src/components/runReport/executionPresentation.ts#L18).
 
 ### R4 — Medium: Comparison discovery needs a useful unavailable state and full history access
 
@@ -63,7 +63,7 @@ These can be different legitimate measurements, but the library's single Duratio
 
 **Recommendation:** Explain the eligibility rule and current scope beside the picker. Show “No other archived runs in this release,” provide a path to eligible history, and distinguish no candidates from loading and request failure. Keep manual IDs as an advanced option. A completed comparison should identify its baseline, population, load differences, evidence limitations, and selected time basis.
 
-**Additional code-supported completeness risk:** The detail view requests `limit: 100` once and filters eligible baselines afterward. Older qualifying runs can be omitted; this was not reproduced in the seven-run dataset. [Baseline loading](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/RunReportPage.tsx:139).
+**Additional code-supported completeness risk:** The detail view requests `limit: 100` once and filters eligible baselines afterward. Older qualifying runs can be omitted; this was not reproduced in the seven-run dataset. [Baseline loading](../../../../dashboard/src/components/RunReportPage.tsx#L139).
 
 **Acceptance:** Empty eligibility is explained; an eligible older run remains discoverable beyond the first response page; comparison cannot present unsupported populations as comparable.
 
@@ -73,7 +73,7 @@ These can be different legitimate measurements, but the library's single Duratio
 
 **Recommendation:** Preserve search, filters, sort, page, and scroll position in route or per-workspace navigation state. Add a clear return-to-repository action where the entry originated in Repository.
 
-**Acceptance:** Find a script on a filtered page, open it, then return: the same query, scope, page, and row remain visible. [Current local filter/sort state](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ApplicationRepositoryPage.tsx:280).
+**Acceptance:** Find a script on a filtered page, open it, then return: the same query, scope, page, and row remain visible. [Current local filter/sort state](../../../../dashboard/src/components/ApplicationRepositoryPage.tsx#L280).
 
 ### R6 — Medium: Repository scope and counts are difficult to reconcile
 
@@ -83,7 +83,7 @@ Counts may intentionally represent different populations. The problem is that th
 
 **Recommendation:** State the complete catalog scope, including application restrictions, and use “1 matching / 5 total” when a filter changes the visible count. Either align Structure with the catalog scope or clearly label it as the full domain structure. Present one coherent scope control.
 
-**Implementation evidence:** [application filtering for release rows](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/repositoryCatalogUtils.ts:216) and [project-only scope toggles](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/dashboard/src/components/ApplicationRepositoryPage.tsx:1098).
+**Implementation evidence:** [application filtering for release rows](../../../../dashboard/src/components/repositoryCatalogUtils.ts#L216) and [project-only scope toggles](../../../../dashboard/src/components/ApplicationRepositoryPage.tsx#L1098).
 
 ### R7 — Medium: Readiness labels need a precise meaning
 
@@ -135,78 +135,78 @@ Implement in this order: **R1 selection correctness; R3 duration semantics; R2/R
 
 Capture 01: scoped run list, headline metrics, reference keys and archive states.
 
-![01 Results library](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/01-results-library.png)
+![01 Results library](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/01-results-library.png)
 
 Capture 02: expanded release/status/archive filters. The selected release is counted as an active filter.
 
-![02 Results filters](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/02-results-filters.png)
+![02 Results filters](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/02-results-filters.png)
 
 Capture 16: empty-search recovery text. Clearing the search restored seven rows.
 
-![16 Results empty search](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/16-results-empty-search.png)
+![16 Results empty search](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/16-results-empty-search.png)
 
 ### Step 2 — Outcome and missing archives · Strong explanation, inconsistent durations
 
 Capture 03: the archived report separates acceptance, workload and evidence coverage. Compare its duration with capture 01.
 
-![03 Result summary](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/03-result-summary.png)
+![03 Result summary](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/03-result-summary.png)
 
 Capture 08: unavailable archive with retained-record investigation paths; observed elapsed is explicitly not recorded.
 
-![08 Unavailable archive](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/08-unavailable-archive.png)
+![08 Unavailable archive](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/08-unavailable-archive.png)
 
 ### Step 3 — Performance and diagnosis · Strong utility, accessibility gaps
 
 Capture 04: synchronized timeline at the observed narrow panel size. Range handles need stronger accessible naming.
 
-![04 Result performance](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/04-result-performance.png)
+![04 Result performance](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/04-result-performance.png)
 
 Capture 05: Errors only correctly yields two retained failures for the selected action.
 
-![05 Result diagnostics](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/05-result-diagnostics.png)
+![05 Result diagnostics](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/05-result-diagnostics.png)
 
 Capture 06: Inspect exposes network timing and request/response evidence, with honest missing-body states.
 
-![06 Error inspection](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/06-error-inspection.png)
+![06 Error inspection](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/06-error-inspection.png)
 
 ### Step 4 — Compare and export · Broad functionality, unhelpful empty picker
 
 Capture 07: audience-specific export choices and the baseline picker with no eligible choices. Export generation and comparison calculations remain unverified.
 
-![07 Comparison and export](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/07-comparison-export.png)
+![07 Comparison and export](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/07-comparison-export.png)
 
 ### Step 5 — Repository and data handoff · Useful inventory, incomplete navigation
 
 Capture 09: all-project catalog with mixed asset types and data pools owned by other projects.
 
-![09 Repository catalog](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/09-repository-catalog.png)
+![09 Repository catalog](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/09-repository-catalog.png)
 
 Capture 10: generic Shared test data link opens ACC's pool manager, with no selected pool and no pools in ACC.
 
-![10 Data handoff](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/10-repository-data-handoff.png)
+![10 Data handoff](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/10-repository-data-handoff.png)
 
 ### Step 6 — Bulk selection · High-priority defect
 
 Capture 11: 27 selected while only 1–10 of 27 are on the page. Selection was cleared immediately after review.
 
-![11 Repository bulk selection](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/11-repository-bulk-selection.png)
+![11 Repository bulk selection](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/11-repository-bulk-selection.png)
 
 ### Step 7 — Structure · Functional controls, inconsistent scope
 
 Capture 12: full structure exposes three ACC releases although the catalog's Releases badge reads one. Creation controls were inspected without submitting.
 
-![12 Repository structure](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/12-repository-structure.png)
+![12 Repository structure](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/12-repository-structure.png)
 
 ### Step 8 — Search, edit, return · Working handoff, lost context
 
 Capture 13: one matching script; total badges remain unchanged.
 
-![13 Repository script search](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/13-repository-script-search.png)
+![13 Repository script search](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/13-repository-script-search.png)
 
 Capture 14: Edit opens the correct script. Readiness evidence is more qualified than the repository's READY label.
 
-![14 Script handoff](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/14-script-handoff.png)
+![14 Script handoff](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/14-script-handoff.png)
 
 Capture 15: Browser Back returns to Scripts, but clears the query and shows all five scripts.
 
-![15 Repository return state](/Users/jasonczech/Documents/GitHub/Project_Stormrunner/docs/qa/reviews/results-repository-audit-2026-09-12/15-repository-return-state.png)
+![15 Repository return state](../../../../docs/qa/reviews/results-repository-audit-2026-09-12/15-repository-return-state.png)

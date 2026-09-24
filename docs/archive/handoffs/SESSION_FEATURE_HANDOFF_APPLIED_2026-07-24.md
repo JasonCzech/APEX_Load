@@ -1,5 +1,7 @@
 # Applied Changes Report — 2026-07-24
 
+Status: Historical (archived 2026-09-24). Point-in-time record of applied working-tree changes; not current documentation.
+
 Applied by: Claude Code · Parent baseline commit: `7bb80c469` (branch `main`)
 
 Two bodies of work were landed: the **LOCAL_CHANGES patch** (87 sections) and the **4 documented

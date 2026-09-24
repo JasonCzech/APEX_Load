@@ -2,7 +2,7 @@
 
 > Answer-first, single-page results viewer for **completed** load-test runs, replacing the 8-tab `TestExecution` archive path and the ~2,100-line `TestExecutionArchive.tsx` scroll. Conceptual mockup and UX rationale precede this doc; this is the engineering plan.
 >
-> **Status:** Proposed · **Authored:** 2026-07-06 · **Method:** multi-agent codebase investigation (7 parallel deep-reads) → drafted plan → adversarial verification of 12 load-bearing assumptions against source → synthesis. All assumptions CONFIRMED except A10 (corrected). Behind feature flag `apexload.featureFlags.runReport`; live command center untouched.
+> **Status:** Implemented (archived 2026-09-24) · **Authored:** 2026-07-06 · **Method:** multi-agent codebase investigation (7 parallel deep-reads) → drafted plan → adversarial verification of 12 load-bearing assumptions against source → synthesis. All assumptions CONFIRMED except A10 (corrected). Originally behind feature flag `apexload.featureFlags.runReport`; RunReportPage and related components now exist in the dashboard.
 
 ---
 
