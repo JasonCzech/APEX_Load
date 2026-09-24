@@ -128,7 +128,7 @@ values there. Writable providers (an encrypted database keyed by a wrapping key,
 Azure Key Vault) need controller configuration and, for Key Vault, the Secrets Officer
 role. Protect and back up wrapping keys; losing them makes encrypted values
 unreadable. The environment variables, provider table, and migration steps are
-maintained in [Project Secrets](PROJECT_SECRETS.md).
+maintained in [Project Secrets](ADMIN_USER_GUIDE.md#project-secrets).
 
 ## Activity, Audit, And Access Review
 
@@ -296,12 +296,134 @@ operations runbook. These live alongside this guide in the project documentation
 Start with [Choose an installation](../deployments/README.md) for the environment-specific setup steps.
 
 - [Identity and access operations](AUTH_RBAC_OPERATIONS_RUNBOOK.md)
-- [Backup, restore, retention and recovery](ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md)
-- [Deployment and HA architecture](ENTERPRISE_PLATFORM_ARCHITECTURE_RUNBOOK.md)
-- [Cluster connections](CLUSTER_CONNECTIONS.md)
-- [Generator restart controls](KUBERNETES_RESTART_CONTROLS.md)
-- [SQLite to PostgreSQL migration](SQLITE_TO_POSTGRES_MIGRATION_GUIDE.md)
-- [Telemetry configuration](OPENTELEMETRY.md)
-- [Support escalation template](HELP_SUPPORT.md)
+- [Backup, restore, retention and recovery](ENTERPRISE_PLATFORM_RUNBOOK.md)
+- [Deployment and HA architecture](ENTERPRISE_PLATFORM_RUNBOOK.md)
+- [Cluster connections](CLUSTERS_AND_CLOUD.md#cluster-connections-host-resource-allocation)
+- [Generator restart controls](CLUSTERS_AND_CLOUD.md#kubernetes-restart-controls)
+- [SQLite to PostgreSQL migration](ENTERPRISE_PLATFORM_RUNBOOK.md#sqlite-to-postgresql-migration-guide)
+- [Telemetry configuration](OBSERVABILITY_INTEGRATIONS.md)
+- [Support escalation template](HELP_CENTER.md#build-and-run-your-first-test)
 
 For upgrades, record the current build, review the deployment release notes and storage compatibility, back up metadata and archives, verify a restore in an isolated environment, and follow your deployment's rollout/rollback procedure. Recheck identity, generator readiness and one small test after rollout. The runbooks above describe deployment-specific requirements; do not assume a database rollback is safe after a schema migration.
+
+## Script and scenario application/release assignments
+
+In the Scripts or Scenarios library, open an item's **More** menu and choose
+**Change application/releases…**. Select an application and any existing releases
+in the current project, then apply. Selecting **Unassigned (clear assignment)**
+removes both the application and releases. An application can also be assigned
+without any releases.
+
+Select several local items to use the same action in the selection toolbar.
+Bulk changes replace each item's complete assignment. The dialog previews the
+replacement, skips unchanged items, and reports individual failures. Retry only
+retries failed items. If another operator has changed an assignment, reload the
+conflicting assignment and review it before applying again.
+
+The **Assigned application/releases** column and assignment filters describe
+editable library metadata. **Run releases** describes historical run associations.
+Archived releases can remain assigned but cannot be newly assigned or selected
+for a new launch. Repository browsing includes assigned items before their first
+run and distinguishes assignments from run history.
+
+Script changes require `manage_scripts`; scenario changes require `manage_tests`.
+Assignments remain independent between a scenario and its scripts. They do not
+change script definitions, scenario groups, existing runs, or saved schedules.
+New and cloned assets begin unassigned.
+
+For a new launch, the scenario's application is suggested. If it is unassigned,
+explicitly assigned scripts suggest an application only when they agree. Assigned
+releases are labeled in the release selector. Choose a release explicitly for
+each fresh launch or new schedule, even when only one is assigned. You may choose
+another application or release; changing application clears the pending release.
+Restoring a saved draft preserves its chosen release.
+
+The replacement API uses an assignment revision to reject stale writes. See the
+[generated API specification](swagger.yaml) and
+[endpoint catalog](api-endpoint-catalog.json) for the request and response contracts.
+API and CLI execution clients retain their existing placement rules.
+
+### Validation record
+
+Point-in-time record (2026-09-19) for the folder-move and assignment feature; the full suites were not green at that time because of unrelated baseline failures.
+
+- **Feature checks passed:** SQLite assignment tests (replacement/clearing, project and release ownership, archived retention, stale revisions, concurrent editors, deletion dependencies, migration from version 9, restart persistence); PostgreSQL 16 integration tests (concurrent revision checks, release-family resolution); preservation tests (script content, scenario composition, historical runs, saved schedules, unassigned clones); API/RBAC contract tests; regenerated OpenAPI, frontend contracts, endpoint catalogs, QA contract matrix and dashboard; new dev-admin and local-auth browser workflows (persistence, bulk failure recovery, filtering, launch release selection/overrides, viewer restrictions).
+- **Baseline failures not caused by this feature:** `ux/Structure.test.tsx` toolbar filter markup; `TestExecutionCharts.interaction.test.tsx` slider; `TestDistributedExecutionBackendRunsRemoteMultiGroupEngine` timing (passes in isolation); `TestOptInSuiteInventoryIsDocumented`; `TestContainerBuildIsSelfContainedAndProfiled`; eight dev-admin browser workflows (command-center details, landing, live metrics, both run lifecycle workflows, workspace hierarchy, authoring scope/history, guided workspace setup) and two local-auth workflows (workspace sign-in/build/import journey; an authoring timeout that passed on rerun).
+- **Fixed during validation:** a launch placement hydration race (explicit operator choices are now preserved during workspace hydration and late assignment loading), and a review follow-up covering late scenario metadata overwriting an explicit application override, workspace refresh clearing an explicit schedule release, duplicate/stale release-creation submissions, a release-list read erasing a newly created release, and stale suggestion tracking after a project change. Six regression tests were added.
+- **Final results:** dashboard cycle 4,296 unit tests passing (plus the two baseline failures); 77 launch and eight shared-dialog unit tests pass; lint, type checking, embedded build and `git diff --check` pass; dev-admin profile 111 passed / eight baseline failures / three skipped; local-auth profile 36 passed / two baseline failures; SQLite, PostgreSQL, API/RBAC, generated-contract, deletion-coverage and QA-dashboard freshness checks pass.
+
+
+## Project Secrets
+
+APEX Load stores scripts with `{{secret.NAME}}` references. Secret values are
+managed separately and are never returned by the Project Secrets APIs, written
+into script JSON, archives, logs, fingerprints, or distributed script caches.
+
+### Storage providers
+
+The controller supports two writable production providers:
+
+| Provider | Configuration | Persistence |
+|---|---|---|
+| Encrypted database | Configure `APEXLOAD_WRAPPING_MASTER_KEY` (local AES key), a versioned Azure Key Vault key in `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`, or an AWS KMS key in `APEXLOAD_WRAPPING_KMS_KEY_ID`. Set at most one of the Key Vault and KMS ids; setting both is a startup error. | Encrypted value records in the configured SQLite/PostgreSQL store. |
+| Azure Key Vault | Set `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true` and `APEXLOAD_AZURE_KEY_VAULT_URL`; use workload/managed identity. | Values in Key Vault; managed logical-name metadata in the APEX Load database. |
+
+The `APEXLOAD_WRAPPING_*` key settings are shared with encrypted Bruno source
+artifacts. A writable encrypted database Project Secrets store requires one of
+them even when Bruno execution is disabled.
+
+Generate a local wrapping key with:
+
+```bash
+openssl rand -base64 32
+```
+
+Keep that key stable, backed up, and available to every controller replica.
+Losing or changing it makes existing encrypted database values unreadable.
+Inject it through a Kubernetes Secret, secret manager, or protected process
+environment; do not put production key material in values files or source
+control.
+
+For Azure Key Vault, grant the controller identity `Key Vault Secrets Officer`.
+Generators do not need write permission. The provided AKS Terraform grants the
+controller that role and retains `Key Vault Secrets User` for generators.
+
+### Import migration policy
+
+Source credential migration is controlled in the application by
+`system_settings.script_imports.allow_source_secret_migration`. It defaults to
+`false` and only a system administrator can enable it. Enabling the policy does
+not bypass project authorization: a project or system administrator must still
+explicitly select migration for an import.
+
+Imports create missing logical names only. They never replace an existing
+Project Secret. Literal `[REDACTED]` values are unrecoverable and remain
+deferred for later configuration.
+
+### Distributed execution
+
+The controller resolves only the logical names referenced by the selected
+script and sends a bounded, memory-only bundle to generators that advertise the
+secret-bundle capability. Delivery requires authenticated TLS: mTLS, or TLS
+combined with the configured gRPC bearer token.
+
+Production deployments must configure:
+
+- `APEXLOAD_GRPC_TLS_CERT`
+- `APEXLOAD_GRPC_TLS_KEY`
+- `APEXLOAD_GRPC_TLS_CA`
+- `APEXLOAD_GRPC_AUTH_TOKEN` when client authentication is not provided by mTLS
+
+The Helm, AKS, and on-prem production manifests mount TLS identities and share
+the bearer token through `apexload-data-platform`. They deliberately do not
+enable Key Vault writes in generator pods.
+
+Scripts may still be saved when the selected fleet is legacy or insecure. A
+secret-bearing launch then fails closed with provisioning guidance; secret
+values are not downgraded to plaintext transport.
+
+### Project deletion
+
+Deleting a project removes its encrypted database secret records. Azure Key
+Vault values are retained by design and the deletion response identifies the
+logical names that require administrative cleanup.

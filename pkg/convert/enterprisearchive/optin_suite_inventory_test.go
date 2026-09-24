@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// optin_suite_inventory_test.go keeps docs/OPTIN_TEST_SUITES.md honest.
+// optin_suite_inventory_test.go keeps docs/qa/TEST_PROGRAM.md honest.
 //
 // Suites excluded from `go test ./...` — by a build tag or by an environment
 // variable that gates a t.Skip — run in no automated context. That is a legitimate
@@ -25,7 +25,7 @@ import (
 // line in scripts/run-optin-suites.sh so the suite is actually runnable).
 
 const (
-	optInSuitesDocPath   = "../../../docs/OPTIN_TEST_SUITES.md"
+	optInSuitesDocPath   = "../../../docs/qa/TEST_PROGRAM.md"
 	optInSuitesRunScript = "../../../scripts/run-optin-suites.sh"
 	repoRootFromPackage  = "../../.."
 )
@@ -56,7 +56,7 @@ var envNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$`)
 var envTokenSplitter = regexp.MustCompile(`[^A-Za-z0-9_]+`)
 
 // filePathPattern strips file names out of a skip message before it is tokenized,
-// so a pointer to "docs/OPTIN_TEST_SUITES.md" is not read as an env var.
+// so a pointer to "docs/qa/TEST_PROGRAM.md" is not read as an env var.
 var filePathPattern = regexp.MustCompile(`[A-Za-z0-9_./\\-]+\.(?:md|go|sh|ya?ml|json|txt|js|ts)\b`)
 
 // skipCallPattern locates the start of a Skip/Skipf/Skipln call on any testing
@@ -248,7 +248,7 @@ func collectPositiveTags(expr constraint.Expr, negated bool, out map[string]bool
 //
 // Both spellings count: the name written literally in the message, and the name
 // passed as a format argument via a package-level constant — `SKIPF("set %s=1",
-// browserTestsEnv)` — which is the form docs/OPTIN_TEST_SUITES.md tells authors to
+// browserTestsEnv)` — which is the form docs/qa/TEST_PROGRAM.md tells authors to
 // use and the form every existing gate in this repository actually uses.
 //
 // content is masked with maskGoComments first, so a Skip call quoted inside a
@@ -481,7 +481,7 @@ const optInScannerFixture = "package sample\n" +
 // TestSkipMessageEnvVarsSeesGatesNamedByConstant is the scanner's own falsifiable
 // test. The guard used to read only the FIRST LINE of a `t.Skip*` call and only
 // accept a literal upper-case token there, so every gate written the way
-// docs/OPTIN_TEST_SUITES.md recommends — name passed as a format argument — was
+// docs/qa/TEST_PROGRAM.md recommends — name passed as a format argument — was
 // invisible, as was every `b.Skipf` on a benchmark.
 func TestSkipMessageEnvVarsSeesGatesNamedByConstant(t *testing.T) {
 	content := strings.ReplaceAll(optInScannerFixture, "SKIPCALL", "Skip")
@@ -599,7 +599,7 @@ func readOptInSuitesDoc(t *testing.T) string {
 
 // TestOptInSuiteInventoryIsDocumented is the guard: every build-tag and
 // environment-variable gate found in the repository's tests must appear in
-// docs/OPTIN_TEST_SUITES.md.
+// docs/qa/TEST_PROGRAM.md.
 func TestOptInSuiteInventoryIsDocumented(t *testing.T) {
 	inventory := collectOptInInventory(t)
 	doc := readOptInSuitesDoc(t)

@@ -18,7 +18,7 @@ const corpusEnvVar = "APEXLOAD_LR_SCRIPTS_CORPUS"
 // corpusRelocationEnvVar is the fetch script's destination override
 // (scripts/fetch-lr-scripts-corpus.sh). It is not an opt-in switch of its own, but
 // it does move the probed location, so the skip message names it and
-// docs/OPTIN_TEST_SUITES.md carries a row for it.
+// docs/qa/TEST_PROGRAM.md carries a row for it.
 const corpusRelocationEnvVar = "LR_SCRIPTS_DEST"
 
 // corpusDefaultRoots are the locations this test discovers a corpus in without an
@@ -171,7 +171,7 @@ func resolveCorpusRoot(t *testing.T) string {
 		"  A probed root counts only when its Scripts directory holds at least %d script directories\n"+
 		"  (the same bar this suite asserts), so a half-finished fetch skips here instead of failing the package.\n"+
 		"  Probed (in order): %s\n"+
-		"  See docs/OPTIN_TEST_SUITES.md.",
+		"  See docs/qa/TEST_PROGRAM.md.",
 		corpusEnvVar, corpusRelocationEnvVar, corpusMinScriptDirs, strings.Join(corpusDefaultRoots(), ", "))
 	return ""
 }

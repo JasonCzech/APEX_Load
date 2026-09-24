@@ -89,7 +89,7 @@ Errors use the same top-level shape with `ok:false`, normalized `error.code`, `e
 
 After configuring the client, restart its MCP connection and invoke a read-only system health tool. Expect an `ok: true` response and HTTP 200. Then inspect identity/effective access before using project tools. Client support and configuration formats vary; use the client's documented stdio MCP configuration with the same interpreter, script and environment values. This example is for Claude Desktop and is not a claim that every client accepts this JSON.
 
-If Python reports a missing module, confirm the client uses the virtual-environment interpreter above. For 401/403 check the controller URL, key and project roles/scopes. If a file cannot be opened, confirm its path exists on the MCP host. See [API authentication](../docs/API_USER_GUIDE.md#authentication) and [Troubleshooting](../docs/HELP_TROUBLESHOOTING.md).
+If Python reports a missing module, confirm the client uses the virtual-environment interpreter above. For 401/403 check the controller URL, key and project roles/scopes. If a file cannot be opened, confirm its path exists on the MCP host. See [API authentication](../docs/API_USER_GUIDE.md#authentication) and [Troubleshooting](../docs/HELP_CENTER.md#troubleshoot-a-run).
 
 ## Running Manually
 

@@ -5,7 +5,7 @@
 // other documentation-as-data contracts (see scripts/ and deployments/k8s/,
 // which are likewise test-only packages asserting on non-Go files, and
 // pkg/convert/enterprisearchive/optin_suite_inventory_test.go, which fails when
-// a gated suite is missing from docs/OPTIN_TEST_SUITES.md).
+// a gated suite is missing from docs/qa/TEST_PROGRAM.md).
 package qa_test
 
 import (

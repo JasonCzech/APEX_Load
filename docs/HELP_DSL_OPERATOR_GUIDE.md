@@ -2,7 +2,7 @@
 
 You already know the important work: reproduce a user journey, vary its data, correlate responses, check business outcomes, and apply a realistic workload. APEX Load expresses that journey as a structured JSON script. **DSL** means **domain-specific language**: here, a vocabulary of test actions and settings. You do not need to write Go or manage goroutines to author a test.
 
-Use this guide to understand and adapt a script. Use the [DSL action reference](DSL_ACTION_REFERENCE.md) to look up exact action fields. For a first run against a local sample service, start with [Your first test](HELP_GETTING_STARTED.md).
+Use this guide to understand and adapt a script. Use the [DSL action reference](DSL_ACTION_REFERENCE.md) to look up exact action fields. For a first run against a local sample service, start with [Your first test](HELP_CENTER.md#build-and-run-your-first-test).
 
 ## Translate familiar concepts
 
@@ -58,7 +58,7 @@ JSON uses `{ }` for an object, `[ ]` for an ordered list, and `"key": value` for
 | `actions` | Ordered actions for one iteration; the main journey. |
 | `teardown` | Ordered cleanup actions after that user's work. |
 
-The examples below are **script objects** for the editor's JSON view or a DSL file. The editor and the DSL parser accept either form: the bare script object or the same object wrapped as `{"script": {...}}`, which is how API requests such as script validation carry it (see [Your first test](HELP_GETTING_STARTED.md)). Smaller examples are explicitly labeled as fragments.
+The examples below are **script objects** for the editor's JSON view or a DSL file. The editor and the DSL parser accept either form: the bare script object or the same object wrapped as `{"script": {...}}`, which is how API requests such as script validation carry it (see [Your first test](HELP_CENTER.md#build-and-run-your-first-test)). Smaller examples are explicitly labeled as fragments.
 
 ## Walk through a complete HTTP example
 
@@ -277,7 +277,7 @@ An omitted error policy can inherit a scenario setting. Inspect the effective po
 
 This guide uses HTTP because the request/correlation/check cycle is familiar. A script selects a protocol family; engine control actions are shared, but protocol actions and assertions are not interchangeable. An HTTP script does not run page JavaScript just because it has a browser-like user agent.
 
-Use [DSL action reference](DSL_ACTION_REFERENCE.md) for all action fields and its downloadable schema, [Browser & mobile support](BROWSER_AND_MOBILE_SUPPORT.md) for browser execution, [Messaging support](MESSAGING_SUPPORT.md) for broker adapters, and [Capabilities & limitations](HELP_CAPABILITIES.md) for runtime boundaries. Authorable or importable does not always mean executable: SAP GUI has no bundled runtime, and Java VUser and Bruno require configured runners. Some messaging integrations require a real adapter instead of the default mock.
+Use [DSL action reference](DSL_ACTION_REFERENCE.md) for all action fields and its downloadable schema, [Browser & mobile support](PROTOCOL_SUPPORT.md#browser-execution-and-mobile-emulation) for browser execution, [Messaging support](PROTOCOL_SUPPORT.md#broker-and-messaging-support) for broker adapters, and [Capabilities & limitations](HELP_CENTER.md#check-current-capabilities) for runtime boundaries. Authorable or importable does not always mean executable: SAP GUI has no bundled runtime, and Java VUser and Bruno require configured runners. Some messaging integrations require a real adapter instead of the default mock.
 
 Start with one verified journey, keep its inputs and measurements explicit, and use the action catalog as your lookup reference as you extend it.
 

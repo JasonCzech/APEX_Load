@@ -8,9 +8,9 @@ it live, and reading the results.
 It is written for the people who run performance tests: engineers, SDETs, and
 performance analysts working in the dashboard. For administrative tasks (managing
 users, roles, the generator fleet, and system settings) see the [Administration](ADMIN_USER_GUIDE.md).
-For automating APEX Load from CI/CD or scripts, see the [API & Automation](HELP_API_OVERVIEW.md) and the [API Reference](#/swagger).
+For automating APEX Load from CI/CD or scripts, see the [API & Automation](API_USER_GUIDE.md) and the [API Reference](#/swagger).
 
-If you have never used APEX Load before, open [Your first test](HELP_GETTING_STARTED.md) and
+If you have never used APEX Load before, open [Your first test](HELP_CENTER.md#build-and-run-your-first-test) and
 come back to the reference sections afterwards.
 
 ## What APEX Load Does
@@ -49,7 +49,7 @@ APEX Load meets you where you work through three surfaces:
 ## Quick Start: Your First Test
 
 The shortest path from an empty workspace to a report is a step-by-step walkthrough in
-[Your first test](HELP_GETTING_STARTED.md), which includes a local sample target and a
+[Your first test](HELP_CENTER.md#build-and-run-your-first-test), which includes a local sample target and a
 ready-to-load script. In outline:
 
 1. Set your **Domain**, **Project**, and **Application/Release** in the left sidebar;
@@ -185,7 +185,7 @@ the DSL's logical sections rather than raw text:
 | `actions` | The main body each virtual user repeats: requests, checks, captures, and control flow. |
 | `teardown` | Cleanup actions that run once per virtual user at the end. |
 
-This HTTP example illustrates the full structure. Before running it, replace shop.example.com with an approved reachable test service, provide accounts.csv with username and sku columns, and configure the SHOP_PASSWORD project secret. For an example with no data or secret prerequisites, use [Your first test](HELP_GETTING_STARTED.md).
+This HTTP example illustrates the full structure. Before running it, replace shop.example.com with an approved reachable test service, provide accounts.csv with username and sku columns, and configure the SHOP_PASSWORD project secret. For an example with no data or secret prerequisites, use [Your first test](HELP_CENTER.md#build-and-run-your-first-test).
 
 ```json
 {
@@ -535,7 +535,7 @@ human decision. Each imported script lands in one of four modes:
 | --- | --- | --- |
 | `executable` | Converts straight to a runnable script | Review the warnings, then validate and replay |
 | `review_only` | Preserved faithfully, but a human must decide how it should run | Work through the flagged fragments in the review panel |
-| `external_runner_required` | Needs an external execution path; import support alone does not provide a runner | Check [Capabilities & limitations](HELP_CAPABILITIES.md). Java VUser has a governed runner; SAP GUI has no standard runtime and Oracle NCA requires an approved bridge |
+| `external_runner_required` | Needs an external execution path; import support alone does not provide a runner | Check [Capabilities & limitations](HELP_CENTER.md#check-current-capabilities). Java VUser has a governed runner; SAP GUI has no standard runtime and Oracle NCA requires an approved bridge |
 | `unsupported` | Nothing in the source maps to an executable action | Re-author, or import a different artifact |
 
 The review flow reports back a promotion status — `ready_for_validation`,
@@ -858,7 +858,7 @@ GitHub.com with OIDC and GHES with a scoped API key.
 
 ### The API And The MCP Server
 
-- The [API overview](HELP_API_OVERVIEW.md) and [API authentication](API_USER_GUIDE.md#authentication) articles explain the base URL,
+- The [API overview](API_USER_GUIDE.md) and [API authentication](API_USER_GUIDE.md#authentication) articles explain the base URL,
   first API calls, service-account keys, and how to authenticate.
 - The [API Reference](#/swagger) is the generated route reference.
 - The [MCP setup](../mcp/README.md) article covers agent-driven automation. The MCP bridge uses
@@ -878,7 +878,7 @@ GitHub.com with OIDC and GHES with a scoped API key.
 | **GitHub / GHES** | Script sync between a repository and a project, plus pull-request checks | Settings → Integrations → GitHub |
 | **Kubernetes clusters** | Register AKS/EKS/generic control planes so an administrator can place generator pools on them with per-pool CPU, memory, and node placement | Admin cluster registry |
 
-Each has its own reference document: [Prometheus metrics](PROMETHEUS_METRICS.md), [Power BI](POWERBI_INTEGRATION.md), [Dynatrace webhooks and monitoring](MONITORING_INTEGRATIONS.md), [OpenTelemetry](OPENTELEMETRY.md), [GitHub integration](GITHUB_INTEGRATION.md), and [Cluster connections](CLUSTER_CONNECTIONS.md).
+Each has its own reference document: [Prometheus metrics](OBSERVABILITY_INTEGRATIONS.md#prometheus-scrape-endpoint), [Power BI](OBSERVABILITY_INTEGRATIONS.md), [Dynatrace webhooks and monitoring](OBSERVABILITY_INTEGRATIONS.md), [OpenTelemetry](OBSERVABILITY_INTEGRATIONS.md#opentelemetry-tracing), [GitHub integration](CICD_INTEGRATION.md#github-enterprise-integration), and [Cluster connections](CLUSTERS_AND_CLOUD.md#cluster-connections-host-resource-allocation).
 
 ## Troubleshooting And FAQ
 
@@ -899,7 +899,7 @@ loudly instead of quietly carrying an empty value into every later request, then
 and inspect the response body.
 
 **My run says `external_runner_required` and will not launch.**
-Check the import disposition and [Capabilities & limitations](HELP_CAPABILITIES.md). Java VUser requires its configured governed sidecar. SAP GUI has no registered runtime in standard binaries, and Oracle Forms/NCA requires an approved bridge; enabling a pool setting alone cannot supply either missing execution path.
+Check the import disposition and [Capabilities & limitations](HELP_CENTER.md#check-current-capabilities). Java VUser requires its configured governed sidecar. SAP GUI has no registered runtime in standard binaries, and Oracle Forms/NCA requires an approved bridge; enabling a pool setting alone cannot supply either missing execution path.
 
 **The shakeout failed and my run is parked.**
 The run is in `SHAKEOUT_REVIEW`. Open it, read the canary evidence, and fix the script —

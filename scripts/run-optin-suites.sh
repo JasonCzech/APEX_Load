@@ -6,7 +6,7 @@
 # workflow; this script remains the one-command local runner, with an explicit
 # per-suite verdict and a non-zero exit if any suite that ran failed.
 #
-# Inventory and rationale: docs/OPTIN_TEST_SUITES.md
+# Inventory and rationale: docs/qa/TEST_PROGRAM.md
 #
 #   ./scripts/run-optin-suites.sh          # suites needing no external infrastructure
 #   ./scripts/run-optin-suites.sh --all    # also suites needing live infrastructure
@@ -142,7 +142,7 @@ for line in "${results[@]}"; do
 done
 
 if [[ "${list_only}" == "1" ]]; then
-  printf '\n(--list: nothing was run. See docs/OPTIN_TEST_SUITES.md)\n'
+  printf '\n(--list: nothing was run. See docs/qa/TEST_PROGRAM.md)\n'
   exit 0
 fi
 

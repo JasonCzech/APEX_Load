@@ -10,7 +10,7 @@ other scripts in this directory carry usage in their own headers.
 | `synthetic-mixed-protocol-test/` | Runnable 45-minute mixed-protocol synthetic test ([details](#synthetic-mixed-protocol-45-minute-test)) |
 | `check-docs.py` | Documentation link/structure checks |
 | `render-aks-manifests.sh`, `render-eks-manifests.sh` | Render AKS/EKS Kustomize manifests from Terraform outputs (see `deployments/README.md`) |
-| `run-optin-suites.sh` | Opt-in test suites (see `docs/OPTIN_TEST_SUITES.md`) |
+| `run-optin-suites.sh` | Opt-in test suites (see `docs/qa/TEST_PROGRAM.md`) |
 | `coverage-baseline.sh`, `coverage-ratchet.py`, `diff-coverage.py` | Coverage baseline, ratchet and diff-coverage tooling |
 
 ## JMeter messaging reference baseline
