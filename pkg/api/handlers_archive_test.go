@@ -660,7 +660,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 			t.Fatalf("pdf report content disposition = %q, want engineer pdf filename", got)
 		}
 		body := resp.Body.String()
-		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "APEX Load Archive Report") || !strings.Contains(body, "Top Actions") {
+		if !strings.HasPrefix(body, "%PDF-1.4") || !strings.Contains(body, "Archive API Run") || !strings.Contains(body, "Top Actions") {
 			t.Fatalf("pdf report body missing expected PDF report content:\n%s", body)
 		}
 	})
@@ -718,7 +718,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 			t.Fatalf("open DOCX response: %v", err)
 		}
 		document := string(readDOCXTestPart(t, archive, "word/document.xml"))
-		if !strings.Contains(document, "APEX Load Archive Report") || !strings.Contains(document, "Top Actions") {
+		if !strings.Contains(document, "Archive API Run") || !strings.Contains(document, "Top Actions") {
 			t.Fatalf("DOCX response missing engineer report content: %s", document)
 		}
 	})

@@ -76,6 +76,13 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 	if err != nil {
 		return err
 	}
+	var projectID string
+	if err := tx.QueryRow(`SELECT COALESCE(project_id,'') FROM tests WHERE id=?`, record.TestID).Scan(&projectID); err != nil {
+		return err
+	}
+	if err := enqueueConfluencePublicationTx(tx, record.TestID, projectID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

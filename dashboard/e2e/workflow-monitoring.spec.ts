@@ -1,9 +1,68 @@
 import { test, expect, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+import { abortLiveRun, startLiveRun } from './support/liveRun'
 
 test.beforeEach(async ({ page }) => {
   test.setTimeout(60000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+})
+
+test('Confluence connection setup follows saved project connection workflow', async ({ page }) => {
+  const workspace = await createWorkspace(page.context().request)
+  await page.goto(`/#/settings?setting=confluence&${scopeQuery(workspace)}`)
+  await page.reload()
+  const card = page.getByLabel('Confluence connections')
+  await expect(card).toBeVisible()
+  await card.getByRole('button', { name: 'Add Confluence connection' }).click()
+  const editor = card.getByLabel('Confluence connection editor')
+  await editor.getByLabel('Name', { exact: true }).fill('Workflow wiki')
+  await editor.getByLabel('Confluence Cloud site URL').fill('https://example.atlassian.net')
+  await editor.getByLabel('Atlassian account email').fill('writer@example.com')
+  await editor.getByLabel('Space ID').fill('42')
+  await editor.getByLabel('Parent page ID').fill('100')
+  await editor.getByLabel(/API token project-secret reference/).fill('workflow-wiki-token')
+  await editor.getByRole('checkbox', { name: 'Enable connection' }).check()
+  const created = page.waitForResponse(response => response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `/api/v1/projects/${workspace.projectId}/integrations/confluence-connections`)
+  await editor.getByRole('button', { name: 'Save connection' }).click()
+  const response = await created
+  expect(response.ok()).toBeTruthy()
+  expect(await response.text()).not.toContain('workflow-wiki-token')
+  await expect(card).toContainText('Workflow wiki')
+  await card.getByRole('button', { name: 'Edit' }).click()
+  await expect(editor.getByLabel(/API token project-secret reference/)).toHaveValue('')
+  await editor.getByRole('button', { name: 'Discard draft' }).click()
+  await card.getByRole('button', { name: 'Delete' }).click()
+  await card.getByRole('button', { name: 'Confirm delete' }).click()
+  await expect(card).toContainText('No Confluence connections are configured')
+})
+
+test('archived run report publishes to a selected Confluence connection', async ({ page }) => {
+  test.setTimeout(120000)
+  const request=page.context().request
+  await page.addInitScript(() => localStorage.setItem('apexload.featureFlags.runReport','true'))
+  const run=await startLiveRun(request,process.env.APEXLOAD_E2E_BASE_URL,{label:'confluence-report',duration:'2m'})
+  try {
+    expect((await request.post(`/api/v1/tests/${run.testId}/stop`)).ok()).toBeTruthy()
+    await expect.poll(async () => {
+      const response=await request.get(`/api/v1/tests/${run.testId}`)
+      const payload=await response.json() as {archive?:unknown}
+      return Boolean(payload.archive)
+    },{timeout:60000}).toBe(true)
+    const publication={test_id:run.testId,project_id:'default',connection_id:'wiki',status:'complete',page_id:'200',page_url:'https://example.atlassian.net/wiki/spaces/42/pages/200',attempts:1,created_at:'2026-09-25T00:00:00Z',updated_at:'2026-09-25T00:00:00Z'}
+    let published=false
+    await page.route(`**/api/v1/tests/${run.testId}/publish/confluence`,route => {
+      if (route.request().method()==='POST') {published=true;return route.fulfill({json:{publication}})}
+      return route.fulfill({json:{connections:[{id:'wiki',name:'Workflow wiki',enabled:true}],publications:published?[publication]:[]}})
+    })
+    await page.goto(`/#/report/${run.testId}`)
+    await page.getByRole('button',{name:'Export report'}).click()
+    await page.getByText('Publish to Confluence',{exact:true}).first().click()
+    await expect(page.getByRole('combobox',{name:'Confluence connection'})).toHaveValue('wiki')
+    await page.getByRole('button',{name:'Publish to Confluence'}).click()
+    await expect(page.getByRole('link',{name:'Open page'})).toHaveAttribute('href',publication.page_url)
+    await expect(page.getByRole('button',{name:'Update Confluence page'})).toBeVisible()
+  } finally {await abortLiveRun(request,run)}
 })
 
 test('Monitoring preserves repeated keyboard navigation and calendar context', async ({ page }) => {

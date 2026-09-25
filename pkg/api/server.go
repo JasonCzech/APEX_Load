@@ -1033,6 +1033,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.registerAPIRouteCatalog(runArchiveAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(archiveRetentionAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(powerBIAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(confluenceAPIRouteCatalog, standardRouteMiddleware)
 
 	// Reusable scenario definitions.
 	s.mux.Handle("POST /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleCreateScenario)))))

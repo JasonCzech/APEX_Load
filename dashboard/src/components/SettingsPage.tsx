@@ -123,6 +123,7 @@ import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import ImportedDashboardsPanel from './ImportedDashboardsPanel'
 import PowerBIIntegrationPanel from './PowerBIIntegrationPanel'
+import ConfluenceConnectionsCard from './ConfluenceConnectionsCard'
 import PersonalSettings from './PersonalSettings'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
@@ -1156,6 +1157,7 @@ export default function SettingsPage({
     grafana: settings.grafana?.enabled ? 'Enabled' : 'Disabled',
     dashboards: 'Grafana import',
     powerbi: settings.powerbi?.enabled ? 'Enabled' : 'Disabled',
+    confluence: activeProject?.name || 'Project scoped',
     notifications: `${notificationWebhookCount} webhook${notificationWebhookCount === 1 ? '' : 's'}`,
   }), [activeProject?.name, notificationWebhookCount, settings.github.enabled, settings.prometheus.enabled, settings.powerbi?.enabled, settings.opensearch?.enabled, settings.grafana?.enabled])
 
@@ -6233,6 +6235,7 @@ export default function SettingsPage({
             )}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'elk-capture' && <section aria-label="Elastic test capture settings"><ELKConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             {activeSection === 'integrations' && activeIntegrationSubsection === 'dynatrace-capture' && <section aria-label="Dynatrace test capture settings"><DynatraceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
+            {activeSection === 'integrations' && activeIntegrationSubsection === 'confluence' && <section aria-label="Confluence publishing settings"><ConfluenceConnectionsCard projectId={activeProject?.id} canManage={canManageSystem || canManageProjects} /></section>}
             <fieldset className="settings-fieldset settings-integration-panels" disabled={formDisabled}>
             <section
               id="settings-integrations-panel-library"

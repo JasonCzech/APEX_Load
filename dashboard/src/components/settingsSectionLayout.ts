@@ -71,6 +71,7 @@ export const INTEGRATION_SETTINGS_SUBSECTIONS = [
   { id: 'grafana', title: 'Grafana' },
   { id: 'dashboards', title: 'Dashboards' },
   { id: 'powerbi', title: 'Power BI' },
+  { id: 'confluence', title: 'Confluence' },
   { id: 'notifications', title: 'Notifications' },
 ] as const
 

@@ -3493,6 +3493,7 @@ function AppShell({
               {view.page === "report" && !routeAssetScopeBlocked && (
                 <RunReportPage
                   testId={view.testId}
+                  canPublishConfluence={effectiveAccessLoaded && !effectiveAccessError && isEffectiveOperationAllowed(effectiveAccessResources, "manage_tests", false)}
                   initialSection={view.section}
                   initialLens={view.lens}
                   initialCompare={view.compare}

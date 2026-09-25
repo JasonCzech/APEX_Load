@@ -38,6 +38,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 11, Name: "optional-elk-monitoring", Fingerprint: "32ec84499a06c93dc1a7ac86bf962134caf4efb5ce4019c4f4e101a3cf17f97d"},
 	{Version: 12, Name: "optional-dynatrace-saas-monitoring", Fingerprint: "47b102255d607b776d1cda7d3e4fc0c79cb978a4ed991a9e0bac18ae80008daf"},
 	{Version: 13, Name: "explicit-iteration-termination", Fingerprint: "2b3f09f8f1be8fedd664b88d5815556071936438f749f9c06e9d4d15e8db5273"},
+	{Version: 14, Name: "confluence-cloud-result-publishing", Fingerprint: "dcc18fcf8fd11ff340bf1fedb505d5c642ecda83e7909b5b23f8ea6fb055cdba"},
 }
 
 type SchemaMigrationRecord struct {

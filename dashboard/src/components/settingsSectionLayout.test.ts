@@ -124,6 +124,7 @@ describe('settingsSectionLayout', () => {
       'grafana',
       'dashboards',
       'powerbi',
+      'confluence',
       'notifications',
     ])
     expect(isGovernanceSettingsSubsectionId('service-account-apis')).toBe(true)

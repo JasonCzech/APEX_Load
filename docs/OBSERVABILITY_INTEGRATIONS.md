@@ -1,6 +1,14 @@
 # Observability Integrations
 
-Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, Power BI, and Elastic integrations.
+Configuration and operating guidance for Prometheus, OpenTelemetry, Dynatrace, Power BI, Elastic, and Confluence integrations.
+
+## Confluence Cloud result publishing
+
+Project administrators configure **Settings → Connections → Confluence** with an HTTPS Cloud site URL, Atlassian account email, numeric space and parent page IDs, and the name of an API token held in the project's secret provider. The token value is never saved in the connection or returned by the API. Save the connection, then use **Test saved connection** to check that the account can read the parent page in the selected space. The account also needs permission to create and update pages there. Confluence Cloud's REST API supports page creation beneath a parent using `spaceId` and `parentId` ([Atlassian API reference](https://developer.atlassian.com/cloud/confluence/rest/v2/api-group-page/)); API-token authentication uses the account email and token ([Atlassian authentication guide](https://developer.atlassian.com/cloud/confluence/basic-auth-for-rest-apis/)).
+
+Editors can open an archived run's report, expand **Publish to Confluence**, choose an enabled connection, and publish. Each run has one page per connection. The page contains the execution outcome, verdict, overview metrics, up to 100 named transaction rows, and a link to the full APEX Load report. Publishing again updates the same page. If a page creation response is uncertain, APEX Load looks for the run's stable title beneath the configured parent before attempting another create.
+
+Automatic publishing is off by default. A project administrator can enable it on one connection per project after setting `APEXLOAD_PUBLIC_URL` on the controller. Every finalized archived run in that project, including failed and aborted runs with an archive, is queued durably. Delivery is retried up to three times; Confluence failure does not change the test outcome. The run report displays delivery status and the Confluence page link. Deleting a connection leaves already published Confluence pages and recorded page links in place.
 
 
 ## Prometheus scrape endpoint

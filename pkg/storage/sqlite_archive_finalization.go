@@ -507,6 +507,9 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 			return false, err
 		}
 	}
+	if err := enqueueConfluencePublicationTx(tx, testID, durableProjectID); err != nil {
+		return false, err
+	}
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}

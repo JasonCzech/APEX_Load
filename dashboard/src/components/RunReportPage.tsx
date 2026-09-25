@@ -28,6 +28,7 @@ import RunReportCompareBar from './runReport/RunReportCompareBar'
 import RunReportDiagnostics from './runReport/RunReportDiagnostics'
 import RunReportExportActions from './runReport/RunReportExportActions'
 import RunReportPowerBIPublish from './runReport/RunReportPowerBIPublish'
+import RunReportConfluencePublish from './runReport/RunReportConfluencePublish'
 import RunReportKpiScorecard from './runReport/RunReportKpiScorecard'
 import RunReportLensSwitcher from './runReport/RunReportLensSwitcher'
 import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
@@ -46,6 +47,7 @@ import './RunReportPage.css'
 
 interface Props {
   testId: string
+  canPublishConfluence?: boolean
   initialLens?: ReportLens
   initialCompare?: string
   initialTransaction?: string
@@ -76,6 +78,7 @@ function httpStatus(error: unknown): number | undefined {
 
 export default function RunReportPage({
   testId,
+  canPublishConfluence = false,
   initialLens,
   initialCompare,
   initialTransaction,
@@ -469,6 +472,7 @@ export default function RunReportPage({
         <button className="btn btn-secondary" type="button" onClick={() => setShowComposer(true)}>Preview / edit commentary</button>
         <RunReportExportActions testId={testId} lens={activeLens} testName={test.name} downloadHTML={api.downloadTestReport} downloadFormat={api.downloadTestReportFormat} />
         <details><summary>Publish to Power BI</summary><RunReportPowerBIPublish testId={testId} publish={api.publishTestToPowerBI} getStatus={api.getPowerBIPublishStatus} /></details>
+        <details><summary>Publish to Confluence</summary><RunReportConfluencePublish testId={testId} canPublish={canPublishConfluence} /></details>
       </section>}
       {hasArchive && area !== 'Execution' && <section className="run-report-context" aria-label="Analysis context">
         <label>Metric population <select value={population} onChange={e => setPopulationChoice(e.target.value as MetricPopulation)}>{Object.entries(populationLabels).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select></label>

@@ -2657,6 +2657,56 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/integrations/confluence-connections",
+      "operationId": "handleListConfluenceConnections",
+      "summary": "List Confluence Connections",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/integrations/confluence-connections",
+      "operationId": "handleCreateConfluenceConnection",
+      "summary": "Create Confluence Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}",
+      "operationId": "handleDeleteConfluenceConnection",
+      "summary": "Delete Confluence Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}",
+      "operationId": "handleUpdateConfluenceConnection",
+      "summary": "Update Confluence Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}/test",
+      "operationId": "handleTestConfluenceConnection",
+      "summary": "Test Confluence Connection",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{id}/monitoring/dynatrace-connections",
       "operationId": "handleListDynatraceConnections",
       "summary": "List Dynatrace Connections",
@@ -5724,6 +5774,26 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/publish/confluence",
+      "operationId": "handleGetConfluencePublicationStatus",
+      "summary": "Get Confluence Publication Status",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/publish/confluence",
+      "operationId": "handlePublishRunToConfluence",
+      "summary": "Publish Run To Confluence",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
     },
     {
       "method": "GET",

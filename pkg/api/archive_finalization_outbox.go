@@ -786,7 +786,7 @@ func (s *Server) startArchiveFinalizationRetry() {
 			defer sweepCancel()
 			// Durable intents are latency-sensitive. Process them before the bounded
 			// filesystem recovery scan so a large archive root cannot delay known jobs.
-			err := errors.Join(s.retryArchiveFinalizationJobs(sweepCtx), s.retryArchiveRefreshJobs(sweepCtx))
+			err := errors.Join(s.retryArchiveFinalizationJobs(sweepCtx), s.retryArchiveRefreshJobs(sweepCtx), s.retryConfluencePublications(sweepCtx))
 			if recoverOrphans && sweepCtx.Err() == nil {
 				err = errors.Join(err, s.runner.recoverOrphanedLocalRunArchives(sweepCtx))
 			}

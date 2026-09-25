@@ -60,6 +60,7 @@ var modularAPIRouteCatalogs = []apiRouteCatalog{
 	runArchiveAPIRouteCatalog,
 	archiveRetentionAPIRouteCatalog,
 	powerBIAPIRouteCatalog,
+	confluenceAPIRouteCatalog,
 	scenarioSchedulingAPIRouteCatalog,
 	executionPlanAPIRouteCatalog,
 	objectRepositoryAPIRouteCatalog,

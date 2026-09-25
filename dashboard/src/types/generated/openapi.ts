@@ -18230,6 +18230,80 @@ export interface operations {
       };
     };
   };
+  "handleCreateConfluenceConnection": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "auto_publish"?: boolean;
+          "email"?: string;
+          "enabled"?: boolean;
+          "name"?: string;
+          "parent_page_id"?: string;
+          "site_url"?: string;
+          "space_id"?: string;
+          "token_secret_name"?: (string) | null;
+          "updated_at"?: string;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "auto_publish": boolean;
+            "created_at": string;
+            "email": string;
+            "enabled": boolean;
+            "has_token": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "parent_page_id": string;
+            "project_id": string;
+            "site_url": string;
+            "space_id": string;
+            "status": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCreateCorrelationRuleset": {
     parameters?: never;
     requestBody: {
@@ -29310,6 +29384,43 @@ export interface operations {
       };
     };
   };
+  "handleDeleteConfluenceConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "204": {
+        content?: never;
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleDeleteCorrelationRuleset": {
     parameters: {
       "path": {
@@ -38686,6 +38797,44 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetConfluencePublicationStatus": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -58287,6 +58436,39 @@ export interface operations {
       };
     };
   };
+  "handleListConfluenceConnections": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleListCorrelationRules": {
     parameters?: never;
     requestBody?: never;
@@ -71935,6 +72117,50 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handlePublishRunToConfluence": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "connection_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -96351,6 +96577,50 @@ export interface operations {
       };
     };
   };
+  "handleTestConfluenceConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestDynatraceConnection": {
     parameters: {
       "path": {
@@ -100658,6 +100928,81 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleUpdateConfluenceConnection": {
+    parameters: {
+      "path": {
+        "connection_id": string;
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "auto_publish"?: boolean;
+          "email"?: string;
+          "enabled"?: boolean;
+          "name"?: string;
+          "parent_page_id"?: string;
+          "site_url"?: string;
+          "space_id"?: string;
+          "token_secret_name"?: (string) | null;
+          "updated_at"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "auto_publish": boolean;
+            "created_at": string;
+            "email": string;
+            "enabled": boolean;
+            "has_token": boolean;
+            "id": string;
+            "last_check_message"?: string;
+            "last_check_status"?: string;
+            "last_checked_at"?: (string) | null;
+            "name": string;
+            "parent_page_id": string;
+            "project_id": string;
+            "site_url": string;
+            "space_id": string;
+            "status": string;
+            "updated_at": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -112284,6 +112629,17 @@ export interface paths {
     "get": operations["handleGetProjectGitHubPolicy"];
     "put": operations["handleUpdateProjectGitHubPolicy"];
   };
+  "/api/v1/projects/{id}/integrations/confluence-connections": {
+    "get": operations["handleListConfluenceConnections"];
+    "post": operations["handleCreateConfluenceConnection"];
+  };
+  "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}": {
+    "put": operations["handleUpdateConfluenceConnection"];
+    "delete": operations["handleDeleteConfluenceConnection"];
+  };
+  "/api/v1/projects/{id}/integrations/confluence-connections/{connection_id}/test": {
+    "post": operations["handleTestConfluenceConnection"];
+  };
   "/api/v1/projects/{id}/monitoring/dynatrace-connections": {
     "get": operations["handleListDynatraceConnections"];
     "post": operations["handleCreateDynatraceConnection"];
@@ -113114,6 +113470,10 @@ export interface paths {
   };
   "/api/v1/tests/{id}/pause": {
     "post": operations["handlePauseTest"];
+  };
+  "/api/v1/tests/{id}/publish/confluence": {
+    "get": operations["handleGetConfluencePublicationStatus"];
+    "post": operations["handlePublishRunToConfluence"];
   };
   "/api/v1/tests/{id}/publish/powerbi": {
     "get": operations["handleGetPowerBIPublishStatus"];

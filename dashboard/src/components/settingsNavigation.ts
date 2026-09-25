@@ -29,6 +29,7 @@ export const SETTINGS_DESTINATIONS: readonly SettingsDestination[] = [
   { id: 'grafana', group: 'Connections', title: 'Grafana', section: 'integrations', subsection: 'grafana', scope: 'deployment' },
   { id: 'dashboards', group: 'Connections', title: 'Imported dashboards', section: 'integrations', subsection: 'dashboards', scope: 'project' },
   { id: 'powerbi', group: 'Connections', title: 'Power BI', section: 'integrations', subsection: 'powerbi', scope: 'deployment' },
+  { id: 'confluence', group: 'Connections', title: 'Confluence', section: 'integrations', subsection: 'confluence', scope: 'project' },
   { id: 'federation', group: 'Connections', title: 'Library federation', section: 'integrations', subsection: 'library', scope: 'project' },
   { id: 'cloud', group: 'Infrastructure', title: 'Cloud connections & targets', section: 'capacity', scope: 'deployment', resource: 'cloud' },
   { id: 'clusters', group: 'Infrastructure', title: 'Kubernetes clusters', section: 'capacity', scope: 'deployment', resource: 'clusters' },

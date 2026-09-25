@@ -576,6 +576,27 @@ func schemaCreateTableStatements() []string {
 			sample_age_ms REAL,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS confluence_connections (
+			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT FALSE, site_url TEXT NOT NULL DEFAULT '',
+			email TEXT NOT NULL DEFAULT '', space_id TEXT NOT NULL DEFAULT '',
+			parent_page_id TEXT NOT NULL DEFAULT '', token_secret_name TEXT NOT NULL DEFAULT '',
+			auto_publish BOOLEAN NOT NULL DEFAULT FALSE,
+			last_checked_at DATETIME, last_check_status TEXT NOT NULL DEFAULT '',
+			last_check_message TEXT NOT NULL DEFAULT '', created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+		)`,
+		`CREATE TABLE IF NOT EXISTS confluence_publications (
+			test_id TEXT NOT NULL, project_id TEXT NOT NULL, connection_id TEXT NOT NULL,
+			page_id TEXT NOT NULL DEFAULT '', page_url TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
+			automatic BOOLEAN NOT NULL DEFAULT FALSE,
+			requested_by TEXT NOT NULL DEFAULT '', created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL, PRIMARY KEY(test_id, connection_id),
+			FOREIGN KEY(test_id) REFERENCES tests(id) ON DELETE CASCADE,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS run_archives (
 			test_id TEXT PRIMARY KEY,
 			ref_key TEXT,
@@ -1787,6 +1808,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_archive_refresh_jobs_updated ON archive_refresh_jobs(updated_at)`, "idx_archive_refresh_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_notes_test_id ON test_notes(test_id)`, "idx_test_notes_test_id"},
 	{`CREATE INDEX IF NOT EXISTS idx_powerbi_publishes_test ON powerbi_publishes(test_id)`, "idx_powerbi_publishes_test"},
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_confluence_auto_project ON confluence_connections(project_id) WHERE auto_publish=TRUE`, "idx_confluence_auto_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_confluence_publications_pending ON confluence_publications(status,updated_at)`, "idx_confluence_publications_pending"},
 	{`CREATE INDEX IF NOT EXISTS idx_powerbi_publishes_dataset ON powerbi_publishes(dataset_id)`, "idx_powerbi_publishes_dataset"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_history_test_time ON test_history(test_id, timestamp)`, "idx_test_history_test_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_interval_summaries_test_time ON test_interval_summaries(test_id, timestamp)`, "idx_test_interval_summaries_test_time"},
