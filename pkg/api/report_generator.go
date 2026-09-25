@@ -73,6 +73,7 @@ type runArchiveHTMLReportData struct {
 
 var profileHTMLFuncMap = template.FuncMap{
 	"reportRunName":     reportRunName,
+	"identityName":      identityName,
 	"reportEnvironment": reportEnvironment,
 	"populationRate":    reportPopulationRate,
 	"executionLabel":    reportExecutionLabel,
@@ -496,4 +497,16 @@ func formatReportPercentage(value float64) string {
 		return "<0.01%"
 	}
 	return fmt.Sprintf("%.2f%%", value)
+}
+
+// identityName returns the display name for a provenance id, falling back to
+// the id itself when no name could be resolved.
+func identityName(name, id string) string {
+	if strings.TrimSpace(name) != "" {
+		return name
+	}
+	if strings.TrimSpace(id) != "" {
+		return id
+	}
+	return "n/a"
 }

@@ -479,3 +479,29 @@ func TestDefaultReportNarrativeNamesArchivePopulationAndNonzeroErrors(t *testing
 		}
 	}
 }
+
+func TestAuditIdentityShowsResolvedNamesNotIDs(t *testing.T) {
+	report := &RunArchiveReport{
+		IdentityNames: RunArchiveIdentityNames{Project: "Checkout Platform", Release: "2026.10", Scenario: "Peak Load"},
+		Manifest: &RunArchiveManifest{
+			TestID:     "0f9a8b7c-1111-2222-3333-444455556666",
+			TestName:   "Nightly Checkout",
+			Provenance: RunArchiveProvenance{ProjectID: "proj-abc123", ReleaseID: "rel-abc123", ScenarioID: "scn-abc123"},
+		},
+	}
+	body, err := renderRunArchiveHTMLReportWithProfile(report, "audit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(body)
+	for _, want := range []string{"Checkout Platform", "2026.10", "Peak Load", "Nightly Checkout"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("audit identity missing %q", want)
+		}
+	}
+	for _, id := range []string{"proj-abc123", "rel-abc123", "scn-abc123"} {
+		if strings.Contains(html, id) {
+			t.Errorf("audit identity leaked raw id %q", id)
+		}
+	}
+}

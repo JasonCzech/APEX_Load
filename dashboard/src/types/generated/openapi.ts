@@ -1641,6 +1641,12 @@ export interface operations {
               "status"?: string;
               "tier"?: string;
             }>;
+            "identity_names"?: {
+              "application"?: string;
+              "project"?: string;
+              "release"?: string;
+              "scenario"?: string;
+            };
             "integrity"?: ({
               "artifacts"?: Array<{
                 "actual_sha256"?: string;
@@ -44209,6 +44215,12 @@ export interface operations {
               "status": string;
               "tier": string;
             }>;
+            "identity_names": {
+              "application"?: string;
+              "project"?: string;
+              "release"?: string;
+              "scenario"?: string;
+            };
             "integrity"?: ({
               "artifacts"?: Array<{
                 "actual_sha256"?: string;

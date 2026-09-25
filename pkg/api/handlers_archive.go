@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 	"os"
@@ -501,6 +502,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		s.attachReleaseTrendForProfile(report, profile.ID)
+		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profile.ID)
 		if profile.ID == "audit" {
 			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
@@ -538,6 +540,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		}
 		profileID := profile.ID
 		s.attachReleaseTrendForProfile(report, profileID)
+		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profileID)
 		if profileID == "audit" {
 			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
@@ -573,6 +576,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		s.attachReleaseTrendForProfile(report, profile.ID)
+		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profile.ID)
 		// The audit PDF carries the tamper-evidence banner, so re-verify the archive
 		// against its recorded artifact hashes before rendering it.
@@ -589,11 +593,22 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		if manifestErr != nil {
 			manifest = nil
 		}
+		var pdfBody bytes.Buffer
+		// Prefer printing the HTML report so the PDF matches it; fall back to the
+		// built-in text renderer when headless Chromium is not available.
+		if rendered, err := reportPDFChromiumRenderer(report, profile.ID, annotations, manifest); err == nil {
+			pdfBody.Write(rendered)
+		} else {
+			slog.Warn("archive report pdf: chromium render unavailable, using built-in renderer", "test", testID, "err", err)
+			if err := writeRunArchiveReportPDFWithProfileAndAnnotations(report, &pdfBody, profile.ID, annotations, manifest); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to write archive report pdf: "+err.Error())
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "application/pdf")
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+"-"+profile.ID+".pdf\"")
-		if err := writeRunArchiveReportPDFWithProfileAndAnnotations(report, w, profile.ID, annotations, manifest); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to write archive report pdf: "+err.Error())
-		}
+		w.Header().Set("Content-Length", strconv.Itoa(pdfBody.Len()))
+		_, _ = w.Write(pdfBody.Bytes())
 		return
 	case "docx":
 		profileID := r.URL.Query().Get("profile")
@@ -607,6 +622,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		s.attachReleaseTrendForProfile(report, profile.ID)
+		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profile.ID)
 		if profile.ID == "audit" {
 			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
@@ -1077,6 +1093,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	// Attach release-over-release trend before rendering — only for profiles that
 	// actually display the section (executive), so engineer/audit avoid the cost.
 	s.attachReleaseTrendForProfile(report, profile)
+	s.attachIdentityNames(report)
 	s.attachDashboardPanelsForProfile(report, profile)
 	// The audit profile renders a tamper-evidence banner, so re-verify the archive
 	// against its recorded artifact hashes here. Gated on the audit profile to keep

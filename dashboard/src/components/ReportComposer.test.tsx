@@ -38,6 +38,7 @@ describe('ReportComposer test notes source panel', () => {
     root = createRoot(container)
     apiMock.getTestArchiveReport.mockResolvedValue(sampleReport())
     apiMock.verifyTestArchive.mockResolvedValue(null)
+    apiMock.downloadTestReport.mockResolvedValue(new Blob(['<html></html>'], { type: 'text/html' }))
     apiMock.getTestReportAnnotations.mockResolvedValue({
       sections: [{ id: 'overview', label: 'Test Overview' }],
       annotations: {
@@ -148,7 +149,6 @@ describe('ReportComposer test notes source panel', () => {
 
   it('inserts selected notes into summary, commentary, and info findings', async () => {
     await renderComposer()
-    await click(button('Edit commentary'))
 
     expect(container.textContent).toContain('Analyst note')
     expect(container.querySelector('.report-note-source-markdown strong')?.textContent).toBe('spike')
@@ -174,6 +174,20 @@ describe('ReportComposer test notes source panel', () => {
       severity: 'info',
       observed: '# Analyst note\n\nObserved **spike** during checkout.',
     })
+  })
+
+  it('previews the exact server-rendered HTML report in a sandboxed frame', async () => {
+    apiMock.downloadTestReport.mockResolvedValue(new Blob(['<html><body><h1>Review summary</h1></body></html>'], { type: 'text/html' }))
+
+    await renderComposer('executive', { edit: false })
+    await flushFocus()
+
+    expect(apiMock.downloadTestReport).toHaveBeenCalledWith('test-1', 'executive')
+    const frame = container.querySelector<HTMLIFrameElement>('iframe.report-preview-frame')
+    expect(frame).not.toBeNull()
+    expect(frame?.getAttribute('srcdoc')).toContain('Review summary')
+    expect(frame?.getAttribute('sandbox')).not.toContain('allow-scripts')
+    expect(container.querySelector('.report-paper')).toBeNull()
   })
 
   it('shows an empty notes source state', async () => {
@@ -373,11 +387,12 @@ describe('ReportComposer test notes source panel', () => {
 		expect(container.textContent).toContain('912')
 	})
 
-  async function renderComposer(profile: 'executive' | 'engineer' | 'audit' = 'executive') {
+  async function renderComposer(profile: 'executive' | 'engineer' | 'audit' = 'executive', options: { edit?: boolean } = {}) {
     await act(async () => {
       root.render(<ReportComposer testId="test-1" testName="Checkout Run" profile={profile} onClose={() => {}} />)
     })
     await flush()
+    if (options.edit !== false) await click(button('Edit commentary'))
   }
 
   function button(label: string) {

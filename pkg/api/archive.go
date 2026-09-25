@@ -386,7 +386,18 @@ type transactionEventFilter struct {
 	SortDir           string
 }
 
+// RunArchiveIdentityNames holds the display names for the ids in the manifest
+// provenance. It is resolved at render time (never persisted in the archive) so
+// reports show what the UI shows instead of opaque ids.
+type RunArchiveIdentityNames struct {
+	Project     string `json:"project,omitempty"`
+	Application string `json:"application,omitempty"`
+	Release     string `json:"release,omitempty"`
+	Scenario    string `json:"scenario,omitempty"`
+}
+
 type RunArchiveReport struct {
+	IdentityNames                     RunArchiveIdentityNames                `json:"identity_names"`
 	Outcome                           *IntegrationOutcome                    `json:"outcome,omitempty"`
 	ByTransaction                     map[string]RunArchiveActionStats       `json:"by_transaction,omitempty"`
 	ByRequest                         map[string]RunArchiveActionStats       `json:"by_request,omitempty"`

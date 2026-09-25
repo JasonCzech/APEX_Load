@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -114,6 +115,13 @@ func (p *archiveRedactionProtocol) Teardown(_ context.Context) error    { return
 func (p *archiveRedactionProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func TestArchiveQueryEndpoints(t *testing.T) {
+	// These subtests assert on the built-in text PDF; Chromium output is compressed.
+	previousPDFRenderer := reportPDFChromiumRenderer
+	reportPDFChromiumRenderer = func(*RunArchiveReport, string, *ReportAnnotations, *TestRunManifest) ([]byte, error) {
+		return nil, errors.New("chromium disabled for text assertions")
+	}
+	t.Cleanup(func() { reportPDFChromiumRenderer = previousPDFRenderer })
+
 	archiveDir := t.TempDir()
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveDir)
 
@@ -718,7 +726,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 			t.Fatalf("open DOCX response: %v", err)
 		}
 		document := string(readDOCXTestPart(t, archive, "word/document.xml"))
-		if !strings.Contains(document, "Archive API Run") || !strings.Contains(document, "Top Actions") {
+		if !strings.Contains(document, "Archive API Run") || !strings.Contains(document, "Action Summary") {
 			t.Fatalf("DOCX response missing engineer report content: %s", document)
 		}
 	})

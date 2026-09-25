@@ -74,6 +74,12 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState('')
   const [savedDraftSnapshot, setSavedDraftSnapshot] = useState<string | null>(null)
+  // Preview shows the exact HTML the server exports, so it can never drift from
+  // what "Download HTML" produces. It always reflects the last saved commentary.
+  const [previewHtml, setPreviewHtml] = useState('')
+  const [previewError, setPreviewError] = useState('')
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null)
 
   const applyAnnotations = useCallback((annotations: ReportAnnotations) => {
     setTitle(annotations.title || '')
@@ -211,10 +217,28 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     }
   }, [api, isDirty, persist, testId, testName, profile])
 
-  const handlePrint = useCallback(async () => {
-    if (isDirty && !(await persist())) return
-    window.print()
-  }, [isDirty, persist])
+  const handlePrint = useCallback(() => {
+    previewFrameRef.current?.contentWindow?.print()
+  }, [])
+
+  const handleToggleEditing = useCallback(async () => {
+    // Leaving the editor saves first so the preview renders the edited commentary.
+    if (editing && isDirty && !(await persist())) return
+    setEditing(current => !current)
+  }, [editing, isDirty, persist])
+
+  useEffect(() => {
+    if (editing || loading || !report) return
+    let cancelled = false
+    setPreviewLoading(true)
+    setPreviewError('')
+    api.downloadTestReport(testId, profile)
+      .then(blob => blob.text())
+      .then(html => { if (!cancelled) setPreviewHtml(html) })
+      .catch((err: unknown) => { if (!cancelled) setPreviewError(getErrorMessage(err, 'Unable to render report preview')) })
+      .finally(() => { if (!cancelled) setPreviewLoading(false) })
+    return () => { cancelled = true }
+  }, [api, editing, loading, report, testId, profile, annotationsUpdatedAt])
 
   const overview = report?.overview
   const manifest = report?.manifest
@@ -312,15 +336,15 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
         </div>
         <div className="report-toolbar-right">
           {status && <span className="report-save-status">{status}</span>}
-          <button type="button" className="btn btn-secondary" onClick={() => setEditing(current => !current)} disabled={saving || loading}>{editing ? 'Preview' : 'Edit commentary'}</button>
+          <button type="button" className="btn btn-secondary" onClick={handleToggleEditing} disabled={saving || loading}>{editing ? 'Preview' : 'Edit commentary'}</button>
           <button type="button" className="btn btn-secondary" onClick={persist} disabled={!editing || saving || loading}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button type="button" className="btn btn-secondary" onClick={handleDownloadHtml} disabled={loading || !report}>
             Download HTML
           </button>
-          <button type="button" className="btn btn-primary" onClick={handlePrint} disabled={loading || !report} title="Print this HTML preview or save it with your browser. Use Print-ready PDF in the report export section for the paged PDF file.">
-            Print HTML preview
+          <button type="button" className="btn btn-primary" onClick={handlePrint} disabled={editing || loading || !report || !previewHtml} title="Print the HTML report or save it with your browser. Use Print-ready PDF in the report export section for the paged PDF file.">
+            Print HTML report
           </button>
         </div>
       </div>
@@ -329,7 +353,23 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
         {loading && <p className="report-status" role="status" aria-live="polite">Loading report…</p>}
         {error && <p className="report-status report-error" role="alert">{error}</p>}
 
-        {!loading && !error && report && (
+        {!loading && !error && report && !editing && (
+          <div className="report-preview-frame-wrap">
+            {previewError && <p className="report-status report-error" role="alert">{previewError}</p>}
+            {previewLoading && !previewHtml && <p className="report-status" role="status" aria-live="polite">Rendering report…</p>}
+            {previewHtml && (
+              <iframe
+                ref={previewFrameRef}
+                className="report-preview-frame"
+                title="Report preview"
+                sandbox="allow-same-origin allow-modals"
+                srcDoc={previewHtml}
+              />
+            )}
+          </div>
+        )}
+
+        {!loading && !error && report && editing && (
           <article className="report-paper">
             <fieldset className="report-edit-fields" disabled={!editing}>
             <header className="report-cover">

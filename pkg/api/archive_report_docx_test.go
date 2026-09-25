@@ -34,23 +34,15 @@ func TestRunArchiveReportDOCXProfilesUseSharedSectionRegistry(t *testing.T) {
 			if !strings.Contains(text, report.Manifest.TestName) || !strings.Contains(text, profile.Label) {
 				t.Fatalf("DOCX document is missing report identity: %s", text)
 			}
-			renderData := buildRunArchiveReportRenderData(report, profile, nil, manifest)
+			// The DOCX is the HTML report converted, so every registry section must
+			// appear as a bookmarked block listed by label in the contents.
 			for _, section := range reportSectionsForProfile(profile) {
-				var sectionLines []string
-				section.PDF(&renderData, &sectionLines)
-				heading := ""
-				for _, line := range sectionLines {
-					if strings.TrimSpace(line) != "" {
-						heading = strings.TrimSpace(line)
-						break
-					}
-				}
 				var escaped bytes.Buffer
-				if err := xml.EscapeText(&escaped, []byte(heading)); err != nil {
+				if err := xml.EscapeText(&escaped, []byte(section.Label)); err != nil {
 					t.Fatal(err)
 				}
-				if heading == "" || !strings.Contains(text, ">"+escaped.String()+"<") {
-					t.Fatalf("DOCX profile %q is missing rendered section %q (heading %q)", profile.ID, section.Label, heading)
+				if !strings.Contains(text, `w:name="report_`+docxBookmarkName(section.ID)+`"`) || !strings.Contains(text, escaped.String()) {
+					t.Fatalf("DOCX profile %q is missing rendered section %q", profile.ID, section.Label)
 				}
 			}
 			if _, err := zipPart(archive, "[Content_Types].xml"); err != nil {
