@@ -25,21 +25,37 @@ func writeRunArchiveReportDOCXWithProfileAndAnnotations(report *RunArchiveReport
 	if !runArchiveReportProfileSupportsFormat(profile, "docx") {
 		return fmt.Errorf("report profile %q does not support docx export", profile.ID)
 	}
-	lines := buildRunArchiveReportPDFLines(report, profile, annotations, manifest)
-	headings := buildDOCXSectionHeadings(report, profile, annotations, manifest)
-	headings["Review Summary"] = struct{}{}
+	htmlReport, err := renderRunArchiveHTMLReportWithAnnotations(report, profile.ID, annotations, manifest)
+	if err != nil {
+		return err
+	}
 	var charts []reportDocumentChart
 	if _, hasGraphs := reportSectionSet(profile.IncludedSections)["graphs"]; hasGraphs {
-		var err error
-		charts, err = buildReportDocumentCharts(report)
-		if err != nil {
+		if charts, err = buildReportDocumentCharts(report); err != nil {
 			return err
 		}
 	}
-	return writeReportDOCXPackage(writer, profile, lines, headings, charts)
+	bodyXML, title, err := convertReportHTMLToDOCXBody(htmlReport, charts)
+	if err != nil {
+		return err
+	}
+	if title == "" {
+		title = profile.Label + " Report"
+	}
+	return writeReportDOCXPackage(writer, profile, title, buildDOCXDocumentXMLFromBody(bodyXML), charts)
 }
 
-func writeReportDOCXPackage(writer io.Writer, profile RunArchiveReportProfile, lines []string, headings map[string]struct{}, charts []reportDocumentChart) error {
+func buildDOCXDocumentXMLFromBody(body []byte) []byte {
+	var doc bytes.Buffer
+	doc.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
+	doc.WriteString(`<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>`)
+	doc.Write(body)
+	doc.WriteString(`<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1200" w:right="1080" w:bottom="1080" w:left="1080" w:header="500" w:footer="400"/></w:sectPr>`)
+	doc.WriteString(`</w:body></w:document>`)
+	return doc.Bytes()
+}
+
+func writeReportDOCXPackage(writer io.Writer, profile RunArchiveReportProfile, title string, documentXML []byte, charts []reportDocumentChart) error {
 	archive := zip.NewWriter(writer)
 	parts := []struct {
 		name string
@@ -48,8 +64,8 @@ func writeReportDOCXPackage(writer io.Writer, profile RunArchiveReportProfile, l
 		{name: "[Content_Types].xml", body: []byte(docxContentTypesXML)},
 		{name: "_rels/.rels", body: []byte(docxPackageRelationshipsXML)},
 		{name: "docProps/app.xml", body: []byte(docxAppPropertiesXML)},
-		{name: "docProps/core.xml", body: []byte(buildDOCXCoreProperties(lines[0]))},
-		{name: "word/document.xml", body: buildDOCXDocumentXML(lines, headings, charts)},
+		{name: "docProps/core.xml", body: []byte(buildDOCXCoreProperties(title))},
+		{name: "word/document.xml", body: documentXML},
 		{name: "word/_rels/document.xml.rels", body: []byte(buildDOCXDocumentRelationshipsXML(charts))},
 		{name: "word/styles.xml", body: []byte(docxStylesXML)},
 		{name: "word/header1.xml", body: []byte(buildDOCXHeaderXML(profile))},
@@ -102,109 +118,6 @@ func buildDOCXSectionHeadings(report *RunArchiveReport, profile RunArchiveReport
 	return headings
 }
 
-func buildDOCXDocumentXML(lines []string, headings map[string]struct{}, charts []reportDocumentChart) []byte {
-	var body bytes.Buffer
-	body.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
-	body.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>`)
-	type pair struct{ label, value string }
-	var pairs []pair
-	var tableRows [][]string
-	chartIndexes := make(map[string]int, len(charts))
-	for index, chart := range charts {
-		chartIndexes[chart.ID] = index
-	}
-	flushPairs := func() {
-		if len(pairs) == 0 {
-			return
-		}
-		body.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:bottom w:val="single" w:sz="4" w:color="D4DBE3"/><w:insideH w:val="single" w:sz="4" w:color="E5EAF0"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3400"/><w:gridCol w:w="7400"/></w:tblGrid>`)
-		for _, item := range pairs {
-			body.WriteString(`<w:tr><w:tc><w:tcPr><w:tcW w:w="3400" w:type="dxa"/><w:shd w:fill="F3F6F9"/></w:tcPr><w:p><w:r><w:rPr><w:b/></w:rPr><w:t>`)
-			writeDOCXEscaped(&body, item.label)
-			body.WriteString(`</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcW w:w="7400" w:type="dxa"/></w:tcPr><w:p><w:r><w:t xml:space="preserve">`)
-			writeDOCXEscaped(&body, item.value)
-			body.WriteString(`</w:t></w:r></w:p></w:tc></w:tr>`)
-		}
-		body.WriteString(`</w:tbl>`)
-		pairs = nil
-	}
-	flushTable := func() {
-		if len(tableRows) == 0 {
-			return
-		}
-		body.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:bottom w:val="single" w:sz="4" w:color="D4DBE3"/><w:insideH w:val="single" w:sz="4" w:color="E5EAF0"/></w:tblBorders></w:tblPr>`)
-		for rowIndex, row := range tableRows {
-			body.WriteString(`<w:tr>`)
-			if rowIndex == 0 {
-				body.WriteString(`<w:trPr><w:tblHeader/></w:trPr>`)
-			}
-			for _, cell := range row {
-				body.WriteString(`<w:tc>`)
-				if rowIndex == 0 {
-					body.WriteString(`<w:tcPr><w:shd w:fill="F3F6F9"/></w:tcPr>`)
-				}
-				body.WriteString(`<w:p><w:r>`)
-				if rowIndex == 0 {
-					body.WriteString(`<w:rPr><w:b/></w:rPr>`)
-				}
-				body.WriteString(`<w:t xml:space="preserve">`)
-				writeDOCXEscaped(&body, cell)
-				body.WriteString(`</w:t></w:r></w:p></w:tc>`)
-			}
-			body.WriteString(`</w:tr>`)
-		}
-		body.WriteString(`</w:tbl>`)
-		tableRows = nil
-	}
-	for index, raw := range lines {
-		if strings.HasPrefix(raw, reportDocumentChartMarker) {
-			flushPairs()
-			flushTable()
-			if chartIndex, ok := chartIndexes[strings.TrimPrefix(raw, reportDocumentChartMarker)]; ok {
-				body.WriteString(docxInlineChartXML(charts[chartIndex], chartIndex+1))
-			}
-			continue
-		}
-		line := sanitizeDOCXText(raw)
-		if cells, ok := parseReportTableLine(line); ok {
-			flushPairs()
-			tableRows = append(tableRows, cells)
-			continue
-		}
-		flushTable()
-		style := ""
-		if index == 0 {
-			style = "Title"
-		} else if _, ok := headings[line]; ok {
-			style = "Heading1"
-		}
-		if style == "" {
-			if label, value, ok := splitDOCXKeyValue(line); ok {
-				pairs = append(pairs, pair{label: label, value: value})
-				continue
-			}
-		}
-		flushPairs()
-		body.WriteString(`<w:p>`)
-		if style != "" {
-			body.WriteString(`<w:pPr><w:pStyle w:val="`)
-			writeDOCXEscaped(&body, style)
-			body.WriteString(`"/></w:pPr>`)
-		}
-		if line != "" {
-			body.WriteString(`<w:r><w:t xml:space="preserve">`)
-			writeDOCXEscaped(&body, line)
-			body.WriteString(`</w:t></w:r>`)
-		}
-		body.WriteString(`</w:p>`)
-	}
-	flushPairs()
-	flushTable()
-	body.WriteString(`<w:sectPr><w:headerReference w:type="default" r:id="rId2"/><w:footerReference w:type="default" r:id="rId3"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="360" w:footer="360"/></w:sectPr>`)
-	body.WriteString(`</w:body></w:document>`)
-	return bytes.Replace(body.Bytes(), []byte(`<w:document xmlns:w=`), []byte(`<w:document xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w=`), 1)
-}
-
 func docxInlineChartXML(chart reportDocumentChart, index int) string {
 	// 6.6 inches fits the letter page after its 0.75-inch margins. Preserve
 	// the source aspect ratio so the chart's axes and labels are not distorted.
@@ -226,19 +139,6 @@ func buildDOCXDocumentRelationshipsXML(charts []reportDocumentChart) string {
 	}
 	body.WriteString(`</Relationships>`)
 	return body.String()
-}
-
-func splitDOCXKeyValue(line string) (string, string, bool) {
-	index := strings.IndexByte(line, ':')
-	if index < 2 || index > 42 || index+1 >= len(line) {
-		return "", "", false
-	}
-	label := strings.TrimSpace(line[:index])
-	value := strings.TrimSpace(line[index+1:])
-	if label == "" || value == "" || strings.HasPrefix(label, "-") || strings.Contains(label, "/") || strings.HasPrefix(value, "//") {
-		return "", "", false
-	}
-	return label, value, true
 }
 
 func buildDOCXHeaderXML(profile RunArchiveReportProfile) string {
@@ -293,11 +193,13 @@ const docxPackageRelationshipsXML = `<?xml version="1.0" encoding="UTF-8" standa
 const docxAppPropertiesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>APEX Load</Application><AppVersion>1.0</AppVersion></Properties>`
 
-const docxFooterXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:t xml:space="preserve">Page </w:t></w:r><w:fldSimple w:instr="PAGE"/></w:p></w:ftr>`
+const docxFooterXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:color w:val="5B6875"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">Page </w:t></w:r><w:fldSimple w:instr="PAGE"/><w:r><w:rPr><w:color w:val="5B6875"/><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve"> of </w:t></w:r><w:fldSimple w:instr="NUMPAGES"/></w:p></w:ftr>`
 
 const docxStylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:eastAsia="Calibri" w:cs="Calibri"/><w:color w:val="1F2933"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="100" w:line="264" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
   <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>
-  <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:spacing w:after="240"/></w:pPr><w:rPr><w:b/><w:color w:val="0F766E"/><w:sz w:val="36"/></w:rPr></w:style>
-  <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="320" w:after="120"/></w:pPr><w:rPr><w:b/><w:color w:val="0F766E"/><w:sz w:val="25"/></w:rPr></w:style>
+  <w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:spacing w:before="0" w:after="160"/></w:pPr><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:b/><w:color w:val="1F2933"/><w:sz w:val="52"/></w:rPr></w:style>
+  <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:pBdr><w:bottom w:val="single" w:sz="12" w:space="4" w:color="D8CFC2"/></w:pBdr><w:spacing w:before="360" w:after="140"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:color w:val="1F2933"/><w:sz w:val="32"/></w:rPr></w:style>
+  <w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="240" w:after="80"/><w:outlineLvl w:val="1"/></w:pPr><w:rPr><w:b/><w:color w:val="1F2933"/><w:sz w:val="24"/></w:rPr></w:style>
 </w:styles>`

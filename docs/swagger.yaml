@@ -4562,6 +4562,17 @@ paths:
                             type: string
                           tier:
                             type: string
+                    identity_names:
+                      type: object
+                      properties:
+                        application:
+                          type: string
+                        project:
+                          type: string
+                        release:
+                          type: string
+                        scenario:
+                          type: string
                     integrity:
                       type: object
                       properties:
@@ -246226,6 +246237,17 @@ paths:
                         - label
                         - status
                         - tier
+                  identity_names:
+                    type: object
+                    properties:
+                      application:
+                        type: string
+                      project:
+                        type: string
+                      release:
+                        type: string
+                      scenario:
+                        type: string
                   integrity:
                     type: object
                     properties:
@@ -249198,6 +249220,7 @@ paths:
                   - change_attribution
                   - compatibility
                   - completeness
+                  - identity_names
                   - manifest
                   - overview
                   - resource_peaks

@@ -126,20 +126,6 @@ func TestReportTableAndWordKeyValueParsing(t *testing.T) {
 			t.Errorf("parseReportTableLine(%q) = %#v, %v", test.line, cells, ok)
 		}
 	}
-	for _, test := range []struct {
-		line  string
-		valid bool
-	}{
-		{"Environment: perf-lab", true},
-		{"No label", false},
-		{"https://example.test", false},
-		{"- checkout: 42 transactions", false},
-	} {
-		_, _, ok := splitDOCXKeyValue(test.line)
-		if ok != test.valid {
-			t.Errorf("splitDOCXKeyValue(%q) valid = %v", test.line, ok)
-		}
-	}
 }
 
 func TestReportPDFHasHierarchyBookmarksPageNumbersAndBalancedTail(t *testing.T) {
@@ -184,7 +170,7 @@ func TestReportDOCXProvidesSummaryTablesAndRunningFurniture(t *testing.T) {
 	if err := xml.Unmarshal(document, new(any)); err != nil {
 		t.Fatalf("invalid Word document XML: %v", err)
 	}
-	for _, want := range []string{">Review Summary<", "<w:tbl>", "<w:tblHeader/>", "Time (UTC)", "<w:headerReference", "<w:footerReference"} {
+	for _, want := range []string{">Review summary<", "<w:tbl>", "<w:tblHeader/>", "Contents", "<w:headerReference", "<w:footerReference"} {
 		if !bytes.Contains(document, []byte(want)) {
 			t.Errorf("Word document missing %q", want)
 		}

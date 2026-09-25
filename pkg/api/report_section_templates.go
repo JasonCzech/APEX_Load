@@ -42,7 +42,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
       color: var(--ink);
       background: #e8e3d9;
     }
-    .mono { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; }
+    .mono { overflow-wrap: anywhere; word-break: break-word; font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; }
     .page { max-width: 960px; margin: 28px auto; background: #fffdf8; box-shadow: 0 1px 32px rgba(31,41,51,.14); }
     .skip-link { position: absolute; left: -10000px; top: 8px; z-index: 10; background: #fff; color: var(--navy); padding: 8px 12px; }
     .skip-link:focus { left: 8px; }
@@ -54,7 +54,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .doc-badge { text-align: right; font-size: 11px; line-height: 1.7; color: var(--slate); }
     .doc-badge .mono { color: var(--ink); }
     .header-rule { height: 4px; background: linear-gradient(90deg, var(--blue) 0%, var(--blue2) 100%); }
-    .content { padding: 40px 52px 60px; }
+    .content { overflow-wrap: anywhere; padding: 40px 52px 60px; }
     .eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--blue2); margin-bottom: 8px; }
     h1 { font-family: "Avenir Next", "Segoe UI", sans-serif; font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.18; color: var(--navy); margin-bottom: 10px; }
     .subtitle { font-size: 14.5px; color: var(--slate); max-width: 72ch; line-height: 1.55; margin-bottom: 28px; }
@@ -111,9 +111,9 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .kpi .v { font-size: 26px; font-weight: 700; color: var(--navy); line-height: 1.05; }
     .kpi .v small { font-size: 13px; font-weight: 600; color: var(--slate); }
     .kpi .d { font-size: 11px; color: var(--slate); margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; border: 1px solid var(--line); margin: 6px 0 14px; font-size: 13px; }
+    table { width: 100%; table-layout: auto; border-collapse: collapse; border: 1px solid var(--line); margin: 6px 0 14px; font-size: 13px; }
     caption { caption-side: top; text-align: left; font-size: 11px; color: var(--slate); padding: 0 0 6px; font-style: italic; }
-    th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th, td { overflow-wrap: anywhere; min-width: 0; padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     th { background: var(--silver); font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--slate); }
     td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     tr:last-child td { border-bottom: 0; }
@@ -156,6 +156,12 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
       thead { display: table-header-group; }
       tfoot { display: table-footer-group; }
       .skip-link, .report-contents, .back-link { display: none; }
+      .export-pdf .report-contents { display: block; break-after: page; }
+      .export-pdf .masthead { border-bottom: 0; }
+      .export-pdf h2, .export-pdf h3 { break-after: avoid; }
+      .export-pdf .report-block { break-before: auto; }
+      .export-pdf .page-footer { display: none; }
+      .export-pdf table { break-inside: auto; page-break-inside: auto; }
       .review-summary { break-inside: avoid; }
     }
     @media (max-width: 640px) {
@@ -769,9 +775,9 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "audit_identity"}}
 <h2>Run Identity</h2>
 <table><tbody>
-  <tr><th>Test ID</th><td class="mono">{{.Report.Manifest.TestID}}</td><th>Run name</th><td>{{.Report.Manifest.TestName}}</td></tr>
-  <tr><th>Status</th><td>{{.Report.Manifest.Status}}</td><th>Completed</th><td>{{formatTime .Report.Manifest.CompletedAt}}</td></tr>
-  <tr><th>Project / Release / Scenario</th><td colspan="3" class="mono">{{.Report.Manifest.Provenance.ProjectID}} / {{.Report.Manifest.Provenance.ReleaseID}} / {{.Report.Manifest.Provenance.ScenarioID}}</td></tr>
+  <tr><th>Run name</th><td>{{reportRunName .Report}}</td><th>Status</th><td>{{.Report.Manifest.Status}}</td></tr>
+  <tr><th>Completed</th><td>{{formatTime .Report.Manifest.CompletedAt}}</td><th>Scenario</th><td>{{identityName .Report.IdentityNames.Scenario .Report.Manifest.Provenance.ScenarioID}}</td></tr>
+  <tr><th>Project</th><td>{{identityName .Report.IdentityNames.Project .Report.Manifest.Provenance.ProjectID}}</td><th>Release</th><td>{{identityName .Report.IdentityNames.Release .Report.Manifest.Provenance.ReleaseID}}</td></tr>
 </tbody></table>
 {{end}}
 
@@ -787,8 +793,8 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 <h2>Governance &amp; Provenance</h2>
 {{with .Report.Manifest.Provenance.Governance}}
 <table><tbody>
-  <tr><th>Capacity reservation</th><td>{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>
-  {{with .ExecutionPlanApproval}}<tr><th>Execution-plan approval</th><td>{{if .ID}}{{.ID}}{{else}}n/a{{end}} · {{if .Status}}{{.Status}}{{else}}n/a{{end}}</td><th>Approved by</th><td>{{if .ResolvedBy}}{{.ResolvedBy}}{{else}}n/a{{end}} · {{if .DecisionReason}}{{.DecisionReason}}{{else}}no reason captured{{end}}</td></tr>{{end}}
+  <tr><th>Capacity reservation</th><td class="mono">{{if .CapacityReservationID}}{{.CapacityReservationID}}{{else}}n/a{{end}}</td><th>Launch status</th><td>{{if .LaunchPreflight}}{{.LaunchPreflight.Status}}{{else}}n/a{{end}}</td></tr>
+  {{with .ExecutionPlanApproval}}<tr><th>Execution-plan approval</th><td><span class="mono">{{if .ID}}{{.ID}}{{else}}n/a{{end}}</span> · {{if .Status}}{{.Status}}{{else}}n/a{{end}}</td><th>Approved by</th><td>{{if .ResolvedBy}}{{.ResolvedBy}}{{else}}n/a{{end}} · {{if .DecisionReason}}{{.DecisionReason}}{{else}}no reason captured{{end}}</td></tr>{{end}}
 </tbody></table>
 {{else}}<p class="muted">No governance provenance was captured for this run.</p>{{end}}
 {{end}}

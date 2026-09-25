@@ -90,10 +90,10 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 		}
 		charts.Throughput = svgLineChart("Throughput (TPS)", "TPS", startLabel, endLabel, throughputSeries)
 		if hasCompleteP95 {
-			charts.ResponseTime = svgLineChart("Response Time (p95)", "ms", startLabel, endLabel,
+			charts.ResponseTime = svgLineChart("Response Time (p95, ms)", "ms", startLabel, endLabel,
 				[]reportChartSeries{{Label: "p95 latency", Color: reportChartAccent, Values: p95}})
 		}
-		charts.ErrorRate = svgLineChart("Error Rate", "%", startLabel, endLabel,
+		charts.ErrorRate = svgLineChart("Error Rate (%)", "%", startLabel, endLabel,
 			[]reportChartSeries{{Label: "Error %", Color: reportChartAccent2, Values: errPct}})
 		charts.VUsers = svgLineChart("Active VUsers", "VUsers", startLabel, endLabel,
 			[]reportChartSeries{{Label: "Active VUsers", Color: reportChartAccent, Values: vusers}})

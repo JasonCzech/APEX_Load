@@ -42,6 +42,26 @@
   padding: 28px 16px 60px;
 }
 
+.report-scroll:has(.report-preview-frame-wrap) {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.report-preview-frame-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.report-preview-frame {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
 .report-status {
   color: #e6e6e6;
   text-align: center;

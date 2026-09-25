@@ -144,7 +144,7 @@ test('[U16] a finished run produces a report and stays findable in results', asy
   expect((await stat(bundlePath!)).size).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Preview / edit commentary' }).click()
   const preview = page.locator('.report-composer-overlay')
-  await expect(preview.getByLabel('Report title')).toBeDisabled()
+  await expect(preview.locator('iframe[title="Report preview"]').contentFrame().getByRole('heading', { name: 'Review summary' })).toBeVisible()
   await preview.getByRole('button', { name: 'Edit commentary' }).click()
   await expect(preview.getByLabel('Report title')).toBeEnabled()
   await preview.getByRole('button', { name: 'Close', exact: true }).click()

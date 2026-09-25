@@ -1083,9 +1083,9 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			appendPDFValueLine(lines, "Status", report.Manifest.Status)
 			appendPDFValueLine(lines, "Completed", formatPDFTime(report.Manifest.CompletedAt))
 			provenance := report.Manifest.Provenance
-			appendPDFValueLine(lines, "Project", provenance.ProjectID)
-			appendPDFValueLine(lines, "Release", provenance.ReleaseID)
-			appendPDFValueLine(lines, "Scenario", provenance.ScenarioID)
+			appendPDFValueLine(lines, "Project", identityName(report.IdentityNames.Project, provenance.ProjectID))
+			appendPDFValueLine(lines, "Release", identityName(report.IdentityNames.Release, provenance.ReleaseID))
+			appendPDFValueLine(lines, "Scenario", identityName(report.IdentityNames.Scenario, provenance.ScenarioID))
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
@@ -1095,9 +1095,9 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				{"run_name", report.Manifest.TestName},
 				{"status", report.Manifest.Status},
 				{"completed", formatPDFTime(report.Manifest.CompletedAt)},
-				{"project", report.Manifest.Provenance.ProjectID},
-				{"release", report.Manifest.Provenance.ReleaseID},
-				{"scenario", report.Manifest.Provenance.ScenarioID},
+				{"project", identityName(report.IdentityNames.Project, report.Manifest.Provenance.ProjectID)},
+				{"release", identityName(report.IdentityNames.Release, report.Manifest.Provenance.ReleaseID)},
+				{"scenario", identityName(report.IdentityNames.Scenario, report.Manifest.Provenance.ScenarioID)},
 			}
 			for _, row := range rows {
 				if strings.TrimSpace(row[1]) == "" {

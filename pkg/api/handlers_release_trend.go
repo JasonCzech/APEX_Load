@@ -159,3 +159,35 @@ func profileIncludesSection(profileID, section string) bool {
 	}
 	return slices.Contains(profile.IncludedSections, section)
 }
+
+// attachIdentityNames resolves the project/release/scenario display names for the
+// report's provenance ids. Best-effort: an unresolvable id (deleted entity, no
+// store) leaves that name empty and renderers fall back to the id.
+func (s *Server) attachIdentityNames(report *RunArchiveReport) {
+	if s == nil || s.store == nil || report == nil || report.Manifest == nil {
+		return
+	}
+	prov := report.Manifest.Provenance
+	names := RunArchiveIdentityNames{}
+	if id := strings.TrimSpace(prov.ProjectID); id != "" {
+		if p, err := s.store.GetProject(id); err == nil && p != nil {
+			names.Project = p.Name
+		}
+	}
+	if id := strings.TrimSpace(prov.ApplicationID); id != "" {
+		if a, err := s.store.GetApplication(id); err == nil && a != nil {
+			names.Application = a.Name
+		}
+	}
+	if id := strings.TrimSpace(prov.ReleaseID); id != "" {
+		if rel, err := s.store.GetRelease(id); err == nil && rel != nil {
+			names.Release = rel.Name
+		}
+	}
+	if id := strings.TrimSpace(prov.ScenarioID); id != "" {
+		if sc, _, err := s.store.GetScenario(id); err == nil && sc != nil {
+			names.Scenario = sc.Name
+		}
+	}
+	report.IdentityNames = names
+}

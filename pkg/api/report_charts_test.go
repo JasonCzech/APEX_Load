@@ -38,7 +38,7 @@ func TestBuildReportChartsWithTimelineAndActions(t *testing.T) {
 			t.Fatalf("throughput chart missing %q: %s", want, throughput)
 		}
 	}
-	if !strings.Contains(string(charts.ResponseTime), "Response Time (p95)") {
+	if !strings.Contains(string(charts.ResponseTime), "Response Time (p95, ms)") {
 		t.Fatalf("response-time chart missing title: %s", charts.ResponseTime)
 	}
 	if !strings.Contains(string(charts.ErrorRate), "Error Rate") {
