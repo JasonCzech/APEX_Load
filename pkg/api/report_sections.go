@@ -118,6 +118,44 @@ func pdfHeading(lines *[]string, heading string) {
 	*lines = append(*lines, heading)
 }
 
+// appendPerformanceIntervalTable keeps a printable evidence sample in PDF and
+// Word instead of pointing the reader to another format for every timeline.
+func appendPerformanceIntervalTable(lines *[]string, timeline []RunArchiveSummaryPoint) {
+	if len(timeline) == 0 {
+		*lines = append(*lines, "No interval timeline was captured for this run.", "")
+		return
+	}
+	chosen := map[int]struct{}{0: {}, len(timeline) - 1: {}}
+	peakTPS, peakP95 := 0, -1
+	for index, point := range timeline {
+		if point.TPS > timeline[peakTPS].TPS {
+			peakTPS = index
+		}
+		if point.HasP95() && (peakP95 < 0 || point.P95Ms > timeline[peakP95].P95Ms) {
+			peakP95 = index
+		}
+	}
+	chosen[peakTPS] = struct{}{}
+	if peakP95 >= 0 {
+		chosen[peakP95] = struct{}{}
+	}
+	indices := make([]int, 0, len(chosen))
+	for index := range chosen {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	*lines = append(*lines, "Representative intervals show start, peak throughput, slowest p95, and end.", "|Time (UTC)|VUsers|TPS|p95 ms|Error %|")
+	for _, index := range indices {
+		point := timeline[index]
+		p95 := "n/a"
+		if point.HasP95() {
+			p95 = fmt.Sprintf("%.0f", point.P95Ms)
+		}
+		*lines = append(*lines, fmt.Sprintf("|%s|%d|%.1f|%s|%.2f|", point.Timestamp.UTC().Format("02 Jan 15:04"), point.ActiveVUsers, point.TPS, p95, point.ErrorPct))
+	}
+	*lines = append(*lines, "")
+}
+
 func csvNote(write reportCSVWriteFunc, section, note string) error {
 	return write(section, "", "note", note)
 }
@@ -442,7 +480,10 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 	add(reportSectionRenderer{ID: "graphs", Label: "Performance Analysis",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
 			pdfHeading(lines, "Performance Analysis")
-			*lines = append(*lines, "Time-series graphs are available in the HTML report and live dashboard.", "")
+			for _, chart := range reportDocumentChartSpecs(d.Report) {
+				*lines = append(*lines, reportDocumentChartMarker+chart.ID)
+			}
+			appendPerformanceIntervalTable(lines, d.Report.SummaryTimeline)
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
 			return csvNote(write, "graphs", "Time-series graphs are available in the HTML report; see summary_timeline rows for the underlying data.")

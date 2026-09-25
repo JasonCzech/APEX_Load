@@ -747,16 +747,27 @@ A report is assembled from a registry of sections, selected by profile:
 
 | Profile | Contains | Export formats |
 | --- | --- | --- |
-| **Executive Summary** | Verdict, overview, graphs, dashboard panels, SLA rollup, release trend, risk summary, run context, recommendations, sign-off | HTML, JSON, CSV, PDF, DOCX |
-| **Detailed Technical** (default) | 21 sections including root cause, raw exports, generator manifest, completeness, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases | HTML, JSON, CSV, PDF, DOCX, JSONL, Parquet |
-| **Audit** | Official outcome, audit identity, authorization, governance, provenance, evidence tiers, completeness, change attribution, artifact integrity, report authorship | HTML, JSON, CSV, PDF, DOCX |
+| **Executive Summary** | Verdict, overview, graphs, dashboard panels, SLA rollup, release trend, risk summary, run context, recommendations, sign-off | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
+| **Detailed Technical** (default) | 21 sections including root cause, raw exports, generator manifest, completeness, schema compatibility, errors, resources, actions, browser evidence, SOAP, network phases | HTML, JSON, CSV, analysis ZIP, PDF, DOCX, JSONL, Parquet |
+| **Audit** | Official outcome, audit identity, authorization, governance, provenance, evidence tiers, completeness, change attribution, artifact integrity, report authorship | HTML, JSON, CSV, analysis ZIP, PDF, DOCX |
 
 PDF is offered only for profiles that declare it; a PDF request against a profile
 without it is refused rather than silently downgraded.
 
+The Executive Summary and Detailed Technical HTML, PDF, and Word exports include
+the archived throughput, p95 latency, error-rate, active-VUser, and action-latency
+charts when those data are available. The printable files also include a compact
+interval table. Audit exports omit performance charts by profile design.
+
 `JSONL` and `Parquet` are not rendered report documents — they are the run's raw
 archive datasets (transactions, resource samples, interval summaries), downloaded per
 artifact for analysis in your own tooling.
+
+The **Analysis tables** ZIP contains row-based CSV files with stable `run_id` fields
+and a data guide. Executive and Technical profiles include run summary,
+transaction SLA, findings, and evidence-gap tables; Audit includes run summary,
+artifact integrity, and evidence-gap tables. The existing four-column CSV
+(`section,key,metric,value`) remains available for integrations using that contract.
 
 ### Baselines
 

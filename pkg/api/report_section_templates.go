@@ -16,17 +16,17 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
   <style>
     :root {
       color-scheme: light;
-      --navy:   #0b2a4a;
-      --blue:   #1f6feb;
-      --blue2:  #0b5fc7;
-      --sky:    #e7f1fd;
-      --silver: #f3f6f9;
-      --line:   #d4dbe3;
-      --ink:    #1a2330;
-      --slate:  #4a5568;
+      --navy:   #1f2933;
+      --blue:   #0f766e;
+      --blue2:  #0c645d;
+      --sky:    #e8f5f2;
+      --silver: #f7f4ee;
+      --line:   #d8cfc2;
+      --ink:    #1f2933;
+      --slate:  #5b6875;
       --good:    #1a6e3c;
       --good-bg: #e6f4ed;
-      --warn:    #8a6100;
+      --warn:    #b45309;
       --warn-bg: #fdf3da;
       --bad:     #b42318;
       --bad-bg:  #fbe9e7;
@@ -36,25 +36,27 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body {
-      font-family: "Avenir Next", "Segoe UI", -apple-system, sans-serif;
+      font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
       font-size: 14.5px;
       line-height: 1.58;
       color: var(--ink);
-      background: #dde3e9;
+      background: #e8e3d9;
     }
     .mono { font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace; }
-    .page { max-width: 960px; margin: 28px auto; background: #fff; box-shadow: 0 1px 32px rgba(11,42,74,.14); }
-    .masthead { background: var(--navy); padding: 22px 52px 20px; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .page { max-width: 960px; margin: 28px auto; background: #fffdf8; box-shadow: 0 1px 32px rgba(31,41,51,.14); }
+    .skip-link { position: absolute; left: -10000px; top: 8px; z-index: 10; background: #fff; color: var(--navy); padding: 8px 12px; }
+    .skip-link:focus { left: 8px; }
+    .masthead { background: #fffdf8; padding: 22px 52px 20px; display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid var(--line); }
     .masthead-brand { display: flex; align-items: center; gap: 14px; }
-    .brand-logo { height: 34px; width: auto; filter: brightness(0) invert(1); }
-    .brand-unit { font-size: 12.5px; font-weight: 600; color: #8fc1ff; letter-spacing: .06em; text-transform: uppercase; line-height: 1.3; }
-    .brand-sub { font-size: 11px; color: rgba(255,255,255,.6); letter-spacing: .03em; margin-top: 2px; }
-    .doc-badge { text-align: right; font-size: 11px; line-height: 1.7; color: rgba(255,255,255,.55); }
-    .doc-badge .mono { color: rgba(255,255,255,.88); }
+    .brand-logo { height: 34px; width: auto; }
+    .brand-unit { font-size: 12.5px; font-weight: 600; color: var(--blue); letter-spacing: .06em; text-transform: uppercase; line-height: 1.3; }
+    .brand-sub { font-size: 11px; color: var(--slate); letter-spacing: .03em; margin-top: 2px; }
+    .doc-badge { text-align: right; font-size: 11px; line-height: 1.7; color: var(--slate); }
+    .doc-badge .mono { color: var(--ink); }
     .header-rule { height: 4px; background: linear-gradient(90deg, var(--blue) 0%, var(--blue2) 100%); }
     .content { padding: 40px 52px 60px; }
     .eyebrow { font-size: 10.5px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--blue2); margin-bottom: 8px; }
-    h1 { font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.18; color: var(--navy); margin-bottom: 10px; }
+    h1 { font-family: "Avenir Next", "Segoe UI", sans-serif; font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.18; color: var(--navy); margin-bottom: 10px; }
     .subtitle { font-size: 14.5px; color: var(--slate); max-width: 72ch; line-height: 1.55; margin-bottom: 28px; }
     .meta-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line); overflow: hidden; margin-bottom: 24px; }
     .meta-cell { background: var(--silver); border-right: 1px solid var(--line); padding: 11px 14px; }
@@ -62,6 +64,29 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .meta-cell b { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--slate); margin-bottom: 4px; }
     .meta-cell span { font-size: 13px; font-weight: 600; }
     .report-block { display: block; }
+    .review-summary { border: 1px solid var(--line); border-left: 5px solid var(--blue2); padding: 18px 20px; margin: 0 0 24px; background: #fff; }
+    .review-summary h2 { margin: 0 0 12px; border: 0; padding: 0; }
+    .review-summary-status { font-size: 17px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+    .review-summary-status.fail { color: var(--bad); }
+    .review-summary-status.conditional { color: var(--warn); }
+    .review-summary p { margin: 0 0 12px; }
+    .review-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 18px; }
+    .review-summary-grid div { min-width: 0; }
+    .review-summary-grid b { display: block; font-size: 10px; color: var(--slate); text-transform: uppercase; letter-spacing: .08em; }
+    .review-summary-grid span { font-weight: 600; }
+    .evidence-gaps { margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .evidence-gaps h3 { margin: 0 0 5px; }
+    .evidence-gaps ul { padding-left: 20px; }
+    .summary-note { margin: 12px 0 0; padding: 10px 12px; background: var(--silver); border-left: 3px solid var(--blue2); }
+    .summary-note strong { color: var(--navy); }
+    .report-contents { border: 1px solid var(--line); background: var(--silver); padding: 16px 20px; margin-bottom: 26px; }
+    .report-contents h2 { margin: 0 0 10px; border: 0; padding: 0; }
+    .report-contents ol { columns: 2; column-gap: 32px; padding-left: 20px; }
+    .report-contents li { break-inside: avoid; margin: 0 0 5px; }
+    .report-contents a, .back-link { color: var(--blue2); text-decoration: underline; text-underline-offset: 2px; }
+    .report-contents a:focus-visible, .back-link:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+    .report-block { scroll-margin-top: 20px; }
+    .back-link { display: inline-block; font-size: 11px; margin-top: 4px; }
     .integrity-banner { display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-radius: 8px; margin: 6px 0 14px; font-size: 13px; border: 1px solid; }
     .integrity-banner.pass { background: var(--good-bg); color: var(--good); border-color: #b7e0c6; }
     .integrity-banner.caution { background: var(--warn-bg); color: var(--warn); border-color: #f0deb0; }
@@ -77,8 +102,8 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
     .outcome-pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--good-bg); color: var(--good); font-weight: 700; }
     .outcome-pill.fail { background: var(--bad-bg); color: var(--bad); }
     .outcome-pill.conditional { background: var(--warn-bg); color: var(--warn); }
-    h2 { font-size: 16.5px; font-weight: 700; color: var(--navy); margin: 30px 0 10px; padding-bottom: 8px; border-bottom: 2px solid var(--navy); }
-    h3 { font-size: 13.5px; font-weight: 700; color: var(--navy); margin: 22px 0 8px; }
+    h2 { font-family: "Avenir Next", "Segoe UI", sans-serif; font-size: 19px; font-weight: 700; color: var(--navy); margin: 30px 0 10px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+    h3 { font-family: "Avenir Next", "Segoe UI", sans-serif; font-size: 13.5px; font-weight: 700; color: var(--navy); margin: 22px 0 8px; }
     .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
     .kpi { border: 1px solid var(--line); border-top: 3px solid var(--blue); padding: 12px 14px; background: var(--silver); }
     .kpi.warn { border-top-color: var(--warn); }
@@ -130,6 +155,8 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
       .verdict, .finding, table, tr, .kpi, .metric { break-inside: avoid; page-break-inside: avoid; }
       thead { display: table-header-group; }
       tfoot { display: table-footer-group; }
+      .skip-link, .report-contents, .back-link { display: none; }
+      .review-summary { break-inside: avoid; }
     }
     @media (max-width: 640px) {
       .content { padding: 22px 18px 32px; }
@@ -137,10 +164,13 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
       h1 { font-size: 24px; }
       .meta-strip, .kpis, .signoff { grid-template-columns: 1fr 1fr; }
       table { display: block; overflow-x: auto; }
+      .review-summary-grid { grid-template-columns: 1fr 1fr; }
+      .report-contents ol { columns: 1; }
     }
   </style>
 </head>
 <body>
+<a class="skip-link" href="#report-main">Skip to report</a>
 <div class="page">
 
 <div class="masthead">
@@ -159,7 +189,7 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
 </div>
 <div class="header-rule"></div>
 
-<div class="content">
+<main class="content" id="report-main">
 
 <div class="eyebrow">{{.Data.Profile.Label}} Report</div>
 <h1>{{if .Data.Annotations.Title}}{{.Data.Annotations.Title}}{{else}}{{.Data.Report.Manifest.TestName}}{{end}}</h1>
@@ -172,10 +202,39 @@ var runArchiveReportShellTemplate = template.Must(template.New("run-archive-repo
   <div class="meta-cell"><b>Profile</b><span>{{.Data.Profile.Label}}</span></div>
 </div>
 
-{{range .Sections}}<section class="report-block" data-report-section="{{.ID}}">{{.Body}}</section>
+<section class="review-summary" aria-labelledby="review-summary-heading">
+  <h2 id="review-summary-heading">Review summary</h2>
+  <div class="review-summary-status {{if .Data.Verdict.Failed}}fail{{else if .Data.Verdict.Conditional}}conditional{{end}}">{{.Data.Verdict.Status}}</div>
+  <p>{{.Data.Verdict.Explanation}}</p>
+  <div class="review-summary-grid">
+    <div><b>Run</b><span>{{reportRunName .Data.Report}}</span></div>
+    <div><b>Environment</b><span>{{reportEnvironment .Data.Report}}</span></div>
+    <div><b>Evidence completeness</b><span>{{f0 .Data.Report.Completeness.ScorePct}}% · {{.Data.Report.Completeness.Status}}</span></div>
+    {{if eq .Data.Profile.ID "audit"}}<div><b>Artifact integrity</b><span>{{if .Data.Report.Integrity}}{{.Data.Report.Integrity.Status}}{{else}}Not verified{{end}}</span></div>{{end}}
+    {{if ne .Data.Profile.ID "audit"}}
+    <div><b>Captured records</b><span>{{hint .Data.Report.Overview.Transactions}}</span></div>
+    <div><b>Archive error rate</b><span>{{formatPercent .Data.Report.Overview.ErrorPct}}</span></div>
+    <div><b>Peak load</b><span>{{.Data.Report.Overview.PeakActiveVUsers}} VUsers</span></div>
+    {{end}}
+  </div>
+  {{if eq .Data.Profile.ID "executive"}}
+    {{with index .Data.Annotations.SectionComments "decision"}}{{if ne . "Not provided"}}<p class="summary-note"><strong>Decision context:</strong> {{.}}</p>{{end}}{{end}}
+    {{with index .Data.Annotations.SectionComments "recommendations"}}{{if ne . "Not provided"}}<p class="summary-note"><strong>Recommendation:</strong> {{.}}</p>{{end}}{{end}}
+  {{else if eq .Data.Profile.ID "engineer"}}
+    {{if .Data.Findings}}<p class="summary-note"><strong>Priority finding:</strong> {{(index .Data.Findings 0).Title}} · <a href="#report-root_cause">Review findings and evidence</a></p>{{end}}
+  {{end}}
+  {{if .Data.EvidenceGaps}}<div class="evidence-gaps"><h3>Evidence gaps</h3><ul>{{range .Data.EvidenceGaps}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+</section>
+
+<nav class="report-contents" id="report-contents" aria-label="Report contents">
+  <h2>Contents</h2>
+  <ol>{{range .Sections}}<li><a href="#report-{{.ID}}">{{.Label}}</a></li>{{end}}</ol>
+</nav>
+
+{{range .Sections}}<section class="report-block" id="report-{{.ID}}" data-report-section="{{.ID}}">{{.Body}}<a class="back-link" href="#report-contents">Back to contents</a></section>
 {{end}}
 
-</div><!-- .content -->
+</main><!-- .content -->
 
 <footer class="page-footer">
   <span>APEX Load · Performance Test Results Analysis</span>

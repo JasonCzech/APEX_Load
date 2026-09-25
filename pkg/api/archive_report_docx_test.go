@@ -31,7 +31,7 @@ func TestRunArchiveReportDOCXProfilesUseSharedSectionRegistry(t *testing.T) {
 				t.Fatalf("document.xml is not well-formed: %v", err)
 			}
 			text := string(document)
-			if !strings.Contains(text, "APEX Load Archive Report") || !strings.Contains(text, profile.Label) {
+			if !strings.Contains(text, report.Manifest.TestName) || !strings.Contains(text, profile.Label) {
 				t.Fatalf("DOCX document is missing report identity: %s", text)
 			}
 			renderData := buildRunArchiveReportRenderData(report, profile, nil, manifest)

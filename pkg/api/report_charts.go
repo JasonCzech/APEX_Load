@@ -42,12 +42,12 @@ const (
 	reportChartPadR    = 18
 	reportChartPadT    = 40
 	reportChartPadB    = 30
-	reportChartAccent  = "#1f6feb"
-	reportChartAccent2 = "#8a6100"
-	reportChartGrid    = "#d4dbe3"
-	reportChartInk     = "#1a2330"
-	reportChartMuted   = "#4a5568"
-	reportChartSurface = "#f3f6f9"
+	reportChartAccent  = "#0f766e"
+	reportChartAccent2 = "#b45309"
+	reportChartGrid    = "#d8cfc2"
+	reportChartInk     = "#1f2933"
+	reportChartMuted   = "#5b6875"
+	reportChartSurface = "#fffdf8"
 )
 
 // buildReportCharts derives all report graphs from the archived run report.
@@ -99,9 +99,17 @@ func buildReportCharts(report *RunArchiveReport) reportCharts {
 			[]reportChartSeries{{Label: "Active VUsers", Color: reportChartAccent, Values: vusers}})
 	}
 
-	if bars := topActionLatencyBars(report.ByAction, 8); len(bars) > 0 {
+	actions := report.ByAction
+	if report.MetricPopulations != nil {
+		actions = report.ByRequest
+	}
+	if bars := topActionLatencyBars(actions, 8); len(bars) > 0 {
 		charts.HasActions = true
-		charts.ActionLatency = svgBarChart("Average Response Time by Action", "ms", bars)
+		average := report.Overview.AvgResponseMs
+		if report.MetricPopulations != nil {
+			average = report.MetricPopulations["action"].AvgResponseMs
+		}
+		charts.ActionLatency = svgBarChart("Average Response Time by Action (ms)", "ms", bars, average)
 	}
 
 	return charts
@@ -214,12 +222,12 @@ func svgLineChart(title, unit, startLabel, endLabel string, series []reportChart
 }
 
 // svgBarChart renders a horizontal bar chart (one bar per label).
-func svgBarChart(title, unit string, bars []reportChartBar) template.HTML {
+func svgBarChart(title, unit string, bars []reportChartBar, highlightAt float64) template.HTML {
 	if len(bars) == 0 {
 		return ""
 	}
 	rowH := 28
-	top := reportChartPadT
+	top := reportChartPadT + 16
 	height := top + len(bars)*rowH + 24
 	labelW := 220
 	barLeft := labelW + 12
@@ -240,6 +248,9 @@ func svgBarChart(title, unit string, bars []reportChartBar) template.HTML {
 		reportChartWidth, height, svgAttr(title), reportChartSurface, reportChartGrid)
 	fmt.Fprintf(&b, `<text x="%d" y="24" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="15" font-weight="600">%s</text>`,
 		reportChartPadL, reportChartInk, svgText(title))
+	if highlightAt > 0 {
+		fmt.Fprintf(&b, `<text x="%d" y="42" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="11">Amber = at or above run average (%s ms)</text>`, reportChartPadL, reportChartMuted, svgText(formatChartValue(highlightAt)))
+	}
 
 	for i, bar := range bars {
 		y := top + i*rowH
@@ -249,8 +260,12 @@ func svgBarChart(title, unit string, bars []reportChartBar) template.HTML {
 		}
 		fmt.Fprintf(&b, `<text x="%d" y="%d" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="12" text-anchor="end">%s</text>`,
 			labelW, y+16, reportChartInk, svgText(truncateLabel(bar.Label, 34)))
+		barColor := reportChartAccent
+		if highlightAt > 0 && bar.Value >= highlightAt {
+			barColor = reportChartAccent2
+		}
 		fmt.Fprintf(&b, `<rect x="%d" y="%d" width="%.1f" height="16" rx="3" fill="%s"/>`,
-			barLeft, y+4, w, reportChartAccent)
+			barLeft, y+4, w, barColor)
 		fmt.Fprintf(&b, `<text x="%.1f" y="%d" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="11">%s %s</text>`,
 			float64(barLeft)+w+6, y+16, reportChartMuted, svgText(formatChartValue(bar.Value)), svgText(unit))
 	}

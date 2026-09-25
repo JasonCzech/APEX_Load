@@ -319,8 +319,8 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
           <button type="button" className="btn btn-secondary" onClick={handleDownloadHtml} disabled={loading || !report}>
             Download HTML
           </button>
-          <button type="button" className="btn btn-primary" onClick={handlePrint} disabled={loading || !report}>
-            Print / Save PDF
+          <button type="button" className="btn btn-primary" onClick={handlePrint} disabled={loading || !report} title="Print this HTML preview or save it with your browser. Use Print-ready PDF in the report export section for the paged PDF file.">
+            Print HTML preview
           </button>
         </div>
       </div>

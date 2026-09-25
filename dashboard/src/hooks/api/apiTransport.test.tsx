@@ -334,6 +334,13 @@ describe('caller-supplied transport options', () => {
     expect(url).toBe(`${BASE}/tests/t-1/archive/report?format=docx&profile=audit`)
   })
 
+  it('downloads row-based analysis tables for the selected profile', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('PK', { status: 200 }))
+    await api.tests.downloadTestReportFormat('t-1', 'engineer', 'analysis_zip')
+    const [url] = lastCall()
+    expect(url).toBe(`${BASE}/tests/t-1/archive/report?format=analysis_zip&profile=engineer`)
+  })
+
   it('surfaces a failed download as an error carrying the server message', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'archive missing' }, 404))
     await expect(api.tests.downloadTestArchive('t-1')).rejects.toThrow('archive missing')

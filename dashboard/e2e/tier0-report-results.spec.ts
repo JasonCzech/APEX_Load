@@ -1,4 +1,5 @@
 import type { APIRequestContext } from '@playwright/test'
+import { stat } from 'node:fs/promises'
 
 import { expect, test } from './support/liveRun'
 
@@ -60,7 +61,7 @@ async function waitForReport(request: APIRequestContext, testId: string): Promis
   throw new Error(`report never became available; last status ${lastStatus}`)
 }
 
-test('[U16] a finished run produces a report and stays findable in results', async ({ request, page, seedLiveRun }) => {
+test('[U16] a finished run produces a report and stays findable in results', async ({ request, page, seedLiveRun }, testInfo) => {
   test.setTimeout(TEST_TIMEOUT_MS)
   await enableRunReport(page)
 
@@ -130,12 +131,33 @@ test('[U16] a finished run produces a report and stays findable in results', asy
     }
   }
   await page.getByRole('button', { name: 'Export report', exact: true }).click()
+  const exportOptions = page.getByRole('region', { name: 'Report export options' })
+  for (const label of ['Navigable HTML', 'Print-ready PDF', 'Editable Word', 'Data CSV', 'Analysis tables']) {
+    await expect(exportOptions.getByRole('button', { name: new RegExp(label) })).toBeVisible()
+  }
+  const analysisDownload = page.waitForEvent('download')
+  await exportOptions.getByRole('button', { name: /Analysis tables/ }).click()
+  const bundle = await analysisDownload
+  expect(bundle.suggestedFilename()).toMatch(/-executive\.zip$/)
+  const bundlePath = await bundle.path()
+  expect(bundlePath).not.toBeNull()
+  expect((await stat(bundlePath!)).size).toBeGreaterThan(0)
   await page.getByRole('button', { name: 'Preview / edit commentary' }).click()
   const preview = page.locator('.report-composer-overlay')
   await expect(preview.getByLabel('Report title')).toBeDisabled()
   await preview.getByRole('button', { name: 'Edit commentary' }).click()
   await expect(preview.getByLabel('Report title')).toBeEnabled()
   await preview.getByRole('button', { name: 'Close', exact: true }).click()
+
+  const exportedHTML = await page.context().newPage()
+  await exportedHTML.goto(`/api/v1/tests/${run.testId}/report?profile=executive`)
+  await expect(exportedHTML.getByRole('heading', { name: 'Review summary' })).toBeVisible()
+  await expect(exportedHTML.getByRole('navigation', { name: 'Report contents' })).toBeVisible()
+  await exportedHTML.screenshot({ path: testInfo.outputPath('executive-html-export.png') })
+  await exportedHTML.locator('#report-contents').screenshot({ path: testInfo.outputPath('executive-html-contents.png') })
+  await exportedHTML.locator('#report-contents a[href="#report-verdict"]').click()
+  await expect(exportedHTML).toHaveURL(/#report-verdict$/)
+  await exportedHTML.close()
 
   await expect(page.getByText(runName, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
 })

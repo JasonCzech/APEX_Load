@@ -17,7 +17,7 @@ func TestWriteRunArchiveReportPDFWithProfile(t *testing.T) {
 	engineerPDF := engineer.String()
 	for _, expected := range []string{
 		"%PDF-1.4",
-		"APEX Load Archive Report",
+		"Checkout Evidence - Detailed Technical Report",
 		"Profile: Detailed Technical",
 		"Top Actions",
 		"Browser Metrics",

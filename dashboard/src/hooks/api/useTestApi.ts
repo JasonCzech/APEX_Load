@@ -729,7 +729,7 @@ export function useTestApi() {
   )
 
   const downloadTestReportFormat = useCallback(
-    (id: string, profile: string, format: 'pdf' | 'csv' | 'docx', options?: ApiCallOptions) =>
+    (id: string, profile: string, format: 'pdf' | 'csv' | 'docx' | 'analysis_zip', options?: ApiCallOptions) =>
       fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile })}`, options),
     [],
   )

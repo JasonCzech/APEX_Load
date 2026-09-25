@@ -48,6 +48,16 @@ test('[U01] sign in, build workspace, import, edit, launch, stop and retrieve th
   await row.getByRole('button', { name: 'View results' }).click()
   await expect(page).toHaveURL(new RegExp(`#/report/${id}`))
   await expect(page.getByText(runName, { exact: false }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Export report', exact: true }).click()
+  const exportOptions = page.getByRole('region', { name: 'Report export options' })
+  await expect(exportOptions.getByRole('button', { name: /Print-ready PDF/ })).toBeVisible()
+  const analysisDownload = page.waitForEvent('download')
+  await exportOptions.getByRole('button', { name: /Analysis tables/ }).click()
+  const analysisBundle = await analysisDownload
+  expect(analysisBundle.suggestedFilename()).toMatch(/-executive\.zip$/)
+  const analysisPath = await analysisBundle.path()
+  expect(analysisPath).not.toBeNull()
+  expect((await stat(analysisPath!)).size).toBeGreaterThan(0)
   // Follow the report's evidence link, preserving the same run identity.
   await page.getByRole('tab', { name: 'Evidence', exact: true }).click()
   await page.getByText('Raw evidence downloads', { exact: true }).click()

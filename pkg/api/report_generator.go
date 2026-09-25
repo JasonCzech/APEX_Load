@@ -52,6 +52,7 @@ type runArchiveHTMLReportData struct {
 	LogoDataURI                       template.URL
 	Manifest                          *TestRunManifest
 	Verdict                           ReportVerdict
+	EvidenceGaps                      []string
 	Findings                          []ReportFinding
 	SLARows                           []SLAComplianceRow
 	TransactionResponseTimeSLAResults []TransactionResponseTimeSLAResult
@@ -247,6 +248,7 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 		LogoDataURI:                       reportLogoDataURI(),
 		Manifest:                          manifest,
 		Verdict:                           verdict,
+		EvidenceGaps:                      reportPresentationEvidenceGaps(report, profile.ID, annotations, verdict),
 		Findings:                          findings,
 		SLARows:                           buildSLAComplianceRows(report),
 		TransactionResponseTimeSLAResults: append([]TransactionResponseTimeSLAResult(nil), report.TransactionResponseTimeSLAResults...),
@@ -264,6 +266,35 @@ func buildRunArchiveReportRenderData(report *RunArchiveReport, profile RunArchiv
 		BrowserPlatformRows:               buildHTMLBrowserPlatformRows(report.BrowserByPlatform),
 		BrowserDeviceRows:                 buildHTMLBrowserDeviceRows(report.BrowserByDevice),
 	}
+}
+
+func reportPresentationEvidenceGaps(report *RunArchiveReport, profileID string, annotations *ReportAnnotations, verdict ReportVerdict) []string {
+	if report == nil {
+		return []string{"Archived run evidence is unavailable."}
+	}
+	var gaps []string
+	if verdict.Status == reportVerdictNotAssessed {
+		gaps = append(gaps, "Acceptance criteria were not configured; a pass/fail decision is unavailable.")
+	}
+	if report.Completeness.ScorePct < 100 {
+		gaps = append(gaps, fmt.Sprintf("Archive evidence completeness is %.0f%%; review the completeness section before relying on missing signals.", report.Completeness.ScorePct))
+	}
+	if profileID == "audit" {
+		if report.Integrity == nil {
+			gaps = append(gaps, "Artifact integrity verification is unavailable.")
+		}
+		if annotations == nil || strings.TrimSpace(annotations.PreparedBy) == "" {
+			gaps = append(gaps, "The report preparer was not recorded.")
+		}
+	} else {
+		if len(report.SummaryTimeline) == 0 {
+			gaps = append(gaps, "No interval timeline was captured for time-series review.")
+		}
+		if profileID == "executive" && report.ReleaseTrend == nil {
+			gaps = append(gaps, "No release trend is available for comparison.")
+		}
+	}
+	return gaps
 }
 
 func reportTransactionSLARuleResults(report *RunArchiveReport) []TransactionSLARuleResult {

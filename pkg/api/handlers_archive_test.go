@@ -723,6 +723,27 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 	})
 
+	t.Run("analysis tables are a downloadable profile bundle", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=analysis_zip&profile=engineer", nil)
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusOK {
+			t.Fatalf("analysis bundle status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Type"); got != "application/zip" {
+			t.Fatalf("analysis bundle content type = %q", got)
+		}
+		archive, err := zip.NewReader(bytes.NewReader(resp.Body.Bytes()), int64(resp.Body.Len()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, part := range []string{"run_summary.csv", "transaction_sla.csv", "findings.csv", "evidence_gaps.csv", "README.txt"} {
+			if _, err := zipPart(archive, part); err != nil {
+				t.Errorf("analysis bundle missing %s: %v", part, err)
+			}
+		}
+	})
+
 	t.Run("audit csv report includes evidence inventory", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?format=csv&profile=audit", nil)
 		resp := httptest.NewRecorder()
@@ -730,6 +751,9 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 
 		if resp.Code != http.StatusOK {
 			t.Fatalf("audit csv report status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		if got := resp.Header().Get("Content-Disposition"); !strings.Contains(got, "-audit.csv") {
+			t.Fatalf("audit csv filename = %q, want profile suffix", got)
 		}
 		rows, err := csv.NewReader(strings.NewReader(resp.Body.String())).ReadAll()
 		if err != nil {

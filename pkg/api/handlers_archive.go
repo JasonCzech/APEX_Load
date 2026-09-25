@@ -494,9 +494,49 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	switch queryFormat(r) {
+	case "analysis_zip":
+		profile, ok := lookupRunArchiveReportProfile(r.URL.Query().Get("profile"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "unknown report profile")
+			return
+		}
+		s.attachReleaseTrendForProfile(report, profile.ID)
+		s.attachDashboardPanelsForProfile(report, profile.ID)
+		if profile.ID == "audit" {
+			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+		}
+		testID := r.PathValue("id")
+		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
+			return
+		}
+		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
+		if manifestErr != nil {
+			manifest = nil
+		}
+		var bundle bytes.Buffer
+		if err := writeRunArchiveAnalysisBundle(report, &bundle, profile.ID, annotations, manifest); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to write analysis tables: "+err.Error())
+			return
+		}
+		if bundle.Len() > int(maxArchiveReportBatchBytes) {
+			writeError(w, http.StatusRequestEntityTooLarge, "analysis tables exceed the 64 MiB response limit")
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-analysis-"+sanitizeFilename(testID)+"-"+profile.ID+".zip\"")
+		w.Header().Set("Content-Length", strconv.Itoa(bundle.Len()))
+		_, _ = w.Write(bundle.Bytes())
+		return
 	case "csv":
 		testID := r.PathValue("id")
-		profileID := r.URL.Query().Get("profile")
+		profile, ok := lookupRunArchiveReportProfile(r.URL.Query().Get("profile"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "unknown report profile")
+			return
+		}
+		profileID := profile.ID
 		s.attachReleaseTrendForProfile(report, profileID)
 		s.attachDashboardPanelsForProfile(report, profileID)
 		if profileID == "audit" {
@@ -512,7 +552,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			manifest = nil
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".csv\"")
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+sanitizeFilename(testID)+"-"+profileID+".csv\"")
 		if err := writeRunArchiveReportCSVWithProfileAndAnnotations(report, w, profileID, annotations, manifest); err != nil {
 			if strings.Contains(err.Error(), "unknown report profile") {
 				writeError(w, http.StatusBadRequest, err.Error())

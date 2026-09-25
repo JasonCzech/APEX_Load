@@ -44983,6 +44983,7 @@ export interface operations {
             }) | null;
           }) | null;
           "application/pdf": string;
+          "application/zip": string;
           "text/csv": string;
         };
       };
