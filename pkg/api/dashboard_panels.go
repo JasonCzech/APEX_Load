@@ -17,6 +17,7 @@ import (
 // that panel's query failed — the resolve is fail-soft so one bad panel never blanks
 // the whole dashboard.
 type DashboardPanel struct {
+	ComparisonIdentity string                   `json:"comparison_identity,omitempty"`
 	PanelID            int                      `json:"panel_id"`
 	Title              string                   `json:"title"`
 	Kind               string                   `json:"kind"`
@@ -122,7 +123,7 @@ func resolveOnePanel(
 	bytesUsed *atomic.Int64,
 ) DashboardPanel {
 	result := DashboardPanel{
-		PanelID:    panel.PanelID,
+		ComparisonIdentity: comparisonDigest(panel.Targets), PanelID: panel.PanelID,
 		Title:      panel.Title,
 		Kind:       panel.Kind,
 		Unit:       panel.Unit,
@@ -170,6 +171,10 @@ func resolveOnePanel(
 		if err != nil {
 			result.Error = dashboardPanelError(err)
 			return result
+		}
+		for i := range series {
+			kind := baselineCapturedMetricKind(target.Expr, series[i].Labels["__name__"])
+			series[i].ComparisonDefinition = &BaselineMetricDefinition{Identity: comparisonDigest(target), Unit: panel.Unit, Kind: kind, Source: "application", Aggregation: "recorded query"}
 		}
 		seriesUsed += len(series)
 		seriesBytes := estimatePrometheusSeriesBytes(series)

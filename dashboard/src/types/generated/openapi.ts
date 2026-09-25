@@ -1399,6 +1399,96 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
+            "baseline_comparison"?: ({
+              "baselines"?: Array<{
+                "archive_available"?: boolean;
+                "completed_at"?: (string) | null;
+                "id"?: string;
+                "name"?: string;
+                "peak_vusers"?: number;
+                "pinned"?: boolean;
+                "release_id"?: string;
+                "release_name"?: string;
+                "scenario_id"?: string;
+                "status"?: string;
+                "vusers"?: number;
+              }>;
+              "created_at"?: string;
+              "current"?: {
+                "archive_available"?: boolean;
+                "completed_at"?: (string) | null;
+                "id"?: string;
+                "name"?: string;
+                "peak_vusers"?: number;
+                "pinned"?: boolean;
+                "release_id"?: string;
+                "release_name"?: string;
+                "scenario_id"?: string;
+                "status"?: string;
+                "vusers"?: number;
+              };
+              "findings"?: Array<{
+                "baseline_id"?: string;
+                "category"?: string;
+                "message"?: string;
+                "metric"?: string;
+                "row_id"?: string;
+                "status"?: string;
+              }>;
+              "id"?: string;
+              "policy"?: {
+                "error_points"?: number;
+                "group_mappings"?: Record<string, string>;
+                "latency_ms"?: number;
+                "latency_pct"?: number;
+                "load_tolerance_pct"?: number;
+                "resource_mappings"?: Array<Record<string, unknown>>;
+                "resource_pct"?: number;
+                "revision"?: number;
+                "throughput_pct"?: number;
+              };
+              "project_id"?: string;
+              "request"?: {
+                "allow_other_scenarios"?: boolean;
+                "baseline_ids"?: Array<string>;
+                "maximum_load"?: number;
+                "minimum_load"?: number;
+                "policy"?: (Record<string, unknown>) | null;
+                "population"?: string;
+                "windows"?: Record<string, Record<string, unknown>>;
+              };
+              "resources"?: Array<{
+                "baselines"?: Record<string, Record<string, unknown>>;
+                "current"?: (Record<string, unknown>) | null;
+                "group"?: string;
+                "id"?: string;
+                "name"?: string;
+                "protocol"?: string;
+                "source"?: string;
+                "unit"?: string;
+                "window"?: (Record<string, unknown>) | null;
+              }>;
+              "rule_version"?: string;
+              "setup"?: Array<{
+                "baseline"?: string;
+                "baseline_id"?: string;
+                "current"?: string;
+                "field"?: string;
+                "status"?: string;
+              }>;
+              "transactions"?: Array<{
+                "baselines"?: Record<string, Record<string, unknown>>;
+                "current"?: (Record<string, unknown>) | null;
+                "group"?: string;
+                "id"?: string;
+                "name"?: string;
+                "protocol"?: string;
+                "source"?: string;
+                "unit"?: string;
+                "window"?: (Record<string, unknown>) | null;
+              }>;
+              "warnings"?: Array<string>;
+            }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
               "avg_browser_process_cpu_pct"?: number;
@@ -1716,6 +1806,8 @@ export interface operations {
                 "assignment"?: (Record<string, unknown>) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "comparison_fingerprint"?: string;
+                "comparison_metrics"?: Record<string, Record<string, unknown>>;
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
@@ -1763,6 +1855,8 @@ export interface operations {
                 "assignment"?: (Record<string, unknown>) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "comparison_fingerprint"?: string;
+                "comparison_metrics"?: Record<string, Record<string, unknown>>;
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
@@ -13375,6 +13469,40 @@ export interface operations {
       };
     };
   };
+  "handleBaselineComparisonCandidates": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+        "offset"?: number;
+        "other_scenarios"?: string;
+        "q"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleBindCapacityTimeslot": {
     parameters: {
       "path": {
@@ -17833,6 +17961,287 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCreateBaselineComparison": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "allow_other_scenarios"?: boolean;
+          "baseline_ids"?: Array<string>;
+          "maximum_load"?: number;
+          "minimum_load"?: number;
+          "policy"?: ({
+            "error_points"?: number;
+            "group_mappings"?: Record<string, string>;
+            "latency_ms"?: number;
+            "latency_pct"?: number;
+            "load_tolerance_pct"?: number;
+            "resource_mappings"?: Array<{
+              "absolute_threshold"?: number;
+              "aggregation"?: string;
+              "confirmed"?: boolean;
+              "group"?: string;
+              "identity"?: string;
+              "keys"?: Array<string>;
+              "kind"?: string;
+              "run_id"?: string;
+              "unit"?: string;
+            }>;
+            "resource_pct"?: number;
+            "revision"?: number;
+            "throughput_pct"?: number;
+          }) | null;
+          "population"?: string;
+          "windows"?: Record<string, {
+            "end_seconds"?: number;
+            "start_seconds"?: number;
+          }>;
+        };
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": ({
+            "baselines": Array<{
+              "archive_available": boolean;
+              "completed_at"?: (string) | null;
+              "id": string;
+              "name": string;
+              "peak_vusers": number;
+              "pinned": boolean;
+              "release_id": string;
+              "release_name": string;
+              "scenario_id": string;
+              "status": string;
+              "vusers": number;
+            }>;
+            "created_at": string;
+            "current": {
+              "archive_available": boolean;
+              "completed_at"?: (string) | null;
+              "id": string;
+              "name": string;
+              "peak_vusers": number;
+              "pinned": boolean;
+              "release_id": string;
+              "release_name": string;
+              "scenario_id": string;
+              "status": string;
+              "vusers": number;
+            };
+            "findings": Array<{
+              "baseline_id": string;
+              "category": string;
+              "message": string;
+              "metric": string;
+              "row_id": string;
+              "status": string;
+            }>;
+            "id": string;
+            "policy": {
+              "error_points": number;
+              "group_mappings"?: Record<string, string>;
+              "latency_ms": number;
+              "latency_pct": number;
+              "load_tolerance_pct": number;
+              "resource_mappings"?: Array<{
+                "absolute_threshold"?: number;
+                "aggregation": string;
+                "confirmed": boolean;
+                "group"?: string;
+                "identity": string;
+                "keys": Array<string>;
+                "kind": string;
+                "run_id": string;
+                "unit": string;
+              }>;
+              "resource_pct": number;
+              "revision": number;
+              "throughput_pct": number;
+            };
+            "project_id": string;
+            "request": {
+              "allow_other_scenarios": boolean;
+              "baseline_ids": Array<string>;
+              "maximum_load"?: number;
+              "minimum_load"?: number;
+              "policy"?: ({
+                "error_points": number;
+                "group_mappings"?: Record<string, string>;
+                "latency_ms": number;
+                "latency_pct": number;
+                "load_tolerance_pct": number;
+                "resource_mappings"?: Array<{
+                  "absolute_threshold"?: number;
+                  "aggregation": string;
+                  "confirmed": boolean;
+                  "group"?: string;
+                  "identity": string;
+                  "keys": Array<string>;
+                  "kind": string;
+                  "run_id": string;
+                  "unit": string;
+                }>;
+                "resource_pct": number;
+                "revision": number;
+                "throughput_pct": number;
+              }) | null;
+              "population": string;
+              "windows"?: Record<string, {
+                "end_seconds": number;
+                "start_seconds": number;
+              }>;
+            };
+            "resources": Array<{
+              "baselines": Record<string, {
+                "approximate": boolean;
+                "delta"?: (number) | null;
+                "delta_pct"?: (number) | null;
+                "measurement"?: (Record<string, unknown>) | null;
+                "qualification": Array<string>;
+                "window"?: (Record<string, unknown>) | null;
+              }>;
+              "current"?: ({
+                "coverage_pct": number;
+                "error_pct": number;
+                "errors": number;
+                "instances": number;
+                "max": number;
+                "mean": number;
+                "min": number;
+                "p50": number;
+                "p90": number;
+                "p95": number;
+                "p99": number;
+                "points"?: Array<Record<string, unknown>>;
+                "samples": number;
+                "sla"?: Array<Record<string, unknown>>;
+                "successes": number;
+                "successful_throughput": number;
+                "throughput": number;
+              }) | null;
+              "group": string;
+              "id": string;
+              "name": string;
+              "protocol"?: string;
+              "source": string;
+              "unit": string;
+              "window"?: ({
+                "direction": string;
+                "end_seconds": number;
+                "group": string;
+                "load": number;
+                "mix": Record<string, number>;
+                "start_seconds": number;
+                "total_load": number;
+              }) | null;
+            }>;
+            "rule_version": string;
+            "setup": Array<{
+              "baseline": string;
+              "baseline_id": string;
+              "current": string;
+              "field": string;
+              "status": string;
+            }>;
+            "transactions": Array<{
+              "baselines": Record<string, {
+                "approximate": boolean;
+                "delta"?: (number) | null;
+                "delta_pct"?: (number) | null;
+                "measurement"?: (Record<string, unknown>) | null;
+                "qualification": Array<string>;
+                "window"?: (Record<string, unknown>) | null;
+              }>;
+              "current"?: ({
+                "coverage_pct": number;
+                "error_pct": number;
+                "errors": number;
+                "instances": number;
+                "max": number;
+                "mean": number;
+                "min": number;
+                "p50": number;
+                "p90": number;
+                "p95": number;
+                "p99": number;
+                "points"?: Array<Record<string, unknown>>;
+                "samples": number;
+                "sla"?: Array<Record<string, unknown>>;
+                "successes": number;
+                "successful_throughput": number;
+                "throughput": number;
+              }) | null;
+              "group": string;
+              "id": string;
+              "name": string;
+              "protocol"?: string;
+              "source": string;
+              "unit": string;
+              "window"?: ({
+                "direction": string;
+                "end_seconds": number;
+                "group": string;
+                "load": number;
+                "mix": Record<string, number>;
+                "start_seconds": number;
+                "total_load": number;
+              }) | null;
+            }>;
+            "warnings": Array<string>;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -38049,6 +38458,290 @@ export interface operations {
       };
     };
   };
+  "handleGetBaselineComparison": {
+    parameters: {
+      "path": {
+        "comparison_id": string;
+        "id": string;
+      };
+      "query"?: {
+        "format"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "baselines": Array<{
+              "archive_available": boolean;
+              "completed_at"?: (string) | null;
+              "id": string;
+              "name": string;
+              "peak_vusers": number;
+              "pinned": boolean;
+              "release_id": string;
+              "release_name": string;
+              "scenario_id": string;
+              "status": string;
+              "vusers": number;
+            }>;
+            "created_at": string;
+            "current": {
+              "archive_available": boolean;
+              "completed_at"?: (string) | null;
+              "id": string;
+              "name": string;
+              "peak_vusers": number;
+              "pinned": boolean;
+              "release_id": string;
+              "release_name": string;
+              "scenario_id": string;
+              "status": string;
+              "vusers": number;
+            };
+            "findings": Array<{
+              "baseline_id": string;
+              "category": string;
+              "message": string;
+              "metric": string;
+              "row_id": string;
+              "status": string;
+            }>;
+            "id": string;
+            "policy": {
+              "error_points": number;
+              "group_mappings"?: Record<string, string>;
+              "latency_ms": number;
+              "latency_pct": number;
+              "load_tolerance_pct": number;
+              "resource_mappings"?: Array<{
+                "absolute_threshold"?: number;
+                "aggregation": string;
+                "confirmed": boolean;
+                "group"?: string;
+                "identity": string;
+                "keys": Array<string>;
+                "kind": string;
+                "run_id": string;
+                "unit": string;
+              }>;
+              "resource_pct": number;
+              "revision": number;
+              "throughput_pct": number;
+            };
+            "project_id": string;
+            "request": {
+              "allow_other_scenarios": boolean;
+              "baseline_ids": Array<string>;
+              "maximum_load"?: number;
+              "minimum_load"?: number;
+              "policy"?: ({
+                "error_points": number;
+                "group_mappings"?: Record<string, string>;
+                "latency_ms": number;
+                "latency_pct": number;
+                "load_tolerance_pct": number;
+                "resource_mappings"?: Array<{
+                  "absolute_threshold"?: number;
+                  "aggregation": string;
+                  "confirmed": boolean;
+                  "group"?: string;
+                  "identity": string;
+                  "keys": Array<string>;
+                  "kind": string;
+                  "run_id": string;
+                  "unit": string;
+                }>;
+                "resource_pct": number;
+                "revision": number;
+                "throughput_pct": number;
+              }) | null;
+              "population": string;
+              "windows"?: Record<string, {
+                "end_seconds": number;
+                "start_seconds": number;
+              }>;
+            };
+            "resources": Array<{
+              "baselines": Record<string, {
+                "approximate": boolean;
+                "delta"?: (number) | null;
+                "delta_pct"?: (number) | null;
+                "measurement"?: (Record<string, unknown>) | null;
+                "qualification": Array<string>;
+                "window"?: (Record<string, unknown>) | null;
+              }>;
+              "current"?: ({
+                "coverage_pct": number;
+                "error_pct": number;
+                "errors": number;
+                "instances": number;
+                "max": number;
+                "mean": number;
+                "min": number;
+                "p50": number;
+                "p90": number;
+                "p95": number;
+                "p99": number;
+                "points"?: Array<Record<string, unknown>>;
+                "samples": number;
+                "sla"?: Array<Record<string, unknown>>;
+                "successes": number;
+                "successful_throughput": number;
+                "throughput": number;
+              }) | null;
+              "group": string;
+              "id": string;
+              "name": string;
+              "protocol"?: string;
+              "source": string;
+              "unit": string;
+              "window"?: ({
+                "direction": string;
+                "end_seconds": number;
+                "group": string;
+                "load": number;
+                "mix": Record<string, number>;
+                "start_seconds": number;
+                "total_load": number;
+              }) | null;
+            }>;
+            "rule_version": string;
+            "setup": Array<{
+              "baseline": string;
+              "baseline_id": string;
+              "current": string;
+              "field": string;
+              "status": string;
+            }>;
+            "transactions": Array<{
+              "baselines": Record<string, {
+                "approximate": boolean;
+                "delta"?: (number) | null;
+                "delta_pct"?: (number) | null;
+                "measurement"?: (Record<string, unknown>) | null;
+                "qualification": Array<string>;
+                "window"?: (Record<string, unknown>) | null;
+              }>;
+              "current"?: ({
+                "coverage_pct": number;
+                "error_pct": number;
+                "errors": number;
+                "instances": number;
+                "max": number;
+                "mean": number;
+                "min": number;
+                "p50": number;
+                "p90": number;
+                "p95": number;
+                "p99": number;
+                "points"?: Array<Record<string, unknown>>;
+                "samples": number;
+                "sla"?: Array<Record<string, unknown>>;
+                "successes": number;
+                "successful_throughput": number;
+                "throughput": number;
+              }) | null;
+              "group": string;
+              "id": string;
+              "name": string;
+              "protocol"?: string;
+              "source": string;
+              "unit": string;
+              "window"?: ({
+                "direction": string;
+                "end_seconds": number;
+                "group": string;
+                "load": number;
+                "mix": Record<string, number>;
+                "start_seconds": number;
+                "total_load": number;
+              }) | null;
+            }>;
+            "warnings": Array<string>;
+          }) | null;
+          "text/csv": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetBaselineComparisonPolicy": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "error_points": number;
+            "group_mappings"?: Record<string, string>;
+            "latency_ms": number;
+            "latency_pct": number;
+            "load_tolerance_pct": number;
+            "resource_mappings"?: Array<{
+              "absolute_threshold"?: number;
+              "aggregation": string;
+              "confirmed": boolean;
+              "group"?: string;
+              "identity": string;
+              "keys": Array<string>;
+              "kind": string;
+              "run_id": string;
+              "unit": string;
+            }>;
+            "resource_pct": number;
+            "revision": number;
+            "throughput_pct": number;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetBrowserBenchmarkEvidence": {
     parameters?: never;
     requestBody?: never;
@@ -42722,6 +43415,14 @@ export interface operations {
               }) | null;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
+              "comparison_fingerprint"?: string;
+              "comparison_metrics"?: Record<string, {
+                "aggregation"?: string;
+                "identity": string;
+                "kind": string;
+                "source": string;
+                "unit": string;
+              }>;
               "controller_env"?: Record<string, string>;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -43312,6 +44013,14 @@ export interface operations {
               }) | null;
               "baseline_pinned"?: boolean;
               "baseline_pinned_at"?: (string) | null;
+              "comparison_fingerprint"?: string;
+              "comparison_metrics"?: Record<string, {
+                "aggregation"?: string;
+                "identity": string;
+                "kind": string;
+                "source": string;
+                "unit": string;
+              }>;
               "controller_env"?: Record<string, string>;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -43953,6 +44662,7 @@ export interface operations {
         "id": string;
       };
       "query"?: {
+        "comparison_id"?: string;
         "download"?: boolean;
         "format"?: string;
         "include_release_trend"?: string;
@@ -43973,6 +44683,167 @@ export interface operations {
               "sha256"?: string;
               "size_bytes"?: number;
             }>;
+            "baseline_comparison"?: ({
+              "baselines": Array<{
+                "archive_available": boolean;
+                "completed_at"?: (string) | null;
+                "id": string;
+                "name": string;
+                "peak_vusers": number;
+                "pinned": boolean;
+                "release_id": string;
+                "release_name": string;
+                "scenario_id": string;
+                "status": string;
+                "vusers": number;
+              }>;
+              "created_at": string;
+              "current": {
+                "archive_available": boolean;
+                "completed_at"?: (string) | null;
+                "id": string;
+                "name": string;
+                "peak_vusers": number;
+                "pinned": boolean;
+                "release_id": string;
+                "release_name": string;
+                "scenario_id": string;
+                "status": string;
+                "vusers": number;
+              };
+              "findings": Array<{
+                "baseline_id": string;
+                "category": string;
+                "message": string;
+                "metric": string;
+                "row_id": string;
+                "status": string;
+              }>;
+              "id": string;
+              "policy": {
+                "error_points": number;
+                "group_mappings"?: Record<string, string>;
+                "latency_ms": number;
+                "latency_pct": number;
+                "load_tolerance_pct": number;
+                "resource_mappings"?: Array<{
+                  "absolute_threshold"?: number;
+                  "aggregation": string;
+                  "confirmed": boolean;
+                  "group"?: string;
+                  "identity": string;
+                  "keys": Array<string>;
+                  "kind": string;
+                  "run_id": string;
+                  "unit": string;
+                }>;
+                "resource_pct": number;
+                "revision": number;
+                "throughput_pct": number;
+              };
+              "project_id": string;
+              "request": {
+                "allow_other_scenarios": boolean;
+                "baseline_ids": Array<string>;
+                "maximum_load"?: number;
+                "minimum_load"?: number;
+                "policy"?: ({
+                  "error_points": number;
+                  "group_mappings"?: Record<string, string>;
+                  "latency_ms": number;
+                  "latency_pct": number;
+                  "load_tolerance_pct": number;
+                  "resource_mappings"?: Array<Record<string, unknown>>;
+                  "resource_pct": number;
+                  "revision": number;
+                  "throughput_pct": number;
+                }) | null;
+                "population": string;
+                "windows"?: Record<string, {
+                  "end_seconds": number;
+                  "start_seconds": number;
+                }>;
+              };
+              "resources": Array<{
+                "baselines": Record<string, Record<string, unknown>>;
+                "current"?: ({
+                  "coverage_pct": number;
+                  "error_pct": number;
+                  "errors": number;
+                  "instances": number;
+                  "max": number;
+                  "mean": number;
+                  "min": number;
+                  "p50": number;
+                  "p90": number;
+                  "p95": number;
+                  "p99": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "samples": number;
+                  "sla"?: Array<Record<string, unknown>>;
+                  "successes": number;
+                  "successful_throughput": number;
+                  "throughput": number;
+                }) | null;
+                "group": string;
+                "id": string;
+                "name": string;
+                "protocol"?: string;
+                "source": string;
+                "unit": string;
+                "window"?: ({
+                  "direction": string;
+                  "group": string;
+                  "load": number;
+                  "mix": Record<string, number>;
+                  "total_load": number;
+                }) | null;
+              }>;
+              "rule_version": string;
+              "setup": Array<{
+                "baseline": string;
+                "baseline_id": string;
+                "current": string;
+                "field": string;
+                "status": string;
+              }>;
+              "transactions": Array<{
+                "baselines": Record<string, Record<string, unknown>>;
+                "current"?: ({
+                  "coverage_pct": number;
+                  "error_pct": number;
+                  "errors": number;
+                  "instances": number;
+                  "max": number;
+                  "mean": number;
+                  "min": number;
+                  "p50": number;
+                  "p90": number;
+                  "p95": number;
+                  "p99": number;
+                  "points"?: Array<Record<string, unknown>>;
+                  "samples": number;
+                  "sla"?: Array<Record<string, unknown>>;
+                  "successes": number;
+                  "successful_throughput": number;
+                  "throughput": number;
+                }) | null;
+                "group": string;
+                "id": string;
+                "name": string;
+                "protocol"?: string;
+                "source": string;
+                "unit": string;
+                "window"?: ({
+                  "direction": string;
+                  "group": string;
+                  "load": number;
+                  "mix": Record<string, number>;
+                  "total_load": number;
+                }) | null;
+              }>;
+              "warnings": Array<string>;
+            }) | null;
             "browser_by_device"?: Record<string, ({
               "avg_blocking_resources"?: number;
               "avg_browser_process_cpu_pct"?: number;
@@ -44301,6 +45172,14 @@ export interface operations {
                 }) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "comparison_fingerprint"?: string;
+                "comparison_metrics"?: Record<string, {
+                  "aggregation"?: string;
+                  "identity": string;
+                  "kind": string;
+                  "source": string;
+                  "unit": string;
+                }>;
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
@@ -44543,6 +45422,14 @@ export interface operations {
                 }) | null;
                 "baseline_pinned"?: boolean;
                 "baseline_pinned_at"?: (string) | null;
+                "comparison_fingerprint"?: string;
+                "comparison_metrics"?: Record<string, {
+                  "aggregation"?: string;
+                  "identity": string;
+                  "kind": string;
+                  "source": string;
+                  "unit": string;
+                }>;
                 "controller_env"?: Record<string, string>;
                 "created_by_display_name"?: string;
                 "created_by_subject"?: string;
@@ -51809,6 +52696,7 @@ export interface operations {
         "id": string;
       };
       "query"?: {
+        "comparison_id"?: string;
         "profile"?: string;
       };
     };
@@ -56625,6 +57513,7 @@ export interface operations {
               "dashboard_title"?: string;
               "datasource_id"?: string;
               "panels": Array<{
+                "comparison_identity"?: string;
                 "error"?: string;
                 "grid_pos": Record<string, unknown>;
                 "kind": string;
@@ -68954,6 +69843,7 @@ export interface operations {
               "dashboard_title"?: string;
               "datasource_id"?: string;
               "panels": Array<{
+                "comparison_identity"?: string;
                 "error"?: string;
                 "grid_pos": Record<string, unknown>;
                 "kind": string;
@@ -71946,6 +72836,7 @@ export interface operations {
             "graphs": Array<{
               "id": string;
               "series": Array<{
+                "comparison_definition"?: (Record<string, unknown>) | null;
                 "key": string;
                 "label": string;
                 "labels"?: Record<string, string>;
@@ -72303,6 +73194,103 @@ export interface operations {
       };
     };
   };
+  "handlePutBaselineComparisonPolicy": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "error_points"?: number;
+          "group_mappings"?: Record<string, string>;
+          "latency_ms"?: number;
+          "latency_pct"?: number;
+          "load_tolerance_pct"?: number;
+          "resource_mappings"?: Array<{
+            "absolute_threshold"?: number;
+            "aggregation"?: string;
+            "confirmed"?: boolean;
+            "group"?: string;
+            "identity"?: string;
+            "keys"?: Array<string>;
+            "kind"?: string;
+            "run_id"?: string;
+            "unit"?: string;
+          }>;
+          "resource_pct"?: number;
+          "revision"?: number;
+          "throughput_pct"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "error_points": number;
+            "group_mappings"?: Record<string, string>;
+            "latency_ms": number;
+            "latency_pct": number;
+            "load_tolerance_pct": number;
+            "resource_mappings"?: Array<{
+              "absolute_threshold"?: number;
+              "aggregation": string;
+              "confirmed": boolean;
+              "group"?: string;
+              "identity": string;
+              "keys": Array<string>;
+              "kind": string;
+              "run_id": string;
+              "unit": string;
+            }>;
+            "resource_pct": number;
+            "revision": number;
+            "throughput_pct": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleQueryGrafanaDashboardPanels": {
     parameters: {
       "path": {
@@ -72326,6 +73314,7 @@ export interface operations {
               "dashboard_title"?: string;
               "datasource_id"?: string;
               "panels": Array<{
+                "comparison_identity"?: string;
                 "error"?: string;
                 "grid_pos": Record<string, unknown>;
                 "kind": string;
@@ -112856,6 +113845,10 @@ export interface paths {
     "put": operations["handleUpdateScenario"];
     "delete": operations["handleDeleteScenario"];
   };
+  "/api/v1/scenarios/{id}/comparison-policy": {
+    "get": operations["handleGetBaselineComparisonPolicy"];
+    "put": operations["handlePutBaselineComparisonPolicy"];
+  };
   "/api/v1/scenarios/{id}/data-pools": {
     "get": operations["handleListScenarioDataPools"];
     "put": operations["handleUpdateScenarioDataPools"];
@@ -113438,6 +114431,15 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/verify": {
     "get": operations["handleVerifyRunArchive"];
+  };
+  "/api/v1/tests/{id}/baseline-candidates": {
+    "get": operations["handleBaselineComparisonCandidates"];
+  };
+  "/api/v1/tests/{id}/baseline-comparisons": {
+    "post": operations["handleCreateBaselineComparison"];
+  };
+  "/api/v1/tests/{id}/baseline-comparisons/{comparison_id}": {
+    "get": operations["handleGetBaselineComparison"];
   };
   "/api/v1/tests/{id}/comparison-baseline/pin": {
     "post": operations["handlePinComparisonBaseline"];

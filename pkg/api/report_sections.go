@@ -1327,6 +1327,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			return nil
 		}})
 
+	reg["baseline_comparison"] = baselineComparisonReportRenderer()
 	return reg
 }
 

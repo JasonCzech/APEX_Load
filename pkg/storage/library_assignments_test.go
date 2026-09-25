@@ -244,7 +244,7 @@ func TestLibraryAssignmentMigrationFromVersionNine(t *testing.T) {
 	}
 	defer store.Close()
 	status, err := store.SchemaStatus()
-	if err != nil || status.AppliedVersion != 14 {
+	if err != nil || status.AppliedVersion != currentSchemaRelease().Version {
 		t.Fatalf("upgrade: %+v %v", status, err)
 	}
 	for _, kind := range []string{"script", "scenario"} {

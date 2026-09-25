@@ -1418,7 +1418,7 @@ type LeaseFencedTestVUserScaleWriter interface {
 }
 
 // TestBaselineState is the durable baseline projection returned after an
-// atomic comparison-scope pin/unpin operation.
+// atomic independent baseline pin/unpin operation.
 type TestBaselineState struct {
 	ID       string
 	Pinned   bool

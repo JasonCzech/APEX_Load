@@ -5419,7 +5419,7 @@ func TestGetTestPrefersLatestSuccessfulComparisonBaselineOverFailedRun(t *testin
 	}
 }
 
-func TestPinComparisonBaselineUnpinsComparableRuns(t *testing.T) {
+func TestPinComparisonBaselinePreservesComparableRuns(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(2, NewHub(), store)
 	baselineCompletedAt := time.Date(2026, time.May, 10, 10, 0, 0, 0, time.UTC)
@@ -5439,14 +5439,14 @@ func TestPinComparisonBaselineUnpinsComparableRuns(t *testing.T) {
 	if !runner.tests["baseline-a"].BaselinePinned {
 		t.Fatal("expected target baseline to remain pinned")
 	}
-	if runner.tests["baseline-b"].BaselinePinned || runner.tests["baseline-b"].BaselinePinnedAt != nil {
-		t.Fatalf("expected comparable baseline to be unpinned, got %#v", runner.tests["baseline-b"])
+	if !runner.tests["baseline-b"].BaselinePinned || runner.tests["baseline-b"].BaselinePinnedAt == nil {
+		t.Fatalf("expected comparable baseline to remain pinned, got %#v", runner.tests["baseline-b"])
 	}
 	if !runner.tests["other-scope"].BaselinePinned {
 		t.Fatal("expected other scope baseline pin to remain intact")
 	}
-	if len(store.savedTests) != 2 {
-		t.Fatalf("expected comparable runs to be persisted, got %d saves", len(store.savedTests))
+	if len(store.savedTests) != 1 {
+		t.Fatalf("expected only target run to be persisted, got %d saves", len(store.savedTests))
 	}
 
 	updated, err := runner.UnpinComparisonBaseline("baseline-a")

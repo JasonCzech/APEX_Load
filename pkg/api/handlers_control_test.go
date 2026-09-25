@@ -607,8 +607,8 @@ func TestHandlePinAndUnpinComparisonBaseline(t *testing.T) {
 	if !pinPayload.BaselinePinned || pinPayload.BaselinePinnedAt == nil {
 		t.Fatalf("expected pin payload to include baseline pin metadata, got %#v", pinPayload)
 	}
-	if server.runner.tests["baseline-b"].BaselinePinned {
-		t.Fatal("expected previous comparable baseline pin to be cleared")
+	if !server.runner.tests["baseline-b"].BaselinePinned {
+		t.Fatal("expected previous comparable baseline pin to remain")
 	}
 
 	unpinReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/baseline-a/comparison-baseline/pin", nil)

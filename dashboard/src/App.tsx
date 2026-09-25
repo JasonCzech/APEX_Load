@@ -3497,6 +3497,7 @@ function AppShell({
                   initialSection={view.section}
                   initialLens={view.lens}
                   initialCompare={view.compare}
+                  initialComparisonId={view.comparisonId}
                   initialTransaction={view.transaction}
                   initialPopulation={view.population}
                   statusOverride={testStatuses[view.testId]}
@@ -3505,6 +3506,7 @@ function AppShell({
                     setGuardedView({
                       page: "report",
                       testId: view.testId,
+                      ...(view.comparisonId ? {comparisonId: view.comparisonId} : {}),
                       ...(view.transaction ? {transaction: view.transaction} : {}),
                       ...(view.population ? {population: view.population} : {}),
                       ...(view.projectId ? { projectId: view.projectId } : {}),

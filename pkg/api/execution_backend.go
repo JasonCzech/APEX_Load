@@ -347,6 +347,7 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.DynatraceCapture = cloneDynatraceCaptureConfig(snapshot.DynatraceCapture)
 	provenance.RuntimeSettingsReview = cloneRuntimeSettingsReview(snapshot.RuntimeSettingsReview)
 	provenance.Groups = maskTestGroupsRuntimeSettings(snapshot.Groups)
+	captureBaselineComparisonMetadata(&provenance, snapshot)
 	provenance.BaselinePinned = snapshot.BaselinePinned
 	provenance.BaselinePinnedAt = snapshot.BaselinePinnedAt
 	provenance.ControllerEnv = captureAPEXLoadEnv()

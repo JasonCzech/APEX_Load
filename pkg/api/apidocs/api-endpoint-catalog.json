@@ -3487,6 +3487,26 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/scenarios/{id}/comparison-policy",
+      "operationId": "handleGetBaselineComparisonPolicy",
+      "summary": "Get Baseline Comparison Policy",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/scenarios/{id}/comparison-policy",
+      "operationId": "handlePutBaselineComparisonPolicy",
+      "summary": "Put Baseline Comparison Policy",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/scenarios/{id}/data-pools",
       "operationId": "handleListScenarioDataPools",
       "summary": "List Scenario Data Pools",
@@ -5594,6 +5614,36 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/baseline-candidates",
+      "operationId": "handleBaselineComparisonCandidates",
+      "summary": "Baseline Comparison Candidates",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/baseline-comparisons",
+      "operationId": "handleCreateBaselineComparison",
+      "summary": "Create Baseline Comparison",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/baseline-comparisons/{comparison_id}",
+      "operationId": "handleGetBaselineComparison",
+      "summary": "Get Baseline Comparison",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
     },
     {
       "method": "DELETE",

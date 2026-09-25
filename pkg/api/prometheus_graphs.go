@@ -58,10 +58,11 @@ type PrometheusGraph struct {
 }
 
 type PrometheusSeries struct {
-	Key    string            `json:"key"`
-	Label  string            `json:"label"`
-	Labels map[string]string `json:"labels,omitempty"`
-	Values []PrometheusPoint `json:"values"`
+	ComparisonDefinition *BaselineMetricDefinition `json:"comparison_definition,omitempty"`
+	Key                  string                    `json:"key"`
+	Label                string                    `json:"label"`
+	Labels               map[string]string         `json:"labels,omitempty"`
+	Values               []PrometheusPoint         `json:"values"`
 }
 
 type PrometheusPoint struct {

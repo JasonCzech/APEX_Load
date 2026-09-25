@@ -233,7 +233,7 @@ func (tr *TestRunner) buildRunComparisonBaselineLocked(test *ManagedTest) *RunCo
 			if candidate.BaselinePinnedAt != nil && !candidate.BaselinePinnedAt.IsZero() {
 				markedAt = *candidate.BaselinePinnedAt
 			}
-			if pinned == nil || markedAt.After(pinnedMarkedAt) || (markedAt.Equal(pinnedMarkedAt) && completedAt.After(pinnedCompletedAt)) {
+			if pinned == nil || markedAt.After(pinnedMarkedAt) || (markedAt.Equal(pinnedMarkedAt) && (completedAt.After(pinnedCompletedAt) || completedAt.Equal(pinnedCompletedAt) && candidate.ID < pinned.ID)) {
 				pinned = candidate
 				pinnedMarkedAt = markedAt
 				pinnedCompletedAt = completedAt
@@ -404,40 +404,13 @@ func (tr *TestRunner) PinComparisonBaseline(id string) (*ManagedTest, error) {
 		cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
 		return cloned, nil
 	}
-	type baselinePinSnapshot struct {
-		test     *ManagedTest
-		pinned   bool
-		pinnedAt *time.Time
-	}
-	snapshots := make([]baselinePinSnapshot, 0)
-	for _, candidate := range tr.tests {
-		if !sharesComparisonScope(test, candidate) {
-			continue
-		}
-		snapshots = append(snapshots, baselinePinSnapshot{
-			test:     candidate,
-			pinned:   candidate.BaselinePinned,
-			pinnedAt: cloneTimePtr(candidate.BaselinePinnedAt),
-		})
-		if candidate.ID == test.ID {
-			candidate.BaselinePinned = true
-			candidate.BaselinePinnedAt = &pinnedAt
-		} else if candidate.BaselinePinned || candidate.BaselinePinnedAt != nil {
-			candidate.BaselinePinned = false
-			candidate.BaselinePinnedAt = nil
-		}
-	}
-	changes := make(map[string]*time.Time, len(snapshots))
-	for _, snapshot := range snapshots {
-		changes[snapshot.test.ID] = cloneTimePtr(snapshot.test.BaselinePinnedAt)
-	}
-	if err := tr.persistBaselineChanges(changes); err != nil {
-		for _, previous := range snapshots {
-			previous.test.BaselinePinned = previous.pinned
-			previous.test.BaselinePinnedAt = cloneTimePtr(previous.pinnedAt)
-		}
+	previousPinned, previousAt := test.BaselinePinned, cloneTimePtr(test.BaselinePinnedAt)
+	test.BaselinePinned, test.BaselinePinnedAt = true, &pinnedAt
+	if err := tr.persistBaselineChanges(map[string]*time.Time{test.ID: &pinnedAt}); err != nil {
+		test.BaselinePinned, test.BaselinePinnedAt = previousPinned, previousAt
 		return nil, fmt.Errorf("persist comparison baseline: %w", err)
 	}
+
 	cloned := cloneManagedTestForReadLocked(test)
 	cloned.ComparisonBaseline = tr.buildRunComparisonBaselineLocked(test)
 	return cloned, nil

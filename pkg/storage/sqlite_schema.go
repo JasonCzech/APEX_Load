@@ -20,6 +20,16 @@ import (
 func schemaCreateTableStatements() []string {
 	return []string{
 		schemaMigrationLedgerDDL,
+		`CREATE TABLE IF NOT EXISTS baseline_comparison_snapshots (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL, test_id TEXT NOT NULL,
+            payload TEXT NOT NULL, created_at DATETIME NOT NULL,
+            FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE
+        )`,
+		`CREATE TABLE IF NOT EXISTS scenario_comparison_policies (
+            scenario_id TEXT PRIMARY KEY, project_id TEXT NOT NULL,
+            revision BIGINT NOT NULL, payload TEXT NOT NULL,
+            FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE
+        )`,
 		`CREATE TABLE IF NOT EXISTS script_library_assignments (
             item_id TEXT PRIMARY KEY,
             application_id TEXT,

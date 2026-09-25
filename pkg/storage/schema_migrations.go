@@ -39,6 +39,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 12, Name: "optional-dynatrace-saas-monitoring", Fingerprint: "47b102255d607b776d1cda7d3e4fc0c79cb978a4ed991a9e0bac18ae80008daf"},
 	{Version: 13, Name: "explicit-iteration-termination", Fingerprint: "2b3f09f8f1be8fedd664b88d5815556071936438f749f9c06e9d4d15e8db5273"},
 	{Version: 14, Name: "confluence-cloud-result-publishing", Fingerprint: "dcc18fcf8fd11ff340bf1fedb505d5c642ecda83e7909b5b23f8ea6fb055cdba"},
+	{Version: 15, Name: "baseline-comparison-workspace", Fingerprint: "958e28dac8c5e9c668ce79322e2e72a3a590f2bba64808de8830d2eeaa0a1e15"},
 }
 
 type SchemaMigrationRecord struct {

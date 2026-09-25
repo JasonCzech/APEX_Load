@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 93; got != want {
+	if got, want := len(specs), 95; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -78,6 +78,8 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		"confluence_publications.test_id":                       "tests.id",
 		"protected_source_secret_sessions.project_id":           "projects.id",
 		"runtime_secret_provisioning_attempts.project_id":       "projects.id",
+		"baseline_comparison_snapshots.test_id":                 "tests.id",
+		"scenario_comparison_policies.scenario_id":              "scenarios.id",
 		"grafana_dashboard_snapshots.test_id":                   "tests.id",
 		"local_auth_credentials.user_id":                        "users.id",
 		"local_auth_sessions.user_id":                           "users.id",

@@ -14,7 +14,7 @@ export type AppView = AppWorkspaceScope & (
   | { page: 'monitoring'; category?: MonitoringCategoryID }
   | { page: 'docs'; guidePage?: ApiGuideContentPageID; guideArticle?: string; guideSection?: string }
   | { page: 'command-center'; testId?: string }
-  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown' }
+  | { page: 'report'; testId: string; lens?: ReportLens; compare?: string; comparisonId?: string; section?: ReportSection; transaction?: string; population?: 'action' | 'transaction' | 'unknown' }
   | { page: 'tests'; scenarioView?: 'library' | 'builder' | 'plans' }
   | { page: 'new-test'; scenarioId?: string; prefillStartLocal?: string }
   | { page: 'scripts'; mode?: 'list' | 'create' | 'edit' | 'import'; scriptId?: string }
@@ -44,7 +44,7 @@ const SCRIPT_MODES = ['list', 'create', 'edit', 'import'] as const
 const SCENARIO_VIEWS = ['library', 'builder', 'plans'] as const
 const TEST_WORKSPACE_TABS = ['overview', 'diagnostics', 'configuration', 'infrastructure', 'control', 'graphs', 'archive', 'action-summary', 'load-impact', 'transaction-drilldown'] as const
 const MONITORING_CATEGORIES = ['overview', 'telemetry', 'alerts'] as const
-export const REPORT_SECTIONS = ['summary', 'performance', 'diagnostics', 'evidence', 'execution'] as const
+export const REPORT_SECTIONS = ['summary', 'performance', 'comparison', 'diagnostics', 'evidence', 'execution'] as const
 export type ReportSection = typeof REPORT_SECTIONS[number]
 export const REPORT_LENSES = ['executive', 'engineer', 'audit'] as const
 
@@ -193,6 +193,7 @@ export function parseAppViewFromHash(hash: string): AppView {
       ...(isReportLens(lens) ? { lens } : {}),
       ...(section && REPORT_SECTIONS.includes(section) ? { section } : {}),
       ...(compare ? { compare } : {}),
+      ...(params.get('comparison_id') ? { comparisonId: params.get('comparison_id')! } : {}),
       ...(transaction ? { transaction } : {}),
       ...(population === 'action' || population === 'transaction' || population === 'unknown' ? { population } : {}),
       ...workspaceScope,
@@ -363,6 +364,7 @@ export function viewToLocationHash(view: AppView): string {
     if (view.section) params.set('section', view.section)
     if (view.lens) params.set('lens', view.lens)
     if (view.compare) params.set('compare', view.compare)
+    if (view.comparisonId) params.set('comparison_id', view.comparisonId)
     if (view.transaction) params.set('transaction', view.transaction)
     if (view.population) params.set('population', view.population)
     appendWorkspaceScope(params, view)

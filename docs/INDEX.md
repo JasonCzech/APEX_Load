@@ -13,6 +13,7 @@ kept for planning or audit context only.
 | [HELP_CENTER.md](HELP_CENTER.md#build-and-run-your-first-test) | Current | In-app help: first test, capabilities, support, changes, and troubleshooting |
 | [README.md](../README.md) | Current | Project overview, quick start, and primary links |
 | [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application |
+| [BASELINE_COMPARISON.md](BASELINE_COMPARISON.md) | Current | Pinned baseline selection, matched-load evidence, advisory policies and saved comparison exports |
 | [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator tasks, library assignments, and project secrets |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API orientation, authentication, workflows, and automation |
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | DSL execution, examples, and migration guidance for LoadRunner and JMeter operators |

@@ -240,7 +240,7 @@ describe('RunReportPage', () => {
     const render = (section: 'summary' | 'performance' | 'execution' | 'evidence') => <RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
     await act(async () => root.render(render('summary')))
     expect(container.querySelector('h1')?.textContent).toBe('Checkout Run')
-    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(5)
+    expect(container.querySelectorAll('[role="tab"]')).toHaveLength(6)
     expect(container.textContent).toContain('Saved archive unavailable')
     if (status === 'FAILED') expect(container.textContent).toContain('Controller restarted before completion')
     expect(container.textContent).not.toContain('Customize view')
@@ -274,12 +274,11 @@ describe('RunReportPage', () => {
     expect(container.textContent).toContain('Archived evidence elapsed Not recorded')
   })
 
-  it('discovers eligible archived baselines beyond the first catalog page', async () => {
+  it('preserves legacy baseline links beyond the first catalog page', async () => {
     mocks.polling.test = { ...buildTest('COMPLETE'), project_id: 'project', application_id: 'app', release_id: 'release' }
     const firstPage = Array.from({ length: 100 }, (_, i) => ({ ...buildTest('COMPLETE', false), id: `unarchived-${i}` }))
     mocks.api.listTests.mockResolvedValueOnce({ tests: firstPage, total: 101, count: 100 }).mockResolvedValueOnce({ tests: [{ ...buildTest('COMPLETE'), id: 'older', name: 'Older archived baseline' }], total: 101, count: 1 })
-    await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
-    await act(async () => buttonByText(container, 'Compare')?.click())
+    await act(async () => root.render(<RunReportPage initialCompare="older" testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     expect(mocks.api.listTests).toHaveBeenCalledWith(expect.objectContaining({ offset: 100, project_id: 'project', application_id: 'app' }))
     expect(container.textContent).toContain('Older archived baseline')
     expect(container.querySelector('[data-testid="compare"]')?.querySelectorAll('span')).toHaveLength(1)

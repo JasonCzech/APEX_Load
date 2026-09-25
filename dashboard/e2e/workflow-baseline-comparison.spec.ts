@@ -1,0 +1,134 @@
+import { test, expect, seedScript, json, idOf, login } from './support/workflow'
+import { createWorkspace, scopeQuery } from './support/workspace'
+import type { ComparisonSnapshot, ComparisonRequest, Measurement, RunIdentity } from '../src/components/baselineComparison/model'
+import { defaultPolicy } from '../src/components/baselineComparison/model'
+
+// Browser fixtures use real authorized project/run identities; numerical and
+// persistence contracts are exercised against real archives in Go integration tests.
+test('baseline workspace selects pins, investigates resources, shares and preserves comparison context', async ({ page }, testInfo) => {
+  test.setTimeout(90000)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const currentId = idOf(await json(await request.post('/api/v1/tests', { data: { project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId, name: 'Release 3 checkout', duration: '2m', groups: [{ name: 'checkout', script_id: scriptId, vusers: 100 }] } })))
+  const baselines: RunIdentity[] = Array.from({ length: 6 }, (_, i) => ({ id: `baseline-${i}`, name: `Checkout baseline ${i + 1}`, release_id: `release-${i}`, release_name: `Release ${i + 1}`, scenario_id: 'scenario', status: 'COMPLETE', vusers: 100, peak_vusers: 100, completed_at: '2026-09-01T12:00:00Z', pinned: true, archive_available: true }))
+  const current: RunIdentity = { ...baselines[0], id: currentId, name: 'Release 3 checkout', release_name: 'Current release' }
+  const measurement = (value: number): Measurement => ({ samples: 1200, successes: 1200, errors: 0, mean: value, min: value / 2, max: value * 2, p50: value, p90: value, p95: value, p99: value, throughput: 20, successful_throughput: 20, error_pct: 0, coverage_pct: 100, instances: 1, points: [{ seconds: 30, load: 100, value }, { seconds: 60, load: 100, value: value * 1.1 }, { seconds: 120, load: 100, value }] })
+  const window = { start_seconds: 30, end_seconds: 120, load: 100, total_load: 100, group: 'checkout', direction: 'steady', mix: { checkout: 1 } }
+  let saved: ComparisonSnapshot | undefined
+  const snapshots = new Map<string, ComparisonSnapshot>()
+  let releasePolicy!: () => void
+  const policyReady = new Promise<void>(resolve => { releasePolicy = resolve })
+  await page.route('**/api/v1/scenarios/*/comparison-policy', async route => { await policyReady; await route.fulfill({ json: defaultPolicy }) })
+  await page.route('**/api/v1/tests**', async route => {
+    const url = new URL(route.request().url()); const path = url.pathname
+    if (path === `/api/v1/tests/${currentId}/baseline-candidates`) return route.fulfill({ json: { runs: baselines.filter(run => run.name.toLowerCase().includes((url.searchParams.get('q') || '').toLowerCase())), total: 6, suggested_baseline: baselines[0] } })
+    if (path === `/api/v1/tests/${currentId}/baseline-comparisons` && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as ComparisonRequest
+      const refs = baselines.filter(run => body.baseline_ids.includes(run.id))
+      const cells = Object.fromEntries(refs.map(run => [run.id, { measurement: measurement(100), window, qualification: [], approximate: true, delta: 50, delta_pct: 50 }]))
+      saved = { id: `saved-comparison-${snapshots.size + 1}`,  project_id: workspace.projectId, current, baselines: refs, created_at: '2026-09-25T12:00:00Z', rule_version: 'baseline-comparison-v1', request: body, policy: body.policy || defaultPolicy,
+        transactions: Array.from({ length: 300 }, (_, i) => ({ id: `tx/${i}`, name: i === 0 ? 'Purchase' : `Transaction ${String(i).padStart(3, '0')}`, group: 'checkout', protocol: 'http', source: 'transaction', unit: 'ms', window, current: measurement(150), baselines: cells })),
+        resources: [{ id: 'resource/0', name: 'external/java_heap', group: '', source: 'application', unit: 'bytes', window, current: measurement(150), baselines: cells }],
+        setup: [{ baseline_id: refs[0].id, field: 'Think time', current: '1 second', baseline: '2 seconds', status: 'differs' }],
+        findings: [{ baseline_id: refs[0].id, row_id: 'resource/0', category: 'resource', metric: 'mean', message: 'Java heap +50% at 100 VUsers', status: 'changed' }], warnings: ['Advisory findings do not change acceptance verdicts.'] }
+      snapshots.set(saved.id, saved)
+      return route.fulfill({ status: 201, json: saved })
+    }
+    if (path.startsWith(`/api/v1/tests/${currentId}/baseline-comparisons/`)) return path.endsWith("/missing") ? route.fulfill({ status: 404, json: {error:"Snapshot unavailable"} }) : route.fulfill({ json: snapshots.get(path.split('/').pop()!) })
+    if (path === `/api/v1/tests/${currentId}/archive/report`) return route.fulfill({ json: { manifest: { test_id: currentId, test_name: current.name, status: 'COMPLETE', provenance: { total_vusers: 100, duration: '2m', started_at: '2026-09-25T10:00:00Z' } }, overview: { transactions: 1200, peak_active_vusers: 100 }, metric_populations: { transaction: { transactions: 1200, errors: 0, avg_response_ms: 150, p95_ms: 150 } }, by_action: {}, completeness: { score_pct: 100 }, verdict: { status: 'pass' } } })
+    if (path === `/api/v1/tests/${currentId}` && route.request().method() === 'GET') {
+      const response = await route.fetch(); const payload = await response.json()
+      return route.fulfill({ response, json: { ...payload, scenario_id: 'scenario', status: 'COMPLETE', created_at: '2026-09-25T10:00:00Z', started_at: '2026-09-25T10:00:00Z', ended_at: '2026-09-25T10:02:00Z', archive: { transaction_count: 1200 } } })
+    }
+    return route.continue()
+  })
+  await page.goto(`/#/report/${currentId}?section=comparison&${scopeQuery(workspace)}`)
+  await page.reload()
+  await expect(page.getByRole('tab', { name: 'Baseline Comparison', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByText('1/5 baselines', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Compare selected baselines' })).toBeDisabled()
+  releasePolicy()
+  await expect(page.getByRole('button', { name: 'Compare selected baselines' })).toBeEnabled()
+  const picker = page.locator('.bc-candidates')
+  for (let i = 2; i <= 5; i++) await picker.getByRole('checkbox', { name: `Checkout baseline ${i}`, exact: false }).check()
+  await expect(picker.getByRole('checkbox', { name: 'Checkout baseline 6', exact: false })).toBeDisabled()
+  await page.getByRole('button', { name: 'Compare selected baselines' }).click()
+  await expect(page.getByText('Java heap +50% at 100 VUsers', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/comparison_id=saved-comparison-1/)
+  await page.getByText('Load alignment, thresholds and mappings', { exact: false }).click()
+  await page.getByLabel('Minimum observed VUsers', { exact: true }).fill('90')
+  await page.getByLabel('Maximum observed VUsers (0 = all)', { exact: true }).fill('110')
+  await page.getByLabel('Load tolerance %', { exact: true }).fill('0')
+  await page.getByText('Map monitoring series and service aggregations', { exact: true }).click()
+  await page.getByLabel('Logical metric identity', { exact: true }).fill('java-heap')
+  await page.getByLabel('Recorded keys, one per line', { exact: true }).fill('external/java_heap')
+  await page.getByLabel('Unit', { exact: true }).fill('bytes')
+  await page.getByRole('button', { name: 'Confirm metric mapping' }).click()
+  await expect(page.getByText('Draft changes unapplied', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Apply comparison', exact: true }).click()
+  await expect(page.getByText('Saved assessment', { exact: true })).toBeVisible()
+  expect(saved?.request.minimum_load).toBe(90)
+  expect(saved?.request.maximum_load).toBe(110)
+  expect(saved?.policy.load_tolerance_pct).toBe(0)
+  expect(saved?.policy.resource_mappings?.[0].identity).toBe('java-heap')
+  await page.getByText('Load alignment, thresholds and mappings', { exact: false }).click()
+  expect(await page.locator('.bc-matrix tbody tr').count()).toBeLessThan(35)
+  await page.getByRole('button', { name: /Java heap \+50%/ }).click()
+  const drawer = page.getByRole('dialog', { name: 'external/java_heap' })
+  await expect(drawer).toBeVisible()
+  await expect(drawer.getByText('100 vs 100 VUsers', { exact: false }).first()).toBeVisible()
+  await drawer.getByLabel('Chart alignment').selectOption('elapsed')
+  await expect(drawer.locator('.recharts-line-dot').first()).toHaveAttribute('fill', 'var(--chart-1)')
+  await page.screenshot({ path: testInfo.outputPath('baseline-resource-detail.png'), fullPage: true })
+  await page.keyboard.press('Escape')
+  await expect(drawer).toBeHidden()
+  await page.getByRole('button', { name: 'Resources', exact: true }).click()
+  await page.getByRole('searchbox', { name: 'Filter resources' }).fill('java_heap')
+  await expect(page.getByRole('button', { name: 'external/java_heap', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Setup differences', exact: true }).click()
+  await expect(page.getByRole('cell', { name: '1 second', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Resources', exact: true }).click()
+  await expect(page.getByRole('searchbox', { name: 'Filter resources' })).toHaveValue('java_heap')
+  await page.setViewportSize({ width: 800, height: 1000 })
+  await page.getByLabel('Visible baseline').selectOption('baseline-2')
+  await expect(page.locator('.bc-matrix thead .bc-baseline:visible')).toHaveCount(1)
+  const contextBar = await page.getByRole('complementary', { name: 'Applied comparison context' }).boundingBox()
+  const topbar = await page.locator('.main-topbar').boundingBox()
+  expect(contextBar!.y).toBeGreaterThanOrEqual(topbar!.y + topbar!.height)
+  await page.screenshot({ path: testInfo.outputPath('baseline-comparison-narrow.png'), fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.screenshot({ path: testInfo.outputPath('baseline-comparison-wide.png'), fullPage: true })
+  await page.getByRole('link', { name: 'Permanent comparison link' }).click()
+  await page.reload()
+  await expect(page.getByText('Java heap +50% at 100 VUsers', { exact: true })).toBeVisible()
+  await expect(page.getByText('5/5 baselines', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click()
+  await expect(page).toHaveURL(/comparison_id=saved-comparison-2/)
+  await page.getByRole('tab', { name: 'Baseline Comparison', exact: true }).click()
+  await expect(page.getByText('5/5 baselines', { exact: true })).toBeVisible()
+  await page.getByText('Load alignment, thresholds and mappings', { exact: false }).click()
+  await page.getByLabel('Start seconds', { exact: true }).last().fill('10')
+  await page.getByRole('button', { name: 'Remove baseline Release 5 · Checkout baseline 5', exact: true }).click()
+  await page.getByRole('button', { name: 'Apply comparison', exact: true }).click()
+  await expect(page.getByText('4/5 baselines', { exact: true })).toBeVisible()
+  expect(saved?.request.windows?.['baseline-4']).toBeUndefined()
+  await page.getByRole('button', { name: /Java heap \+50%/ }).click()
+  await expect(page.getByRole('dialog', { name: 'external/java_heap' })).toBeVisible()
+  await page.goto(`/#/report/${currentId}?section=comparison&comparison_id=missing&${scopeQuery(workspace)}`)
+  await expect(page.getByRole('alert')).toContainText('Snapshot unavailable')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByText('Java heap +50% at 100 VUsers', { exact: true })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Permanent comparison link' })).toHaveCount(0)
+  await page.goto(`/#/report/${currentId}?section=comparison&comparison_id=saved-comparison-1&${scopeQuery(workspace)}`)
+  await expect(page.getByText('Java heap +50% at 100 VUsers', { exact: true })).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  for (const baseline of ['baseline-1', 'baseline-2']) {
+    await page.goto(`/#/report/${currentId}?section=comparison&compare=${baseline}&${scopeQuery(workspace)}`)
+    await expect(page.getByText('1/5 baselines', { exact: true })).toBeVisible()
+    await expect(page.locator('.bc-candidates input:checked')).toHaveCount(1)
+    await expect(page.locator('.bc-candidates').getByRole('checkbox', { name: `Checkout baseline ${Number(baseline.split('-')[1]) + 1}`, exact: false })).toBeChecked()
+  }
+})

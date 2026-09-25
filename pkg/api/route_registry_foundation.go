@@ -62,6 +62,7 @@ var modularAPIRouteCatalogs = []apiRouteCatalog{
 	powerBIAPIRouteCatalog,
 	confluenceAPIRouteCatalog,
 	scenarioSchedulingAPIRouteCatalog,
+	baselineComparisonAPIRouteCatalog,
 	executionPlanAPIRouteCatalog,
 	objectRepositoryAPIRouteCatalog,
 	correlationRulesetAPIRouteCatalog,

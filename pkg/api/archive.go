@@ -124,6 +124,8 @@ type RunArchiveExecutionSettingsSnapshot struct {
 }
 
 type RunArchiveProvenance struct {
+	ComparisonFingerprint string                              `json:"comparison_fingerprint,omitempty"`
+	ComparisonMetrics     map[string]BaselineMetricDefinition `json:"comparison_metrics,omitempty"`
 	TerminationMode       string                              `json:"termination_mode,omitempty"`
 	CSVExports            []RunArchiveCSVExport               `json:"csv_exports,omitempty"`
 	ApplicationID         string                              `json:"application_id,omitempty"`
@@ -397,6 +399,7 @@ type RunArchiveIdentityNames struct {
 }
 
 type RunArchiveReport struct {
+	BaselineComparison                *BaselineComparisonSnapshot            `json:"baseline_comparison,omitempty"`
 	IdentityNames                     RunArchiveIdentityNames                `json:"identity_names"`
 	Outcome                           *IntegrationOutcome                    `json:"outcome,omitempty"`
 	ByTransaction                     map[string]RunArchiveActionStats       `json:"by_transaction,omitempty"`

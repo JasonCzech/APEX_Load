@@ -3911,6 +3911,242 @@ paths:
                           size_bytes:
                             type: integer
                             format: int64
+                    baseline_comparison:
+                      type: object
+                      properties:
+                        baselines:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              archive_available:
+                                type: boolean
+                              completed_at:
+                                type: string
+                                format: date-time
+                                nullable: true
+                              id:
+                                type: string
+                              name:
+                                type: string
+                              peak_vusers:
+                                type: integer
+                                format: int64
+                              pinned:
+                                type: boolean
+                              release_id:
+                                type: string
+                              release_name:
+                                type: string
+                              scenario_id:
+                                type: string
+                              status:
+                                type: string
+                              vusers:
+                                type: integer
+                                format: int64
+                        created_at:
+                          type: string
+                          format: date-time
+                        current:
+                          type: object
+                          properties:
+                            archive_available:
+                              type: boolean
+                            completed_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            peak_vusers:
+                              type: integer
+                              format: int64
+                            pinned:
+                              type: boolean
+                            release_id:
+                              type: string
+                            release_name:
+                              type: string
+                            scenario_id:
+                              type: string
+                            status:
+                              type: string
+                            vusers:
+                              type: integer
+                              format: int64
+                        findings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              baseline_id:
+                                type: string
+                              category:
+                                type: string
+                              message:
+                                type: string
+                              metric:
+                                type: string
+                              row_id:
+                                type: string
+                              status:
+                                type: string
+                        id:
+                          type: string
+                        policy:
+                          type: object
+                          properties:
+                            error_points:
+                              type: number
+                              format: double
+                            group_mappings:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            latency_ms:
+                              type: number
+                              format: double
+                            latency_pct:
+                              type: number
+                              format: double
+                            load_tolerance_pct:
+                              type: number
+                              format: double
+                            resource_mappings:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: BaselineResourceMapping'
+                                additionalProperties: true
+                            resource_pct:
+                              type: number
+                              format: double
+                            revision:
+                              type: integer
+                              format: int64
+                            throughput_pct:
+                              type: number
+                              format: double
+                        project_id:
+                          type: string
+                        request:
+                          type: object
+                          properties:
+                            allow_other_scenarios:
+                              type: boolean
+                            baseline_ids:
+                              type: array
+                              items:
+                                type: string
+                            maximum_load:
+                              type: number
+                              format: double
+                            minimum_load:
+                              type: number
+                              format: double
+                            policy:
+                              type: object
+                              additionalProperties: true
+                              nullable: true
+                            population:
+                              type: string
+                            windows:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: BaselineComparisonWindow'
+                                additionalProperties: true
+                        resources:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              baselines:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: BaselineComparisonCell'
+                                  additionalProperties: true
+                              current:
+                                type: object
+                                description: 'Go type: BaselineMeasurement'
+                                additionalProperties: true
+                                nullable: true
+                              group:
+                                type: string
+                              id:
+                                type: string
+                              name:
+                                type: string
+                              protocol:
+                                type: string
+                              source:
+                                type: string
+                              unit:
+                                type: string
+                              window:
+                                type: object
+                                description: 'Go type: BaselineLoadWindow'
+                                additionalProperties: true
+                                nullable: true
+                        rule_version:
+                          type: string
+                        setup:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              baseline:
+                                type: string
+                              baseline_id:
+                                type: string
+                              current:
+                                type: string
+                              field:
+                                type: string
+                              status:
+                                type: string
+                        transactions:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              baselines:
+                                type: object
+                                additionalProperties:
+                                  type: object
+                                  description: 'Go type: BaselineComparisonCell'
+                                  additionalProperties: true
+                              current:
+                                type: object
+                                description: 'Go type: BaselineMeasurement'
+                                additionalProperties: true
+                                nullable: true
+                              group:
+                                type: string
+                              id:
+                                type: string
+                              name:
+                                type: string
+                              protocol:
+                                type: string
+                              source:
+                                type: string
+                              unit:
+                                type: string
+                              window:
+                                type: object
+                                description: 'Go type: BaselineLoadWindow'
+                                additionalProperties: true
+                                nullable: true
+                        warnings:
+                          type: array
+                          items:
+                            type: string
+                      nullable: true
                     browser_by_device:
                       type: object
                       additionalProperties:
@@ -4746,6 +4982,14 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            comparison_fingerprint:
+                              type: string
+                            comparison_metrics:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: BaselineMetricDefinition'
+                                additionalProperties: true
                             controller_env:
                               type: object
                               additionalProperties:
@@ -4890,6 +5134,14 @@ paths:
                               type: string
                               format: date-time
                               nullable: true
+                            comparison_fingerprint:
+                              type: string
+                            comparison_metrics:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                description: 'Go type: BaselineMetricDefinition'
+                                additionalProperties: true
                             controller_env:
                               type: object
                               additionalProperties:
@@ -40194,6 +40446,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              comparison_identity:
+                                type: string
                               error:
                                 type: string
                               grid_pos:
@@ -40356,6 +40610,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              comparison_identity:
+                                type: string
                               error:
                                 type: string
                               grid_pos:
@@ -40966,6 +41222,8 @@ paths:
                           items:
                             type: object
                             properties:
+                              comparison_identity:
+                                type: string
                               error:
                                 type: string
                               grid_pos:
@@ -41282,6 +41540,10 @@ paths:
                           items:
                             type: object
                             properties:
+                              comparison_definition:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               key:
                                 type: string
                               label:
@@ -97710,6 +97972,313 @@ paths:
       tags:
         - Scenarios
       x-handler: handleUpdateScenario
+  /api/v1/scenarios/{id}/comparison-policy:
+    get:
+      summary: Get Baseline Comparison Policy
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleGetBaselineComparisonPolicy
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error_points:
+                    type: number
+                    format: double
+                  group_mappings:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  latency_ms:
+                    type: number
+                    format: double
+                  latency_pct:
+                    type: number
+                    format: double
+                  load_tolerance_pct:
+                    type: number
+                    format: double
+                  resource_mappings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        absolute_threshold:
+                          type: number
+                          format: double
+                        aggregation:
+                          type: string
+                        confirmed:
+                          type: boolean
+                        group:
+                          type: string
+                        identity:
+                          type: string
+                        keys:
+                          type: array
+                          items:
+                            type: string
+                        kind:
+                          type: string
+                        run_id:
+                          type: string
+                        unit:
+                          type: string
+                      required:
+                        - aggregation
+                        - confirmed
+                        - identity
+                        - keys
+                        - kind
+                        - run_id
+                        - unit
+                  resource_pct:
+                    type: number
+                    format: double
+                  revision:
+                    type: integer
+                    format: int64
+                  throughput_pct:
+                    type: number
+                    format: double
+                required:
+                  - error_points
+                  - latency_ms
+                  - latency_pct
+                  - load_tolerance_pct
+                  - resource_pct
+                  - revision
+                  - throughput_pct
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scenarios
+      x-handler: handleGetBaselineComparisonPolicy
+    put:
+      summary: Put Baseline Comparison Policy
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      operationId: handlePutBaselineComparisonPolicy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                error_points:
+                  type: number
+                  format: double
+                group_mappings:
+                  type: object
+                  additionalProperties:
+                    type: string
+                latency_ms:
+                  type: number
+                  format: double
+                latency_pct:
+                  type: number
+                  format: double
+                load_tolerance_pct:
+                  type: number
+                  format: double
+                resource_mappings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      absolute_threshold:
+                        type: number
+                        format: double
+                      aggregation:
+                        type: string
+                      confirmed:
+                        type: boolean
+                      group:
+                        type: string
+                      identity:
+                        type: string
+                      keys:
+                        type: array
+                        items:
+                          type: string
+                      kind:
+                        type: string
+                      run_id:
+                        type: string
+                      unit:
+                        type: string
+                resource_pct:
+                  type: number
+                  format: double
+                revision:
+                  type: integer
+                  format: int64
+                throughput_pct:
+                  type: number
+                  format: double
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error_points:
+                    type: number
+                    format: double
+                  group_mappings:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  latency_ms:
+                    type: number
+                    format: double
+                  latency_pct:
+                    type: number
+                    format: double
+                  load_tolerance_pct:
+                    type: number
+                    format: double
+                  resource_mappings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        absolute_threshold:
+                          type: number
+                          format: double
+                        aggregation:
+                          type: string
+                        confirmed:
+                          type: boolean
+                        group:
+                          type: string
+                        identity:
+                          type: string
+                        keys:
+                          type: array
+                          items:
+                            type: string
+                        kind:
+                          type: string
+                        run_id:
+                          type: string
+                        unit:
+                          type: string
+                      required:
+                        - aggregation
+                        - confirmed
+                        - identity
+                        - keys
+                        - kind
+                        - run_id
+                        - unit
+                  resource_pct:
+                    type: number
+                    format: double
+                  revision:
+                    type: integer
+                    format: int64
+                  throughput_pct:
+                    type: number
+                    format: double
+                required:
+                  - error_points
+                  - latency_ms
+                  - latency_pct
+                  - load_tolerance_pct
+                  - resource_pct
+                  - revision
+                  - throughput_pct
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scenarios
+      x-handler: handlePutBaselineComparisonPolicy
   /api/v1/scenarios/{id}/data-pools:
     get:
       summary: List Scenario Data Pools
@@ -241856,6 +242425,28 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      comparison_fingerprint:
+                        type: string
+                      comparison_metrics:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            identity:
+                              type: string
+                            kind:
+                              type: string
+                            source:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - identity
+                            - kind
+                            - source
+                            - unit
                       controller_env:
                         type: object
                         additionalProperties:
@@ -243607,6 +244198,28 @@ paths:
                         type: string
                         format: date-time
                         nullable: true
+                      comparison_fingerprint:
+                        type: string
+                      comparison_metrics:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            aggregation:
+                              type: string
+                            identity:
+                              type: string
+                            kind:
+                              type: string
+                            source:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - identity
+                            - kind
+                            - source
+                            - unit
                       controller_env:
                         type: object
                         additionalProperties:
@@ -245491,6 +246104,574 @@ paths:
                           format: int64
                       required:
                         - name
+                  baseline_comparison:
+                    type: object
+                    properties:
+                      baselines:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            archive_available:
+                              type: boolean
+                            completed_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            peak_vusers:
+                              type: integer
+                              format: int64
+                            pinned:
+                              type: boolean
+                            release_id:
+                              type: string
+                            release_name:
+                              type: string
+                            scenario_id:
+                              type: string
+                            status:
+                              type: string
+                            vusers:
+                              type: integer
+                              format: int64
+                          required:
+                            - archive_available
+                            - id
+                            - name
+                            - peak_vusers
+                            - pinned
+                            - release_id
+                            - release_name
+                            - scenario_id
+                            - status
+                            - vusers
+                      created_at:
+                        type: string
+                        format: date-time
+                      current:
+                        type: object
+                        properties:
+                          archive_available:
+                            type: boolean
+                          completed_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          id:
+                            type: string
+                          name:
+                            type: string
+                          peak_vusers:
+                            type: integer
+                            format: int64
+                          pinned:
+                            type: boolean
+                          release_id:
+                            type: string
+                          release_name:
+                            type: string
+                          scenario_id:
+                            type: string
+                          status:
+                            type: string
+                          vusers:
+                            type: integer
+                            format: int64
+                        required:
+                          - archive_available
+                          - id
+                          - name
+                          - peak_vusers
+                          - pinned
+                          - release_id
+                          - release_name
+                          - scenario_id
+                          - status
+                          - vusers
+                      findings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baseline_id:
+                              type: string
+                            category:
+                              type: string
+                            message:
+                              type: string
+                            metric:
+                              type: string
+                            row_id:
+                              type: string
+                            status:
+                              type: string
+                          required:
+                            - baseline_id
+                            - category
+                            - message
+                            - metric
+                            - row_id
+                            - status
+                      id:
+                        type: string
+                      policy:
+                        type: object
+                        properties:
+                          error_points:
+                            type: number
+                            format: double
+                          group_mappings:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          latency_ms:
+                            type: number
+                            format: double
+                          latency_pct:
+                            type: number
+                            format: double
+                          load_tolerance_pct:
+                            type: number
+                            format: double
+                          resource_mappings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                absolute_threshold:
+                                  type: number
+                                  format: double
+                                aggregation:
+                                  type: string
+                                confirmed:
+                                  type: boolean
+                                group:
+                                  type: string
+                                identity:
+                                  type: string
+                                keys:
+                                  type: array
+                                  items:
+                                    type: string
+                                kind:
+                                  type: string
+                                run_id:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - aggregation
+                                - confirmed
+                                - identity
+                                - keys
+                                - kind
+                                - run_id
+                                - unit
+                          resource_pct:
+                            type: number
+                            format: double
+                          revision:
+                            type: integer
+                            format: int64
+                          throughput_pct:
+                            type: number
+                            format: double
+                        required:
+                          - error_points
+                          - latency_ms
+                          - latency_pct
+                          - load_tolerance_pct
+                          - resource_pct
+                          - revision
+                          - throughput_pct
+                      project_id:
+                        type: string
+                      request:
+                        type: object
+                        properties:
+                          allow_other_scenarios:
+                            type: boolean
+                          baseline_ids:
+                            type: array
+                            items:
+                              type: string
+                          maximum_load:
+                            type: number
+                            format: double
+                          minimum_load:
+                            type: number
+                            format: double
+                          policy:
+                            type: object
+                            properties:
+                              error_points:
+                                type: number
+                                format: double
+                              group_mappings:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              latency_ms:
+                                type: number
+                                format: double
+                              latency_pct:
+                                type: number
+                                format: double
+                              load_tolerance_pct:
+                                type: number
+                                format: double
+                              resource_mappings:
+                                type: array
+                                items:
+                                  type: object
+                                  description: 'Go type: BaselineResourceMapping'
+                                  additionalProperties: true
+                              resource_pct:
+                                type: number
+                                format: double
+                              revision:
+                                type: integer
+                                format: int64
+                              throughput_pct:
+                                type: number
+                                format: double
+                            required:
+                              - error_points
+                              - latency_ms
+                              - latency_pct
+                              - load_tolerance_pct
+                              - resource_pct
+                              - revision
+                              - throughput_pct
+                            nullable: true
+                          population:
+                            type: string
+                          windows:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                end_seconds:
+                                  type: number
+                                  format: double
+                                start_seconds:
+                                  type: number
+                                  format: double
+                              required:
+                                - end_seconds
+                                - start_seconds
+                        required:
+                          - allow_other_scenarios
+                          - baseline_ids
+                          - population
+                      resources:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baselines:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            current:
+                              type: object
+                              properties:
+                                coverage_pct:
+                                  type: number
+                                  format: double
+                                error_pct:
+                                  type: number
+                                  format: double
+                                errors:
+                                  type: integer
+                                  format: int64
+                                instances:
+                                  type: integer
+                                  format: int64
+                                max:
+                                  type: number
+                                  format: double
+                                mean:
+                                  type: number
+                                  format: double
+                                min:
+                                  type: number
+                                  format: double
+                                p50:
+                                  type: number
+                                  format: double
+                                p90:
+                                  type: number
+                                  format: double
+                                p95:
+                                  type: number
+                                  format: double
+                                p99:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BaselineMetricPoint'
+                                    additionalProperties: true
+                                samples:
+                                  type: integer
+                                  format: int64
+                                sla:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TransactionResponseTimeSLAResult'
+                                    additionalProperties: true
+                                successes:
+                                  type: integer
+                                  format: int64
+                                successful_throughput:
+                                  type: number
+                                  format: double
+                                throughput:
+                                  type: number
+                                  format: double
+                              required:
+                                - coverage_pct
+                                - error_pct
+                                - errors
+                                - instances
+                                - max
+                                - mean
+                                - min
+                                - p50
+                                - p90
+                                - p95
+                                - p99
+                                - samples
+                                - successes
+                                - successful_throughput
+                                - throughput
+                              nullable: true
+                            group:
+                              type: string
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            protocol:
+                              type: string
+                            source:
+                              type: string
+                            unit:
+                              type: string
+                            window:
+                              type: object
+                              properties:
+                                direction:
+                                  type: string
+                                group:
+                                  type: string
+                                load:
+                                  type: number
+                                  format: double
+                                mix:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                total_load:
+                                  type: number
+                                  format: double
+                              required:
+                                - direction
+                                - group
+                                - load
+                                - mix
+                                - total_load
+                              nullable: true
+                          required:
+                            - baselines
+                            - group
+                            - id
+                            - name
+                            - source
+                            - unit
+                      rule_version:
+                        type: string
+                      setup:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baseline:
+                              type: string
+                            baseline_id:
+                              type: string
+                            current:
+                              type: string
+                            field:
+                              type: string
+                            status:
+                              type: string
+                          required:
+                            - baseline
+                            - baseline_id
+                            - current
+                            - field
+                            - status
+                      transactions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            baselines:
+                              type: object
+                              additionalProperties:
+                                type: object
+                                additionalProperties: true
+                            current:
+                              type: object
+                              properties:
+                                coverage_pct:
+                                  type: number
+                                  format: double
+                                error_pct:
+                                  type: number
+                                  format: double
+                                errors:
+                                  type: integer
+                                  format: int64
+                                instances:
+                                  type: integer
+                                  format: int64
+                                max:
+                                  type: number
+                                  format: double
+                                mean:
+                                  type: number
+                                  format: double
+                                min:
+                                  type: number
+                                  format: double
+                                p50:
+                                  type: number
+                                  format: double
+                                p90:
+                                  type: number
+                                  format: double
+                                p95:
+                                  type: number
+                                  format: double
+                                p99:
+                                  type: number
+                                  format: double
+                                points:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: BaselineMetricPoint'
+                                    additionalProperties: true
+                                samples:
+                                  type: integer
+                                  format: int64
+                                sla:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: TransactionResponseTimeSLAResult'
+                                    additionalProperties: true
+                                successes:
+                                  type: integer
+                                  format: int64
+                                successful_throughput:
+                                  type: number
+                                  format: double
+                                throughput:
+                                  type: number
+                                  format: double
+                              required:
+                                - coverage_pct
+                                - error_pct
+                                - errors
+                                - instances
+                                - max
+                                - mean
+                                - min
+                                - p50
+                                - p90
+                                - p95
+                                - p99
+                                - samples
+                                - successes
+                                - successful_throughput
+                                - throughput
+                              nullable: true
+                            group:
+                              type: string
+                            id:
+                              type: string
+                            name:
+                              type: string
+                            protocol:
+                              type: string
+                            source:
+                              type: string
+                            unit:
+                              type: string
+                            window:
+                              type: object
+                              properties:
+                                direction:
+                                  type: string
+                                group:
+                                  type: string
+                                load:
+                                  type: number
+                                  format: double
+                                mix:
+                                  type: object
+                                  additionalProperties:
+                                    type: number
+                                    format: double
+                                total_load:
+                                  type: number
+                                  format: double
+                              required:
+                                - direction
+                                - group
+                                - load
+                                - mix
+                                - total_load
+                              nullable: true
+                          required:
+                            - baselines
+                            - group
+                            - id
+                            - name
+                            - source
+                            - unit
+                      warnings:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - baselines
+                      - created_at
+                      - current
+                      - findings
+                      - id
+                      - policy
+                      - project_id
+                      - request
+                      - resources
+                      - rule_version
+                      - setup
+                      - transactions
+                      - warnings
+                    nullable: true
                   browser_by_device:
                     type: object
                     additionalProperties:
@@ -246489,6 +247670,28 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          comparison_fingerprint:
+                            type: string
+                          comparison_metrics:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                aggregation:
+                                  type: string
+                                identity:
+                                  type: string
+                                kind:
+                                  type: string
+                                source:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - identity
+                                - kind
+                                - source
+                                - unit
                           controller_env:
                             type: object
                             additionalProperties:
@@ -247272,6 +248475,28 @@ paths:
                             type: string
                             format: date-time
                             nullable: true
+                          comparison_fingerprint:
+                            type: string
+                          comparison_metrics:
+                            type: object
+                            additionalProperties:
+                              type: object
+                              properties:
+                                aggregation:
+                                  type: string
+                                identity:
+                                  type: string
+                                kind:
+                                  type: string
+                                source:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - identity
+                                - kind
+                                - source
+                                - unit
                           controller_env:
                             type: object
                             additionalProperties:
@@ -249276,6 +250501,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: comparison_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
         - name: download
           in: query
           description: Handler-defined query parameter.
@@ -249919,6 +251150,1596 @@ paths:
       tags:
         - Tests
       x-handler: handleVerifyRunArchive
+  /api/v1/tests/{id}/baseline-candidates:
+    get:
+      summary: Baseline Comparison Candidates
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleBaselineComparisonCandidates
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: offset
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: other_scenarios
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleBaselineComparisonCandidates
+  /api/v1/tests/{id}/baseline-comparisons:
+    post:
+      summary: Create Baseline Comparison
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleCreateBaselineComparison
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allow_other_scenarios:
+                  type: boolean
+                baseline_ids:
+                  type: array
+                  items:
+                    type: string
+                maximum_load:
+                  type: number
+                  format: double
+                minimum_load:
+                  type: number
+                  format: double
+                policy:
+                  type: object
+                  properties:
+                    error_points:
+                      type: number
+                      format: double
+                    group_mappings:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    latency_ms:
+                      type: number
+                      format: double
+                    latency_pct:
+                      type: number
+                      format: double
+                    load_tolerance_pct:
+                      type: number
+                      format: double
+                    resource_mappings:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          absolute_threshold:
+                            type: number
+                            format: double
+                          aggregation:
+                            type: string
+                          confirmed:
+                            type: boolean
+                          group:
+                            type: string
+                          identity:
+                            type: string
+                          keys:
+                            type: array
+                            items:
+                              type: string
+                          kind:
+                            type: string
+                          run_id:
+                            type: string
+                          unit:
+                            type: string
+                    resource_pct:
+                      type: number
+                      format: double
+                    revision:
+                      type: integer
+                      format: int64
+                    throughput_pct:
+                      type: number
+                      format: double
+                  nullable: true
+                population:
+                  type: string
+                windows:
+                  type: object
+                  additionalProperties:
+                    type: object
+                    properties:
+                      end_seconds:
+                        type: number
+                        format: double
+                      start_seconds:
+                        type: number
+                        format: double
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  baselines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        archive_available:
+                          type: boolean
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        peak_vusers:
+                          type: integer
+                          format: int64
+                        pinned:
+                          type: boolean
+                        release_id:
+                          type: string
+                        release_name:
+                          type: string
+                        scenario_id:
+                          type: string
+                        status:
+                          type: string
+                        vusers:
+                          type: integer
+                          format: int64
+                      required:
+                        - archive_available
+                        - id
+                        - name
+                        - peak_vusers
+                        - pinned
+                        - release_id
+                        - release_name
+                        - scenario_id
+                        - status
+                        - vusers
+                  created_at:
+                    type: string
+                    format: date-time
+                  current:
+                    type: object
+                    properties:
+                      archive_available:
+                        type: boolean
+                      completed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      peak_vusers:
+                        type: integer
+                        format: int64
+                      pinned:
+                        type: boolean
+                      release_id:
+                        type: string
+                      release_name:
+                        type: string
+                      scenario_id:
+                        type: string
+                      status:
+                        type: string
+                      vusers:
+                        type: integer
+                        format: int64
+                    required:
+                      - archive_available
+                      - id
+                      - name
+                      - peak_vusers
+                      - pinned
+                      - release_id
+                      - release_name
+                      - scenario_id
+                      - status
+                      - vusers
+                  findings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline_id:
+                          type: string
+                        category:
+                          type: string
+                        message:
+                          type: string
+                        metric:
+                          type: string
+                        row_id:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - baseline_id
+                        - category
+                        - message
+                        - metric
+                        - row_id
+                        - status
+                  id:
+                    type: string
+                  policy:
+                    type: object
+                    properties:
+                      error_points:
+                        type: number
+                        format: double
+                      group_mappings:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      latency_ms:
+                        type: number
+                        format: double
+                      latency_pct:
+                        type: number
+                        format: double
+                      load_tolerance_pct:
+                        type: number
+                        format: double
+                      resource_mappings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            absolute_threshold:
+                              type: number
+                              format: double
+                            aggregation:
+                              type: string
+                            confirmed:
+                              type: boolean
+                            group:
+                              type: string
+                            identity:
+                              type: string
+                            keys:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            run_id:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - aggregation
+                            - confirmed
+                            - identity
+                            - keys
+                            - kind
+                            - run_id
+                            - unit
+                      resource_pct:
+                        type: number
+                        format: double
+                      revision:
+                        type: integer
+                        format: int64
+                      throughput_pct:
+                        type: number
+                        format: double
+                    required:
+                      - error_points
+                      - latency_ms
+                      - latency_pct
+                      - load_tolerance_pct
+                      - resource_pct
+                      - revision
+                      - throughput_pct
+                  project_id:
+                    type: string
+                  request:
+                    type: object
+                    properties:
+                      allow_other_scenarios:
+                        type: boolean
+                      baseline_ids:
+                        type: array
+                        items:
+                          type: string
+                      maximum_load:
+                        type: number
+                        format: double
+                      minimum_load:
+                        type: number
+                        format: double
+                      policy:
+                        type: object
+                        properties:
+                          error_points:
+                            type: number
+                            format: double
+                          group_mappings:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          latency_ms:
+                            type: number
+                            format: double
+                          latency_pct:
+                            type: number
+                            format: double
+                          load_tolerance_pct:
+                            type: number
+                            format: double
+                          resource_mappings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                absolute_threshold:
+                                  type: number
+                                  format: double
+                                aggregation:
+                                  type: string
+                                confirmed:
+                                  type: boolean
+                                group:
+                                  type: string
+                                identity:
+                                  type: string
+                                keys:
+                                  type: array
+                                  items:
+                                    type: string
+                                kind:
+                                  type: string
+                                run_id:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - aggregation
+                                - confirmed
+                                - identity
+                                - keys
+                                - kind
+                                - run_id
+                                - unit
+                          resource_pct:
+                            type: number
+                            format: double
+                          revision:
+                            type: integer
+                            format: int64
+                          throughput_pct:
+                            type: number
+                            format: double
+                        required:
+                          - error_points
+                          - latency_ms
+                          - latency_pct
+                          - load_tolerance_pct
+                          - resource_pct
+                          - revision
+                          - throughput_pct
+                        nullable: true
+                      population:
+                        type: string
+                      windows:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            end_seconds:
+                              type: number
+                              format: double
+                            start_seconds:
+                              type: number
+                              format: double
+                          required:
+                            - end_seconds
+                            - start_seconds
+                    required:
+                      - allow_other_scenarios
+                      - baseline_ids
+                      - population
+                  resources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baselines:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              approximate:
+                                type: boolean
+                              delta:
+                                type: number
+                                format: double
+                                nullable: true
+                              delta_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              measurement:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              qualification:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            required:
+                              - approximate
+                              - qualification
+                        current:
+                          type: object
+                          properties:
+                            coverage_pct:
+                              type: number
+                              format: double
+                            error_pct:
+                              type: number
+                              format: double
+                            errors:
+                              type: integer
+                              format: int64
+                            instances:
+                              type: integer
+                              format: int64
+                            max:
+                              type: number
+                              format: double
+                            mean:
+                              type: number
+                              format: double
+                            min:
+                              type: number
+                              format: double
+                            p50:
+                              type: number
+                              format: double
+                            p90:
+                              type: number
+                              format: double
+                            p95:
+                              type: number
+                              format: double
+                            p99:
+                              type: number
+                              format: double
+                            points:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            samples:
+                              type: integer
+                              format: int64
+                            sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            successes:
+                              type: integer
+                              format: int64
+                            successful_throughput:
+                              type: number
+                              format: double
+                            throughput:
+                              type: number
+                              format: double
+                          required:
+                            - coverage_pct
+                            - error_pct
+                            - errors
+                            - instances
+                            - max
+                            - mean
+                            - min
+                            - p50
+                            - p90
+                            - p95
+                            - p99
+                            - samples
+                            - successes
+                            - successful_throughput
+                            - throughput
+                          nullable: true
+                        group:
+                          type: string
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        protocol:
+                          type: string
+                        source:
+                          type: string
+                        unit:
+                          type: string
+                        window:
+                          type: object
+                          properties:
+                            direction:
+                              type: string
+                            end_seconds:
+                              type: number
+                              format: double
+                            group:
+                              type: string
+                            load:
+                              type: number
+                              format: double
+                            mix:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            start_seconds:
+                              type: number
+                              format: double
+                            total_load:
+                              type: number
+                              format: double
+                          required:
+                            - direction
+                            - end_seconds
+                            - group
+                            - load
+                            - mix
+                            - start_seconds
+                            - total_load
+                          nullable: true
+                      required:
+                        - baselines
+                        - group
+                        - id
+                        - name
+                        - source
+                        - unit
+                  rule_version:
+                    type: string
+                  setup:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline:
+                          type: string
+                        baseline_id:
+                          type: string
+                        current:
+                          type: string
+                        field:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - baseline
+                        - baseline_id
+                        - current
+                        - field
+                        - status
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baselines:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              approximate:
+                                type: boolean
+                              delta:
+                                type: number
+                                format: double
+                                nullable: true
+                              delta_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              measurement:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              qualification:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            required:
+                              - approximate
+                              - qualification
+                        current:
+                          type: object
+                          properties:
+                            coverage_pct:
+                              type: number
+                              format: double
+                            error_pct:
+                              type: number
+                              format: double
+                            errors:
+                              type: integer
+                              format: int64
+                            instances:
+                              type: integer
+                              format: int64
+                            max:
+                              type: number
+                              format: double
+                            mean:
+                              type: number
+                              format: double
+                            min:
+                              type: number
+                              format: double
+                            p50:
+                              type: number
+                              format: double
+                            p90:
+                              type: number
+                              format: double
+                            p95:
+                              type: number
+                              format: double
+                            p99:
+                              type: number
+                              format: double
+                            points:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            samples:
+                              type: integer
+                              format: int64
+                            sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            successes:
+                              type: integer
+                              format: int64
+                            successful_throughput:
+                              type: number
+                              format: double
+                            throughput:
+                              type: number
+                              format: double
+                          required:
+                            - coverage_pct
+                            - error_pct
+                            - errors
+                            - instances
+                            - max
+                            - mean
+                            - min
+                            - p50
+                            - p90
+                            - p95
+                            - p99
+                            - samples
+                            - successes
+                            - successful_throughput
+                            - throughput
+                          nullable: true
+                        group:
+                          type: string
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        protocol:
+                          type: string
+                        source:
+                          type: string
+                        unit:
+                          type: string
+                        window:
+                          type: object
+                          properties:
+                            direction:
+                              type: string
+                            end_seconds:
+                              type: number
+                              format: double
+                            group:
+                              type: string
+                            load:
+                              type: number
+                              format: double
+                            mix:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            start_seconds:
+                              type: number
+                              format: double
+                            total_load:
+                              type: number
+                              format: double
+                          required:
+                            - direction
+                            - end_seconds
+                            - group
+                            - load
+                            - mix
+                            - start_seconds
+                            - total_load
+                          nullable: true
+                      required:
+                        - baselines
+                        - group
+                        - id
+                        - name
+                        - source
+                        - unit
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - baselines
+                  - created_at
+                  - current
+                  - findings
+                  - id
+                  - policy
+                  - project_id
+                  - request
+                  - resources
+                  - rule_version
+                  - setup
+                  - transactions
+                  - warnings
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleCreateBaselineComparison
+  /api/v1/tests/{id}/baseline-comparisons/{comparison_id}:
+    get:
+      summary: Get Baseline Comparison
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleGetBaselineComparison
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  baselines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        archive_available:
+                          type: boolean
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        peak_vusers:
+                          type: integer
+                          format: int64
+                        pinned:
+                          type: boolean
+                        release_id:
+                          type: string
+                        release_name:
+                          type: string
+                        scenario_id:
+                          type: string
+                        status:
+                          type: string
+                        vusers:
+                          type: integer
+                          format: int64
+                      required:
+                        - archive_available
+                        - id
+                        - name
+                        - peak_vusers
+                        - pinned
+                        - release_id
+                        - release_name
+                        - scenario_id
+                        - status
+                        - vusers
+                  created_at:
+                    type: string
+                    format: date-time
+                  current:
+                    type: object
+                    properties:
+                      archive_available:
+                        type: boolean
+                      completed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      peak_vusers:
+                        type: integer
+                        format: int64
+                      pinned:
+                        type: boolean
+                      release_id:
+                        type: string
+                      release_name:
+                        type: string
+                      scenario_id:
+                        type: string
+                      status:
+                        type: string
+                      vusers:
+                        type: integer
+                        format: int64
+                    required:
+                      - archive_available
+                      - id
+                      - name
+                      - peak_vusers
+                      - pinned
+                      - release_id
+                      - release_name
+                      - scenario_id
+                      - status
+                      - vusers
+                  findings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline_id:
+                          type: string
+                        category:
+                          type: string
+                        message:
+                          type: string
+                        metric:
+                          type: string
+                        row_id:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - baseline_id
+                        - category
+                        - message
+                        - metric
+                        - row_id
+                        - status
+                  id:
+                    type: string
+                  policy:
+                    type: object
+                    properties:
+                      error_points:
+                        type: number
+                        format: double
+                      group_mappings:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      latency_ms:
+                        type: number
+                        format: double
+                      latency_pct:
+                        type: number
+                        format: double
+                      load_tolerance_pct:
+                        type: number
+                        format: double
+                      resource_mappings:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            absolute_threshold:
+                              type: number
+                              format: double
+                            aggregation:
+                              type: string
+                            confirmed:
+                              type: boolean
+                            group:
+                              type: string
+                            identity:
+                              type: string
+                            keys:
+                              type: array
+                              items:
+                                type: string
+                            kind:
+                              type: string
+                            run_id:
+                              type: string
+                            unit:
+                              type: string
+                          required:
+                            - aggregation
+                            - confirmed
+                            - identity
+                            - keys
+                            - kind
+                            - run_id
+                            - unit
+                      resource_pct:
+                        type: number
+                        format: double
+                      revision:
+                        type: integer
+                        format: int64
+                      throughput_pct:
+                        type: number
+                        format: double
+                    required:
+                      - error_points
+                      - latency_ms
+                      - latency_pct
+                      - load_tolerance_pct
+                      - resource_pct
+                      - revision
+                      - throughput_pct
+                  project_id:
+                    type: string
+                  request:
+                    type: object
+                    properties:
+                      allow_other_scenarios:
+                        type: boolean
+                      baseline_ids:
+                        type: array
+                        items:
+                          type: string
+                      maximum_load:
+                        type: number
+                        format: double
+                      minimum_load:
+                        type: number
+                        format: double
+                      policy:
+                        type: object
+                        properties:
+                          error_points:
+                            type: number
+                            format: double
+                          group_mappings:
+                            type: object
+                            additionalProperties:
+                              type: string
+                          latency_ms:
+                            type: number
+                            format: double
+                          latency_pct:
+                            type: number
+                            format: double
+                          load_tolerance_pct:
+                            type: number
+                            format: double
+                          resource_mappings:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                absolute_threshold:
+                                  type: number
+                                  format: double
+                                aggregation:
+                                  type: string
+                                confirmed:
+                                  type: boolean
+                                group:
+                                  type: string
+                                identity:
+                                  type: string
+                                keys:
+                                  type: array
+                                  items:
+                                    type: string
+                                kind:
+                                  type: string
+                                run_id:
+                                  type: string
+                                unit:
+                                  type: string
+                              required:
+                                - aggregation
+                                - confirmed
+                                - identity
+                                - keys
+                                - kind
+                                - run_id
+                                - unit
+                          resource_pct:
+                            type: number
+                            format: double
+                          revision:
+                            type: integer
+                            format: int64
+                          throughput_pct:
+                            type: number
+                            format: double
+                        required:
+                          - error_points
+                          - latency_ms
+                          - latency_pct
+                          - load_tolerance_pct
+                          - resource_pct
+                          - revision
+                          - throughput_pct
+                        nullable: true
+                      population:
+                        type: string
+                      windows:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            end_seconds:
+                              type: number
+                              format: double
+                            start_seconds:
+                              type: number
+                              format: double
+                          required:
+                            - end_seconds
+                            - start_seconds
+                    required:
+                      - allow_other_scenarios
+                      - baseline_ids
+                      - population
+                  resources:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baselines:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              approximate:
+                                type: boolean
+                              delta:
+                                type: number
+                                format: double
+                                nullable: true
+                              delta_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              measurement:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              qualification:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            required:
+                              - approximate
+                              - qualification
+                        current:
+                          type: object
+                          properties:
+                            coverage_pct:
+                              type: number
+                              format: double
+                            error_pct:
+                              type: number
+                              format: double
+                            errors:
+                              type: integer
+                              format: int64
+                            instances:
+                              type: integer
+                              format: int64
+                            max:
+                              type: number
+                              format: double
+                            mean:
+                              type: number
+                              format: double
+                            min:
+                              type: number
+                              format: double
+                            p50:
+                              type: number
+                              format: double
+                            p90:
+                              type: number
+                              format: double
+                            p95:
+                              type: number
+                              format: double
+                            p99:
+                              type: number
+                              format: double
+                            points:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            samples:
+                              type: integer
+                              format: int64
+                            sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            successes:
+                              type: integer
+                              format: int64
+                            successful_throughput:
+                              type: number
+                              format: double
+                            throughput:
+                              type: number
+                              format: double
+                          required:
+                            - coverage_pct
+                            - error_pct
+                            - errors
+                            - instances
+                            - max
+                            - mean
+                            - min
+                            - p50
+                            - p90
+                            - p95
+                            - p99
+                            - samples
+                            - successes
+                            - successful_throughput
+                            - throughput
+                          nullable: true
+                        group:
+                          type: string
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        protocol:
+                          type: string
+                        source:
+                          type: string
+                        unit:
+                          type: string
+                        window:
+                          type: object
+                          properties:
+                            direction:
+                              type: string
+                            end_seconds:
+                              type: number
+                              format: double
+                            group:
+                              type: string
+                            load:
+                              type: number
+                              format: double
+                            mix:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            start_seconds:
+                              type: number
+                              format: double
+                            total_load:
+                              type: number
+                              format: double
+                          required:
+                            - direction
+                            - end_seconds
+                            - group
+                            - load
+                            - mix
+                            - start_seconds
+                            - total_load
+                          nullable: true
+                      required:
+                        - baselines
+                        - group
+                        - id
+                        - name
+                        - source
+                        - unit
+                  rule_version:
+                    type: string
+                  setup:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline:
+                          type: string
+                        baseline_id:
+                          type: string
+                        current:
+                          type: string
+                        field:
+                          type: string
+                        status:
+                          type: string
+                      required:
+                        - baseline
+                        - baseline_id
+                        - current
+                        - field
+                        - status
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baselines:
+                          type: object
+                          additionalProperties:
+                            type: object
+                            properties:
+                              approximate:
+                                type: boolean
+                              delta:
+                                type: number
+                                format: double
+                                nullable: true
+                              delta_pct:
+                                type: number
+                                format: double
+                                nullable: true
+                              measurement:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                              qualification:
+                                type: array
+                                items:
+                                  type: string
+                              window:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
+                            required:
+                              - approximate
+                              - qualification
+                        current:
+                          type: object
+                          properties:
+                            coverage_pct:
+                              type: number
+                              format: double
+                            error_pct:
+                              type: number
+                              format: double
+                            errors:
+                              type: integer
+                              format: int64
+                            instances:
+                              type: integer
+                              format: int64
+                            max:
+                              type: number
+                              format: double
+                            mean:
+                              type: number
+                              format: double
+                            min:
+                              type: number
+                              format: double
+                            p50:
+                              type: number
+                              format: double
+                            p90:
+                              type: number
+                              format: double
+                            p95:
+                              type: number
+                              format: double
+                            p99:
+                              type: number
+                              format: double
+                            points:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            samples:
+                              type: integer
+                              format: int64
+                            sla:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                            successes:
+                              type: integer
+                              format: int64
+                            successful_throughput:
+                              type: number
+                              format: double
+                            throughput:
+                              type: number
+                              format: double
+                          required:
+                            - coverage_pct
+                            - error_pct
+                            - errors
+                            - instances
+                            - max
+                            - mean
+                            - min
+                            - p50
+                            - p90
+                            - p95
+                            - p99
+                            - samples
+                            - successes
+                            - successful_throughput
+                            - throughput
+                          nullable: true
+                        group:
+                          type: string
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        protocol:
+                          type: string
+                        source:
+                          type: string
+                        unit:
+                          type: string
+                        window:
+                          type: object
+                          properties:
+                            direction:
+                              type: string
+                            end_seconds:
+                              type: number
+                              format: double
+                            group:
+                              type: string
+                            load:
+                              type: number
+                              format: double
+                            mix:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            start_seconds:
+                              type: number
+                              format: double
+                            total_load:
+                              type: number
+                              format: double
+                          required:
+                            - direction
+                            - end_seconds
+                            - group
+                            - load
+                            - mix
+                            - start_seconds
+                            - total_load
+                          nullable: true
+                      required:
+                        - baselines
+                        - group
+                        - id
+                        - name
+                        - source
+                        - unit
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - baselines
+                  - created_at
+                  - current
+                  - findings
+                  - id
+                  - policy
+                  - project_id
+                  - request
+                  - resources
+                  - rule_version
+                  - setup
+                  - transactions
+                  - warnings
+                nullable: true
+            text/csv:
+              schema:
+                type: string
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: comparison_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetBaselineComparison
   /api/v1/tests/{id}/comparison-baseline/pin:
     delete:
       summary: Unpin Comparison Baseline
@@ -272755,6 +275576,12 @@ paths:
         - name: id
           in: path
           required: true
+          schema:
+            type: string
+        - name: comparison_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
           schema:
             type: string
         - name: profile

@@ -22,6 +22,7 @@ const PROFILE_LABEL: Record<string, string> = {
 }
 
 interface Props {
+  comparisonId?: string
   testId: string
   testName: string
   profile: ReportProfileId
@@ -45,7 +46,7 @@ function reportDraftSnapshot(annotations: EditableReportAnnotations): string {
   })
 }
 
-export default function ReportComposer({ testId, testName, profile, onClose }: Props) {
+export default function ReportComposer({ testId, testName, profile, onClose, comparisonId }: Props) {
   const api = useApi()
   const { runGuarded } = useNavigationGuardRunner()
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -112,7 +113,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     setError('')
 
     Promise.all([
-      api.getTestArchiveReport(testId),
+      (comparisonId ? api.getTestArchiveReport(testId, { comparisonId }) : api.getTestArchiveReport(testId)),
       api.getTestReportAnnotations(testId, profile),
       api.listTestNotes(testId)
         .then((response) => ({ response, error: '' }))
@@ -149,7 +150,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     return () => {
       cancelled = true
     }
-  }, [api, testId, profile, applyAnnotations])
+  }, [api, testId, profile, comparisonId, applyAnnotations])
 
   const persist = useCallback(async (): Promise<boolean> => {
     setSaving(true)
@@ -209,13 +210,13 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
   const handleDownloadHtml = useCallback(async () => {
     if (isDirty && !(await persist())) return
     try {
-      const blob = await api.downloadTestReport(testId, profile)
+      const blob = await (comparisonId ? api.downloadTestReport(testId, profile, { comparisonId }) : api.downloadTestReport(testId, profile))
       const slug = (testName || testId).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
       await downloadBlob(blob, `${slug || 'apexload'}-${profile}-report.html`)
     } catch (err: unknown) {
       setStatus(getErrorMessage(err, 'Download failed'))
     }
-  }, [api, isDirty, persist, testId, testName, profile])
+  }, [api, isDirty, persist, testId, testName, profile, comparisonId])
 
   const handlePrint = useCallback(() => {
     previewFrameRef.current?.contentWindow?.print()
@@ -232,13 +233,13 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     let cancelled = false
     setPreviewLoading(true)
     setPreviewError('')
-    api.downloadTestReport(testId, profile)
-      .then(blob => blob.text())
+    const previewDownload = comparisonId ? api.downloadTestReport(testId, profile, { comparisonId }) : api.downloadTestReport(testId, profile)
+    previewDownload.then(blob => blob.text())
       .then(html => { if (!cancelled) setPreviewHtml(html) })
       .catch((err: unknown) => { if (!cancelled) setPreviewError(getErrorMessage(err, 'Unable to render report preview')) })
       .finally(() => { if (!cancelled) setPreviewLoading(false) })
     return () => { cancelled = true }
-  }, [api, editing, loading, report, testId, profile, annotationsUpdatedAt])
+  }, [api, editing, loading, report, testId, profile, annotationsUpdatedAt, comparisonId])
 
   const overview = report?.overview
   const manifest = report?.manifest

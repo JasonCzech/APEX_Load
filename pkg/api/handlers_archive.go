@@ -494,6 +494,9 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
 	}
+	if !s.attachSelectedBaselineComparison(w, r, report, r.URL.Query().Get("comparison_id")) {
+		return
+	}
 	switch queryFormat(r) {
 	case "analysis_zip":
 		profile, ok := lookupRunArchiveReportProfile(r.URL.Query().Get("profile"))
@@ -1084,6 +1087,9 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	report, err := cachedRunArchiveReport(record)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
+		return
+	}
+	if !s.attachSelectedBaselineComparison(w, r, report, r.URL.Query().Get("comparison_id")) {
 		return
 	}
 	profile := r.URL.Query().Get("profile")

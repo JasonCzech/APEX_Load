@@ -791,7 +791,7 @@ func TestSQLiteStoreComparisonBaselineIsAtomicAndProjectScoped(t *testing.T) {
 	}
 
 	wants := map[string]bool{
-		"baseline-a-1": false,
+		"baseline-a-1": true,
 		"baseline-a-2": true,
 		"baseline-b-1": true,
 	}

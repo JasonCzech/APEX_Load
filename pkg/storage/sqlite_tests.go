@@ -1367,8 +1367,7 @@ func (s *SQLiteStore) UpdateTestBaselines(changes map[string]*time.Time) error {
 }
 
 // SetTestComparisonBaseline applies baseline selection from durable scope
-// fields, rather than from a replica-local map. Pinning unpins every other row
-// in the same comparison scope and pins the target in one transaction. A nil
+// fields, rather than from a replica-local map. Pinning changes only the target; several historical runs may remain pinned. A nil
 // pinnedAt unpins only the target.
 func (s *SQLiteStore) SetTestComparisonBaseline(id string, pinnedAt *time.Time) ([]TestBaselineState, error) {
 	id = strings.TrimSpace(id)
@@ -1397,23 +1396,14 @@ func (s *SQLiteStore) SetTestComparisonBaseline(id string, pinnedAt *time.Time) 
 		}
 	}
 
-	predicate, predicateArgs := comparisonBaselineScopePredicate(normalizeProjectID(projectID), scenarioID, releaseID, applicationID, name)
+	predicate, predicateArgs := `id = ?`, []any{id}
 	if pinnedAt == nil {
-		if _, err := tx.Exec(`UPDATE tests SET baseline_pinned = ?, baseline_pinned_at = NULL WHERE id = ?`, false, id); err != nil {
-			return nil, err
-		}
-		predicate = `id = ?`
-		predicateArgs = []any{id}
+		_, err = tx.Exec(`UPDATE tests SET baseline_pinned = ?, baseline_pinned_at = NULL WHERE id = ?`, false, id)
 	} else {
-		pinTime := pinnedAt.UTC()
-		args := []any{id, true, false, id, pinTime}
-		args = append(args, predicateArgs...)
-		if _, err := tx.Exec(`UPDATE tests
-			SET baseline_pinned = CASE WHEN id = ? THEN ? ELSE ? END,
-				baseline_pinned_at = CASE WHEN id = ? THEN ? ELSE NULL END
-			WHERE `+predicate, args...); err != nil {
-			return nil, err
-		}
+		_, err = tx.Exec(`UPDATE tests SET baseline_pinned = ?, baseline_pinned_at = ? WHERE id = ?`, true, pinnedAt.UTC(), id)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	rows, err := tx.Query(`SELECT id, COALESCE(baseline_pinned, 0), baseline_pinned_at FROM tests WHERE `+predicate+` ORDER BY id`, predicateArgs...)

@@ -1051,6 +1051,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scenarios/load-models/support-matrix", cors(log(auth(http.HandlerFunc(s.handleLoadModelSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/scenarios/load-models/templates", cors(log(auth(http.HandlerFunc(s.handleLoadModelTemplates)))))
 	s.registerAPIRouteCatalog(scenarioSchedulingAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(baselineComparisonAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScenarioRuntimeSettingsReport)))))
 	s.mux.Handle("POST /api/v1/scenarios/{id}/runtime/apply-to-groups", cors(log(auth(http.HandlerFunc(s.handleApplyScenarioRuntimeToGroups)))))

@@ -3699,9 +3699,14 @@ describe('NewTestPage', () => {
     await flushPromises()
     await flushDebouncedPreflight()
 
-    const queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
-    await act(async () => queuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await flushPromises()
+    let queuedButton: HTMLButtonElement | undefined
+    await vi.waitFor(() => {
+      queuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Create Queued Run')
+      expect(queuedButton).toBeTruthy()
+      expect(queuedButton?.disabled).toBe(false)
+    })
+    await act(async () => queuedButton!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await vi.waitFor(() => expect(openCommandCenter).toHaveBeenCalled())
 
     expect(requestedTestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
     expect(apiMock.createTest).toHaveBeenCalledWith(expect.objectContaining({ requested_test_id: requestedTestId }))

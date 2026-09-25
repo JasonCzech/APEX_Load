@@ -1657,6 +1657,8 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		args  []any
 	}
 	deletes := []projectDelete{
+		{`DELETE FROM baseline_comparison_snapshots WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
+		{`DELETE FROM scenario_comparison_policies WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM import_assets WHERE project_id = ?`, []any{id}},
 		// Children that can reference tests must be removed before tests.
 		{`UPDATE capacity_reservations SET bound_test_id = NULL, bound_test_status = NULL, updated_at = ? WHERE bound_test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{time.Now().UTC(), id}},

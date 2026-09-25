@@ -1297,6 +1297,8 @@ func TestDistributedExecutionBackendRunsRemoteEngine(t *testing.T) {
 func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 	const bufSize = 1024 * 1024
 
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/buyers", "/admins":
@@ -1345,6 +1347,9 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 		Version:  "1.0.0",
 		Config: dsl.ScriptConfig{
 			BaseURL: target.URL,
+			// Exercise remote groups without turning this integration test into an
+			// unbounded archive-throughput benchmark on fast loopback connections.
+			Pacing: dsl.PacingConfig{Type: "fixed_delay", DelayMs: 100},
 			RunLogic: dsl.RunLogicConfig{
 				Iterations: 0,
 			},
@@ -1358,6 +1363,9 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 		Version:  "1.0.0",
 		Config: dsl.ScriptConfig{
 			BaseURL: target.URL,
+			// Exercise remote groups without turning this integration test into an
+			// unbounded archive-throughput benchmark on fast loopback connections.
+			Pacing: dsl.PacingConfig{Type: "fixed_delay", DelayMs: 100},
 			RunLogic: dsl.RunLogicConfig{
 				Iterations: 0,
 			},

@@ -424,3 +424,8 @@ it('round trips Help articles, section links, and API searches through workspace
   expect(parseAppViewFromHash('#/docs?guide=user-guide&article=scenarios&section=sizing-from-a-goal')).toMatchObject({ guideArticle: 'scenarios', guideSection: 'sizing-from-a-goal' })
   expect(parseAppViewFromHash('#/swagger?search=script%20validate')).toMatchObject({ search: 'script validate' })
 })
+
+it('round-trips an immutable baseline comparison without losing the run scope', () => {
+  const view = { page: 'report' as const, testId: 'run/123', section: 'comparison' as const, comparisonId: 'comparison-1', projectId: 'project-1' }
+  expect(parseAppViewFromHash(viewToLocationHash(view))).toEqual(view)
+})

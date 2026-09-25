@@ -655,7 +655,7 @@ export function useTestApi() {
     [],
   )
 
-  const getTestArchiveReport = useCallback((id: string, options?: ApiCallOptions & { includeReleaseTrend?: boolean }) => request<RunArchiveReport>(`/tests/${id}/archive/report${options?.includeReleaseTrend === false ? '?include_release_trend=false' : ''}`, withCallOptions(undefined, options)), [])
+  const getTestArchiveReport = useCallback((id: string, options?: ApiCallOptions & { includeReleaseTrend?: boolean; comparisonId?: string }) => request<RunArchiveReport>(`/tests/${id}/archive/report${buildQuery({ include_release_trend: options?.includeReleaseTrend, comparison_id: options?.comparisonId })}`, withCallOptions(undefined, options)), [])
 
   const getTestArchiveReports = useCallback(
     (ids: string[], projectId: string, options?: ApiCallOptions) =>
@@ -710,7 +710,7 @@ export function useTestApi() {
   )
 
   const downloadTestReport = useCallback(
-    (id: string, profile: string, options?: ApiCallOptions) => fetchBlob(`/tests/${id}/report${buildQuery({ profile })}`, options),
+    (id: string, profile: string, options?: ApiCallOptions & { comparisonId?: string }) => fetchBlob(`/tests/${id}/report${buildQuery({ profile, comparison_id: options?.comparisonId })}`, options),
     [],
   )
 
@@ -729,8 +729,8 @@ export function useTestApi() {
   )
 
   const downloadTestReportFormat = useCallback(
-    (id: string, profile: string, format: 'pdf' | 'csv' | 'docx' | 'analysis_zip', options?: ApiCallOptions) =>
-      fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile })}`, options),
+    (id: string, profile: string, format: 'pdf' | 'csv' | 'docx' | 'analysis_zip', options?: ApiCallOptions & { comparisonId?: string }) =>
+      fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile, comparison_id: options?.comparisonId })}`, options),
     [],
   )
 

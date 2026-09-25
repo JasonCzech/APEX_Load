@@ -431,7 +431,7 @@ func (c *docxConverter) block(out *bytes.Buffer, n *html.Node) {
 		c.inlineParagraph(out, n, docxRunProps{}, docxParaProps{style: "Heading1"}, false)
 		return
 	case isTag(n, "h3", "h4"):
-		c.inlineParagraph(out, n, docxRunProps{}, docxParaProps{style: "Heading2"}, false)
+		c.inlineParagraph(out, n, docxRunProps{}, docxParaProps{style: "Heading2", pageBreakFirst: hasClass(n, "baseline-reference")}, false)
 		return
 	case isTag(n, "table"):
 		c.table(out, n)
