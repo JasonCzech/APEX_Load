@@ -443,8 +443,16 @@ var (
 		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*((?:[a-z_][a-z0-9_]*\s*\.\s*)?)baseline_pinned\s*,\s*0\s*\)`), "COALESCE(${1}baseline_pinned, FALSE)"},
 		{regexp.MustCompile(`(?i)\bCOALESCE\s*\(\s*((?:[a-z_][a-z0-9_]*\s*\.\s*)?)base_missing\s*,\s*0\s*\)`), "COALESCE(${1}base_missing, FALSE)"},
 		{regexp.MustCompile(`(?i)\bactive\s*=\s*1\b`), "active = TRUE"},
-		{regexp.MustCompile(`(?i)\bsize_bytes\s+INTEGER\s+NOT\s+NULL\b`), "size_bytes BIGINT NOT NULL"},
 	}
+	// postgresDDLIntegerType widens every remaining DDL INTEGER to BIGINT. SQLite
+	// INTEGER is a 64-bit type, so the schema freely stores int64 values in it
+	// (duration_ns, cumulative_pause_ns, byte sizes, unix-ms stamps, lease
+	// generations); a literal Postgres INTEGER is int4 and rejects anything past
+	// 2^31-1, which made every test longer than ~2.1s unsavable. It runs after
+	// postgresSQLRewrites so the BOOLEAN entries above claim their columns first,
+	// and only on DDL: DML casts such as CAST(value AS INTEGER) are unchanged.
+	// Existing databases are widened by ensurePostgresIntegerColumnsBigint.
+	postgresDDLIntegerType = regexp.MustCompile(`(?i)\bINTEGER\b`)
 )
 
 func rewriteSQL(query string, dialect storeDialect) string {
@@ -468,6 +476,9 @@ func rewriteSQL(query string, dialect storeDialect) string {
 		}
 		for _, rewrite := range postgresSQLRewrites {
 			code = rewrite.pattern.ReplaceAllString(code, rewrite.replacement)
+		}
+		if ddl {
+			code = postgresDDLIntegerType.ReplaceAllString(code, "BIGINT")
 		}
 		return code
 	})

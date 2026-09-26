@@ -78,6 +78,12 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 		PoolID:                strings.TrimSpace(in.PoolID),
 		RequiredLabels:        normalizeRequiredLabels(in.RequiredLabels),
 		TolerateGeneratorLoss: in.TolerateGeneratorLoss,
+		FailoverPolicy:        strings.ToLower(strings.TrimSpace(in.FailoverPolicy)),
+	}
+	switch out.FailoverPolicy {
+	case "", failoverPolicyFail, failoverPolicyContinue:
+	default:
+		return nil, fmt.Errorf("assignment.failover_policy must be fail or continue")
 	}
 	if out.SourceAffinity != "" && out.SourceAffinity != "single_generator" {
 		return nil, fmt.Errorf("assignment.source_affinity must be single_generator")
@@ -229,6 +235,9 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 		// resolved, so the group would silently fall back to auto and run
 		// fleet-wide — reject it rather than ignore an explicit isolation directive.
 		return nil, fmt.Errorf("assignment.pool_id is not supported at group scope; set the pool on the test-level assignment")
+	}
+	if strings.TrimSpace(in.FailoverPolicy) != "" {
+		return nil, fmt.Errorf("assignment.failover_policy is test-scoped; set it on the test-level assignment")
 	}
 	out, err := normalizeGeneratorAssignmentSettings(in)
 	if err != nil {

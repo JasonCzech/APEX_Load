@@ -254,6 +254,21 @@ prove that replacement shards and a lost source belong to one execution epoch.
 | Controller | `APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL` | `10s` |
 | Generator | `APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL` | `60s` |
 | Generator | `APEXLOAD_GENERATOR_ABANDON_DRAIN` | `5s` |
+| Generator | `APEXLOAD_GENERATOR_MAX_ADOPTION_GRACE` | unset (`120s`, the hard maximum) |
+
+`APEXLOAD_GENERATOR_MAX_ADOPTION_GRACE` caps HA run continuity: how long a run
+whose controller is lost may keep generating load while it waits for a
+successor controller to adopt it. It only applies to runs a controller staged
+with an adoption grace (`assignment.failover_policy=continue`). Unadopted runs
+stop `FAILED` with `controller_adoption_timeout`. Combined with
+`tolerate_generator_loss`, a generator lost while no controller is leading fails
+the run (it is not evacuated); losses while a leader is present are evacuated
+as usual. A generator cannot tell a lost controller from a network partition,
+so a generator cut off from a live controller also keeps a continue-policy run's
+load going for up to the grace before stopping; generator-loss evacuation waits
+out that grace before starting a replacement, so the shard never runs twice. `0` disables orphaning on the
+generator, and values above `120s` stop startup. See
+[HA_RUN_CONTINUITY_PLAN.md](HA_RUN_CONTINUITY_PLAN.md).
 
 Keep the controller TTL equal to the generator TTL. A generator may grant less
 than requested, but the controller rejects that claim when it would leave fewer

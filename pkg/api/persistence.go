@@ -749,6 +749,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.PendingSince = cloneTimePtr(stored.PendingSince)
 	current.PausedAt = cloneTimePtr(stored.PausedAt)
 	current.CumulativePause = stored.CumulativePause
+	setContinuityCheckpointLocked(current, stored.continuityCheckpoint)
 	current.CapacityWindowStartAt = cloneTimePtr(stored.CapacityWindowStartAt)
 	current.CapacityWindowEndAt = cloneTimePtr(stored.CapacityWindowEndAt)
 	current.BaselinePinned = stored.BaselinePinned
@@ -773,6 +774,11 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	switch test.Status {
 	case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
 	default:
+		return nil
+	}
+	if tr.isRunAdoptionCandidate(test) {
+		// Left RUNNING/PAUSED for adoptOrphanedRuns, which adopts it from its
+		// generators or finalizes it FAILED with the specific reason.
 		return nil
 	}
 	if err := tr.claimTestExecutionFence(test); err != nil {
@@ -874,6 +880,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 	if record.EndTime != nil {
 		managedTest.EndedAt = record.EndTime
 	}
+	setContinuityCheckpointLocked(managedTest, record.ContinuityCheckpoint)
 	return managedTest
 }
 

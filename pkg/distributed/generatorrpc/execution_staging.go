@@ -133,6 +133,9 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 	if len(assignment.GetRunSupervisionToken()) > 0 && !validRunSupervisionToken(assignment.GetRunSupervisionToken()) {
 		return nil, status.Errorf(codes.InvalidArgument, "run_supervision_token must contain exactly %d non-zero bytes", RunSupervisionTokenSize)
 	}
+	if err := validateAdoptionGrace(assignment); err != nil {
+		return nil, err
+	}
 	if ctx != nil {
 		if err := ctx.Err(); err != nil {
 			return nil, status.FromContextError(err).Err()
@@ -337,6 +340,9 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		}
 		if !sameRunSupervisionTokenHash(current.runSupervisionTokenHash, runSupervisionTokenHash(request.GetRunSupervisionToken())) {
 			return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, "all groups in a test must use the same run supervision token"), availableCapacity: available}
+		}
+		if current.adoptionGrace != service.effectiveAdoptionGrace(request) {
+			return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, "all groups in a test must use the same adoption grace"), availableCapacity: available}
 		}
 		if existing, groupExists := current.groups[request.GetGroupName()]; groupExists {
 			existingFingerprint, fingerprintExists := current.groupAssignments[request.GetGroupName()]
@@ -644,6 +650,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if len(request.GetRunSupervisionToken()) > 0 {
 		next.runSupervisionTokenHash = runSupervisionTokenHash(request.GetRunSupervisionToken())
 	}
+	next.adoptionGrace = service.effectiveAdoptionGrace(request)
 	next.committed = plan.nextCommitted
 	next.paused = plan.startPaused
 	next.duration = plan.nextDuration
@@ -1280,4 +1287,31 @@ func requiredProtocolRuntimeFeature(script *dsl.Script) string {
 		}
 	}
 	return strings.Join(external, "+")
+}
+
+// validateAdoptionGrace rejects adoption grace the generator could not honour
+// safely: adoption proves lineage with the run-supervision token, so a grace
+// without one is refused rather than silently ignored.
+func validateAdoptionGrace(assignment *pb.WorkAssignment) error {
+	if assignment.GetAdoptionGrace() == nil {
+		return nil
+	}
+	grace := assignment.GetAdoptionGrace().AsDuration()
+	switch {
+	case grace < 0:
+		return status.Error(codes.InvalidArgument, "adoption_grace must not be negative")
+	case grace == 0:
+		return nil
+	case !validRunSupervisionToken(assignment.GetRunSupervisionToken()):
+		return status.Error(codes.InvalidArgument, "adoption_grace requires a run_supervision_token")
+	}
+	return nil
+}
+
+// effectiveAdoptionGrace caps the requested grace at this generator's limit.
+func (service *Service) effectiveAdoptionGrace(assignment *pb.WorkAssignment) time.Duration {
+	if assignment.GetAdoptionGrace() == nil {
+		return 0
+	}
+	return min(max(assignment.GetAdoptionGrace().AsDuration(), 0), service.maxAdoptionGrace)
 }

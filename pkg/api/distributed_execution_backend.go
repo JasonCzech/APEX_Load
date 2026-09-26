@@ -903,6 +903,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	test.Assignment = assignment
 	requireTestExecutionLease := assignmentToleratesGeneratorLoss(assignment)
+	// Only a supervised continue-policy run may outlive this controller.
+	var adoptionGrace time.Duration
+	if b.requireRunSupervision {
+		adoptionGrace = tr.runAdoptionGrace(test)
+	}
 	test.executionGeneration = executionGeneration
 	if b.requireRunSupervision {
 		test.remoteRunSupervisionToken = runSupervisionToken
@@ -1345,6 +1350,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				SecretBundle:               secretBundle,
 				SecretBundleID:             secretBundleID,
 				RunSupervisionToken:        append([]byte(nil), runSupervisionTokenBytes...),
+				AdoptionGrace:              adoptionGrace,
 				MessageDetailMaxItems:      authoredMessageDetailMaxItems(group.script),
 				MessageDetailMaxItemBytes:  authoredMessageDetailMaxItemBytes(group.script),
 				MessageDetailMaxTotalBytes: authoredMessageDetailMaxTotalBytes(group.script),
@@ -1425,6 +1431,9 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		stopRunSupervisionKeeper = b.startRunSupervisionKeeper(executionCtx, tr, test, assignedClients, executionGeneration, executionLeaseOwnerID, runSupervisionToken)
 	}
+	// Every generator now holds this run's supervision lease and placement is
+	// final, so a successor would have everything it needs to adopt the run.
+	tr.armRunContinuity(executionCtx, test, executionGeneration, executionLeaseOwnerID, runSupervisionTokenBytes, activeGroupShards)
 
 	for _, target := range orderedGeneratorTargets(assignedClients, allowedTargets) {
 		if _, ok := streamsByTarget[target]; ok {
@@ -2277,7 +2286,13 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	test.remoteGroupShards[groupName] = cloneGeneratorShardSummaries(nextShards)
 	test.remoteGroupTargets = primaryTargetsFromShards(test.remoteGroupShards)
 	test.GeneratorShards = flattenGroupShards(test.remoteGroupShards)
+	shardsSnapshot := cloneGroupShardMap(test.remoteGroupShards)
 	tr.mu.Unlock()
+	// Keep the adoption checkpoint's placement current so a successor resumes
+	// with the scaled VUser counts.
+	if _, ownerID, _, claimErr := tr.generatorExecutionClaim(); claimErr == nil && tr.runAdoptionEnabled() {
+		tr.armRunContinuity(executionCtx, test, executionGeneration, ownerID, runSupervisionToken, shardsSnapshot)
+	}
 	return nil
 }
 

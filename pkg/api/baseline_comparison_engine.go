@@ -59,6 +59,9 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 	sort.SliceStable(summaries, func(i, j int) bool { return summaries[i].Timestamp.Before(summaries[j].Timestamp) })
 	r := &baselineComparisonRun{population: request.Population, originalGroups: map[string]string{}, identity: baselineRunInfo(t), manifest: manifest, transactions: map[baselineTransactionKey]map[int]*baselineTransactionAccumulator{}, resources: map[string]baselineResourceSeries{}}
 	r.identity.ArchiveAvailable = true
+	if warning := controllerFailoverComparisonWarning(manifest.Continuity); warning != "" {
+		r.warnings = append(r.warnings, warning)
+	}
 	if s.store != nil && t.ReleaseID != "" {
 		if release, e := s.store.GetRelease(t.ReleaseID); e == nil && release != nil {
 			r.identity.ReleaseName = release.Name

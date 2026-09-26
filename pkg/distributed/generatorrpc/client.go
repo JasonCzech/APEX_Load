@@ -30,6 +30,8 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
+	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
+	AdoptionGrace                time.Duration
 	SourcePlan                   *pb.SourcePlanManifest
 	TerminationMode              string
 	TestID                       string
@@ -343,6 +345,26 @@ type ExecutionEpochResult struct {
 	CurrentGeneration uint64
 	ExpiresAt         time.Time
 	ErrorMessage      string
+	// AdoptionSupported is false on generators that predate HA run adoption;
+	// they fence every lower-generation run regardless of Adoptions.
+	AdoptionSupported bool
+	Adoptions         []RunAdoptionResult
+}
+
+// RunAdoption asks a generator to carry one run into a higher execution
+// generation (see ClaimExecutionEpochWithAdoptions).
+type RunAdoption struct {
+	TestID          string
+	PriorGeneration uint64
+	PriorToken      []byte
+	NewToken        []byte
+}
+
+type RunAdoptionResult struct {
+	TestID        string
+	Outcome       pb.RunAdoptionOutcome
+	Detail        string
+	TerminalState string
 }
 
 type Heartbeat struct {
@@ -479,9 +501,17 @@ type Client struct {
 	sourcePlans sync.Map
 	conn        *grpc.ClientConn
 	rpc         pb.GeneratorControlClient
+	connection  *sharedClientConnection
+	closeMu     sync.Mutex
+	closed      bool
 
 	clockMu       sync.RWMutex
 	clockEstimate generatorClockEstimate
+}
+
+type sharedClientConnection struct {
+	mu   sync.Mutex
+	refs int
 }
 
 type HeartbeatStream struct {
@@ -540,16 +570,50 @@ func Dial(ctx context.Context, target string, opts ...grpc.DialOption) (*Client,
 
 func NewClient(conn *grpc.ClientConn) *Client {
 	return &Client{
-		conn: conn,
-		rpc:  pb.NewGeneratorControlClient(conn),
+		conn:       conn,
+		rpc:        pb.NewGeneratorControlClient(conn),
+		connection: &sharedClientConnection{refs: 1},
 	}
+}
+
+// Retain returns an independently closeable client on the same transport. This
+// lets a batched adoption hand each run its own lifetime, including on a reverse
+// connection where opening another physical connection is not possible.
+func (c *Client) Retain() (*Client, error) {
+	if c == nil {
+		return nil, fmt.Errorf("generator client is unavailable")
+	}
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	if c.closed || c.connection == nil {
+		return nil, fmt.Errorf("generator client is closed or has no shareable connection")
+	}
+	c.connection.mu.Lock()
+	c.connection.refs++
+	c.connection.mu.Unlock()
+	return &Client{conn: c.conn, rpc: c.rpc, connection: c.connection}, nil
 }
 
 func (c *Client) Close() error {
 	if c == nil {
 		return nil
 	}
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	if c.closed {
+		return nil
+	}
+	c.closed = true
 	c.sourcePlans.Clear()
+	if c.connection != nil {
+		c.connection.mu.Lock()
+		c.connection.refs--
+		last := c.connection.refs == 0
+		c.connection.mu.Unlock()
+		if !last {
+			return nil
+		}
+	}
 	if c.conn == nil {
 		return nil
 	}
@@ -578,6 +642,14 @@ func (c *Client) DistributeScript(ctx context.Context, script Script) (ScriptRes
 // generation until ttl expires.
 func (c *Client) ClaimExecutionEpoch(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration) (ExecutionEpochResult, error) {
 	return c.claimExecutionEpoch(ctx, generation, leaseOwnerID, ttl, "")
+}
+
+// ClaimExecutionEpochWithAdoptions claims generation and, atomically with it,
+// adopts orphaned runs from a lost predecessor. It must be the first claim of
+// the generation on this generator: a higher generation fences every
+// lower-generation run it does not adopt.
+func (c *Client) ClaimExecutionEpochWithAdoptions(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration, adoptions []RunAdoption) (ExecutionEpochResult, error) {
+	return c.claimExecutionEpoch(ctx, generation, leaseOwnerID, ttl, "", adoptions...)
 }
 
 // ClaimTestExecutionEpoch establishes or renews the volatile lease for one
@@ -622,7 +694,7 @@ func (c *Client) ClaimRunSupervision(ctx context.Context, claim RunSupervisionCl
 	}, nil
 }
 
-func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration, testID string) (ExecutionEpochResult, error) {
+func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, leaseOwnerID string, ttl time.Duration, testID string, adoptions ...RunAdoption) (ExecutionEpochResult, error) {
 	if ttl <= 0 {
 		return ExecutionEpochResult{}, fmt.Errorf("execution epoch ttl must be positive")
 	}
@@ -632,11 +704,21 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 	if ttl > time.Duration(^uint64(0)>>1) {
 		return ExecutionEpochResult{}, fmt.Errorf("execution epoch ttl is too large")
 	}
+	protoAdoptions := make([]*pb.RunAdoption, 0, len(adoptions))
+	for _, adoption := range adoptions {
+		protoAdoptions = append(protoAdoptions, &pb.RunAdoption{
+			TestId:                   strings.TrimSpace(adoption.TestID),
+			PriorGeneration:          adoption.PriorGeneration,
+			PriorRunSupervisionToken: append([]byte(nil), adoption.PriorToken...),
+			NewRunSupervisionToken:   append([]byte(nil), adoption.NewToken...),
+		})
+	}
 	ack, err := c.rpc.ClaimExecutionEpoch(ctx, &pb.ExecutionEpochClaim{
 		ExecutionGeneration:   generation,
 		LeaseTtlMilliseconds:  ttl.Milliseconds(),
 		ExecutionLeaseOwnerId: strings.TrimSpace(leaseOwnerID),
 		TestId:                testID,
+		Adoptions:             protoAdoptions,
 	})
 	if err != nil {
 		return ExecutionEpochResult{}, err
@@ -646,6 +728,13 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 		CurrentGeneration: ack.GetCurrentGeneration(),
 		ExpiresAt:         time.UnixMilli(ack.GetExpiresAtUnixMs()),
 		ErrorMessage:      ack.GetErrorMessage(),
+		AdoptionSupported: ack.GetAdoptionSupported(),
+	}
+	for _, adoption := range ack.GetAdoptions() {
+		result.Adoptions = append(result.Adoptions, RunAdoptionResult{
+			TestID: adoption.GetTestId(), Outcome: adoption.GetOutcome(),
+			Detail: adoption.GetDetail(), TerminalState: adoption.GetTerminalState(),
+		})
 	}
 	if testID != "" && !ack.GetTestLeaseAccepted() {
 		return result, fmt.Errorf("generator does not acknowledge assignment-scoped execution leases")
@@ -1406,6 +1495,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		ExecutionGeneration:       assignment.ExecutionGeneration,
 		ScenarioId:                assignment.ScenarioID,
 		RequireTestExecutionLease: assignment.RequireTestExecutionLease,
+		AdoptionGrace:             preciseDurationProto(assignment.AdoptionGrace, 0),
 		GroupName:                 assignment.GroupName,
 		TargetDurationSeconds:     compatibilityDurationSeconds(targetDuration),
 		TargetDuration:            preciseDurationProto(targetDuration, 0),

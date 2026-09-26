@@ -180,6 +180,7 @@ func main() {
 	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers,
 		generatorrpc.WithExecution(),
 		generatorrpc.WithRunSupervisionRequired(supervisionConfig.TTL, supervisionConfig.Drain),
+		generatorrpc.WithMaxAdoptionGrace(supervisionConfig.MaxAdoptionGrace),
 		generatorrpc.WithRuntimeContainmentFailureSignal(java_vuser.LocalProcessContainmentFailure()),
 	)
 	if err := controlService.ReadinessError(); err != nil {

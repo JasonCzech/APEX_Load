@@ -1,4 +1,4 @@
-import { TestRunManifest, TestSummary } from '../types'
+import { RunContinuityStatus, TestRunManifest, TestSummary } from '../types'
 import { CaptureStatusSummary, CaptureMetricValues, CaptureEmptyEvidence } from './CaptureStatusSummary'
 
 interface Props {
@@ -14,6 +14,13 @@ function telemetryHealth(test: TestSummary): string {
   const age = telemetry.end_to_end_age_ms ?? telemetry.sample_age_ms
   if (age === undefined) return 'Telemetry received'
   return age > 2000 ? `Telemetry is stale (${Math.round(age)} ms)` : `Telemetry healthy (${Math.round(age)} ms)`
+}
+
+function continuitySummary(continuity?: RunContinuityStatus): string {
+  if (!continuity || continuity.policy !== 'continue') return 'Fail on controller failover'
+  const failovers = continuity.failovers?.length || 0
+  const survived = failovers ? ` · survived ${failovers} failover${failovers === 1 ? '' : 's'}` : ''
+  return `Continue through failover${continuity.armed ? ' (armed)' : ''}${survived}`
 }
 
 export default function TestExecutionInfrastructure({ manifest, manifestError, manifestLoading, test }: Props) {
@@ -33,7 +40,20 @@ export default function TestExecutionInfrastructure({ manifest, manifestError, m
         <div><dt>Assignment mode</dt><dd>{manifest?.load_generators.assignment?.mode || 'Not recorded'}</dd></div>
         <div><dt>Generator shards</dt><dd>{manifestLoading ? 'Loading…' : shards.length || 'None recorded'}</dd></div>
         <div><dt>Selected targets</dt><dd>{manifest?.load_generators.assignment?.selected_targets?.join(', ') || 'Not recorded'}</dd></div>
+        <div><dt>Controller failover</dt><dd>{continuitySummary(test.continuity)}</dd></div>
       </dl>
+      {test.continuity?.failovers && test.continuity.failovers.length > 0 && <section aria-label="Controller failovers">
+        <h4>Controller failovers</h4>
+        <p>A standby controller adopted this run while its generators kept producing load. Measured results are complete; the controller observed nothing live during each gap.</p>
+        <div className="advanced-group-table-wrap"><table className="advanced-group-table"><thead><tr><th>Adopted</th><th>Generation</th><th>Unobserved gap</th><th>Generators</th></tr></thead><tbody>
+          {test.continuity.failovers.map(failover => <tr key={`${failover.prior_generation}-${failover.generation}`}>
+            <td>{new Date(failover.adopted_at).toLocaleTimeString()}</td>
+            <td>{failover.prior_generation} → {failover.generation}</td>
+            <td>{failover.gap_seconds !== undefined ? `${failover.gap_seconds.toFixed(1)} s` : 'Not recorded'}</td>
+            <td>{failover.adopted_generators} adopted{failover.completed_generators ? ` · ${failover.completed_generators} finished during the gap` : ''}</td>
+          </tr>)}
+        </tbody></table></div>
+      </section>}
       {manifestError && <p className="advanced-inline-warning" role="status">Infrastructure record unavailable: {manifestError}</p>}
       {elk && <section aria-label="Elastic capture">
         <h4>Elastic capture · {elk.connection_name || elk.connection_id}</h4>

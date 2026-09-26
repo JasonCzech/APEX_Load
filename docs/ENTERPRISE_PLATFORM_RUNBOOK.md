@@ -195,9 +195,28 @@ Archive bundles carry schema versions in both metadata and manifest files. Reade
 
 Dashboard static assets are versioned with the controller binary. Production rollout should build the dashboard before packaging the controller and verify that root SPA routing serves `index.html`.
 
+PostgreSQL integer width (one-time, on upgrade): earlier releases created every
+schema `INTEGER` column as PostgreSQL `int4`, which cannot hold the int64 values
+the schema stores (a test longer than about 2.1s could not be saved). The
+controller now widens every int4 column in APEX Load's own tables to `BIGINT`
+at startup. This is lossless, but PostgreSQL rewrites each affected table under
+an `ACCESS EXCLUSIVE` lock, so the first start after upgrading takes time
+proportional to table size; each table logs `widened PostgreSQL int4 columns to
+BIGINT` with its elapsed time. Replicas serialize on an advisory lock, and later
+starts skip the step. During a rolling upgrade, replicas still running the old
+binary can log a transient `cached plan must not change result type` once per
+cached statement; upgrading all replicas clears it. Tables in the same schema
+that APEX Load did not create are never altered.
+
+The controller also refuses to start with `APEXLOAD_CONTROLLER_HA=true` unless
+`APEXLOAD_STORE=postgres`. The store backend is selected by `APEXLOAD_STORE`,
+not by the presence of `APEXLOAD_DATABASE_URL`, which is ignored (with a
+warning) on the SQLite store.
+
 Rollback expectations:
 
 - Additive metadata columns may remain after rollback.
+- Columns widened from `int4` to `BIGINT` stay `BIGINT`; older binaries read and write them unchanged.
 - Older binaries may ignore newer optional archive fields.
 - Destructive migrations require an explicit backup and release note.
 
@@ -211,7 +230,7 @@ Rollback expectations:
 | Some generators unreachable | `generator_rpc=degraded` | Drain or replace failing generators; capacity advice reflects available inventory |
 | Auth bypass in production | `auth_mode=degraded` | Configure trusted headers or OIDC before exposing shared environments |
 | Scheduler has prior errors | `scheduler_state=degraded` | Inspect schedule `last_error`, scenario references, release references, and capacity policy |
-| Controller restart during run | Terminal run shows interruption or reattached state | Review audit events, generator logs, and archive completeness before promoting results |
+| Controller restart during run | Default: run ends `FAILED` ("controller restarted before the run completed"). With `assignment.failover_policy=continue` on HA: the run stays `RUNNING`, `continuity.failovers` records the adoption, and the report gains a *Controller Failover* section | Default: review audit events, generator logs, and archive completeness before promoting results. Continue-policy runs: results are complete; check the failover section's unobserved gap and whether controller-driven shapes (stages, profiles, goals) moved during it. Adoption failures end `FAILED` with a per-generator reason (e.g. `generator predates run adoption`) |
 
 ### Operator Checklist
 

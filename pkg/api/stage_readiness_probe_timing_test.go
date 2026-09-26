@@ -117,3 +117,29 @@ func TestDistributedStageReadinessProbePreservesFirstHoldAndRateLimitsRetries(t 
 		t.Fatalf("first hold elapsed only %s after readiness admission, want at least %s; initial-ramp retries consumed the hold", elapsed, holdDuration)
 	}
 }
+
+func TestAdoptedStageScheduleJoinsCurrentOrFinalTarget(t *testing.T) {
+	for _, elapsed := range []time.Duration{150 * time.Millisecond, time.Second} {
+		t.Run(elapsed.String(), func(t *testing.T) {
+			backend := &stageReadinessProbeBackend{admitted: make(chan time.Time, 1)}
+			runner := NewTestRunner(1, NewHub(), nil)
+			runner.setExecutionBackend(backend)
+			started := time.Now().Add(-elapsed)
+			runner.tests["adopted"] = &ManagedTest{
+				ID: "adopted", Status: "RUNNING", ScenarioMode: "vuser_driven",
+				StartedAt: &started, stageScheduleResume: true, TotalVUsers: 1,
+				Groups: []TestGroup{{Name: "buyers", VUsers: 1, currentVUsers: 1, stageDriven: true}},
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			runner.runStageSchedule(ctx, "adopted", "buyers", []storage.LoadStage{
+				{Type: "hold", Duration: "100ms", TargetVUsers: 2},
+				{Type: "hold", Duration: "100ms", TargetVUsers: 4},
+			}, 0, nil)
+			calls := backend.snapshotCalls()
+			if len(calls) != 1 || calls[0].target != 4 {
+				t.Fatalf("resumed scale calls = %+v, want only the current/final target 4", calls)
+			}
+		})
+	}
+}

@@ -18,6 +18,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
@@ -61,9 +62,21 @@ type stagedEvacuationFaultClient struct {
 
 type setupRecordingEvacuationClient struct {
 	*generatorrpc.Client
+	assignment          generatorrpc.Assignment
 	setupTimeout        atomic.Int64
 	durationMu          sync.Mutex
 	durationAdjustments []generatorrpc.DurationAdjustment
+}
+
+func (c *setupRecordingEvacuationClient) AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error) {
+	c.assignment = assignment
+	return c.Client.AssignWork(ctx, assignment)
+}
+
+type supervisedEvacuationSource struct{ *evacuationFakeGeneratorClient }
+
+func (c *supervisedEvacuationSource) StopTestAtGenerationWithToken(ctx context.Context, id string, graceful bool, generation uint64, _ []byte) (generatorrpc.StopResult, error) {
+	return c.StopTestAtGeneration(ctx, id, graceful, generation)
 }
 
 type terminalObservingEvacuationClient struct {
@@ -1247,12 +1260,20 @@ func TestFailDistributedTestOnStreamErrorDoesNotReenterEvacuationForTransitional
 }
 
 func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *testing.T) {
+	runEvacuationProvisionScenario(t, false)
+}
+
+func TestDistributedEvacuationPreservesRunContinuity(t *testing.T) {
+	runEvacuationProvisionScenario(t, true)
+}
+
+func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	const bufSize = 1024 * 1024
 	listener := bufconn.Listen(bufSize)
 	server := grpc.NewServer()
-	service := generatorrpc.NewService("generator-b", 10, generatorrpc.WithExecution())
+	service := generatorrpc.NewService("generator-b", 10, generatorrpc.WithExecution(), generatorrpc.WithExecutionEpochStatePath(filepath.Join(t.TempDir(), "epoch.json")))
 	pb.RegisterGeneratorControlServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(func() {
@@ -1322,6 +1343,30 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	runner := NewTestRunner(1, hub, nil)
 	runner.tests[test.ID] = test
 	configureEvacuationExecutionLease(runner, test, 81, "operator-evacuation/81", 10*time.Second)
+	generation := uint64(81)
+	var token []byte
+	var store *storage.SQLiteStore
+	sourceClient := generatorClient(failedClient)
+	if continuity {
+		var leadership *executionLeadership
+		runner, store, leadership = newAdoptionTestRunner(t)
+		runner.hub = hub
+		runner.execution = backend
+		runner.tests[test.ID] = test
+		_, generation = leadership.executionLeaseTerm()
+		test.executionGeneration = generation
+		test.Assignment.FailoverPolicy = "continue"
+		for i := range test.remoteRunSupervisionToken {
+			test.remoteRunSupervisionToken[i] = 7
+		}
+		token = cloneRunSupervisionToken(test.remoteRunSupervisionToken)
+		sourceClient = &supervisedEvacuationSource{failedClient}
+		test.remoteClientsByTarget["gen-a"] = sourceClient
+		backend.enableRunSupervision(time.Minute, 10*time.Second)
+		if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, Status: test.Status, StartTime: started, Groups: []any{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "node maintenance window")
 	if err != nil {
@@ -1349,7 +1394,8 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	resumeCtx, resumeCancel := context.WithTimeout(context.Background(), time.Second)
 	resumeResult, resumeErr := replacementClient.SetPaused(resumeCtx, generatorrpc.PauseControl{
 		TestID:              test.ID,
-		ExecutionGeneration: 81,
+		ExecutionGeneration: generation,
+		RunSupervisionToken: token,
 		Pause:               false,
 		OperationID:         "resume-paused-evacuation",
 		OperationSequence:   1,
@@ -1384,8 +1430,21 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	runner.mu.RLock()
 	archiveSource := test.remoteArchiveClientsByTarget["gen-a"]
 	runner.mu.RUnlock()
-	if archiveSource != failedClient {
+	if archiveSource != sourceClient {
 		t.Fatalf("stopped source was not retained for final archive merge: %T", archiveSource)
+	}
+	if continuity {
+		if replacementClient.assignment.AdoptionGrace != defaultRunAdoptionGrace {
+			t.Fatalf("replacement lost adoption grace: %s", replacementClient.assignment.AdoptionGrace)
+		}
+		record, err := store.GetTest(test.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkpoint, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
+		if err != nil || !present || len(checkpoint.Shards["buyers"]) != 1 || checkpoint.Shards["buyers"][0].Target != "gen-b" || len(checkpoint.ArchiveTargets) != 1 || checkpoint.ArchiveTargets[0] != "gen-a" {
+			t.Fatalf("evacuation checkpoint = %+v, present=%v, error=%v", checkpoint, present, err)
+		}
 	}
 	if state := test.remoteTargetStates["gen-a"]; !remoteTargetStateDone(state) {
 		t.Fatalf("custom evacuation reason left unrecognized target state %q", state)
@@ -1396,7 +1455,7 @@ func TestDistributedEvacuateGeneratorProvisionsPreviouslyUnassignedSurvivor(t *t
 	if got := failedClient.closeCount(); got != 1 {
 		t.Fatalf("archive-only source close count = %d, want 1", got)
 	}
-	if _, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: test.ID, ExecutionGeneration: 81}); err != nil {
+	if _, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: test.ID, ExecutionGeneration: generation, RunSupervisionToken: token}); err != nil {
 		t.Fatalf("cleanup StopTest: %v", err)
 	}
 }

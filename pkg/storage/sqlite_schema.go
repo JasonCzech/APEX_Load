@@ -535,7 +535,8 @@ func schemaCreateTableStatements() []string {
 			start_authorization_json TEXT,
 			execution_plan_approval_json TEXT,
 			initial_provenance_json TEXT,
-			timeslot_id TEXT
+			timeslot_id TEXT,
+			continuity_checkpoint_json TEXT
 		)`,
 		`CREATE TABLE IF NOT EXISTS test_history (
 			test_id TEXT,
@@ -1580,6 +1581,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.resource_baseline_enabled", query: `ALTER TABLE tests ADD COLUMN resource_baseline_enabled INTEGER DEFAULT 0`},
 		{name: "tests.start_delay", query: `ALTER TABLE tests ADD COLUMN start_delay TEXT`},
 		{name: "tests.initial_provenance_json", query: `ALTER TABLE tests ADD COLUMN initial_provenance_json TEXT`},
+		{name: "tests.continuity_checkpoint_json", query: `ALTER TABLE tests ADD COLUMN continuity_checkpoint_json TEXT`},
 		{name: "scenarios.assignment_json", query: `ALTER TABLE scenarios ADD COLUMN assignment_json TEXT`},
 		{name: "scenarios.start_delay", query: `ALTER TABLE scenarios ADD COLUMN start_delay TEXT`},
 		{name: "scenarios.traffic_profile_json", query: `ALTER TABLE scenarios ADD COLUMN traffic_profile_json TEXT`},
@@ -1929,6 +1931,9 @@ func (s *SQLiteStore) init() error {
 	}
 
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
+		return err
+	}
+	if err := s.ensurePostgresIntegerColumnsBigint(); err != nil {
 		return err
 	}
 	if err := s.backfillKubernetesExecutionTargets(); err != nil {

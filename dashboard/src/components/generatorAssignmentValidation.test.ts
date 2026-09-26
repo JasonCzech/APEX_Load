@@ -17,5 +17,11 @@ describe('validateGeneratorAssignment', () => {
   it('rejects root-only placement settings at group scope', () => {
     expect(validateGeneratorAssignment({ mode: 'region_weighted', region_weights: { east: 1 } }, 'group', 'Checkout')).toContain('only at scenario scope')
     expect(validateGeneratorAssignment({ mode: 'auto', tolerate_generator_loss: true }, 'group', 'Checkout')).toContain('only at scenario scope')
+    expect(validateGeneratorAssignment({ mode: 'auto', failover_policy: 'continue' }, 'group', 'Checkout')).toContain('only at scenario scope')
+  })
+
+  it('allows continuing through controller failover together with generator-loss tolerance', () => {
+    expect(validateGeneratorAssignment({ mode: 'auto', failover_policy: 'continue', tolerate_generator_loss: true }, 'scenario', 'Scenario')).toBeUndefined()
+    expect(validateGeneratorAssignment({ mode: 'auto', failover_policy: 'continue' }, 'scenario', 'Scenario')).toBeUndefined()
   })
 })

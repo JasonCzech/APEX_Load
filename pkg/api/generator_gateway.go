@@ -109,6 +109,15 @@ func (s *Server) handleGeneratorGatewayConnect(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusServiceUnavailable, "reverse generator gateway is not configured")
 		return
 	}
+	// Only the execution leader drives generators. A follower that accepted the
+	// tunnel would strand the generator where the leader cannot reach it. The
+	// 503 is deliberately not a 4xx: the reverse connector treats 4xx as a
+	// permanent rejection, and this one clears once routing reaches the leader.
+	// Adoption needs this transport before public mutation admission opens.
+	if !s.runner.holdsExecutionLeadership() {
+		writeError(w, http.StatusServiceUnavailable, errNotExecutionLeader.Error())
+		return
+	}
 	if productionMode() && !reverseGatewayRequestSecure(r, s.startupAuthSettings) {
 		writeError(w, http.StatusUpgradeRequired, "reverse generator connections require HTTPS in production")
 		return

@@ -32,6 +32,12 @@ type executionEpochManager struct {
 	executionEpochStateErr   error
 	executionEpochStatePath  string
 	executionLeaseOwner      string
+	// lastRenewedAt/lastGrantedTTL record the most recent accepted epoch claim.
+	// A live controller renews well within a third of the TTL; a lost one has
+	// been silent for most of it. expireTestExecutionLease uses this to tell
+	// controller loss from a deliberate per-run fence.
+	lastRenewedAt  time.Time
+	lastGrantedTTL time.Duration
 	// runSupervisionRestartFenceArmed is persisted before the first supervised
 	// lease is acknowledged in a generation. Inherited means this process did not
 	// arm it and therefore may not reconstruct pre-restart work. Expired is sticky
@@ -73,6 +79,9 @@ type executionEpochPersistence struct {
 	bindOwner  bool
 	state      *executionEpochStateStore
 	done       chan struct{}
+	// adoptions are applied when this persistence commits, before the new
+	// generation fences lower-generation work.
+	adoptions []*pb.RunAdoption
 }
 
 type executionEpochClaimKind uint8
@@ -92,10 +101,11 @@ type executionEpochClaimDecision struct {
 	expiresAt         time.Time
 	errorMessage      string
 	lowerTestIDs      []string
+	adoptionResults   []*pb.RunAdoptionResult
 	err               error
 }
 
-func (manager *executionEpochManager) planClaimLocked(service *Service, generation uint64, leaseOwner string, expiresAt time.Time, now time.Time) executionEpochClaimDecision {
+func (manager *executionEpochManager) planClaimLocked(service *Service, generation uint64, leaseOwner string, expiresAt time.Time, now time.Time, adoptions []*pb.RunAdoption) executionEpochClaimDecision {
 	if manager.pendingPersistence != nil {
 		return executionEpochClaimDecision{kind: executionEpochClaimWait, wait: manager.pendingPersistence.done}
 	}
@@ -152,11 +162,16 @@ func (manager *executionEpochManager) planClaimLocked(service *Service, generati
 			bindOwner:  bindOwner,
 			state:      manager.executionEpochState,
 			done:       make(chan struct{}),
+			adoptions:  adoptions,
 		}
 		manager.pendingPersistence = persistence
 		return executionEpochClaimDecision{kind: executionEpochClaimPersist, persistence: persistence}
 	}
-	return manager.installLeaseLocked(service, generation, expiresAt)
+	// Same generation: an adoption can only be confirmed, never performed.
+	adoptionResults := service.adoptRunsLocked(generation, adoptions, false, now)
+	decision := manager.installLeaseLocked(service, generation, expiresAt)
+	decision.adoptionResults = adoptionResults
+	return decision
 }
 
 func (manager *executionEpochManager) persistenceCurrentLocked(persistence *executionEpochPersistence) bool {
@@ -206,6 +221,10 @@ func (manager *executionEpochManager) commitPersistenceLocked(service *Service, 
 	} else if persistence.bindOwner {
 		manager.executionLeaseOwner = persistence.leaseOwner
 	}
+	// Adopt before either path below computes the lower-generation fence list,
+	// and even if the caller's context was canceled: the generation change is
+	// already durable, and a retrying successor will find the run adopted.
+	adoptionResults := service.adoptRunsLocked(persistence.generation, persistence.adoptions, persistence.higher, service.nowTime())
 	if canceled != nil {
 		if persistence.higher {
 			manager.executionExpiresAt = time.Time{}
@@ -220,9 +239,11 @@ func (manager *executionEpochManager) commitPersistenceLocked(service *Service, 
 			currentGeneration: manager.executionGeneration,
 			expiresAt:         manager.executionExpiresAt,
 			lowerTestIDs:      lowerTestIDs,
+			adoptionResults:   adoptionResults,
 		}, canceled
 	}
 	decision := manager.installLeaseLocked(service, persistence.generation, persistence.expiresAt)
+	decision.adoptionResults = adoptionResults
 	manager.completePersistenceLocked(persistence)
 	return decision, nil
 }
@@ -233,6 +254,9 @@ func (manager *executionEpochManager) installLeaseLocked(service *Service, gener
 	}
 	manager.executionExpiresAt = expiresAt
 	manager.executionRestartRevalidation = false
+	now := service.nowTime()
+	manager.lastRenewedAt = now
+	manager.lastGrantedTTL = expiresAt.Sub(now)
 	manager.resetTimerLocked(service, generation, expiresAt)
 	lowerTestIDs := service.testIDsBeforeGenerationLocked(generation)
 	if len(lowerTestIDs) > 0 {
@@ -306,26 +330,44 @@ func (manager *executionEpochManager) resetTimerLocked(service *Service, generat
 	})
 }
 
-func (manager *executionEpochManager) planExpiryLocked(service *Service, generation uint64, expiresAt time.Time, token uint64, requireToken bool, now time.Time) (<-chan struct{}, []string, bool) {
+// planExpiryLocked returns the assignments to fence when generation's epoch
+// lapses, and the continue-policy runs orphaned instead (see orphanLocked).
+// controllerSilentLocked reports whether the controller holding the epoch
+// appears lost: it has not renewed for at least half of the last granted TTL,
+// or the epoch is about to lapse. A live controller renews far more often.
+func (manager *executionEpochManager) controllerSilentLocked(now time.Time) bool {
+	if manager.executionExpiresAt.Sub(now) <= testLeaseOrphanWindow {
+		return true
+	}
+	return !manager.lastRenewedAt.IsZero() && manager.lastGrantedTTL > 0 && now.Sub(manager.lastRenewedAt) >= manager.lastGrantedTTL/2
+}
+
+func (manager *executionEpochManager) planExpiryLocked(service *Service, generation uint64, expiresAt time.Time, token uint64, requireToken bool, now time.Time) (<-chan struct{}, []string, []string, bool) {
 	if manager.pendingPersistence != nil {
-		return manager.pendingPersistence.done, nil, false
+		return manager.pendingPersistence.done, nil, nil, false
 	}
 	if requireToken && manager.executionEpochTimerToken != token {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	if manager.executionGeneration != generation || !manager.executionExpiresAt.Equal(expiresAt) || now.Before(manager.executionExpiresAt) {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	testIDs := make([]string, 0)
+	var orphaned []string
 	for testID, assignment := range service.assignments {
-		if assignment.executionGeneration <= generation {
-			testIDs = append(testIDs, testID)
+		if assignment.executionGeneration > generation {
+			continue
 		}
+		if service.orphanLocked(testID, assignment, generation, now) {
+			orphaned = append(orphaned, testID)
+			continue
+		}
+		testIDs = append(testIDs, testID)
 	}
 	if len(testIDs) > 0 {
 		manager.executionEpochFencing = true
 	}
-	return nil, testIDs, true
+	return nil, testIDs, orphaned, true
 }
 
 func (manager *executionEpochManager) beginDetachedFencesLocked(count int) {
@@ -432,19 +474,25 @@ func (service *Service) ClaimExecutionEpoch(ctx context.Context, claim *pb.Execu
 	}
 	expiresAt := service.nowTime().Add(time.Duration(ttlMs) * time.Millisecond)
 	if testID := strings.TrimSpace(claim.GetTestId()); testID != "" {
+		if len(claim.GetAdoptions()) > 0 {
+			return nil, status.Error(codes.InvalidArgument, "adoptions belong to a process-epoch claim, not a run-scoped lease")
+		}
 		return service.claimTestExecutionLease(ctx, testID, generation, leaseOwner, expiresAt)
 	}
-	return service.claimValidatedExecutionEpoch(ctx, generation, leaseOwner, expiresAt)
+	if err := validateRunAdoptions(claim.GetAdoptions()); err != nil {
+		return nil, err
+	}
+	return service.claimValidatedExecutionEpoch(ctx, generation, leaseOwner, expiresAt, claim.GetAdoptions()...)
 }
 
-func (service *Service) claimValidatedExecutionEpoch(ctx context.Context, generation uint64, leaseOwner string, expiresAt time.Time) (*pb.ExecutionEpochAck, error) {
+func (service *Service) claimValidatedExecutionEpoch(ctx context.Context, generation uint64, leaseOwner string, expiresAt time.Time, adoptions ...*pb.RunAdoption) (*pb.ExecutionEpochAck, error) {
 	for {
 		service.mu.Lock()
 		if err := ctx.Err(); err != nil {
 			service.mu.Unlock()
 			return nil, status.FromContextError(err).Err()
 		}
-		decision := service.executionEpochManager.planClaimLocked(service, generation, leaseOwner, expiresAt, service.nowTime())
+		decision := service.executionEpochManager.planClaimLocked(service, generation, leaseOwner, expiresAt, service.nowTime(), adoptions)
 		service.mu.Unlock()
 		if decision.err != nil {
 			return nil, decision.err
@@ -456,6 +504,7 @@ func (service *Service) claimValidatedExecutionEpoch(ctx context.Context, genera
 				CurrentGeneration: decision.currentGeneration,
 				ExpiresAtUnixMs:   decision.expiresAt.UnixMilli(),
 				ErrorMessage:      decision.errorMessage,
+				AdoptionSupported: true,
 			}, nil
 		case executionEpochClaimWait:
 			select {
@@ -503,6 +552,8 @@ func (service *Service) finishExecutionEpochClaim(ctx context.Context, generatio
 			CurrentGeneration: generation,
 			ExpiresAtUnixMs:   decision.expiresAt.UnixMilli(),
 			ErrorMessage:      cleanupErr.Error(),
+			AdoptionSupported: true,
+			Adoptions:         decision.adoptionResults,
 		}, nil
 	}
 	service.mu.Lock()
@@ -516,6 +567,8 @@ func (service *Service) finishExecutionEpochClaim(ctx context.Context, generatio
 		CurrentGeneration: final.currentGeneration,
 		ExpiresAtUnixMs:   final.expiresAt.UnixMilli(),
 		ErrorMessage:      final.errorMessage,
+		AdoptionSupported: true,
+		Adoptions:         decision.adoptionResults,
 	}
 	return ack, nil
 }

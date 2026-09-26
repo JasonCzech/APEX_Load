@@ -50,7 +50,10 @@ type RunArchiveManifest struct {
 	// InitialProvenance is captured once when archive recording begins and is
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.
-	InitialProvenance                 *RunArchiveProvenance              `json:"initial_provenance,omitempty"`
+	InitialProvenance *RunArchiveProvenance `json:"initial_provenance,omitempty"`
+	// Continuity records the HA controller failovers the run survived
+	// (docs/HA_RUN_CONTINUITY_PLAN.md); absent when the run never failed over.
+	Continuity                        *RunContinuityStatus               `json:"continuity,omitempty"`
 	TransactionsFile                  string                             `json:"transactions_file"`
 	TransactionsParquetFile           string                             `json:"transactions_parquet_file,omitempty"`
 	ResourceSamplesFile               string                             `json:"resource_samples_file"`

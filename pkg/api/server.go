@@ -488,6 +488,7 @@ func NewServer(cfg ServerConfig) *Server {
 	runnerOpts = append(runnerOpts,
 		WithProjectSecretStore(projectSecretStore),
 		withSecretReferenceMutationCoordinator(secretReferenceMutations),
+		WithRunContinuityKeyWrapper(wrapper),
 	)
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
 	runner.setLiveStateStore(cache)
@@ -600,6 +601,9 @@ func NewServer(cfg ServerConfig) *Server {
 		})
 		leadership.setOnAcquire(func() {
 			for leadership.IsLeader() {
+				if runner.runAdoptionEnabled() {
+					s.publishExecutionEndpoint(true)
+				}
 				if err := s.repairScriptRecordingsOnLeadershipAcquire(); err != nil {
 					slog.Warn("script recording leadership repair failed; admission remains closed", "error", err)
 				} else if err := runner.reloadAndReconcile(); err != nil {
@@ -634,6 +638,8 @@ func NewServer(cfg ServerConfig) *Server {
 			}
 		})
 		leadership.setOnAdmit(func() {
+			// Restore adopted runtimes before publishing normal execution readiness.
+			runner.resumeAdoptedRuns()
 			s.publishActiveExecutionEndpoint()
 			s.launchBackground(func() {
 				runner.ReconcilePendingTests()

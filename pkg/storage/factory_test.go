@@ -219,7 +219,10 @@ func TestPostgresSchemaBooleanColumnsRewriteToBoolean(t *testing.T) {
 		stmts = append(stmts, m.query)
 	}
 
-	intColumn := regexp.MustCompile(`(?i)\b([a-z_][a-z0-9_]*)\s+INTEGER\b`)
+	// DDL INTEGER is widened to BIGINT on Postgres, so a boolean column the
+	// rewrite table missed now surfaces as BIGINT; match both integer spellings
+	// or this guard would pass vacuously.
+	intColumn := regexp.MustCompile(`(?i)\b([a-z_][a-z0-9_]*)\s+(?:INTEGER|BIGINT)\b`)
 
 	// The boolean columns are the naming-convention ones declared in the live
 	// schema UNION the ones the rewrite table itself declares BOOLEAN. Deriving
@@ -233,7 +236,7 @@ func TestPostgresSchemaBooleanColumnsRewriteToBoolean(t *testing.T) {
 		rewritten := rewriteSQL(stmt, storeDialectPostgres)
 		for _, m := range intColumn.FindAllStringSubmatch(rewritten, -1) {
 			if name := strings.ToLower(m[1]); boolCols[name] {
-				t.Errorf("boolean column %q is still INTEGER after the Postgres rewrite — add a BOOLEAN entry to rewriteSQL.\nstatement: %s", name, strings.TrimSpace(stmt))
+				t.Errorf("boolean column %q is still an integer type after the Postgres rewrite — add a BOOLEAN entry to rewriteSQL.\nstatement: %s", name, strings.TrimSpace(stmt))
 			}
 		}
 	}

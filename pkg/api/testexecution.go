@@ -2504,6 +2504,9 @@ func (tr *TestRunner) reloadAndReconcile() error {
 	if err := tr.reloadStoredTests(); err != nil {
 		return fmt.Errorf("reload tests: %w", err)
 	}
+	if err := tr.adoptOrphanedRuns(); err != nil {
+		return fmt.Errorf("adopt orphaned runs: %w", err)
+	}
 	if err := tr.cleanupLeakedCIScriptSnapshots(); err != nil {
 		return fmt.Errorf("clean up leaked CI script snapshots: %w", err)
 	}
@@ -3496,6 +3499,18 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 	if !tr.waitTestActiveRuntime(ctx, testID, activeOffset) {
 		return
 	}
+	// A schedule resumed after HA adoption joins a run already in progress: its
+	// generators hold the load of the stage that was active, so the readiness
+	// probe (which rescales to the initial VUsers) is skipped and completed
+	// stages are fast-forwarded against the persisted run clock.
+	tr.mu.RLock()
+	resuming := false
+	var resumeElapsed time.Duration
+	if current := tr.tests[testID]; current != nil && current.stageScheduleResume {
+		resuming = true
+		resumeElapsed = testActiveRuntimeLocked(current, time.Now().UTC()) - activeOffset
+	}
+	tr.mu.RUnlock()
 	if mge != nil {
 		select {
 		case <-ctx.Done():
@@ -3515,7 +3530,7 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			}
 		}
 	}
-	if mge == nil {
+	if mge == nil && !resuming {
 		// Distributed generators expose initial-ramp readiness through the typed
 		// scale precondition rather than a local ScalingReady channel. Probe the
 		// already-configured target and retry only that transient sentinel before
@@ -3562,6 +3577,22 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 		if err != nil || duration <= 0 {
 			slog.Warn("stage schedule stopped on invalid stage duration", "test_id", testID, "group", groupName, "stage", index, "duration", stage.Duration, "error", err)
 			return
+		}
+		if resuming {
+			if resumeElapsed >= duration {
+				if index < len(stages)-1 {
+					resumeElapsed -= duration
+					continue
+				}
+				// The entire schedule elapsed during the outage. Reapply its
+				// final target, which may never have reached the generators.
+				stageType, duration = "hold", 0
+			} else {
+				duration -= max(resumeElapsed, 0)
+			}
+			// Resume mid-stage: a hold reapplies its target for the remainder; a
+			// ramp continues from the current VUsers over the remaining time.
+			resuming = false
 		}
 		switch stageType {
 		case "ramp_up", "ramp_down":

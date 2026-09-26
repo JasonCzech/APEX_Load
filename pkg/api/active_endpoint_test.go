@@ -60,6 +60,35 @@ func TestExecutionReadinessIsReadyInSingleControllerMode(t *testing.T) {
 	}
 }
 
+func TestRecoveryEndpointRoutesGeneratorsWithoutAdmittingMutations(t *testing.T) {
+	runner, _, leadership := newAdoptionTestRunner(t)
+	leadership.reconciling.Store(true)
+	publisher := &fakeExecutionEndpointPublisher{}
+	server := &Server{runner: runner, leadership: leadership, activeEndpointPublisher: publisher}
+	server.setBoundAddr("127.0.0.1:8080")
+	server.publishExecutionEndpoint(true)
+	publishes, _, _, _, _, _ := publisher.state()
+	if publishes != 1 {
+		t.Fatalf("recovery endpoint publishes = %d, want 1", publishes)
+	}
+	response := httptest.NewRecorder()
+	if server.requireExecutionLeader(response) || response.Code != http.StatusServiceUnavailable {
+		t.Fatal("publishing the recovery endpoint admitted execution mutations")
+	}
+	response = httptest.NewRecorder()
+	server.handleExecutionReadiness(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatal("recovery endpoint passed execution readiness before admission")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	server.runActiveExecutionEndpointPublisher(ctx)
+	_, clears, _, _, _, _ := publisher.state()
+	if clears != 0 {
+		t.Fatal("periodic publication cleared the recovery endpoint")
+	}
+}
+
 func TestExecutionReadinessRejectsFollowerWithoutAffectingOrdinaryReadiness(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {

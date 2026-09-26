@@ -54,6 +54,11 @@ export interface GeneratorAssignmentSettings {
   shard_strategy?: 'capacity_weighted'
   required_labels?: Record<string, string>
   tolerate_generator_loss?: boolean
+  /**
+   * HA run continuity (test/scenario scope only). `continue` lets a successor
+   * controller adopt the run if the execution leader is lost; omitted = fail.
+   */
+  failover_policy?: 'fail' | 'continue'
 }
 
 export interface GeneratorShardSummary {

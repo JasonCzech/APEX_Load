@@ -113,19 +113,19 @@ func (tr *TestRunner) trafficProfileElapsed(testID string, activeOffset time.Dur
 	if test == nil || test.StartedAt == nil {
 		return -activeOffset
 	}
-	active := now.Sub(test.StartedAt.UTC()) - test.CumulativePause
-	if test.PausedAt != nil && !test.PausedAt.IsZero() && now.After(*test.PausedAt) {
-		pauseStart := test.PausedAt.UTC()
-		if pauseStart.Before(test.StartedAt.UTC()) {
-			pauseStart = test.StartedAt.UTC()
-		}
-		active -= now.Sub(pauseStart)
-	}
-	return active - activeOffset
+	return testActiveRuntimeLocked(test, now) - activeOffset
 }
 
 func (tr *TestRunner) waitTrafficProfileScalingReady(ctx context.Context, testID, groupName string, mge *engine.MultiGroupEngine) bool {
 	if mge == nil {
+		tr.mu.RLock()
+		resumed := tr.tests[testID] != nil && tr.tests[testID].stageScheduleResume
+		tr.mu.RUnlock()
+		if resumed {
+			// Adopted after HA failover: generators are already running the
+			// profile's current load, and the schedule jumps to the active point.
+			return true
+		}
 		// Distributed generators signal initial-ramp admission through the
 		// scale primitive. Probe the configured target so a slow generator
 		// startup cannot make the profile scheduler abandon its first point.

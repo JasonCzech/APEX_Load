@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"sort"
 	"strings"
+	"time"
 )
 
 // reportCSVWriteFunc writes a single section/key/metric/value CSV row.
@@ -611,6 +612,55 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				}
 				if err := write("completeness_finding", finding.Dimension, "message", finding.Message); err != nil {
 					return err
+				}
+			}
+			return nil
+		}})
+
+	// --- Controller failover (HA run continuity) ---------------------------
+	add(reportSectionRenderer{ID: "controller_failover", Label: "Controller Failover",
+		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {
+			pdfHeading(lines, "Controller Failover")
+			continuity := d.Report.Manifest.Continuity
+			if continuity == nil || len(continuity.Failovers) == 0 {
+				*lines = append(*lines, "No controller failover occurred during this run.", "")
+				return
+			}
+			*lines = append(*lines, fmt.Sprintf("Survived %d controller failover(s); load generators kept running and measured results are complete. Unobserved controller time: %.1f s.", len(continuity.Failovers), failoverGapTotalSeconds(continuity)))
+			for _, failover := range continuity.Failovers {
+				*lines = append(*lines, fmt.Sprintf("- %s: generation %d -> %d, gap %.1f s, %d generator(s) adopted, %d finished during the gap",
+					failover.AdoptedAt.UTC().Format(time.RFC3339), failover.PriorGeneration, failover.Generation, failover.GapSeconds, failover.AdoptedGenerators, failover.CompletedGenerators))
+			}
+			*lines = append(*lines, "")
+		},
+		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
+			continuity := d.Report.Manifest.Continuity
+			count := 0
+			if continuity != nil {
+				count = len(continuity.Failovers)
+			}
+			if err := write("controller_failover", "", "failovers", fmt.Sprint(count)); err != nil {
+				return err
+			}
+			if count == 0 {
+				return nil
+			}
+			if err := write("controller_failover", "", "unobserved_seconds", formatCSVFloat(failoverGapTotalSeconds(continuity))); err != nil {
+				return err
+			}
+			for index, failover := range continuity.Failovers {
+				key := fmt.Sprintf("%d", index+1)
+				for _, row := range [][2]string{
+					{"adopted_at", failover.AdoptedAt.UTC().Format(time.RFC3339)},
+					{"prior_generation", fmt.Sprint(failover.PriorGeneration)},
+					{"generation", fmt.Sprint(failover.Generation)},
+					{"gap_seconds", formatCSVFloat(failover.GapSeconds)},
+					{"adopted_generators", fmt.Sprint(failover.AdoptedGenerators)},
+					{"completed_generators", fmt.Sprint(failover.CompletedGenerators)},
+				} {
+					if err := write("controller_failover", key, row[0], row[1]); err != nil {
+						return err
+					}
 				}
 			}
 			return nil

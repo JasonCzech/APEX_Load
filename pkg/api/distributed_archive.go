@@ -645,12 +645,14 @@ func fetchRemoteArchiveArtifactFileWithBudget(ctx context.Context, client genera
 
 func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []remoteArchiveBundle, finalStatus, finalError string, completedAt time.Time) RunArchiveManifest {
 	var initialProvenance *RunArchiveProvenance
+	var continuity *RunContinuityStatus
 	if tr != nil {
 		tr.mu.RLock()
 		if test != nil && test.initialArchiveProvenance != nil {
 			initial := maskRunArchiveProvenance(*test.initialArchiveProvenance)
 			initialProvenance = &initial
 		}
+		continuity = archivedRunContinuity(test)
 		tr.mu.RUnlock()
 	} else if test != nil && test.initialArchiveProvenance != nil {
 		initial := maskRunArchiveProvenance(*test.initialArchiveProvenance)
@@ -673,6 +675,7 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		IntervalSummariesFile:        "interval_summaries.jsonl",
 		IntervalSummariesParquetFile: "interval_summaries.parquet",
 	}
+	manifest.Continuity = continuity
 	manifest.TerminationReason = "unknown"
 	switch finalStatus {
 	case "ABORTED":

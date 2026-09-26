@@ -94,8 +94,14 @@ func (s *Server) activeExecutionEndpointTerm() (string, uint64) {
 }
 
 func (s *Server) publishActiveExecutionEndpoint() {
+	s.publishExecutionEndpoint(false)
+}
+
+// Recovery needs reverse generators to reach the lease holder before adoption
+// can finish. Execution mutations still require admission at their handlers.
+func (s *Server) publishExecutionEndpoint(recovering bool) {
 	if s == nil || s.activeEndpointPublisher == nil || s.leadership == nil ||
-		!s.BoundAddrReady() || !s.isExecutionLeader() {
+		!s.BoundAddrReady() || !s.leadership.IsLeader() || (!recovering && !s.isExecutionLeader()) {
 		return
 	}
 	ownerID, generation := s.leadership.executionLeaseTerm()
@@ -116,7 +122,7 @@ func (s *Server) publishActiveExecutionEndpoint() {
 		return
 	}
 	currentOwner, currentGeneration := s.leadership.executionLeaseTerm()
-	if ctx.Err() != nil || !s.isExecutionLeader() || currentOwner != ownerID || currentGeneration != generation {
+	if ctx.Err() != nil || !s.leadership.IsLeader() || (!recovering && !s.isExecutionLeader()) || currentOwner != ownerID || currentGeneration != generation {
 		// The publisher's generation fence prevents this old success from
 		// overwriting a successor. Keep local readiness closed as well.
 		s.setActiveExecutionEndpointState(ownerID, generation, false)
@@ -149,6 +155,9 @@ func (s *Server) runActiveExecutionEndpointPublisher(ctx context.Context) {
 		if s.isExecutionLeader() {
 			s.publishActiveExecutionEndpoint()
 			return
+		}
+		if s.leadership != nil && s.leadership.IsLeader() {
+			return // preserve a recovery endpoint until admission or lease loss
 		}
 		s.clearActiveExecutionEndpoint()
 	}

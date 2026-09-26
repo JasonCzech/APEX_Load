@@ -33,6 +33,7 @@ function cloneGeneratorAssignment(assignment?: GeneratorAssignmentSettings): Gen
     ...(assignment?.shard_strategy ? { shard_strategy: assignment.shard_strategy } : {}),
     ...(assignment?.required_labels ? { required_labels: { ...assignment.required_labels } } : {}),
     ...(assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}),
+    ...(assignment?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
   }
 }
 

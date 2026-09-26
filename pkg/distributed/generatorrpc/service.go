@@ -35,13 +35,18 @@ import (
 const FeatureIterationTerminationV1 = "iteration_termination_v1"
 
 type assignedTest struct {
-	sourcePlan                      *pb.SourcePlanManifest
-	terminationMode                 string
-	testID                          string
-	lifecycle                       assignmentLifecycleState
-	executionGeneration             uint64
-	requireTestExecutionLease       bool
-	runSupervisionTokenHash         [sha256.Size]byte
+	sourcePlan                *pb.SourcePlanManifest
+	terminationMode           string
+	testID                    string
+	lifecycle                 assignmentLifecycleState
+	executionGeneration       uint64
+	requireTestExecutionLease bool
+	runSupervisionTokenHash   [sha256.Size]byte
+	// adoptionGrace > 0 opts this run into HA continuity: on controller epoch
+	// expiry it is orphaned (keeps running) until orphanedUntil instead of being
+	// fenced, awaiting a successor's RunAdoption.
+	adoptionGrace                   time.Duration
+	orphanedUntil                   time.Time
 	vuserCount                      int32
 	paused                          bool
 	pauseOperationID                string
@@ -673,19 +678,21 @@ type Service struct {
 	runSupervisionTombstoneOrder         []runSupervisionTombstoneKey
 	runSupervisionRequired               bool
 	runSupervisionTTL                    time.Duration
-	runSupervisionDrain                  time.Duration
-	runSupervisionHardGrace              time.Duration
-	runSupervisionDrainingVUsers         int64
-	runSupervisionExpirations            atomic.Uint64
-	runSupervisionEscalations            atomic.Uint64
-	runSupervisionFencePersistenceMu     sync.Mutex
-	runSupervisionIntentMu               sync.Mutex
-	runSupervisionIntentErr              error
-	safetyExitEvidence                   []runSupervisionCrashIntent
-	selfTermination                      chan SelfTerminationRequest
-	selfTerminationOnce                  sync.Once
-	runtimeContainmentFailure            <-chan struct{}
-	runtimeContainmentBeforePersist      func()
+	// maxAdoptionGrace caps WorkAssignment.adoption_grace; see orphanLocked.
+	maxAdoptionGrace                 time.Duration
+	runSupervisionDrain              time.Duration
+	runSupervisionHardGrace          time.Duration
+	runSupervisionDrainingVUsers     int64
+	runSupervisionExpirations        atomic.Uint64
+	runSupervisionEscalations        atomic.Uint64
+	runSupervisionFencePersistenceMu sync.Mutex
+	runSupervisionIntentMu           sync.Mutex
+	runSupervisionIntentErr          error
+	safetyExitEvidence               []runSupervisionCrashIntent
+	selfTermination                  chan SelfTerminationRequest
+	selfTerminationOnce              sync.Once
+	runtimeContainmentFailure        <-chan struct{}
+	runtimeContainmentBeforePersist  func()
 	*executionEpochManager
 	shutdown     chan struct{}
 	shutdownOnce sync.Once
@@ -793,6 +800,14 @@ func WithRunSupervisionRequired(ttl, drain time.Duration) ServiceOption {
 	}
 }
 
+// WithMaxAdoptionGrace caps the HA adoption grace a controller may request for
+// a run (see WorkAssignment.adoption_grace). Zero disables orphaning.
+func WithMaxAdoptionGrace(limit time.Duration) ServiceOption {
+	return func(s *Service) {
+		s.maxAdoptionGrace = min(max(limit, 0), maxAdoptionGrace)
+	}
+}
+
 // WithAssignmentStageTTL bounds how long validated, capacity-reserving work may
 // remain uncommitted. Production defaults to a two-minute controller-crash
 // recovery window.
@@ -879,6 +894,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		testExecutionLeaseFences: make(map[string]uint64),
 		runSupervisions:          make(map[string]*runSupervisionLease),
 		runSupervisionTTL:        defaultRunSupervisionTTL,
+		maxAdoptionGrace:         maxAdoptionGrace,
 		runSupervisionDrain:      defaultRunSupervisionDrain,
 		runSupervisionHardGrace:  defaultRunSupervisionHardGrace,
 		selfTermination:          make(chan SelfTerminationRequest, 1),

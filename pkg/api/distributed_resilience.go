@@ -160,6 +160,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	executionGeneration := test.executionGeneration
 	runSupervisionToken := cloneRunSupervisionToken(test.remoteRunSupervisionToken)
 	requireTestExecutionLease := assignmentToleratesGeneratorLoss(test.Assignment)
+	sourceSupervisionTTL := continuitySupervisionFenceTTL(b.runSupervisionTTL, tr.runAdoptionGrace(test))
 	testName := test.Name
 	testID := test.ID
 	startPaused := status == "PAUSED" || test.PausedAt != nil
@@ -515,7 +516,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	if source := clientsByTarget[target]; source != nil {
 		if err := b.stopEvacuationClient(testID, executionGeneration, source, runSupervisionToken); err != nil {
 			if allowLostSourceLeaseFence && requireTestExecutionLease && !sourceRenewalsJoinedAt.IsZero() {
-				if expiryErr := waitForRunSupervisionProcessFence(executionCtx, tr, test, status, controlGeneration, executionGeneration, runSupervisionProcessFenceDeadline(sourceRenewalsJoinedAt, b.runSupervisionTTL)); expiryErr == nil {
+				if expiryErr := waitForRunSupervisionProcessFence(executionCtx, tr, test, status, controlGeneration, executionGeneration, runSupervisionProcessFenceDeadline(sourceRenewalsJoinedAt, sourceSupervisionTTL)); expiryErr == nil {
 					goto sourceFenced
 				}
 			}
@@ -536,7 +537,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		}
 	} else {
 		if allowLostSourceLeaseFence && requireTestExecutionLease && !sourceRenewalsJoinedAt.IsZero() {
-			if expiryErr := waitForRunSupervisionProcessFence(executionCtx, tr, test, status, controlGeneration, executionGeneration, runSupervisionProcessFenceDeadline(sourceRenewalsJoinedAt, b.runSupervisionTTL)); expiryErr == nil {
+			if expiryErr := waitForRunSupervisionProcessFence(executionCtx, tr, test, status, controlGeneration, executionGeneration, runSupervisionProcessFenceDeadline(sourceRenewalsJoinedAt, sourceSupervisionTTL)); expiryErr == nil {
 				goto sourceFenced
 			}
 		}
@@ -773,7 +774,9 @@ sourceFenced:
 	// on the managed test, but their execution context must still own the newly
 	// opened stream and its consumer.
 	runCtx := remoteLifecycleCtx
+	shardsSnapshot := cloneGroupShardMap(test.remoteGroupShards)
 	tr.mu.Unlock()
+	tr.armRunContinuity(executionCtx, test, executionGeneration, executionLeaseOwnerID, runSupervisionToken, shardsSnapshot)
 	// Client.Close may block in transport shutdown. Never hold runner state,
 	// topology, and evacuation locks while closing placement-only candidates.
 	for _, client := range unusedDialedClients {
@@ -823,6 +826,16 @@ func runSupervisionProcessFenceDeadline(renewalsJoinedAt time.Time, ttl time.Dur
 		externalRunnerOwnerLeaseContract+externalRunnerCleanupExitContract,
 	)
 	return renewalsJoinedAt.Add(ttl + maxRunSupervisionAbandonDrainContract + postDrainFence + runSupervisionProcessFenceJitter)
+}
+
+func continuitySupervisionFenceTTL(ttl, adoptionGrace time.Duration) time.Duration {
+	if adoptionGrace > 0 {
+		// Orphaning can extend the deadman past its original supervision TTL.
+		// Include the last possible process lease plus grace before adding drain
+		// and containment time in runSupervisionProcessFenceDeadline.
+		return max(ttl, defaultExecutionLeaseTTL+adoptionGrace)
+	}
+	return ttl
 }
 
 func waitForRunSupervisionProcessFence(ctx context.Context, tr *TestRunner, test *ManagedTest, status string, controlGeneration, generation uint64, deadline time.Time) error {
@@ -885,12 +898,7 @@ func waitForLostGeneratorEpochFence(ctx context.Context, tr *TestRunner, test *M
 	if err != nil || current != generation || deadline.IsZero() {
 		return fmt.Errorf("execution epoch deadline is unavailable while fencing lost generator")
 	}
-	// A generator's assignment lease is derived from the controller deadline and
-	// can never outlive one lease TTL. A deadline further out than that is a
-	// corrupt sample, not a longer fence: never hold the evacuation locks past it.
-	if latest := time.Now().Add(defaultExecutionLeaseTTL); deadline.After(latest) {
-		deadline = latest
-	}
+	deadline = lostGeneratorFenceDeadline(tr, test, deadline, time.Now())
 	wait := time.Until(deadline) + 10*time.Millisecond
 	if wait <= 0 {
 		wait = time.Millisecond
@@ -916,6 +924,22 @@ func waitForLostGeneratorEpochFence(ctx context.Context, tr *TestRunner, test *M
 		return fmt.Errorf("execution leadership changed while fencing lost generator")
 	}
 	return nil
+}
+
+// lostGeneratorFenceDeadline is when a lost generator is certain to have
+// stopped the run: its lease deadline (capped at one lease TTL; a later value is
+// a corrupt sample, never a longer fence) plus, for a continue-policy run, the
+// adoption grace. A generator partitioned from this live controller cannot tell
+// that from controller loss, so it orphans the run and keeps generating load
+// for up to the grace; the replacement must not start before then.
+func lostGeneratorFenceDeadline(tr *TestRunner, test *ManagedTest, leaseDeadline, now time.Time) time.Time {
+	if latest := now.Add(defaultExecutionLeaseTTL); leaseDeadline.After(latest) {
+		leaseDeadline = latest
+	}
+	tr.mu.RLock()
+	adoptionGrace := tr.runAdoptionGrace(test)
+	tr.mu.RUnlock()
+	return leaseDeadline.Add(adoptionGrace)
 }
 
 // lostGeneratorEpochFenceAbandoned evaluates the evacuation's own post-fence
@@ -1201,6 +1225,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					SecretBundle:               secretBundle,
 					SecretBundleID:             secretBundleID,
 					RunSupervisionToken:        runSupervisionToken,
+					AdoptionGrace:              tr.runAdoptionGrace(managedTest),
 					Region:                     b.regionForTarget(shard.Target),
 					MessageDetailMaxItems:      authoredMessageDetailMaxItems(group.script),
 					MessageDetailMaxItemBytes:  authoredMessageDetailMaxItemBytes(group.script),

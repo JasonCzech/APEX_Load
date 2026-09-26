@@ -25,18 +25,24 @@ const (
 	minimumRunSupervisionTTL       = 30 * time.Second
 	defaultRunSupervisionDrain     = 5 * time.Second
 	defaultRunSupervisionHardGrace = time.Second
-	maxRunSupervisionTombstones    = 4096
-	runSupervisionFailureReason    = "controller_supervision_lost"
-	stopEscalationReason           = "controller_stop_unquiesced"
-	fenceEscalationReason          = "execution_fence_unquiesced"
-	shutdownEscalationReason       = "generator_shutdown_unquiesced"
-	testFailureEscalationReason    = "test_failure_unquiesced"
-	durationEscalationReason       = "duration_completion_unquiesced"
-	defaultEscalationReason        = "generator_execution_unquiesced"
-	runSupervisionCrashVersion     = 1
-	runSupervisionJournalVersion   = 1
-	maxRunSupervisionCrashEntries  = 64
-	maxRunSupervisionCrashBytes    = 64 << 10
+	// maxAdoptionGrace bounds how long an orphaned run may keep generating load
+	// with no controller. It is the hard ceiling on unsupervised load for a
+	// continue-policy run; operators can only lower it.
+	maxAdoptionGrace              = 120 * time.Second
+	adoptionTimeoutReason         = "controller_adoption_timeout"
+	envGeneratorMaxAdoptionGrace  = "APEXLOAD_GENERATOR_MAX_ADOPTION_GRACE"
+	maxRunSupervisionTombstones   = 4096
+	runSupervisionFailureReason   = "controller_supervision_lost"
+	stopEscalationReason          = "controller_stop_unquiesced"
+	fenceEscalationReason         = "execution_fence_unquiesced"
+	shutdownEscalationReason      = "generator_shutdown_unquiesced"
+	testFailureEscalationReason   = "test_failure_unquiesced"
+	durationEscalationReason      = "duration_completion_unquiesced"
+	defaultEscalationReason       = "generator_execution_unquiesced"
+	runSupervisionCrashVersion    = 1
+	runSupervisionJournalVersion  = 1
+	maxRunSupervisionCrashEntries = 64
+	maxRunSupervisionCrashBytes   = 64 << 10
 )
 
 const runSupervisionRestartFenceMessage = "generation-zero run supervision is durably fenced; a positive execution generation is required"
@@ -68,6 +74,9 @@ type SelfTerminationRequest struct {
 type RunSupervisionConfig struct {
 	TTL   time.Duration
 	Drain time.Duration
+	// MaxAdoptionGrace caps the adoption grace a controller may request for a
+	// continue-policy run. Zero disables orphaning on this generator.
+	MaxAdoptionGrace time.Duration
 }
 
 // runSupervisionCrashIntent is one deliberately token-free journal entry. The
@@ -108,7 +117,17 @@ func RunSupervisionConfigFromEnv(getenv func(string) string) (RunSupervisionConf
 	if getenv == nil {
 		getenv = func(string) string { return "" }
 	}
-	config := RunSupervisionConfig{TTL: defaultRunSupervisionTTL, Drain: defaultRunSupervisionDrain}
+	config := RunSupervisionConfig{TTL: defaultRunSupervisionTTL, Drain: defaultRunSupervisionDrain, MaxAdoptionGrace: maxAdoptionGrace}
+	if raw := strings.TrimSpace(getenv(envGeneratorMaxAdoptionGrace)); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil {
+			return RunSupervisionConfig{}, fmt.Errorf("%s: %w", envGeneratorMaxAdoptionGrace, err)
+		}
+		if parsed < 0 || parsed > maxAdoptionGrace {
+			return RunSupervisionConfig{}, fmt.Errorf("%s must be between 0s and %s", envGeneratorMaxAdoptionGrace, maxAdoptionGrace)
+		}
+		config.MaxAdoptionGrace = parsed
+	}
 	if raw := strings.TrimSpace(getenv("APEXLOAD_GENERATOR_RUN_SUPERVISION_TTL")); raw != "" {
 		parsed, err := time.ParseDuration(raw)
 		if err != nil {
@@ -698,18 +717,27 @@ func (s *Service) expireRunSupervision(testID string, timerToken uint64) {
 	generation := assignment.executionGeneration
 	s.markRunSupervisionGenerationExpiredLocked(generation)
 	ttl := lease.ttl
+	orphaned := !assignment.orphanedUntil.IsZero()
 	stops := s.detachFencedTestsLocked([]string{testID}, generation, false)
 	s.mu.Unlock()
 
 	s.runSupervisionExpirations.Add(1)
-	slog.Error("generator run supervision expired", "event", "generator_run_supervision_expired", "test_id", testID, "execution_generation", generation, "ttl", ttl)
+	reason := runSupervisionFailureReason
+	if orphaned {
+		// The run outlived its controller under a continue policy and no
+		// successor adopted it within the grace.
+		reason = adoptionTimeoutReason
+		slog.Error("orphaned run was not adopted within its grace; stopping", "event", "generator_run_adoption_timeout", "test_id", testID, "execution_generation", generation)
+	} else {
+		slog.Error("generator run supervision expired", "event", "generator_run_supervision_expired", "test_id", testID, "execution_generation", generation, "ttl", ttl)
+	}
 	if len(stops) == 0 {
 		return
 	}
 	stop := stops[0]
 	stop.finalState = "FAILED"
-	stop.finalError = runSupervisionFailureReason
-	stop.escalationReason = runSupervisionFailureReason
+	stop.finalError = reason
+	stop.escalationReason = reason
 	s.startDetachedRunDrain(stop, true)
 }
 
@@ -1159,7 +1187,7 @@ func validRunEscalationReason(reason string) bool {
 	switch reason {
 	case runSupervisionFailureReason, stopEscalationReason, fenceEscalationReason,
 		shutdownEscalationReason, testFailureEscalationReason, durationEscalationReason,
-		defaultEscalationReason, runtimeContainmentFailureReason:
+		defaultEscalationReason, runtimeContainmentFailureReason, adoptionTimeoutReason:
 		return true
 	default:
 		return false

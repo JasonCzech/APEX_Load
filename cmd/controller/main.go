@@ -101,7 +101,14 @@ func runController() (runErr error) {
 		slog.Info("distributed execution enabled", "generators", generatorTargets, "timeout", generatorTimeout, "grpc_transport", security.String())
 	}
 
-	store, err := storage.NewStoreFromEnv()
+	storeConfig := storage.StoreConfigFromEnv()
+	if err := validateHAStoreStartup(envIsTruthy(os.Getenv("APEXLOAD_CONTROLLER_HA")), storeConfig); err != nil {
+		return err
+	}
+	if warning := ignoredDatabaseURLWarning(storeConfig); warning != "" {
+		slog.Warn(warning, "store", storeConfig.Backend)
+	}
+	store, err := storage.NewConfiguredStore(storeConfig)
 	if err != nil {
 		return fmt.Errorf("initialize storage: %w", err)
 	}
@@ -367,6 +374,33 @@ func logRuntimeTuning(settings runtimetuning.Settings) {
 		args = append(args, "gomemlimit", settings.GOMEMLIMIT, "gomemlimit_source", settings.GOMEMLIMITSource)
 	}
 	slog.Info("go runtime tuning applied", args...)
+}
+
+// validateHAStoreStartup refuses HA on a per-replica store. The execution
+// lease lives in the store, so with SQLite every replica leases against its own
+// file, each believes it is the leader, and they run tests concurrently.
+func validateHAStoreStartup(haEnabled bool, config storage.StoreConfig) error {
+	if !haEnabled {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(config.Backend)) {
+	case storage.StoreBackendPostgres, "postgresql":
+		return nil
+	}
+	return fmt.Errorf("APEXLOAD_CONTROLLER_HA=true requires APEXLOAD_STORE=postgres; store %q is per-replica, so every replica would hold its own execution lease and run tests concurrently", strings.TrimSpace(config.Backend))
+}
+
+// ignoredDatabaseURLWarning reports a database URL that the selected store
+// will never use: the backend is chosen by APEXLOAD_STORE, not by the URL.
+func ignoredDatabaseURLWarning(config storage.StoreConfig) string {
+	if strings.TrimSpace(config.DatabaseURL) == "" {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(config.Backend)) {
+	case storage.StoreBackendPostgres, "postgresql":
+		return ""
+	}
+	return "APEXLOAD_DATABASE_URL is set but ignored because APEXLOAD_STORE is not postgres; set APEXLOAD_STORE=postgres to use it"
 }
 
 func envIsTruthy(raw string) bool {

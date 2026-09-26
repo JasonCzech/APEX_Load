@@ -4932,6 +4932,23 @@ paths:
                         completed_at:
                           type: string
                           format: date-time
+                        continuity:
+                          type: object
+                          properties:
+                            armed:
+                              type: boolean
+                            execution_generation:
+                              type: integer
+                              format: int64
+                            failovers:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunFailover'
+                                additionalProperties: true
+                            policy:
+                              type: string
+                          nullable: true
                         created_at:
                           type: string
                           format: date-time
@@ -6916,6 +6933,8 @@ paths:
                     assignment:
                       type: object
                       properties:
+                        failover_policy:
+                          type: string
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -7103,6 +7122,8 @@ paths:
                           assignment:
                             type: object
                             properties:
+                              failover_policy:
+                                type: string
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -36872,6 +36893,11 @@ paths:
                                   description: 'Go type: RunComparisonBaseline'
                                   additionalProperties: true
                                   nullable: true
+                                continuity:
+                                  type: object
+                                  description: 'Go type: RunContinuityStatus'
+                                  additionalProperties: true
+                                  nullable: true
                                 created_at:
                                   type: string
                                   format: date-time
@@ -48621,6 +48647,8 @@ paths:
                 assignment:
                   type: object
                   properties:
+                    failover_policy:
+                      type: string
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -48827,6 +48855,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -49518,6 +49548,8 @@ paths:
                     assignment:
                       type: object
                       properties:
+                        failover_policy:
+                          type: string
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -49724,6 +49756,8 @@ paths:
                           assignment:
                             type: object
                             properties:
+                              failover_policy:
+                                type: string
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -50885,6 +50919,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -51299,6 +51335,52 @@ paths:
                           - source_test_id
                           - source_test_name
                         nullable: true
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -51614,6 +51696,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -54952,6 +55036,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -55366,6 +55452,52 @@ paths:
                           - source_test_id
                           - source_test_name
                         nullable: true
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -55681,6 +55813,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -59016,6 +59150,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -59430,6 +59566,52 @@ paths:
                           - source_test_id
                           - source_test_name
                         nullable: true
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -59745,6 +59927,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -63092,6 +63276,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -63506,6 +63692,52 @@ paths:
                           - source_test_id
                           - source_test_name
                         nullable: true
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -63821,6 +64053,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -67168,6 +67402,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -67582,6 +67818,52 @@ paths:
                           - source_test_id
                           - source_test_name
                         nullable: true
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -67897,6 +68179,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -71244,6 +71528,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -71658,6 +71944,52 @@ paths:
                           - source_test_id
                           - source_test_name
                         nullable: true
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -71973,6 +72305,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -75320,6 +75654,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -75734,6 +76070,52 @@ paths:
                           - source_test_id
                           - source_test_name
                         nullable: true
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -76049,6 +76431,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -87766,6 +88150,8 @@ paths:
                 assignment:
                   type: object
                   properties:
+                    failover_policy:
+                      type: string
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -87983,6 +88369,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -89522,6 +89910,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -90783,6 +91173,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -91790,6 +92182,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -93051,6 +93445,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -94001,6 +94397,8 @@ paths:
                 assignment:
                   type: object
                   properties:
+                    failover_policy:
+                      type: string
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -94218,6 +94616,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -95757,6 +96157,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -97018,6 +97420,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -98671,6 +99075,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -99622,6 +100028,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -101976,6 +102384,8 @@ paths:
                     assignment:
                       type: object
                       properties:
+                        failover_policy:
+                          type: string
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -102163,6 +102573,8 @@ paths:
                           assignment:
                             type: object
                             properties:
+                              failover_policy:
+                                type: string
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -103691,6 +104103,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -103893,6 +104307,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -105634,6 +106050,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -105836,6 +106254,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -107209,6 +107629,8 @@ paths:
                     assignment:
                       type: object
                       properties:
+                        failover_policy:
+                          type: string
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -107396,6 +107818,8 @@ paths:
                           assignment:
                             type: object
                             properties:
+                              failover_policy:
+                                type: string
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -108924,6 +109348,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -109126,6 +109552,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -110396,6 +110824,8 @@ paths:
                 assignment:
                   type: object
                   properties:
+                    failover_policy:
+                      type: string
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -110613,6 +111043,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -226518,6 +226950,8 @@ paths:
                 assignment:
                   type: object
                   properties:
+                    failover_policy:
+                      type: string
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -226754,6 +227188,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -228361,6 +228797,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -229049,6 +229487,52 @@ paths:
                       - source_test_id
                       - source_test_name
                     nullable: true
+                  continuity:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      execution_generation:
+                        type: integer
+                        format: int64
+                      failovers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            adopted_at:
+                              type: string
+                              format: date-time
+                            adopted_generators:
+                              type: integer
+                              format: int64
+                            completed_generators:
+                              type: integer
+                              format: int64
+                            gap_seconds:
+                              type: number
+                              format: double
+                            generation:
+                              type: integer
+                              format: int64
+                            last_observed_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            prior_generation:
+                              type: integer
+                              format: int64
+                          required:
+                            - adopted_at
+                            - adopted_generators
+                            - generation
+                            - prior_generation
+                      policy:
+                        type: string
+                    required:
+                      - armed
+                      - policy
+                    nullable: true
                   created_at:
                     type: string
                     format: date-time
@@ -229400,6 +229884,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -234974,6 +235460,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -235662,6 +236150,52 @@ paths:
                       - source_test_id
                       - source_test_name
                     nullable: true
+                  continuity:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      execution_generation:
+                        type: integer
+                        format: int64
+                      failovers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            adopted_at:
+                              type: string
+                              format: date-time
+                            adopted_generators:
+                              type: integer
+                              format: int64
+                            completed_generators:
+                              type: integer
+                              format: int64
+                            gap_seconds:
+                              type: number
+                              format: double
+                            generation:
+                              type: integer
+                              format: int64
+                            last_observed_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            prior_generation:
+                              type: integer
+                              format: int64
+                          required:
+                            - adopted_at
+                            - adopted_generators
+                            - generation
+                            - prior_generation
+                      policy:
+                        type: string
+                    required:
+                      - armed
+                      - policy
+                    nullable: true
                   created_at:
                     type: string
                     format: date-time
@@ -236013,6 +236547,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -242339,6 +242875,52 @@ paths:
                   completed_at:
                     type: string
                     format: date-time
+                  continuity:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      execution_generation:
+                        type: integer
+                        format: int64
+                      failovers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            adopted_at:
+                              type: string
+                              format: date-time
+                            adopted_generators:
+                              type: integer
+                              format: int64
+                            completed_generators:
+                              type: integer
+                              format: int64
+                            gap_seconds:
+                              type: number
+                              format: double
+                            generation:
+                              type: integer
+                              format: int64
+                            last_observed_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            prior_generation:
+                              type: integer
+                              format: int64
+                          required:
+                            - adopted_at
+                            - adopted_generators
+                            - generation
+                            - prior_generation
+                      policy:
+                        type: string
+                    required:
+                      - armed
+                      - policy
+                    nullable: true
                   created_at:
                     type: string
                     format: date-time
@@ -242388,6 +242970,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -243126,6 +243710,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -244161,6 +244747,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -244899,6 +245487,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -247584,6 +248174,52 @@ paths:
                       completed_at:
                         type: string
                         format: date-time
+                      continuity:
+                        type: object
+                        properties:
+                          armed:
+                            type: boolean
+                          execution_generation:
+                            type: integer
+                            format: int64
+                          failovers:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                adopted_at:
+                                  type: string
+                                  format: date-time
+                                adopted_generators:
+                                  type: integer
+                                  format: int64
+                                completed_generators:
+                                  type: integer
+                                  format: int64
+                                gap_seconds:
+                                  type: number
+                                  format: double
+                                generation:
+                                  type: integer
+                                  format: int64
+                                last_observed_at:
+                                  type: string
+                                  format: date-time
+                                  nullable: true
+                                prior_generation:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - adopted_at
+                                - adopted_generators
+                                - generation
+                                - prior_generation
+                          policy:
+                            type: string
+                        required:
+                          - armed
+                          - policy
+                        nullable: true
                       created_at:
                         type: string
                         format: date-time
@@ -247633,6 +248269,8 @@ paths:
                           assignment:
                             type: object
                             properties:
+                              failover_policy:
+                                type: string
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -248438,6 +249076,8 @@ paths:
                           assignment:
                             type: object
                             properties:
+                              failover_policy:
+                                type: string
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -252807,6 +253447,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -253495,6 +254137,52 @@ paths:
                       - source_test_id
                       - source_test_name
                     nullable: true
+                  continuity:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      execution_generation:
+                        type: integer
+                        format: int64
+                      failovers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            adopted_at:
+                              type: string
+                              format: date-time
+                            adopted_generators:
+                              type: integer
+                              format: int64
+                            completed_generators:
+                              type: integer
+                              format: int64
+                            gap_seconds:
+                              type: number
+                              format: double
+                            generation:
+                              type: integer
+                              format: int64
+                            last_observed_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            prior_generation:
+                              type: integer
+                              format: int64
+                          required:
+                            - adopted_at
+                            - adopted_generators
+                            - generation
+                            - prior_generation
+                      policy:
+                        type: string
+                    required:
+                      - armed
+                      - policy
+                    nullable: true
                   created_at:
                     type: string
                     format: date-time
@@ -253846,6 +254534,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -259364,6 +260054,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -260052,6 +260744,52 @@ paths:
                       - source_test_id
                       - source_test_name
                     nullable: true
+                  continuity:
+                    type: object
+                    properties:
+                      armed:
+                        type: boolean
+                      execution_generation:
+                        type: integer
+                        format: int64
+                      failovers:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            adopted_at:
+                              type: string
+                              format: date-time
+                            adopted_generators:
+                              type: integer
+                              format: int64
+                            completed_generators:
+                              type: integer
+                              format: int64
+                            gap_seconds:
+                              type: number
+                              format: double
+                            generation:
+                              type: integer
+                              format: int64
+                            last_observed_at:
+                              type: string
+                              format: date-time
+                              nullable: true
+                            prior_generation:
+                              type: integer
+                              format: int64
+                          required:
+                            - adopted_at
+                            - adopted_generators
+                            - generation
+                            - prior_generation
+                      policy:
+                        type: string
+                    required:
+                      - armed
+                      - policy
+                    nullable: true
                   created_at:
                     type: string
                     format: date-time
@@ -260403,6 +261141,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -271111,6 +271851,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -271364,6 +272106,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -272419,6 +273163,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -272672,6 +273418,8 @@ paths:
                             assignment:
                               type: object
                               properties:
+                                failover_policy:
+                                  type: string
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -273690,6 +274438,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -274138,6 +274888,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -276836,6 +277588,8 @@ paths:
                 assignment:
                   type: object
                   properties:
+                    failover_policy:
+                      type: string
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -277072,6 +277826,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -278628,6 +279384,8 @@ paths:
                   assignment:
                     type: object
                     properties:
+                      failover_policy:
+                        type: string
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -278953,6 +279711,8 @@ paths:
                         assignment:
                           type: object
                           properties:
+                            failover_policy:
+                              type: string
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -279779,6 +280539,8 @@ paths:
                 assignment:
                   type: object
                   properties:
+                    failover_policy:
+                      type: string
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -279985,6 +280747,8 @@ paths:
                       assignment:
                         type: object
                         properties:
+                          failover_policy:
+                            type: string
                           load_zone_weights:
                             type: object
                             additionalProperties:

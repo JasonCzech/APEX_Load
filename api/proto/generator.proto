@@ -188,6 +188,12 @@ message WorkAssignment {
   // Explicit fixed-population iteration completion; omission retains duration mode.
   string termination_mode = 37;
   SourcePlanManifest source_plan = 38;
+  // adoption_grace opts this run into HA run continuity. When the controller
+  // epoch lapses, a committed supervised assignment keeps running for up to
+  // this long (capped by the generator) waiting for a successor controller to
+  // adopt it through ExecutionEpochClaim.adoptions, then stops with
+  // controller_adoption_timeout. Zero (the default) keeps fail-fast behaviour.
+  google.protobuf.Duration adoption_grace = 39;
 }
 
 message WorkCommitRequest {
@@ -246,6 +252,39 @@ message ExecutionEpochClaim {
   // process-wide controller epoch. Controllers use this lease to fence one
   // lost assignment without interrupting unrelated tests on the generator.
   string test_id = 4;
+  // adoptions carries runs a successor controller takes over as part of this
+  // higher-generation claim. They must travel inside the claim: a higher
+  // generation fences every lower-generation assignment it does not adopt.
+  repeated RunAdoption adoptions = 5;
+}
+
+// RunAdoption proves lineage of one run to the generator: the prior
+// generation and supervision token must match the assignment exactly. The new
+// token replaces the old one for every later mutation and supervision claim.
+message RunAdoption {
+  string test_id = 1;
+  uint64 prior_generation = 2;
+  bytes prior_run_supervision_token = 3;
+  bytes new_run_supervision_token = 4;
+}
+
+enum RunAdoptionOutcome {
+  RUN_ADOPTION_OUTCOME_UNSPECIFIED = 0;
+  RUN_ADOPTION_OUTCOME_ADOPTED = 1;
+  // The run finished (COMPLETE) before adoption; its archive is retained.
+  RUN_ADOPTION_OUTCOME_ALREADY_COMPLETED = 2;
+  // The run already stopped or failed (for example its grace expired).
+  RUN_ADOPTION_OUTCOME_ALREADY_STOPPED = 3;
+  RUN_ADOPTION_OUTCOME_REJECTED = 4;
+  RUN_ADOPTION_OUTCOME_UNKNOWN_TEST = 5;
+}
+
+message RunAdoptionResult {
+  string test_id = 1;
+  RunAdoptionOutcome outcome = 2;
+  string detail = 3;
+  // Terminal lifecycle state reported for ALREADY_COMPLETED/ALREADY_STOPPED.
+  string terminal_state = 4;
 }
 
 message ExecutionEpochAck {
@@ -257,6 +296,10 @@ message ExecutionEpochAck {
   // leave this false, so a newer controller cannot mistake a process-epoch
   // renewal for a run-scoped fence.
   bool test_lease_accepted = 5;
+  // adoption_supported is true on generators that understand adoptions; an
+  // older generator leaves it false and fences every lower-generation run.
+  bool adoption_supported = 6;
+  repeated RunAdoptionResult adoptions = 7;
 }
 
 message RedactionRule {

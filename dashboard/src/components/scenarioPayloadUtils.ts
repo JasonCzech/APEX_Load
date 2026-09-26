@@ -239,7 +239,11 @@ export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSett
 
 function buildRootAssignmentPayload(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings {
   const requiredLabels = normalizeRequiredLabels(assignment?.required_labels)
-  const lossTolerance = assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}
+  const lossTolerance = {
+    ...(assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}),
+    // Only the non-default value is sent, so fail-policy payloads are unchanged.
+    ...(assignment?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
+  }
   const pool = assignment?.pool_id?.trim() ? { pool_id: assignment.pool_id.trim() } : {}
   if (assignment?.mode === 'specific_hosts') {
     const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)

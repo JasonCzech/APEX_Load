@@ -1,6 +1,41 @@
 import { test, expect, seedScript, seedScenario, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
+test('Scenario builder preserves controller continuity together with generator-loss tolerance', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  await seedScript(request, workspace, 'Continuity_HTTP')
+  await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
+  await page.reload()
+  const steps = page.getByLabel('Scenario builder steps')
+  await page.getByPlaceholder('Scenario name').fill('Continuity scenario')
+  await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
+  await page.getByRole('row').filter({ hasText: 'Continuity_HTTP' }).getByRole('button', { name: 'Use for Group 1' }).click()
+  await steps.getByRole('button', { name: /^Model/ }).click()
+  await page.getByRole('button', { name: /^Fixed VUsers/ }).click()
+  await page.getByRole('button', { name: 'Use Closed VUser', exact: true }).click()
+  await steps.getByRole('button', { name: /^Run Settings/ }).click()
+  await page.getByRole('tab', { name: 'Controller/Generator', exact: true }).click()
+  const continuity = page.getByRole('checkbox', { name: 'Continue through controller failover' })
+  const lossTolerance = page.getByRole('checkbox', { name: 'Tolerate generator loss' })
+  await continuity.check()
+  await lossTolerance.check()
+  await expect(continuity).toBeChecked()
+  await expect(lossTolerance).toBeChecked()
+  await page.setViewportSize({ width: 850, height: 1000 })
+  await page.screenshot({ path: testInfo.outputPath('controller-continuity.png'), fullPage: true })
+  await steps.getByRole('button', { name: /^Data/ }).click()
+  await steps.getByRole('button', { name: /^Run Settings/ }).click()
+  await expect(continuity).toBeChecked()
+  await steps.getByRole('button', { name: /^Review/ }).click()
+  const saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/scenarios')
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click()
+  const response = await saved
+  expect(response.ok(), await response.text()).toBeTruthy()
+  expect(response.request().postDataJSON().assignment).toMatchObject({ failover_policy: 'continue', tolerate_generator_loss: true })
+})
+
 test('New Test saves drafts without execution, retains both tabs and validates recurring triggers', async ({ page }) => {
   test.setTimeout(90_000)
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)

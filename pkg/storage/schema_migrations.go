@@ -40,6 +40,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 13, Name: "explicit-iteration-termination", Fingerprint: "2b3f09f8f1be8fedd664b88d5815556071936438f749f9c06e9d4d15e8db5273"},
 	{Version: 14, Name: "confluence-cloud-result-publishing", Fingerprint: "dcc18fcf8fd11ff340bf1fedb505d5c642ecda83e7909b5b23f8ea6fb055cdba"},
 	{Version: 15, Name: "baseline-comparison-workspace", Fingerprint: "958e28dac8c5e9c668ce79322e2e72a3a590f2bba64808de8830d2eeaa0a1e15"},
+	{Version: 16, Name: "ha-run-continuity-checkpoints", Fingerprint: "9f50fe7c91b938c6e590e79b3079ea8e8509c12a7707e60c689a90a76cadb4d1"},
 }
 
 type SchemaMigrationRecord struct {

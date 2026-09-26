@@ -65,71 +65,99 @@ func (tr *TestRunner) generatorExecutionClaim() (uint64, string, time.Time, erro
 }
 
 func claimGeneratorExecutionEpoch(ctx context.Context, client generatorClient, generation uint64, leaseOwnerID string, leaseDeadline time.Time, maxTransit time.Duration) error {
-	if generation == 0 {
+	_, err := claimGeneratorExecutionEpochWithAdoptions(ctx, client, generation, leaseOwnerID, leaseDeadline, maxTransit, nil)
+	return err
+}
+
+// adoptionEpochGeneratorClient is implemented by generator clients that can
+// carry HA run adoptions inside a process-epoch claim.
+type adoptionEpochGeneratorClient interface {
+	ClaimExecutionEpochWithAdoptions(context.Context, uint64, string, time.Duration, []generatorrpc.RunAdoption) (generatorrpc.ExecutionEpochResult, error)
+}
+
+// claimGeneratorExecutionEpochWithAdoptions is claimGeneratorExecutionEpoch
+// carrying run adoptions. With adoptions it requires an adoption-capable client
+// and returns the generator's per-run outcomes; the lease-bounded transit and
+// TTL rules are identical, so adoption can never extend load past the lease.
+func claimGeneratorExecutionEpochWithAdoptions(ctx context.Context, client generatorClient, generation uint64, leaseOwnerID string, leaseDeadline time.Time, maxTransit time.Duration, adoptions []generatorrpc.RunAdoption) (generatorrpc.ExecutionEpochResult, error) {
+	var result generatorrpc.ExecutionEpochResult
+	err := func() error {
+		if generation == 0 {
+			return nil
+		}
+		if leaseOwnerID == "" {
+			return fmt.Errorf("execution lease owner is unavailable")
+		}
+		if ctx == nil {
+			return fmt.Errorf("execution claim context is required")
+		}
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("execution claim context: %w", err)
+		}
+		claiming, ok := client.(executionEpochGeneratorClient)
+		if !ok {
+			return fmt.Errorf("generator client does not support execution fencing")
+		}
+		adopting, adoptionCapable := client.(adoptionEpochGeneratorClient)
+		if len(adoptions) > 0 && !adoptionCapable {
+			return fmt.Errorf("generator client does not support run adoption")
+		}
+		if leaseDeadline.IsZero() {
+			return fmt.Errorf("execution lease deadline is unavailable")
+		}
+		if maxTransit <= 0 {
+			return fmt.Errorf("execution claim transit bound must be positive")
+		}
+		now := time.Now()
+		remaining := leaseDeadline.Sub(now)
+		if remaining < 3*time.Millisecond {
+			return fmt.Errorf("execution lease has insufficient time remaining for a safe claim")
+		}
+		transitBudget := min(maxTransit, remaining/3)
+		if parentDeadline, ok := ctx.Deadline(); ok {
+			parentRemaining := time.Until(parentDeadline)
+			if parentRemaining <= 0 {
+				return fmt.Errorf("execution claim context: %w", context.DeadlineExceeded)
+			}
+			transitBudget = min(transitBudget, parentRemaining)
+		}
+		if transitBudget < time.Millisecond {
+			return fmt.Errorf("execution claim has less than one millisecond of transit budget")
+		}
+		// The generator starts its relative TTL only when the request arrives. Remove
+		// the entire maximum transit window so even a request delivered at its RPC
+		// deadline cannot keep load alive past the controller's local lease deadline.
+		safeTTL := remaining - transitBudget
+		if safeTTL < time.Millisecond {
+			return fmt.Errorf("execution lease has less than one millisecond of safe generator ttl")
+		}
+		claimCtx, cancel := context.WithTimeout(ctx, transitBudget)
+		defer cancel()
+		var err error
+		if len(adoptions) > 0 {
+			result, err = adopting.ClaimExecutionEpochWithAdoptions(claimCtx, generation, leaseOwnerID, safeTTL, adoptions)
+		} else {
+			result, err = claiming.ClaimExecutionEpoch(claimCtx, generation, leaseOwnerID, safeTTL)
+		}
+		if err != nil {
+			return err
+		}
+		if err := claimCtx.Err(); err != nil {
+			return fmt.Errorf("execution claim exceeded its transit bound: %w", err)
+		}
+		if !time.Now().Before(leaseDeadline) {
+			return fmt.Errorf("execution lease expired while claiming generator")
+		}
+		if !result.Accepted || result.CurrentGeneration != generation {
+			return &generatorExecutionEpochRejection{
+				generation:        generation,
+				currentGeneration: result.CurrentGeneration,
+				message:           result.ErrorMessage,
+			}
+		}
 		return nil
-	}
-	if leaseOwnerID == "" {
-		return fmt.Errorf("execution lease owner is unavailable")
-	}
-	if ctx == nil {
-		return fmt.Errorf("execution claim context is required")
-	}
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("execution claim context: %w", err)
-	}
-	claiming, ok := client.(executionEpochGeneratorClient)
-	if !ok {
-		return fmt.Errorf("generator client does not support execution fencing")
-	}
-	if leaseDeadline.IsZero() {
-		return fmt.Errorf("execution lease deadline is unavailable")
-	}
-	if maxTransit <= 0 {
-		return fmt.Errorf("execution claim transit bound must be positive")
-	}
-	now := time.Now()
-	remaining := leaseDeadline.Sub(now)
-	if remaining < 3*time.Millisecond {
-		return fmt.Errorf("execution lease has insufficient time remaining for a safe claim")
-	}
-	transitBudget := min(maxTransit, remaining/3)
-	if parentDeadline, ok := ctx.Deadline(); ok {
-		parentRemaining := time.Until(parentDeadline)
-		if parentRemaining <= 0 {
-			return fmt.Errorf("execution claim context: %w", context.DeadlineExceeded)
-		}
-		transitBudget = min(transitBudget, parentRemaining)
-	}
-	if transitBudget < time.Millisecond {
-		return fmt.Errorf("execution claim has less than one millisecond of transit budget")
-	}
-	// The generator starts its relative TTL only when the request arrives. Remove
-	// the entire maximum transit window so even a request delivered at its RPC
-	// deadline cannot keep load alive past the controller's local lease deadline.
-	safeTTL := remaining - transitBudget
-	if safeTTL < time.Millisecond {
-		return fmt.Errorf("execution lease has less than one millisecond of safe generator ttl")
-	}
-	claimCtx, cancel := context.WithTimeout(ctx, transitBudget)
-	defer cancel()
-	result, err := claiming.ClaimExecutionEpoch(claimCtx, generation, leaseOwnerID, safeTTL)
-	if err != nil {
-		return err
-	}
-	if err := claimCtx.Err(); err != nil {
-		return fmt.Errorf("execution claim exceeded its transit bound: %w", err)
-	}
-	if !time.Now().Before(leaseDeadline) {
-		return fmt.Errorf("execution lease expired while claiming generator")
-	}
-	if !result.Accepted || result.CurrentGeneration != generation {
-		return &generatorExecutionEpochRejection{
-			generation:        generation,
-			currentGeneration: result.CurrentGeneration,
-			message:           result.ErrorMessage,
-		}
-	}
-	return nil
+	}()
+	return result, err
 }
 
 // generatorExecutionEpochRejection is a generator's negative acknowledgement of
@@ -254,7 +282,10 @@ func (b *distributedExecutionBackend) maintainGeneratorExecutionEpoch(ctx contex
 			continue
 		}
 
-		clients := make(map[string]generatorClient)
+		// The first claim of a new generation fences every orphaned run it does
+		// not adopt; let acquisition reconcile send the adoption claims first.
+		tr.awaitRunAdoptionReconcile(epochCtx)
+		clients := tr.retainAdoptedEpochClients()
 		b.maintainGeneratorExecutionTerm(epochCtx, tr, generation, leaseOwnerID, clients)
 		closeGeneratorEpochKeeperClients(clients)
 		epochCancel()

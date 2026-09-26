@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -248,13 +249,16 @@ type TestRunner struct {
 	settingsStore               settingsPersistence
 	usageStore                  usageSnapshotPersistence
 	projectSecretStore          secretstore.Store
-	elkStore                    storage.ELKConnectionStore
-	dynatraceStore              storage.DynatraceConnectionStore
-	dynatraceOAuthMu            sync.Mutex
-	dynatraceOAuthTokens        map[string]dynatraceOAuthToken
-	dynatraceOAuthRefresh       singleflight.Group
-	secretAttemptStore          storage.RuntimeSecretProvisioningAttemptStore
-	secretRecovery              runtimeSecretRecoveryState
+	// continuityKeyWrapper seals the run-supervision token into HA run-continuity
+	// checkpoints (run_continuity.go). Nil disables arming.
+	continuityKeyWrapper  keywrap.KeyWrapper
+	elkStore              storage.ELKConnectionStore
+	dynatraceStore        storage.DynatraceConnectionStore
+	dynatraceOAuthMu      sync.Mutex
+	dynatraceOAuthTokens  map[string]dynatraceOAuthToken
+	dynatraceOAuthRefresh singleflight.Group
+	secretAttemptStore    storage.RuntimeSecretProvisioningAttemptStore
+	secretRecovery        runtimeSecretRecoveryState
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
 	// load run is compiled (generators have no store, so binding must resolve here).
 	objectRepoStore objectRepositoryReader
@@ -473,9 +477,12 @@ type ManagedTest struct {
 	StartDelay            string                            `json:"start_delay,omitempty"`
 	GoalConfig            *GoalConfig                       `json:"goal_config,omitempty"`
 	GoalTargets           map[string]GoalTargetStatus       `json:"goal_targets,omitempty"`
-	TrafficProfile        *TrafficProfile                   `json:"traffic_profile,omitempty"`
-	RuntimeSettings       *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
-	ELKCapture            *ELKCaptureConfig                 `json:"elk_capture,omitempty"`
+	// Continuity is the HA run-continuity state (docs/HA_RUN_CONTINUITY_PLAN.md);
+	// derived on read, never persisted from this field.
+	Continuity            *RunContinuityStatus     `json:"continuity,omitempty"`
+	TrafficProfile        *TrafficProfile          `json:"traffic_profile,omitempty"`
+	RuntimeSettings       *RuntimeSettingsOverride `json:"runtime_settings,omitempty"`
+	ELKCapture            *ELKCaptureConfig        `json:"elk_capture,omitempty"`
 	elkArtifacts          *runArtifacts
 	DynatraceCapture      *DynatraceCaptureConfig `json:"dynatrace_capture,omitempty"`
 	dynatraceArtifacts    *runArtifacts
@@ -518,9 +525,25 @@ type ManagedTest struct {
 	ScriptID   string `json:"script_id,omitempty"`
 	ScriptName string `json:"script_name,omitempty"`
 
-	multiEngine                   *engine.MultiGroupEngine
-	executionCtx                  context.Context
-	executionGeneration           uint64
+	multiEngine         *engine.MultiGroupEngine
+	executionCtx        context.Context
+	executionGeneration uint64
+	// continuityCheckpoint is the stored HA adoption checkpoint (opaque JSON,
+	// never serialized); continuityArmedGeneration is its decoded term (0 when
+	// absent). Set both through setContinuityCheckpointLocked. adoptedResume is
+	// set between a successful adoption claim and the runtime rebuild that
+	// follows admission (run_adoption.go).
+	continuityCheckpoint      string
+	continuityArmedGeneration uint64
+	adoptedResume             *adoptedRunResume
+	// stageScheduleResume makes stage schedules started after adoption
+	// fast-forward to the run clock instead of replaying from stage 0.
+	stageScheduleResume bool
+	// continuityFailovers is the run's failover history: loaded from the
+	// checkpoint, appended on adoption, written into every re-arm. It is the
+	// single source for RunContinuityStatus, so a failed re-arm cannot hide a
+	// failover the run survived.
+	continuityFailovers           []RunFailover
 	pendingScriptShakeoutOutcome  *pendingScriptShakeoutOutcome
 	validatedScriptShakeoutPass   string
 	validatedScriptShakeoutTerm   executionLeaseTerm
@@ -1338,6 +1361,13 @@ type GeneratorAssignmentSettings struct {
 	// assignment is rejected (it would never be resolved — see
 	// normalizeGroupGeneratorAssignmentSettings).
 	PoolID string `json:"pool_id,omitempty"`
+	// FailoverPolicy selects what happens to this run if the HA execution leader
+	// is lost mid-run: "fail" (default; the successor marks it FAILED) or
+	// "continue" (the successor adopts the running generators). It is
+	// test-scoped and only takes effect for distributed runs on an HA
+	// controller with a configured key wrapper; see
+	// docs/HA_RUN_CONTINUITY_PLAN.md.
+	FailoverPolicy string `json:"failover_policy,omitempty"`
 }
 
 // fleetMembershipReader resolves a fleet pool's member generator targets (the

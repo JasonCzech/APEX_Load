@@ -477,6 +477,21 @@ func (broker *metricsBroker) hasTerminal(key terminalBatchKey) bool {
 	return tombstone.batch != nil
 }
 
+// terminalState returns the retained terminal lifecycle state for one exact
+// test generation.
+func (broker *metricsBroker) terminalState(testID string, generation uint64) (string, bool) {
+	if broker == nil {
+		return "", false
+	}
+	broker.mu.RLock()
+	defer broker.mu.RUnlock()
+	tombstone, ok := broker.terminalBatches[terminalBatchKey{testID: testID, generation: generation}]
+	if !ok || tombstone.batch == nil {
+		return "", false
+	}
+	return tombstone.batch.GetLifecycleState(), true
+}
+
 func (broker *metricsBroker) terminalGeneration(testID string) (uint64, bool) {
 	if broker == nil {
 		return 0, false

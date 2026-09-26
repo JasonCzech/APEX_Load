@@ -1786,6 +1786,12 @@ export interface operations {
                 "size_bytes"?: number;
               }>;
               "completed_at"?: string;
+              "continuity"?: ({
+                "armed"?: boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<Record<string, unknown>>;
+                "policy"?: string;
+              }) | null;
               "created_at"?: string;
               "csv_export_incomplete"?: string;
               "csv_exports"?: Array<{
@@ -2532,6 +2538,7 @@ export interface operations {
           }) | null;
           "scenario"?: ({
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -2596,6 +2603,7 @@ export interface operations {
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -10691,6 +10699,7 @@ export interface operations {
             "applied": number;
             "scenario": ({
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -11021,6 +11030,7 @@ export interface operations {
               "script_shakeout"?: boolean;
               "scripts": Array<{
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -20607,6 +20617,7 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: ({
+            "failover_policy"?: string;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -20680,6 +20691,7 @@ export interface operations {
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -20932,6 +20944,7 @@ export interface operations {
           "test"?: ({
             "application_id"?: string;
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -21005,6 +21018,7 @@ export interface operations {
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -21431,6 +21445,7 @@ export interface operations {
                 "trend_point_json"?: string;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -21563,6 +21578,20 @@ export interface operations {
                   "tps": number;
                 }) | null>;
               }) | null;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -21668,6 +21697,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -23103,6 +23133,7 @@ export interface operations {
       content: {
         "application/json": {
           "assignment"?: ({
+            "failover_policy"?: string;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -23177,6 +23208,7 @@ export interface operations {
           }) | null;
           "groups": Array<{
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -23775,6 +23807,7 @@ export interface operations {
         content: {
           "application/json": ({
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -24238,6 +24271,7 @@ export interface operations {
             "script_shakeout"?: boolean;
             "scripts": Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -26426,6 +26460,7 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: ({
+            "failover_policy"?: string;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -26509,6 +26544,7 @@ export interface operations {
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -27134,6 +27170,7 @@ export interface operations {
               "trend_point_json"?: string;
             }) | null;
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -27352,6 +27389,20 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "continuity"?: ({
+              "armed": boolean;
+              "execution_generation"?: number;
+              "failovers"?: Array<{
+                "adopted_at": string;
+                "adopted_generators": number;
+                "completed_generators"?: number;
+                "gap_seconds"?: number;
+                "generation": number;
+                "last_observed_at"?: (string) | null;
+                "prior_generation": number;
+              }>;
+              "policy": string;
+            }) | null;
             "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
@@ -27467,6 +27518,7 @@ export interface operations {
                 "target_vusers": number;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -31215,6 +31267,7 @@ export interface operations {
           "project_id"?: string;
           "scenario_draft"?: {
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -31279,6 +31332,7 @@ export interface operations {
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -31837,6 +31891,7 @@ export interface operations {
             }>;
             "scenario_draft": {
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -31901,6 +31956,7 @@ export interface operations {
               }) | null;
               "groups": Array<{
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -32381,6 +32437,7 @@ export interface operations {
           "project_id"?: string;
           "scenario_draft"?: {
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -32445,6 +32502,7 @@ export interface operations {
             }) | null;
             "groups"?: Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -33003,6 +33061,7 @@ export interface operations {
             }>;
             "scenario_draft": {
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -33067,6 +33126,7 @@ export interface operations {
               }) | null;
               "groups": Array<{
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -34598,6 +34658,7 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: ({
+            "failover_policy"?: string;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -34681,6 +34742,7 @@ export interface operations {
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -35288,6 +35350,7 @@ export interface operations {
         content: {
           "application/json": ({
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -35392,6 +35455,7 @@ export interface operations {
                 "target_vusers": number;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -41799,6 +41863,7 @@ export interface operations {
                 "trend_point_json"?: string;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -41931,6 +41996,20 @@ export interface operations {
                   "tps": number;
                 }) | null>;
               }) | null;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -42036,6 +42115,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -43384,6 +43464,20 @@ export interface operations {
               "size_bytes"?: number;
             }>;
             "completed_at"?: string;
+            "continuity"?: ({
+              "armed": boolean;
+              "execution_generation"?: number;
+              "failovers"?: Array<{
+                "adopted_at": string;
+                "adopted_generators": number;
+                "completed_generators"?: number;
+                "gap_seconds"?: number;
+                "generation": number;
+                "last_observed_at"?: (string) | null;
+                "prior_generation": number;
+              }>;
+              "policy": string;
+            }) | null;
             "created_at": string;
             "csv_export_incomplete"?: string;
             "csv_exports"?: Array<{
@@ -43402,6 +43496,7 @@ export interface operations {
             "initial_provenance"?: ({
               "application_id"?: string;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -43637,6 +43732,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -44000,6 +44096,7 @@ export interface operations {
             "provenance"?: {
               "application_id"?: string;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -44235,6 +44332,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -45141,6 +45239,20 @@ export interface operations {
                 "size_bytes"?: number;
               }>;
               "completed_at"?: string;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "csv_export_incomplete"?: string;
               "csv_exports"?: Array<{
@@ -45159,6 +45271,7 @@ export interface operations {
               "initial_provenance"?: ({
                 "application_id"?: string;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -45409,6 +45522,7 @@ export interface operations {
               "provenance"?: {
                 "application_id"?: string;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -46460,6 +46574,7 @@ export interface operations {
         content: {
           "application/json": ({
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -46923,6 +47038,7 @@ export interface operations {
             "script_shakeout"?: boolean;
             "scripts": Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -49279,6 +49395,7 @@ export interface operations {
               "trend_point_json"?: string;
             }) | null;
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -49497,6 +49614,20 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "continuity"?: ({
+              "armed": boolean;
+              "execution_generation"?: number;
+              "failovers"?: Array<{
+                "adopted_at": string;
+                "adopted_generators": number;
+                "completed_generators"?: number;
+                "gap_seconds"?: number;
+                "generation": number;
+                "last_observed_at"?: (string) | null;
+                "prior_generation": number;
+              }>;
+              "policy": string;
+            }) | null;
             "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
@@ -49612,6 +49743,7 @@ export interface operations {
                 "target_vusers": number;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -52777,6 +52909,7 @@ export interface operations {
             "current_configuration": {
               "active_vusers"?: number;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -52858,6 +52991,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -53229,6 +53363,7 @@ export interface operations {
             "initial_configuration": {
               "active_vusers"?: number;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -53310,6 +53445,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -53666,6 +53802,7 @@ export interface operations {
             };
             "load_generators": {
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -53806,6 +53943,7 @@ export interface operations {
             "schema_version": string;
             "scripts"?: Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -58073,6 +58211,7 @@ export interface operations {
                   "capacity_window_end_at"?: (string) | null;
                   "capacity_window_start_at"?: (string) | null;
                   "comparison_baseline"?: (Record<string, unknown>) | null;
+                  "continuity"?: (Record<string, unknown>) | null;
                   "created_at": string;
                   "created_by_display_name"?: string;
                   "created_by_subject"?: string;
@@ -63974,6 +64113,7 @@ export interface operations {
               "trend_point_json"?: string;
             }) | null;
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -64192,6 +64332,20 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "continuity"?: ({
+              "armed": boolean;
+              "execution_generation"?: number;
+              "failovers"?: Array<{
+                "adopted_at": string;
+                "adopted_generators": number;
+                "completed_generators"?: number;
+                "gap_seconds"?: number;
+                "generation": number;
+                "last_observed_at"?: (string) | null;
+                "prior_generation": number;
+              }>;
+              "policy": string;
+            }) | null;
             "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
@@ -64307,6 +64461,7 @@ export interface operations {
                 "target_vusers": number;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -66244,6 +66399,7 @@ export interface operations {
         "application/json": {
           "application_id"?: string;
           "assignment"?: ({
+            "failover_policy"?: string;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -66317,6 +66473,7 @@ export interface operations {
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -74507,6 +74664,7 @@ export interface operations {
                 "trend_point_json"?: string;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -74639,6 +74797,20 @@ export interface operations {
                   "tps": number;
                 }) | null>;
               }) | null;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -74744,6 +74916,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -75850,6 +76023,7 @@ export interface operations {
                 "trend_point_json"?: string;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -75982,6 +76156,20 @@ export interface operations {
                   "tps": number;
                 }) | null>;
               }) | null;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -76087,6 +76275,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -77193,6 +77382,7 @@ export interface operations {
                 "trend_point_json"?: string;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -77325,6 +77515,20 @@ export interface operations {
                   "tps": number;
                 }) | null>;
               }) | null;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -77430,6 +77634,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -78536,6 +78741,7 @@ export interface operations {
                 "trend_point_json"?: string;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -78668,6 +78874,20 @@ export interface operations {
                   "tps": number;
                 }) | null>;
               }) | null;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -78773,6 +78993,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -79879,6 +80100,7 @@ export interface operations {
                 "trend_point_json"?: string;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -80011,6 +80233,20 @@ export interface operations {
                   "tps": number;
                 }) | null>;
               }) | null;
+              "continuity"?: ({
+                "armed": boolean;
+                "execution_generation"?: number;
+                "failovers"?: Array<{
+                  "adopted_at": string;
+                  "adopted_generators": number;
+                  "completed_generators"?: number;
+                  "gap_seconds"?: number;
+                  "generation": number;
+                  "last_observed_at"?: (string) | null;
+                  "prior_generation": number;
+                }>;
+                "policy": string;
+              }) | null;
               "created_at": string;
               "created_by_display_name"?: string;
               "created_by_subject"?: string;
@@ -80116,6 +80352,7 @@ export interface operations {
                   "target_vusers": number;
                 }) | null;
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -87847,6 +88084,7 @@ export interface operations {
             }) | null;
             "scenario_draft": {
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -87911,6 +88149,7 @@ export interface operations {
               }) | null;
               "groups": Array<{
                 "assignment"?: ({
+                  "failover_policy"?: string;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -97909,6 +98148,7 @@ export interface operations {
               "trend_point_json"?: string;
             }) | null;
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -98127,6 +98367,20 @@ export interface operations {
                 "tps": number;
               }) | null>;
             }) | null;
+            "continuity"?: ({
+              "armed": boolean;
+              "execution_generation"?: number;
+              "failovers"?: Array<{
+                "adopted_at": string;
+                "adopted_generators": number;
+                "completed_generators"?: number;
+                "gap_seconds"?: number;
+                "generation": number;
+                "last_observed_at"?: (string) | null;
+                "prior_generation": number;
+              }>;
+              "policy": string;
+            }) | null;
             "created_at": string;
             "created_by_display_name"?: string;
             "created_by_subject"?: string;
@@ -98242,6 +98496,7 @@ export interface operations {
                 "target_vusers": number;
               }) | null;
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -104055,6 +104310,7 @@ export interface operations {
       content: {
         "application/json": {
           "assignment"?: ({
+            "failover_policy"?: string;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -104129,6 +104385,7 @@ export interface operations {
           }) | null;
           "groups": Array<{
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -104727,6 +104984,7 @@ export interface operations {
         content: {
           "application/json": ({
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -105190,6 +105448,7 @@ export interface operations {
             "script_shakeout"?: boolean;
             "scripts": Array<{
               "assignment"?: ({
+                "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -111561,6 +111820,7 @@ export interface operations {
       content: {
         "application/json": {
           "assignment"?: ({
+            "failover_policy"?: string;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -111635,6 +111895,7 @@ export interface operations {
           }) | null;
           "groups"?: Array<{
             "assignment"?: ({
+              "failover_policy"?: string;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;

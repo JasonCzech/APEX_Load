@@ -876,7 +876,7 @@ func (s *SQLiteStore) ListTestCapacityBindings(testIDs []string) ([]TestCapacity
 }
 
 func testSelectColumns() string {
-	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id`
+	return `SELECT id, COALESCE(ref_key, ''), COALESCE(materialization_key, ''), name, status, COALESCE(application_id, ''), COALESCE(release_id, ''), COALESCE(scenario_id, ''), COALESCE(project_id, ''), folder_id, COALESCE(scenario_mode, ''), COALESCE(termination_mode, 'duration'), COALESCE(shakeout_enabled, 0), COALESCE(resource_baseline_enabled, 0), COALESCE(start_delay, ''), COALESCE(assignment_json, ''), total_vusers, duration_ns, start_time, scheduled_start_at, started_at, pending_since, paused_at, COALESCE(cumulative_pause_ns, 0), capacity_window_start_at, capacity_window_end_at, COALESCE(baseline_pinned, 0), baseline_pinned_at, end_time, error, COALESCE(created_by_subject, ''), COALESCE(created_by_display_name, ''), COALESCE(started_by_subject, ''), COALESCE(started_by_display_name, ''), COALESCE(stopped_by_subject, ''), COALESCE(stopped_by_display_name, ''), groups_json, COALESCE(data_pools_json, ''), COALESCE(runtime_settings_json, ''), COALESCE(goal_config_json, ''), COALESCE(traffic_profile_json, ''), COALESCE(elk_capture_json, ''), COALESCE(dynatrace_capture_json, ''), COALESCE(start_authorization_json, ''), COALESCE(execution_plan_approval_json, ''), COALESCE(initial_provenance_json, ''), timeslot_id, COALESCE(continuity_checkpoint_json, '')`
 }
 
 // rowScanner abstracts *sql.Row and *sql.Rows so scan helpers work with both
@@ -890,7 +890,7 @@ type rowScanner interface {
 func scanTest(scanner rowScanner) (TestRecord, error) {
 	var test TestRecord
 	var groupsJSON, dataPoolsJSON, assignmentJSON, runtimeSettingsJSON, goalConfigJSON, trafficProfileJSON, elkCaptureJSON, dynatraceCaptureJSON, startAuthorizationJSON, executionPlanApprovalJSON, initialProvenanceJSON string
-	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.TerminationMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &initialProvenanceJSON, &test.TimeslotID); err != nil {
+	if err := scanner.Scan(&test.ID, &test.RefKey, &test.MaterializationKey, &test.Name, &test.Status, &test.ApplicationID, &test.ReleaseID, &test.ScenarioID, &test.ProjectID, &test.FolderID, &test.ScenarioMode, &test.TerminationMode, &test.ScriptShakeout, &test.ResourceBaseline, &test.StartDelay, &assignmentJSON, &test.TotalVUsers, &test.Duration, &test.StartTime, &test.ScheduledStartAt, &test.StartedAt, &test.PendingSince, &test.PausedAt, &test.CumulativePause, &test.CapacityWindowStartAt, &test.CapacityWindowEndAt, &test.BaselinePinned, &test.BaselinePinnedAt, &test.EndTime, &test.Error, &test.CreatedBySubject, &test.CreatedByDisplayName, &test.StartedBySubject, &test.StartedByDisplayName, &test.StoppedBySubject, &test.StoppedByDisplayName, &groupsJSON, &dataPoolsJSON, &runtimeSettingsJSON, &goalConfigJSON, &trafficProfileJSON, &elkCaptureJSON, &dynatraceCaptureJSON, &startAuthorizationJSON, &executionPlanApprovalJSON, &initialProvenanceJSON, &test.TimeslotID, &test.ContinuityCheckpoint); err != nil {
 		return test, err
 	}
 	if err := json.Unmarshal([]byte(groupsJSON), &test.Groups); err != nil {
@@ -1292,6 +1292,60 @@ func preciseDatabaseTime(tx *storeTx, dialect storeDialect) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("parse SQLite clock %q: %w", raw, err)
 	}
 	return now.UTC(), nil
+}
+
+// UpdateTestContinuityCheckpointIfLeaseHeld writes the HA run-continuity
+// adoption checkpoint for one run, but only while leaseOwnerID holds the
+// execution lease. A non-empty checkpoint is written only to an active run so a
+// stale leader cannot arm adoption for a run a successor already finished; an
+// empty checkpoint clears the column in any status.
+func (s *SQLiteStore) UpdateTestContinuityCheckpointIfLeaseHeld(id, checkpoint, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if leaseName == "" || leaseOwnerID == "" {
+		return TestStatusTransitionFenced, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil {
+		return "", err
+	}
+	if !held {
+		return TestStatusTransitionFenced, nil
+	}
+	var value any
+	query := `UPDATE tests SET continuity_checkpoint_json = ? WHERE id = ?`
+	if strings.TrimSpace(checkpoint) != "" {
+		value = checkpoint
+		query += ` AND status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING')`
+	}
+	result, err := tx.Exec(query, value, id)
+	if err != nil {
+		return "", err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return "", err
+	}
+	if affected == 0 {
+		var exists int
+		if err := tx.QueryRow(`SELECT 1 FROM tests WHERE id = ?`, id).Scan(&exists); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return TestStatusTransitionMissing, nil
+			}
+			return "", err
+		}
+		// The run is no longer active: nothing to arm.
+		return TestStatusTransitionUnchanged, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	return TestStatusTransitionUpdated, nil
 }
 
 func schedulerLeaseHeldInTransaction(tx *storeTx, dialect storeDialect, leaseName, leaseOwnerID string) (bool, error) {

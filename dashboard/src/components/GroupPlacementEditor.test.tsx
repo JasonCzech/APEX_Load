@@ -423,4 +423,32 @@ describe('GroupPlacementEditor', () => {
     const serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
     expect(serialized.region_weights).toEqual({ east: 2 })
   })
+
+  it('toggles controller-failover continuity at scenario scope, combines it with loss tolerance, and keeps it across mode changes', () => {
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} availableTargets={['gen-a']} scope="scenario" />))
+    const serialized = () => JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    const continuity = () => container.querySelector<HTMLInputElement>('input[aria-label="Continue through controller failover"]')
+    const cards = () => Array.from(container.querySelectorAll<HTMLLabelElement>('.scenario-option-card'))
+    const lossTolerance = () => cards().find(card => card.textContent?.includes('Tolerate generator loss'))?.querySelector<HTMLInputElement>('input[type=checkbox]')
+
+    expect(continuity()).not.toBeNull()
+    act(() => continuity()?.click())
+    expect(serialized()).toMatchObject({ mode: 'auto', failover_policy: 'continue' })
+    expect(lossTolerance()?.disabled).toBe(false)
+    act(() => lossTolerance()?.click())
+    expect(serialized()).toMatchObject({ mode: 'auto', failover_policy: 'continue', tolerate_generator_loss: true })
+    expect(container.textContent).toContain('lost while no controller is leading fails the run')
+
+    act(() => radio('Pin to host(s)').click())
+    expect(serialized()).toMatchObject({ mode: 'specific_hosts', failover_policy: 'continue', tolerate_generator_loss: true })
+
+    act(() => continuity()?.click())
+    expect(serialized().failover_policy).toBeUndefined()
+    expect(serialized().tolerate_generator_loss).toBe(true)
+  })
+
+  it('does not offer controller-failover continuity at group scope', () => {
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} availableTargets={['gen-a']} scope="group" />))
+    expect(container.querySelector('input[aria-label="Continue through controller failover"]')).toBeNull()
+  })
 })

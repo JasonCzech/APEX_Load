@@ -290,17 +290,7 @@ func (tr *TestRunner) waitTestActiveRuntime(ctx context.Context, testID string, 
 		active := time.Duration(0)
 		if test != nil {
 			status = test.Status
-			if test.StartedAt != nil {
-				now := time.Now().UTC()
-				active = now.Sub(test.StartedAt.UTC()) - test.CumulativePause
-				if test.PausedAt != nil && !test.PausedAt.IsZero() && now.After(*test.PausedAt) {
-					pauseStart := test.PausedAt.UTC()
-					if pauseStart.Before(test.StartedAt.UTC()) {
-						pauseStart = test.StartedAt.UTC()
-					}
-					active -= now.Sub(pauseStart)
-				}
-			}
+			active = testActiveRuntimeLocked(test, time.Now().UTC())
 		}
 		tr.mu.RUnlock()
 		if test == nil || isTerminalTestStatus(status) || status == "STOPPING" {
@@ -2038,4 +2028,21 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	snapshot.SafetyExits = cloneRemoteGeneratorSafetyExitEvidenceList(response.SafetyExits)
 	snapshot.HeartbeatOK = true
 	return snapshot
+}
+
+// testActiveRuntimeLocked is the run's pause-aware active time since its
+// coordinated StartedAt. The caller holds tr.mu.
+func testActiveRuntimeLocked(test *ManagedTest, now time.Time) time.Duration {
+	if test == nil || test.StartedAt == nil {
+		return 0
+	}
+	active := now.Sub(test.StartedAt.UTC()) - test.CumulativePause
+	if test.PausedAt != nil && !test.PausedAt.IsZero() && now.After(*test.PausedAt) {
+		pauseStart := test.PausedAt.UTC()
+		if pauseStart.Before(test.StartedAt.UTC()) {
+			pauseStart = test.StartedAt.UTC()
+		}
+		active -= now.Sub(pauseStart)
+	}
+	return active
 }

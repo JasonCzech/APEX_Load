@@ -25,6 +25,28 @@ const (
 	generatorLaunchNonceEnv      = "APEXLOAD_LAUNCH_NONCE"
 )
 
+const (
+	reverseConnectInitialBackoff = time.Second
+	// reverseConnectMaxBackoff bounds reconnection so a generator whose
+	// controller failed over reaches the new leader well inside an HA takeover
+	// window rather than sleeping through it.
+	reverseConnectMaxBackoff = 15 * time.Second
+)
+
+// reverseEnrollmentRejectionIsPermanent reports whether a gateway HTTP status
+// means retrying cannot succeed. Rate limiting (429) and request timeouts (408)
+// are transient: treating them as permanent made a throttled generator exit.
+func reverseEnrollmentRejectionIsPermanent(status int) bool {
+	if status < 400 || status >= 500 {
+		return false
+	}
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	}
+	return true
+}
+
 type reverseConnectorConfig struct {
 	URL               string
 	GeneratorID       string
@@ -72,7 +94,7 @@ func runReverseGeneratorConnector(ctx context.Context, listener *generatorrpc.Co
 	if err := config.validate(); err != nil {
 		return err
 	}
-	backoff := time.Second
+	backoff := reverseConnectInitialBackoff
 	for {
 		nonceBytes := make([]byte, 32)
 		if _, err := rand.Read(nonceBytes); err != nil {
@@ -90,7 +112,7 @@ func runReverseGeneratorConnector(ctx context.Context, listener *generatorrpc.Co
 		}
 		ws, response, err := websocket.DefaultDialer.DialContext(ctx, config.websocketURL(), headers)
 		if err == nil {
-			backoff = time.Second
+			backoff = reverseConnectInitialBackoff
 			conn := generatorrpc.NewWebSocketConn(ws)
 			if err := listener.Offer(ctx, conn); err != nil {
 				_ = conn.Close()
@@ -104,7 +126,7 @@ func runReverseGeneratorConnector(ctx context.Context, listener *generatorrpc.Co
 			}
 		} else if response != nil {
 			_ = response.Body.Close()
-			if response.StatusCode >= 400 && response.StatusCode < 500 {
+			if reverseEnrollmentRejectionIsPermanent(response.StatusCode) {
 				return fmt.Errorf("reverse generator enrollment rejected with HTTP %d", response.StatusCode)
 			}
 		}
@@ -115,6 +137,6 @@ func runReverseGeneratorConnector(ctx context.Context, listener *generatorrpc.Co
 			return ctx.Err()
 		case <-timer.C:
 		}
-		backoff = min(backoff*2, 30*time.Second)
+		backoff = min(backoff*2, reverseConnectMaxBackoff)
 	}
 }

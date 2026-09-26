@@ -30,6 +30,9 @@ export function validateGeneratorAssignment(
     if (assignment.tolerate_generator_loss) {
       return `${label}: generator-loss tolerance is supported only at scenario scope. Remove the group-level setting before saving.`
     }
+    if (assignment.failover_policy) {
+      return `${label}: controller-failover continuity is supported only at scenario scope. Remove the group-level setting before saving.`
+    }
   }
 
   if (assignment.mode === 'specific_hosts') {

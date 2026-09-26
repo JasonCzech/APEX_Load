@@ -1317,30 +1317,35 @@ type ScriptRecordingStatusRecord struct {
 
 // TestRecord represents a persisted test run.
 type TestRecord struct {
-	TerminationMode       string                    `json:"termination_mode,omitempty"`
-	ID                    string                    `json:"id"`
-	RefKey                string                    `json:"ref_key,omitempty"`
-	MaterializationKey    string                    `json:"materialization_key,omitempty"`
-	Name                  string                    `json:"name"`
-	Status                string                    `json:"status"`
-	ApplicationID         string                    `json:"application_id,omitempty"`
-	ReleaseID             string                    `json:"release_id,omitempty"`
-	ScenarioID            string                    `json:"scenario_id,omitempty"`
-	ProjectID             string                    `json:"project_id,omitempty"`
-	FolderID              *string                   `json:"folder_id,omitempty"`
-	ScenarioMode          string                    `json:"scenario_mode,omitempty"`
-	ScriptShakeout        bool                      `json:"script_shakeout,omitempty"`
-	ResourceBaseline      bool                      `json:"resource_baseline,omitempty"`
-	StartDelay            string                    `json:"start_delay,omitempty"`
-	Assignment            any                       `json:"assignment,omitempty"` // JSON blob
-	TotalVUsers           int                       `json:"total_vusers"`
-	Duration              int64                     `json:"duration_ns"`
-	StartTime             time.Time                 `json:"start_time"`
-	ScheduledStartAt      *time.Time                `json:"scheduled_start_at,omitempty"`
-	StartedAt             *time.Time                `json:"started_at,omitempty"`
-	PendingSince          *time.Time                `json:"pending_since,omitempty"`
-	PausedAt              *time.Time                `json:"paused_at,omitempty"`
-	CumulativePause       int64                     `json:"cumulative_pause_ns,omitempty"`
+	TerminationMode    string     `json:"termination_mode,omitempty"`
+	ID                 string     `json:"id"`
+	RefKey             string     `json:"ref_key,omitempty"`
+	MaterializationKey string     `json:"materialization_key,omitempty"`
+	Name               string     `json:"name"`
+	Status             string     `json:"status"`
+	ApplicationID      string     `json:"application_id,omitempty"`
+	ReleaseID          string     `json:"release_id,omitempty"`
+	ScenarioID         string     `json:"scenario_id,omitempty"`
+	ProjectID          string     `json:"project_id,omitempty"`
+	FolderID           *string    `json:"folder_id,omitempty"`
+	ScenarioMode       string     `json:"scenario_mode,omitempty"`
+	ScriptShakeout     bool       `json:"script_shakeout,omitempty"`
+	ResourceBaseline   bool       `json:"resource_baseline,omitempty"`
+	StartDelay         string     `json:"start_delay,omitempty"`
+	Assignment         any        `json:"assignment,omitempty"` // JSON blob
+	TotalVUsers        int        `json:"total_vusers"`
+	Duration           int64      `json:"duration_ns"`
+	StartTime          time.Time  `json:"start_time"`
+	ScheduledStartAt   *time.Time `json:"scheduled_start_at,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	PendingSince       *time.Time `json:"pending_since,omitempty"`
+	PausedAt           *time.Time `json:"paused_at,omitempty"`
+	CumulativePause    int64      `json:"cumulative_pause_ns,omitempty"`
+	// ContinuityCheckpoint is the controller-owned adoption checkpoint for HA
+	// run continuity (docs/HA_RUN_CONTINUITY_PLAN.md). It is opaque JSON written
+	// only through UpdateTestContinuityCheckpointIfLeaseHeld, never by SaveTest,
+	// and never serialized: it carries a wrapped run-supervision credential.
+	ContinuityCheckpoint  string                    `json:"-"`
 	CapacityWindowStartAt *time.Time                `json:"capacity_window_start_at,omitempty"`
 	CapacityWindowEndAt   *time.Time                `json:"capacity_window_end_at,omitempty"`
 	BaselinePinned        bool                      `json:"baseline_pinned,omitempty"`

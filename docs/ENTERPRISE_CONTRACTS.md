@@ -293,10 +293,14 @@ from five to sixty seconds are allowed with trackability warnings, and large
 adjacent target ratios warn that achieved TPS may lag the requested curve.
 
 The scheduler restores the active point when generator readiness or controller
-activation attaches late to an already-started run. A controller process
-restart does not resume an active run: the platform's existing fail-closed
-reconciliation marks ambiguous in-flight runs failed. Their immutable profile,
-target/achieved interval evidence, and archive provenance remain available.
+activation attaches late to an already-started run. By default a controller
+process restart does not resume an active run: fail-closed reconciliation marks
+ambiguous in-flight runs failed, and their immutable profile, target/achieved
+interval evidence, and archive provenance remain available. A distributed run
+created with `assignment.failover_policy=continue` on an HA controller is the
+exception: a standby controller adopts it from its still-running generators,
+and the profile schedule jumps to the active point on the run clock (see
+[HA_RUN_CONTINUITY_PLAN.md](HA_RUN_CONTINUITY_PLAN.md)).
 
 Scripts can also set shared run goals in `config.run_logic`. The dashboard script editor exposes these fields in Runtime Settings > Run Logic:
 

@@ -210,7 +210,11 @@ export default function GroupPlacementEditor({
     : selectedCapacity > 0
       ? `${selectedCapacity} known selected VUser capacity · ${selectedUnknownCapacityCount} host${selectedUnknownCapacityCount === 1 ? '' : 's'} unknown`
       : 'Selected VUser capacity unknown'
-  const lossTolerance = { ...(scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}), ...(scope === 'scenario' && assignment?.sharing_mode ? { sharing_mode: assignment.sharing_mode } : {}) }
+  const lossTolerance = {
+    ...(scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}),
+    ...(scope === 'scenario' && assignment?.sharing_mode ? { sharing_mode: assignment.sharing_mode } : {}),
+    ...(scope === 'scenario' && assignment?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
+  }
   const regionKeys = Array.from(new Set((generatorInventory || []).map(generator => generator.region?.trim()).filter((value): value is string => Boolean(value)))).sort()
   const loadZoneKeys = Array.from(new Set((generatorInventory || []).map(generator => (
     generator.labels?.load_zone
@@ -315,6 +319,13 @@ export default function GroupPlacementEditor({
     const next: GeneratorAssignmentSettings = assignment ? { ...assignment } : { mode: 'auto' }
     if (enabled) next.tolerate_generator_loss = true
     else delete next.tolerate_generator_loss
+    onChange(next)
+  }
+
+  const setFailoverContinuity = (enabled: boolean) => {
+    const next: GeneratorAssignmentSettings = assignment ? { ...assignment } : { mode: 'auto' }
+    if (enabled) next.failover_policy = 'continue'
+    else delete next.failover_policy
     onChange(next)
   }
 
@@ -489,6 +500,22 @@ export default function GroupPlacementEditor({
         <label className={`scenario-option-card ${assignment?.tolerate_generator_loss ? 'selected' : ''}`}>
           <input type="checkbox" checked={Boolean(assignment?.tolerate_generator_loss)} onChange={event => setLossTolerance(event.target.checked)} />
           <div><strong>Tolerate generator loss</strong><span>Continue on surviving assigned generators when policy permits.</span></div>
+        </label>
+      )}
+      {scope === 'scenario' && mode !== 'inherit' && (
+        <label className={`scenario-option-card ${assignment?.failover_policy === 'continue' ? 'selected' : ''}`}>
+          <input
+            type="checkbox"
+            aria-label="Continue through controller failover"
+            checked={assignment?.failover_policy === 'continue'}
+            onChange={event => setFailoverContinuity(event.target.checked)}
+          />
+          <div>
+            <strong>Continue through controller failover</strong>
+            <span>{assignment?.tolerate_generator_loss
+              ? 'On an HA controller, a standby adopts this run if the leader is lost. A generator lost while no controller is leading fails the run instead of being evacuated.'
+              : 'On an HA controller, a standby adopts this run if the leader is lost instead of failing it. Launch checks warn when this deployment cannot honour it.'}</span>
+          </div>
         </label>
       )}
     </div>

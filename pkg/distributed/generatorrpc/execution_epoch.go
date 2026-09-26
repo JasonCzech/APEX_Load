@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,9 @@ const (
 	maxExecutionFenceWorkers               = 16
 	maxExecutionLeaseTestIDBytes           = 512
 	maxTestExecutionLeaseFences            = 4096
+	// testLeaseOrphanWindow: an epoch this close to lapsing counts as a silent
+	// controller (see controllerSilentLocked).
+	testLeaseOrphanWindow = 5 * time.Second
 )
 
 // ExecutionGenerationSessionExpiredMessage is the FailedPrecondition detail a
@@ -168,7 +172,21 @@ func (s *Service) expireTestExecutionLease(testID string, generation uint64, exp
 	delete(s.testExecutionLeases, testID)
 	s.recordTestExecutionLeaseFenceLocked(testID, generation)
 	assignment, assigned := s.assignments[testID]
+	now := s.nowTime()
+	// A live controller that fences one generator on purpose (generator-loss
+	// evacuation) keeps renewing the process epoch; a dead one has gone silent.
+	// Run and process leases are renewed on different schedules, so their
+	// deadlines can differ by several seconds; controller silence, not
+	// deadline proximity alone, is the signal. Only controller loss orphans a
+	// continue-policy run; a deliberate fence must still stop it.
+	orphaned := assigned && assignment.executionGeneration == generation &&
+		s.executionEpochManager.controllerSilentLocked(now) &&
+		s.orphanLocked(testID, assignment, generation, now)
 	s.mu.Unlock()
+	if orphaned {
+		slog.Warn("generator test execution lease lapsed with its controller; continue-policy run keeps running awaiting adoption", "event", "generator_runs_orphaned", "test_id", testID, "execution_generation", generation)
+		return
+	}
 	if !assigned || assignment.executionGeneration != generation {
 		return
 	}
@@ -187,6 +205,7 @@ func (s *Service) recordTestExecutionLeaseFenceLocked(testID string, generation 
 }
 
 func (s *Service) stopExpiredTestExecutionAssignment(testID string, generation uint64) {
+	slog.Warn("generator test execution lease expired; stopping its assignment", "event", "generator_test_execution_lease_expired", "test_id", testID, "execution_generation", generation)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	_ = s.forceStopTests(ctx, []string{testID}, generation, "FAILED", "test execution lease expired before completion", fenceEscalationReason, false)
 	cancel()
@@ -252,7 +271,7 @@ func (s *Service) expireExecutionEpoch(generation uint64, expiresAt time.Time) {
 func (s *Service) expireExecutionEpochToken(generation uint64, expiresAt time.Time, token uint64, requireToken bool) {
 	for {
 		s.mu.Lock()
-		wait, testIDs, accepted := s.executionEpochManager.planExpiryLocked(s, generation, expiresAt, token, requireToken, s.nowTime())
+		wait, testIDs, orphaned, accepted := s.executionEpochManager.planExpiryLocked(s, generation, expiresAt, token, requireToken, s.nowTime())
 		s.mu.Unlock()
 		if wait != nil {
 			<-wait
@@ -260,6 +279,15 @@ func (s *Service) expireExecutionEpochToken(generation uint64, expiresAt time.Ti
 		}
 		if !accepted {
 			return
+		}
+		if len(orphaned) > 0 {
+			slog.Warn("generator execution epoch expired; continue-policy runs keep running awaiting adoption", "event", "generator_runs_orphaned", "execution_generation", generation, "expired_at", expiresAt, "test_ids", orphaned)
+		}
+		if len(testIDs) > 0 {
+			// The controller stopped renewing this generation (crashed, partitioned
+			// or lost its lease). This is the only record on the generator of why
+			// its load stopped, so name every run it takes down.
+			slog.Warn("generator execution epoch expired; stopping its assignments", "event", "generator_execution_epoch_expired", "execution_generation", generation, "expired_at", expiresAt, "test_ids", testIDs)
 		}
 		s.metricsBroker.fenceGeneration(generation)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

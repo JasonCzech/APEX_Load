@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -43,6 +44,13 @@ func TestGeneratorGatewayAuthenticatesTargetAndRegistersByteStream(t *testing.T)
 	token := strings.Repeat("g", 32)
 	target := seedReverseExecutionTarget(t, store, token)
 	server.reverseGenerators = generatorrpc.NewReverseRegistry()
+	// The transport is needed during acquisition, before ordinary mutations
+	// are admitted, so exercise the real WebSocket handshake in that window.
+	leadership := newExecutionLeadership(nil, "recovering")
+	leadership.leader.Store(true)
+	leadership.reconciling.Store(true)
+	leadership.localLeaseDeadline = time.Now().Add(time.Minute)
+	server.runner.leadership = leadership
 	httpServer := httptest.NewServer(server.mux)
 	t.Cleanup(httpServer.Close)
 
@@ -300,5 +308,34 @@ func TestReverseGatewayRateLimitDefaultsAboveRealisticFleetSize(t *testing.T) {
 	t.Setenv(reverseGatewayRateLimitEnvVar, "not-a-number")
 	if got := configuredReverseGatewayRatePerMinute(); got != defaultReverseGatewayRatePerMinute {
 		t.Fatalf("malformed value = %d, want the default rather than an unlimited gateway", got)
+	}
+}
+
+// A follower must not accept a reverse tunnel: the leader could never drive a
+// generator stranded on it. The refusal must be retryable (5xx), because the
+// reverse connector exits permanently on a 4xx.
+func TestGeneratorGatewayRefusesEnrollmentOnFollower(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "development")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	token := strings.Repeat("v", 32)
+	target := seedReverseExecutionTarget(t, store, token)
+	// Leadership is enabled but never acquired, so this server is a follower.
+	server := NewServer(ServerConfig{Store: store, HAExecutionLeadership: true})
+	server.reverseGenerators = generatorrpc.NewReverseRegistry()
+	if server.isExecutionLeader() {
+		t.Fatal("server should be a follower until it acquires the lease")
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/generator-gateway/connect", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set(generatorGatewayIDHeader, "generator-reverse-1")
+	req.Header.Set(generatorGatewayTargetHeader, target.ID)
+	rec := httptest.NewRecorder()
+	server.handleGeneratorGatewayConnect(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("follower gateway status = %d body=%s, want 503", rec.Code, rec.Body.String())
 	}
 }

@@ -750,6 +750,27 @@ export interface RunArchiveErrorPattern {
   }
 }
 
+/** One controller failover a run survived (a successor adopted it). */
+export interface RunFailover {
+  prior_generation: number
+  generation: number
+  adopted_at: string
+  /** Newest live metrics persisted before the failover; nothing was observed between it and adoption. */
+  last_observed_at?: string
+  gap_seconds?: number
+  adopted_generators: number
+  /** Generators whose share finished while no controller was leading. */
+  completed_generators?: number
+}
+
+export interface RunContinuityStatus {
+  policy: 'fail' | 'continue'
+  /** A successor controller holds what it needs to adopt the run. */
+  armed: boolean
+  execution_generation?: number
+  failovers?: RunFailover[]
+}
+
 export interface TestSummary {
   termination_mode?: "duration" | "iterations"
   id: string
@@ -788,6 +809,8 @@ export interface TestSummary {
   generator_shards?: GeneratorShardSummary[]
   vuser_ramps?: Record<string, VUserRampStatus>
   goal_targets?: Record<string, GoalTargetStatus>
+  /** HA run continuity; absent for fail-policy runs that never failed over. */
+  continuity?: RunContinuityStatus
   live_metrics?: LiveMetrics
   sparkline?: TestSparklinePoint[]
   telemetry_health?: TelemetryRunHealth

@@ -483,6 +483,22 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </div>
 {{end}}
 
+{{define "controller_failover"}}
+<h2>Controller Failover</h2>
+{{with .Report.Manifest.Continuity}}{{if .Failovers}}
+<p class="section-copy">This run survived {{len .Failovers}} HA controller failover(s). Its load generators kept producing load throughout and a standby controller adopted the run, so every measured result below comes from the generators' own archives and is complete. During each gap the controller observed nothing live: controller-derived overlays (target TPS, telemetry health) are absent for those windows, and controller-driven shapes (stage schedules, traffic profiles, goal control) held their last value until adoption.</p>
+<table>
+  <thead><tr><th>Adopted at</th><th>Generation</th><th class="num">Unobserved gap (s)</th><th class="num">Generators adopted</th><th class="num">Finished during gap</th></tr></thead>
+  <tbody>
+    {{range .Failovers}}
+    <tr><td>{{formatTime .AdoptedAt}}</td><td>{{.PriorGeneration}} → {{.Generation}}</td><td class="num">{{if .GapSeconds}}{{formatFloat .GapSeconds}}{{else}}n/a{{end}}</td><td class="num">{{.AdoptedGenerators}}</td><td class="num">{{.CompletedGenerators}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
+{{else}}<p class="section-copy">No controller failover occurred during this run.</p>{{end}}
+{{end}}
+
 {{define "completeness"}}
 <h2>Completeness Score</h2>
 <p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% — {{.Report.Completeness.Status}}</p>
