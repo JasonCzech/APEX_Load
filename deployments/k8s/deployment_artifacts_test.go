@@ -124,9 +124,9 @@ func TestKEDAScaledObjectsProtectActiveDemand(t *testing.T) {
 			content := readTextFile(t, path)
 			checks := []string{
 				"metricName: apexload_active_vusers",
-				`query: sum(apexload_scaling_vusers{state="active"})`,
+				`signal="active_vusers"`,
 				"metricName: apexload_active_browser_vusers",
-				`query: sum(apexload_scaling_protocol_vusers{state="active",protocol="browser"})`,
+				`signal="active_browser_vusers"`,
 			}
 			for _, check := range checks {
 				if !strings.Contains(content, check) {

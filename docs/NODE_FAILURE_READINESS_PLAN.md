@@ -20,7 +20,7 @@ combined leader/generator recovery or establish production node-loss readiness.
 | 1 | Investigation artifacts remain the baseline | Repository-owned node-fault harness and repeated baseline runs |
 | 2 | Health uses local settings and cached inventory; bounded durable-write bypass remains | Ten-minute dependency-outage deployment gate |
 | 3 | PostgreSQL provenance and comparisons use pgx microsecond precision; SQLite remains exact; real PostgreSQL reload regression | Recorded-archive replay and actual leadership-transfer evidence |
-| 4 | Reservation-floor trigger retained in local, EKS, on-prem, on-prem autoscaling, and Azure Monitor overlays | Fleet-scoped HA demand, spare-capacity admission, placement/discovery errors |
+| 4 | Fleet-scoped, expiring leader demand across all KEDA variants; peak queued demand; ordinal-floor protection; executable PromQL and cloud HA render tests | Spare-capacity admission, placement/discovery errors, deployed scale/failover qualification |
 | 5 | Existing fail-closed behavior retained | Durable, fenced combined-loss recovery |
 | 6 | Existing storage profiles retained | Storage inventory, recovery runbook, multi-host CSI tests |
 | 7 | Existing terminal/archive behavior retained | Stale sample reporting and explicit partial-result finalization |

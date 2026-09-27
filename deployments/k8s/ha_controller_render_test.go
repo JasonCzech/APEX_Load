@@ -14,7 +14,8 @@ import (
 // indentation slip in the chart makes the whole document unparseable, which
 // `helm template` rejects before anything reaches the cluster.
 type haControllerDocument struct {
-	Kind     string `yaml:"kind"`
+	Kind     string            `yaml:"kind"`
+	Data     map[string]string `yaml:"data"`
 	Metadata struct {
 		Name string `yaml:"name"`
 	} `yaml:"metadata"`
@@ -25,6 +26,9 @@ type haControllerDocument struct {
 		Port     int    `yaml:"port"`
 	} `yaml:"ports"`
 	Spec struct {
+		Triggers []struct {
+			Metadata map[string]string `yaml:"metadata"`
+		} `yaml:"triggers"`
 		Ports []struct {
 			Name string `yaml:"name"`
 			Port int    `yaml:"port"`

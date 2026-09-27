@@ -39,6 +39,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
+            - name: APEXLOAD_FLEET_ID
+              value: apexload-local
             # Labels the build/runtime indicator in the dashboard. Auto-detection
             # falls back to "kubernetes" when unset; override to "aks"/"eks"/etc.
             # for precise cloud labeling in cloud-specific overlays.

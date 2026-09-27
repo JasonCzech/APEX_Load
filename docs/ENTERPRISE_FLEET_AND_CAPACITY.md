@@ -134,10 +134,10 @@ fresh-cluster local base.
 Example trigger query:
 
 ```promql
-sum(apexload_scaling_vusers{state="queued"})
+max(apexload_fleet_autoscaling{fleet="your-installation",signal="total_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
 ```
 
-Example regional trigger query:
+Regional diagnostic query (not an HA autoscaling trigger):
 
 ```promql
 sum by (region) (apexload_generator_region_active_vusers)
@@ -148,11 +148,10 @@ sum by (region) (apexload_generator_region_active_vusers)
 The KEDA `ScaledObject` for `apexload-generator` defines:
 
 - `minReplicaCount: 2` and `maxReplicaCount: 50`, matching the enterprise scale-out envelope.
-- Queued VUsers trigger: `sum(apexload_scaling_vusers{state="queued"})`.
-- Active VUsers trigger: `sum(apexload_scaling_vusers{state="active"})`.
-- Queued browser canary trigger: `sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})`.
-- Active browser canary trigger: `sum(apexload_scaling_protocol_vusers{state="active",protocol="browser"})`.
-- Saturation trigger: `sum(apexload_generator_capacity_state_count{state="saturated"})`.
+- Total queued plus active VUsers and separate active-demand triggers.
+- Total queued plus active browser VUsers and separate active-browser triggers.
+- Saturation and retained StatefulSet ordinal-floor triggers.
+- All queries select the installation's fleet ID, discard expired observations, and deduplicate HA observations with `max`; see HA autoscaling observations below.
 - Conservative scale-down stabilization so recently queued demand does not collapse the generator pool too quickly.
 
 The default Prometheus endpoint is `http://prometheus-operated.monitoring.svc:9090`; production overlays should replace it when Prometheus uses a different service name or namespace.
@@ -499,3 +498,38 @@ Combined status of the fleet (P2) workstream items.
 | P2.6 Capacity reservations | Complete for settings, advisory, health, metrics, fleet API, and Monitoring visibility | `capacity_planning.reservations`, capacity advisory fields, `/metrics`, `/api/v1/fleet/capacity` |
 | P2.7 Fair-share placement | Complete for reservation-aware pending promotion and project slot accounting | Project-aware pending promotion, `/api/v1/fleet/capacity` |
 | P2.8 Protocol density envelopes | Complete for code-owned advisory envelopes; values remain design/model inputs until local benchmark evidence is published | `capacity_advisory.protocol_densities` with benchmark metadata |
+
+## HA autoscaling observations
+
+KEDA uses `apexload_fleet_autoscaling{fleet,signal}` from the fully reconciled
+execution leader. Existing `apexload_scaling_*` metrics remain diagnostic observations
+and must not be summed across HA replicas to drive scaling. The fleet signal reports
+active plus queued peak VUsers for total demand (including stage/adaptive admission
+reservations), active VUsers separately, the corresponding
+browser demand, the sum of saturated generators across regions, and the retained
+StatefulSet ordinal floor. New replicas are not automatically assigned to existing runs.
+
+Set `APEXLOAD_FLEET_ID` to a stable installation identifier shared by its controllers
+and unique across every installation in the Prometheus query domain. The AKS/EKS render
+scripts require this value and substitute it into both controller configuration and
+KEDA queries. For manually rendered on-prem manifests, replace the placeholder in both
+places. Helm derives `<namespace>/<release>` by default; set `keda.fleetID` to a cluster-
+specific identifier when multiple clusters share Prometheus. Local examples use
+`apexload-local`; change that ID and the selector together when cloning an installation.
+
+Each observation expires after at most 30 seconds, and earlier when the current
+execution lease expires. A follower, reconciling leader, changed term, or failed
+reservation-store read emits no fleet observation. The PromQL filters expiry and takes
+`max` within the selected installation, preserving replicated observations without
+multiplying them. The queries return no value when evidence is missing. All triggers
+set `ignoreNullValues: "false"`; this surfaces unavailable evidence instead of presenting
+it as idle demand. Keep Prometheus and controller clocks synchronized and scrape every
+15 seconds or faster. The reservation floor protects retained ordinals; reserved
+recovery headroom is a separate, unfinished policy.
+
+The [KEDA Prometheus scaler documentation](https://keda.sh/docs/2.18/scalers/prometheus/)
+describes missing-result behavior. The executable regression cases live in
+`scripts/testdata/keda-promql.json`; run `promtool test rules` against that file. They
+cover duplicate observations, stale followers, independent installations, expiry,
+browser demand, saturation, and the ordinal floor. Deployment tests ensure every shipped
+query matches a tested expression.

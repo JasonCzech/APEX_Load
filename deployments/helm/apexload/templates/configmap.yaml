@@ -23,6 +23,7 @@ metadata:
     app.kubernetes.io/component: data-platform
 {{ include "apexload.labels" . | indent 4 }}
 data:
+  APEXLOAD_FLEET_ID: {{ include "apexload.fleetID" . | quote }}
   APEXLOAD_STORE: {{ .Values.dataPlatform.store | quote }}
   APEXLOAD_DATABASE_MAX_OPEN_CONNS: {{ .Values.dataPlatform.databaseMaxOpenConns | quote }}
   APEXLOAD_DATABASE_MAX_IDLE_CONNS: {{ .Values.dataPlatform.databaseMaxIdleConns | quote }}

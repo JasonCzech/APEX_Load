@@ -1,0 +1,215 @@
+{
+  "evaluation_interval": "15s",
+  "tests": [
+    {
+      "name": "HA duplicates, stale followers, separate fleets, and expiry",
+      "interval": "15s",
+      "input_series": [
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"leader\",signal=\"total_vusers\"}",
+          "values": "180+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"leader\",signal=\"active_vusers\"}",
+          "values": "180+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"leader\",signal=\"reserved_replica_floor\"}",
+          "values": "9+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"leader\",signal=\"total_browser_vusers\"}",
+          "values": "15+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"leader\",signal=\"active_browser_vusers\"}",
+          "values": "10+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"leader\",signal=\"saturated_generators\"}",
+          "values": "5+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling_valid_until{fleet=\"fleet-a\",job=\"controller\",instance=\"leader\"}",
+          "values": "120+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"duplicate-scrape\",signal=\"total_vusers\"}",
+          "values": "180+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"duplicate-scrape\",signal=\"active_vusers\"}",
+          "values": "180+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"duplicate-scrape\",signal=\"reserved_replica_floor\"}",
+          "values": "9+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"duplicate-scrape\",signal=\"total_browser_vusers\"}",
+          "values": "15+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"duplicate-scrape\",signal=\"active_browser_vusers\"}",
+          "values": "10+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"duplicate-scrape\",signal=\"saturated_generators\"}",
+          "values": "5+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling_valid_until{fleet=\"fleet-a\",job=\"controller\",instance=\"duplicate-scrape\"}",
+          "values": "120+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"stale-follower\",signal=\"total_vusers\"}",
+          "values": "99999+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"stale-follower\",signal=\"active_vusers\"}",
+          "values": "99999+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"stale-follower\",signal=\"reserved_replica_floor\"}",
+          "values": "9+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"stale-follower\",signal=\"total_browser_vusers\"}",
+          "values": "15+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"stale-follower\",signal=\"active_browser_vusers\"}",
+          "values": "10+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-a\",job=\"controller\",instance=\"stale-follower\",signal=\"saturated_generators\"}",
+          "values": "5+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling_valid_until{fleet=\"fleet-a\",job=\"controller\",instance=\"stale-follower\"}",
+          "values": "0+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-b\",job=\"controller\",instance=\"other-installation\",signal=\"total_vusers\"}",
+          "values": "900+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-b\",job=\"controller\",instance=\"other-installation\",signal=\"active_vusers\"}",
+          "values": "900+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-b\",job=\"controller\",instance=\"other-installation\",signal=\"reserved_replica_floor\"}",
+          "values": "50+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-b\",job=\"controller\",instance=\"other-installation\",signal=\"total_browser_vusers\"}",
+          "values": "90+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-b\",job=\"controller\",instance=\"other-installation\",signal=\"active_browser_vusers\"}",
+          "values": "10+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling{fleet=\"fleet-b\",job=\"controller\",instance=\"other-installation\",signal=\"saturated_generators\"}",
+          "values": "5+0x10"
+        },
+        {
+          "series": "apexload_fleet_autoscaling_valid_until{fleet=\"fleet-b\",job=\"controller\",instance=\"other-installation\"}",
+          "values": "120+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"total_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "15s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 180
+            }
+          ]
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"total_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "2m",
+          "exp_samples": []
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"active_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "15s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 180
+            }
+          ]
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"active_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "2m",
+          "exp_samples": []
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"reserved_replica_floor\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "15s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 9
+            }
+          ]
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"reserved_replica_floor\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "2m",
+          "exp_samples": []
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"total_browser_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "15s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 15
+            }
+          ]
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"total_browser_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "2m",
+          "exp_samples": []
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"active_browser_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "15s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 10
+            }
+          ]
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"active_browser_vusers\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "2m",
+          "exp_samples": []
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"saturated_generators\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "15s",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 5
+            }
+          ]
+        },
+        {
+          "expr": "max(apexload_fleet_autoscaling{fleet=\"fleet-a\",signal=\"saturated_generators\"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))",
+          "eval_time": "2m",
+          "exp_samples": []
+        }
+      ]
+    }
+  ]
+}

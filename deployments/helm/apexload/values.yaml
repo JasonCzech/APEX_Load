@@ -260,6 +260,9 @@ pdb:
   enabled: true
 
 keda:
+  # Override with a globally unique ID when Prometheus spans clusters.
+  # Empty defaults to <namespace>/<release>. Must match all controllers in this installation.
+  fleetID: ""
   enabled: true
   minReplicaCount: 2
   maxReplicaCount: 50

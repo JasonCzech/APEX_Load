@@ -85,3 +85,32 @@ PostgreSQL/filesystem/S3 integration checks, deployment tests, and documentation
 The full-suite inventory guard found an undocumented integration switch; its entry
 was added to `docs/qa/TEST_PROGRAM.md` and the guard passed on rerun. Fleet-scoped KEDA
 demand remains a separately tracked implementation batch.
+
+
+## Fleet autoscaling review/fix cycle
+
+Fleet demand now comes only from a reconciled execution leader, carries an installation
+ID and expires at the earlier of 30 seconds or its lease deadline. Every shipped KEDA
+query filters expiry and selects that fleet before deduplicating with `max`. Missing
+observations fail the metric instead of representing zero demand. Legacy diagnostic
+metrics remain available. Total demand includes queued stage/adaptive admission peaks.
+
+Review fixed stopped/shakeout demand disappearing too early, under-reported queued
+peaks, misplaced ConfigMap identity wiring, and cloud renderers that broke inherited
+HA overlay paths. Renderers now expand overlays before replacing their placeholders.
+A second review found no further issues in this slice. Reserved recovery capacity and
+combined-loss adoption remain separate unfinished work.
+
+Validation: focused API tests passed (1.433 seconds); focused race tests passed
+(3.055 seconds); deployment tests and the complete scripts suite passed (24.693
+seconds for scripts). Real Prometheus v3.12.0 `promtool test rules` passed all six
+query families, duplicate HA, stale observations, independent fleets and expiry.
+The later attempted repeat could not start because Docker Desktop's containerd
+metadata filesystem became read-only; this is a local runtime blocker, not a passing
+repeat. No Docker restart or cleanup of shared workloads was attempted.
+
+The broad API run found one existing asynchronous-test race: the tracing test read
+the exporter immediately after the start response, before execution ended its span.
+It now waits for that ended span with a five-second bound, preserving all trace,
+parentage and disclosure assertions. Thirty repeated runs passed (2.434 seconds).
+The broad API rerun is recorded separately once complete.

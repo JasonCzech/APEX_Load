@@ -84,6 +84,13 @@ if [[ -z "$IMAGE_TAG" ]]; then
   IMAGE_TAG="0.1.0"
 fi
 
+FLEET_ID_VALUE="${APEXLOAD_FLEET_ID:-}"
+if [[ ! "$FLEET_ID_VALUE" =~ ^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$ ]]; then
+  echo "set APEXLOAD_FLEET_ID to a unique 1-128 character installation ID" >&2
+  exit 1
+fi
+export FLEET_ID_VALUE
+
 missing=()
 [[ -n "$AWS_REGION_VALUE" ]] || missing+=("aws_region")
 [[ -n "$ECR_CONTROLLER_REPO" ]] || missing+=("ecr_controller_repository_url")
@@ -99,7 +106,9 @@ fi
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/apexload-eks.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
-cp -R "$OVERLAY_DIR/." "$TMP_DIR/"
+# Render at the source location so relative resources in HA/monitoring overlays
+# resolve correctly; substitute the complete output, including inherited bases.
+kubectl kustomize "$OVERLAY_DIR" > "$TMP_DIR/rendered.yaml"
 
 export AWS_REGION_VALUE ECR_CONTROLLER_REPO ECR_GENERATOR_REPO ARCHIVE_BUCKET_NAME \
   WRAPPING_KMS_KEY_ARN CONTROLLER_IRSA_ROLE_ARN GENERATOR_IRSA_ROLE_ARN IMAGE_TAG
@@ -112,6 +121,7 @@ export AWS_REGION_VALUE ECR_CONTROLLER_REPO ECR_GENERATOR_REPO ARCHIVE_BUCKET_NA
 # The KMS key ARN is replaced BEFORE the bare region token, because the ARN
 # itself embeds "changeme-region" and would otherwise be rewritten twice.
 perl -0pi \
+  -e 's/\$\{APEXLOAD_FLEET_ID\}/$ENV{FLEET_ID_VALUE}/g;' \
   -e 's#arn:aws:kms:changeme-region:000000000000:key/change-me#$ENV{WRAPPING_KMS_KEY_ARN}#g;' \
   -e 's/changeme\.dkr\.ecr\.changeme-region\.amazonaws\.com\/apexload-controller/$ENV{ECR_CONTROLLER_REPO}/g;' \
   -e 's/changeme\.dkr\.ecr\.changeme-region\.amazonaws\.com\/apexload-generator/$ENV{ECR_GENERATOR_REPO}/g;' \
@@ -119,12 +129,12 @@ perl -0pi \
   -e 's/changeme-region/$ENV{AWS_REGION_VALUE}/g;' \
   -e 's/\$\{CONTROLLER_IRSA_ROLE_ARN\}/$ENV{CONTROLLER_IRSA_ROLE_ARN}/g;' \
   -e 's/\$\{GENERATOR_IRSA_ROLE_ARN\}/$ENV{GENERATOR_IRSA_ROLE_ARN}/g;' \
-  "$TMP_DIR"/*.yaml
+  "$TMP_DIR/rendered.yaml"
 
-perl -0pi -e 's/newTag: 0\.1\.0/newTag: $ENV{IMAGE_TAG}/g;' "$TMP_DIR"/kustomization.yaml
+perl -0pi -e 's#(image:\s*\S*apexload-[a-z0-9-]+):0\.1\.0#$1:$ENV{IMAGE_TAG}#g;' "$TMP_DIR/rendered.yaml"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
-kubectl kustomize "$TMP_DIR" > "$OUTPUT_PATH"
+cp "$TMP_DIR/rendered.yaml" "$OUTPUT_PATH"
 
 if grep -En 'CHANGE-ME|changeme|change-me|\$\{[A-Z0-9_]+\}' "$OUTPUT_PATH" >&2; then
   echo "rendered manifest still contains placeholders" >&2

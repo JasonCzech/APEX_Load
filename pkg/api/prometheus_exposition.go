@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -14,6 +15,8 @@ import (
 )
 
 func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request) {
+	observedOwner := s.runner.leadership.executionFenceToken()
+	observationComplete := true
 	settings := s.runner.GetSystemSettings()
 	availability := resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now())
 	tests := s.runner.listOperationalTestSnapshots()
@@ -23,7 +26,7 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	reservedResources := protocol.CapacityVector{}
 	queuedResources := protocol.CapacityVector{}
 	for _, test := range tests {
-		if test == nil || test.Status != "PENDING" {
+		if test == nil || (test.Status != "PENDING" && test.Status != "QUEUED" && test.Status != "RESERVED") {
 			continue
 		}
 		if groups, err := podReservationGroups(test); err == nil {
@@ -40,8 +43,12 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 				reservedResources = reservedResources.Add(claim.Demand)
 			}
 			scalingStats.ActiveVUsers = max(scalingStats.ActiveVUsers, reserved)
+			if browser := int(math.Ceil(reservedResources.Protocols["browser"])); browser > 0 {
+				scalingStats.ActiveProtocolVUsers["browser"] = max(scalingStats.ActiveProtocolVUsers["browser"], browser)
+			}
 			podReplicaFloor = reservedReplicaFloor(claims, settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators)
 		} else {
+			observationComplete = false
 			entries, _ := s.runner.cachedGeneratorInventorySnapshot()
 			unknown := make([]storage.PodCapacityReservation, 0, len(entries))
 			for _, entry := range entries {
@@ -60,6 +67,7 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	var body strings.Builder
+	s.writeFleetAutoscalingMetrics(&body, observedOwner, scalingStats, regionStats, podReplicaFloor, observationComplete)
 	body.WriteString("# HELP apexload_up Whether the APEX Load controller is healthy.\n")
 	body.WriteString("# TYPE apexload_up gauge\n")
 	body.WriteString("apexload_up 1\n")
@@ -379,9 +387,17 @@ func scalingSignalStats(tests []*ManagedTest) scalingSignals {
 		switch test.Status {
 		case "QUEUED", "PENDING", "RESERVED":
 			stats.QueuedTests++
-			stats.QueuedVUsers += test.TotalVUsers
-			addProtocolVUsers(stats.QueuedProtocolVUsers, test.Groups)
-		case "INITIALIZING", "RUNNING", "PAUSED":
+			groups := test.Groups
+			if peak, err := podReservationGroups(test); err == nil {
+				groups = peak
+			}
+			peakVUsers := 0
+			for _, group := range groups {
+				peakVUsers += group.VUsers
+			}
+			stats.QueuedVUsers += max(test.TotalVUsers, peakVUsers)
+			addProtocolVUsers(stats.QueuedProtocolVUsers, groups)
+		case "INITIALIZING", "STARTING", "SHAKEOUT", "SHAKEOUT_REVIEW", "RUNNING", "PAUSED", "STOPPING":
 			stats.ActiveTests++
 			stats.ActiveVUsers += test.TotalVUsers
 			addProtocolVUsers(stats.ActiveProtocolVUsers, test.Groups)

@@ -39,41 +39,47 @@ spec:
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
         metricName: apexload_queued_vusers
-        query: sum(apexload_scaling_vusers{state="queued"})
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="apexload-local",signal="total_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
         threshold: "5000"
         activationThreshold: "1"
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
         metricName: apexload_active_vusers
-        query: sum(apexload_scaling_vusers{state="active"})
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="apexload-local",signal="active_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
         threshold: "5000"
         activationThreshold: "1"
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
         metricName: apexload_queued_browser_vusers
-        query: sum(apexload_scaling_protocol_vusers{state="queued",protocol="browser"})
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="apexload-local",signal="total_browser_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
         threshold: "20"
         activationThreshold: "1"
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
         metricName: apexload_active_browser_vusers
-        query: sum(apexload_scaling_protocol_vusers{state="active",protocol="browser"})
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="apexload-local",signal="active_browser_vusers"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
         threshold: "20"
         activationThreshold: "1"
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
         metricName: apexload_saturated_generators
-        query: sum(apexload_generator_capacity_state_count{state="saturated"})
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="apexload-local",signal="saturated_generators"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
         threshold: "1"
         activationThreshold: "1"
     - type: prometheus
       metadata:
         serverAddress: http://prometheus-operated.monitoring.svc:9090
         metricName: apexload_reserved_replica_floor
-        query: max(apexload_pod_reserved_replica_floor)
+        ignoreNullValues: "false"
+        query: max(apexload_fleet_autoscaling{fleet="apexload-local",signal="reserved_replica_floor"} and on(fleet,job,instance) (apexload_fleet_autoscaling_valid_until > time()))
         threshold: "1"
         activationThreshold: "0"

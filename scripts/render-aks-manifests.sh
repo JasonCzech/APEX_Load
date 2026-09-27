@@ -88,6 +88,13 @@ if [[ -z "$IMAGE_TAG" ]]; then
   IMAGE_TAG="0.1.0"
 fi
 
+FLEET_ID_VALUE="${APEXLOAD_FLEET_ID:-}"
+if [[ ! "$FLEET_ID_VALUE" =~ ^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$ ]]; then
+  echo "set APEXLOAD_FLEET_ID to a unique 1-128 character installation ID" >&2
+  exit 1
+fi
+export FLEET_ID_VALUE
+
 missing=()
 [[ -n "$ACR_LOGIN_SERVER" ]] || missing+=("acr_login_server")
 [[ -n "$STORAGE_ACCOUNT_NAME" ]] || missing+=("storage_account_name")
@@ -101,7 +108,9 @@ fi
 
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/apexload-aks.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
-cp -R "$OVERLAY_DIR/." "$TMP_DIR/"
+# Render at the source location so relative resources in HA/monitoring overlays
+# resolve correctly; substitute the complete output, including inherited bases.
+kubectl kustomize "$OVERLAY_DIR" > "$TMP_DIR/rendered.yaml"
 
 export STORAGE_ACCOUNT_NAME KEY_VAULT_URL ACR_LOGIN_SERVER CONTROLLER_CLIENT_ID GENERATOR_CLIENT_ID KEDA_CLIENT_ID IMAGE_TAG
 # Substitute across every YAML in the overlay so additional overlays (e.g.
@@ -110,6 +119,7 @@ export STORAGE_ACCOUNT_NAME KEY_VAULT_URL ACR_LOGIN_SERVER CONTROLLER_CLIENT_ID 
 # substitutions are placeholder-specific, so applying them to files without
 # placeholders is a no-op.
 perl -0pi \
+  -e 's/\$\{APEXLOAD_FLEET_ID\}/$ENV{FLEET_ID_VALUE}/g;' \
   -e 's/changemestorageaccount/$ENV{STORAGE_ACCOUNT_NAME}/g;' \
   -e 's#https://change-me\.vault\.azure\.net#$ENV{KEY_VAULT_URL}#g;' \
   -e 's/changeme\.azurecr\.io/$ENV{ACR_LOGIN_SERVER}/g;' \
@@ -117,12 +127,12 @@ perl -0pi \
   -e 's/\$\{GENERATOR_WORKLOAD_IDENTITY_CLIENT_ID\}/$ENV{GENERATOR_CLIENT_ID}/g;' \
   -e 's/\$\{KEDA_WORKLOAD_IDENTITY_CLIENT_ID\}/$ENV{KEDA_CLIENT_ID}/g;' \
   -e 's/\$\{WORKLOAD_IDENTITY_CLIENT_ID\}/$ENV{CONTROLLER_CLIENT_ID}/g;' \
-  "$TMP_DIR"/*.yaml
+  "$TMP_DIR/rendered.yaml"
 
-perl -0pi -e 's/newTag: 0\.1\.0/newTag: $ENV{IMAGE_TAG}/g;' "$TMP_DIR"/kustomization.yaml
+perl -0pi -e 's#(image:\s*\S*apexload-[a-z0-9-]+):0\.1\.0#$1:$ENV{IMAGE_TAG}#g;' "$TMP_DIR/rendered.yaml"
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
-kubectl kustomize "$TMP_DIR" > "$OUTPUT_PATH"
+cp "$TMP_DIR/rendered.yaml" "$OUTPUT_PATH"
 
 if grep -En 'CHANGE-ME|changeme|change-me|\$\{[A-Z0-9_]+\}' "$OUTPUT_PATH" >&2; then
   echo "rendered manifest still contains placeholders" >&2

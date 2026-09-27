@@ -12,6 +12,7 @@ metadata:
     app.kubernetes.io/name: apexload
     app.kubernetes.io/component: data-platform
 data:
+  APEXLOAD_FLEET_ID: "${APEXLOAD_FLEET_ID}"
   # --- Persistence: Amazon RDS for PostgreSQL ---
   APEXLOAD_STORE: postgres
   APEXLOAD_DATABASE_MAX_OPEN_CONNS: "25"

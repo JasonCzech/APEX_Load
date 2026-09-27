@@ -77,3 +77,12 @@ chart default while explicit false values remain false.
 {{- define "apexload.importAssetsClaimName" -}}
 {{- default "apexload-controller-import-assets" .Values.importAssets.persistence.existingClaim -}}
 {{- end -}}
+
+{{/* One fleet identity shared by the controller and every KEDA query. */}}
+{{- define "apexload.fleetID" -}}
+{{- $id := default (printf "%s/%s" (include "apexload.namespace" .) .Release.Name) .Values.keda.fleetID -}}
+{{- if or (not (regexMatch "^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}$" $id)) (contains "change-me" (lower $id)) -}}
+{{- fail "keda.fleetID must be 1-128 letters, digits, underscores, dots, colons, slashes, or hyphens" -}}
+{{- end -}}
+{{- $id -}}
+{{- end -}}

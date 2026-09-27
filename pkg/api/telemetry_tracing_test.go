@@ -82,10 +82,20 @@ func TestHTTPStartRequestPropagatesIntoTestLifecycleSpans(t *testing.T) {
 		t.Fatalf("start response = %d body=%s", response.Code, response.Body.String())
 	}
 
-	spans := exporter.GetSpans()
-	byName := make(map[string]tracetest.SpanStub, len(spans))
-	for _, span := range spans {
-		byName[span.Name] = span
+	// The HTTP start response does not join the asynchronous execution goroutine.
+	// Wait for its ended span, not just a terminal status written by the backend.
+	var spans tracetest.SpanStubs
+	byName := make(map[string]tracetest.SpanStub)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		spans = exporter.GetSpans()
+		for _, span := range spans {
+			byName[span.Name] = span
+		}
+		if _, done := byName["apexload.test.execute"]; done || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(time.Millisecond)
 	}
 	httpSpan, httpOK := byName["POST /api/v1/tests/{id}/start"]
 	startSpan, startOK := byName["apexload.test.start"]
