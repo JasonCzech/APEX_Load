@@ -549,3 +549,17 @@ the driver. Tests verify checkpoint timing, hashes/private files, ownership chan
 missing KEDA, artifact conflicts, and primary-failure preservation after restoration.
 This is immediate post-Docker-restoration evidence, not a pod/PVC readiness gate.
 No actionable finding remained after review. Final test results are recorded below.
+
+## Final cluster-evidence validation gate
+
+All 28 Python fault-harness tests passed (1.566 seconds). The complete repository
+scripts package passed uncached (`go test ./scripts -count=1`, 14.609 seconds), which
+also runs the harness through its Go CI bridge. Documentation checks and
+`git diff --check` passed. The standalone CLI test executes a fake kubectl process;
+the driver timing/restoration tests use a fake command boundary. No actionable
+review finding remains in these collector and checkpoint slices.
+
+No live Docker/Kubernetes fault was injected. The stack provisioner, authoritative
+traffic/assignment observer, during-fault scaling evidence, final archive evidence,
+and repeated multi-host/dependency-failover qualification remain open. Application,
+dashboard and database schemas are unchanged. Unrelated concurrent work was preserved.
