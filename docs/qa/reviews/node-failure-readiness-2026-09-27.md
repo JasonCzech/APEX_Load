@@ -407,3 +407,27 @@ that recorded target independently of client availability. A regression injects 
 dial failure and verifies the missing original source beside the collected retired
 source. Focused API race tests passed (5.915 seconds); final review found no further
 actionable collector finding. The final broad gate below includes this follow-up.
+
+
+## Partial archive coverage in Results
+
+Results now shows server-provided source-coverage findings alongside the saved archive
+and offers an expandable, bounded source inventory. The warning remains visible
+across analysis tabs. Execution outcome and retained sample counts remain unchanged;
+legacy incomplete archives and invalid coverage can show a warning without inventing
+a missing-source list. Complete archives without a source finding gain no warning.
+
+Dashboard typecheck, lint, build and 46 relevant unit tests passed. The analysis
+workflow passed all four cases in both dev-admin (5.7 seconds) and local-auth (31.3
+seconds). Both narrow-screen screenshots were inspected, showing the terminal outcome,
+partial-evidence warning, collected/missing sources and retained 500-sample count
+without horizontal overflow. Review corrected the presentation fixture to avoid
+requesting action drilldowns absent from its synthetic archive and centered the
+notice for screenshot capture. These are scoped presentation fixtures, not live
+node-loss evidence. Final UI review found no remaining actionable issue.
+
+The first broad Go run passed (API: 404.978 seconds; storage: 32.524 seconds). A final
+run includes the subsequent recorded-single-target fix and is recorded below when
+complete. No new Docker, KEDA, Redis/PostgreSQL failover or multi-host qualification
+was performed. Durable intent on every terminal path, exact historical shard loss,
+combined recovery and deployment qualification remain open.

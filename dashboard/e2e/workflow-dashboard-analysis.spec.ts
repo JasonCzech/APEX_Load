@@ -335,3 +335,55 @@ test('run results distinguishes recorded archive failure and refreshes availabil
   await expect(notice).not.toContainText('Archive collection failed')
   await expect(page.getByRole('tab', { name: 'Performance', exact: true })).toHaveAttribute('aria-selected', 'true')
 })
+
+test('partial archive sources remain visible beside retained measurements and terminal outcome', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Partial archive evidence', duration: '1m', groups: [{ name: 'orders', script_id: scriptId, vusers: 120 }],
+  } })))
+  await json(await request.post(`/api/v1/tests/${id}/abort`))
+  const stats = { transactions: 500, errors: 0, error_pct: 0, avg_response_ms: 10, p50_ms: 10,
+    p95_ms: 20, p99_ms: 25, min_response_ms: 5, max_response_ms: 30, average_rate_per_second: 10 }
+  // Real scoped terminal run; controlled archive projection tests presentation.
+  // Missing-source collection and persistence are covered by Go regressions.
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({ response, json: { ...payload, status: 'ABORTED', ended_at: '2026-09-27T12:01:00Z',
+      archive: { transaction_count: 500, completed_at: '2026-09-27T12:01:02Z' } } })
+  })
+  await page.route(`**/api/v1/tests/${id}/archive/report*`, route => route.fulfill({ json: {
+    manifest: { test_id: id, status: 'ABORTED', transaction_count: 500,
+      source_coverage: { mode: 'best_effort', sources: [
+        { target: 'generator-0.generators.svc:9090', collected: true },
+        { target: 'generator-1.generators.svc:9090', collected: false },
+      ] } },
+    overview: { ...stats, peak_active_vusers: 60 }, metric_populations: { action: stats },
+    by_action: {}, by_request: {},
+    completeness: { score_pct: 70, status: 'incomplete', findings: [{ dimension: 'generator_sources', severity: 'critical', penalty: 30,
+      message: '1 of 2 known generator archive sources were not collected. Surviving measurements are partial evidence.' }] },
+    verdict: { status: 'conditional_pass' },
+  } }))
+  await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`)
+  await page.reload()
+  const notice = page.getByRole('region', { name: 'Archive source coverage', exact: true })
+  await expect(notice).toContainText('1 of 2 known generator archive sources were not collected')
+  await expect(page.getByRole('region', { name: 'Execution outcome', exact: true })).toContainText('Execution aborted')
+  await notice.getByText('Inspect generator sources (2)', { exact: true }).click()
+  await expect(notice.getByRole('row').filter({ hasText: 'generator-1.' })).toContainText('Not collected')
+  await expect(notice.getByRole('row').filter({ hasText: 'generator-0.' })).toContainText('Collected')
+  await expect(notice).toContainText('does not establish complete shard history')
+  await page.getByRole('tab', { name: 'Performance', exact: true }).click()
+  await expect(notice).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Analysis context', exact: true })).toContainText('500 samples')
+  await expect(page.getByText('archive not found', { exact: true })).toHaveCount(0)
+  await page.setViewportSize({ width: 850, height: 1000 })
+  await notice.evaluate(element => element.scrollIntoView({ block: 'center' }))
+  await page.screenshot({ path: testInfo.outputPath('partial-archive-coverage.png'), fullPage: true })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})

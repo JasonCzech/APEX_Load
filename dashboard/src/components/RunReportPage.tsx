@@ -32,6 +32,7 @@ import RunReportPowerBIPublish from './runReport/RunReportPowerBIPublish'
 import RunReportConfluencePublish from './runReport/RunReportConfluencePublish'
 import RunReportKpiScorecard from './runReport/RunReportKpiScorecard'
 import RunReportLensSwitcher from './runReport/RunReportLensSwitcher'
+import RunArchiveCoverageNotice from './runReport/RunArchiveCoverageNotice'
 import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
 import SynchronizedTimeline from './runReport/SynchronizedTimeline'
 import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
@@ -476,6 +477,7 @@ export default function RunReportPage({
         <button type="button" className="btn btn-secondary" disabled={archiveCheckPending} onClick={() => void checkArchiveAgain()}>{archiveCheckPending ? 'Checking…' : 'Check again'}</button>
         {archiveCheckError && <p role="alert" className="run-report-error">{archiveCheckError}</p>}
       </section>}
+      {hasArchive && <RunArchiveCoverageNotice report={report} />}
       {showExport && hasArchive && <section className="run-report-panel" aria-label="Report export options">
         <h2>Export report</h2><p>Choose an audience. Outputs cover the whole run, independent of the population selector below. Any release trend in an output uses the prior release run and names that reference.</p>
         <RunReportLensSwitcher activeLens={activeLens} onLensChange={setLens} />

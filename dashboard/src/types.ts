@@ -950,6 +950,7 @@ export interface TestNote {
 }
 
 export interface RunArchiveManifest {
+  source_coverage?: { mode: string; sources: Array<{ target: string; collected: boolean }> }
   csv_exports?: Array<{ id: string; group: string; file_name: string; status: string; rows: number; error?: string }>
   termination_reason?: string
 
