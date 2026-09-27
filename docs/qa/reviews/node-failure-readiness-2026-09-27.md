@@ -114,3 +114,26 @@ the exporter immediately after the start response, before execution ended its sp
 It now waits for that ended span with a five-second bound, preserving all trace,
 parentage and disclosure assertions. Thirty repeated runs passed (2.434 seconds).
 The broad API rerun is recorded separately once complete.
+
+
+## Fault-driver and storage review/fix cycle
+
+The storage runbook was checked against the local, AKS, EKS, on-prem and Helm storage
+contracts and generator epoch/supervision persistence. It distinguishes same-identity
+reattachment from new-identity replacement and leaves CSI/zone RTO/RPO unqualified.
+
+The repository fault driver now refuses unowned namespaces, mismatched kind clusters,
+control-plane victims, stale/future observations, duplicate shard ownership, absent
+KEDA demand and unsustained target traffic. It restores the immutable container ID
+on timeout, interruption and failed recovery. Review fixed a false-pass risk by
+requiring sustained traffic while the failed node remains stopped, reset the target
+comparison at injection, and removed arbitrary nested assignment fields from evidence.
+Fresh input generation refuses overwrite, produces a new CA and credentials, and
+keeps directory/files at 0700/0600. Nine Python regressions pass, including actual
+OpenSSL verification; the Go scripts test invokes these regressions as well.
+A second review found no additional issues in this foundation's documented scope.
+
+This is not a completed end-to-end harness: the application stack provisioner, real
+observation adapter, complete HPA/final-archive evidence and deployed three-trial
+matrix remain open. Docker's read-only metadata filesystem prevents runtime fault
+validation here. The driver never force-deletes a StatefulSet identity or PVC.

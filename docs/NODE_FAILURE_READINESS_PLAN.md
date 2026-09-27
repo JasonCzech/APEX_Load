@@ -17,7 +17,7 @@ combined leader/generator recovery or establish production node-loss readiness.
 
 | Package | Current implementation | Qualification still required |
 |---|---|---|
-| 1 | Investigation artifacts remain the baseline | Repository-owned node-fault harness and repeated baseline runs |
+| 1 | [Repository fault-driver foundation](../scripts/fault_harness/README.md): fresh credentials/TLS, explicit disposable targeting, sustained target-load gates, immutable-container cleanup and safety tests | Stack provisioner, real observation adapter, complete evidence collection and repeated baseline runs |
 | 2 | Health uses local settings and cached inventory; bounded durable-write bypass remains | Ten-minute dependency-outage deployment gate |
 | 3 | PostgreSQL provenance and comparisons use pgx microsecond precision; SQLite remains exact; real PostgreSQL reload regression | Recorded-archive replay and actual leadership-transfer evidence |
 | 4 | Fleet-scoped, expiring leader demand across all KEDA variants; peak queued demand; ordinal-floor protection; executable PromQL and cloud HA render tests | Spare-capacity admission, placement/discovery errors, deployed scale/failover qualification |
