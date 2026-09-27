@@ -21,6 +21,10 @@ class GateError(RuntimeError):
     pass
 
 
+class ObservationSafetyError(GateError):
+    """An observed safety violation cannot be retried away as a transport outage."""
+
+
 def command(argv, timeout=20):
     result = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
     if result.returncode:
@@ -53,32 +57,47 @@ def validate_config(config):
 
 def validate_observation(observation, config, previous=None, now=None):
     now = time.time() if now is None else now
-    if observation.get("run_id") != config["run_id"]:
-        raise GateError("observation belongs to another run")
+    if not isinstance(observation, dict) or observation.get("run_id") != config["run_id"]:
+        raise ObservationSafetyError("observation must belong to this run")
     at = observation.get("observed_at_unix", 0)
-    if not isinstance(at, (int, float)) or not math.isfinite(at) or not 0 <= now - at <= 5:
+    if isinstance(at, bool) or not isinstance(at, (int, float)) or not now - 5 <= at <= now:
         raise GateError("target observation is stale or in the future")
     # Counts come from the private target; dashboard TPS is deliberately ignored.
     count = observation.get("target_requests")
     if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-        raise GateError("target_requests must be a nonnegative counter")
+        raise ObservationSafetyError("target_requests must be a nonnegative counter")
+    for key in ("observed_vusers", "keda_total_demand", "controller_restarts"):
+        value = observation.get(key)
+        if (isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0
+                or (isinstance(value, float) and not math.isfinite(value))
+                or (key != "keda_total_demand" and not isinstance(value, int))):
+            raise ObservationSafetyError(f"{key} must be a finite nonnegative count")
+    status = observation.get("status")
+    if not isinstance(status, str) or not status:
+        raise ObservationSafetyError("run status evidence is required")
+    if status in ("COMPLETE", "FAILED", "ABORTED", "STOPPED"):
+        raise ObservationSafetyError("run became terminal before the fault trial ended")
     assignments = observation.get("assignments")
     if not isinstance(assignments, list) or not assignments:
         raise GateError("current shard assignments are required")
     seen = set()
     for shard in assignments:
+        if not isinstance(shard, dict):
+            raise ObservationSafetyError("invalid shard ownership evidence")
         key = (shard.get("group"), shard.get("shard"))
-        if key in seen or not all(isinstance(v, str) and v for v in key):
-            raise GateError("duplicate or invalid shard ownership")
+        if not all(isinstance(v, str) and v for v in key) or key in seen:
+            raise ObservationSafetyError("duplicate or invalid shard ownership")
         seen.add(key)
-        if not shard.get("node") or not shard.get("pod") or not isinstance(shard.get("generation"), int) or shard["generation"] <= 0:
-            raise GateError("assignment lacks node/pod/generation evidence")
+        if (any(not isinstance(shard.get(key), str) or not shard[key] for key in ("node", "pod"))
+                or isinstance(shard.get("generation"), bool) or not isinstance(shard.get("generation"), int)
+                or shard["generation"] <= 0):
+            raise ObservationSafetyError("assignment lacks node/pod/generation evidence")
     if not previous:
         return False
     elapsed = at - previous["observed_at_unix"]
     delta = count - previous["target_requests"]
     if elapsed <= 0 or delta < 0:
-        raise GateError("target counter or observation clock regressed")
+        raise ObservationSafetyError("target counter or observation clock regressed")
     return (observation.get("status") == "RUNNING" and delta / elapsed >= config["minimum_target_rps"]
             and observation.get("observed_vusers", 0) >= config["expected_vusers"]
             and observation.get("keda_total_demand", 0) >= config["expected_vusers"])
@@ -105,6 +124,7 @@ class Harness:
         self.events = []
         self.victim_id = None
         self.restore_required = False
+        self.last_observation = None
 
     def kube(self, *args):
         c = self.config
@@ -142,8 +162,18 @@ class Harness:
 
     def observe(self):
         raw = self.execute(self.config["observation_command"], timeout=15)
-        observation = json.loads(raw)
+        try:
+            observation = json.loads(raw)
+        except ValueError:
+            raise ObservationSafetyError("observation adapter returned invalid JSON") from None
         validate_observation(observation, self.config)
+        if self.last_observation is not None:
+            # Resetting the consecutive-load window after a transport outage must
+            # not forget counter continuity or hide a target restart.
+            if (observation["target_requests"] < self.last_observation["target_requests"]
+                    or observation["observed_at_unix"] < self.last_observation["observed_at_unix"]):
+                raise ObservationSafetyError("target counter or observation clock regressed")
+        self.last_observation = observation
         self.record("observation", observation=public_observation(observation))
         return observation
 
@@ -199,6 +229,11 @@ class Harness:
                     self.restore()
                 try:
                     observation = self.observe()
+                except ObservationSafetyError as error:
+                    # These messages are fixed validation reasons, never adapter
+                    # output or unfiltered source values.
+                    self.record("observation_safety_failed", reason=str(error))
+                    raise
                 except (GateError, ValueError, subprocess.TimeoutExpired):
                     previous = None
                     recovery_healthy_since = None

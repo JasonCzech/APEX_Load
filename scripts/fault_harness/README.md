@@ -72,7 +72,12 @@ It requires sustained baseline traffic, VUsers and KEDA demand, then requires su
 traffic recovery while the node remains stopped. A stale sample, requested load alone,
 or traffic returning only after node restoration does not pass. Use a workload long
 enough to outlast baseline, failure and recovery windows. Fault and recovery windows
-are bounded at 30 minutes. Poll/command errors cannot silently pass the traffic gate.
+are bounded at 30 minutes. Poll/command errors cannot silently pass the traffic gate. A transport outage resets
+only the consecutive-load window; it does not erase the last target counter. Duplicate
+ownership, a counter reset (including across an observation outage), invalid ownership/count evidence,
+or a terminal run during the trial fails the trial permanently and triggers restoration.
+A brief recovery followed by a failed run cannot pass. Load/restart counts must be finite,
+nonnegative and correctly typed; booleans do not count as numbers or generations.
 
 The `finally` path restores the stopped container, including when the kill command
 itself times out. SIGTERM and Ctrl-C trigger that path. SIGKILL, host failure or Docker

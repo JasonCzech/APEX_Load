@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from node_fault import GateError, Harness, public_observation, validate_config, validate_observation
+from node_fault import GateError, ObservationSafetyError, Harness, public_observation, validate_config, validate_observation
 
 
 class HarnessTest(unittest.TestCase):
@@ -22,6 +22,8 @@ class HarnessTest(unittest.TestCase):
         self.node = self.config["cluster"] + "-worker"
         self.now, self.killed, self.started = 100.0, False, []
         self.fault_mode = None
+        self.fault_at = None
+        self.bad_observation_sent = False
         self.harness_count = 0
         self.labels = {"io.x-k8s.kind.cluster": self.config["cluster"], "io.x-k8s.kind.role": "worker"}
         self.namespace_owner = self.config["run_id"]
@@ -37,6 +39,9 @@ class HarnessTest(unittest.TestCase):
     def execute(self, argv, timeout=20):
         if argv[0] == "observe":
             data = self.observation()
+            if self.killed and self.fault_mode == "outage-once" and not self.bad_observation_sent:
+                self.bad_observation_sent = True
+                raise GateError("temporary observation transport failure")
             if self.killed and self.fault_mode == "interrupt":
                 raise KeyboardInterrupt
             if self.fault_mode == "no-keda":
@@ -45,9 +50,20 @@ class HarnessTest(unittest.TestCase):
                 data["controller_restarts"] = 1
             if self.killed and self.fault_mode == "no-recovery":
                 data["observed_vusers"] = 0
+            if self.killed and self.fault_mode == "duplicate-once" and not self.bad_observation_sent:
+                data["assignments"] *= 2
+                self.bad_observation_sent = True
+            if self.killed and self.fault_mode == "terminal-after-recovery" and self.now - self.fault_at > 15:
+                data["status"] = "FAILED"
+            if self.killed and self.fault_mode == "reset-after-outage":
+                if self.now - self.fault_at == 1:
+                    raise GateError("temporary observation transport failure")
+                if self.now - self.fault_at >= 2:
+                    data["target_requests"] -= 500
             return json.dumps(data)
         if argv[:2] == ["docker", "kill"]:
             self.killed = True
+            self.fault_at = self.now
             if self.fault_mode == "kill-timeout":
                 raise subprocess.TimeoutExpired(argv, 20)
             return ""
@@ -133,6 +149,46 @@ class HarnessTest(unittest.TestCase):
         prior = {**self.observation(), "observed_at_unix": self.now-1, "target_requests": 99999}
         with self.assertRaises(GateError):
             validate_observation(self.observation(), self.config, prior)
+
+    def test_safety_failure_cannot_be_hidden_by_later_good_samples(self):
+        for mode in ("duplicate-once", "terminal-after-recovery", "reset-after-outage"):
+            with self.subTest(mode=mode):
+                self.now, self.killed, self.started, self.fault_mode = 100.0, False, [], mode
+                self.bad_observation_sent = False
+                h = self.harness()
+                with self.assertRaises(GateError):
+                    h.run(self.node)
+                self.assertEqual(self.started, ["immutable-id"])
+                self.assertNotIn("traffic_gate_passed", [e["event"] for e in h.events])
+                self.assertIn("observation_safety_failed", [e["event"] for e in h.events])
+
+    def test_transport_outage_is_retryable_without_renewing_evidence(self):
+        self.fault_mode = "outage-once"
+        h = self.harness()
+        h.run(self.node)
+        self.assertIn("observation_unavailable", [e["event"] for e in h.events])
+        self.assertIn("traffic_gate_passed", [e["event"] for e in h.events])
+        self.assertEqual(self.started, ["immutable-id"])
+
+    def test_invalid_json_and_wrong_run_are_fatal_evidence(self):
+        for payload in ("not-json", "[]", json.dumps({**self.observation(), "run_id": "different"})):
+            with self.subTest(payload=payload):
+                h = self.harness()
+                h.execute = lambda *args, **kwargs: payload
+                with self.assertRaises(ObservationSafetyError):
+                    h.observe()
+
+    def test_invalid_load_and_assignment_evidence_rejected(self):
+        for key, value in (("observed_vusers", float("inf")), ("keda_total_demand", float("nan")),
+                           ("keda_total_demand", float("inf")), ("observed_vusers", True),
+                           ("controller_restarts", False), ("observed_vusers", "120")):
+            with self.subTest(key=key, value=value), self.assertRaises(ObservationSafetyError):
+                validate_observation({**self.observation(), key: value}, self.config)
+        for shard in (None, [], {**self.observation()["assignments"][0], "generation": True},
+                      {**self.observation()["assignments"][0], "node": ["node"]},
+                      {**self.observation()["assignments"][0], "shard": ["shard"]}):
+            with self.subTest(shard=shard), self.assertRaises(ObservationSafetyError):
+                validate_observation({**self.observation(), "assignments": [shard]}, self.config)
 
     def test_evidence_drops_nonwhitelisted_secret_fields(self):
         data = self.observation()

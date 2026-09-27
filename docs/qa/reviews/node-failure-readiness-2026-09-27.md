@@ -253,3 +253,37 @@ wording fix, both Command Center cases passed again in dev-admin (4.3 seconds) a
 local-auth (17.9 seconds); the final local-auth screenshot was inspected. Browser
 fixtures use real scoped run IDs with controlled observations; they do not inject a
 real node failure. Final review found no remaining actionable issue in this slice.
+
+
+## Fault observation integrity
+
+Review reproduced three false passes in the driver: a duplicate ownership observation
+was retried away as an outage; a run could fail after its initial sustained recovery
+and still pass; and clearing the previous rate sample during an outage also forgot
+counter continuity. Regression tests failed against the prior implementation before
+the fixes were applied.
+
+Safety violations now abort the trial permanently, emit a fixed validation reason and
+restore the worker by immutable container ID. The last validated target counter and
+clock survive transport outages; only the consecutive-load window resets. A terminal
+run before the trial ends fails even after an earlier recovery. Finite, nonnegative,
+correctly typed load/restart counts and shard identity fields are required. Invalid
+JSON and wrong-run evidence cannot be treated as a retryable transport failure.
+Actual transport outages and unavailable fresh observations remain retryable.
+
+All 14 Python tests passed, including OpenSSL generation and negative/cleanup cases;
+the final Go harness wrapper passed uncached (1.692 seconds). Final review checked
+exception ordering, continuity across gaps, terminal-after-recovery behavior and
+sanitized evidence. No remaining actionable finding was identified in this slice.
+End-to-end Docker node-fault validation and the real observation adapter are still open.
+
+## Follow-up validation result
+
+The repository-wide `go test ./...` passed (API package: 505.813 seconds). The fault
+harness was separately rerun through its Go wrapper with `-count=1` after the Python
+changes, so the cached scripts result in the broad suite is not the evidence for the
+new regressions. Focused observation race tests, 94 dashboard unit tests, typecheck,
+lint, build, both affected browser auth profiles, documentation checks and diff
+whitespace checks passed as described above. The three follow-up slices were reviewed,
+fixed and committed independently. Concurrent Java/performance work remains separate.
+No new Docker, KEDA or real node-failure qualification was performed in this follow-up.
