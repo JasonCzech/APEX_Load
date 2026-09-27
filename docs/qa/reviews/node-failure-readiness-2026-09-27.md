@@ -678,3 +678,24 @@ Remaining qualification includes the stack provisioner, authoritative traffic/sh
 observer, deployed KEDA/dependency time series, final archive evidence, repeated
 fault cases, and independent multi-host/zone testing. Sampled Kubernetes state alone
 does not establish production availability, exclusive ownership or archive integrity.
+
+## Final archive evidence collector
+
+Added an incarnation-bound collector to apexctl. It pins test/project/creation time,
+expected terminal status and the catalog's manifest SHA-256, reads the archive
+manifest and controller integrity report, then rechecks the terminal run/catalog.
+PostgreSQL identities use exact microsecond truncation; SQLite identities remain
+nanosecond-exact. The collector validates artifact verdict/count consistency and the
+manifest trust-anchor entry rather than accepting an HTTP 200 or a bare verified
+boolean. Source coverage remains distinct: unknown, partial and best-effort snapshots
+do not pass this strict distributed-evidence gate.
+
+Review added explicit rejection of unsupported manifest schemas; this initial gate
+supports v4 archives. It also covers ID reuse, missing terminal times, wrong projects,
+legacy provenance, missing archives, durable collection-failure reasons, inconsistent
+hash/count reports, duplicate entries/sources, transport/oversize/malformed responses,
+read deadlines and run replacement during collection. Output excludes source/artifact
+names, scripts, configuration, server error text, URLs and credentials. A passing
+archive for an explicitly expected FAILED run does not imply execution success.
+Focused collector and command tests passed; no further actionable finding remained
+in the collector slice. CLI exposure and final validation follow separately.
