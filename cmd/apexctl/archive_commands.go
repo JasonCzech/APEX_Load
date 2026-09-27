@@ -12,12 +12,14 @@ import (
 // archiveCmd dispatches `apexctl archive <subcommand>`.
 func archiveCmd() {
 	if len(os.Args) < 3 {
-		fmt.Fprintln(os.Stderr, "error: archive subcommand required (verify)")
+		fmt.Fprintln(os.Stderr, "error: archive subcommand required (verify, evidence)")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintln(os.Stderr, archiveUsage())
 		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	switch os.Args[2] {
+	case "evidence":
+		os.Exit(runArchiveEvidenceCommand(os.Args[3:], os.Stdout, os.Stderr))
 	case "verify":
 		archiveVerifyCmd(os.Args[3:])
 	case "help", "--help", "-h":
@@ -151,6 +153,10 @@ func archiveVerifyCmd(args []string) {
 
 func archiveUsage() string {
 	return strings.TrimSpace(`
+Archive subcommands:
+  verify    Recompute archive artifact integrity
+  evidence  Capture incarnation-bound final archive evidence (--help for flags)
+
 Archive Flags (apexctl archive verify <test-id>):
   --api     Controller base URL (default APEXLOAD_API or http://localhost:8080)
   --api-key API key for secured controllers (or APEXLOAD_API_KEY)

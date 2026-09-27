@@ -699,3 +699,41 @@ names, scripts, configuration, server error text, URLs and credentials. A passin
 archive for an explicitly expected FAILED run does not imply execution success.
 Focused collector and command tests passed; no further actionable finding remained
 in the collector slice. CLI exposure and final validation follow separately.
+
+## Archive evidence CLI and review follow-up
+
+Exposed `apexctl archive evidence` with explicit test/project/creation-time identity,
+expected terminal status, metadata backend, new private output directory and a
+command-wide read timeout. The command writes a safe JSON artifact even when the
+check fails and refuses to reuse output directories. Help, CLI discovery and the
+fault-harness workflow document the command and its limits. Tests exercise actual
+subcommand dispatch in a subprocess, environment authentication, argument validation,
+private file permissions, failure artifacts and overwrite refusal.
+
+Final review found that an old integrity response could otherwise look like current
+post-fault evidence. Verification timestamps must now fall in the verification request
+window with a documented five-second controller/client clock-skew allowance. Tests
+reject both stale and future-dated reports. The final CLI package suite passed (13.508
+seconds), and focused race checks passed (3.829 seconds). Documentation/whitespace
+checks passed. No further actionable issue remained in this scope; the broad Go gate
+is recorded below once complete.
+
+The pass describes the controller's integrity verdict and a complete declared source
+snapshot. It does not claim independent client hashing, SLA success, zero measurement
+loss, an atomic read snapshot or successful live failover. Recorded archive replay,
+leadership transfer and multi-host/dependency qualification remain open. No dashboard
+or public API route/schema changed; unrelated concurrent work was preserved.
+
+## Final archive-evidence validation gate
+
+The full `go test ./...` suite passed (API package: 353.099 seconds). After the
+freshness follow-up, the final full-suite confirmation also passed, reusing cached
+results for unchanged packages. The final CLI package suite passed (13.508 seconds)
+and the focused archive-evidence race suite passed (3.829 seconds). Documentation
+checks passed for 68 active Markdown files, and `git diff --check` passed. Final
+review found no further actionable issue in this collector/command scope.
+
+The tests use local HTTP servers and a real CLI dispatch subprocess. They validate
+response contracts, bounded reads, identity/coverage gates and retained safe evidence;
+they do not replace recorded PostgreSQL/S3 restart or leadership-transfer trials.
+No new live Kubernetes fault or independent-node qualification was performed.

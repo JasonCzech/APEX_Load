@@ -835,7 +835,7 @@ apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5 --
 | `script` | Validate or explain a JSON DSL script |
 | `status` | Print a test's current status and SLA verdict |
 | `wait` | Block until a started test finishes, then report the verdict |
-| `archive` | Inspect an archived run; `verify` re-checks artifact SHA-256 integrity |
+| `archive` | Inspect an archive; `verify` checks integrity and `evidence` captures a pinned final result |
 | `record` | Record a browser script with the embedded recorder |
 | `record-agent` | Start the localhost browser recording bridge |
 | `github` | Inspect and run GitHub Enterprise sync/check workflows |

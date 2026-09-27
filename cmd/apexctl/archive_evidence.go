@@ -227,7 +227,14 @@ func collectArchiveEvidence(ctx context.Context, client *ApiClient, expected arc
 		}
 	}
 	var integrity api.RunArchiveIntegrityReport
+	verificationStarted := time.Now()
 	if !read("integrity", "/archive/verify", &integrity) {
+		return result
+	}
+	// Verification is useful as post-fault evidence only when the controller's
+	// observation belongs to this request window. Allow bounded host clock skew.
+	if integrity.VerifiedAt.Before(verificationStarted.Add(-5*time.Second)) || integrity.VerifiedAt.After(time.Now().Add(5*time.Second)) {
+		result.Reason = "stale_integrity_response"
 		return result
 	}
 	switch integrity.Status {

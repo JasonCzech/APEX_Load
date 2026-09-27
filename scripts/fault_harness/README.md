@@ -94,7 +94,8 @@ Evidence is an allowlisted JSON event stream with private permissions. It captur
 traffic observations, assignments, generation and timing; raw API/Secret responses,
 command output and arbitrary adapter fields are excluded. The collector below adds
 before/after Kubernetes inventories and optional background samples during the trial.
-Measured dependency failover and final archive evidence still require the stack adapter. A passed traffic gate alone is not a passing completion, archive,
+Measured dependency failover still requires the stack adapter. The archive command
+below captures a separately requested final archive check. A passed traffic gate alone is not a passing completion, archive,
 no-overlap, liveness, cleanup-readiness or production-availability qualification.
 
 
@@ -264,3 +265,59 @@ This feature provides sampled Kubernetes state, not a passing KEDA scaling test,
 continuous coverage, authoritative shard ownership or dependency failover evidence.
 The real stack/traffic adapter, final archive checks and repeated deployed fault
 matrix remain required before qualification.
+
+
+## Final archive evidence through apexctl
+
+After a trial, use `apexctl archive evidence` against the deployed controller to save
+an incarnation-bound archive check. It does not wait for run completion or inject a
+fault. Supply the test ID, project and creation timestamp captured at launch, rather
+than discovering a potentially reused ID after the failure. For example:
+
+```sh
+./bin/apexctl archive evidence \
+  --api https://localhost:8443 \
+  --test RUN_ID --project PROJECT_ID \
+  --created-at '2026-09-27T12:00:00.123456789Z' \
+  --metadata-backend postgres --status COMPLETE --timeout 2m \
+  --output /absolute/new/private-archive-evidence
+```
+
+Use the controller's actual launch identity, not these example values. Configure
+`APEXLOAD_API_KEY` or `APEXLOAD_BEARER_TOKEN` for authentication. TLS verification
+stays enabled; for a disposable private CA, provide the CA through the Go runtime's
+trusted-root configuration (for example `SSL_CERT_FILE` on supported Unix systems).
+The command uses the existing CLI controller client and confines redirects to the
+configured origin. All reads/retries share `--timeout` (positive, at most 30 minutes),
+and each decoded API response is capped at 4 MiB.
+
+The command reads the terminal run, v4 archive manifest and controller integrity
+report, then rereads the run/catalog. It requires the expected project, creation time,
+terminal status/end time and unchanged catalog manifest hash. PostgreSQL comparisons
+truncate exactly to microseconds; the default `sqlite` mode compares exact timestamps.
+The integrity report must name the expected test and include a matching `manifest.json`
+trust-anchor entry, consistent counts and a matching SHA-256 for every artifact.
+HTTP 200 or a bare `verified: true` field cannot pass by themselves. The verifier
+timestamp must fall within this request window, with a five-second allowance for
+controller/client clock skew; older or future-dated reports fail as stale evidence. This is the
+controller's verification of its stored archive, not independent client-side hashing
+of downloaded objects. The sanitized manifest can legitimately differ in bytes from
+the stored manifest, so its response hash is not used as the catalog trust anchor.
+
+A pass requires a nonempty `required` source snapshot with every source collected.
+Missing/unknown coverage, `best_effort` collection, unsupported manifest schemas,
+unverifiable hashes and absent archives exit nonzero. Counts and coverage labels
+remain visible even when a check fails. Known durable remote-collection failure
+reasons are retained, but raw server errors, scripts, configuration, artifact/source
+names and credentials are excluded. An explicitly expected FAILED or ABORTED run
+can have valid archive evidence; that pass does not claim the execution succeeded.
+Even complete declared source coverage does not establish zero measurement loss or
+complete historical shard membership.
+
+The new output directory is mode 0700 and `archive-evidence.json` is mode 0600;
+existing directories and files are never overwritten. The same safe report is emitted
+as JSON stdout. A failed check still saves its stage, fixed reason and HTTP status
+when available. Repeated before/after-failover checks must use separate directories.
+These reads are not an atomic database snapshot, and a stable catalog does not prove
+that no later mutation occurred. Running the command alone does not establish a
+leadership transfer, S3 restart, data-service failover or production availability.

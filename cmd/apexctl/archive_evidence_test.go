@@ -106,6 +106,18 @@ func TestArchiveEvidencePassDoesNotImplyRunSucceeded(t *testing.T) {
 	}
 }
 
+func TestArchiveEvidenceRejectsStaleOrFutureVerification(t *testing.T) {
+	for _, offset := range []time.Duration{-time.Minute, time.Minute} {
+		expected, data := archiveEvidenceFixture()
+		data["integrity"].(*api.RunArchiveIntegrityReport).VerifiedAt = time.Now().Add(offset)
+		client, _ := evidenceServer(t, data, nil)
+		report := collectArchiveEvidence(context.Background(), client, expected)
+		if report.Passed || report.Reason != "stale_integrity_response" {
+			t.Fatalf("offset %s: %+v", offset, report)
+		}
+	}
+}
+
 func TestArchiveEvidenceFailClosedCases(t *testing.T) {
 	cases := []struct {
 		name, reason string

@@ -342,7 +342,7 @@ Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API r
 | `script` | Validate or explain a JSON DSL script |
 | `status` | Print a test's current status and SLA verdict (exits 1 on breach/failure) |
 | `wait` | Block until a started test finishes, then report the SLA verdict |
-| `archive` | Inspect an archived run (`verify` re-checks artifact SHA-256 integrity) |
+| `archive` | Inspect an archive (`verify` checks integrity; `evidence` captures a pinned final result) |
 | `record` | Record a browser script with the embedded recorder |
 | `record-agent` | Start the localhost browser recording bridge for a remote dashboard |
 | `github` | Inspect and run GitHub Enterprise sync/check workflows |
