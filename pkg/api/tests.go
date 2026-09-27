@@ -730,9 +730,8 @@ func cloneOperationalTestProjectionLocked(test *ManagedTest) *ManagedTest {
 			P95Ms:        test.LiveMetrics.P95Ms,
 			P99Ms:        test.LiveMetrics.P99Ms,
 		}
-		if isTerminalTestStatus(test.Status) {
-			projection.LiveMetrics.ObservationState = "historical"
-		}
+		projection.LiveMetrics.ObservationValidUntil = cloneTimePtr(test.LiveMetrics.ObservationValidUntil)
+		annotateLiveObservation(projection.LiveMetrics, test.Status, time.Now())
 	}
 	return projection
 }
@@ -1056,9 +1055,7 @@ func cloneRunLiveMetrics(test *ManagedTest) *LiveMetrics {
 		return nil
 	}
 	metrics := cloneLiveMetrics(test.LiveMetrics)
-	if metrics != nil && isTerminalTestStatus(test.Status) {
-		metrics.ObservationState = "historical"
-	}
+	annotateLiveObservation(metrics, test.Status, time.Now())
 	return metrics
 }
 
@@ -1067,6 +1064,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 		return nil
 	}
 	cloned := *metrics
+	cloned.ObservationValidUntil = cloneTimePtr(metrics.ObservationValidUntil)
 	cloned.ErrorBreakdown = cloneStringInt64Map(metrics.ErrorBreakdown)
 	cloned.Transactions = cloneTxMetricsMap(metrics.Transactions)
 	cloned.TransactionResponseTimeSLA = append([]TransactionResponseTimeSLAResult(nil), metrics.TransactionResponseTimeSLA...)

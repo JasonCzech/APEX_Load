@@ -794,9 +794,11 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
-	// ObservationState labels terminal projections; retained samples are historical,
-	// not proof that those VUsers are still executing. Timestamp remains the actual
-	// sample time, and historical values are preserved for reports and comparison.
+	// ObservationState is stale for expired active observations and historical for
+	// terminal projections. Values and sample timestamps remain unchanged.
+	// ObservationValidUntil bounds freshness, including the oldest distributed
+	// contributor; reading or relaying a snapshot never extends this deadline.
+	ObservationValidUntil      *time.Time                            `json:"observation_valid_until,omitempty"`
 	ObservationState           string                                `json:"observation_state,omitempty"`
 	CompletedIterations        int64                                 `json:"completed_iterations"`
 	Timestamp                  time.Time                             `json:"timestamp"`

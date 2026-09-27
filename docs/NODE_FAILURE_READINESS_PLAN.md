@@ -24,7 +24,7 @@ recovery and production node-loss readiness remain unfinished.
 | 4 | Fleet-scoped, expiring leader demand across all KEDA variants; peak queued demand; ordinal-floor protection; executable PromQL and cloud HA render tests | Spare-capacity admission, placement/discovery errors, deployed scale/failover qualification |
 | 5 | Existing fail-closed behavior retained | Durable, fenced combined-loss recovery |
 | 6 | [State inventory and fenced storage recovery runbook](NODE_STORAGE_RECOVERY.md) published | Multi-host CSI, permanent worker/zone trials and measured RTO/RPO |
-| 7 | Terminal API/WS projections and history reloads label samples historical; Results and advanced details preserve and label captured values | Active-run stale/recovery state and durable explicit partial-result finalization |
+| 7 | Terminal projections label samples historical; active API/WS observations carry a five-second deadline bounded by the oldest contributor, with missing shards treated as stale | Dashboard expiry, explicit recovery state and durable partial-result finalization |
 | 8 | Go, race, deployment render, and PostgreSQL/S3 regression checks passed | Repeated fault matrix and external production qualification |
 
 Validation details: [first-slice evidence](qa/reviews/node-failure-readiness-2026-09-27.md).

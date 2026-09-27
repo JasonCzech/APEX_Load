@@ -21863,6 +21863,7 @@ export interface operations {
                 "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -22191,6 +22192,7 @@ export interface operations {
                   "tps": number;
                 }) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -27981,6 +27983,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;
@@ -28610,6 +28613,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;
@@ -42285,6 +42289,7 @@ export interface operations {
                 "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -42613,6 +42618,7 @@ export interface operations {
                   "tps": number;
                 }) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -50210,6 +50216,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;
@@ -50839,6 +50846,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;
@@ -64930,6 +64938,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;
@@ -65559,6 +65568,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;
@@ -75092,6 +75102,7 @@ export interface operations {
                 "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -75420,6 +75431,7 @@ export interface operations {
                   "tps": number;
                 }) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -76453,6 +76465,7 @@ export interface operations {
                 "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -76781,6 +76794,7 @@ export interface operations {
                   "tps": number;
                 }) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -77814,6 +77828,7 @@ export interface operations {
                 "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -78142,6 +78157,7 @@ export interface operations {
                   "tps": number;
                 }) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -79175,6 +79191,7 @@ export interface operations {
                 "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -79503,6 +79520,7 @@ export interface operations {
                   "tps": number;
                 }) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -80536,6 +80554,7 @@ export interface operations {
                 "load_levels"?: Array<Record<string, unknown>>;
                 "network_profiles"?: Record<string, (Record<string, unknown>) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -80864,6 +80883,7 @@ export interface operations {
                   "tps": number;
                 }) | null>;
                 "observation_state"?: string;
+                "observation_valid_until"?: (string) | null;
                 "p50_ms": number;
                 "p90_ms": number;
                 "p95_ms": number;
@@ -98977,6 +98997,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;
@@ -99606,6 +99627,7 @@ export interface operations {
                 "tps": number;
               }) | null>;
               "observation_state"?: string;
+              "observation_valid_until"?: (string) | null;
               "p50_ms": number;
               "p90_ms": number;
               "p95_ms": number;

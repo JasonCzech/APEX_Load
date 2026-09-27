@@ -15,7 +15,7 @@ func TestTerminalObservationIsHistoricalWithoutMutatingMeasurements(t *testing.T
 			snapshot := buildRunLiveStateSnapshotLocked(run, time.Now())
 			operational := cloneOperationalTestProjectionLocked(run)
 			for _, metrics := range []*LiveMetrics{clone.LiveMetrics, snapshot.LiveMetrics, operational.LiveMetrics} {
-				want := ""
+				want := "stale"
 				if isTerminalTestStatus(state) {
 					want = "historical"
 				}

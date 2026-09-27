@@ -205,3 +205,26 @@ unfinished stack adapter/provisioner, deployed outage and archive-replay evidenc
 reserved unused recovery capacity, durable combined-loss recovery, explicit partial
 archive finalization, and repeated local/multi-host release gates. These commits do
 not enable or claim production combined-node-loss continuity.
+
+
+## Active observation freshness API
+
+Active current-sample projections now emit `observation_valid_until` and mark expired
+samples `observation_state: stale`. The five-second bound is a presentation rule, not
+a recovery budget or proof of target traffic. Local samples expire from their actual
+sample timestamp. Distributed samples expire from the oldest contributing batch;
+a required target with no batch, a missing timestamp or a future timestamp makes the
+aggregate stale. Finished contributors retained in an aggregate retain their original
+age too. Canonical counts, timestamps, SLA evidence and historical values are preserved.
+
+Review checked all public projections, WebSocket publication, persisted-history and
+cache serialization, and copy ownership. Absolute deadlines survive relays and cannot
+be renewed by reading a sample. Terminal state takes precedence and removes the active
+freshness deadline. Focused regressions cover boundaries, missing/future timestamps,
+mixed-age generators, restored freshness, detached projections and actual WebSocket
+serialization. These changes do not enable recovery or establish a no-overlap guarantee.
+
+Validation: the full API package passed (332.930 seconds), focused API regressions
+passed (1.318 seconds), and focused observation/concurrent-metrics race checks passed
+(3.320 seconds). Generated OpenAPI/TypeScript contracts were refreshed. Documentation
+and whitespace checks passed. Browser presentation and its checks are the next slice.

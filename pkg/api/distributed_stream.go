@@ -1719,6 +1719,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 			}
 		}
 	}
+	observationValidUntil := distributedObservationValidUntilLocked(test, batches, time.Now())
 	tr.mu.Unlock()
 
 	// aggregateDistributedMetricsBatches only reads test.ID + the batches
@@ -1727,6 +1728,7 @@ func (b *distributedExecutionBackend) applyRemoteMetricsBatchWithFreshness(tr *T
 	aggregated, fleetTPS, groupTPS := aggregateDistributedMetricsBatches(test.ID, batches)
 	tr.mu.Lock()
 	live := buildLiveMetricsFromDistributedBatch(test, aggregated, fleetTPS, groupTPS)
+	live.ObservationValidUntil = &observationValidUntil
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	tr.mu.Unlock()
 	live.GeneratorResources = b.buildGeneratorResourceSnapshots(test, batches)

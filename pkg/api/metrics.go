@@ -557,7 +557,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 		"project_id": projectID,
 		"test_name":  testName,
 		"timestamp":  publishedLive.Timestamp,
-		"data":       publishedLive,
+		"data":       snapshot.LiveMetrics,
 	})
 	if publishDiagnostic {
 		tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
@@ -967,7 +967,7 @@ func (tr *TestRunner) reconcilePublishedFinalLocalMetrics(test *ManagedTest, sna
 	testName := test.Name
 	projectID := normalizeProjectID(test.ProjectID)
 	goalConfig := cloneGoalConfig(test.GoalConfig)
-	published := cloneLiveMetrics(current)
+	published := cloneRunLiveMetrics(test)
 	tr.mu.Unlock()
 
 	artifacts.recordSLAEvidence(goalConfig, published)

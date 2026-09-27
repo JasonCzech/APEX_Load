@@ -52248,6 +52248,10 @@ paths:
                                 nullable: true
                             observation_state:
                               type: string
+                            observation_valid_until:
+                              type: string
+                              format: date-time
+                              nullable: true
                             p50_ms:
                               type: number
                               format: double
@@ -53317,6 +53321,10 @@ paths:
                               nullable: true
                           observation_state:
                             type: string
+                          observation_valid_until:
+                            type: string
+                            format: date-time
+                            nullable: true
                           p50_ms:
                             type: number
                             format: double
@@ -56369,6 +56377,10 @@ paths:
                                 nullable: true
                             observation_state:
                               type: string
+                            observation_valid_until:
+                              type: string
+                              format: date-time
+                              nullable: true
                             p50_ms:
                               type: number
                               format: double
@@ -57438,6 +57450,10 @@ paths:
                               nullable: true
                           observation_state:
                             type: string
+                          observation_valid_until:
+                            type: string
+                            format: date-time
+                            nullable: true
                           p50_ms:
                             type: number
                             format: double
@@ -60487,6 +60503,10 @@ paths:
                                 nullable: true
                             observation_state:
                               type: string
+                            observation_valid_until:
+                              type: string
+                              format: date-time
+                              nullable: true
                             p50_ms:
                               type: number
                               format: double
@@ -61556,6 +61576,10 @@ paths:
                               nullable: true
                           observation_state:
                             type: string
+                          observation_valid_until:
+                            type: string
+                            format: date-time
+                            nullable: true
                           p50_ms:
                             type: number
                             format: double
@@ -64617,6 +64641,10 @@ paths:
                                 nullable: true
                             observation_state:
                               type: string
+                            observation_valid_until:
+                              type: string
+                              format: date-time
+                              nullable: true
                             p50_ms:
                               type: number
                               format: double
@@ -65686,6 +65714,10 @@ paths:
                               nullable: true
                           observation_state:
                             type: string
+                          observation_valid_until:
+                            type: string
+                            format: date-time
+                            nullable: true
                           p50_ms:
                             type: number
                             format: double
@@ -68747,6 +68779,10 @@ paths:
                                 nullable: true
                             observation_state:
                               type: string
+                            observation_valid_until:
+                              type: string
+                              format: date-time
+                              nullable: true
                             p50_ms:
                               type: number
                               format: double
@@ -69816,6 +69852,10 @@ paths:
                               nullable: true
                           observation_state:
                             type: string
+                          observation_valid_until:
+                            type: string
+                            format: date-time
+                            nullable: true
                           p50_ms:
                             type: number
                             format: double
@@ -72877,6 +72917,10 @@ paths:
                                 nullable: true
                             observation_state:
                               type: string
+                            observation_valid_until:
+                              type: string
+                              format: date-time
+                              nullable: true
                             p50_ms:
                               type: number
                               format: double
@@ -73946,6 +73990,10 @@ paths:
                               nullable: true
                           observation_state:
                             type: string
+                          observation_valid_until:
+                            type: string
+                            format: date-time
+                            nullable: true
                           p50_ms:
                             type: number
                             format: double
@@ -77007,6 +77055,10 @@ paths:
                                 nullable: true
                             observation_state:
                               type: string
+                            observation_valid_until:
+                              type: string
+                              format: date-time
+                              nullable: true
                             p50_ms:
                               type: number
                               format: double
@@ -78076,6 +78128,10 @@ paths:
                               nullable: true
                           observation_state:
                             type: string
+                          observation_valid_until:
+                            type: string
+                            format: date-time
+                            nullable: true
                           p50_ms:
                             type: number
                             format: double
@@ -231309,6 +231365,10 @@ paths:
                             nullable: true
                         observation_state:
                           type: string
+                        observation_valid_until:
+                          type: string
+                          format: date-time
+                          nullable: true
                         p50_ms:
                           type: number
                           format: double
@@ -233274,6 +233334,10 @@ paths:
                           nullable: true
                       observation_state:
                         type: string
+                      observation_valid_until:
+                        type: string
+                        format: date-time
+                        nullable: true
                       p50_ms:
                         type: number
                         format: double
@@ -237976,6 +238040,10 @@ paths:
                             nullable: true
                         observation_state:
                           type: string
+                        observation_valid_until:
+                          type: string
+                          format: date-time
+                          nullable: true
                         p50_ms:
                           type: number
                           format: double
@@ -239941,6 +240009,10 @@ paths:
                           nullable: true
                       observation_state:
                         type: string
+                      observation_valid_until:
+                        type: string
+                        format: date-time
+                        nullable: true
                       p50_ms:
                         type: number
                         format: double
@@ -255967,6 +256039,10 @@ paths:
                             nullable: true
                         observation_state:
                           type: string
+                        observation_valid_until:
+                          type: string
+                          format: date-time
+                          nullable: true
                         p50_ms:
                           type: number
                           format: double
@@ -257932,6 +258008,10 @@ paths:
                           nullable: true
                       observation_state:
                         type: string
+                      observation_valid_until:
+                        type: string
+                        format: date-time
+                        nullable: true
                       p50_ms:
                         type: number
                         format: double
@@ -262578,6 +262658,10 @@ paths:
                             nullable: true
                         observation_state:
                           type: string
+                        observation_valid_until:
+                          type: string
+                          format: date-time
+                          nullable: true
                         p50_ms:
                           type: number
                           format: double
@@ -264543,6 +264627,10 @@ paths:
                           nullable: true
                       observation_state:
                         type: string
+                      observation_valid_until:
+                        type: string
+                        format: date-time
+                        nullable: true
                       p50_ms:
                         type: number
                         format: double

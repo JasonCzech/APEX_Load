@@ -197,7 +197,7 @@ func (tr *TestRunner) attachStoredTerminalHistory(test *ManagedTest) {
 				if len(test.History) > 0 {
 					test.LiveMetrics = cloneLiveMetrics(test.History[len(test.History)-1])
 					if test.LiveMetrics != nil {
-						test.LiveMetrics.ObservationState = "historical"
+						annotateLiveObservation(test.LiveMetrics, test.Status, time.Now())
 					}
 				}
 			})
