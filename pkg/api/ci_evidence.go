@@ -65,7 +65,7 @@ func (s *Server) validatedCIRunArchiveEvidence(ctx context.Context, test *Manage
 	if normalizeProjectID(manifest.Provenance.ProjectID) != normalizeProjectID(test.ProjectID) {
 		return nil, errors.New("durable archive manifest belongs to another project")
 	}
-	if manifest.Provenance.RequestedAt.IsZero() || test.CreatedAt.IsZero() || !manifest.Provenance.RequestedAt.Equal(test.CreatedAt) {
+	if manifest.Provenance.RequestedAt.IsZero() || test.CreatedAt.IsZero() || !archiveRunTimestampMatches(manifest.Provenance.RequestedAt, test.CreatedAt, s.runner.testStore) {
 		return nil, errors.New("durable archive manifest belongs to a stale run identity")
 	}
 	if status := strings.ToUpper(strings.TrimSpace(manifest.Status)); status != strings.ToUpper(strings.TrimSpace(test.Status)) {

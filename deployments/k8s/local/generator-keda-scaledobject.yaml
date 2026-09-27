@@ -70,3 +70,10 @@ spec:
         query: sum(apexload_generator_capacity_state_count{state="saturated"})
         threshold: "1"
         activationThreshold: "1"
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-operated.monitoring.svc:9090
+        metricName: apexload_reserved_replica_floor
+        query: max(apexload_pod_reserved_replica_floor)
+        threshold: "1"
+        activationThreshold: "0"

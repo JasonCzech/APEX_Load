@@ -1424,6 +1424,9 @@ func loadRunArchiveManifestFromRecord(record *storage.RunArchiveRecord) (*RunArc
 	if int64(len(data)) > maxArchiveManifestDownloadBytes {
 		return nil, fmt.Errorf("archive manifest exceeds %d bytes", maxArchiveManifestDownloadBytes)
 	}
+	if expected := strings.TrimSpace(record.ManifestSHA256); expected != "" && !strings.EqualFold(sha256BytesHex(data), expected) {
+		return nil, fmt.Errorf("archive manifest SHA-256 does not match persisted metadata")
+	}
 	var manifest RunArchiveManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, err

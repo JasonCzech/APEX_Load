@@ -858,3 +858,32 @@ func TestAtomicReplaceArchiveDirectoryRejectsLinkedOrNonDirectoryFinalRoot(t *te
 		})
 	}
 }
+
+func TestLoadRunArchiveManifestChecksCatalogChecksum(t *testing.T) {
+	root := t.TempDir()
+	data, err := json.Marshal(RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: "integrity-run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, runArchiveManifestFileName)
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, hash string
+		wantErr    bool
+	}{
+		{"matching", sha256BytesHex(data), false},
+		{"uppercase", strings.ToUpper(sha256BytesHex(data)), false},
+		{"legacy missing checksum", "", false},
+		{"wrong checksum", sha256BytesHex([]byte("other manifest")), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			record := &storage.RunArchiveRecord{TestID: "integrity-run", ArchivePath: root, ManifestPath: path, ManifestSHA256: tc.hash}
+			_, err := loadRunArchiveManifestFromRecord(record)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("error=%v, want error=%v", err, tc.wantErr)
+			}
+		})
+	}
+}

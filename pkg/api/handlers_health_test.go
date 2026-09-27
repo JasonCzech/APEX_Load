@@ -5,16 +5,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestHandleHealthCheckReturnsCapacityAvailabilitySnapshot(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
-	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{
+	entries := []GeneratorInventoryEntry{
 		{Target: "gen-a:9090", GeneratorID: "gen-a", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
 		{Target: "gen-b:9090", GeneratorID: "gen-b", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
 		{Target: "gen-c:9090", GeneratorID: "gen-c", Status: "healthy", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 1000},
 		{Target: "gen-d:9090", GeneratorID: "gen-d", Status: "connected", DrainState: "cordoned", AvailableCapacity: 100, MaxVUsers: 1000},
-	}})
+	}
+	server.runner.setExecutionBackend(stubInventoryBackend{entries: entries})
+	server.runner.setCachedGeneratorInventory(entries, time.Now())
 
 	settings := server.runner.GetSystemSettings()
 	settings.CapacityPlanning.Availability.Source = capacityAvailabilityConfiguredPlusLive

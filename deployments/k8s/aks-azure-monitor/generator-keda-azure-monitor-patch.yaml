@@ -50,3 +50,12 @@ spec:
         activationThreshold: "1"
       authenticationRef:
         name: apexload-azure-monitor
+    - type: prometheus
+      metadata:
+        serverAddress: https://CHANGE-ME.monitor.azure.com
+        metricName: apexload_reserved_replica_floor
+        query: max(apexload_pod_reserved_replica_floor)
+        threshold: "1"
+        activationThreshold: "0"
+      authenticationRef:
+        name: apexload-azure-monitor

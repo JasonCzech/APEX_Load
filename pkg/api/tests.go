@@ -1279,7 +1279,7 @@ func (tr *TestRunner) GetRunArchiveContext(ctx context.Context, id string) (*sto
 			return nil, false
 		}
 		manifest, manifestErr := cachedRunArchiveManifest(record)
-		if manifestErr != nil || !runArchiveManifestMatchesStoredTest(manifest, durable) {
+		if manifestErr != nil || !runArchiveManifestMatchesStoredTest(manifest, durable, tr.testStore) {
 			tr.forgetCachedRunArchive(id)
 			return nil, false
 		}
@@ -1303,7 +1303,7 @@ func (tr *TestRunner) forgetCachedRunArchive(id string) {
 	forgetRunArchiveCache(id)
 }
 
-func runArchiveManifestMatchesStoredTest(manifest *RunArchiveManifest, test *storage.TestRecord) bool {
+func runArchiveManifestMatchesStoredTest(manifest *RunArchiveManifest, test *storage.TestRecord, metadataStore any) bool {
 	if manifest == nil || test == nil || strings.TrimSpace(manifest.TestID) != strings.TrimSpace(test.ID) {
 		return false
 	}
@@ -1313,7 +1313,23 @@ func runArchiveManifestMatchesStoredTest(manifest *RunArchiveManifest, test *sto
 	// v2 archives persist the test's CreatedAt as RequestedAt. Keep legacy
 	// archives (which omitted it) readable, but use it when present to reject a
 	// same-project ID reuse as well as the cross-project case.
-	return manifest.Provenance.RequestedAt.IsZero() || test.StartTime.IsZero() || manifest.Provenance.RequestedAt.Equal(test.StartTime)
+	return manifest.Provenance.RequestedAt.IsZero() || test.StartTime.IsZero() || archiveRunTimestampMatches(manifest.Provenance.RequestedAt, test.StartTime, metadataStore)
+}
+
+// archiveRunTimestampMatches compares run identity at the metadata store's
+// precision. pgx encodes PostgreSQL timestamps by truncating to microseconds,
+// whereas existing immutable manifests can retain the original nanoseconds.
+// This is an exact comparison of that representation, not a time tolerance.
+// Other stores retain their existing nanosecond identity checks.
+func archiveRunTimestampMatches(requestedAt, createdAt time.Time, metadataStore any) bool {
+	return archiveRunTimestamp(requestedAt, metadataStore).Equal(archiveRunTimestamp(createdAt, metadataStore))
+}
+
+func archiveRunTimestamp(at time.Time, metadataStore any) time.Time {
+	if provider, ok := metadataStore.(storage.BackendInfoProvider); ok && provider.BackendInfo().Type == storage.StoreBackendPostgres {
+		return at.Truncate(time.Microsecond)
+	}
+	return at
 }
 
 func cloneRunArchiveRecord(record *storage.RunArchiveRecord) *storage.RunArchiveRecord {

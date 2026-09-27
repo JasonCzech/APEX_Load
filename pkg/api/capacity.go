@@ -455,7 +455,7 @@ func (tr *TestRunner) cachedLiveAvailableGeneratorCount(now time.Time) *int {
 	if len(entries) == 0 || capturedAt.IsZero() {
 		return nil
 	}
-	if now.Sub(capturedAt) > defaultGeneratorSnapshotTTL {
+	if age := now.Sub(capturedAt); age < 0 || age > defaultGeneratorSnapshotTTL {
 		return nil
 	}
 	return liveAvailableGeneratorCountFromEntries(entries)

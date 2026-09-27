@@ -1383,14 +1383,20 @@ func (s *Server) healthCheckSnapshotWithoutRunnerLock() (healthCheckSnapshot, bo
 func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	snapshot, cached := s.healthCheckSnapshotWithoutRunnerLock()
 	if !cached {
-		settings := s.runner.GetSystemSettings()
+		// Liveness must not refresh durable settings or probe remote generators.
+		// Both can outlast the kubelet deadline during a dependency outage. The
+		// normal settings/inventory cadences keep these local observations fresh.
+		// Retain the runner lock (and its bounded durable-write bypass above) so
+		// a genuinely wedged runner still fails liveness.
+		s.runner.mu.RLock()
 		snapshot = healthCheckSnapshot{
-			availability: resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now()),
-			testCount:    s.runner.TestCount(),
+			availability: resolveCapacityAvailabilityWithLiveAt(s.runner.settings, s.runner.cachedLiveAvailableGeneratorCount(time.Now()), time.Now()),
+			testCount:    len(s.runner.tests),
 			// Stamped after the live reads returned, so the age the bypass bounds is
 			// the age of the data being served.
 			publishedAt: time.Now(),
 		}
+		s.runner.mu.RUnlock()
 		s.healthSnapshot.Store(&snapshot)
 	}
 	availability := snapshot.availability

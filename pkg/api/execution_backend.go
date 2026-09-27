@@ -328,6 +328,9 @@ func buildRunArchiveProvenance(tr *TestRunner, test *ManagedTest) RunArchiveProv
 	provenance.ScenarioID = snapshot.ScenarioID
 	provenance.ProjectID = normalizeProjectID(snapshot.ProjectID)
 	provenance.RequestedAt = snapshot.CreatedAt
+	if tr != nil {
+		provenance.RequestedAt = archiveRunTimestamp(snapshot.CreatedAt, tr.testStore)
+	}
 	provenance.StartedAt = snapshot.StartedAt
 	provenance.ScheduledStartAt = cloneTimePtr(snapshot.ScheduledStartAt)
 	provenance.ScenarioMode = snapshot.ScenarioMode
