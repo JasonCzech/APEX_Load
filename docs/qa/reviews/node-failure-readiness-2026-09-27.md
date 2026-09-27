@@ -349,3 +349,26 @@ scoped run IDs with controlled evidence. The new fixture also aborts the actual 
 run before showing synthetic evidence, keeping the catalog/topbar terminal. This is
 presentation evidence, not a real generator outage. Final UI review found no remaining
 actionable issue in this slice.
+
+## Final archive-failure validation gate
+
+The final `go test ./...` passed with the supersession fix included (API package:
+372.712 seconds; storage: 23.338 seconds). Focused API race checks passed, as did
+storage/archive race checks including completion of a previously coexisting failure
+record. Dashboard typecheck, lint, build, 49 relevant unit tests, documentation checks,
+and diff whitespace checks passed. Final analysis browser runs passed all three cases
+in each profile: dev-admin 3.0 seconds and local-auth 22.6 seconds. The final local-auth
+screenshot was inspected after correcting the fixture's catalog/topbar status.
+
+An earlier overlapping broad run timed out the existing eight-second
+`TestDistributedExecutionBackendStagesRemoteArchiveOnCompletion` assertion while the
+run was still RUNNING. No deadline was relaxed. Subsequent full runs passed, and that
+specific case passed three additional uncached repetitions (20.854 seconds total).
+Its transient timeout was not isolated to a specific cause; the final passing gates
+do not establish a production archive-completion latency bound.
+
+No new live Docker, KEDA, Redis/PostgreSQL failover, or multi-host qualification was
+performed. The new tagged PostgreSQL regression was skipped without a configured
+integration database. Concurrent Java/performance and admission-test changes were
+preserved outside these commits. The three implementation/fix slices are complete;
+the remaining acceptance gaps listed above and in the readiness plan remain open.
