@@ -142,6 +142,38 @@ KEDA and assignment evidence. This service alone cannot detect old-owner traffic
 qualify failover. Graceful termination waits up to five seconds for active requests.
 
 
+### Read a validated target snapshot
+
+```sh
+/absolute/private/apexfault-target observe \
+  --config /absolute/private/target.json \
+  --url https://127.0.0.1:8090 \
+  --ca /absolute/private/ca.crt --timeout 3s
+```
+
+This prints one validated snapshot JSON object and exits nonzero with a fixed error
+message on failure. It sends only the observer token and preserves the target's
+original observation timestamp. URLs must use HTTPS, except numeric loopback HTTP
+for local tests. The path may be empty, `/`, or `/snapshot`; URL credentials, query
+parameters and fragments are rejected. Redirects and environment proxies are not
+used. Omit `--ca` to use system trust roots; there is no insecure TLS mode.
+
+The request deadline covers connection, TLS and body reading (default three seconds,
+maximum ten). Headers are bounded to 8 KiB and the JSON body to 4 KiB. The reader
+requires the exact v1 fields, rejects duplicate/missing/null fields and unknown
+schemas, pins the configured run ID, checks process identity syntax and counter
+types, and requires the original observation time to be at most five seconds old and never
+in the future. Target and observer clocks must agree. CA input is bounded to
+1 MiB. Errors omit remote bodies, URLs, file contents and credentials.
+
+This is a single target read, not a complete `observation_command`: the adapter
+still needs authoritative VUser, KEDA, controller-restart and shard/generation
+observations. Preserve `target_instance_id` and `observed_at_unix` when combining
+those sources. The reader does not compare separate invocations; the fault driver
+performs continuity checks. An accepted-request snapshot is not a success or
+no-duplicate-execution verdict.
+
+
 ## Read-only cluster inventory
 
 Collect an inventory independently, using the same driver config and a new private

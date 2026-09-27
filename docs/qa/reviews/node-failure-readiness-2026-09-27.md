@@ -860,3 +860,29 @@ checks passed. Documentation checks for 68 active Markdown files and whitespace
 checks passed. Final review found no further actionable issue in these slices.
 Unrelated Java/performance work was preserved. No live Kubernetes fault or
 independent-node/zone qualification was performed.
+
+## Verified target snapshot reader
+
+Added `apexfault-target observe` to read the independent target with the observer
+token from private inputs. It verifies TLS using explicit CA or system roots,
+permits plaintext only on numeric loopback addresses, disables redirects/proxies,
+and bounds network duration, headers, body and CA input. The output preserves the
+target timestamp and includes only the six v1 snapshot fields. Run identity,
+process identity, counter types and freshness are checked; duplicate/missing/null
+fields, unknown schema fields and non-JSON/compressed responses are rejected.
+
+Tests cover verified and untrusted HTTPS, authenticated command output, URL policy,
+redirect credential isolation, stale/future/mismatched snapshots, malformed payloads,
+response bounds, stalled bodies, cancellation, invalid configuration and output
+failures. Review tightened URL validation to reject an empty hostname. The reader
+is a component for the future full observation adapter; it does not infer VUsers,
+KEDA demand, ownership or successful responses from a target request count.
+
+The full `go test ./...` suite passed, with cached results for unchanged packages.
+The final target race suite, including the exact 4 KiB response-size boundary,
+passed (1.393 seconds). A compiled CLI smoke against the real target with fresh
+inputs passed: verified TLS, pinned run identity, exact output fields, and empty
+stdout/nonzero exit when the generated CA was not trusted. Documentation checks
+for 68 active Markdown files and whitespace checks passed. Final review found no
+further actionable issue in this slice. Unrelated Java/performance work was
+preserved; no live Kubernetes fault qualification was performed.

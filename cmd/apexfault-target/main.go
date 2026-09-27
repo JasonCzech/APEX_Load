@@ -140,6 +140,9 @@ func (t *target) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func run(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "observe" {
+		return observeCommand(ctx, args[1:], os.Stdout)
+	}
 	flags := flag.NewFlagSet("apexfault-target", flag.ContinueOnError)
 	configPath := flags.String("config", "", "absolute private target.json path")
 	listen := flags.String("listen", "127.0.0.1:8090", "listen address; use an explicit interface for a disposable cluster")
