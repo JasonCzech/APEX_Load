@@ -137,3 +137,17 @@ This is not a completed end-to-end harness: the application stack provisioner, r
 observation adapter, complete HPA/final-archive evidence and deployed three-trial
 matrix remain open. Docker's read-only metadata filesystem prevents runtime fault
 validation here. The driver never force-deletes a StatefulSet identity or PVC.
+
+## Watchdog completion-boundary review/fix cycle
+
+The broader API rerun exposed a watchdog race after a slow durable write returned:
+the gauge could become zero before the caller published completion, causing a healthy
+controller to re-panic. The backstop now prefers an already-completed stage and gives
+an observed write one settling interval, within the existing extension cap. It still
+fails a genuinely wedged stage and never extends the maximum watchdog budget.
+
+The watchdog regressions passed ten repetitions (18.474 seconds), and watchdog plus
+terminal-observation race regressions passed (4.316 seconds). Source review confirmed
+that the completion preference and settling interval cannot bypass the cap. A race
+build initially overlapped dashboard asset replacement and failed to read removed
+embed inputs; it was rerun after the completed dashboard build and passed.

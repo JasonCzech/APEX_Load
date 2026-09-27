@@ -5128,14 +5128,27 @@ func (tr *TestRunner) recoverRunTestPanic(test *ManagedTest, recovered any, stac
 // milliseconds and the next expiry re-panics.
 func (tr *TestRunner) awaitPanicRecoveryStage(testID string, stage string, done <-chan struct{}) bool {
 	deadline := time.After(runTestPanicRecoveryLockTimeout)
+	writeWasInFlight := tr.durableWritesInFlight.Load() > 0
 	for extensions := 0; ; extensions++ {
 		select {
 		case <-done:
 			return true
 		case <-deadline:
-			if tr.durableWritesInFlight.Load() <= 0 || extensions >= runTestPanicRecoveryDurableWriteExtensions {
+			// Completion and the timer can both be ready. Prefer completed work
+			// before treating an expired timer as an orphaned gate.
+			select {
+			case <-done:
+				return true
+			default:
+			}
+			writeInFlight := tr.durableWritesInFlight.Load() > 0
+			if (!writeInFlight && !writeWasInFlight) || extensions >= runTestPanicRecoveryDurableWriteExtensions {
 				return false
 			}
+			// A write can return just before this check, while its caller still
+			// needs to unlock/publish completion. Allow one settling interval
+			// after an observed write, within the same total extension budget.
+			writeWasInFlight = writeInFlight
 			slog.Warn("recovering a panicked run is still waiting on a durable write; extending the wait instead of restarting the controller",
 				"test_id", testID, "stage", stage)
 			deadline = time.After(runTestPanicRecoveryLockTimeout)
