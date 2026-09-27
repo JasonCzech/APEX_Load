@@ -4,11 +4,14 @@ import copy
 from pathlib import Path
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
 from node_fault import GateError, ObservationSafetyError, Harness, public_observation, validate_config, validate_observation
 from test_cluster_readiness import cluster_fixture
+from cluster_sampler import ClusterSampler
 
 
 class HarnessTest(unittest.TestCase):
@@ -254,6 +257,163 @@ class HarnessTest(unittest.TestCase):
                 validate_config({**self.config, "capture_cluster_evidence": True, "restoration_readiness_seconds": value})
         with self.assertRaises(GateError):
             validate_config({**self.config, "restoration_readiness_seconds": 10})
+
+    def enable_sampling(self, mode=None):
+        self.enable_cluster_evidence()
+        self.config["cluster_evidence_interval_seconds"] = 5
+        self.sampling_calls = []
+        owner = self
+
+        class Sampler:
+            def __init__(self, config, namespace, output, kube, **kwargs):
+                self.namespace = namespace
+                Path(output).mkdir(mode=0o700, exist_ok=False)
+                owner.sampling_calls.append(("prepare", owner.killed, bool(owner.started)))
+
+            def start(self):
+                owner.sampling_calls.append(("start", owner.killed, bool(owner.started)))
+                if mode == "start-failure":
+                    raise OSError("SECRET thread start failure")
+
+            def stop(self):
+                owner.sampling_calls.append(("stop", owner.killed, bool(owner.started)))
+
+            def finish(self):
+                owner.sampling_calls.append(("finish", owner.killed, bool(owner.started)))
+                if mode == "finish-failure":
+                    raise OSError("SECRET index failure")
+                return {"schema_version": 1, "namespace": self.namespace, "worker_stopped": mode != "hung",
+                        "stop_reason": "stopped" if mode is None else mode, "attempts": []}
+        replacement = patch("node_fault.ClusterSampler", Sampler)
+        replacement.start()
+        self.addCleanup(replacement.stop)
+
+    def test_sampling_starts_after_injection_and_finishes_after_restoration(self):
+        self.enable_sampling()
+        harness = self.harness()
+        harness.run(self.node)
+        self.assertEqual(self.sampling_calls, [("prepare", False, False), ("start", True, False),
+                                               ("stop", True, False), ("finish", True, True)])
+        event = next(e for e in harness.events if e["event"] == "cluster_sampling_finished")
+        path = harness.output / event["file"]
+        self.assertEqual(event["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(event["observed_samples"], 0)
+        self.assertEqual(harness.events[-1]["event"], "cluster_evidence")
+
+    def test_sampling_failures_fail_trial_only_after_restoration_and_keep_primary_error(self):
+        for mode in ("hung", "artifact_limit", "scope_or_inventory_invalid", "finish-failure", "start-failure"):
+            for fault in (None, "duplicate-once"):
+                with self.subTest(mode=mode, fault=fault):
+                    self.now, self.killed, self.started, self.bad_observation_sent = 100.0, False, [], False
+                    self.execute = HarnessTest.execute.__get__(self)
+                    self.enable_sampling(mode)
+                    self.fault_mode = fault
+                    harness = self.harness()
+                    expected = ObservationSafetyError if fault and mode != "start-failure" else GateError
+                    with self.assertRaises(expected) as raised:
+                        harness.run(self.node)
+                    self.assertEqual(self.started, ["immutable-id"])
+                    self.assertEqual(self.sampling_calls[-1], ("finish", True, True))
+                    self.assertEqual(harness.events[-1]["event"], "cluster_evidence")
+                    self.assertNotIn("SECRET", str(raised.exception) + json.dumps(harness.events))
+
+    def test_sampling_stops_on_interrupt_and_ambiguous_kill_without_masking_it(self):
+        self.enable_sampling()
+        for fault in ("interrupt", "kill-timeout"):
+            self.now, self.killed, self.started, self.sampling_calls = 100.0, False, [], []
+            self.fault_mode = fault
+            harness = self.harness()
+            with self.assertRaises(KeyboardInterrupt if fault == "interrupt" else subprocess.TimeoutExpired):
+                harness.run(self.node)
+            self.assertEqual(self.started, ["immutable-id"])
+            self.assertEqual(self.sampling_calls[-1], ("finish", True, True))
+            if fault == "kill-timeout":
+                self.assertFalse(any(call[0] == "start" for call in self.sampling_calls))
+
+    def test_restore_failure_still_finishes_sampler_and_has_precedence(self):
+        self.enable_sampling("finish-failure")
+        original = self.execute
+        order = []
+        def execute(argv, timeout=20):
+            if argv[:2] == ["docker", "start"]:
+                order.append("restore_attempted")
+                raise GateError("Docker restoration failed")
+            return original(argv, timeout)
+        self.execute = execute
+        harness = self.harness()
+        with self.assertRaisesRegex(GateError, "Docker restoration failed"):
+            harness.run(self.node)
+        self.assertEqual(order, ["restore_attempted"])
+        self.assertEqual(self.sampling_calls[-1][0], "finish")
+
+    def test_sampling_artifact_conflicts_prevent_injection_or_fail_finalization(self):
+        self.enable_sampling()
+        harness = self.harness()
+        (harness.output / "cluster-series").mkdir()
+        with self.assertRaisesRegex(GateError, "could not be prepared"):
+            harness.run(self.node)
+        self.assertFalse(self.killed)
+        harness = self.harness()
+        path = harness.output / "cluster-series.json"
+        path.write_text("preserve")
+        with self.assertRaisesRegex(GateError, "could not be finalized"):
+            harness.run(self.node)
+        self.assertEqual(path.read_text(), "preserve")
+        self.assertEqual(self.started, ["immutable-id"])
+
+    def test_sampling_budget_requires_evidence_and_bounded_numeric_interval(self):
+        for value in (None, True, False, 0, 4, 301, float("inf"), float("nan"), "10"):
+            with self.subTest(value=value), self.assertRaises(GateError):
+                validate_config({**self.config, "capture_cluster_evidence": True, "cluster_evidence_interval_seconds": value})
+        with self.assertRaises(GateError):
+            validate_config({**self.config, "cluster_evidence_interval_seconds": 5})
+
+    def test_sampling_failure_still_runs_optional_restoration_readiness(self):
+        self.enable_sampling("finish-failure")
+        self.enable_readiness()
+        harness = self.harness()
+        with self.assertRaisesRegex(GateError, "background cluster evidence could not be finalized"):
+            harness.run(self.node)
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertTrue(json.loads((harness.output / "cluster-readiness.json").read_text())["ready"])
+
+    def test_real_background_blocked_read_does_not_postpone_docker_restoration(self):
+        self.enable_cluster_evidence()
+        self.config["cluster_evidence_interval_seconds"] = 5
+        entered, release = threading.Event(), threading.Event()
+        original = self.execute
+        expected_namespace = {"name": self.config["namespace"], "uid": "namespace-uid"}
+
+        def execute(argv, timeout=20):
+            if argv[0] == "observe" and self.killed and not self.started:
+                self.assertTrue(entered.wait(2))
+            if argv[:2] == ["docker", "start"]:
+                self.assertTrue(entered.is_set())
+                self.assertFalse(release.is_set(), "sampling was awaited before restoring Docker")
+                result = original(argv, timeout)
+                release.set()
+                return result
+            return original(argv, timeout)
+
+        def factory(config, namespace, output, kube, **kwargs):
+            self.assertEqual(namespace, expected_namespace)
+            def blocked(*args, deadline):
+                entered.set()
+                release.wait(3)
+                return {"metadata": {**namespace, "labels": {"apexload.io/fault-run": config["run_id"]}}}
+            return ClusterSampler(config, namespace, output, blocked, clock=time.monotonic)
+
+        self.execute = execute
+        self.addCleanup(release.set)
+        with patch("node_fault.ClusterSampler", factory):
+            harness = self.harness()
+            harness.run(self.node)
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertEqual(self.now - self.fault_at, self.config["fault_seconds"])
+        report = json.loads((harness.output / "cluster-series.json").read_text())
+        self.assertTrue(report["worker_stopped"])
+        self.assertEqual(report["attempts"][0]["status"], "cancelled")
 
     def test_cluster_inventory_is_outside_the_fault_timing_window(self):
         self.enable_cluster_evidence()

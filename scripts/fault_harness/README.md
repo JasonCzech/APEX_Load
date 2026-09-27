@@ -43,6 +43,7 @@ The driver reads a JSON config with these fields:
   "expected_vusers": 120,
   "minimum_target_rps": 100,
   "capture_cluster_evidence": true,
+  "cluster_evidence_interval_seconds": 10,
   "restoration_readiness_seconds": 120,
   "observation_command": ["/absolute/path/to/observation-adapter", "--private-config", "/absolute/private/adapter.json"]
 }
@@ -92,8 +93,8 @@ The output directory must be new; retries refuse to overwrite existing evidence.
 Evidence is an allowlisted JSON event stream with private permissions. It captures
 traffic observations, assignments, generation and timing; raw API/Secret responses,
 command output and arbitrary adapter fields are excluded. The collector below adds
-before/after Kubernetes inventories. During-fault time series, measured dependency
-failover and final archive evidence still require the stack adapter. A passed traffic gate alone is not a passing completion, archive,
+before/after Kubernetes inventories and optional background samples during the trial.
+Measured dependency failover and final archive evidence still require the stack adapter. A passed traffic gate alone is not a passing completion, archive,
 no-overlap, liveness, cleanup-readiness or production-availability qualification.
 
 
@@ -146,8 +147,9 @@ Set `capture_cluster_evidence` to `true` in the driver config (default: `false`)
 save `cluster-preflight.json` before the sustained load baseline and
 `cluster-restored.json` after the driver's final restoration attempt succeeds.
 `events.json` links each file by name and SHA-256, with `inventory_complete` and
-resource gap names. Snapshot reads never run inside the stopped-node recovery
-window or before the restoration command in cleanup.
+resource gap names. These checkpoint reads never run inside the stopped-node recovery
+window or before the restoration command in cleanup. The separate background sampling
+option below can collect inventories during the trial.
 
 A preflight ownership/snapshot failure or artifact-write conflict prevents injection.
 Individual unavailable resource APIs remain recorded gaps and do not independently
@@ -191,8 +193,7 @@ are separate gates. Binding identity does not verify volume contents or attachme
 Polling pauses up to five seconds between attempts. Every kubectl subprocess is
 limited by the same remaining monotonic deadline, and a response at/after that
 deadline cannot pass. This budget covers the post-trial readiness observation loop;
-Docker restoration, preflight and artifact writes are separate operations. No extra
-read runs while the victim is stopped. Ctrl-C/SIGTERM during the trial restores the
+Docker restoration, preflight and artifact writes are separate operations. Readiness polling does not run while the victim is stopped. Ctrl-C/SIGTERM during the trial restores the
 container and skips this optional wait; interruption during the wait exits after
 restoration has already occurred. Other trial failures still attempt the gate, while
 preserving the original failure if readiness or evidence recording also fails.
@@ -211,3 +212,55 @@ it is not an atomic snapshot, a sustained availability result, an application he
 probe, or a proof of data integrity, archive completion, correct placement across
 failure domains or exclusive execution ownership. It does not qualify production
 node-loss recovery or replace the remaining real deployment/fault-matrix tests.
+
+
+## Optional background inventories during the fault trial
+
+Set `cluster_evidence_interval_seconds` from 5 through 300, together with
+`capture_cluster_evidence: true`, to start one background sampler after the Docker
+kill command succeeds. Omit the interval to disable it. The namespace UID is pinned
+to the preflight inventory. Each sample uses the same allowlisted node, pod, workload,
+HPA/KEDA, PVC and event projection as the checkpoint collector. The sampler issues
+only reads; the traffic driver continues its observation/restoration loop without
+waiting for a sample. API reads still consume cluster resources, so sampling is
+optional and its effects should be considered when interpreting a performance run.
+
+A sample gets a shared ten-second read budget. The interval is the pause after an
+attempt completes; slow reads never queue concurrent samples or trigger catch-up
+bursts. Missing resource APIs produce partial inventory artifacts, and whole-snapshot
+transport/deadline failures produce explicit index gaps. Namespace replacement or
+invalid cluster identity/inventory stops sampling and cannot be retried into success.
+A snapshot spans its recorded UTC start/end times and is not an atomic cluster view.
+Compare those times with `fault_injected` and `node_restored`; an overlapping sample
+must not be described as wholly observed while the node was stopped. If restoration
+occurs before the trial ends, sampling can include the remaining post-restoration
+part of the trial.
+
+Cleanup requests cancellation without waiting, attempts Docker restoration, and only
+then joins the worker for at most eleven seconds. Cancellation is checked between
+reads, and each command receives only the remaining snapshot budget. Even if Docker
+restoration fails, the sampler is stopped/finalized and that restoration error stays
+the primary failure. Interruption, ambiguous kill timeouts and trial safety failures
+also enter cleanup. A worker that cannot stop is explicitly reported; later files
+from that daemon worker, if any, are unindexed and must not count as evidence.
+
+The new private `cluster-series/` directory contains exclusive `sample-NNNN.json`
+files. `cluster-series.json` indexes attempt start/end offsets from the sampler's
+UTC start time, fixed statuses, filenames, SHA-256 values, byte counts and resource
+gaps. The driver event stream links the index by SHA-256. Raw errors, command output,
+credentials and observation-adapter configuration are excluded. The series is capped
+at 512 attempts and 64 MiB of snapshot files, with the existing 8 MiB per-file limit;
+the final index is separate and also subject to the per-file limit. A partial write
+can leave an unindexed file; only successfully indexed bytes are reported.
+
+Unavailable API observations and cancellation remain explicit diagnostic gaps and do
+not invalidate a traffic pass by themselves. Scope failures, storage/attempt limits,
+worker failures, failure to stop, or failure to save/index the result fail an otherwise
+successful driver run after restoration. These failures do not suppress the optional
+Kubernetes readiness gate or replace an original trial failure. Zero observed samples
+is visible in the event/index; it provides no scaling evidence even if traffic passed.
+
+This feature provides sampled Kubernetes state, not a passing KEDA scaling test,
+continuous coverage, authoritative shard ownership or dependency failover evidence.
+The real stack/traffic adapter, final archive checks and repeated deployed fault
+matrix remain required before qualification.

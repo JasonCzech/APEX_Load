@@ -645,3 +645,36 @@ real-thread tests cover slow reads, stop/join timeout, cancellation, scope repla
 transport retry, partial API gaps, cumulative byte/attempt bounds, hashes/permissions,
 no overwrite and unexpected worker failure. All 59 harness tests passed. No further
 actionable finding remained in this foundation; driver integration follows separately.
+
+## During-trial sampler integration and final validation
+
+The optional `cluster_evidence_interval_seconds` setting (5–300 seconds, requiring
+cluster evidence) now starts the sampler after a successful fault injection. The
+foreground traffic loop never waits for snapshots. Cleanup requests cancellation,
+attempts Docker restoration, then performs the bounded worker join and writes the
+private hashed series index. Failed restoration still stops/finalizes the sampler;
+the restoration error remains primary. Sampler errors do not skip the optional
+Kubernetes readiness gate, and they preserve any original trial failure.
+
+Review checked startup failure, ambiguous kill timeout, interruption, stuck workers,
+namespace replacement, storage/attempt limits, index conflicts and diagnostic-error
+precedence. The series now records an explicit UTC clock origin for attempt offsets;
+an unstarted sampler is explicit. A real-thread integration regression holds a
+Kubernetes read blocked until Docker restoration is attempted and verifies that the
+fault duration does not advance to wait for it. Gaps and zero observed samples remain
+visible and cannot be interpreted as successful scaling evidence. No further
+actionable finding remained after review.
+
+All 68 Python fault-harness tests passed (1.956 seconds). The complete Go scripts
+package passed uncached (`go test ./scripts -count=1`, 15.276 seconds), including the
+Python CI bridge. Documentation checks passed for 68 active Markdown files, and
+`git diff --check` passed. The sampler tests use real threads with controlled command
+boundaries; the existing collector CLI test executes fake kubectl. No live Docker or
+Kubernetes fault was injected. No application/API/dashboard code changed, so the full
+application and browser suites were not rerun for this tooling slice. Unrelated
+Java/performance and admission-test work was preserved.
+
+Remaining qualification includes the stack provisioner, authoritative traffic/shard
+observer, deployed KEDA/dependency time series, final archive evidence, repeated
+fault cases, and independent multi-host/zone testing. Sampled Kubernetes state alone
+does not establish production availability, exclusive ownership or archive integrity.

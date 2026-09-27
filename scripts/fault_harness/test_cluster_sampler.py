@@ -52,6 +52,7 @@ class ClusterSamplerTest(unittest.TestCase):
         self.assertTrue(report["worker_stopped"])
         self.assertEqual(report["stop_reason"], "stopped")
         self.assertEqual(report["namespace"], self.baseline["namespace"])
+        self.assertIsNotNone(report["started_at"])
         self.assertTrue(report["attempts"])
         self.assertEqual(self.output.stat().st_mode & 0o777, 0o700)
         total = 0
@@ -216,6 +217,14 @@ class ClusterSamplerTest(unittest.TestCase):
         report = sampler.finish()
         self.assertEqual(report["stop_reason"], "worker_failed")
         self.assertNotIn("SECRET", json.dumps(report))
+
+    def test_unstarted_sampler_is_explicit_and_does_not_issue_reads(self):
+        report = self.sampler().finish()
+        self.assertTrue(report["worker_stopped"])
+        self.assertEqual(report["stop_reason"], "not_started")
+        self.assertIsNone(report["started_at"])
+        self.assertEqual(report["attempts"], [])
+        self.assertEqual(self.calls, [])
 
 
 if __name__ == "__main__":

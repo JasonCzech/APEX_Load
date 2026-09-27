@@ -21,6 +21,7 @@ import time
 
 from cluster_evidence import snapshot as cluster_snapshot, write_snapshot
 from cluster_readiness import assess as assess_cluster_readiness
+from cluster_sampler import ClusterSampler
 
 
 class GateError(RuntimeError):
@@ -58,6 +59,13 @@ def validate_config(config):
         raise GateError("baseline must be >=10s; fault/recovery bounds must be <=1800s")
     if not isinstance(config.get("capture_cluster_evidence", False), bool):
         raise GateError("capture_cluster_evidence must be a boolean")
+    if "cluster_evidence_interval_seconds" in config:
+        interval = config["cluster_evidence_interval_seconds"]
+        if (isinstance(interval, bool) or not isinstance(interval, (int, float))
+                or not math.isfinite(interval) or not 5 <= interval <= 300):
+            raise GateError("cluster_evidence_interval_seconds must be between 5 and 300")
+        if not config.get("capture_cluster_evidence", False):
+            raise GateError("cluster sampling requires capture_cluster_evidence")
     if "restoration_readiness_seconds" in config:
         budget = config["restoration_readiness_seconds"]
         if (isinstance(budget, bool) or not isinstance(budget, (int, float))
@@ -246,6 +254,17 @@ class Harness:
         self.victim_id = info["Id"]  # immutable ID prevents name reuse during cleanup
         self.record("preflight", node=node, container_id=self.victim_id, image_id=info["Image"])
 
+    def finish_cluster_sampling(self, sampler):
+        report = sampler.finish()
+        path = self.output / "cluster-series.json"
+        written = write_snapshot(path, report)
+        self.record("cluster_sampling_finished", file=path.name, sha256=written["sha256"],
+                    directory="cluster-series", worker_stopped=report["worker_stopped"],
+                    stop_reason=report["stop_reason"], attempts=len(report["attempts"]),
+                    observed_samples=sum(a["status"] == "observed" for a in report["attempts"]))
+        if not report["worker_stopped"] or report["stop_reason"] != "stopped":
+            raise GateError("background cluster evidence sampling failed; inspect series index")
+
     def observe(self):
         raw = self.execute(self.config["observation_command"], timeout=15)
         try:
@@ -308,6 +327,13 @@ class Harness:
             raise GateError("requested target-observed load was never sustained")
         if not any(s["node"] == node for s in previous["assignments"]):
             raise GateError("victim carries no active shard")
+        sampler = None
+        if "cluster_evidence_interval_seconds" in c:
+            try:
+                sampler = ClusterSampler(c, baseline_inventory["namespace"], self.output / "cluster-series",
+                                         self.kube, clock=self.clock)
+            except Exception:
+                raise GateError("background cluster evidence could not be prepared") from None
         # Register restoration before kill: a timeout can mean the kill succeeded.
         self.restore_required = True
         fault_at = self.clock()
@@ -316,6 +342,13 @@ class Harness:
         try:
             self.execute(["docker", "kill", "--signal", "KILL", self.victim_id])
             self.record("fault_injected", node=node)
+            if sampler is not None:
+                self.record("cluster_sampling_started", directory="cluster-series",
+                            interval_seconds=c["cluster_evidence_interval_seconds"])
+                try:
+                    sampler.start()
+                except Exception:
+                    raise GateError("background cluster evidence could not be started") from None
             previous = None
             while self.clock() - fault_at < max(c["fault_seconds"], c["recovery_seconds"]):
                 elapsed = self.clock() - fault_at
@@ -350,7 +383,23 @@ class Harness:
         finally:
             trial_failed = sys.exc_info()[0] is not None
             trial_interrupted = isinstance(sys.exc_info()[1], KeyboardInterrupt)
-            self.restore()
+            if sampler is not None:
+                sampler.stop()  # Nonblocking: never join before attempting restoration.
+            try:
+                self.restore()
+            except BaseException:
+                if sampler is not None:
+                    try:
+                        self.finish_cluster_sampling(sampler)
+                    except BaseException:
+                        pass  # Keep the restoration failure, including interruption.
+                raise
+            sampling_error = None
+            if sampler is not None:
+                try:
+                    self.finish_cluster_sampling(sampler)
+                except Exception:
+                    sampling_error = GateError("background cluster evidence could not be finalized")
             # Restoration always precedes diagnostic reads. Even a failure to
             # write the gap event must preserve the original trial exception.
             try:
@@ -367,6 +416,8 @@ class Harness:
             except Exception:
                 if not trial_failed:
                     raise GateError("restored cluster evidence could not be recorded") from None
+            if sampling_error is not None and not trial_failed:
+                raise sampling_error from None
 
 
 def main():
