@@ -30,7 +30,7 @@ def packages_without_tests(root: Path) -> int:
     ).stdout
     return sum(
         1 for line in output.splitlines()
-        if "/node_modules/" not in line and line.endswith("\tfalse")
+        if "/node_modules/" not in line and "/artifacts/" not in line and line.endswith("\tfalse")
     )
 
 

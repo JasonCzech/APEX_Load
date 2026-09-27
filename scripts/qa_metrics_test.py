@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -20,6 +22,14 @@ class QAMetricsTest(unittest.TestCase):
             "## Found by this program\n| QA-1 | High | x | M0 | OPEN | — |\n"
         )
         self.assertEqual(open_inherited_defects(defects), 1)
+
+    def test_ignored_evidence_and_dependencies_do_not_change_source_inventory(self) -> None:
+        lines = "\n".join([
+            "example/pkg/runtime\tfalse", "example/pkg/tested\ttrue",
+            "example/artifacts/private-runtime\tfalse", "example/node_modules/flatted/golang\tfalse",
+        ])
+        with patch("qa_metrics.subprocess.run", return_value=SimpleNamespace(stdout=lines)):
+            self.assertEqual(packages_without_tests(Path(".")), 1)
 
     def test_repository_package_inventory_is_nonempty(self) -> None:
         root = Path(__file__).resolve().parent.parent
