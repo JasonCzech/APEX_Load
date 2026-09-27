@@ -243,6 +243,22 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	req.actor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 	req.traceContext = telemetry.Detach(r.Context())
 	if err := s.runner.StartTestWithOptions(id, req); err != nil {
+		var windowErr *LaunchWindowConflictError
+		if errors.As(err, &windowErr) {
+			if test, ok := s.runner.GetTest(id); ok {
+				s.recordAuditEvent(r, "capacity.launch_window.reject", "blocked", "test", id, test.ProjectID, map[string]any{
+					"reason": "launch_window_conflict", "blocking_conflicts": windowErr.Conflicts,
+				})
+			}
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":              windowErr.Error(),
+				"code":               "launch_window_conflict",
+				"test_id":            id,
+				"blocking_conflicts": windowErr.Conflicts,
+				"override_available": false,
+			})
+			return
+		}
 		var placementErr *StartPlacementConflictError
 		if errors.As(err, &placementErr) {
 			if test, ok := s.runner.GetTest(id); ok {

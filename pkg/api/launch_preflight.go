@@ -1631,7 +1631,7 @@ func (tr *TestRunner) launchStartWindowErrorWithEvidenceLocked(test *ManagedTest
 	if len(conflicts) == 0 {
 		return nil
 	}
-	return fmt.Errorf("launch window conflict: %s", conflicts[0].Message)
+	return &LaunchWindowConflictError{Conflicts: conflicts}
 }
 
 func (tr *TestRunner) dueOneTimeScheduledTestIDsLocked(now time.Time, limit int) []string {

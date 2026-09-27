@@ -766,3 +766,35 @@ override and asynchronous fast-failure behavior. Generated API-contract freshnes
 documentation checks for 68 active Markdown files and `git diff --check` passed.
 Final review found no further actionable issue in this reporting scope. Unrelated
 Java/performance work was preserved. No new live cluster qualification was performed.
+
+## Structured launch-window admission conflicts
+
+Launch-window revalidation now preserves its conflict records in a typed error.
+The start API returns HTTP 409 with `launch_window_conflict`, the preflight-shaped
+`blocking_conflicts` and `override_available: false`, plus a blocked
+`capacity.launch_window.reject` audit event. The original first-conflict message
+remains unchanged for scheduler and direct-runner callers. This covers the existing
+window checks, including HTTP runs that overlap future capacity reservations.
+
+The SQLite/API regression creates an HTTP run and a future reservation, verifies
+the conflict time and required/available generator counts, rejects both ordinary
+and capacity-override requests without dispatch or lifecycle changes, and verifies
+that releasing the reservation permits the same run to start. A separate injected
+occurrence-read outage remains HTTP 503 with `Retry-After: 1`. Unit cases preserve
+retryable classification for stale, reservation, occurrence and quota evidence;
+available nonconflicting evidence and nil inputs remain accepted. Existing tests
+cover current-capacity queueing and reserved manual starts.
+
+Review corrected a clock-boundary risk in the test fixture: the reservation is
+placed 45–60 minutes ahead so it cannot become an immediate-capacity case during
+the request. Focused API tests and generated-contract freshness checks passed.
+This changes response classification and audit evidence, not capacity planning,
+scheduler policy, live generator discovery or recovery headroom.
+
+The full `go test ./...` suite passed (API: 315.276 seconds); focused race
+checks passed (6.205 seconds), including queueing, placement rejection, reserved
+manual starts, capacity overrides and asynchronous fast failures. Generated API
+contracts remained fresh. Documentation checks for 68 active Markdown files and
+`git diff --check` passed. Final review found no further actionable issue in this
+scope. Unrelated Java/performance work was preserved; no new live Kubernetes
+fault or production qualification was performed.
