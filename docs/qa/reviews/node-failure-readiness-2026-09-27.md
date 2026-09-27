@@ -821,3 +821,42 @@ The target race suite passed (1.512 seconds), including real HTTPS requests and
 shutdown tests. Fresh-input/certificate tests passed (0.768 seconds), as did
 68-file documentation and whitespace checks. No further actionable finding remained
 in the target service slice. No Docker/Kubernetes deployment was performed.
+
+## Target process continuity in the fault driver
+
+The observer contract now requires the target's 32-character lowercase hexadecimal
+`target_instance_id`. Both direct sample validation and the driver's retained
+observation state reject a changed identity. This closes the false-pass case where
+a restarted target's counter overtakes the old value between observations, including
+across a transport outage. Missing/invalid identity is a latched safety failure;
+old adapters must forward the new field and cannot silently fall back to counts.
+The allowlisted event record retains only the validated identity.
+
+Regression cases cover missing/malformed identities, unchanged identity acceptance,
+a baseline restart preventing injection, and a post-fault restart after an outage
+with a higher counter. Post-fault failure restores the worker and cannot become a
+traffic-gate pass. Existing retryable transport and counter-reset tests remain.
+Target identity detects process replacement, not generator execution ownership;
+authoritative shard/generation correlation remains an open observation-adapter task.
+
+Review found that process identity must be checked before freshness: otherwise a
+stale replacement sample could be retried away and hidden by later traffic from
+the old process. The driver now checks identity first, and a stale replacement
+followed by good observations is a latched-failure regression case.
+
+The compiled CLI smoke test exposed a strict-TLS interoperability failure in the
+generated certificates: the leaf authority-key identifier was missing. Input
+preparation now emits subject/authority key identifiers on CA and leaf certificates.
+Tests use both strict OpenSSL verification and strict Python TLS handshakes for all
+three service certificates. The repeated real CLI smoke passed with CA verification
+enabled: authenticated counting, zero/new identity after process restart and clean
+SIGTERM exit. Existing private inputs were not changed.
+
+The full `go test ./...` suite passed (API: 338.461 seconds; target: 0.319
+seconds). After the final Python/certificate fixes, the scripts suite was explicitly
+rerun uncached and passed (23.196 seconds), including all 70 fault-harness tests.
+Target race checks passed (1.512 seconds); strict certificate and real CLI TLS smoke
+checks passed. Documentation checks for 68 active Markdown files and whitespace
+checks passed. Final review found no further actionable issue in these slices.
+Unrelated Java/performance work was preserved. No live Kubernetes fault or
+independent-node/zone qualification was performed.

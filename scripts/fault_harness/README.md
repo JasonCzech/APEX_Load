@@ -18,7 +18,10 @@ a random ownership record, and a separate target/observer credential pair in `ta
 The directory must remain private; do not commit it or include its credentials in
 public evidence. Certificates last two days. Install the generated values through
 Secret resources, with the CA trust and server names required by your deployment.
-The credentials file is input data, not an environment file.
+Generated certificates include subject/authority key identifiers for strict TLS
+verification. Generate a new private directory to replace older inputs; preparation
+never rewrites existing credentials or certificates. The credentials file is input
+data, not an environment file.
 
 Create the disposable kind cluster with the exact name in `ownership.json`, write
 its kubeconfig into that private directory, and deploy the test stack in namespace
@@ -60,7 +63,10 @@ python3 scripts/fault_harness/node_fault.py \
 
 The adapter prints one JSON object. It must obtain `target_requests` from an independent
 private target's monotonic counter for this run; `observed_at_unix` is the target
-observation time, not a timestamp added to old dashboard data. Include `run_id`,
+observation time, not a timestamp added to old dashboard data. Forward the target's
+32-character lowercase hexadecimal `target_instance_id` unchanged; it is required
+and must remain constant across the entire trial, including observation outages.
+Existing adapters must add this field; missing identities fail closed. Include `run_id`,
 `observed_vusers`, `keda_total_demand`, `controller_restarts`, `status`, and `assignments`.
 Each assignment has `group`, stable `shard`, `pod`, `node`, and authoritative execution
 `generation`. Do not infer generation from pod names. A duplicated group/shard pair
@@ -77,7 +83,8 @@ or traffic returning only after node restoration does not pass. Use a workload l
 enough to outlast baseline, failure and recovery windows. Fault and recovery windows
 are bounded at 30 minutes. Poll/command errors cannot silently pass the traffic gate. A transport outage resets
 only the consecutive-load window; it does not erase the last target counter. Duplicate
-ownership, a counter reset (including across an observation outage), invalid ownership/count evidence,
+ownership, a changed target identity (even with a higher counter), a counter reset
+(including across an observation outage), invalid ownership/count evidence,
 or a terminal run during the trial fails the trial permanently and triggers restoration.
 A brief recovery followed by a failed run cannot pass. Load/restart counts must be finite,
 nonnegative and correctly typed; booleans do not count as numbers or generations.

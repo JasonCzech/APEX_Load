@@ -82,6 +82,11 @@ def validate_observation(observation, config, previous=None, now=None):
     now = time.time() if now is None else now
     if not isinstance(observation, dict) or observation.get("run_id") != config["run_id"]:
         raise ObservationSafetyError("observation must belong to this run")
+    instance = observation.get("target_instance_id")
+    if not isinstance(instance, str) or not re.fullmatch(r"[0-9a-f]{32}", instance):
+        raise ObservationSafetyError("target process identity is required")
+    if previous is not None and instance != previous.get("target_instance_id"):
+        raise ObservationSafetyError("target instance changed")
     at = observation.get("observed_at_unix", 0)
     if isinstance(at, bool) or not isinstance(at, (int, float)) or not now - 5 <= at <= now:
         raise GateError("target observation is stale or in the future")
@@ -129,7 +134,7 @@ def validate_observation(observation, config, previous=None, now=None):
 def public_observation(observation):
     # Whitelist evidence; the adapter must never make raw API/Secret snapshots public.
     result = {key: observation.get(key) for key in (
-        "run_id", "observed_at_unix", "target_requests", "observed_vusers",
+        "run_id", "target_instance_id", "observed_at_unix", "target_requests", "observed_vusers",
         "keda_total_demand", "controller_restarts", "status")}
     result["assignments"] = [{key: shard.get(key) for key in
                                ("group", "shard", "node", "pod", "generation")}
@@ -271,6 +276,11 @@ class Harness:
             observation = json.loads(raw)
         except ValueError:
             raise ObservationSafetyError("observation adapter returned invalid JSON") from None
+        # Check process continuity before freshness: a stale replacement sample
+        # must not be retried away and hidden by a later sample from the old target.
+        if (self.last_observation is not None and isinstance(observation, dict)
+                and observation.get("target_instance_id") != self.last_observation["target_instance_id"]):
+            raise ObservationSafetyError("target instance changed")
         validate_observation(observation, self.config)
         if self.last_observation is not None:
             # Resetting the consecutive-load window after a transport outage must

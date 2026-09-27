@@ -38,7 +38,7 @@ class HarnessTest(unittest.TestCase):
         self.addCleanup(self.clock_patch.stop)
 
     def observation(self):
-        return dict(run_id=self.config["run_id"], observed_at_unix=self.now, target_requests=int(self.now * 10),
+        return dict(run_id=self.config["run_id"], target_instance_id="a" * 32, observed_at_unix=self.now, target_requests=int(self.now * 10),
                     observed_vusers=10, keda_total_demand=10, controller_restarts=0, status="RUNNING",
                     assignments=[dict(group="http", shard="0", pod="generator-0", node=self.node, generation=1)])
 
@@ -66,6 +66,21 @@ class HarnessTest(unittest.TestCase):
                     raise GateError("temporary observation transport failure")
                 if self.now - self.fault_at >= 2:
                     data["target_requests"] -= 500
+            if self.killed and self.fault_mode == "target-restart-after-outage":
+                if self.now - self.fault_at == 1:
+                    raise GateError("temporary observation transport failure")
+                if self.now - self.fault_at >= 2:
+                    # The replacement counter already exceeds its predecessor.
+                    data["target_instance_id"] = "b" * 32
+                    data["target_requests"] += 500
+            if self.killed and self.fault_mode == "stale-target-restart-once" and not self.bad_observation_sent:
+                data["target_instance_id"] = "b" * 32
+                data["observed_at_unix"] -= 10
+                self.bad_observation_sent = True
+            if self.killed and self.fault_mode == "missing-target-identity":
+                del data["target_instance_id"]
+            if self.fault_mode == "target-restart-baseline" and self.now >= 105:
+                data["target_instance_id"] = "b" * 32
             return json.dumps(data)
         if argv[:2] == ["docker", "kill"]:
             self.killed = True
@@ -578,7 +593,8 @@ class HarnessTest(unittest.TestCase):
             validate_observation(self.observation(), self.config, prior)
 
     def test_safety_failure_cannot_be_hidden_by_later_good_samples(self):
-        for mode in ("duplicate-once", "terminal-after-recovery", "reset-after-outage"):
+        for mode in ("duplicate-once", "terminal-after-recovery", "reset-after-outage",
+                     "target-restart-after-outage", "missing-target-identity", "stale-target-restart-once"):
             with self.subTest(mode=mode):
                 self.now, self.killed, self.started, self.fault_mode = 100.0, False, [], mode
                 self.bad_observation_sent = False
@@ -588,6 +604,27 @@ class HarnessTest(unittest.TestCase):
                 self.assertEqual(self.started, ["immutable-id"])
                 self.assertNotIn("traffic_gate_passed", [e["event"] for e in h.events])
                 self.assertIn("observation_safety_failed", [e["event"] for e in h.events])
+
+    def test_target_instance_is_required_and_retained_in_safe_evidence(self):
+        for value in (None, "", True, 123, "a" * 31, "a" * 33, "A" * 32, "secret-token", []):
+            with self.subTest(value=value), self.assertRaises(ObservationSafetyError):
+                validate_observation({**self.observation(), "target_instance_id": value}, self.config)
+        data = self.observation()
+        del data["target_instance_id"]
+        with self.assertRaises(ObservationSafetyError):
+            validate_observation(data, self.config)
+        self.assertEqual(public_observation(self.observation())["target_instance_id"], "a" * 32)
+        previous = {**self.observation(), "observed_at_unix": self.now - 1, "target_requests": 0}
+        self.assertTrue(validate_observation(self.observation(), self.config, previous))
+        with self.assertRaisesRegex(ObservationSafetyError, "target instance changed"):
+            validate_observation({**self.observation(), "target_instance_id": "b" * 32}, self.config, previous)
+
+    def test_target_restart_before_fault_prevents_injection(self):
+        self.fault_mode = "target-restart-baseline"
+        with self.assertRaisesRegex(ObservationSafetyError, "target instance changed"):
+            self.harness().run(self.node)
+        self.assertFalse(self.killed)
+        self.assertFalse(self.started)
 
     def test_transport_outage_is_retryable_without_renewing_evidence(self):
         self.fault_mode = "outage-once"
