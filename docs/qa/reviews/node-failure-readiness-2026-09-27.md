@@ -530,3 +530,22 @@ not a deployed Kubernetes qualification. Review found and corrected a fixture ne
 escape before the final passing test run. The repository scripts test bridge and
 documentation checks are recorded with the final gate below. No actionable finding
 remained in the collector review.
+
+
+## Fault-driver cluster evidence checkpoints
+
+The optional `capture_cluster_evidence` boolean adds private preflight and restored
+inventory artifacts, linked from the event stream with SHA-256 and explicit resource
+gap names. Preflight capture runs before sustained baseline observations. Cleanup
+restores the immutable container before any diagnostic read, so collection cannot
+consume the stopped-node traffic-recovery budget or delay restoration. Ownership or
+artifact-write failures before baseline prevent fault injection. Individual missing
+resource APIs remain diagnostic gaps, separate from the traffic gate.
+
+Review covered diagnostic errors during cleanup. Read failures are recorded with a
+fixed event, and even a failure to write that event preserves an existing safety or
+traffic exception. A recording failure after an otherwise successful trial fails
+the driver. Tests verify checkpoint timing, hashes/private files, ownership changes,
+missing KEDA, artifact conflicts, and primary-failure preservation after restoration.
+This is immediate post-Docker-restoration evidence, not a pod/PVC readiness gate.
+No actionable finding remained after review. Final test results are recorded below.

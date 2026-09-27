@@ -7,6 +7,7 @@ from historical dashboard TPS and never force-deletes pods, nodes or PVCs.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import math
 import os
@@ -14,7 +15,10 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import sys
 import time
+
+from cluster_evidence import snapshot as cluster_snapshot, write_snapshot
 
 
 class GateError(RuntimeError):
@@ -50,6 +54,8 @@ def validate_config(config):
             raise GateError(f"{key} must be finite and positive")
     if not 10 <= config["baseline_seconds"] <= config["recovery_seconds"] or config["recovery_seconds"] > 1800 or config["fault_seconds"] > 1800:
         raise GateError("baseline must be >=10s; fault/recovery bounds must be <=1800s")
+    if not isinstance(config.get("capture_cluster_evidence", False), bool):
+        raise GateError("capture_cluster_evidence must be a boolean")
     adapter = config.get("observation_command")
     if not isinstance(adapter, list) or not adapter or any(not isinstance(a, str) or not a for a in adapter):
         raise GateError("observation_command must be a nonempty argv array")
@@ -140,6 +146,26 @@ class Harness:
             json.dump(self.events, f, indent=2)
         tmp.replace(self.output / "events.json")
 
+    def capture_cluster_evidence(self, phase, required=False):
+        if not self.config.get("capture_cluster_evidence", False):
+            return
+        filename = "cluster-" + phase + ".json"
+        try:
+            evidence = cluster_snapshot(self.config, self.kube)
+            path = self.output / filename
+            write_snapshot(path, evidence)
+            checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        except Exception:
+            self.record("cluster_evidence_unavailable", phase=phase)
+            if required:
+                # Do not inject after a failed ownership check or failed artifact
+                # write. Raw exception strings may contain credentials.
+                raise GateError("preflight cluster evidence could not be captured") from None
+            return
+        self.record("cluster_evidence", phase=phase, file=filename, sha256=checksum,
+                    inventory_complete=evidence["inventory_complete"],
+                    gaps=[key for key, value in evidence["resources"].items() if value["status"] != "observed"])
+
     def preflight(self, node):
         c = self.config
         namespace = self.kube("get", "namespace", c["namespace"])
@@ -188,6 +214,9 @@ class Harness:
 
     def run(self, node):
         self.preflight(node)
+        # Capture before the sustained baseline so inventory reads cannot age its
+        # final target observation or consume the stopped-node recovery budget.
+        self.capture_cluster_evidence("preflight", required=True)
         c = self.config
         previous = None
         healthy_since = None
@@ -254,7 +283,15 @@ class Harness:
                 raise GateError("traffic recovery deadline exceeded")
             self.record("traffic_gate_passed", recovery_seconds=recovered_at)
         finally:
+            trial_failed = sys.exc_info()[0] is not None
             self.restore()
+            # Restoration always precedes diagnostic reads. Even a failure to
+            # write the gap event must preserve the original trial exception.
+            try:
+                self.capture_cluster_evidence("restored")
+            except Exception:
+                if not trial_failed:
+                    raise GateError("restored cluster evidence could not be recorded") from None
 
 
 def main():

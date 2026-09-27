@@ -42,6 +42,7 @@ The driver reads a JSON config with these fields:
   "recovery_seconds": 120,
   "expected_vusers": 120,
   "minimum_target_rps": 100,
+  "capture_cluster_evidence": true,
   "observation_command": ["/absolute/path/to/observation-adapter", "--private-config", "/absolute/private/adapter.json"]
 }
 ```
@@ -89,9 +90,9 @@ The driver does not change replicas, force-delete pods/PVCs, or destroy its clus
 The output directory must be new; retries refuse to overwrite existing evidence.
 Evidence is an allowlisted JSON event stream with private permissions. It captures
 traffic observations, assignments, generation and timing; raw API/Secret responses,
-command output and arbitrary adapter fields are excluded. Record sanitized HPA,
-events, image digests, dependency state and final archives through the forthcoming
-stack adapter. A passed traffic gate alone is not a passing completion, archive,
+command output and arbitrary adapter fields are excluded. The collector below adds
+before/after Kubernetes inventories. During-fault time series, measured dependency
+failover and final archive evidence still require the stack adapter. A passed traffic gate alone is not a passing completion, archive,
 no-overlap, liveness, cleanup-readiness or production-availability qualification.
 
 
@@ -134,3 +135,22 @@ exits nonzero. Ownership failures abort collection. Reads span the recorded star
 times and are not an atomic cluster snapshot. This diagnostic inventory is separate
 from the independent target counter and authoritative assignment/generation evidence
 required by the traffic observer.
+
+
+## Optional driver checkpoints
+
+Set `capture_cluster_evidence` to `true` in the driver config (default: `false`) to
+save `cluster-preflight.json` before the sustained load baseline and
+`cluster-restored.json` after the driver's final restoration attempt succeeds.
+`events.json` links each file by name and SHA-256, with `inventory_complete` and
+resource gap names. Snapshot reads never run inside the stopped-node recovery
+window or before the restoration command in cleanup.
+
+A preflight ownership/snapshot failure or artifact-write conflict prevents injection.
+Individual unavailable resource APIs remain recorded gaps and do not independently
+fail the traffic gate. A diagnostic read outage after restoration records
+`cluster_evidence_unavailable`; it does not hide the original safety/traffic failure.
+If the trial otherwise succeeds but the diagnostic result cannot be recorded, the
+driver fails. The restored checkpoint observes the cluster immediately after Docker
+container restoration; it does not wait for or certify pod/PVC readiness. These two
+checkpoints do not provide a during-fault scaling trace or qualify recovery.

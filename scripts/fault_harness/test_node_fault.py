@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
@@ -85,6 +86,119 @@ class HarnessTest(unittest.TestCase):
         self.harness_count += 1
         return Harness(self.config, Path(self.temp.name) / f"evidence-{self.harness_count}", self.execute, lambda: self.now, sleep)
 
+    def enable_cluster_evidence(self, mode=None):
+        self.config["capture_cluster_evidence"] = True
+        original = self.execute
+        self.inventory_reads = []
+        namespace_calls = 0
+
+        def execute(argv, timeout=20):
+            nonlocal namespace_calls
+            if argv[0] != "kubectl":
+                return original(argv, timeout)
+            resource = argv[argv.index("get") + 1]
+            self.inventory_reads.append((resource, self.killed, bool(self.started)))
+            if resource == "namespace":
+                namespace_calls += 1
+                if mode == "after-restore-error" and self.started:
+                    raise GateError("SECRET transport error")
+                value = json.loads(original(argv, timeout))
+                value["metadata"].update(name=self.config["namespace"], uid="namespace-uid")
+                if mode == "ownership-change" and namespace_calls > 1:
+                    value["metadata"]["labels"]["apexload.io/fault-run"] = "other"
+                return json.dumps(value)
+            if resource == "nodes":
+                value = json.loads(original(argv, timeout))
+                for index, node in enumerate(value["items"]):
+                    node["metadata"]["uid"] = "node-" + str(index)
+                return json.dumps(value)
+            if mode == "missing-keda" and resource == "scaledobjects.keda.sh":
+                raise GateError("SECRET missing CRD")
+            return json.dumps({"items": []})
+        self.execute = execute
+
+    def test_cluster_inventory_is_outside_the_fault_timing_window(self):
+        self.enable_cluster_evidence()
+        harness = self.harness()
+        harness.run(self.node)
+        events = [event for event in harness.events if event["event"] == "cluster_evidence"]
+        self.assertEqual([event["phase"] for event in events], ["preflight", "restored"])
+        for event in events:
+            path = harness.output / event["file"]
+            self.assertTrue(event["inventory_complete"])
+            self.assertEqual(event["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertTrue(all(not killed or restored for _, killed, restored in self.inventory_reads))
+        kinds = [event["event"] for event in harness.events]
+        self.assertLess(kinds.index("cluster_evidence"), kinds.index("observation"))
+        self.assertLess(kinds.index("node_restored"), len(kinds) - 1)
+        self.assertEqual(kinds[-1], "cluster_evidence")
+        self.assertEqual(self.started, ["immutable-id"])
+
+    def test_cluster_ownership_change_prevents_injection(self):
+        self.enable_cluster_evidence("ownership-change")
+        harness = self.harness()
+        with self.assertRaises(GateError):
+            harness.run(self.node)
+        self.assertFalse(self.killed)
+        self.assertEqual(harness.events[-1]["event"], "cluster_evidence_unavailable")
+
+    def test_cluster_gaps_do_not_masquerade_as_complete_inventory(self):
+        self.enable_cluster_evidence("missing-keda")
+        harness = self.harness()
+        harness.run(self.node)
+        events = [event for event in harness.events if event["event"] == "cluster_evidence"]
+        self.assertEqual(len(events), 2)
+        for event in events:
+            self.assertFalse(event["inventory_complete"])
+            self.assertEqual(event["gaps"], ["scaledobjects.keda.sh"])
+        self.assertNotIn("SECRET", (harness.output / "events.json").read_text())
+
+    def test_after_restore_inventory_outage_preserves_original_safety_failure(self):
+        self.enable_cluster_evidence("after-restore-error")
+        self.fault_mode = "duplicate-once"
+        harness = self.harness()
+        with self.assertRaises(ObservationSafetyError):
+            harness.run(self.node)
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertEqual(harness.events[-1]["event"], "cluster_evidence_unavailable")
+        self.assertEqual(harness.events[-1]["phase"], "restored")
+        self.assertNotIn("SECRET", (harness.output / "events.json").read_text())
+
+    def test_after_restore_artifact_errors_do_not_replace_trial_failure(self):
+        self.enable_cluster_evidence()
+        self.fault_mode = "duplicate-once"
+        harness = self.harness()
+        original = harness.record
+
+        def record(kind, **fields):
+            if fields.get("phase") == "restored":
+                raise OSError("SECRET evidence disk error")
+            return original(kind, **fields)
+        harness.record = record
+        with self.assertRaises(ObservationSafetyError):
+            harness.run(self.node)
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertNotIn("SECRET", (harness.output / "events.json").read_text())
+        # If the trial otherwise succeeds, recording failure must still surface.
+        self.killed, self.started, self.fault_mode = False, [], None
+        harness = self.harness()
+        original = harness.record
+        harness.record = record
+        with self.assertRaisesRegex(GateError, "restored cluster evidence could not be recorded"):
+            harness.run(self.node)
+        self.assertEqual(self.started, ["immutable-id"])
+
+    def test_preflight_artifact_conflict_prevents_injection_without_overwrite(self):
+        self.enable_cluster_evidence()
+        harness = self.harness()
+        path = harness.output / "cluster-preflight.json"
+        path.write_text("preserve")
+        with self.assertRaises(GateError):
+            harness.run(self.node)
+        self.assertFalse(self.killed)
+        self.assertEqual(path.read_text(), "preserve")
+
     def test_existing_evidence_directory_is_never_overwritten(self):
         existing = Path(self.temp.name) / "old-evidence"
         existing.mkdir()
@@ -95,7 +209,7 @@ class HarnessTest(unittest.TestCase):
 
     def test_wrong_context_and_nonfinite_budget_rejected(self):
         for key, value in [("context", "docker-desktop"), ("cluster", "production"), ("fault_seconds", float("nan")),
-                           ("expected_vusers", True), ("observation_command", "echo dangerous")]:
+                           ("expected_vusers", True), ("capture_cluster_evidence", "yes"), ("capture_cluster_evidence", 1), ("observation_command", "echo dangerous")]:
             with self.subTest(key=key), self.assertRaises(GateError):
                 validate_config({**self.config, key: value})
 
