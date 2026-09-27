@@ -36,10 +36,11 @@ nodes:
     # Keys are generated in an inaccessible directory and tightened immediately.
     openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.crt",
             "-days", "2", "-subj", "/CN=apexload-fault-" + run_id,
-            "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign")
+            "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+            "-addext", "subjectKeyIdentifier=hash", "-addext", "authorityKeyIdentifier=keyid:always")
     for role in ("controller", "generator", "fault-target"):
         write(role + ".ext", "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
-              "extendedKeyUsage=serverAuth,clientAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1,DNS:apexload-" + role
+              "subjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\nextendedKeyUsage=serverAuth,clientAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1,DNS:apexload-" + role
               + ",DNS:apexload-" + role + ".apexload-fault.svc,DNS:*.apexload-" + role + ".apexload-fault.svc\n")
         openssl("req", "-new", "-newkey", "rsa:2048", "-nodes", "-keyout", role + ".key", "-out", role + ".csr",
                 "-subj", "/CN=apexload-" + role)
