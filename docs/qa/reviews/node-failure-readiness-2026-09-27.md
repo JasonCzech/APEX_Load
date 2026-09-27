@@ -583,3 +583,47 @@ evaluator tests passed, covering missing evidence, wrong identities, volume rebi
 stale generation, unavailable replicas, pod ownership/counts, pressure, termination,
 normal replacement and autoscaling. No further actionable finding remained in this
 slice. Driver integration and its bounded cleanup tests follow separately.
+
+
+## Bounded Kubernetes restoration gate integration
+
+The optional `restoration_readiness_seconds` setting requires cluster evidence and a
+ready supported baseline before injection. After Docker restoration and the traffic
+trial, the driver retries readiness with a shared monotonic read deadline, capped at
+30 minutes. Each subprocess receives only the remaining budget, and even a ready
+response arriving at/after the deadline cannot pass. The gate records per-attempt
+reason counts and a final private assessment plus the final available inventory,
+with hashes in the event stream. It does not accumulate a full snapshot per poll.
+Traffic success followed by Kubernetes readiness failure fails the driver separately.
+
+Command-boundary tests cover delayed readiness, permanently unready resources, slow
+reads, API outages, namespace replacement, optional event gaps, unsupported/unready
+baselines, artifact conflicts, explicit bounded configuration and preservation of the
+original safety exception. Interruption restores Docker and skips the optional wait.
+Review found and fixed two additional cases: terminating nodes must block readiness,
+and checkpoint-index write errors must remain failures rather than being reclassified
+as harmless diagnostic outages. Regression tests cover both. No further actionable
+finding remained in the implementation review; final validation is recorded below.
+
+This gate observes Kubernetes readiness and unchanged PVC binding identities, not
+application/dependency availability, volume contents, archive completion or execution
+fencing. It supports active Deployment/StatefulSet stacks plus bare pods; active
+Job/DaemonSet/custom owners fail baseline qualification. There was no live Docker or
+Kubernetes fault injection, and production qualification remains open.
+
+## Final restoration-readiness validation gate
+
+All 48 Python fault-harness tests passed (1.584 seconds). The complete Go scripts
+package passed uncached (`go test ./scripts -count=1`, 18.758 seconds), including its
+Python harness CI bridge. Documentation checks passed for 68 active Markdown files,
+and `git diff --check` passed. Final review found no further actionable issue in this
+scope. Tests use sanitized Kubernetes fixtures and command boundaries; the collector
+CLI regression executes a fake kubectl process. These results do not constitute a
+live cluster or production failure-domain test.
+
+Only harness tooling, tests and readiness documentation changed. Application, public
+API and dashboard behavior are unchanged; no new full application or browser suite
+was run for this slice. Unrelated Java/performance and admission-test work was left
+untouched. The stack provisioner, authoritative observer, during-fault scaling and
+final archive evidence, repeated fault matrix, and multi-host/dependency-failover
+qualification remain open.

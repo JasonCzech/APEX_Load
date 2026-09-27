@@ -141,6 +141,9 @@ class ClusterReadinessTest(unittest.TestCase):
                            [{"type": "Ready", "status": "True"}, {"type": "DiskPressure", "status": "True"}]):
             self.data["nodes"]["items"][1]["status"]["conditions"] = conditions
             self.reasons()
+        self.data = cluster_fixture(self.config)
+        self.data["nodes"]["items"][1]["metadata"]["deletionTimestamp"] = "2026-09-27T00:00:00Z"
+        self.assertIn("not_ready", self.reasons())
 
     def test_volume_rebinding_and_deletion_block_even_while_bound(self):
         for field, value in (("volumeName", "new-volume"), ("storageClassName", "other"), ("accessModes", ["ReadWriteMany"])):

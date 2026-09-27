@@ -43,6 +43,7 @@ The driver reads a JSON config with these fields:
   "expected_vusers": 120,
   "minimum_target_rps": 100,
   "capture_cluster_evidence": true,
+  "restoration_readiness_seconds": 120,
   "observation_command": ["/absolute/path/to/observation-adapter", "--private-config", "/absolute/private/adapter.json"]
 }
 ```
@@ -84,7 +85,7 @@ The `finally` path restores the stopped container, including when the kill comma
 itself times out. SIGTERM and Ctrl-C trigger that path. SIGKILL, host failure or Docker
 failure can prevent cleanup; retain the immutable container ID in `events.json` for
 manual restoration. `node_restored` proves the container is running, not that every pod
-and volume is ready. Verify Kubernetes readiness and resource recovery separately.
+and volume is ready. The optional gate below checks Kubernetes readiness separately.
 The driver does not change replicas, force-delete pods/PVCs, or destroy its cluster.
 
 The output directory must be new; retries refuse to overwrite existing evidence.
@@ -153,6 +154,60 @@ Individual unavailable resource APIs remain recorded gaps and do not independent
 fail the traffic gate. A diagnostic read outage after restoration records
 `cluster_evidence_unavailable`; it does not hide the original safety/traffic failure.
 If the trial otherwise succeeds but the diagnostic result cannot be recorded, the
-driver fails. The restored checkpoint observes the cluster immediately after Docker
-container restoration; it does not wait for or certify pod/PVC readiness. These two
-checkpoints do not provide a during-fault scaling trace or qualify recovery.
+driver fails. Without the readiness option below, the restored checkpoint observes the cluster
+immediately after Docker container restoration and does not wait for pod/PVC
+readiness. These checkpoints do not provide a during-fault scaling trace or qualify
+application recovery.
+
+
+## Optional Kubernetes restoration gate
+
+Set `restoration_readiness_seconds` to a finite value from 1 through 1800, together
+with `capture_cluster_evidence: true`, to require a ready preflight inventory and
+poll Kubernetes after Docker restoration and the traffic trial have finished. Omit
+this option to retain the immediate diagnostic checkpoint behavior. An unready,
+empty or unsupported baseline prevents fault injection.
+
+The gate checks all cluster nodes and the disposable namespace's Deployment,
+StatefulSet, ReplicaSet, pod and PVC inventories. These inventories must be observed;
+missing RBAC/API access fails the gate. Nodes must retain their baseline identities,
+report Ready, have no reported pressure/network condition other than False, and not
+be terminating. Baseline workloads and PVCs must retain their identities; PVCs must
+stay bound to the same volume/storage class/access modes. Every current workload
+must observe its generation and converge to its current desired replica count,
+including pod inventory through verified controller-owner references. Autoscaling
+may change the desired count, but scaling a previously active workload to zero
+cannot satisfy recovery. All active pods must report Ready/ContainersReady with
+running ready application containers on inventoried nodes. Terminating pods block.
+
+Managed pods may be replaced normally. Bare active pods, such as an independent
+target, must retain their identity and remain running. Completed job pods are ignored.
+Active Job, DaemonSet or custom-controller pods are currently unsupported and prevent
+baseline qualification; this gate targets Deployment/StatefulSet stacks. HPA/KEDA and
+event read gaps remain diagnostics, not Kubernetes readiness predicates, and are
+still marked incomplete in the saved inventory. Autoscaler behavior and actual traffic
+are separate gates. Binding identity does not verify volume contents or attachment.
+
+Polling pauses up to five seconds between attempts. Every kubectl subprocess is
+limited by the same remaining monotonic deadline, and a response at/after that
+deadline cannot pass. This budget covers the post-trial readiness observation loop;
+Docker restoration, preflight and artifact writes are separate operations. No extra
+read runs while the victim is stopped. Ctrl-C/SIGTERM during the trial restores the
+container and skips this optional wait; interruption during the wait exits after
+restoration has already occurred. Other trial failures still attempt the gate, while
+preserving the original failure if readiness or evidence recording also fails.
+
+`events.json` records fixed reason counts for each readiness attempt. Only the last
+snapshot is saved as `cluster-restored.json` (absent when collection fails entirely),
+so polling does not accumulate full inventory files. `cluster-readiness.json` records
+the gate result, budget, elapsed observation time, attempt count, deadline status and
+last readiness assessment. Both artifacts are private, refuse overwrite and are
+linked by SHA-256 from the event stream. A traffic pass followed by a readiness timeout
+fails the driver, with distinct `cluster_readiness_failed` evidence. An artifact/index
+write failure also fails an otherwise successful trial.
+
+A readiness pass describes Kubernetes observations over the recorded snapshot span;
+it is not an atomic snapshot, a sustained availability result, an application health
+probe, or a proof of data integrity, archive completion, correct placement across
+failure domains or exclusive execution ownership. It does not qualify production
+node-loss recovery or replace the remaining real deployment/fault-matrix tests.

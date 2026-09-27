@@ -179,6 +179,7 @@ def event(obj):
 
 def node(obj):
     result = identity(obj)
+    result["terminating"] = obj["metadata"].get("deletionTimestamp") is not None
     labels = obj["metadata"].get("labels", {})
     result.update(control_plane="node-role.kubernetes.io/control-plane" in labels,
                   zone=identifier(labels.get("topology.kubernetes.io/zone")),

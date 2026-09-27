@@ -47,7 +47,7 @@ def assess(baseline, current):
             issue("nodes", None, "insufficient_baseline")
         retained("nodes", before_nodes, nodes)
         for name, node in nodes.items():
-            if condition(node, "Ready") != "True":
+            if node["terminating"] or condition(node, "Ready") != "True":
                 issue("nodes", name, "not_ready")
             for key in ("MemoryPressure", "DiskPressure", "PIDPressure", "NetworkUnavailable"):
                 reported = [c for c in node["conditions"] if c["type"] == key]

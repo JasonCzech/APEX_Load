@@ -1,5 +1,6 @@
 import json
 import hashlib
+import copy
 from pathlib import Path
 import subprocess
 import tempfile
@@ -7,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from node_fault import GateError, ObservationSafetyError, Harness, public_observation, validate_config, validate_observation
+from test_cluster_readiness import cluster_fixture
 
 
 class HarnessTest(unittest.TestCase):
@@ -117,6 +119,142 @@ class HarnessTest(unittest.TestCase):
             return json.dumps({"items": []})
         self.execute = execute
 
+    def enable_readiness(self, mode=None, budget=12):
+        self.config.update(capture_cluster_evidence=True, restoration_readiness_seconds=budget)
+        original = self.execute
+        self.cluster_data = cluster_fixture(self.config)
+        self.readiness_reads = []
+        self.restored_at = None
+
+        def execute(argv, timeout=20):
+            if argv[0] != "kubectl":
+                result = original(argv, timeout)
+                if argv[:2] == ["docker", "start"]:
+                    self.restored_at = self.now
+                return result
+            resource = argv[argv.index("get") + 1]
+            self.readiness_reads.append((resource, self.killed, bool(self.started), timeout, self.now))
+            data = copy.deepcopy(self.cluster_data[resource])
+            if self.started:
+                if mode == "slow":
+                    self.now += timeout
+                    raise subprocess.TimeoutExpired(argv, timeout, stderr="SECRET")
+                if mode == "outage":
+                    raise GateError("SECRET cluster unavailable")
+                if mode == "events-outage" and resource == "events":
+                    raise GateError("SECRET events unavailable")
+                if mode == "late-ready":
+                    self.now += 1
+                if resource == "pods" and (mode == "never-ready" or (mode == "delayed" and self.now - self.restored_at < 5)):
+                    data["items"][0]["status"]["conditions"][0]["status"] = "False"
+                if mode == "namespace-replaced" and resource == "namespace":
+                    data["metadata"]["uid"] = "replacement"
+            return json.dumps(data)
+        self.execute = execute
+
+    def test_readiness_retries_after_restoration_without_delaying_fault_cleanup(self):
+        self.enable_readiness("delayed")
+        harness = self.harness()
+        harness.run(self.node)
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertTrue(all(not killed or restored for _, killed, restored, _, _ in self.readiness_reads))
+        report = json.loads((harness.output / "cluster-readiness.json").read_text())
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["attempts"], 2)
+        self.assertEqual(report["elapsed_seconds"], 5)
+        kinds = [event["event"] for event in harness.events]
+        self.assertLess(kinds.index("node_restored"), kinds.index("cluster_readiness_started"))
+        self.assertIn("traffic_gate_passed", kinds)
+        self.assertEqual(kinds[-1], "cluster_readiness_passed")
+        event = harness.events[-1]
+        path = harness.output / event["file"]
+        self.assertEqual(event["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertTrue((harness.output / "cluster-restored.json").is_file())
+
+    def test_readiness_deadline_and_unavailable_cluster_fail_after_traffic_pass(self):
+        for mode in ("never-ready", "outage", "slow", "namespace-replaced", "late-ready"):
+            with self.subTest(mode=mode):
+                self.now, self.killed, self.started = 100.0, False, []
+                self.execute = HarnessTest.execute.__get__(self)
+                self.enable_readiness(mode, budget=10)
+                harness = self.harness()
+                with self.assertRaisesRegex(GateError, "restoration readiness deadline"):
+                    harness.run(self.node)
+                self.assertEqual(self.started, ["immutable-id"])
+                report = json.loads((harness.output / "cluster-readiness.json").read_text())
+                self.assertFalse(report["ready"])
+                self.assertTrue(report["deadline_exceeded"])
+                self.assertEqual(report["elapsed_seconds"], 10)
+                self.assertIn("traffic_gate_passed", [e["event"] for e in harness.events])
+                self.assertEqual(harness.events[-1]["event"], "cluster_readiness_failed")
+                for _, _, restored, timeout, at in self.readiness_reads:
+                    if restored:
+                        self.assertGreater(timeout, 0)
+                        self.assertLessEqual(at + timeout, self.restored_at + 10)
+                self.assertNotIn("SECRET", json.dumps(harness.events) + json.dumps(report))
+
+    def test_unready_or_unsupported_baseline_prevents_injection(self):
+        for failure in ("unready", "unsupported-owner", "no-workloads"):
+            with self.subTest(failure=failure):
+                self.execute = HarnessTest.execute.__get__(self)
+                self.enable_readiness()
+                if failure == "unready":
+                    self.cluster_data["pods"]["items"][0]["status"]["phase"] = "Pending"
+                elif failure == "unsupported-owner":
+                    self.cluster_data["pods"]["items"][0]["metadata"]["ownerReferences"][0]["kind"] = "DaemonSet"
+                else:
+                    self.cluster_data["deployments"]["items"] = []
+                    self.cluster_data["statefulsets"]["items"] = []
+                with self.assertRaisesRegex(GateError, "baseline is not ready"):
+                    self.harness().run(self.node)
+                self.assertFalse(self.killed)
+
+    def test_readiness_failure_keeps_original_safety_error_and_skips_on_interrupt(self):
+        self.enable_readiness("never-ready")
+        self.fault_mode = "duplicate-once"
+        harness = self.harness()
+        with self.assertRaises(ObservationSafetyError):
+            harness.run(self.node)
+        self.assertEqual(harness.events[-1]["event"], "cluster_readiness_failed")
+        self.assertEqual(self.started, ["immutable-id"])
+        self.now, self.killed, self.started, self.fault_mode = 100.0, False, [], "interrupt"
+        harness = self.harness()
+        with self.assertRaises(KeyboardInterrupt):
+            harness.run(self.node)
+        self.assertEqual(harness.events[-1]["event"], "cluster_readiness_skipped")
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertFalse((harness.output / "cluster-readiness.json").exists())
+
+    def test_readiness_does_not_claim_optional_diagnostic_gaps_are_complete(self):
+        self.enable_readiness("events-outage")
+        harness = self.harness()
+        harness.run(self.node)
+        evidence = json.loads((harness.output / "cluster-restored.json").read_text())
+        self.assertFalse(evidence["inventory_complete"])
+        self.assertTrue(json.loads((harness.output / "cluster-readiness.json").read_text())["ready"])
+
+    def test_readiness_artifact_conflict_fails_and_preserves_trial_failure(self):
+        self.enable_readiness()
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                self.now, self.killed, self.started, self.bad_observation_sent = 100.0, False, [], False
+                self.fault_mode = "duplicate-once" if failed else None
+                harness = self.harness()
+                path = harness.output / "cluster-readiness.json"
+                path.write_text("preserve")
+                with self.assertRaises(ObservationSafetyError if failed else GateError):
+                    harness.run(self.node)
+                self.assertEqual(path.read_text(), "preserve")
+                self.assertEqual(self.started, ["immutable-id"])
+
+    def test_readiness_budget_requires_explicit_finite_bound_and_evidence(self):
+        for value in (None, False, True, 0, -1, 1801, float("nan"), float("inf"), "10"):
+            with self.subTest(value=value), self.assertRaises(GateError):
+                validate_config({**self.config, "capture_cluster_evidence": True, "restoration_readiness_seconds": value})
+        with self.assertRaises(GateError):
+            validate_config({**self.config, "restoration_readiness_seconds": 10})
+
     def test_cluster_inventory_is_outside_the_fault_timing_window(self):
         self.enable_cluster_evidence()
         harness = self.harness()
@@ -188,6 +326,21 @@ class HarnessTest(unittest.TestCase):
         with self.assertRaisesRegex(GateError, "restored cluster evidence could not be recorded"):
             harness.run(self.node)
         self.assertEqual(self.started, ["immutable-id"])
+
+    def test_checkpoint_index_write_failure_cannot_be_reclassified_as_read_outage(self):
+        self.enable_cluster_evidence()
+        harness = self.harness()
+        original = harness.record
+
+        def record(kind, **fields):
+            if kind == "cluster_evidence" and fields.get("phase") == "restored":
+                raise OSError("SECRET index error")
+            return original(kind, **fields)
+        harness.record = record
+        with self.assertRaisesRegex(GateError, "restored cluster evidence could not be recorded"):
+            harness.run(self.node)
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertFalse(any(e["event"] == "cluster_evidence_unavailable" for e in harness.events))
 
     def test_preflight_artifact_conflict_prevents_injection_without_overwrite(self):
         self.enable_cluster_evidence()

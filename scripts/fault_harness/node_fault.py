@@ -6,6 +6,7 @@ It is an argv array, never a shell fragment. This driver does not qualify recove
 from historical dashboard TPS and never force-deletes pods, nodes or PVCs.
 """
 import argparse
+from collections import Counter
 import datetime
 import hashlib
 import json
@@ -19,6 +20,7 @@ import sys
 import time
 
 from cluster_evidence import snapshot as cluster_snapshot, write_snapshot
+from cluster_readiness import assess as assess_cluster_readiness
 
 
 class GateError(RuntimeError):
@@ -56,6 +58,13 @@ def validate_config(config):
         raise GateError("baseline must be >=10s; fault/recovery bounds must be <=1800s")
     if not isinstance(config.get("capture_cluster_evidence", False), bool):
         raise GateError("capture_cluster_evidence must be a boolean")
+    if "restoration_readiness_seconds" in config:
+        budget = config["restoration_readiness_seconds"]
+        if (isinstance(budget, bool) or not isinstance(budget, (int, float))
+                or not math.isfinite(budget) or not 1 <= budget <= 1800):
+            raise GateError("restoration_readiness_seconds must be between 1 and 1800")
+        if not config.get("capture_cluster_evidence", False):
+            raise GateError("restoration readiness requires capture_cluster_evidence")
     adapter = config.get("observation_command")
     if not isinstance(adapter, list) or not adapter or any(not isinstance(a, str) or not a for a in adapter):
         raise GateError("observation_command must be a nonempty argv array")
@@ -132,10 +141,15 @@ class Harness:
         self.restore_required = False
         self.last_observation = None
 
-    def kube(self, *args):
+    def kube(self, *args, deadline=None):
         c = self.config
+        timeout = 20
+        if deadline is not None:
+            timeout = min(timeout, deadline - self.clock())
+            if timeout <= 0:
+                raise GateError("cluster readiness read deadline exceeded")
         return json.loads(self.execute(["kubectl", "--kubeconfig", c["kubeconfig"], "--context", c["context"],
-                                        "--request-timeout=10s", "-n", c["namespace"], *args, "-o", "json"]))
+                                        "--request-timeout=10s", "-n", c["namespace"], *args, "-o", "json"], timeout=timeout))
 
     def record(self, kind, **fields):
         self.events.append({"event": kind, "at": datetime.datetime.now(datetime.timezone.utc).isoformat(), **fields})
@@ -149,12 +163,9 @@ class Harness:
     def capture_cluster_evidence(self, phase, required=False):
         if not self.config.get("capture_cluster_evidence", False):
             return
-        filename = "cluster-" + phase + ".json"
         try:
             evidence = cluster_snapshot(self.config, self.kube)
-            path = self.output / filename
-            write_snapshot(path, evidence)
-            checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+            fields = self.persist_cluster_evidence(phase, evidence)
         except Exception:
             self.record("cluster_evidence_unavailable", phase=phase)
             if required:
@@ -162,9 +173,58 @@ class Harness:
                 # write. Raw exception strings may contain credentials.
                 raise GateError("preflight cluster evidence could not be captured") from None
             return
-        self.record("cluster_evidence", phase=phase, file=filename, sha256=checksum,
+        self.record("cluster_evidence", **fields)
+        return evidence
+
+    def persist_cluster_evidence(self, phase, evidence):
+        filename = "cluster-" + phase + ".json"
+        path = self.output / filename
+        write_snapshot(path, evidence)
+        checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        return dict(phase=phase, file=filename, sha256=checksum,
                     inventory_complete=evidence["inventory_complete"],
                     gaps=[key for key, value in evidence["resources"].items() if value["status"] != "observed"])
+
+    def wait_for_cluster_readiness(self, baseline):
+        budget = self.config["restoration_readiness_seconds"]
+        started = self.clock()
+        deadline = started + budget
+        self.record("cluster_readiness_started", budget_seconds=budget)
+        attempts, ready, evidence = 0, False, None
+        result = {"ready": False, "issues": [{"resource": "cluster", "name": None, "reason": "inventory_unavailable"}]}
+        while self.clock() < deadline:
+            attempts += 1
+            try:
+                evidence = cluster_snapshot(self.config, lambda *args: self.kube(*args, deadline=deadline))
+                result = assess_cluster_readiness(baseline, evidence)
+            except Exception:
+                evidence = None
+                result = {"ready": False, "issues": [{"resource": "cluster", "name": None, "reason": "inventory_unavailable"}]}
+            # Even an otherwise ready response arriving at/after the deadline
+            # cannot turn an exceeded budget into a success.
+            ready = result["ready"] and self.clock() < deadline
+            self.record("cluster_readiness_observation", attempt=attempts, elapsed_seconds=self.clock() - started,
+                        ready=ready, reasons=dict(Counter(issue["reason"] for issue in result["issues"])))
+            if ready:
+                break
+            remaining = deadline - self.clock()
+            if remaining > 0:
+                self.sleep(min(5, remaining))
+        elapsed = self.clock() - started
+        if evidence is not None:
+            self.record("cluster_evidence", **self.persist_cluster_evidence("restored", evidence))
+        else:
+            self.record("cluster_evidence_unavailable", phase="restored")
+        report = {"schema_version": 1, "run_id": self.config["run_id"], "cluster": self.config["cluster"],
+                  "namespace": baseline["namespace"], "ready": ready, "budget_seconds": budget,
+                  "elapsed_seconds": elapsed, "attempts": attempts,
+                  "deadline_exceeded": not ready and elapsed >= budget, "last_observation": result}
+        path = self.output / "cluster-readiness.json"
+        write_snapshot(path, report)
+        self.record("cluster_readiness_passed" if ready else "cluster_readiness_failed", file=path.name,
+                    sha256=hashlib.sha256(path.read_bytes()).hexdigest(), elapsed_seconds=report["elapsed_seconds"])
+        if not ready:
+            raise GateError("Kubernetes restoration readiness deadline exceeded")
 
     def preflight(self, node):
         c = self.config
@@ -216,8 +276,13 @@ class Harness:
         self.preflight(node)
         # Capture before the sustained baseline so inventory reads cannot age its
         # final target observation or consume the stopped-node recovery budget.
-        self.capture_cluster_evidence("preflight", required=True)
+        baseline_inventory = self.capture_cluster_evidence("preflight", required=True)
         c = self.config
+        if "restoration_readiness_seconds" in c:
+            readiness = assess_cluster_readiness(baseline_inventory, baseline_inventory)
+            self.record("cluster_readiness_preflight", **readiness)
+            if not readiness["ready"]:
+                raise GateError("Kubernetes baseline is not ready for restoration qualification")
         previous = None
         healthy_since = None
         deadline = self.clock() + c["recovery_seconds"]
@@ -284,11 +349,21 @@ class Harness:
             self.record("traffic_gate_passed", recovery_seconds=recovered_at)
         finally:
             trial_failed = sys.exc_info()[0] is not None
+            trial_interrupted = isinstance(sys.exc_info()[1], KeyboardInterrupt)
             self.restore()
             # Restoration always precedes diagnostic reads. Even a failure to
             # write the gap event must preserve the original trial exception.
             try:
-                self.capture_cluster_evidence("restored")
+                if "restoration_readiness_seconds" in c:
+                    if trial_interrupted:
+                        self.record("cluster_readiness_skipped", reason="trial_interrupted")
+                    else:
+                        self.wait_for_cluster_readiness(baseline_inventory)
+                else:
+                    self.capture_cluster_evidence("restored")
+            except GateError:
+                if not trial_failed:
+                    raise
             except Exception:
                 if not trial_failed:
                     raise GateError("restored cluster evidence could not be recorded") from None
