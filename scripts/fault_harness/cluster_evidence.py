@@ -2,6 +2,7 @@
 """Read-only, allowlisted Kubernetes evidence for an owned disposable fault cluster."""
 import argparse
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -246,14 +247,15 @@ def snapshot(config, kube):
     return result
 
 
-def write_snapshot(path, evidence):
+def write_snapshot(path, evidence, *, max_bytes=MAX_ARTIFACT_BYTES):
     """Create a private artifact without overwriting prior evidence or following links."""
     data = (json.dumps(evidence, indent=2, allow_nan=False) + "\n").encode("utf-8")
-    if len(data) > MAX_ARTIFACT_BYTES:
+    if len(data) > min(MAX_ARTIFACT_BYTES, max_bytes):
         raise EvidenceError("cluster evidence artifact exceeds size bound")
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as stream:
         stream.write(data)
+    return {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
 
 def main():

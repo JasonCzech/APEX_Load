@@ -627,3 +627,21 @@ was run for this slice. Unrelated Java/performance and admission-test work was l
 untouched. The stack provisioner, authoritative observer, during-fault scaling and
 final archive evidence, repeated fault matrix, and multi-host/dependency-failover
 qualification remain open.
+
+## Background cluster sampling foundation
+
+Added a single read-only background sampler over the sanitized inventory collector.
+It pins namespace identity to the preflight inventory, retries transport gaps, stops
+on invalid scope/inventory, and records cancellation explicitly. Each snapshot shares
+a ten-second read deadline. The caller requests stop without waiting, then joins only
+after attempting Docker restoration; a stuck worker has an explicit bounded-join
+failure. The sampler never writes driver events or runs mutation commands.
+
+Artifacts use private new directories and exclusive files, SHA-256 indexes, a 512
+attempt cap, 8 MiB per-file cap and 64 MiB aggregate snapshot cap. Raw exceptions and
+credentials do not enter the index. Review checked failure during writing/worker exit
+and avoided publishing a final byte count for a worker that did not stop. Eleven
+real-thread tests cover slow reads, stop/join timeout, cancellation, scope replacement,
+transport retry, partial API gaps, cumulative byte/attempt bounds, hashes/permissions,
+no overwrite and unexpected worker failure. All 59 harness tests passed. No further
+actionable finding remained in this foundation; driver integration follows separately.
