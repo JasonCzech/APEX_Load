@@ -18,8 +18,12 @@ def prepare(directory):
             f.write(text)
     def openssl(*args):
         subprocess.run(["openssl", *args], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    write("credentials.json", json.dumps({key: secrets.token_urlsafe(32) for key in
-          ("http", "grpc", "postgres", "redis", "s3_access_key", "s3_secret_key", "wrapping_key")}, indent=2))
+    credentials = {key: secrets.token_urlsafe(32) for key in
+                   ("http", "grpc", "postgres", "redis", "s3_access_key", "s3_secret_key", "wrapping_key",
+                    "target_load", "target_observer")}
+    write("credentials.json", json.dumps(credentials, indent=2))
+    write("target.json", json.dumps({"run_id": run_id, "load_token": credentials["target_load"],
+                                     "observer_token": credentials["target_observer"]}, indent=2))
     write("kind.yaml", """kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -33,7 +37,7 @@ nodes:
     openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", "ca.key", "-out", "ca.crt",
             "-days", "2", "-subj", "/CN=apexload-fault-" + run_id,
             "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign")
-    for role in ("controller", "generator"):
+    for role in ("controller", "generator", "fault-target"):
         write(role + ".ext", "basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
               "extendedKeyUsage=serverAuth,clientAuth\nsubjectAltName=DNS:localhost,IP:127.0.0.1,DNS:apexload-" + role
               + ",DNS:apexload-" + role + ".apexload-fault.svc,DNS:*.apexload-" + role + ".apexload-fault.svc\n")

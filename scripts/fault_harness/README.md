@@ -14,7 +14,7 @@ python3 scripts/fault_harness/prepare_inputs.py /absolute/new/private-directory
 
 The second command refuses an existing directory and generates fresh credentials,
 a private CA, controller/generator certificates, a three-node kind configuration and
-a random ownership record. Nothing is copied from earlier deployment snapshots.
+a random ownership record, and a separate target/observer credential pair in `target.json`. Nothing is copied from earlier deployment snapshots.
 The directory must remain private; do not commit it or include its credentials in
 public evidence. Certificates last two days. Install the generated values through
 Secret resources, with the CA trust and server names required by your deployment.
@@ -97,6 +97,42 @@ before/after Kubernetes inventories and optional background samples during the t
 Measured dependency failover still requires the stack adapter. The archive command
 below captures a separately requested final archive check. A passed traffic gate alone is not a passing completion, archive,
 no-overlap, liveness, cleanup-readiness or production-availability qualification.
+
+
+## Independent traffic target
+
+Build the target and start it with the fresh private inputs:
+
+```sh
+go build -o /absolute/private/apexfault-target ./cmd/apexfault-target
+/absolute/private/apexfault-target --config /absolute/private/target.json \
+  --tls-cert /absolute/private/fault-target.crt \
+  --tls-key /absolute/private/fault-target.key
+```
+
+The default listener is `127.0.0.1:8090`. Set `--listen :8090` explicitly for a
+private disposable-cluster deployment. Place this single target outside the failed
+worker, trust the generated CA, and use its certificate name `apexload-fault-target`
+(or localhost for a local test). Without TLS flags it serves HTTP for isolated local
+use. Both TLS flags must be supplied together. This command does not deploy a pod.
+
+Authenticated `GET /load` requests with `Authorization: Bearer <load_token>` and
+`X-Apexload-Fault-Run: <run_id>` increment the process's counter and return 204.
+Configure these headers through private workload inputs. `GET /snapshot` requires
+the distinct observer token and returns only schema version, run ID, random
+`target_instance_id`, process start time, fresh `observed_at_unix`, and
+`target_requests`. Keep tokens out of URLs and published scripts/artifacts.
+`GET /healthz` returns 204. Health, snapshot and rejected requests never increase
+the counter; snapshot responses disable caching. There is no counter-reset endpoint.
+
+The counter measures accepted load requests at the target, including requests whose
+response is subsequently lost. It is not successful-response TPS, a VUser count,
+a shard ownership record or a target performance benchmark. Counters are in memory;
+a restarted process gets a new identity and begins at zero. Use one target process,
+not load-balanced replicas. The observation adapter must preserve the target's
+observation time and identity, then combine it with independently verified controller,
+KEDA and assignment evidence. This service alone cannot detect old-owner traffic or
+qualify failover. Graceful termination waits up to five seconds for active requests.
 
 
 ## Read-only cluster inventory

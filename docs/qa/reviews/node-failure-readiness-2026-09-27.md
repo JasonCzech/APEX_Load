@@ -798,3 +798,26 @@ contracts remained fresh. Documentation checks for 68 active Markdown files and
 `git diff --check` passed. Final review found no further actionable issue in this
 scope. Unrelated Java/performance work was preserved; no new live Kubernetes
 fault or production qualification was performed.
+
+## Independent fault-trial traffic target
+
+Added `apexfault-target`, a dependency-free HTTP counter service for a single
+disposable fault run. Load requests require a run-bound header and load token;
+snapshots require a separate observer token and expose only the run/process identity,
+start/observation timestamps and accepted-request count. Health, observation and
+rejected traffic do not count. Input preparation now generates separate target
+credentials/config and a target certificate. The service defaults to loopback,
+supports TLS, bounds HTTP timeouts/headers and exposes no reset operation.
+
+Review fixed graceful shutdown so the process waits for active requests rather
+than exiting as soon as the listener stops. Tests cover concurrent HTTPS traffic,
+monotonic snapshots, distinct process incarnations, credential/run/method isolation,
+duplicate headers, counter overflow, bounded config parsing, TLS failure and
+cancellation. The target is an independent accepted-request counter, not an
+authoritative assignment observer or a production throughput benchmark. Stack
+provisioning and real controller/KEDA/shard correlation remain open.
+
+The target race suite passed (1.512 seconds), including real HTTPS requests and
+shutdown tests. Fresh-input/certificate tests passed (0.768 seconds), as did
+68-file documentation and whitespace checks. No further actionable finding remained
+in the target service slice. No Docker/Kubernetes deployment was performed.

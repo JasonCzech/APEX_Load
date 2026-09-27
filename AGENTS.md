@@ -27,6 +27,7 @@ cmd/
   apexload-record-agent/ — Local browser-recording bridge agent (run on operator workstations)
   apexload-collector-agent/ — Monitoring collector agent (controller heartbeat + host-metric packs)
   apexload-java-vuser-runner/ — Java Vuser runner bridge (external-runner container for `java_vuser`)
+  apexfault-target/ — Authenticated independent HTTP traffic counter for disposable fault trials
   apexbench/     — Controlled local performance-evidence harness (`make performance-smoke`)
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
   swaggergen/    — Code generator for docs/swagger.yaml + docs/api-endpoint-catalog.json
