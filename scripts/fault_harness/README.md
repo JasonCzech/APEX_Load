@@ -81,7 +81,21 @@ It requires sustained baseline traffic, VUsers and KEDA demand, then requires su
 traffic recovery while the node remains stopped. A stale sample, requested load alone,
 or traffic returning only after node restoration does not pass. Use a workload long
 enough to outlast baseline, failure and recovery windows. Fault and recovery windows
-are bounded at 30 minutes. Poll/command errors cannot silently pass the traffic gate. A transport outage resets
+are bounded at 30 minutes. The full sustained recovery interval must finish strictly
+before both the recovery deadline and scheduled node restoration. If it cannot,
+the driver fails and immediately enters cleanup. `traffic_recovered.elapsed` and
+`traffic_gate_passed.recovery_seconds` measure completion of that sustained interval;
+`traffic_recovered.healthy_since_seconds` separately records its start. Older driver
+evidence reported the interval's start as recovery time and must not be compared as
+if it used the completion definition.
+
+Baseline observation calls inherit the remaining acquisition budget. During the
+fault trial, each observation is bounded by the next applicable recovery,
+restoration or trial-end boundary, with a maximum 15-second command timeout. Poll
+sleeps use the same boundary, and responses arriving at/after it cannot establish
+recovery. Docker kill/start and post-restoration readiness have separate command
+budgets; these observation limits do not guarantee a Docker restoration completion
+time. Poll/command errors cannot silently pass the traffic gate. A transport outage resets
 only the consecutive-load window; it does not erase the last target counter. Duplicate
 ownership, a changed target identity (even with a higher counter), a counter reset
 (including across an observation outage), invalid ownership/count evidence,

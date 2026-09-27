@@ -317,7 +317,9 @@ class Harness:
         deadline = self.clock() + c["recovery_seconds"]
         baseline_restarts = None
         while self.clock() < deadline:
-            observation = self.observe()
+            observation = self.observe(timeout=min(15, deadline - self.clock()))
+            if self.clock() >= deadline:
+                raise GateError("baseline observation deadline exceeded")
             restarts = observation.get("controller_restarts")
             if not isinstance(restarts, int) or restarts < 0:
                 raise GateError("controller restart evidence is required")
@@ -332,7 +334,7 @@ class Harness:
             previous = observation
             if healthy_since is not None and self.clock() - healthy_since >= c["baseline_seconds"]:
                 break
-            self.sleep(1)
+            self.sleep(min(1, max(0, deadline - self.clock())))
         else:
             raise GateError("requested target-observed load was never sustained")
         if not any(s["node"] == node for s in previous["assignments"]):
@@ -349,6 +351,8 @@ class Harness:
         fault_at = self.clock()
         recovered_at = None
         recovery_healthy_since = None
+        trial_deadline = fault_at + max(c["fault_seconds"], c["recovery_seconds"])
+        recovery_deadline = fault_at + min(c["fault_seconds"], c["recovery_seconds"])
         try:
             self.execute(["docker", "kill", "--signal", "KILL", self.victim_id])
             self.record("fault_injected", node=node)
@@ -360,12 +364,28 @@ class Harness:
                 except Exception:
                     raise GateError("background cluster evidence could not be started") from None
             previous = None
-            while self.clock() - fault_at < max(c["fault_seconds"], c["recovery_seconds"]):
+            while self.clock() < trial_deadline:
                 elapsed = self.clock() - fault_at
+                if recovered_at is None and self.clock() >= recovery_deadline:
+                    raise GateError("traffic recovery deadline exceeded")
                 if elapsed >= c["fault_seconds"]:
                     self.restore()
+                # Reads must not postpone the next restoration/recovery boundary.
+                read_deadline = trial_deadline
+                if self.restore_required:
+                    read_deadline = min(read_deadline, fault_at + c["fault_seconds"])
+                if recovered_at is None:
+                    read_deadline = min(read_deadline, recovery_deadline)
+                remaining = read_deadline - self.clock()
+                if remaining <= 0:
+                    continue
                 try:
-                    observation = self.observe()
+                    observation = self.observe(timeout=min(15, remaining))
+                    if observation.get("controller_restarts") != baseline_restarts:
+                        raise ObservationSafetyError("unintended controller restart after injection")
+                    elapsed = self.clock() - fault_at
+                    if self.clock() >= read_deadline:
+                        raise GateError("fault observation deadline exceeded")
                 except ObservationSafetyError as error:
                     # These messages are fixed validation reasons, never adapter
                     # output or unfiltered source values.
@@ -374,20 +394,19 @@ class Harness:
                 except (GateError, ValueError, subprocess.TimeoutExpired):
                     previous = None
                     recovery_healthy_since = None
-                    self.record("observation_unavailable", elapsed=elapsed)
-                    self.sleep(1)
+                    self.record("observation_unavailable", elapsed=self.clock() - fault_at)
+                    self.sleep(min(1, max(0, read_deadline - self.clock())))
                     continue
-                if observation.get("controller_restarts") != baseline_restarts:
-                    raise GateError("unintended controller restart after injection")
                 healthy = validate_observation(observation, c, previous)
                 previous = observation
                 recovery_healthy_since = (recovery_healthy_since if recovery_healthy_since is not None else elapsed) if healthy else None
                 if (recovered_at is None and self.restore_required and recovery_healthy_since is not None
                         and elapsed - recovery_healthy_since >= c["baseline_seconds"]):
-                    recovered_at = recovery_healthy_since
-                    self.record("traffic_recovered", elapsed=recovered_at)
-                self.sleep(1)
-            if recovered_at is None or recovered_at > c["recovery_seconds"]:
+                    recovered_at = elapsed
+                    self.record("traffic_recovered", elapsed=recovered_at,
+                                healthy_since_seconds=recovery_healthy_since)
+                self.sleep(min(1, max(0, read_deadline - self.clock())))
+            if recovered_at is None:
                 raise GateError("traffic recovery deadline exceeded")
             self.record("traffic_gate_passed", recovery_seconds=recovered_at)
         finally:

@@ -580,6 +580,133 @@ class HarnessTest(unittest.TestCase):
             self.harness().run(self.node)
         self.assertFalse(self.killed)
 
+    def test_recovery_reports_completion_of_sustained_window(self):
+        h = self.harness()
+        h.run(self.node)
+        recovered = next(e for e in h.events if e["event"] == "traffic_recovered")
+        passed = next(e for e in h.events if e["event"] == "traffic_gate_passed")
+        self.assertEqual(recovered["healthy_since_seconds"], 1)
+        self.assertEqual(recovered["elapsed"], 11)
+        self.assertEqual(passed["recovery_seconds"], 11)
+
+    def test_entire_recovery_window_must_finish_before_deadline(self):
+        for healthy_at, passes in ((9, True), (10, False), (12, False)):
+            with self.subTest(healthy_at=healthy_at):
+                self.now, self.killed, self.started = 100, False, []
+                original = HarnessTest.execute.__get__(self)
+                def execute(argv, timeout=20):
+                    raw = original(argv, timeout)
+                    if argv == ["observe"] and self.killed and self.now - self.fault_at < healthy_at:
+                        data = json.loads(raw)
+                        data["observed_vusers"] = 0
+                        return json.dumps(data)
+                    return raw
+                self.execute = execute
+                h = self.harness()
+                if passes:
+                    h.run(self.node)
+                    recovered = next(e for e in h.events if e["event"] == "traffic_recovered")
+                    self.assertEqual(recovered["elapsed"], healthy_at + 10)
+                else:
+                    with self.assertRaisesRegex(GateError, "recovery deadline"):
+                        h.run(self.node)
+                    self.assertNotIn("traffic_gate_passed", [e["event"] for e in h.events])
+                    self.assertEqual(self.now - self.fault_at, 20)
+                self.assertEqual(self.started, ["immutable-id"])
+
+    def test_baseline_response_at_deadline_never_injects(self):
+        original = self.execute
+        observed_timeouts = []
+        def execute(argv, timeout=20):
+            if argv == ["observe"] and self.now >= 110:
+                observed_timeouts.append(timeout)
+                self.now += timeout
+            return original(argv, timeout)
+        self.execute = execute
+        with self.assertRaisesRegex(GateError, "baseline observation deadline"):
+            self.harness().run(self.node)
+        self.assertEqual(observed_timeouts, [10])
+        self.assertEqual(self.now, 120)
+        self.assertFalse(self.killed)
+
+    def test_slow_recovery_response_cannot_cross_deadline(self):
+        original = self.execute
+        observed_timeouts = []
+        def execute(argv, timeout=20):
+            if argv == ["observe"] and self.killed and self.now - self.fault_at >= 10:
+                observed_timeouts.append(timeout)
+                self.now += timeout
+            return original(argv, timeout)
+        self.execute = execute
+        h = self.harness()
+        with self.assertRaisesRegex(GateError, "recovery deadline"):
+            h.run(self.node)
+        self.assertEqual(observed_timeouts, [10])
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertNotIn("traffic_recovered", [e["event"] for e in h.events])
+
+    def test_recovery_time_uses_observation_completion_not_request_start(self):
+        original = self.execute
+        def execute(argv, timeout=20):
+            if argv == ["observe"] and self.killed and self.now - self.fault_at == 11:
+                self.now += 0.25
+            return original(argv, timeout)
+        self.execute = execute
+        h = self.harness()
+        h.run(self.node)
+        recovered = next(e for e in h.events if e["event"] == "traffic_recovered")
+        self.assertEqual(recovered["elapsed"], 11.25)
+        self.assertEqual(recovered["healthy_since_seconds"], 1)
+
+    def test_observation_cannot_postpone_scheduled_restoration(self):
+        for fault_seconds in (15, 30):
+            with self.subTest(fault_seconds=fault_seconds):
+                self.now, self.killed, self.started = 100, False, []
+                self.config["fault_seconds"] = fault_seconds
+                original = HarnessTest.execute.__get__(self)
+                stopped_reads, restored_at = [], []
+                def execute(argv, timeout=20):
+                    if argv == ["observe"] and self.killed and not self.started:
+                        stopped_reads.append((self.now - self.fault_at, timeout))
+                        if self.now - self.fault_at == fault_seconds - 1:
+                            self.now += timeout
+                            raise subprocess.TimeoutExpired(argv, timeout, stderr="SECRET")
+                    if argv[:2] == ["docker", "start"]:
+                        restored_at.append(self.now - self.fault_at)
+                    return original(argv, timeout)
+                self.execute = execute
+                h = self.harness()
+                h.run(self.node)
+                self.assertEqual(restored_at, [fault_seconds])
+                self.assertTrue(all(at + timeout <= fault_seconds for at, timeout in stopped_reads))
+                self.assertNotIn("SECRET", json.dumps(h.events))
+
+    def test_fault_window_too_short_for_sustained_recovery_fails(self):
+        self.config["fault_seconds"] = 10
+        h = self.harness()
+        with self.assertRaisesRegex(GateError, "recovery deadline"):
+            h.run(self.node)
+        self.assertEqual(self.now - self.fault_at, 10)
+        self.assertEqual(self.started, ["immutable-id"])
+        self.assertNotIn("traffic_gate_passed", [e["event"] for e in h.events])
+
+    def test_late_response_cannot_hide_known_controller_restart(self):
+        original = self.execute
+        def execute(argv, timeout=20):
+            if argv == ["observe"] and self.killed and self.now - self.fault_at == 29:
+                self.now += timeout
+                data = json.loads(original(argv, timeout))
+                data["controller_restarts"] = 1
+                return json.dumps(data)
+            return original(argv, timeout)
+        self.execute = execute
+        h = self.harness()
+        with self.assertRaisesRegex(ObservationSafetyError, "controller restart"):
+            h.run(self.node)
+        self.assertIn("observation_safety_failed", [e["event"] for e in h.events])
+        self.assertNotIn("traffic_gate_passed", [e["event"] for e in h.events])
+        self.assertEqual(self.started, ["immutable-id"])
+
     def test_stale_future_duplicate_and_reset_observations(self):
         for value in (self.now-6, self.now+1, float("nan")):
             with self.assertRaises(GateError):

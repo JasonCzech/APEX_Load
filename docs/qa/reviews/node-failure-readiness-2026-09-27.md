@@ -949,3 +949,36 @@ for this tooling-only slice. Final review found no further actionable issue.
 The real observation adapter and deployed stack remain required for live control
 qualification; this change does not qualify the production fault matrix. Unrelated
 Java/performance work was preserved.
+
+## Recovery completion deadlines and observation budgets
+
+Review found that the fault driver recorded the start of a sustained healthy
+interval as recovery time. An interval beginning before the recovery budget but
+finishing after it could therefore pass. Recovery now requires the whole interval
+to finish strictly before the recovery deadline and scheduled worker restoration.
+The reported recovery time is the completed observation time; the interval start
+is retained separately as `healthy_since_seconds`. Older evidence uses a different
+timing definition and is documented accordingly.
+
+Baseline and fault observations now inherit the remaining phase budget, capped at
+15 seconds. Poll sleeps cannot cross the next recovery/restoration/trial boundary.
+A late baseline cannot trigger injection, and a slow observation cannot extend the
+scheduled stopped-node window. Failed recovery immediately enters the existing
+restoration path. Docker commands and post-restoration checks retain their separate
+budgets; this does not establish a hard Docker restoration completion guarantee.
+
+The follow-up review found that late responses must still latch known controller
+restarts. Restart validation now precedes the late-response rejection and records
+the existing safety-failure event. Tests cover sustained completion before/at/after
+the budget, post-response timing, slow baseline/recovery reads, restoration at both
+shorter and longer fault windows, insufficient stopped-node time, and a controller
+restart reported at the deadline. The seven initial timing regressions fail against
+the prior committed driver, confirming that they detect the original behavior.
+
+All 94 harness tests passed (3.843 seconds), including existing sampling,
+restoration-readiness and healthy-control regressions. The complete uncached
+`go test ./scripts -count=1` passed (15.296 seconds). Documentation checks for 68
+active Markdown files and whitespace checks passed. Final review found no further
+actionable issue. This slice changes fault tooling only; the full application Go
+suite and live Docker/Kubernetes qualification were not repeated. Unrelated
+Java/performance changes were preserved.
