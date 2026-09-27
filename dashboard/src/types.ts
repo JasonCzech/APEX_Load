@@ -1995,7 +1995,8 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
-  observation_state?: 'historical'
+  observation_state?: 'historical' | 'stale'
+  observation_valid_until?: string
   completed_iterations?: number
   timestamp: string
   active_vusers: number

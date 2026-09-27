@@ -86,3 +86,49 @@ test('Command Center supports empty actions, run triage, persistent switching an
   await overview.getByRole('button', { name: 'Clear filters', exact: true }).click()
   await page.screenshot({ path: testInfo.outputPath('command-center-overview.png'), fullPage: true })
 })
+
+test('active load observations expire without updates and fresh telemetry clears the warning', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Active observation evidence', duration: '10m', groups: [{ name: 'orders', script_id: scriptId, vusers: 120 }],
+  } })))
+  let capturedAt = new Date().toISOString()
+  await page.clock.install({ time: new Date(capturedAt) })
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({ response, json: { ...payload, status: 'RUNNING', started_at: capturedAt,
+      live_metrics: { timestamp: capturedAt, observation_valid_until: new Date(Date.parse(capturedAt) + 5000).toISOString(), active_vusers: 120,
+        tps: 100, total_transactions: 5000, total_errors: 0, error_pct: 0, avg_response_ms: 10,
+        p50_ms: 10, p90_ms: 15, p95_ms: 20, p99_ms: 25 } } })
+  })
+  await page.goto(`/#/command-center/${id}?${scopeQuery(workspace)}`)
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  const notice = page.getByRole('status', { name: 'Load observation status' })
+  await expect(notice).toHaveCount(0)
+  await page.clock.fastForward(6000)
+  await expect(notice).toContainText('current load and recovery are unconfirmed')
+  await expect(page.getByRole('region', { name: 'Command center run controls' })).toContainText('Observed / Target Load')
+  await expect(page.getByRole('region', { name: 'Command center run controls' })).not.toContainText('connected to live run data')
+  await page.setViewportSize({ width: 1280, height: 950 })
+  await page.screenshot({ path: testInfo.outputPath('active-observation-stale.png'), fullPage: true })
+  // A real new sample, rather than a fresh receipt time for the old sample.
+  capturedAt = await page.evaluate(() => new Date().toISOString())
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  await expect(notice).toHaveCount(0)
+  await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`)
+  await expect(page.getByRole('region', { name: 'Run state', exact: true })).toBeVisible()
+  await page.clock.fastForward(6000)
+  const state = page.getByRole('region', { name: 'Run state', exact: true })
+  await expect(state).toContainText('Last observed load')
+  await expect(state).toContainText('120')
+  await expect(state).toContainText('Stale sample')
+  await expect(state.getByRole('status')).toContainText('recovery are unconfirmed')
+})

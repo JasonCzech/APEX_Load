@@ -1866,7 +1866,7 @@ describe('CommandCenterPrototype', () => {
     })
 
     const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
-    expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Current / Target Load')
+    expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('42 / 50 VU')
     const errorRateMetric = summaryMetrics
       .find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
@@ -1911,7 +1911,7 @@ describe('CommandCenterPrototype', () => {
     })
 
     const summaryMetrics = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
-    expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Current / Target Load')
+    expect(summaryMetrics[0].querySelector('span')?.textContent).toBe('Observed / Target Load')
     expect(summaryMetrics[0].querySelector('strong')?.textContent).toBe('67 / 75 VU')
     const overall = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Overall Error Rate')
     const highest = summaryMetrics.find(metric => metric.querySelector('span')?.textContent === 'Highest Error Rate')
@@ -2417,7 +2417,7 @@ describe('CommandCenterPrototype', () => {
     expect(container.textContent).toContain('guardrail 10-200 VU')
     expect(container.querySelector('[aria-label="Group load transition controls"]')).toBeNull()
     const combinedLoad = Array.from(container.querySelectorAll<HTMLElement>('.command-metric-pill'))
-      .find(metric => metric.querySelector('span')?.textContent === 'Current / Target Load')
+      .find(metric => metric.querySelector('span')?.textContent === 'Observed / Target Load')
     expect(combinedLoad?.querySelector('strong')?.textContent).toBe('42 VU / 90.0 TPS')
     const projected = Array.from(container.querySelectorAll('.command-capacity-snapshot .command-metric-pill')).find(metric => metric.querySelector('span')?.textContent === 'Projected')
     expect(projected?.querySelector('strong')?.textContent).toBe('50 VU')

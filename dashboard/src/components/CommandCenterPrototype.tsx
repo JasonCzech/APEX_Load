@@ -1,3 +1,5 @@
+import { useLiveObservation } from '../hooks/useLiveObservation'
+import LiveObservationNotice from './LiveObservationNotice'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
@@ -129,7 +131,7 @@ interface CommandCenterState {
 }
 
 const DEFAULT_PROTOTYPE_FEEDBACK = 'Prototype controls are local-only. No live run will be changed.'
-const DEFAULT_LIVE_FEEDBACK = 'Command center is connected to live run data.'
+const DEFAULT_LIVE_FEEDBACK = 'Showing run observations from the controller.'
 const DEFAULT_HISTORICAL_FEEDBACK = 'Historical snapshot. Live controls are unavailable for completed, failed, or aborted runs.'
 const TEST_STATUSES: TestStatus[] = [
   'QUEUED',
@@ -431,6 +433,13 @@ function buildGroupsWithTargets(prototypeGroups: CommandGroup[], targets: Record
     const target = targets[group.name] ?? group.target
     return { ...group, target, targetVusers: target }
   })
+}
+
+// Keep the expiry timer inside this small notice rather than re-rendering every
+// graph in Command Center when the network has stopped providing new samples.
+function CommandLoadObservation({ test }: { test: TestSummary }) {
+  const state = useLiveObservation(test.status, test.live_metrics)
+  return <LiveObservationNotice state={state} />
 }
 
 export default function CommandCenterPrototype({
@@ -1389,6 +1398,7 @@ export default function CommandCenterPrototype({
         </select></label>
         {discoveryError && <span role="alert">Run list is stale. <button type="button" className="btn btn-secondary" onClick={() => setDiscoveryRetry(value => value + 1)}>Retry active runs</button></span>}
       </nav>}
+      {liveMode && <CommandLoadObservation test={displayTest} />}
       <RunControlShelf
         test={displayTest}
         status={runStatus}
@@ -1662,7 +1672,7 @@ function RunControlShelf({
 
       <div className={`command-run-stats${tps !== undefined ? ' with-tps' : ''}${test.groups.length > 1 ? ' with-highest-error' : ''}`} aria-label="Run summary">
         <MetricPill
-          label={canStart ? "Planned load" : "Current / Target Load"}
+          label={canStart ? "Planned load" : "Observed / Target Load"}
           value={canStart ? `${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'} · Not started` : noRequestSamples && !test.live_metrics ? `No samples / ${formatNumber(totalTarget)} ${targetMode === 'tps' ? 'TPS' : 'VU'}` : targetMode === 'tps'
             ? `${formatNumber(totalCurrent)} VU / ${formatNumber(totalTarget, 1)} TPS`
             : `${formatNumber(totalCurrent)} / ${formatNumber(totalTarget)} VU`}

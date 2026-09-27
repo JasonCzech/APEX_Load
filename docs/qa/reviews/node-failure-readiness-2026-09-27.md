@@ -228,3 +228,28 @@ Validation: the full API package passed (332.930 seconds), focused API regressio
 passed (1.318 seconds), and focused observation/concurrent-metrics race checks passed
 (3.320 seconds). Generated OpenAPI/TypeScript contracts were refreshed. Documentation
 and whitespace checks passed. Browser presentation and its checks are the next slice.
+
+
+## Active observation presentation
+
+Command Center and advanced run details expire observations in the browser even when
+WebSocket updates and polls stop. Old API responses without a deadline use the same
+five-second sample-age bound. Explicit server stale state, invalid timestamps and
+invalid deadlines cannot display as current. Fresh evidence clears the warning;
+terminal state still displays historical evidence. A stale sample does not assert
+that a run failed, that its load stopped, or that recovery succeeded. Configuring a
+sampling interval longer than five seconds can legitimately produce these warnings
+between samples; this bound is independent of telemetry health and recovery policy.
+
+Review moved the Command Center expiry timer into the small notice to avoid rendering
+all its graphs every second. Browser screenshot review then found conflicting “live
+run data” feedback under the warning; the feedback and load summary label now describe
+observations. Run controls, captured values, target settings and history are preserved.
+
+Validation passed typecheck, lint, build and 94 relevant unit tests. The full affected
+Command Center and analysis workflow files passed in both dev-admin (four cases,
+9.8 seconds) and local-auth (four cases, 50.6 seconds). After the screenshot-driven
+wording fix, both Command Center cases passed again in dev-admin (4.3 seconds) and
+local-auth (17.9 seconds); the final local-auth screenshot was inspected. Browser
+fixtures use real scoped run IDs with controlled observations; they do not inject a
+real node failure. Final review found no remaining actionable issue in this slice.
