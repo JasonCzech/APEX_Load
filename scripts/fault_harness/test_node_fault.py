@@ -22,6 +22,7 @@ class HarnessTest(unittest.TestCase):
         self.node = self.config["cluster"] + "-worker"
         self.now, self.killed, self.started = 100.0, False, []
         self.fault_mode = None
+        self.harness_count = 0
         self.labels = {"io.x-k8s.kind.cluster": self.config["cluster"], "io.x-k8s.kind.role": "worker"}
         self.namespace_owner = self.config["run_id"]
         self.clock_patch = patch("node_fault.time.time", lambda: self.now)
@@ -65,7 +66,16 @@ class HarnessTest(unittest.TestCase):
     def harness(self):
         def sleep(seconds):
             self.now += seconds
-        return Harness(self.config, Path(self.temp.name) / "evidence", self.execute, lambda: self.now, sleep)
+        self.harness_count += 1
+        return Harness(self.config, Path(self.temp.name) / f"evidence-{self.harness_count}", self.execute, lambda: self.now, sleep)
+
+    def test_existing_evidence_directory_is_never_overwritten(self):
+        existing = Path(self.temp.name) / "old-evidence"
+        existing.mkdir()
+        (existing / "events.json").write_text("preserve")
+        with self.assertRaises(FileExistsError):
+            Harness(self.config, existing, self.execute)
+        self.assertEqual((existing / "events.json").read_text(), "preserve")
 
     def test_wrong_context_and_nonfinite_budget_rejected(self):
         for key, value in [("context", "docker-desktop"), ("cluster", "production"), ("fault_seconds", float("nan")),

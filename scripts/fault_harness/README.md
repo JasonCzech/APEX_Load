@@ -81,6 +81,7 @@ manual restoration. `node_restored` proves the container is running, not that ev
 and volume is ready. Verify Kubernetes readiness and resource recovery separately.
 The driver does not change replicas, force-delete pods/PVCs, or destroy its cluster.
 
+The output directory must be new; retries refuse to overwrite existing evidence.
 Evidence is an allowlisted JSON event stream with private permissions. It captures
 traffic observations, assignments, generation and timing; raw API/Secret responses,
 command output and arbitrary adapter fields are excluded. Record sanitized HPA,

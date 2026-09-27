@@ -99,6 +99,8 @@ class Harness:
     def __init__(self, config, output, execute=command, clock=time.monotonic, sleep=time.sleep):
         validate_config(config)
         self.config, self.output, self.execute = config, Path(output), execute
+        # A retry must not overwrite the only evidence of an earlier failed run.
+        self.output.mkdir(parents=True, exist_ok=False, mode=0o700)
         self.clock, self.sleep = clock, sleep
         self.events = []
         self.victim_id = None
