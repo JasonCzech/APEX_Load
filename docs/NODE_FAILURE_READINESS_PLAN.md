@@ -22,7 +22,7 @@ combined leader/generator recovery or establish production node-loss readiness.
 | 3 | PostgreSQL provenance and comparisons use pgx microsecond precision; SQLite remains exact; real PostgreSQL reload regression | Recorded-archive replay and actual leadership-transfer evidence |
 | 4 | Fleet-scoped, expiring leader demand across all KEDA variants; peak queued demand; ordinal-floor protection; executable PromQL and cloud HA render tests | Spare-capacity admission, placement/discovery errors, deployed scale/failover qualification |
 | 5 | Existing fail-closed behavior retained | Durable, fenced combined-loss recovery |
-| 6 | Existing storage profiles retained | Storage inventory, recovery runbook, multi-host CSI tests |
+| 6 | [State inventory and fenced storage recovery runbook](NODE_STORAGE_RECOVERY.md) published | Multi-host CSI, permanent worker/zone trials and measured RTO/RPO |
 | 7 | Existing terminal/archive behavior retained | Stale sample reporting and explicit partial-result finalization |
 | 8 | Go, race, deployment render, and PostgreSQL/S3 regression checks passed | Repeated fault matrix and external production qualification |
 
