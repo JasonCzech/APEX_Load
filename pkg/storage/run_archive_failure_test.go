@@ -114,7 +114,7 @@ func TestRunArchiveFailureRejectsInvalidIdentity(t *testing.T) {
 }
 
 func TestRunArchiveFailureLeaseAndPublicationPrecedence(t *testing.T) {
-	for _, publication := range []string{"catalog", "outbox"} {
+	for _, publication := range []string{"catalog", "outbox", "orphan"} {
 		t.Run(publication, func(t *testing.T) {
 			s := newHAFencingStore(t)
 			f := seedArchiveFailureRun(t, s)
@@ -134,6 +134,12 @@ func TestRunArchiveFailureLeaseAndPublicationPrecedence(t *testing.T) {
 			var err error
 			if publication == "catalog" {
 				err = s.SaveRunArchive(&record)
+			} else if publication == "orphan" {
+				var saved bool
+				saved, err = s.SaveArchiveFinalizationJobIfOrphan(&ArchiveFinalizationJob{TestID: f.TestID, ProjectID: f.ProjectID, ArchiveRecord: record})
+				if !saved && err == nil {
+					t.Fatal("orphan intent not saved")
+				}
 			} else {
 				err = s.SaveArchiveFinalizationJob(&ArchiveFinalizationJob{TestID: f.TestID, ProjectID: f.ProjectID, ArchiveRecord: record})
 			}
@@ -145,6 +151,17 @@ func TestRunArchiveFailureLeaseAndPublicationPrecedence(t *testing.T) {
 			}
 			if saved, err := s.SaveRunArchiveFailure(f, testExecutionLeaseName, "owner"); err != nil || saved {
 				t.Fatalf("late failure: %v %v", saved, err)
+			}
+			// Retention/cancellation removes publication metadata later; an old
+			// collection failure must not reappear as the current explanation.
+			if _, err := s.db.Exec("DELETE FROM run_archives WHERE test_id = ?", f.TestID); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.DeleteArchiveFinalizationJob(f.TestID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.GetRunArchiveFailure(f.TestID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("resolved failure resurfaced after retention: %v", err)
 			}
 		})
 	}
@@ -212,5 +229,78 @@ func TestRunArchiveFailureFullRowReplacementInvalidatesOldRecord(t *testing.T) {
 	got, err := s.GetRunArchiveFailure(old.TestID)
 	if err != nil || !got.StartTime.Equal(replacement.StartTime) {
 		t.Fatalf("replacement read: %+v %v", got, err)
+	}
+}
+
+func TestRunArchiveFailureSupersessionIsAtomic(t *testing.T) {
+	for _, publication := range []string{"catalog", "outbox", "orphan"} {
+		t.Run(publication, func(t *testing.T) {
+			s := newHAFencingStore(t)
+			f := seedArchiveFailureRun(t, s)
+			if saved, err := s.SaveRunArchiveFailure(f, "", ""); err != nil || !saved {
+				t.Fatalf("save: %v %v", saved, err)
+			}
+			if _, err := s.db.Exec(`CREATE TRIGGER reject_failure_resolution BEFORE DELETE ON run_archive_failures BEGIN SELECT RAISE(ABORT, 'injected resolution failure'); END`); err != nil {
+				t.Fatal(err)
+			}
+			record := RunArchiveRecord{TestID: f.TestID, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json", CreatedAt: f.StartTime, CompletedAt: f.EndTime}
+			publish := func() error {
+				if publication == "catalog" {
+					return s.SaveRunArchive(&record)
+				}
+				job := &ArchiveFinalizationJob{TestID: f.TestID, ProjectID: f.ProjectID, ArchiveRecord: record}
+				if publication == "orphan" {
+					_, err := s.SaveArchiveFinalizationJobIfOrphan(job)
+					return err
+				}
+				return s.SaveArchiveFinalizationJob(job)
+			}
+			if err := publish(); err == nil {
+				t.Fatal("publication committed without resolving failure")
+			}
+			if _, err := s.GetRunArchiveFailure(f.TestID); err != nil {
+				t.Fatalf("failure lost after rollback: %v", err)
+			}
+			if _, err := s.GetRunArchive(f.TestID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("catalog survived rollback: %v", err)
+			}
+			if _, err := s.GetArchiveFinalizationJob(f.TestID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("intent survived rollback: %v", err)
+			}
+			if _, err := s.db.Exec("DROP TRIGGER reject_failure_resolution"); err != nil {
+				t.Fatal(err)
+			}
+			if err := publish(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.GetRunArchiveFailure(f.TestID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatalf("retry did not resolve failure: %v", err)
+			}
+		})
+	}
+}
+
+func TestRunArchiveFailureCompletionClearsPreviouslyCoexistingRecord(t *testing.T) {
+	s := newHAFencingStore(t)
+	f := seedArchiveFailureRun(t, s)
+	record := RunArchiveRecord{TestID: f.TestID, ArchivePath: "/archive/run", ManifestPath: "/archive/run/manifest.json", CreatedAt: f.StartTime, CompletedAt: f.EndTime}
+	job := &ArchiveFinalizationJob{TestID: f.TestID, ProjectID: f.ProjectID, ArchiveRecord: record}
+	if err := s.SaveArchiveFinalizationJob(job); err != nil {
+		t.Fatal(err)
+	}
+	// An older writer could leave a hidden failure beside the job. Completing
+	// that pending job must also resolve the old record, not just hide it.
+	if _, err := s.db.Exec(`INSERT INTO run_archive_failures (test_id, project_id, test_start_time, test_end_time, test_status, reason, recorded_at)
+ SELECT id, project_id, start_time, end_time, status, ?, ? FROM tests WHERE id = ?`, f.Reason, time.Now().UTC(), f.TestID); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := s.CompleteArchiveFinalization(f.TestID, job.IntentToken, "", &record); err != nil || !done {
+		t.Fatalf("complete: %v %v", done, err)
+	}
+	if _, err := s.db.Exec("DELETE FROM run_archives WHERE test_id = ?", f.TestID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetRunArchiveFailure(f.TestID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("completion left old failure: %v", err)
 	}
 }

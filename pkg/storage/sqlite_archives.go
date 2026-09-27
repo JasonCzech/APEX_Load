@@ -76,6 +76,11 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 	if err != nil {
 		return err
 	}
+	// A successful collection supersedes its earlier failure permanently, even
+	// after retention eventually removes this catalog entry.
+	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, record.TestID); err != nil {
+		return err
+	}
 	var projectID string
 	if err := tx.QueryRow(`SELECT COALESCE(project_id,'') FROM tests WHERE id=?`, record.TestID).Scan(&projectID); err != nil {
 		return err

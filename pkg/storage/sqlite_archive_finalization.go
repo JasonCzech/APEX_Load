@@ -133,6 +133,9 @@ func (s *SQLiteStore) SaveArchiveFinalizationJob(job *ArchiveFinalizationJob) er
 	if err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, job.TestID); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -209,6 +212,11 @@ func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	affected, err := result.RowsAffected()
 	if err != nil {
 		return false, err
+	}
+	if affected > 0 {
+		if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, job.TestID); err != nil {
+			return false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
@@ -501,6 +509,9 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 	}
 	if affected == 0 {
 		return false, nil
+	}
+	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, testID); err != nil {
+		return false, err
 	}
 	if refreshToken = strings.TrimSpace(refreshToken); refreshToken != "" {
 		if _, err := tx.Exec(`DELETE FROM archive_refresh_jobs WHERE test_id = ? AND intent_token = ?`, testID, refreshToken); err != nil {

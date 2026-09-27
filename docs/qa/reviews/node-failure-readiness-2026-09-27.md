@@ -319,3 +319,15 @@ crash window after terminal commit but before collection/recording, guarantee re
 through a database outage beyond bounded retries, cover every adoption-failure path,
 retry collection, or describe missing shards in partial archives. Those acceptance
 items and real Docker/KEDA/multi-host qualification remain open.
+
+## Archive failure supersession and retention
+
+Follow-up lifecycle review reproduced stale failures resurfacing after later archive
+metadata was removed. Catalog writes, normal publication intents, orphan-recovery
+intents, and successful finalization now clear the superseded failure transactionally.
+The regression failed for catalog, outbox, and orphan paths before the fix. Tests also
+inject a failure-record deletion error to prove that publication rolls back, preserves
+the failure, and succeeds coherently on retry. Completion handles records left beside
+an existing job by an older writer. Focused storage/archive race tests passed; final
+review found no remaining actionable issue in this fix. The final broad gate below
+includes the publication change.
