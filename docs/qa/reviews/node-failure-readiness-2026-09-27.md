@@ -473,3 +473,25 @@ These retries are process-local and only cover the fail-closed evacuation collec
 They do not persist collection intent before terminalization, survive controller loss
 before a collection outcome is recorded, implement combined leader/worker recovery,
 or establish PostgreSQL/Redis/KEDA or multi-host failure qualification.
+
+
+### Replacement-run retry guard fix
+
+A further identity review found that the new retry guard's test-ID-only key could
+suppress a replacement run while an older worker was still pending. The guard now
+uses the exact in-process run instance, matching the collector's ownership check.
+A regression holds the old worker claim while finalizing a new instance with the
+same persisted identity and verifies that only the replacement receives the archive.
+Final validation below includes this fix.
+
+The outer stop-cleanup retry was also reviewed: once collection has a durable failure
+record, callbacks now accept that result instead of repeatedly trying closed sources.
+A regression makes archive storage unavailable after the first attempt, replays the
+callback, and verifies the original reason and recording time remain unchanged. The
+first full Go run passed (API: 369.205 seconds); final validation includes both retry
+follow-ups.
+
+The final evacuation/archive race suite passed with both follow-ups (31.551 seconds).
+Review found no further actionable issue in the run-instance guard or recorded-outcome
+handling. Documentation and whitespace checks passed. The final broad gate is still
+running and is recorded below when complete.

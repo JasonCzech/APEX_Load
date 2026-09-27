@@ -70,6 +70,20 @@ func TestFailClosedEvacuationRecordsArchiveOutcome(t *testing.T) {
 			if got.Status != "FAILED" || got.Error != run.Error {
 				t.Fatalf("changed terminal outcome: %+v", got)
 			}
+			// An outer stop-cleanup retry must accept the recorded result without
+			// attempting collection again, even if archive storage is now broken.
+			broken := filepath.Join(t.TempDir(), "not-directory")
+			if err := os.WriteFile(broken, []byte("file"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("APEXLOAD_ARCHIVE_DIR", broken)
+			if err := backend.finalizeFailClosedEvacuation(runner, run); err != nil {
+				t.Fatalf("recollected after recorded failure: %v", err)
+			}
+			again, err := s.GetRunArchiveFailure(run.ID)
+			if err != nil || again.Reason != got.ArchiveFailure.Reason || !again.RecordedAt.Equal(got.ArchiveFailure.RecordedAt) {
+				t.Fatalf("recorded failure changed: %+v %v", again, err)
+			}
 		})
 	}
 }
@@ -306,5 +320,31 @@ func TestFailClosedEvacuationDoesNotRecollectPublishedEvidence(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFailClosedEvacuationRetryDoesNotSuppressReplacementRun(t *testing.T) {
+	s, old := archiveFailureFixture(t)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	runner := NewTestRunner(1, nil, s)
+	// Hold an old worker's claim deterministically while its replacement reaches
+	// finalization. Equal persisted fields do not make these the same live owner.
+	oldKey := evacuationArchiveRetryKey(old)
+	if !runner.beginTerminalRetry(oldKey) {
+		t.Fatal("cannot reserve old retry")
+	}
+	defer runner.endTerminalRetry(oldKey)
+	current := *old
+	current.remoteClientsByTarget = map[string]generatorClient{"generator-a": coverageArchiveClient(t, current.ID)}
+	runner.tests[current.ID] = &current
+	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
+	if err := backend.finalizeFailClosedEvacuation(runner, &current); err != nil {
+		t.Fatal(err)
+	}
+	if current.Archive == nil {
+		t.Fatal("old retry suppressed replacement run collection")
+	}
+	if old.Archive != nil {
+		t.Fatal("replacement publication attached to superseded run")
 	}
 }

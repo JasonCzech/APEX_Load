@@ -10,13 +10,19 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+// The pointer is an in-process incarnation token, matching the runner's ownership
+// checks. A pending worker for a replaced run must not suppress its successor.
+func evacuationArchiveRetryKey(test *ManagedTest) string {
+	return fmt.Sprintf("evacuation-archive:%s:%p", test.ID, test)
+}
+
 func (b *distributedExecutionBackend) finalizeFailClosedEvacuation(tr *TestRunner, test *ManagedTest) error {
 	unlock := tr.lockArchiveCommitFence(test.ID)
 	defer unlock()
 	// An existing worker owns the pre-compaction history snapshot. A duplicate
 	// stop-cleanup callback must not start a competing collection with a trimmed
 	// history while that worker is waiting for storage recovery.
-	retryKey := "evacuation-archive:" + test.ID
+	retryKey := evacuationArchiveRetryKey(test)
 	tr.terminalRetryMu.Lock()
 	_, pending := tr.terminalRetrying[retryKey]
 	tr.terminalRetryMu.Unlock()
@@ -101,6 +107,18 @@ func (b *distributedExecutionBackend) finalizeEvacuationArchiveUnderFence(tr *Te
 			return true, fmt.Errorf("read evacuation archive catalog: %w", err)
 		}
 		if record != nil {
+			b.closeRemoteResources(tr, test)
+			return false, completionErr
+		}
+	}
+	// A previous best-effort attempt has a durable outcome. In particular, a
+	// stop-cleanup retry must not keep dialing already closed archive sources.
+	if store := tr.archiveFailureStore(); store != nil {
+		failure, err := store.GetRunArchiveFailure(test.ID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return true, fmt.Errorf("read evacuation archive failure: %w", err)
+		}
+		if failure != nil {
 			b.closeRemoteResources(tr, test)
 			return false, completionErr
 		}
