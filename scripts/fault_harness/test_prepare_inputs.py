@@ -48,7 +48,7 @@ class PrepareTest(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(first.stat().st_mode), 0o700)
             for path in first.iterdir():
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
-            for role in ("controller", "generator", "fault-target"):
+            for role in ("controller", "generator", "fault-target", "postgres", "redis"):
                 subprocess.run(["openssl", "verify", "-x509_strict", "-CAfile", str(first / "ca.crt"), str(first / (role + ".crt"))],
                                check=True, capture_output=True)
                 self.verify_strict_tls(first, role)

@@ -3,8 +3,9 @@
 This is the repository-owned safety/evidence foundation for the
 [node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It does not yet
 provision the application, provide its observation adapter, or qualify the complete
-fault matrix. Docker Desktop containerd became read-only during development;
-container-based validation of this driver remains open. Unit tests use a fake command
+fault matrix. Docker Desktop recovered after an authorized restart; target and
+PostgreSQL/Redis component checks now pass in a fresh three-node kind cluster.
+Full application fault qualification remains open. Unit tests use a fake command
 boundary; fresh certificate tests execute OpenSSL.
 
 ```sh
@@ -13,7 +14,7 @@ python3 scripts/fault_harness/prepare_inputs.py /absolute/new/private-directory
 ```
 
 The second command refuses an existing directory and generates fresh credentials,
-a private CA, controller/generator certificates, a three-node kind configuration and
+a private CA, controller/generator/target/PostgreSQL/Redis certificates, a three-node kind configuration and
 a random ownership record, and a separate target/observer credential pair in `target.json`. Nothing is copied from earlier deployment snapshots.
 The directory must remain private; do not commit it or include its credentials in
 public evidence. Certificates last two days. Install the generated values through
@@ -286,10 +287,63 @@ kubeconfig and kind context. Keep rendered resources private: Kustomize output i
 Secrets. Do not print or attach that output as public evidence. The fixed one-CPU/
 128-MiB limit is a bounded initial target profile, not measured throughput capacity.
 
-Offline resource tests and Linux compilation do not establish a working image or
-pod. The attempted Docker build still fails because Docker Desktop's containerd
-metadata database is read-only; image-build/runtime and live Kubernetes validation
-remain open. Existing containers and PostgreSQL data were not modified.
+The target image build and pod checks passed after an authorized Docker Desktop
+restart. Three rounds of 64 requests using eight concurrent clients produced exact
+accepted-counter deltas over verified TLS; invalid tokens/run IDs were rejected.
+These component checks do not qualify application recovery or target throughput.
+Existing Compose volumes were preserved, and its PostgreSQL returned to healthy.
+
+
+## Private PostgreSQL and Redis dependencies
+
+Fresh input directories now include separate PostgreSQL and Redis certificates.
+Render single-instance dependencies for isolating application worker faults:
+
+```sh
+python3 scripts/fault_harness/render_dependencies.py \
+  --inputs /absolute/private/inputs \
+  --postgres-image "$POSTGRES_IMAGE_DIGEST" \
+  --redis-image "$REDIS_IMAGE_DIGEST" \
+  --storage-class standard \
+  --output /absolute/new/private-dependencies
+```
+
+Supply repository manifest digests for the official PostgreSQL 16 Alpine and Redis
+7 Alpine images, or compatible mirrors. The renderer validates digest syntax, not
+image contents. Numeric identities follow those images: PostgreSQL UID/GID 70 and
+Redis UID 999/GID 1000. The images used for live checks are recorded in the review
+ledger. Resources remain namespace-scoped and private, with no automatic apply or
+namespace creation. Verify the live namespace ownership before applying as above.
+
+Each service has one StatefulSet replica pinned to the owned control-plane node,
+a 1-GiB RWO claim using the selected storage class, TLS credentials in an immutable
+Secret, a headless Service, and a scoped NetworkPolicy permitting only controller
+and observer pods. Containers are non-root with read-only root filesystems and no
+service-account token. PostgreSQL requires SCRAM over TLS for TCP access; Redis has
+no plaintext listener, requires authentication, and persists with AOF. Readiness
+checks authenticate over TLS; TCP liveness/startup probes only establish a listener.
+Redis uses `noeviction` to avoid silently evicting coordination state at its limit.
+
+The separate `apexload-fault-data-client` Secret contains only database/cache URLs
+and the CA, with no server private keys or unrelated application credentials.
+Controllers must mount its CA at `/run/apexfault-data/ca.crt` and trust that CA for
+Redis using `SSL_CERT_FILE=/run/apexfault-data/ca.crt`. The database URL uses
+`sslmode=verify-full` with that CA path. Mount this private trust file explicitly;
+rendering the Secret does not configure an existing controller. New certificates or
+passwords require a fresh disposable installation, not an overwrite of immutable
+Secrets or reuse of initialized database volumes.
+
+The local deployment passed authenticated TLS checks, rejection of plaintext and
+invalid PostgreSQL credentials/unauthenticated Redis requests, and data retention
+across clean pod replacement. This is single-instance local-path storage. It does
+not establish dependency HA, abrupt-loss RPO, cross-node volume recovery, or a full
+stack provisioner. NetworkPolicy enforcement requires a compatible CNI and a
+separate positive/negative connectivity test.
+
+The image identity and TLS key-permission assumptions follow the
+[PostgreSQL image source](https://github.com/docker-library/postgres/blob/master/16/alpine3.23/Dockerfile),
+[Redis image source](https://github.com/redis/docker-library-redis/blob/master/7.4/alpine/Dockerfile),
+and [PostgreSQL TLS documentation](https://www.postgresql.org/docs/16/ssl-tcp.html).
 
 
 ## Read-only cluster inventory

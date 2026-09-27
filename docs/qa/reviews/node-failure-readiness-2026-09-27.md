@@ -982,3 +982,46 @@ active Markdown files and whitespace checks passed. Final review found no furthe
 actionable issue. This slice changes fault tooling only; the full application Go
 suite and live Docker/Kubernetes qualification were not repeated. Unrelated
 Java/performance changes were preserved.
+
+## Docker recovery and TLS dependency resources
+
+With explicit user approval, restarted Docker Desktop without resetting or deleting
+data. The containerd read-only error cleared; existing Compose controller,
+PostgreSQL and Redis returned healthy. A new owned three-node kind v0.33.0 cluster
+uses Kubernetes v1.34.3; it does not reuse prior trial credentials or snapshots.
+
+Added private PostgreSQL 16 Alpine and Redis 7 Alpine resource rendering, fresh
+service certificates, persistent claims, authenticated TLS readiness, restricted
+non-root containers, scoped ingress and separate controller client credentials.
+Both data services reside on the control plane to isolate worker-loss trials.
+Shared input/image/TLS/output checks retain the target renderer's contracts.
+Review tightened storage-class syntax and rejected encrypted TLS keys without
+interactive stdin prompts. Neither the renderer nor input generation applies
+resources or creates namespaces.
+
+Live component checks in run `e7514cf6e06205d8` passed: PostgreSQL TLS verified with
+`pg_stat_ssl`, bad-password/plaintext rejection, Redis TLS/authentication and
+plaintext rejection, and retained probe data after both dependency pods were
+cleanly replaced. Both PVCs remained bound. The target image built and ran under
+restricted pod security. Three independent rounds of 64 requests with eight
+concurrent clients each produced exactly 64 accepted requests over verified TLS;
+bad tokens/run IDs and an untrusted CA were rejected. This is component evidence,
+not a benchmark or a production/node-failure qualification.
+
+Image manifests: PostgreSQL
+`sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777`, Redis
+`sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2`, target
+`sha256:aeb1eeb0349d0beab828cd7a8aa933a7cfe857b386c2977fd7c9f0e72d117ea9`.
+Docker Desktop's partial multi-platform cache caused ordinary kind image loading
+to fail on absent platform content. Explicit ARM64 export/import worked; the
+locally built target's repository digest was registered against its verified
+manifest in the disposable node image cache.
+
+All 98 harness tests passed (4.337 seconds), and the uncached scripts suite passed
+(30.286 seconds). Offline Kustomize, documentation and whitespace checks passed.
+Final review found no further actionable issue in this slice. Private JSON
+component evidence is retained under the ignored `artifacts/scalability/2026-09-27/`
+trial directory. Single-instance dependency failover, CNI enforcement, the full
+application matrix, and multi-host/zone storage qualification remain open. The
+user confirmed that only Docker Desktop is available. Application images are
+being built from committed source; unrelated Java/performance work is preserved.

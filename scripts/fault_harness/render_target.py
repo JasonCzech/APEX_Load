@@ -47,7 +47,7 @@ def read_json(root, name):
         raise RenderError("invalid private configuration") from None
 
 
-def validate_tls(cert, key, ca):
+def validate_tls(cert, key, ca, hostname="apexload-fault-target.apexload-fault.svc"):
     try:
         client_context = ssl.create_default_context(cadata=ca)
         client_context.verify_flags |= ssl.VERIFY_X509_STRICT
@@ -59,9 +59,10 @@ def validate_tls(cert, key, ca):
                 fd = os.open(Path(temporary) / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 with os.fdopen(fd, "w") as stream:
                     stream.write(data)
-            server_context.load_cert_chain(Path(temporary) / "cert", Path(temporary) / "key")
+            # Never prompt on stdin if an unexpected encrypted key is supplied.
+            server_context.load_cert_chain(Path(temporary) / "cert", Path(temporary) / "key", password="")
         client_in, client_out, server_in, server_out = (ssl.MemoryBIO() for _ in range(4))
-        client = client_context.wrap_bio(client_in, client_out, server_hostname="apexload-fault-target.apexload-fault.svc")
+        client = client_context.wrap_bio(client_in, client_out, server_hostname=hostname)
         server = server_context.wrap_bio(server_in, server_out, server_side=True)
         complete = set()
         for _ in range(20):
@@ -80,10 +81,14 @@ def validate_tls(cert, key, ca):
     raise RenderError("target TLS validation did not complete")
 
 
-def resources(inputs, image):
+def input_root(inputs):
     root = Path(inputs)
     if not root.is_absolute() or not root.is_dir():
         raise RenderError("inputs must be an existing absolute directory")
+    return root
+
+
+def validate_image(image):
     # A registry manifest digest is required, not a mutable tag or local image ID.
     if (not isinstance(image, str) or len(image) > 512 or not re.fullmatch(
             r"[a-z0-9]+(?:[.-][a-z0-9]+)*(?::[0-9]{1,5})?(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)+@sha256:[a-f0-9]{64}", image)):
@@ -91,6 +96,9 @@ def resources(inputs, image):
     registry = image.split("/", 1)[0]
     if ":" in registry and not 1 <= int(registry.rsplit(":", 1)[1]) <= 65535:
         raise RenderError("image registry port is invalid")
+
+
+def read_ownership(root):
     ownership = read_json(root, "ownership.json")
     run_id = ownership.get("run_id")
     if not isinstance(run_id, str) or not re.fullmatch(r"[a-f0-9]{16}", run_id):
@@ -99,6 +107,13 @@ def resources(inputs, image):
     if (ownership.get("cluster") != cluster or ownership.get("namespace") != "apexload-fault"
             or ownership.get("namespace_label") != "apexload.io/fault-run=" + run_id):
         raise RenderError("private ownership inputs do not match the disposable run")
+    return run_id, cluster
+
+
+def resources(inputs, image):
+    root = input_root(inputs)
+    validate_image(image)
+    run_id, cluster = read_ownership(root)
     config = read_json(root, "target.json")
     if set(config) != {"run_id", "load_token", "observer_token"} or config["run_id"] != run_id:
         raise RenderError("target configuration does not match the disposable run")
@@ -147,20 +162,24 @@ def resources(inputs, image):
     return run_id, {"apiVersion": "v1", "kind": "List", "items": [secret, load_secret, deployment, service, policy]}
 
 
-def render(inputs, image, output):
-    run_id, manifest = resources(inputs, image)
+def write_resources(output, manifest, filename):
     root = Path(output)
     if not root.is_absolute():
         raise RenderError("output must be a new absolute directory")
     try:
         root.mkdir(mode=0o700, parents=False, exist_ok=False)
-        for name, content in (("target-resources.json", json.dumps(manifest, indent=2) + "\n"),
-                              ("kustomization.yaml", "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - target-resources.json\n")):
+        for name, content in ((filename, json.dumps(manifest, indent=2) + "\n"),
+                              ("kustomization.yaml", "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - " + filename + "\n")):
             fd = os.open(root / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "w") as stream:
                 stream.write(content)
     except OSError:
-        raise RenderError("cannot create new private target output") from None
+        raise RenderError("cannot create new private resource output") from None
+
+
+def render(inputs, image, output):
+    run_id, manifest = resources(inputs, image)
+    write_resources(output, manifest, "target-resources.json")
     return run_id
 
 
