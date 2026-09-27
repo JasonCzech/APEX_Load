@@ -822,9 +822,16 @@ export interface TestSummary {
   scenario_mode?: ScenarioMode
   goal_config?: GoalConfig
   archive?: RunArchiveRecord
+  archive_failure?: RunArchiveFailure
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+/** Observed collection failure; this is separate from archive publication retries. */
+export interface RunArchiveFailure {
+  reason: string
+  recorded_at: string
 }
 
 export interface RuntimeAdjustmentGroupRequest {
@@ -2416,6 +2423,7 @@ export interface AuthoringCorrelationPreviewResponse {
 
 export interface WSMessage {
   type: string
+  archive_failure?: RunArchiveFailure
   test_id?: string
   project_id?: string
   script_id?: string

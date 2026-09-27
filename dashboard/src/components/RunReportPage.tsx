@@ -2,7 +2,7 @@ import BaselineComparisonWorkspace from './baselineComparison/BaselineComparison
 import { loadAllTestSummaries } from './testCatalogPagination'
 import { useExecutionTestManifest } from './useExecutionTestManifest'
 import RunExecutionDetails, { RunExecutionFacts, RetainedRunMetrics, RetainedRunDiagnostics } from './runReport/RunExecutionDetails'
-import { executionFacts, recordedNumber } from './runReport/executionPresentation'
+import { executionFacts, recordedNumber, executionDate } from './runReport/executionPresentation'
 import StatusBadge from './StatusBadge'
 import TestNotesDialog from './TestNotesDialog'
 import { reportComparisonQualification } from './reportComparisonQualification'
@@ -465,7 +465,14 @@ export default function RunReportPage({
         <p className="run-report-muted">Execution status is separate from sampled transaction success and performance acceptance.</p>
       </section>}
       {!hasArchive && <section className="run-report-panel run-evidence-notice" aria-label="Evidence availability">
-        <div><h2>Saved archive unavailable</h2><p>Retained controller records are available below. Archive publication progress is unknown; these records do not establish complete workload or performance evidence.</p></div>
+        <div>{test.archive_failure ? <>
+          <h2>Archive collection failed</h2>
+          <p>{test.archive_failure.reason === 'remote_collection_unavailable'
+            ? 'No generator archive was available when collection finished.'
+            : 'The controller could not collect the generator archive.'}</p>
+          <p>Recorded: {executionDate(test.archive_failure.recorded_at)}</p>
+          <p>Retained controller records are available below and may be incomplete. Checking again refreshes archive availability; it does not restart collection.</p>
+        </> : <><h2>Saved archive unavailable</h2><p>Retained controller records are available below. Archive publication progress is unknown; these records do not establish complete workload or performance evidence.</p></>}</div>
         <button type="button" className="btn btn-secondary" disabled={archiveCheckPending} onClick={() => void checkArchiveAgain()}>{archiveCheckPending ? 'Checking…' : 'Check again'}</button>
         {archiveCheckError && <p role="alert" className="run-report-error">{archiveCheckError}</p>}
       </section>}

@@ -257,6 +257,33 @@ describe('RunReportPage', () => {
     expect(onOpenCommandCenter).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['remote_collection_failed', 'The controller could not collect the generator archive.'],
+    ['remote_collection_unavailable', 'No generator archive was available when collection finished.'],
+    ['future_reason_with_private_detail', 'The controller could not collect the generator archive.'],
+  ])('shows recorded archive collection failure %s without implying a retry', async (reason, explanation) => {
+    mocks.polling.test = { ...buildTest('ABORTED', false), archive_failure: { reason, recorded_at: 'invalid' } }
+    const render = () => <RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
+    await act(async () => root.render(render()))
+    const notice = container.querySelector('[aria-label="Evidence availability"]')!
+    expect(notice.textContent).toContain('Archive collection failed')
+    expect(notice.textContent).toContain(explanation)
+    expect(notice.textContent).toContain('Recorded: Not recorded')
+    expect(notice.textContent).toContain('may be incomplete')
+    expect(notice.textContent).toContain('does not restart collection')
+    expect(notice.textContent).not.toContain('progress is unknown')
+    expect(notice.textContent).not.toContain(reason)
+    expect(container.textContent).toContain('Execution aborted')
+    await act(async () => { notice.querySelector('button')!.click() })
+    expect(mocks.polling.checkArchiveAgain).toHaveBeenCalledTimes(1)
+    // A later catalog record wins over stale failure data and keeps the normal
+    // Results shell instead of continuing to display a failed collection.
+    mocks.polling.test = { ...mocks.polling.test!, archive: buildTest('ABORTED').archive }
+    await act(async () => root.render(render()))
+    expect(container.querySelector('[aria-label="Evidence availability"]')).toBeNull()
+    expect(container.textContent).toContain('Execution aborted')
+  })
+
   it('applies a dashboard transaction selection once without overriding later operator choices', async () => {
     mocks.archiveModel.archiveReport = { by_transaction: { Checkout: {transactions: 100, errors: 0, error_pct: 0, avg_response_ms: 10} } } as unknown as RunArchiveReport
     const render = () => <RunReportPage testId="run-1" initialPopulation="transaction" initialTransaction="Checkout" onOpenCommandCenter={vi.fn()} onNavigateReport={vi.fn()} />

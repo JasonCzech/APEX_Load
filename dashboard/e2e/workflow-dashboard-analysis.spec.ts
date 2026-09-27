@@ -290,3 +290,48 @@ test('run results labels terminal samples as historical evidence', async ({ page
   await state.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('terminal-observation.png'), fullPage: true })
 })
+
+test('run results distinguishes recorded archive failure and refreshes availability', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Archive collection evidence', duration: '1m', groups: [{ name: 'orders', script_id: scriptId, vusers: 120 }],
+  } })))
+  // Keep the actual catalog/topbar terminal too; only the evidence below is a fixture.
+  await json(await request.post(`/api/v1/tests/${id}/abort`))
+  let failureVisible = true
+  // Real scoped run and navigation; the archive failure projection is controlled
+  // here. Storage and distributed completion are exercised by Go regressions.
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({ response, json: { ...payload, status: 'ABORTED', ended_at: '2026-09-27T12:01:00Z',
+      archive_failure: failureVisible ? { reason: 'remote_collection_unavailable', recorded_at: '2026-09-27T12:01:02Z' } : undefined,
+      live_metrics: { timestamp: '2026-09-27T12:00:00Z', observation_state: 'historical', active_vusers: 120,
+        tps: 100, total_transactions: 5000, total_errors: 0, error_pct: 0, avg_response_ms: 10,
+        p50_ms: 10, p90_ms: 15, p95_ms: 20, p99_ms: 25 } } })
+  })
+  await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`)
+  await page.reload()
+  const notice = page.getByRole('region', { name: 'Evidence availability', exact: true })
+  await expect(notice).toContainText('Archive collection failed')
+  await expect(notice).toContainText('No generator archive was available')
+  await expect(notice).toContainText('does not restart collection')
+  await expect(notice).not.toContainText('progress is unknown')
+  await expect(page.getByRole('region', { name: 'Execution outcome', exact: true })).toContainText('Execution aborted')
+  await page.getByRole('tab', { name: 'Performance', exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Retained controller sample', exact: true })).toContainText('120')
+  await page.setViewportSize({ width: 850, height: 1000 })
+  await notice.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('archive-collection-failure.png'), fullPage: true })
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  failureVisible = false
+  await notice.getByRole('button', { name: 'Check again', exact: true }).click()
+  await expect(notice).toContainText('Saved archive unavailable')
+  await expect(notice).not.toContainText('Archive collection failed')
+  await expect(page.getByRole('tab', { name: 'Performance', exact: true })).toHaveAttribute('aria-selected', 'true')
+})

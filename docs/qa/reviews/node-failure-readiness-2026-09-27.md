@@ -331,3 +331,21 @@ the failure, and succeeds coherently on retry. Completion handles records left b
 an existing job by an older writer. Focused storage/archive race tests passed; final
 review found no remaining actionable issue in this fix. The final broad gate below
 includes the publication change.
+
+## Results presentation for recorded collection failures
+
+Results now distinguishes an observed collection failure from unknown publication
+progress, shows the recording time, retains the execution outcome and available
+historical samples, and explains that Check again refreshes availability without
+restarting collection. A later archive pointer takes precedence. Unknown reason codes
+receive a fixed explanation rather than exposing raw strings; invalid timestamps show
+Not recorded. Existing bounded polling and manual refresh behavior remain unchanged.
+
+The 49 relevant dashboard unit tests, typecheck, lint and build passed. The full
+analysis workflow file passed both dev-admin and local-auth (three cases each).
+The narrow-screen failure notice was visually inspected; it preserved the terminal
+outcome and retained sample without horizontal overflow. Browser fixtures use real
+scoped run IDs with controlled evidence. The new fixture also aborts the actual queued
+run before showing synthetic evidence, keeping the catalog/topbar terminal. This is
+presentation evidence, not a real generator outage. Final UI review found no remaining
+actionable issue in this slice.
