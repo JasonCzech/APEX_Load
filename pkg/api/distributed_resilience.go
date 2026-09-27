@@ -1538,29 +1538,6 @@ func noteUnreachableEvacuationParticipants(tr *TestRunner, test *ManagedTest, un
 	test.Error = test.Error + "; " + note
 }
 
-func (b *distributedExecutionBackend) finalizeFailClosedEvacuation(tr *TestRunner, test *ManagedTest) error {
-	completedAt := time.Now()
-	finalError := test.Error
-	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
-	defer unlockArchiveCommit()
-	targetHistory := snapshotRemoteArchiveTargetHistory(tr, test)
-
-	// Commit the authoritative failure before potentially slow best-effort
-	// evidence transfer, matching the ordinary distributed failure path.
-	completionErr := tr.completeTestRunUnderArchiveFence(test, "FAILED", completedAt, finalError, nil)
-	archiveRecord, archiveErr := b.stageRemoteArchiveWithTargetHistory(tr, test, "FAILED", finalError, completedAt, false, targetHistory)
-	// Clients remain attached until staging has snapshotted every stopped
-	// participant. Closing after the fetch prevents partial-run evidence loss.
-	b.closeRemoteResources(tr, test)
-	if archiveRecord != nil {
-		tr.persistAndAttachRunArchiveUnderFence(test, archiveRecord)
-	}
-	if archiveErr != nil {
-		archiveErr = fmt.Errorf("collect fail-closed evacuation archive: %w", archiveErr)
-	}
-	return errors.Join(completionErr, archiveErr)
-}
-
 func (b *distributedExecutionBackend) detachEvacuationResourcesUnderTopologyControl(tr *TestRunner, test *ManagedTest, participants map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream) {
 	unlock := tr.lockDistributedTopologyControl(test.ID)
 	b.detachEvacuationResources(tr, test, participants, streams)

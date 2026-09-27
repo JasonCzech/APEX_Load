@@ -442,3 +442,34 @@ browser cases in each authentication profile. Final documentation checks and
 and Results slices. Unrelated concurrent Java/performance and admission-test work
 was preserved outside these commits. Production recovery claims remain bounded by
 the open readiness-plan acceptance gates.
+
+
+## Fail-closed evacuation archive outcomes and retries
+
+Fail-closed evacuation now records the same durable, incarnation-bound archive
+collection failure as ordinary distributed completion. Missing bundles and collection
+errors remain distinct fixed reasons; a new controller can read the recorded outcome
+without relying on the producer's memory. Successful publication takes precedence.
+
+Review also corrected archive finalization around terminal-write outages and callback
+replays. Generator transports stay available until the terminal row commits and
+collection is attempted. An in-process retry retains the original controller interval
+target history across terminal compaction, and duplicate cleanup callbacks leave that
+snapshot to its existing worker. Archives use the committed completion timestamp and
+failure reason. Deleted/replaced runs, different terminal outcomes and already
+published archives are not recollected. Existing publication jobs and catalog records
+protect their evidence from replacement by a replayed evacuation callback; failed
+storage checks defer collection instead of treating the publication state as empty.
+
+Regression tests cover missing/error/success outcomes after runner reconstruction,
+original archive identity, duplicate and superseded callbacks, temporary terminal
+storage failure, preservation of early interval targets, and outbox/catalog precedence.
+Focused tests passed. The final evacuation/archive race suite passed (29.065 seconds),
+including the duplicate-callback history guard. Final review found no further
+actionable issue in this slice. The full Go gate is running and will be recorded
+below. No dashboard or public API contract changed.
+
+These retries are process-local and only cover the fail-closed evacuation collector.
+They do not persist collection intent before terminalization, survive controller loss
+before a collection outcome is recorded, implement combined leader/worker recovery,
+or establish PostgreSQL/Redis/KEDA or multi-host failure qualification.
