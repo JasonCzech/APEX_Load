@@ -106,6 +106,54 @@ below captures a separately requested final archive check. A passed traffic gate
 no-overlap, liveness, cleanup-readiness or production-availability qualification.
 
 
+## Healthy control comparison
+
+Use the same driver configuration and observation adapter to measure a control
+window before running fault trials. Add `"control_seconds": 60` (allowed range:
+10–1800 seconds), remove `restoration_readiness_seconds` if present, and use a new
+evidence directory:
+
+```sh
+python3 scripts/fault_harness/healthy_control.py \
+  --config /absolute/private/control-config.json \
+  --output /absolute/new/private-control-evidence
+```
+
+The control command issues Kubernetes reads and runs the configured observation
+adapter. It never invokes Docker, selects a victim, stops/restores nodes, or changes
+replicas. The operator-provided adapter must also be read-only. All shared driver
+configuration fields remain required; `fault_seconds` is unused in this mode.
+`recovery_seconds` bounds acquisition of the sustained `baseline_seconds` load
+baseline. Once acquired, every sample in the control window must meet the target
+request-rate, observed-VUser and KEDA-demand thresholds, with zero controller
+restarts. The adapter must count restarts across all controllers for a control run.
+Transport failures, stale observations, duplicate assignments, changed target
+identity, counter regression and terminal runs fail immediately. Load dips during
+baseline acquisition reset its consecutive-load timer; dips during the measured
+control window fail the trial.
+
+Observations are requested about once per second, each with a maximum five-second
+command timeout constrained by the remaining budget. A final sample is taken at or
+after the requested window, with a five-second final-observation allowance. A
+response at/after that deadline cannot pass. This is a sampled traffic gate; it does
+not establish uninterrupted traffic between samples or successful-response TPS.
+
+Mandatory `cluster-control-preflight.json` and `cluster-control-completed.json`
+checkpoints verify disposable namespace ownership and retain node/namespace
+identities. Replaced identities or failed checkpoint collection prevent a pass.
+Each checkpoint has a separate 20-second command budget. Individual resource API
+gaps remain explicit inventory diagnostics, not a cluster-readiness verdict.
+Optional `cluster_evidence_interval_seconds` background sampling works as in fault
+trials and requires `capture_cluster_evidence: true`; its worker must finalize
+before `control_gate_passed` is recorded. Interruption stops that worker and records
+a failed control, with no restoration needed. Output permissions and overwrite
+protections match the fault driver.
+
+This control path still requires the real observation adapter and deployed stack.
+Its local safety tests do not qualify a live healthy run, archive completeness,
+KEDA scale transitions, dependency failover or the production fault matrix.
+
+
 ## Independent traffic target
 
 Build the target and start it with the fresh private inputs:

@@ -918,3 +918,34 @@ Dockerfile's build flags passed; the latter used the host compiler and does not
 validate the container build. Documentation checks for 68 active Markdown files
 and whitespace checks passed. Final review found no further actionable issue in
 this slice. Unrelated Java/performance work was preserved.
+
+## Bounded healthy-control comparison
+
+Added a separate healthy-control command for comparing fault trials with a sampled
+load window that has no deliberate node failure. It reuses the driver's strict
+observation validation and private event recording, with a configurable command
+timeout that preserves the existing fault driver's default. It obtains a sustained
+baseline within a bounded acquisition budget, then requires each observed interval
+to meet traffic, VUser and KEDA thresholds with zero controller restarts. A final
+sample covers the requested window with a bounded five-second observation allowance.
+Late responses cannot pass. No Docker command or replica mutation is performed.
+
+Mandatory before/after Kubernetes inventories bind the run to the owned namespace
+and node identities. Optional background sampling is finalized before a pass and
+stopped on interruption/failure. Review checked deadline boundaries, failed final
+inventories, preservation of existing evidence, credential omission, and the
+distinction between sampled traffic and continuous availability. Tests cover low
+traffic/demand, stale/terminal observations, target resets/replacements, duplicate
+assignments, prior/new restarts, transport loss, interruption, changed cluster
+identities, sampler artifact conflicts and fixed CLI errors.
+
+All 86 harness tests passed, and the complete uncached `go test ./scripts -count=1`
+suite passed (19.972 seconds), including the Python safety bridge.
+An end-to-end CLI smoke with synthetic command sources and real timing passed a
+10.055-second measured control window; it did not contact Kubernetes or Docker.
+Documentation checks for 68 active Markdown files and whitespace checks passed. No application
+or dashboard runtime code changed; the full application Go suite was not repeated
+for this tooling-only slice. Final review found no further actionable issue.
+The real observation adapter and deployed stack remain required for live control
+qualification; this change does not qualify the production fault matrix. Unrelated
+Java/performance work was preserved.

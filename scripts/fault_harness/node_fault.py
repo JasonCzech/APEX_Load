@@ -270,8 +270,8 @@ class Harness:
         if not report["worker_stopped"] or report["stop_reason"] != "stopped":
             raise GateError("background cluster evidence sampling failed; inspect series index")
 
-    def observe(self):
-        raw = self.execute(self.config["observation_command"], timeout=15)
+    def observe(self, timeout=15):
+        raw = self.execute(self.config["observation_command"], timeout=timeout)
         try:
             observation = json.loads(raw)
         except ValueError:
