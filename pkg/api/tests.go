@@ -42,7 +42,7 @@ func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit in
 	if canonical != nil {
 		selected := selectLiveMetricsHistory(canonical.History, since, limit)
 		test.History = cloneLiveMetricsHistory(selected)
-		test.LiveMetrics = cloneLiveMetrics(canonical.LiveMetrics)
+		test.LiveMetrics = cloneRunLiveMetrics(canonical)
 	}
 	tr.mu.RUnlock()
 
@@ -730,6 +730,9 @@ func cloneOperationalTestProjectionLocked(test *ManagedTest) *ManagedTest {
 			P95Ms:        test.LiveMetrics.P95Ms,
 			P99Ms:        test.LiveMetrics.P99Ms,
 		}
+		if isTerminalTestStatus(test.Status) {
+			projection.LiveMetrics.ObservationState = "historical"
+		}
 	}
 	return projection
 }
@@ -1008,7 +1011,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.StartAuthorization = cloneQueuedStartAuthorization(test.StartAuthorization)
 	cloned.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval)
 	cloned.VUserRamps = cloneVUserRampStatusMap(test.VUserRamps)
-	cloned.LiveMetrics = cloneLiveMetrics(test.LiveMetrics)
+	cloned.LiveMetrics = cloneRunLiveMetrics(test)
 	cloned.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)
 	cloned.ComparisonBaseline = cloneRunComparisonBaseline(test.ComparisonBaseline)
 	cloned.Archive = cloneRunArchiveRecord(test.Archive)
@@ -1044,6 +1047,19 @@ func cloneStringTimeMap(values map[string]time.Time) map[string]time.Time {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+// cloneRunLiveMetrics annotates the public current-run projection without changing
+// the resident sample or history (which are also used by archive/SLA calculations).
+func cloneRunLiveMetrics(test *ManagedTest) *LiveMetrics {
+	if test == nil {
+		return nil
+	}
+	metrics := cloneLiveMetrics(test.LiveMetrics)
+	if metrics != nil && isTerminalTestStatus(test.Status) {
+		metrics.ObservationState = "historical"
+	}
+	return metrics
 }
 
 func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {

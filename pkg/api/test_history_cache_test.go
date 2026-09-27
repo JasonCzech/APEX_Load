@@ -167,6 +167,14 @@ func TestAttachStoredTerminalHistoryRevalidatesExpiredHAEntry(t *testing.T) {
 	}
 	freshSnapshot := cloneManagedTestForReadLocked(test)
 	runner.attachStoredTerminalHistory(freshSnapshot)
+	for _, sample := range []*LiveMetrics{snapshot.LiveMetrics, freshSnapshot.LiveMetrics} {
+		if sample.ObservationState != "historical" {
+			t.Fatal("reload lost the terminal observation label")
+		}
+	}
+	if test.LiveMetrics.ObservationState != "" {
+		t.Fatal("reload mutated the canonical sample")
+	}
 	if store.limitedHistoryCalls != 1 {
 		t.Fatalf("fresh HA cache reloaded history; calls = %d, want 1", store.limitedHistoryCalls)
 	}

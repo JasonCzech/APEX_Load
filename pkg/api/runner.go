@@ -794,6 +794,10 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	// ObservationState labels terminal projections; retained samples are historical,
+	// not proof that those VUsers are still executing. Timestamp remains the actual
+	// sample time, and historical values are preserved for reports and comparison.
+	ObservationState           string                                `json:"observation_state,omitempty"`
 	CompletedIterations        int64                                 `json:"completed_iterations"`
 	Timestamp                  time.Time                             `json:"timestamp"`
 	ActiveVUsers               int64                                 `json:"active_vusers"`

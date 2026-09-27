@@ -61,10 +61,11 @@ go test -tags postgres_integration ./pkg/api \
 
 ## Remaining release gates
 
-The repository-owned node-fault harness, ten-minute dependency outage deployment
-check, scoped HA autoscaling signals, reserved spare-capacity admission, combined-loss
-checkpoint/fencing recovery, storage runbook, and terminal partial-result reporting
-remain open. The original two recorded S3 archives have not yet been replayed through
+The complete deployed fault harness, ten-minute dependency outage deployment check,
+reserved spare-capacity admission, combined-loss checkpoint/fencing recovery, and
+durable terminal partial-result reporting remain open. The guarded fault-driver
+foundation, scoped KEDA signals, storage runbook and terminal historical-sample labels
+are implemented in the review cycles below. The original two recorded S3 archives have not yet been replayed through
 an updated deployed controller. There has been no repeat of the multi-node fault
 matrix with these binaries, and no multi-host, CSI, PostgreSQL-primary, or Redis-primary
 failover qualification.
@@ -151,3 +152,56 @@ terminal-observation race regressions passed (4.316 seconds). Source review conf
 that the completion preference and settling interval cannot bypass the cap. A race
 build initially overlapped dashboard asset replacement and failed to read removed
 embed inputs; it was rerun after the completed dashboard build and passed.
+
+
+## Terminal observation review/fix cycle
+
+Terminal REST projections and cached WebSocket snapshots expose
+`live_metrics.observation_state: historical`; sample timestamps, VUsers, TPS and totals
+retain their measured values. History reloads preserve that label without changing
+canonical/history measurements. The dashboard displays capture time and explicitly
+states that historical VUsers are not currently running VUsers. Generated API and
+TypeScript contracts were refreshed.
+
+Review found that database history reload replaced the annotated projection, that a
+missing history tail needed a nil guard, and that terminal routes redirect to Results
+rather than advanced details. All three are addressed; both views now label historical
+samples. The local-auth browser fixture refreshes its workspace catalog after seeding
+through the API. No production routing or authorization change was needed.
+
+UI validation passed 26 relevant unit tests, typecheck, lint and build. The complete
+analysis workflow file (existing comparison workflow plus terminal-observation case)
+passed under dev-admin and local-auth. The local-auth screenshot was inspected.
+Focused API/history-reload tests and race tests passed; final whole-repository results
+are recorded below. Active-run stale/recovery semantics and durable partial archives
+remain open; the new label does not claim measurement completeness.
+
+The final fault-driver review additionally made evidence directories exclusive so a
+retry cannot overwrite the only record of a prior failure; all ten Python cases pass.
+QA inventory now ignores private artifact packages. The opt-in Java fixture environment
+gate introduced by concurrent work was documented after the full-suite inventory guard
+flagged it; the other Java changes remain outside these commits.
+
+## Final validation and environment boundary
+
+The final `go test ./...` run passed (API package: 318.002 seconds), including the
+corrected QA/dashboard and opt-in-suite inventory checks. The subsequent nil-tail
+projection regression also passed with the focused history-reload tests (1.156
+seconds). Terminal projection/history race tests passed (2.835 seconds). Dashboard
+validation passed typecheck, lint, build, 26 relevant unit tests, both complete affected
+browser workflow profiles, and an additional local-auth screenshot inspection.
+Documentation checks passed for 68 active Markdown files and the staged diff passed
+whitespace validation.
+
+Docker Desktop still rejects container creation with a read-only
+`/var/lib/desktop-containerd/daemon/io.containerd.metadata.v1.bolt/meta.db` filesystem.
+Restarting it would interrupt other stacks, so no shared-runtime restart was performed
+without the requested user decision. The next deployed harness, outage, KEDA, archive
+replay and fault-matrix work needs a repaired disposable test runtime. No multi-host
+context was supplied for permanent-worker/zone/storage qualification.
+
+The readiness plan is not complete. Its ledger remains authoritative for the
+unfinished stack adapter/provisioner, deployed outage and archive-replay evidence,
+reserved unused recovery capacity, durable combined-loss recovery, explicit partial
+archive finalization, and repeated local/multi-host release gates. These commits do
+not enable or claim production combined-node-loss continuity.

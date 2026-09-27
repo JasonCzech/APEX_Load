@@ -52246,6 +52246,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            observation_state:
+                              type: string
                             p50_ms:
                               type: number
                               format: double
@@ -53313,6 +53315,8 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          observation_state:
+                            type: string
                           p50_ms:
                             type: number
                             format: double
@@ -56363,6 +56367,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            observation_state:
+                              type: string
                             p50_ms:
                               type: number
                               format: double
@@ -57430,6 +57436,8 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          observation_state:
+                            type: string
                           p50_ms:
                             type: number
                             format: double
@@ -60477,6 +60485,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            observation_state:
+                              type: string
                             p50_ms:
                               type: number
                               format: double
@@ -61544,6 +61554,8 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          observation_state:
+                            type: string
                           p50_ms:
                             type: number
                             format: double
@@ -64603,6 +64615,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            observation_state:
+                              type: string
                             p50_ms:
                               type: number
                               format: double
@@ -65670,6 +65684,8 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          observation_state:
+                            type: string
                           p50_ms:
                             type: number
                             format: double
@@ -68729,6 +68745,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            observation_state:
+                              type: string
                             p50_ms:
                               type: number
                               format: double
@@ -69796,6 +69814,8 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          observation_state:
+                            type: string
                           p50_ms:
                             type: number
                             format: double
@@ -72855,6 +72875,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            observation_state:
+                              type: string
                             p50_ms:
                               type: number
                               format: double
@@ -73922,6 +73944,8 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          observation_state:
+                            type: string
                           p50_ms:
                             type: number
                             format: double
@@ -76981,6 +77005,8 @@ paths:
                                 type: object
                                 additionalProperties: true
                                 nullable: true
+                            observation_state:
+                              type: string
                             p50_ms:
                               type: number
                               format: double
@@ -78048,6 +78074,8 @@ paths:
                                 - p99_ms
                                 - tps
                               nullable: true
+                          observation_state:
+                            type: string
                           p50_ms:
                             type: number
                             format: double
@@ -231279,6 +231307,8 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        observation_state:
+                          type: string
                         p50_ms:
                           type: number
                           format: double
@@ -233242,6 +233272,8 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      observation_state:
+                        type: string
                       p50_ms:
                         type: number
                         format: double
@@ -237942,6 +237974,8 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        observation_state:
+                          type: string
                         p50_ms:
                           type: number
                           format: double
@@ -239905,6 +239939,8 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      observation_state:
+                        type: string
                       p50_ms:
                         type: number
                         format: double
@@ -255929,6 +255965,8 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        observation_state:
+                          type: string
                         p50_ms:
                           type: number
                           format: double
@@ -257892,6 +257930,8 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      observation_state:
+                        type: string
                       p50_ms:
                         type: number
                         format: double
@@ -262536,6 +262576,8 @@ paths:
                               - p99_ms
                               - tps
                             nullable: true
+                        observation_state:
+                          type: string
                         p50_ms:
                           type: number
                           format: double
@@ -264499,6 +264541,8 @@ paths:
                             - p99_ms
                             - tps
                           nullable: true
+                      observation_state:
+                        type: string
                       p50_ms:
                         type: number
                         format: double

@@ -11,9 +11,10 @@ it does not equate successful controller-only adoption with combined controller/
 
 ## Implementation ledger
 
-The first implementation slice covers dependency-independent liveness, archive
-identity precision, and KEDA reservation-floor parity. It does not yet enable
-combined leader/generator recovery or establish production node-loss readiness.
+Reviewed implementation slices cover dependency-independent liveness and its bounded
+watchdog, archive identity/integrity, fleet-scoped KEDA demand, fault-driver safety,
+storage recovery guidance, and terminal observation labels. Combined leader/generator
+recovery and production node-loss readiness remain unfinished.
 
 | Package | Current implementation | Qualification still required |
 |---|---|---|
@@ -23,7 +24,7 @@ combined leader/generator recovery or establish production node-loss readiness.
 | 4 | Fleet-scoped, expiring leader demand across all KEDA variants; peak queued demand; ordinal-floor protection; executable PromQL and cloud HA render tests | Spare-capacity admission, placement/discovery errors, deployed scale/failover qualification |
 | 5 | Existing fail-closed behavior retained | Durable, fenced combined-loss recovery |
 | 6 | [State inventory and fenced storage recovery runbook](NODE_STORAGE_RECOVERY.md) published | Multi-host CSI, permanent worker/zone trials and measured RTO/RPO |
-| 7 | Existing terminal/archive behavior retained | Stale sample reporting and explicit partial-result finalization |
+| 7 | Terminal API/WS projections and history reloads label samples historical; Results and advanced details preserve and label captured values | Active-run stale/recovery state and durable explicit partial-result finalization |
 | 8 | Go, race, deployment render, and PostgreSQL/S3 regression checks passed | Repeated fault matrix and external production qualification |
 
 Validation details: [first-slice evidence](qa/reviews/node-failure-readiness-2026-09-27.md).

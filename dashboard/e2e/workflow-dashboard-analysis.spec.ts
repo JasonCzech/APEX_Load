@@ -258,3 +258,35 @@ test('analysis preserves evidence gaps, saved baselines, filtered deltas and rep
   await expect(page).toHaveURL(/transaction=Checkout/)
   await expect(page).toHaveURL(/population=transaction/)
 })
+
+test('run results labels terminal samples as historical evidence', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const scriptId = await seedScript(request, workspace)
+  const id = idOf(await json(await request.post('/api/v1/tests', { data: {
+    project_id: workspace.projectId, application_id: workspace.applicationId, release_id: workspace.releaseId,
+    name: 'Terminal observation evidence', duration: '1m', groups: [{ name: 'orders', script_id: scriptId, vusers: 120 }],
+  } })))
+  await page.route(`**/api/v1/tests/${id}`, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const payload = await response.json()
+    await route.fulfill({ response, json: { ...payload, status: 'FAILED', ended_at: '2026-09-27T12:01:00Z',
+      live_metrics: { timestamp: '2026-09-27T12:00:00Z', observation_state: 'historical', active_vusers: 120,
+        tps: 100, total_transactions: 5000, total_errors: 0, error_pct: 0, avg_response_ms: 10,
+        p50_ms: 10, p90_ms: 15, p95_ms: 20, p99_ms: 25 } } })
+  })
+  await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`)
+  // API seeding happened after login loaded the workspace catalog.
+  await page.reload()
+  await page.getByRole('tab', { name: 'Performance', exact: true }).click()
+  const state = page.getByRole('region', { name: 'Retained controller sample', exact: true })
+  await expect(state).toContainText('VUsers at capture')
+  await expect(state).toContainText('120')
+  await expect(state).toContainText('Historical sample')
+  await expect(state.getByRole('status')).toContainText('do not indicate currently running VUsers')
+  await expect(state).not.toContainText('Live sample received')
+  await state.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('terminal-observation.png'), fullPage: true })
+})

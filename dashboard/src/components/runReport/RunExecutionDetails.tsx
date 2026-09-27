@@ -21,6 +21,7 @@ export function RetainedRunMetrics({ test }: { test: TestSummary }) {
     <h2>Retained controller sample</h2>
     <p>Captured at {executionDate(metrics?.timestamp)}. The metric population and aggregation window are not established for this retained record. These values are not whole-run result KPIs.</p>
     {metrics ? <>
+      <p role="status">Historical sample. VUsers at capture do not indicate currently running VUsers.</p>
       <dl className="run-execution-facts">
         <div><dt>VUsers at capture</dt><dd>{recordedNumber(metrics.active_vusers)}</dd></div>
         <div><dt>Reported transaction count</dt><dd>{recordedNumber(metrics.total_transactions)}</dd></div>

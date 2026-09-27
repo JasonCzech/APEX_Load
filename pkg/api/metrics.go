@@ -686,7 +686,7 @@ func buildRunLiveStateSnapshotLocked(test *ManagedTest, updatedAt time.Time) Run
 		UpdatedAt:     updatedAt.UTC(),
 		StartedAt:     cloneTimePtr(test.StartedAt),
 		EndedAt:       cloneTimePtr(test.EndedAt),
-		LiveMetrics:   cloneLiveMetrics(test.LiveMetrics),
+		LiveMetrics:   cloneRunLiveMetrics(test),
 		HistoryPoints: len(test.History),
 	}
 }
