@@ -287,3 +287,35 @@ lint, build, both affected browser auth profiles, documentation checks and diff
 whitespace checks passed as described above. The three follow-up slices were reviewed,
 fixed and committed independently. Concurrent Java/performance work remains separate.
 No new Docker, KEDA or real node-failure qualification was performed in this follow-up.
+
+## Durable archive collection failure records
+
+Distributed completion now records a fixed reason and observation time when archive
+collection errors or yields no generator archive. These records are separate from
+publication retry jobs and do not alter the already committed execution outcome.
+The existing COMPLETE-path failure on required archive collection remains unchanged.
+A catalog entry or publication intent takes precedence over the failure on reads.
+
+Schema release 17 adds an idempotent record bound to project, run creation/completion
+timestamps and terminal status. HA writes check the execution lease in the same
+transaction. SQLite retains nanosecond identity; PostgreSQL uses pgx microsecond
+precision. Run and project deletion cascade the record. Reused IDs cannot accept
+late writes or expose old failures. Single-run full, summary and metrics reads hydrate
+`archive_failure`; lists do not perform an additional query per run. The scoped
+`test_archive_failed` WebSocket event carries only the fixed reason and recording time,
+not transport errors, credentials or internal identity fields.
+
+Review fixed rejected-lease readback/publication and checked identity again between
+storage readback and event emission. Regression tests cover restart reads, duplicate
+observation, publication precedence, deletion, same-ID replacement, stale producers,
+schema upgrade, failed/aborted collection, and the existing fail-closed COMPLETE path.
+Focused storage/deletion/schema tests and API race tests passed. Generated API contracts
+and documentation checks passed. The full Go gate is running and will be recorded
+below. A tagged PostgreSQL precision/deletion regression compiles but was skipped
+because `APEXLOAD_TEST_POSTGRES_URL` is unset; it is not PostgreSQL runtime evidence.
+
+This slice records failures observed by a surviving collector. It does not close the
+crash window after terminal commit but before collection/recording, guarantee recording
+through a database outage beyond bounded retries, cover every adoption-failure path,
+retry collection, or describe missing shards in partial archives. Those acceptance
+items and real Docker/KEDA/multi-host qualification remain open.

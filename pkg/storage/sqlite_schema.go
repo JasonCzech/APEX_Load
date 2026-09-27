@@ -665,6 +665,17 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS run_archive_failures (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			test_start_time DATETIME NOT NULL,
+			test_end_time DATETIME NOT NULL,
+			test_status TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			recorded_at DATETIME NOT NULL,
+			FOREIGN KEY(test_id) REFERENCES tests(id) ON DELETE CASCADE,
+			FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+		)`,
 		`CREATE TABLE IF NOT EXISTS archive_refresh_jobs (
 			test_id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,

@@ -21444,6 +21444,10 @@ export interface operations {
                 "transaction_count": number;
                 "trend_point_json"?: string;
               }) | null;
+              "archive_failure"?: ({
+                "reason": string;
+                "recorded_at": string;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -27172,6 +27176,10 @@ export interface operations {
               "test_id": string;
               "transaction_count": number;
               "trend_point_json"?: string;
+            }) | null;
+            "archive_failure"?: ({
+              "reason": string;
+              "recorded_at": string;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
@@ -41870,6 +41878,10 @@ export interface operations {
                 "transaction_count": number;
                 "trend_point_json"?: string;
               }) | null;
+              "archive_failure"?: ({
+                "reason": string;
+                "recorded_at": string;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -49405,6 +49417,10 @@ export interface operations {
               "test_id": string;
               "transaction_count": number;
               "trend_point_json"?: string;
+            }) | null;
+            "archive_failure"?: ({
+              "reason": string;
+              "recorded_at": string;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
@@ -58220,6 +58236,7 @@ export interface operations {
                 "test"?: ({
                   "application_id"?: string;
                   "archive"?: (Record<string, unknown>) | null;
+                  "archive_failure"?: (Record<string, unknown>) | null;
                   "assignment"?: (Record<string, unknown>) | null;
                   "baseline_pinned"?: boolean;
                   "baseline_pinned_at"?: (string) | null;
@@ -64127,6 +64144,10 @@ export interface operations {
               "test_id": string;
               "transaction_count": number;
               "trend_point_json"?: string;
+            }) | null;
+            "archive_failure"?: ({
+              "reason": string;
+              "recorded_at": string;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
@@ -74683,6 +74704,10 @@ export interface operations {
                 "transaction_count": number;
                 "trend_point_json"?: string;
               }) | null;
+              "archive_failure"?: ({
+                "reason": string;
+                "recorded_at": string;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -76045,6 +76070,10 @@ export interface operations {
                 "test_id": string;
                 "transaction_count": number;
                 "trend_point_json"?: string;
+              }) | null;
+              "archive_failure"?: ({
+                "reason": string;
+                "recorded_at": string;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -77409,6 +77438,10 @@ export interface operations {
                 "transaction_count": number;
                 "trend_point_json"?: string;
               }) | null;
+              "archive_failure"?: ({
+                "reason": string;
+                "recorded_at": string;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -78772,6 +78805,10 @@ export interface operations {
                 "transaction_count": number;
                 "trend_point_json"?: string;
               }) | null;
+              "archive_failure"?: ({
+                "reason": string;
+                "recorded_at": string;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -80134,6 +80171,10 @@ export interface operations {
                 "test_id": string;
                 "transaction_count": number;
                 "trend_point_json"?: string;
+              }) | null;
+              "archive_failure"?: ({
+                "reason": string;
+                "recorded_at": string;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -98186,6 +98227,10 @@ export interface operations {
               "test_id": string;
               "transaction_count": number;
               "trend_point_json"?: string;
+            }) | null;
+            "archive_failure"?: ({
+              "reason": string;
+              "recorded_at": string;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;

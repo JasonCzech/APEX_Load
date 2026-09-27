@@ -36864,6 +36864,10 @@ paths:
                                   type: object
                                   additionalProperties: true
                                   nullable: true
+                                archive_failure:
+                                  type: object
+                                  additionalProperties: true
+                                  nullable: true
                                 assignment:
                                   type: object
                                   description: 'Go type: GeneratorAssignmentSettings'
@@ -50916,6 +50920,18 @@ paths:
                           - test_id
                           - transaction_count
                         nullable: true
+                      archive_failure:
+                        type: object
+                        properties:
+                          reason:
+                            type: string
+                          recorded_at:
+                            type: string
+                            format: date-time
+                        required:
+                          - reason
+                          - recorded_at
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -55045,6 +55061,18 @@ paths:
                           - test_id
                           - transaction_count
                         nullable: true
+                      archive_failure:
+                        type: object
+                        properties:
+                          reason:
+                            type: string
+                          recorded_at:
+                            type: string
+                            format: date-time
+                        required:
+                          - reason
+                          - recorded_at
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -59170,6 +59198,18 @@ paths:
                           - schema_version
                           - test_id
                           - transaction_count
+                        nullable: true
+                      archive_failure:
+                        type: object
+                        properties:
+                          reason:
+                            type: string
+                          recorded_at:
+                            type: string
+                            format: date-time
+                        required:
+                          - reason
+                          - recorded_at
                         nullable: true
                       assignment:
                         type: object
@@ -63309,6 +63349,18 @@ paths:
                           - test_id
                           - transaction_count
                         nullable: true
+                      archive_failure:
+                        type: object
+                        properties:
+                          reason:
+                            type: string
+                          recorded_at:
+                            type: string
+                            format: date-time
+                        required:
+                          - reason
+                          - recorded_at
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -67446,6 +67498,18 @@ paths:
                           - schema_version
                           - test_id
                           - transaction_count
+                        nullable: true
+                      archive_failure:
+                        type: object
+                        properties:
+                          reason:
+                            type: string
+                          recorded_at:
+                            type: string
+                            format: date-time
+                        required:
+                          - reason
+                          - recorded_at
                         nullable: true
                       assignment:
                         type: object
@@ -71585,6 +71649,18 @@ paths:
                           - test_id
                           - transaction_count
                         nullable: true
+                      archive_failure:
+                        type: object
+                        properties:
+                          reason:
+                            type: string
+                          recorded_at:
+                            type: string
+                            format: date-time
+                        required:
+                          - reason
+                          - recorded_at
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -75722,6 +75798,18 @@ paths:
                           - schema_version
                           - test_id
                           - transaction_count
+                        nullable: true
+                      archive_failure:
+                        type: object
+                        properties:
+                          reason:
+                            type: string
+                          recorded_at:
+                            type: string
+                            format: date-time
+                        required:
+                          - reason
+                          - recorded_at
                         nullable: true
                       assignment:
                         type: object
@@ -228878,6 +228966,18 @@ paths:
                       - test_id
                       - transaction_count
                     nullable: true
+                  archive_failure:
+                    type: object
+                    properties:
+                      reason:
+                        type: string
+                      recorded_at:
+                        type: string
+                        format: date-time
+                    required:
+                      - reason
+                      - recorded_at
+                    nullable: true
                   assignment:
                     type: object
                     properties:
@@ -235552,6 +235652,18 @@ paths:
                       - schema_version
                       - test_id
                       - transaction_count
+                    nullable: true
+                  archive_failure:
+                    type: object
+                    properties:
+                      reason:
+                        type: string
+                      recorded_at:
+                        type: string
+                        format: date-time
+                    required:
+                      - reason
+                      - recorded_at
                     nullable: true
                   assignment:
                     type: object
@@ -253552,6 +253664,18 @@ paths:
                       - test_id
                       - transaction_count
                     nullable: true
+                  archive_failure:
+                    type: object
+                    properties:
+                      reason:
+                        type: string
+                      recorded_at:
+                        type: string
+                        format: date-time
+                    required:
+                      - reason
+                      - recorded_at
+                    nullable: true
                   assignment:
                     type: object
                     properties:
@@ -260170,6 +260294,18 @@ paths:
                       - schema_version
                       - test_id
                       - transaction_count
+                    nullable: true
+                  archive_failure:
+                    type: object
+                    properties:
+                      reason:
+                        type: string
+                      recorded_at:
+                        type: string
+                        format: date-time
+                    required:
+                      - reason
+                      - recorded_at
                     nullable: true
                   assignment:
                     type: object

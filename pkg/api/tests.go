@@ -20,11 +20,15 @@ import (
 )
 
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
-	return tr.getTestSnapshot(id, true)
+	test, ok := tr.getTestSnapshot(id, true)
+	tr.attachRunArchiveFailure(test)
+	return test, ok
 }
 
 func (tr *TestRunner) GetTestSummary(id string) (*ManagedTest, bool) {
-	return tr.getTestSnapshot(id, false)
+	test, ok := tr.getTestSnapshot(id, false)
+	tr.attachRunArchiveFailure(test)
+	return test, ok
 }
 
 // GetTestMetricsWindow returns the normal serialization-safe test summary plus
@@ -62,6 +66,7 @@ func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit in
 		tr.attachStoredTerminalHistory(test)
 		test.History = selectLiveMetricsHistory(test.History, since, 0)
 	}
+	tr.attachRunArchiveFailure(test)
 	return test, true
 }
 
@@ -1014,6 +1019,10 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.Sparkline = append([]TestSparklinePoint(nil), test.Sparkline...)
 	cloned.ComparisonBaseline = cloneRunComparisonBaseline(test.ComparisonBaseline)
 	cloned.Archive = cloneRunArchiveRecord(test.Archive)
+	cloned.ArchiveFailure = cloneRunArchiveFailure(test.ArchiveFailure)
+	if cloned.Archive != nil {
+		cloned.ArchiveFailure = nil
+	}
 	cloned.TelemetryHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
 	if test.initialArchiveProvenance != nil {
 		initial := maskRunArchiveProvenance(*test.initialArchiveProvenance)

@@ -1809,12 +1809,15 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		}
 		b.closeRemoteResources(tr, test)
 		if archiveErr != nil {
+			tr.recordRemoteArchiveFailure(test, storage.RunArchiveFailureRemoteCollection)
 			unlockArchiveCommit()
 			slog.Error("failed to collect best-effort archive after distributed terminal outcome", "test_id", test.ID, "status", finalStatus, "error", archiveErr)
 			return
 		}
 		if archiveRecord != nil {
 			tr.persistAndAttachRunArchiveUnderFence(test, archiveRecord)
+		} else if owned {
+			tr.recordRemoteArchiveFailure(test, storage.RunArchiveFailureRemoteUnavailable)
 		}
 		tr.mu.RLock()
 		archiveTerminal := archiveRecord != nil && test.Archive != nil
@@ -1875,6 +1878,9 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 	}
 	if err := tr.completeTestRunUnderArchiveFence(test, finalStatus, completedAt, finalError, archiveRecord); err != nil {
 		slog.Error("distributed terminal transition remains retryable after bounded persistence retries", "test_id", test.ID, "status", finalStatus, "error", err)
+	}
+	if archiveErr != nil {
+		tr.recordRemoteArchiveFailure(test, storage.RunArchiveFailureRemoteCollection)
 	}
 	unlockArchiveCommit()
 	if b.releaseRunCapacity != nil {
