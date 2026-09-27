@@ -886,3 +886,35 @@ stdout/nonzero exit when the generated CA was not trusted. Documentation checks
 for 68 active Markdown files and whitespace checks passed. Final review found no
 further actionable issue in this slice. Unrelated Java/performance work was
 preserved; no live Kubernetes fault qualification was performed.
+
+## Container and Kubernetes resources for the independent target
+
+Added a dedicated standard-library-only target Dockerfile using the repository's
+pinned Go builder and a non-root scratch runtime. A private renderer consumes the
+fresh input directory and a repository manifest digest, validates ownership,
+credentials and TLS, and emits Secrets, a single-replica Deployment, ClusterIP
+Service and scoped NetworkPolicy. It pins the target to the owned kind control-plane
+node, outside worker fault injection, and keeps observer credentials/private keys
+out of the separate load Secret. No namespace is created/relabelled and no cluster
+mutation is performed. Output is private and exclusive.
+
+Review strengthened TLS validation to perform a strict handshake for the Service
+DNS name using the exact captured certificate/key/CA bytes, avoiding validation of
+a second file read. Tests cover wrong CA/service identity, key mismatch, bounded
+malformed inputs, ownership mismatch, mutable/invalid image references, credential
+separation, workload placement/security, output permissions, overwrite/symlink
+refusal, safe CLI output and offline Kustomize rendering.
+
+Docker Desktop responds to read-only queries, but the image build failed before
+compilation: containerd's metadata database remains a read-only filesystem. The
+existing PostgreSQL container also reports unhealthy. Existing containers/data
+were left untouched; image runtime and live cluster validation remain unverified.
+
+Validation passed: all 76 fault-harness tests (3.737 seconds), the six focused
+renderer tests (0.890 seconds), the uncached Go harness bridge (12.393 seconds),
+and `go test ./...` (API package: 402.687 seconds; cached results for unchanged
+packages). Offline Kustomize rendering and a static Linux cross-compile with the
+Dockerfile's build flags passed; the latter used the host compiler and does not
+validate the container build. Documentation checks for 68 active Markdown files
+and whitespace checks passed. Final review found no further actionable issue in
+this slice. Unrelated Java/performance work was preserved.

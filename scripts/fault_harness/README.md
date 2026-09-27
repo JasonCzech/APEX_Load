@@ -174,6 +174,62 @@ performs continuity checks. An accepted-request snapshot is not a success or
 no-duplicate-execution verdict.
 
 
+### Container and private Kubernetes target resources
+
+The target has a separate [minimal Dockerfile](../../cmd/apexfault-target/Dockerfile)
+using the repository's pinned Go builder and a non-root scratch runtime. It includes
+no application/dashboard dependencies or bundled CA roots; use `--ca` when running
+the observer inside this image. Build from the repository root:
+
+```sh
+docker build -f cmd/apexfault-target/Dockerfile \
+  -t localhost:5001/apexload-fault-target:trial .
+```
+
+Push to the registry reachable from the disposable cluster, then set
+`TARGET_IMAGE_DIGEST` to its repository reference including `@sha256:` and the
+registry manifest digest. A mutable tag or local image ID is not a substitute.
+Generate a new private resource directory from fresh inputs:
+
+```sh
+python3 scripts/fault_harness/render_target.py \
+  --inputs /absolute/private/inputs \
+  --image "$TARGET_IMAGE_DIGEST" \
+  --output /absolute/new/private-target
+```
+
+The renderer validates run ownership, distinct credentials, and a strict TLS
+handshake using the exact captured PEM bytes and the Service's DNS name. It writes
+`target-resources.json` and `kustomization.yaml` with private permissions and refuses
+existing output directories. The resource list contains:
+
+- An immutable server Secret containing target config and its TLS certificate/key.
+- A separate immutable load Secret containing only the load token and CA, with no
+  observer token or private key. Configure workload headers from these private inputs.
+- One target replica with `Recreate` rollout strategy, pinned to the run's kind
+  control-plane node and tolerating that node's scheduling taint. Worker fault
+  injection must leave this node running. Restart/redeployment changes the target
+  identity and invalidates the running trial.
+- A non-root, read-only container with no service-account token, bounded resources,
+  TLS health probes and a ten-second termination grace period. Health probes check
+  process availability; the verified observer checks certificate trust separately.
+- A ClusterIP HTTPS Service and ingress restricted to same-namespace generator or
+  `apexload-fault-observer` pods, plus denied target egress. NetworkPolicy enforcement
+  depends on the cluster's CNI and remains a live-validation requirement.
+
+The renderer does not create/relabel a namespace, contact Kubernetes, apply resources,
+or provision the rest of the application. Before applying, verify the live namespace's
+`apexload.io/fault-run` label matches `ownership.json`, using the run's explicit
+kubeconfig and kind context. Keep rendered resources private: Kustomize output includes
+Secrets. Do not print or attach that output as public evidence. The fixed one-CPU/
+128-MiB limit is a bounded initial target profile, not measured throughput capacity.
+
+Offline resource tests and Linux compilation do not establish a working image or
+pod. The attempted Docker build still fails because Docker Desktop's containerd
+metadata database is read-only; image-build/runtime and live Kubernetes validation
+remain open. Existing containers and PostgreSQL data were not modified.
+
+
 ## Read-only cluster inventory
 
 Collect an inventory independently, using the same driver config and a new private
