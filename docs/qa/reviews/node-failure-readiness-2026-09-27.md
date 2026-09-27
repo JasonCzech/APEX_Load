@@ -431,3 +431,14 @@ run includes the subsequent recorded-single-target fix and is recorded below whe
 complete. No new Docker, KEDA, Redis/PostgreSQL failover or multi-host qualification
 was performed. Durable intent on every terminal path, exact historical shard loss,
 combined recovery and deployment qualification remain open.
+
+## Final source-coverage validation gate
+
+The final `go test ./...` passed with the single-target follow-up included (API:
+326.321 seconds). The focused API race suite passed after that fix. Dashboard
+checks passed: typecheck, lint, build, 46 relevant unit tests, and four analysis
+browser cases in each authentication profile. Final documentation checks and
+`git diff --check` passed. No actionable finding remains in these source-coverage
+and Results slices. Unrelated concurrent Java/performance and admission-test work
+was preserved outside these commits. Production recovery claims remain bounded by
+the open readiness-plan acceptance gates.
