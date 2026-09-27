@@ -563,3 +563,23 @@ No live Docker/Kubernetes fault was injected. The stack provisioner, authoritati
 traffic/assignment observer, during-fault scaling evidence, final archive evidence,
 and repeated multi-host/dependency-failover qualification remain open. Application,
 dashboard and database schemas are unchanged. Unrelated concurrent work was preserved.
+
+
+## Kubernetes restoration readiness evaluator
+
+Added a conservative evaluator over sanitized inventories. It checks retained node,
+workload and PVC identities; current observed generations and converged replica
+counts; pod readiness and Deployment → ReplicaSet → Pod / StatefulSet → Pod ownership;
+and unchanged bound volume identities. Bare running pods must retain their identity.
+Normal controller-managed pod replacements are accepted. Current desired replicas
+may differ from baseline, but a previously active workload cannot pass by scaling to
+zero. Completed job pods are ignored; active unsupported owners fail closed. This is
+readiness evidence, not data integrity, availability or execution-fencing proof.
+
+The collector now includes allowlisted owner identities, deletion state and ReplicaSet
+inventory. Review found that duplicate node names could satisfy the old inventory's
+three-node count; duplicate names now abort collection. Twenty focused collector and
+evaluator tests passed, covering missing evidence, wrong identities, volume rebinding,
+stale generation, unavailable replicas, pod ownership/counts, pressure, termination,
+normal replacement and autoscaling. No further actionable finding remained in this
+slice. Driver integration and its bounded cleanup tests follow separately.

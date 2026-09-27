@@ -115,7 +115,9 @@ It does not run the observation command or inject a fault. `cluster.json` record
 - Node identities, zones and readiness/pressure conditions.
 - Pod placement, phase/readiness, container restart counts and runtime SHA-256 image
   digests. A missing digest remains null; an image tag is not treated as a digest.
-- Deployment/StatefulSet replica state and HPA/KEDA targets, bounds and conditions.
+- Deployment/StatefulSet/ReplicaSet replica state and HPA/KEDA targets, bounds and conditions.
+- Pod/workload controller-owner identities and deletion state, for checking replacement
+  pods against the workload that owns them; arbitrary owner metadata is omitted.
 - PVC binding phase, storage class, volume identity and access modes.
 - Kubernetes event object references, type, reason, count and timestamps.
 

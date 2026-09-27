@@ -10,7 +10,7 @@ import re
 
 MAX_ITEMS = 2000
 MAX_ARTIFACT_BYTES = 8 * 1024 * 1024
-RESOURCES = ("pods", "deployments", "statefulsets", "horizontalpodautoscalers",
+RESOURCES = ("pods", "deployments", "statefulsets", "replicasets", "horizontalpodautoscalers",
              "scaledobjects.keda.sh", "persistentvolumeclaims", "events")
 
 
@@ -61,6 +61,21 @@ def identity(obj):
     return {"name": name, "uid": uid}
 
 
+def controller_owner(obj):
+    owners = []
+    for ref in bounded_list(obj["metadata"].get("ownerReferences", []), 64):
+        if "controller" in ref and not isinstance(ref["controller"], bool):
+            raise EvidenceError("invalid controller ownership")
+        if ref.get("controller"):
+            owner = {key: identifier(ref.get(key)) for key in ("kind", "name", "uid")}
+            if not all(owner.values()):
+                raise EvidenceError("missing controller identity")
+            owners.append(owner)
+    if len(owners) > 1:
+        raise EvidenceError("ambiguous controller ownership")
+    return owners[0] if owners else None
+
+
 def bounded_list(values, limit=MAX_ITEMS):
     if not isinstance(values, list) or len(values) > limit:
         raise EvidenceError("invalid or oversized list")
@@ -85,6 +100,8 @@ def digest(value):
 
 def pod(obj):
     result = identity(obj)
+    result["controller_owner"] = controller_owner(obj)
+    result["terminating"] = obj["metadata"].get("deletionTimestamp") is not None
     spec, status = obj.get("spec", {}), obj.get("status", {})
     result.update(node=identifier(spec.get("nodeName")),
                   phase=choice(status.get("phase"), ("Pending", "Running", "Succeeded", "Failed", "Unknown")),
@@ -109,6 +126,8 @@ def pod(obj):
 
 def workload(obj):
     result = identity(obj)
+    result["controller_owner"] = controller_owner(obj)
+    result["terminating"] = obj["metadata"].get("deletionTimestamp") is not None
     result["generation"] = count(obj["metadata"].get("generation"))
     result["desired_replicas"] = count(obj.get("spec", {}).get("replicas"))
     status = obj.get("status", {})
@@ -137,6 +156,7 @@ def autoscaler(obj, keda=False):
 
 def claim(obj):
     result = identity(obj)
+    result["terminating"] = obj["metadata"].get("deletionTimestamp") is not None
     spec = obj.get("spec", {})
     result.update(phase=choice(obj.get("status", {}).get("phase"), ("Pending", "Bound", "Lost")),
                   storage_class=identifier(spec.get("storageClassName")) if spec.get("storageClassName") else None,
@@ -166,7 +186,7 @@ def node(obj):
     return result
 
 
-PROJECTORS = {"pods": pod, "deployments": workload, "statefulsets": workload,
+PROJECTORS = {"pods": pod, "deployments": workload, "statefulsets": workload, "replicasets": workload,
               "horizontalpodautoscalers": autoscaler, "scaledobjects.keda.sh": lambda obj: autoscaler(obj, True),
               "persistentvolumeclaims": claim, "events": event}
 
@@ -198,6 +218,8 @@ def snapshot(config, kube):
     nodes = items(kube("get", "nodes"))
     if len(nodes) < 3 or any(not n["metadata"]["name"].startswith(config["cluster"] + "-") for n in nodes):
         raise EvidenceError("nodes do not belong to disposable multi-node cluster")
+    if len({n["metadata"]["name"] for n in nodes}) != len(nodes):
+        raise EvidenceError("duplicate node identity")
     result = {"schema_version": 1, "run_id": config["run_id"], "cluster": config["cluster"],
               "namespace": namespace, "started_at": started, "nodes": [node(n) for n in nodes], "resources": {}}
     for resource in RESOURCES:

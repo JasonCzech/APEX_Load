@@ -127,6 +127,27 @@ class ClusterEvidenceTest(unittest.TestCase):
         with self.assertRaises(EvidenceError):
             snapshot(self.config, kube)
 
+    def test_controller_ownership_and_deletion_are_allowlisted(self):
+        pod = self.obj("generator-0")
+        owner = {"kind": "StatefulSet", "name": "generator", "uid": "generator-uid", "controller": True,
+                 "private": "SECRET"}
+        pod["metadata"].update(ownerReferences=[owner], deletionTimestamp="2026-09-27T00:00:00Z")
+        self.resources["pods"]["items"] = [pod]
+        evidence = snapshot(self.config, self.kube)
+        projected = evidence["resources"]["pods"]["items"][0]
+        self.assertEqual(projected["controller_owner"], {key: owner[key] for key in ("kind", "name", "uid")})
+        self.assertTrue(projected["terminating"])
+        self.assertNotIn("SECRET", json.dumps(evidence))
+        for owners in ([owner, owner], [{**owner, "controller": "true"}], [{**owner, "uid": None}], [owner] * 65):
+            with self.subTest(owners=len(owners)):
+                pod["metadata"]["ownerReferences"] = owners
+                self.assertEqual(snapshot(self.config, self.kube)["resources"]["pods"]["status"], "invalid_response")
+
+    def test_duplicate_nodes_cannot_count_as_multi_node_inventory(self):
+        self.nodes["items"] = [self.nodes["items"][0]] * 3
+        with self.assertRaises(EvidenceError):
+            snapshot(self.config, self.kube)
+
     def test_cli_uses_explicit_read_only_scope_and_retains_partial_inventory(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)
