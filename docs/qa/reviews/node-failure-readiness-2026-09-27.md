@@ -510,3 +510,23 @@ was required. Unrelated Java/performance and admission-test changes were preserv
 No new Docker, KEDA, PostgreSQL/Redis failover or independent-node qualification was
 performed. Persisted pre-collection intent on every terminal path and combined
 controller/worker recovery remain open readiness work.
+
+
+## Disposable-cluster evidence inventory
+
+Added a read-only cluster inventory command for the owned disposable kind namespace.
+It records node/pod placement, readiness/restarts, runtime image digests, workload
+replicas, HPA/KEDA state, PVC bindings and selected Kubernetes event fields. Raw
+messages, pod environment/template values, annotations, trigger metadata and command
+errors are excluded. Namespace UID/ownership is rechecked after collection; foreign
+nodes, partial pagination, oversized lists and malformed counts cannot silently pass
+as complete inventory. Missing APIs/CRDs remain explicit gaps in the retained artifact.
+Files are private, refuse overwrite, and have an 8 MiB artifact limit.
+
+The 22 Python harness tests passed, including an executable fake-kubectl CLI test
+that verifies explicit context/namespace arguments, partial-inventory exit status,
+private output, no overwrite and error redaction. These are command-boundary tests,
+not a deployed Kubernetes qualification. Review found and corrected a fixture newline
+escape before the final passing test run. The repository scripts test bridge and
+documentation checks are recorded with the final gate below. No actionable finding
+remained in the collector review.

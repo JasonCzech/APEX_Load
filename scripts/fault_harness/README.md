@@ -93,3 +93,44 @@ command output and arbitrary adapter fields are excluded. Record sanitized HPA,
 events, image digests, dependency state and final archives through the forthcoming
 stack adapter. A passed traffic gate alone is not a passing completion, archive,
 no-overlap, liveness, cleanup-readiness or production-availability qualification.
+
+
+## Read-only cluster inventory
+
+Collect an inventory independently, using the same driver config and a new private
+output directory:
+
+```sh
+python3 scripts/fault_harness/cluster_evidence.py \
+  --config /absolute/private/config.json \
+  --output /absolute/new/private-cluster-evidence
+```
+
+This command performs only explicit-context, namespace-scoped reads (plus namespace
+ownership and node inventory reads). It verifies the fault-run namespace label and
+UID before and after collection, and rejects nodes outside the disposable cluster.
+It does not run the observation command or inject a fault. `cluster.json` records:
+
+- Node identities, zones and readiness/pressure conditions.
+- Pod placement, phase/readiness, container restart counts and runtime SHA-256 image
+  digests. A missing digest remains null; an image tag is not treated as a digest.
+- Deployment/StatefulSet replica state and HPA/KEDA targets, bounds and conditions.
+- PVC binding phase, storage class, volume identity and access modes.
+- Kubernetes event object references, type, reason, count and timestamps.
+
+The output omits environment values, pod templates, annotations, event messages,
+KEDA trigger metadata, authentication references and raw command errors. It never
+requests Secrets or ConfigMaps. Object identifiers still describe private topology;
+keep the directory private. Files are created with mode 0600 in a new 0700 directory
+and refuse overwrite, including symlink destinations. Inventories are bounded to
+2,000 objects per resource and artifacts to 8 MiB; oversized/paginated resource lists
+are explicit gaps, not silently truncated successes.
+
+`inventory_complete` means every listed resource inventory was observed. It does not
+mean the cluster is healthy, every container has a digest, or recovery is qualified.
+Unavailable APIs (including a missing KEDA CRD) and invalid responses produce fixed
+per-resource gap statuses; the standalone command saves that partial inventory and
+exits nonzero. Ownership failures abort collection. Reads span the recorded start/end
+times and are not an atomic cluster snapshot. This diagnostic inventory is separate
+from the independent target counter and authoritative assignment/generation evidence
+required by the traffic observer.
