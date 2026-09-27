@@ -486,7 +486,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "controller_failover"}}
 <h2>Controller Failover</h2>
 {{with .Report.Manifest.Continuity}}{{if .Failovers}}
-<p class="section-copy">This run survived {{len .Failovers}} HA controller failover(s). Its load generators kept producing load throughout and a standby controller adopted the run, so every measured result below comes from the generators' own archives and is complete. During each gap the controller observed nothing live: controller-derived overlays (target TPS, telemetry health) are absent for those windows, and controller-driven shapes (stage schedules, traffic profiles, goal control) held their last value until adoption.</p>
+<p class="section-copy">This run survived {{len .Failovers}} HA controller failover(s). A standby controller adopted the run. Generator archives provide retained measurements; completeness and missing sources are evaluated separately. During each gap the controller observed nothing live: controller-derived overlays (target TPS, telemetry health) are absent for those windows, and controller-driven shapes (stage schedules, traffic profiles, goal control) held their last value until adoption.</p>
 <table>
   <thead><tr><th>Adopted at</th><th>Generation</th><th class="num">Unobserved gap (s)</th><th class="num">Generators adopted</th><th class="num">Finished during gap</th></tr></thead>
   <tbody>
@@ -502,6 +502,12 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "completeness"}}
 <h2>Completeness Score</h2>
 <p class="section-copy">{{formatFloat .Report.Completeness.ScorePct}}% — {{.Report.Completeness.Status}}</p>
+{{with .Report.Manifest}}{{with .SourceCoverage}}
+<p class="section-copy">Generator sources known at collection time. This inventory does not prove complete shard history or that all measurements survived.</p>
+<table><thead><tr><th>Generator source</th><th>Collection</th></tr></thead><tbody>
+{{range .Sources}}<tr><td>{{.Target}}</td><td>{{if .Collected}}Collected{{else}}Not collected{{end}}</td></tr>{{end}}
+</tbody></table>
+{{end}}{{end}}
 {{if .Report.Completeness.Findings}}
 <table>
   <thead><tr><th>Dimension</th><th>Severity</th><th class="num">Penalty</th><th>Finding</th></tr></thead>

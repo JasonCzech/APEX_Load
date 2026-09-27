@@ -1068,6 +1068,9 @@ func buildRunArchiveCompletenessScoreFromCounts(manifest *RunArchiveManifest, re
 	if manifest == nil {
 		addFinding("summary", "critical", 40, "Archive manifest is missing.")
 	} else {
+		if finding := archiveSourceCoverageFinding(manifest); finding != nil {
+			addFinding(finding.Dimension, finding.Severity, finding.Penalty, finding.Message)
+		}
 		if strings.TrimSpace(manifest.Error) != "" {
 			addFinding("archive_writer", "critical", 25, "Archive writer recorded an error: "+manifest.Error)
 		}

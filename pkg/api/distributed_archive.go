@@ -75,7 +75,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 		return nil, statErr
 	}
 
-	bundles, err := b.fetchRemoteArchiveBundles(tr, test, requireAll)
+	bundles, coverage, err := b.fetchRemoteArchiveBundlesWithCoverage(context.Background(), tr, test, requireAll)
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +88,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	}
 
 	manifest := mergeRemoteArchiveManifest(tr, test, bundles, finalStatus, finalError, completedAt)
+	manifest.SourceCoverage = coverage
 	if !requireAll {
 		manifest.CSVExportIncomplete = "not all generator archives were required; complete export cannot be verified"
 	}
@@ -349,17 +350,23 @@ type remoteArchiveFetchResult struct {
 }
 
 func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesContext(ctx context.Context, tr *TestRunner, test *ManagedTest, requireAll bool) ([]remoteArchiveBundle, error) {
+	bundles, _, err := b.fetchRemoteArchiveBundlesWithCoverage(ctx, tr, test, requireAll)
+	return bundles, err
+}
+
+func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx context.Context, tr *TestRunner, test *ManagedTest, requireAll bool) ([]remoteArchiveBundle, *RunArchiveSourceCoverage, error) {
 	if test == nil {
-		return nil, fmt.Errorf("test is required")
+		return nil, nil, fmt.Errorf("test is required")
 	}
 	if err := validateArchiveRunID(test.ID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var (
 		clientsByTarget map[string]generatorClient
 		archivedClients map[string]generatorClient
 		singleClient    generatorClient
 		remoteTarget    string
+		shards          []GeneratorShardSummary
 	)
 	if tr != nil {
 		tr.mu.RLock()
@@ -367,19 +374,21 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesContext(ctx conte
 		archivedClients = cloneClientMap(test.remoteArchiveClientsByTarget)
 		singleClient = test.remoteClient
 		remoteTarget = test.remoteTarget
+		shards = append([]GeneratorShardSummary(nil), test.GeneratorShards...)
 		tr.mu.RUnlock()
 	} else {
 		clientsByTarget = cloneClientMap(test.remoteClientsByTarget)
 		archivedClients = cloneClientMap(test.remoteArchiveClientsByTarget)
 		singleClient = test.remoteClient
 		remoteTarget = test.remoteTarget
+		shards = append([]GeneratorShardSummary(nil), test.GeneratorShards...)
 	}
 	// Snapshot active and retired-archive transports in one critical section.
 	// Otherwise a concurrent evacuation could move a source between the two maps
 	// between reads and make the final evidence merge omit it.
 	clients, err := b.clientsFromSnapshot(clientsByTarget, singleClient, remoteTarget)
-	if err != nil && len(archivedClients) == 0 {
-		return nil, err
+	if err != nil && len(archivedClients) == 0 && len(shards) == 0 {
+		return nil, nil, err
 	}
 	if clients == nil {
 		clients = make(map[string]generatorClient, len(archivedClients))
@@ -389,16 +398,25 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesContext(ctx conte
 			clients[target] = client
 		}
 	}
+	// A known assignment whose transport disappeared must remain an expected
+	// source. Do not mistake the surviving client map for the whole run.
+	for _, shard := range shards {
+		if target := strings.TrimSpace(shard.Target); target != "" {
+			if _, exists := clients[target]; !exists {
+				clients[target] = nil
+			}
+		}
+	}
 	if len(clients) > remoteArchiveMaxTargets {
-		return nil, fmt.Errorf("remote archive target count %d exceeds limit %d", len(clients), remoteArchiveMaxTargets)
+		return nil, nil, fmt.Errorf("remote archive target count %d exceeds limit %d", len(clients), remoteArchiveMaxTargets)
 	}
 	tempRoot, err := resolveArchiveDirectoryRoot(os.TempDir(), false)
 	if err != nil {
-		return nil, fmt.Errorf("resolve remote archive transfer root: %w", err)
+		return nil, nil, fmt.Errorf("resolve remote archive transfer root: %w", err)
 	}
 	transferStageRoot, err := createArchiveTemporaryDirectory(tempRoot, "apexload-remote-archive", 0o700)
 	if err != nil {
-		return nil, fmt.Errorf("create remote archive transfer staging directory: %w", err)
+		return nil, nil, fmt.Errorf("create remote archive transfer staging directory: %w", err)
 	}
 	keepStaging := false
 	defer func() {
@@ -443,11 +461,16 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesContext(ctx conte
 		}
 	}
 	if firstErr != nil {
-		return nil, firstErr
+		return nil, nil, firstErr
 	}
 	bundles := make([]remoteArchiveBundle, 0, len(targets))
 	missingTargets := make([]string, 0)
+	coverage := &RunArchiveSourceCoverage{Mode: "best_effort", Sources: make([]RunArchiveSource, 0, len(targets))}
+	if requireAll {
+		coverage.Mode = "required"
+	}
 	for index, result := range ordered {
+		coverage.Sources = append(coverage.Sources, RunArchiveSource{Target: targets[index], Collected: !result.missing})
 		if result.missing {
 			missingTargets = append(missingTargets, targets[index])
 			continue
@@ -457,20 +480,23 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesContext(ctx conte
 	if len(bundles) == 0 {
 		if requireAll {
 			if len(missingTargets) > 0 {
-				return nil, fmt.Errorf("archive not available from targets: %s", strings.Join(missingTargets, ", "))
+				return nil, nil, fmt.Errorf("archive not available from targets: %s", strings.Join(missingTargets, ", "))
 			}
-			return nil, fmt.Errorf("no remote archive bundles were available")
+			return nil, nil, fmt.Errorf("no remote archive bundles were available")
 		}
-		return nil, nil
+		return nil, coverage, nil
 	}
 	if requireAll && len(missingTargets) > 0 {
-		return nil, fmt.Errorf("archive not available from targets: %s", strings.Join(missingTargets, ", "))
+		return nil, nil, fmt.Errorf("archive not available from targets: %s", strings.Join(missingTargets, ", "))
 	}
 	keepStaging = true
-	return bundles, nil
+	return bundles, coverage, nil
 }
 
 func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context.Context, client generatorClient, testID, target string, index int, transferStageRoot string, requireAll bool, budget *remoteArchiveTransferBudget) (remoteArchiveBundle, bool, error) {
+	if client == nil {
+		return remoteArchiveBundle{}, true, nil
+	}
 	targetCtx, cancel := context.WithTimeout(ctx, remoteArchiveTargetTimeout(b.timeout))
 	defer cancel()
 	targetDir, err := ensureArchiveRelativeDirectory(transferStageRoot, fmt.Sprintf("target-%03d", index), 0o700)

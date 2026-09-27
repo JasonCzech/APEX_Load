@@ -48,10 +48,13 @@ func TestControllerFailoverReportSectionRendersAllFormats(t *testing.T) {
 			t.Errorf("HTML missing %q:\n%s", want, html)
 		}
 	}
-	for _, want := range []string{"Survived 2 controller failover(s)", "Unobserved controller time: 67.4 s", "generation 1 -> 2", "1 finished during the gap"} {
+	for _, want := range []string{"Recorded 2 controller failover(s)", "Unobserved controller time: 67.4 s", "generation 1 -> 2", "1 finished during the gap"} {
 		if !strings.Contains(pdf, want) {
 			t.Errorf("PDF missing %q:\n%s", want, pdf)
 		}
+	}
+	if strings.Contains(html, "is complete") || strings.Contains(pdf, "results are complete") || !strings.Contains(html, "missing sources are evaluated separately") {
+		t.Fatal("failover narration implied complete archive evidence")
 	}
 	if csv["controller_failover//failovers"] != "2" || csv["controller_failover/2/completed_generators"] != "1" || csv["controller_failover/1/generation"] != "2" {
 		t.Errorf("CSV rows = %v", csv)
@@ -81,6 +84,9 @@ func TestControllerFailoverComparisonWarning(t *testing.T) {
 		t.Fatalf("warning for a run without failover: %q", got)
 	}
 	got := controllerFailoverComparisonWarning(&RunContinuityStatus{Failovers: []RunFailover{{GapSeconds: 30}, {GapSeconds: 12}}})
+	if strings.Contains(got, "results are complete") || !strings.Contains(got, "separate verification") {
+		t.Fatal("failover warning overstates completeness")
+	}
 	if !strings.Contains(got, "2 controller failover(s)") || !strings.Contains(got, "42 s unobserved") {
 		t.Fatalf("comparison warning = %q", got)
 	}

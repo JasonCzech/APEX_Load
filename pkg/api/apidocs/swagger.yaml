@@ -5279,6 +5279,18 @@ paths:
                             type: string
                         sla_evaluated:
                           type: boolean
+                        source_coverage:
+                          type: object
+                          properties:
+                            mode:
+                              type: string
+                            sources:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: RunArchiveSource'
+                                additionalProperties: true
+                          nullable: true
                         status:
                           type: string
                         termination_reason:
@@ -246723,6 +246735,27 @@ paths:
                       type: string
                   sla_evaluated:
                     type: boolean
+                  source_coverage:
+                    type: object
+                    properties:
+                      mode:
+                        type: string
+                      sources:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            collected:
+                              type: boolean
+                            target:
+                              type: string
+                          required:
+                            - collected
+                            - target
+                    required:
+                      - mode
+                      - sources
+                    nullable: true
                   status:
                     type: string
                   termination_reason:
@@ -250082,6 +250115,27 @@ paths:
                           type: string
                       sla_evaluated:
                         type: boolean
+                      source_coverage:
+                        type: object
+                        properties:
+                          mode:
+                            type: string
+                          sources:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                collected:
+                                  type: boolean
+                                target:
+                                  type: string
+                              required:
+                                - collected
+                                - target
+                        required:
+                          - mode
+                          - sources
+                        nullable: true
                       status:
                         type: string
                       termination_reason:

@@ -329,11 +329,12 @@ func failoverGapTotalSeconds(status *RunContinuityStatus) float64 {
 
 // controllerFailoverComparisonWarning is the evidence caveat a baseline
 // comparison attaches to a run that survived controller failover: its
-// measurements are complete, but controller-driven shapes held during each gap.
+// archive completeness must be checked separately; controller-driven shapes held
+// during each gap.
 func controllerFailoverComparisonWarning(status *RunContinuityStatus) string {
 	if status == nil || len(status.Failovers) == 0 {
 		return ""
 	}
-	return fmt.Sprintf("Survived %d controller failover(s) with %.0f s unobserved by the controller; measured results are complete, but stage, traffic-profile and goal control held their last value during each gap",
+	return fmt.Sprintf("Survived %d controller failover(s) with %.0f s unobserved by the controller; archive completeness requires separate verification, and stage, traffic-profile and goal control held their last value during each gap",
 		len(status.Failovers), failoverGapTotalSeconds(status))
 }

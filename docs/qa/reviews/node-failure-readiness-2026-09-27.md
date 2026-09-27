@@ -372,3 +372,28 @@ performed. The new tagged PostgreSQL regression was skipped without a configured
 integration database. Concurrent Java/performance and admission-test changes were
 preserved outside these commits. The three implementation/fix slices are complete;
 the remaining acceptance gaps listed above and in the readiness plan remain open.
+
+
+## Partial archive source coverage
+
+The collector now persists an authoritative source inventory from the same snapshot
+used for collection, including retired transports and known assignments whose
+transports disappeared. Generator-supplied coverage cannot replace that inventory.
+Best-effort archives preserve surviving measurements and terminal outcomes while
+recording missing sources. Required collection still fails closed on missing sources.
+
+Completeness scoring independently evaluates source loss, malformed coverage and the
+legacy incomplete-export flag. Intact surviving files therefore cannot yield complete
+evidence when known sources are missing. HTML, PDF/text and CSV exports include the
+source inventory. Controller-failover prose no longer unconditionally claims that
+measurements are complete. Review found and fixed omission of known assignments whose
+clients disappeared; the final focused API race run passed (7.086 seconds), including
+collection modes, retired/missing sources, authoritative metadata, persistence,
+acceptance scoring, exports and existing report profiles. No further actionable
+finding remained in this slice. Generated API contracts were refreshed. The full Go
+gate is running and will be recorded after completion.
+
+This inventory describes sources known at collection time. It does not reconstruct
+all historical shard ownership, quantify lost samples, close the pre-collection crash
+window, or implement combined leader/worker recovery. Live production qualification
+remains open.

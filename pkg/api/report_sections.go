@@ -597,6 +597,16 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			for _, finding := range d.Report.Completeness.Findings {
 				*lines = append(*lines, fmt.Sprintf("- %s: %s", finding.Dimension, finding.Message))
 			}
+			if d.Report.Manifest != nil && d.Report.Manifest.SourceCoverage != nil {
+				*lines = append(*lines, "Generator sources known at collection time (not proof of complete shard history):")
+				for _, source := range d.Report.Manifest.SourceCoverage.Sources {
+					status := "not collected"
+					if source.Collected {
+						status = "collected"
+					}
+					*lines = append(*lines, fmt.Sprintf("- %s: %s", source.Target, status))
+				}
+			}
 			*lines = append(*lines, "")
 		},
 		CSV: func(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error {
@@ -614,6 +624,16 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 					return err
 				}
 			}
+			if d.Report.Manifest != nil && d.Report.Manifest.SourceCoverage != nil {
+				if err := write("archive_source_coverage", "", "mode", d.Report.Manifest.SourceCoverage.Mode); err != nil {
+					return err
+				}
+				for _, source := range d.Report.Manifest.SourceCoverage.Sources {
+					if err := write("archive_source", source.Target, "collected", fmt.Sprint(source.Collected)); err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		}})
 
@@ -626,7 +646,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				*lines = append(*lines, "No controller failover occurred during this run.", "")
 				return
 			}
-			*lines = append(*lines, fmt.Sprintf("Survived %d controller failover(s); load generators kept running and measured results are complete. Unobserved controller time: %.1f s.", len(continuity.Failovers), failoverGapTotalSeconds(continuity)))
+			*lines = append(*lines, fmt.Sprintf("Recorded %d controller failover(s). Archive source coverage and measurement completeness are reported separately. Unobserved controller time: %.1f s.", len(continuity.Failovers), failoverGapTotalSeconds(continuity)))
 			for _, failover := range continuity.Failovers {
 				*lines = append(*lines, fmt.Sprintf("- %s: generation %d -> %d, gap %.1f s, %d generator(s) adopted, %d finished during the gap",
 					failover.AdoptedAt.UTC().Format(time.RFC3339), failover.PriorGeneration, failover.Generation, failover.GapSeconds, failover.AdoptedGenerators, failover.CompletedGenerators))

@@ -1903,6 +1903,10 @@ export interface operations {
               "sla_breached"?: boolean;
               "sla_details"?: Array<string>;
               "sla_evaluated"?: boolean;
+              "source_coverage"?: ({
+                "mode"?: string;
+                "sources"?: Array<Record<string, unknown>>;
+              }) | null;
               "status"?: string;
               "termination_reason"?: string;
               "test_id"?: string;
@@ -44715,6 +44719,13 @@ export interface operations {
             "sla_breached": boolean;
             "sla_details"?: Array<string>;
             "sla_evaluated"?: boolean;
+            "source_coverage"?: ({
+              "mode": string;
+              "sources": Array<{
+                "collected": boolean;
+                "target": string;
+              }>;
+            }) | null;
             "status"?: string;
             "termination_reason"?: string;
             "test_id": string;
@@ -45792,6 +45803,13 @@ export interface operations {
               "sla_breached": boolean;
               "sla_details"?: Array<string>;
               "sla_evaluated"?: boolean;
+              "source_coverage"?: ({
+                "mode": string;
+                "sources": Array<{
+                  "collected": boolean;
+                  "target": string;
+                }>;
+              }) | null;
               "status"?: string;
               "termination_reason"?: string;
               "test_id": string;

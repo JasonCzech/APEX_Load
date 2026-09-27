@@ -35,7 +35,20 @@ const (
 	archivePercentileQualityUnavailable     = "unavailable"
 )
 
+// RunArchiveSourceCoverage records the controller's source snapshot used for
+// collection. It does not prove complete shard history or zero measurement loss.
+type RunArchiveSourceCoverage struct {
+	Mode    string             `json:"mode"`
+	Sources []RunArchiveSource `json:"sources"`
+}
+
+type RunArchiveSource struct {
+	Target    string `json:"target"`
+	Collected bool   `json:"collected"`
+}
+
 type RunArchiveManifest struct {
+	SourceCoverage      *RunArchiveSourceCoverage   `json:"source_coverage,omitempty"`
 	CSVExports          []RunArchiveCSVExportStatus `json:"csv_exports,omitempty"`
 	CSVExportIncomplete string                      `json:"csv_export_incomplete,omitempty"`
 	TerminationReason   string                      `json:"termination_reason,omitempty"`
