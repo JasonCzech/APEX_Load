@@ -1413,8 +1413,7 @@ func (tr *TestRunner) evaluateStartGatesLockedWithEvidence(id string, test *Mana
 		return false, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
 	}
 	if len(placementConflicts) > 0 {
-		conflict := placementConflicts[0]
-		return false, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+		return false, &StartPlacementConflictError{Conflicts: placementConflicts}
 	}
 	// Unavailable durable evidence is neither quota pressure nor an
 	// authoritative launch conflict. Return the typed retry signal before any

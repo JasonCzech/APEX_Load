@@ -737,3 +737,32 @@ The tests use local HTTP servers and a real CLI dispatch subprocess. They valida
 response contracts, bounded reads, identity/coverage gates and retained safe evidence;
 they do not replace recorded PostgreSQL/S3 restart or leadership-transfer trials.
 No new live Kubernetes fault or independent-node qualification was performed.
+
+## Structured start-boundary placement rejection
+
+Start-boundary placement revalidation now returns a typed error containing all
+blocking conflicts. The start handler responds with HTTP 409, code
+`generator_placement_conflict`, the existing preflight-shaped `blocking_conflicts`,
+and `override_available: false`, and records a blocked placement audit event. The
+first-conflict error text remains compatible with scheduler and direct-runner callers.
+
+A real SQLite/API regression exercises the existing aggregate Java runtime-capacity
+gate with three individually eligible groups that cannot share the advertised slots.
+It verifies both conflicts survive, ordinary and capacity-override requests are
+rejected, audit identity is correct, and neither memory nor durable lifecycle state
+is started or failed. Error tests cover nil/empty payloads and wrapped typed errors.
+Focused tests and generated API-contract freshness checks passed.
+
+Review confirmed this changes reporting for the existing gate only: placement
+revalidation currently runs for Java Vuser groups, and the earlier Java-specific
+runtime gate remains separate. This does not add HTTP placement checks, live
+reachability admission, spare-capacity reservations, retryable discovery responses,
+or new scheduler behavior. Asynchronous startup failures retain their existing
+terminal response. No dashboard or public route/schema change is required.
+
+The full `go test ./...` suite passed (API: 333.328 seconds). Focused race
+checks passed (7.423 seconds), including existing successful start, capacity
+override and asynchronous fast-failure behavior. Generated API-contract freshness,
+documentation checks for 68 active Markdown files and `git diff --check` passed.
+Final review found no further actionable issue in this reporting scope. Unrelated
+Java/performance work was preserved. No new live cluster qualification was performed.

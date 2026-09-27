@@ -243,6 +243,22 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	req.actor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 	req.traceContext = telemetry.Detach(r.Context())
 	if err := s.runner.StartTestWithOptions(id, req); err != nil {
+		var placementErr *StartPlacementConflictError
+		if errors.As(err, &placementErr) {
+			if test, ok := s.runner.GetTest(id); ok {
+				s.recordAuditEvent(r, "capacity.placement.reject", "blocked", "test", id, test.ProjectID, map[string]any{
+					"reason": "generator_placement_conflict", "blocking_conflicts": placementErr.Conflicts,
+				})
+			}
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":              placementErr.Error(),
+				"code":               "generator_placement_conflict",
+				"test_id":            id,
+				"blocking_conflicts": placementErr.Conflicts,
+				"override_available": false,
+			})
+			return
+		}
 		var capacityErr *CapacityShortfallError
 		if errors.As(err, &capacityErr) {
 			if test, ok := s.runner.GetTest(id); ok {
