@@ -495,3 +495,18 @@ The final evacuation/archive race suite passed with both follow-ups (31.551 seco
 Review found no further actionable issue in the run-instance guard or recorded-outcome
 handling. Documentation and whitespace checks passed. The final broad gate is still
 running and is recorded below when complete.
+
+## Final evacuation archive validation gate
+
+The final `go test ./...` passed with both retry follow-ups included (API: 339.774
+seconds). The final evacuation/archive race suite passed (31.551 seconds), and
+documentation and whitespace checks passed. The preceding broad runs also passed
+(API: 369.205 and 351.647 seconds); an earlier development run failed to compile a
+test fixture that incorrectly supplied ProjectID on RunArchiveRecord, which was
+corrected before the passing runs. No actionable review finding remains in this
+scope. No dashboard files or public API contracts changed, so no new browser workflow
+was required. Unrelated Java/performance and admission-test changes were preserved.
+
+No new Docker, KEDA, PostgreSQL/Redis failover or independent-node qualification was
+performed. Persisted pre-collection intent on every terminal path and combined
+controller/worker recovery remain open readiness work.
