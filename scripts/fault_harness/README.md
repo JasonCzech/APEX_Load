@@ -5,6 +5,8 @@ This is the repository-owned safety/evidence foundation for the
 provision the application, provide its observation adapter, or qualify the complete
 fault matrix. Docker Desktop recovered after an authorized restart; target and
 PostgreSQL/Redis component checks now pass in a fresh three-node kind cluster.
+A ten-minute idle dependency outage also passed on two HA controllers; see the
+[review ledger](../../docs/qa/reviews/node-failure-readiness-2026-09-27.md) for scope and measurements.
 Full application fault qualification remains open. Unit tests use a fake command
 boundary; fresh certificate tests execute OpenSSL.
 
@@ -31,6 +33,14 @@ control plane and instrumented target independent of the selected failed worker.
 Use at least two worker nodes, multiple generator pods on each, PostgreSQL, Redis,
 object storage, Prometheus and KEDA. Pin and record images. The production-like stack
 preparer and real observation adapter are still required before an end-to-end run.
+
+Check host free space and Docker storage before building or importing images. A
+local trial exhausted host storage and left zero-byte application binaries in an
+already registered node image cache. A pinned image digest alone does not prove
+that extraction survived an I/O failure. After recovery, verify workload startup
+on every worker and establish a new baseline before collecting fault evidence.
+Keep private evidence and PVCs when repairing an owned node's image cache; a
+Docker data reset is not part of this harness.
 
 The driver reads a JSON config with these fields:
 
@@ -167,6 +177,38 @@ protections match the fault driver.
 This control path still requires the real observation adapter and deployed stack.
 Its local safety tests do not qualify a live healthy run, archive completeness,
 KEDA scale transitions, dependency failover or the production fault matrix.
+
+## Controller liveness sampling
+
+Forward each controller pod separately to a distinct loopback port, then sample
+the existing `/api/v1/system/health` endpoint with the read-only helper:
+
+```sh
+python3 scripts/fault_harness/liveness_probe.py \
+  --ports 18101 18102 --seconds 600 \
+  --output /absolute/new/private-liveness-evidence
+```
+
+This command requires `curl`, disables its startup configuration and proxies,
+does not follow redirects, and bounds each full HTTP transfer to two seconds
+(with a 2.5-second subprocess backstop). One to eight unique loopback ports are
+allowed. Controllers are sampled concurrently about once per second; delayed
+requests do not trigger bursts of catch-up probes. The final sample must start
+at or after the requested duration and finish before the five-second completion
+allowance. The gate rejects sampling gaps over three seconds, any failed request,
+incomplete coverage, and per-controller nearest-rank p99 latency at or above
+500 ms. Supported durations are 10–1800 seconds; use 600 for the plan's local gate.
+
+The new output directory is private (0700), files are 0600, and existing evidence
+is never overwritten. `report.json` and `samples.json` retain only ports, timing,
+counts, and outcomes. Interruptions and transport failures cannot pass. Raw
+response bodies and command errors are not persisted.
+
+A sampler pass establishes only sampled HTTP liveness. Separately record pod UIDs,
+node placement, restart counts, actual dependency unavailability, and restoration.
+Do not forward a load-balanced service: it could hide a failed replica. This helper
+does not create port-forwards, stop dependencies, restore replicas, or establish
+continuous availability between samples. Failed port-forwards count as failures.
 
 
 ## Independent traffic target

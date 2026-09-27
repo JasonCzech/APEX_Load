@@ -61,7 +61,7 @@ go test -tags postgres_integration ./pkg/api \
 
 ## Remaining release gates
 
-The complete deployed fault harness, ten-minute dependency outage deployment check,
+The complete deployed fault harness, active-load/node-loss liveness confirmation,
 reserved spare-capacity admission, combined-loss checkpoint/fencing recovery, and
 durable terminal partial-result reporting remain open. The guarded fault-driver
 foundation, scoped KEDA signals, storage runbook and terminal historical-sample labels
@@ -1025,3 +1025,70 @@ trial directory. Single-instance dependency failover, CNI enforcement, the full
 application matrix, and multi-host/zone storage qualification remain open. The
 user confirmed that only Docker Desktop is available. Application images are
 being built from committed source; unrelated Java/performance work is preserved.
+
+
+## Docker storage recovery and bounded liveness sampling
+
+Application-image import exhausted host storage (116 MiB free) and made Docker's
+container storage read-only again. The authorized restart stalled during shutdown;
+Docker Desktop's force-stop/start recovered it. Removed only this trial's transfer
+archives and unused Docker build cache (10.68 GB reclaimed). Existing containers,
+images and data volumes were preserved. The original Compose controller,
+PostgreSQL and Redis returned healthy. The owned worker's damaged application
+snapshots contained zero-byte binaries; removing only those application image-cache
+entries and reimporting the existing images restored their verified binary hashes.
+No PVC was deleted. These startup failures precede the liveness baseline and are
+not counted as passing runtime evidence.
+
+Added a read-only loopback liveness sampler with bounded curl transfers, concurrent
+per-controller samples, per-controller nearest-rank p99, complete-window and sampling-gap
+checks, and private evidence. It does not mutate Kubernetes or establish dependency
+outage, pod identity, restart counts or readiness. Those require separate evidence.
+Review disabled curl startup configuration to prevent local options changing the
+request and moved verdict publication after sample persistence. Regressions cover
+invalid ports/durations, failed/slow endpoints, malformed results, interruptions,
+coverage gaps, late completion, transport bounds, output permissions, overwrite
+refusal and evidence-write failure. A second review found no additional actionable
+issue in this scope.
+
+A ten-second live sampler smoke during the dependency outage passed against both
+controller pod port-forwards (11 samples each, zero failures; p99 29.885 ms and
+24.526 ms). This smoke validates the new sampler's transport path; the separate
+600-second trial and restoration results follow.
+
+The 600-second idle dependency-unavailability trial passed on two production-mode
+HA controllers, one per kind worker, using application commit
+`6be3855497f9d3aa1f3ad0a816d498353323dd88`. Before injection, four mTLS/token-authenticated
+generators were ready, two per worker, with TLS PostgreSQL and Redis on the control
+plane. Both controllers used the on-prem HA overlay, fresh credentials, PostgreSQL
+leases and trusted-header authentication. Local emptyDir archives/import assets
+were used only for this liveness profile; this does not qualify shared archives.
+
+After PostgreSQL, Redis and all generator pods were scaled to zero and confirmed
+absent, each controller received 601 direct pod-port-forward health requests over
+600.000538 seconds. Both had zero failed requests. Per-controller nearest-rank p99
+was 11.431 ms and 11.937 ms; maximums were 133.443 ms and 110.455 ms. The largest
+sampling gap was 1.167 seconds. Every minute, the runner confirmed dependency pods
+remained absent and both controller UIDs/restart counts were unchanged. Both
+controllers retained their original UIDs with zero restarts after the outage.
+
+The finally path restored PostgreSQL/Redis to one replica each and generators to
+four. All nine application/dependency/target pods became Ready without further
+mutations; the second controller had transient DNS/RPC timeouts while discovery
+recovered. PostgreSQL and Redis retained their pre-outage probe data. All trial
+port-forwards stopped. The original Compose services remained healthy. The target's
+one earlier Docker-restart count is outside the measured controller baseline.
+
+Private evidence includes the profile and image digests, trial scripts and hashes,
+before/after controller identities, 1,202 request outcomes, latency series,
+restoration inventory and retained-data checks. It remains under the ignored trial
+directory. This is sampled idle liveness during dependency unavailability, not
+successful test execution during an outage, dependency HA promotion, active-load
+recovery, KEDA qualification, archive failover, or physical-host/zone resilience.
+
+Final validation: all 109 harness tests passed through the complete uncached
+`go test ./scripts -count=1` suite (19.618 seconds); the dedicated sampler's live
+transport smoke passed. Documentation checks for 68 active Markdown files and
+whitespace checks passed. Application runtime code did not change, so the full
+application Go suite was not repeated. The prior watchdog regressions remain the
+separate internal-wedge evidence. Unrelated Java/performance edits were preserved.
