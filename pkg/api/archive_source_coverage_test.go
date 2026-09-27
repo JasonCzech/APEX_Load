@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -200,5 +201,24 @@ func TestArchiveSourceCoverageCompletenessAndAcceptance(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestArchiveSourceCoverageKeepsRecordedSingleTarget(t *testing.T) {
+	const id = "retired-with-single-source"
+	runner := NewTestRunner(1, nil, nil)
+	run := &ManagedTest{ID: id, remoteTarget: "missing-original",
+		remoteArchiveClientsByTarget: map[string]generatorClient{"retired": coverageArchiveClient(t, id)}}
+	backend := newDistributedExecutionBackend(nil, time.Second, nil)
+	backend.dial = func(context.Context, string) (generatorClient, error) { return nil, fmt.Errorf("unavailable") }
+	bundles, coverage, err := backend.fetchRemoteArchiveBundlesWithCoverage(context.Background(), runner, run, false)
+	defer cleanupRemoteArchiveBundles(bundles)
+	if err != nil || len(bundles) != 1 || coverage == nil || len(coverage.Sources) != 2 {
+		t.Fatalf("bundles=%d coverage=%+v err=%v", len(bundles), coverage, err)
+	}
+	for _, source := range coverage.Sources {
+		if source.Collected != (source.Target == "retired") {
+			t.Fatalf("incorrect coverage: %+v", coverage)
+		}
 	}
 }

@@ -397,3 +397,13 @@ This inventory describes sources known at collection time. It does not reconstru
 all historical shard ownership, quantify lost samples, close the pre-collection crash
 window, or implement combined leader/worker recovery. Live production qualification
 remains open.
+
+
+### Recorded single-target coverage review fix
+
+A further collector review found that a recorded single target could be omitted when
+its dial failed but retired archives were available. The source union now includes
+that recorded target independently of client availability. A regression injects that
+dial failure and verifies the missing original source beside the collected retired
+source. Focused API race tests passed (5.915 seconds); final review found no further
+actionable collector finding. The final broad gate below includes this follow-up.

@@ -398,6 +398,11 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx 
 			clients[target] = client
 		}
 	}
+	if target := strings.TrimSpace(remoteTarget); target != "" {
+		if _, exists := clients[target]; !exists {
+			clients[target] = nil
+		}
+	}
 	// A known assignment whose transport disappeared must remain an expected
 	// source. Do not mistake the surviving client map for the whole run.
 	for _, shard := range shards {
