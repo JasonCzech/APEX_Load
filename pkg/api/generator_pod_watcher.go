@@ -54,7 +54,7 @@ func (s *Server) reconcileTerminatingGeneratorPods(ctx context.Context) {
 		return
 	}
 	backend := s.runner.getExecutionBackend()
-	identityBackend, ok := backend.(identityDrainableExecutionBackend)
+	podBackend, ok := backend.(generatorPodTerminationBackend)
 	if !ok {
 		return
 	}
@@ -65,40 +65,47 @@ func (s *Server) reconcileTerminatingGeneratorPods(ctx context.Context) {
 		}
 		return
 	}
-	var changed bool
-	current := map[string]string{}
-	if persistent, ok := backend.(persistentDrainBackend); ok {
-		current = persistent.GeneratorDrainStates()
-	}
-	for _, pod := range pods {
+	for _, pod := range podBackend.SetTerminatingGeneratorPods(pods) {
 		generatorID := strings.TrimSpace(pod.Name)
-		if generatorID == "" || !pod.Terminating {
-			continue
-		}
-		if strings.EqualFold(current[generatorID], "draining") {
-			continue
-		}
-		target, err := identityBackend.SetGeneratorDrainStateByID(generatorID, "draining")
-		if err != nil {
-			slog.Warn("failed to mark terminating generator pod draining", "generator_id", generatorID, "err", err)
-			continue
-		}
-		changed = true
+		target := podBackend.GeneratorTargetForID(generatorID)
 		slog.Info("marked terminating generator pod draining", "generator_id", generatorID, "target", target)
 		s.broadcastFleetEvent("generator_pod_terminating", map[string]any{
-			"generator_id": generatorID,
-			"target":       target,
-			"pod_name":     pod.Name,
-			"namespace":    pod.Namespace,
+			"generator_id": generatorID, "target": target,
+			"pod_name": pod.Name, "namespace": pod.Namespace,
 		})
 	}
-	if changed {
-		if persistent, ok := backend.(persistentDrainBackend); ok {
-			if err := s.saveGeneratorDrainStates(persistent.GeneratorDrainStates()); err != nil {
-				slog.Warn("failed to persist terminating generator drain state", "err", err)
-			}
+}
+
+type generatorPodTerminationBackend interface {
+	SetTerminatingGeneratorPods([]KubePodRef) []KubePodRef
+	GeneratorTargetForID(string) string
+}
+
+// SetTerminatingGeneratorPods replaces the transient scheduling exclusion from a
+// successful, complete pod inventory. Operator drain/cordon intent lives in a
+// separate durable map and is never changed here. A replacement StatefulSet pod
+// must not inherit its predecessor's shutdown state merely by reusing its name.
+// Callers retain the preceding snapshot on inventory failure.
+func (b *distributedExecutionBackend) SetTerminatingGeneratorPods(pods []KubePodRef) []KubePodRef {
+	next := make(map[string]struct{})
+	var added []KubePodRef
+	b.drainMu.Lock()
+	defer b.drainMu.Unlock()
+	for _, pod := range pods {
+		id := strings.TrimSpace(pod.Name)
+		if id == "" || !pod.Terminating {
+			continue
+		}
+		if _, duplicate := next[id]; duplicate {
+			continue
+		}
+		next[id] = struct{}{}
+		if _, known := b.terminatingGeneratorIDs[id]; !known {
+			added = append(added, pod)
 		}
 	}
+	b.terminatingGeneratorIDs = next
+	return added
 }
 
 func (s *Server) cachedGeneratorPods(ctx context.Context) ([]KubePodRef, error) {

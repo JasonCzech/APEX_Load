@@ -1173,7 +1173,7 @@ func TestGeneratorMetadataCordonAppliesOnReconnect(t *testing.T) {
 
 // RN-2 (both directions + draining guard): the reconnect reconcile must apply a
 // metadata cordon, clear a stale operator cordon when metadata is un-cordoned, and
-// never clobber a "draining" state owned by the pod watcher.
+// never clobber an operator-owned "draining" state.
 func TestApplyMetadataCordonOnReconnectReconcilesBothDirections(t *testing.T) {
 	server, store := newTimeslotServer(t)
 	backend := newDistributedExecutionBackend([]string{"gen-1:9090", "gen-2:9090", "gen-3:9090"}, time.Second, nil)
@@ -1194,7 +1194,7 @@ func TestApplyMetadataCordonOnReconnectReconcilesBothDirections(t *testing.T) {
 		t.Fatalf("gen-1 = %q, want active (stale cordon cleared)", got)
 	}
 
-	// gen-2: metadata cordoned, live draining (pod watcher) -> must NOT be clobbered.
+	// gen-2: metadata cordoned, operator draining -> must NOT be clobbered.
 	if _, err := backend.SetGeneratorDrainStateByID("gen-2", "draining"); err != nil {
 		t.Fatalf("seed gen-2: %v", err)
 	}

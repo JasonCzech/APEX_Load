@@ -285,21 +285,22 @@ func validateDistributedShardRunGoals(group TestGroup, peakShards []GeneratorSha
 }
 
 type distributedExecutionBackend struct {
-	targetsMu          sync.RWMutex
-	targets            []generatorTargetSpec
-	timeout            time.Duration
-	stopGrace          time.Duration
-	dial               generatorDial
-	drainMu            sync.RWMutex
-	drainStates        map[string]string
-	testLeaseFences    map[distributedTestLeaseFenceKey]uint64
-	nextTestLeaseFence uint64
-	identityMu         sync.RWMutex
-	targetIDs          map[string]string
-	idTargets          map[string]string
-	evacuationMu       sync.Mutex
-	inventoryProbeOnce sync.Once
-	inventoryProbeGate chan struct{}
+	targetsMu               sync.RWMutex
+	targets                 []generatorTargetSpec
+	timeout                 time.Duration
+	stopGrace               time.Duration
+	dial                    generatorDial
+	drainMu                 sync.RWMutex
+	drainStates             map[string]string
+	terminatingGeneratorIDs map[string]struct{}
+	testLeaseFences         map[distributedTestLeaseFenceKey]uint64
+	nextTestLeaseFence      uint64
+	identityMu              sync.RWMutex
+	targetIDs               map[string]string
+	idTargets               map[string]string
+	evacuationMu            sync.Mutex
+	inventoryProbeOnce      sync.Once
+	inventoryProbeGate      chan struct{}
 	// onIdentityRecorded, if set, is invoked (outside all backend locks) the first
 	// time a generator's id↔target mapping is established or changes — i.e. when a
 	// generator (re)connects. The Server uses it to apply a persisted metadata
@@ -594,6 +595,8 @@ func (b *distributedExecutionBackend) ApplyGeneratorDrainStates(states map[strin
 	}
 }
 
+// GeneratorDrainStates returns only operator intent suitable for persistence.
+// Use the effective state readers for placement and inventory.
 func (b *distributedExecutionBackend) GeneratorDrainStates() map[string]string {
 	b.drainMu.RLock()
 	defer b.drainMu.RUnlock()
@@ -609,6 +612,9 @@ func (b *distributedExecutionBackend) generatorDrainState(target string) string 
 	id := b.GeneratorIDForTarget(target)
 	b.drainMu.RLock()
 	defer b.drainMu.RUnlock()
+	if _, terminating := b.terminatingGeneratorIDs[id]; terminating && id != "" {
+		return "draining"
+	}
 	if id != "" {
 		if state := b.drainStates[id]; state != "" {
 			return state
@@ -688,6 +694,16 @@ func (b *distributedExecutionBackend) GeneratorTargetForID(generatorID string) s
 // unset), resolving both the id-keyed and target-keyed drain entries. The target
 // is resolved before taking drainMu so the two locks are never held together.
 func (b *distributedExecutionBackend) GeneratorDrainStateByID(generatorID string) string {
+	return b.generatorDrainStateByID(generatorID, true)
+}
+
+// GeneratorOperatorDrainStateByID excludes the transient pod shutdown overlay,
+// so metadata reconciliation and rollback cannot turn it into durable intent.
+func (b *distributedExecutionBackend) GeneratorOperatorDrainStateByID(generatorID string) string {
+	return b.generatorDrainStateByID(generatorID, false)
+}
+
+func (b *distributedExecutionBackend) generatorDrainStateByID(generatorID string, includeTermination bool) string {
 	generatorID = strings.TrimSpace(generatorID)
 	if generatorID == "" {
 		return "active"
@@ -695,6 +711,9 @@ func (b *distributedExecutionBackend) GeneratorDrainStateByID(generatorID string
 	target := b.GeneratorTargetForID(generatorID)
 	b.drainMu.RLock()
 	defer b.drainMu.RUnlock()
+	if _, terminating := b.terminatingGeneratorIDs[generatorID]; terminating && includeTermination {
+		return "draining"
+	}
 	if state := b.drainStates[generatorID]; state != "" {
 		return state
 	}

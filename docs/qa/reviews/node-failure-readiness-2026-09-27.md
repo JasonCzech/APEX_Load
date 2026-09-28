@@ -1262,3 +1262,32 @@ Final capacity-slice validation: `go test ./...` passed (API package 410.475 s),
 focused capacity/start/discovery/concurrent-scale tests passed, and the corresponding
 race run passed (5.080 s). `git diff --check` passed. Final review found no further
 capacity-slice issue; the independently identified watcher defect is the next slice.
+
+## Temporary pod termination state
+
+Separated Kubernetes termination exclusions from persisted operator drain/cordon
+intent. Successful complete pod inventories replace the temporary exclusion set;
+failed inventories retain it. A recreated StatefulSet ordinal can therefore become
+eligible without inheriting shutdown state. Operator drains remain durable and are
+not automatically migrated away, because older stored drains have no reliable
+provenance distinguishing operator intent from the previous watcher behavior.
+
+Review caught two interactions: reconnect reconciliation must still apply offline
+metadata cordons beneath a temporary exclusion, and failed operator updates must
+restore operator intent rather than accidentally persisting the effective shutdown
+state. Both now use the operator-state reader. Tests cover replacement addresses,
+empty and failed inventories, duplicate observations, concurrent readers, operator
+updates during termination, metadata reconciliation and lifecycle rollback.
+
+While validation ran, a separate queued-demand trial on the preceding application
+image replaced the idle leader normally. The authoritative generation changed from
+8 to 9. Demand recovered to 320 without exceeding it; five post-baseline samples
+were missing/zero during handoff. The observed StatefulSet stayed at four replicas,
+and the independent target counter did not move. The successor retained the QUEUED
+run, which was stopped afterward. This is bounded queued-demand handoff evidence,
+not continuous metric availability, active-run adoption or a node-fault pass.
+
+Final termination-state validation: focused lifecycle/metadata tests passed,
+`go test ./...` passed (API 387.817 s), and targeted race checks passed (11.151 s).
+`git diff --check` passed. Final review found no additional issue in this slice.
+Deployed repeated-cycle verification will use a new image built from this commit.

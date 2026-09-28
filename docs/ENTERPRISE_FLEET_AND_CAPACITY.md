@@ -65,7 +65,15 @@ Supported states:
 - `cordoned`: no new placements, existing runs continue.
 - `draining`: no new placements and existing work should finish or migrate where supported.
 
-Drain state persists through controller restarts in the metadata store. Operators can restart a controller without losing cordon/drain intent, and inventory plus fleet alerts continue to reflect the persisted placement view.
+Operator drain state persists through controller restarts in the metadata store.
+The Kubernetes pod watcher adds a separate temporary `draining` exclusion while a
+pod is terminating. A successful later inventory clears that temporary exclusion
+when the pod is gone or its replacement is no longer terminating; inventory failures
+retain the last exclusion. This allows KEDA to reuse StatefulSet ordinals without
+inheriting shutdown state, while deliberate operator drains and cordons survive.
+Older releases persisted both kinds of drain identically. After upgrading, review
+any existing persisted drains before explicitly clearing obsolete ones; the upgrade
+does not automatically discard potentially deliberate operator intent.
 
 ### Version And Protocol Compatibility
 

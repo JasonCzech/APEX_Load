@@ -663,13 +663,25 @@ type drainStateReader interface {
 	GeneratorDrainStateByID(generatorID string) string
 }
 
+// Operator state is the value to reconcile or roll back. Effective scheduling
+// state can additionally be draining because Kubernetes is terminating the pod.
+func generatorOperatorDrainState(backend any, generatorID string) string {
+	if reader, ok := backend.(interface{ GeneratorOperatorDrainStateByID(string) string }); ok {
+		return reader.GeneratorOperatorDrainStateByID(generatorID)
+	}
+	if reader, ok := backend.(drainStateReader); ok {
+		return reader.GeneratorDrainStateByID(generatorID)
+	}
+	return "active"
+}
+
 // reconcileMetadataCordonOnReconnect reconciles the live drain state to the
 // persisted metadata cordon when a generator (re)connects. This is what makes a
 // cordon (or un-cordon) issued while a generator was offline actually take effect:
 // the PATCH persists the intent in generator metadata, and this hook (registered on
 // the backend's identity-record event) enforces it once the generator has a live
 // target mapping. It reconciles BOTH directions but never clobbers a non-cordon
-// drain state (e.g. "draining" set by the pod watcher).
+// operator drain state ("draining"). Pod termination remains a separate overlay.
 func (s *Server) applyMetadataCordonOnReconnect(backend identityDrainableExecutionBackend, generatorID string) {
 	generatorID = strings.TrimSpace(generatorID)
 	if s == nil || s.store == nil || backend == nil || generatorID == "" {
@@ -685,15 +697,12 @@ func (s *Server) applyMetadataCordonOnReconnect(backend identityDrainableExecuti
 	if metadata == nil {
 		return // no persisted intent to reconcile
 	}
-	current := "active"
-	if reader, ok := backend.(drainStateReader); ok {
-		current = reader.GeneratorDrainStateByID(generatorID)
-	}
+	current := generatorOperatorDrainState(backend, generatorID)
 	var desired string
 	switch {
 	case metadata.Cordoned && current != "cordoned" && current != "draining":
-		// Apply a cordon issued while offline. Don't override a live "draining"
-		// (pod termination) with "cordoned".
+		// Apply offline metadata intent without replacing an operator drain.
+		// A transient termination overlay remains independently enforced.
 		desired = "cordoned"
 	case !metadata.Cordoned && current == "cordoned":
 		// Clear a stale operator cordon that was removed while the generator was

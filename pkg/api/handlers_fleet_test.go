@@ -234,8 +234,8 @@ func TestTerminatingGeneratorPodWatcherMarksStableIDDraining(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSetting returned error: %v", err)
 	}
-	if !strings.Contains(raw, "apexload-generator-0") || !strings.Contains(raw, "draining") {
-		t.Fatalf("stored drain states = %q, want stable generator id draining", raw)
+	if strings.Contains(raw, "apexload-generator-0") || strings.Contains(raw, "draining") {
+		t.Fatalf("transient pod termination leaked into durable operator state: %q", raw)
 	}
 }
 

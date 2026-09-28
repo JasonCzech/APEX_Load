@@ -302,10 +302,13 @@ func (s *Server) currentGeneratorLifecycleState(generatorID string, target strin
 		return "active"
 	}
 	backend := s.runner.getExecutionBackend()
-	if reader, ok := backend.(drainStateReader); ok {
-		if id := strings.TrimSpace(firstNonEmpty(generatorID, target)); id != "" {
-			return firstNonEmpty(strings.TrimSpace(reader.GeneratorDrainStateByID(id)), "active")
+	if strings.TrimSpace(generatorID) == "" {
+		if identity, ok := backend.(identityDrainableExecutionBackend); ok {
+			generatorID = identity.GeneratorIDForTarget(target)
 		}
+	}
+	if id := strings.TrimSpace(firstNonEmpty(generatorID, target)); id != "" {
+		return firstNonEmpty(strings.TrimSpace(generatorOperatorDrainState(backend, id)), "active")
 	}
 	return "active"
 }
