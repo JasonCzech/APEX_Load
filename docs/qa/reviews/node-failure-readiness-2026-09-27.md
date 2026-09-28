@@ -2539,3 +2539,30 @@ active Markdown files. Final scoped review found no further actionable issues;
 the corrected full Go suite remains in progress before this slice is committed.
 
 The corrected full Go suite passed all 108 test-bearing packages (API 412.495 s, storage 25.025 s). Final review, focused/race, PostgreSQL, full-suite and documentation gates pass. No deployed qualification or durable retry-worker completion is claimed.
+
+
+## Collection source fencing and leadership cancellation (2026-09-28)
+
+Collection/publication source locks now apply even with source retirement disabled
+and on filesystem archives. Collection inherits the current leadership epoch,
+preserves the source on cancellation, and checks durable run identity, cleanup,
+resolved collection state and existing publication under the source lock. Existing
+catalog/outbox records take precedence over late collection attempts. Review added
+rejection of deleted/replaced runs and cleanup tombstones before I/O, then the same
+checks before replacing a merged source. Two archive merge fixtures now persist
+the run they collect, matching that production guard.
+
+Validation is in progress using private `/tmp/apex-source-fence-*` logs. The bounded
+retry worker, anchored partial-source cache and storage admission remain separate
+work; this slice establishes their source-ownership prerequisites.
+
+Focused validation passed (initial 4.662 s; reviewed run 3.876 s). The completed
+race run passed all three iterations (78.180 s), including an interleaving regression
+where catalog publication, outbox creation, deletion or incarnation replacement
+occurs while a source is downloading. Existing source files remain byte-identical,
+and the source lock is released on leadership cancellation. Documentation checks
+pass for all 69 active Markdown files. The full Go gate is still running.
+
+The full Go suite passed all 108 test-bearing packages (API 437.618 s).
+Final scoped review found no further actionable issues. Focused, repeated race,
+full-suite and documentation checks now pass for this source-fencing slice.

@@ -5,10 +5,19 @@ of successfully published object archives. It accepts durations from `1m` throug
 `720h`; unset, zero, invalid and out-of-range values disable retirement. Enable it
 only after every controller that can write the same staging volume runs a version
 with the publication-source file fence. An older writer does not participate in
-that fence. It is disabled by default and has not yet been qualified in a deployed
-fault trial.
+that fence. Source retirement is disabled by default and has not yet been qualified
+in a deployed fault trial.
 
-Collection and publication hold a per-run cross-process file lock. The publisher
+Collection and publication hold a per-run cross-process file lock for both filesystem
+and object backends, including when source retirement is disabled. Lock inodes
+remain after source cleanup so concurrent writers cannot acquire different locks
+for the same run. Collection is tied to the current controller leadership epoch;
+lease loss cancels pending downloads and prevents a new source from being committed.
+Before collecting or replacing a source, the controller checks the durable run
+identity, cleanup state and existing publication. An existing outbox or catalog
+record is reused; a resolved archive removed by retention is not collected again.
+
+The publisher
 creates a local cleanup receipt only after object upload and the durable archive
 catalog commit succeed. The receipt identifies the immutable object version and
 manifest SHA-256. A failed upload or catalog commit leaves its source available for

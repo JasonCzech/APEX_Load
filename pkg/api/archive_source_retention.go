@@ -42,8 +42,11 @@ type publishedArchiveSourceReceipt struct {
 // Keep these lock inodes after retiring data. Replacing/unlinking a lock while a
 // waiter holds its descriptor would create two independent ownership domains.
 func lockArchivePublicationSource(ctx context.Context, testID string) (func(), error) {
-	if archiveSourceRetentionTTL() == 0 || currentArchiveBackend().Backend == archiveBackendFilesystem {
-		return func() {}, nil
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if err := validateArchiveRunID(testID); err != nil {
 		return nil, err

@@ -256,6 +256,9 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
 	runner.mu.Unlock()
+	if err := store.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, StartTime: test.CreatedAt, Status: test.Status}); err != nil {
+		t.Fatal(err)
+	}
 
 	record, err := backend.stageRemoteArchive(runner, test, "FAILED", "controller-authoritative failure", completedAt, false)
 	if err != nil {

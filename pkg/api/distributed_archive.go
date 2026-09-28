@@ -61,6 +61,11 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if tr != nil && !tr.isExecutionLeader() {
+		return nil, errNotExecutionLeader
+	}
+	ctx, cancelOperation := tr.archiveOperationContext(ctx)
+	defer cancelOperation()
 	sourceCtx, cancelSource := context.WithTimeout(ctx, archiveFinalizationAttemptTimeout)
 	defer cancelSource()
 	if err := sourceCtx.Err(); err != nil {
@@ -81,6 +86,9 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext
 		return nil, err
 	}
 	defer releaseSource()
+	if existing, err := tr.existingCollectedArchive(test); err != nil || existing != nil {
+		return existing, err
+	}
 	archiveParent, err := ensureArchiveRelativeDirectory(archiveRoot, "remote", 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("prepare distributed archive parent: %w", err)
@@ -149,6 +157,12 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext
 	workingManifestPath := filepath.Join(workingDir, runArchiveManifestFileName)
 	if err := writeSyncedArchiveFile(workingManifestPath, manifestContent); err != nil {
 		return nil, err
+	}
+	if err := sourceCtx.Err(); err != nil {
+		return nil, err
+	}
+	if existing, err := tr.existingCollectedArchive(test); err != nil || existing != nil {
+		return existing, err
 	}
 	if err := sourceCtx.Err(); err != nil {
 		return nil, err

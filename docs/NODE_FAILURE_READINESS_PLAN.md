@@ -367,3 +367,9 @@ generator cannot confirm the original assignment, and controller restart retains
 missing-source coverage. Publication permanently resolves the collection intent,
 including after catalog retention. This is the durable-source foundation; the
 bounded retry worker, anchored partial-source cache and retry-status UI remain work.
+
+Collection source locking now applies independently of confirmed-source retirement,
+including filesystem archives. Collection inherits leadership cancellation and
+checks durable run/publication/cleanup state before downloading or replacing merged
+sources. These are prerequisites for durable retries; they do not add the worker
+or partial-source cache by themselves.
