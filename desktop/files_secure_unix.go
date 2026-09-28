@@ -48,7 +48,7 @@ func secureWriteGrantedFileFrom(grant writePathGrant, src io.Reader, maxBytes in
 	if !os.SameFile(grant.parentIdentity, parentInfo) {
 		return fmt.Errorf("refusing to write because the selected save directory was replaced")
 	}
-	tempName, tempFD, err := acquireTempAt(dirFD, dir)
+	tempName, temp, err := acquireTempAt(dirFD, dir)
 	if err != nil {
 		return err
 	}
@@ -58,11 +58,7 @@ func secureWriteGrantedFileFrom(grant writePathGrant, src io.Reader, maxBytes in
 	// renames consume the name. Existing-file exchange intentionally retains the
 	// displaced version as a private recovery file; failed saves retain their
 	// owner-only staging file for the same fail-closed reason.
-	temp := os.NewFile(uintptr(tempFD), tempName)
-	if temp == nil {
-		_ = unix.Close(tempFD)
-		return fmt.Errorf("create atomic save file: invalid descriptor")
-	}
+	tempFD := int(temp.Fd())
 	tempClosed := false
 	stagingPublishedOrUncertain := false
 	defer func() {
@@ -231,10 +227,10 @@ func publishExistingFileIfMatchesWith(
 // unlink. Reusing that same private, empty, single-link inode on the next save
 // keeps successful overwrites at a constant number of tombstones without ever
 // deleting a path that a same-user process could race-replace.
-func acquireTempAt(dirFD int, dir *os.File) (string, int, error) {
+func acquireTempAt(dirFD int, dir *os.File) (string, *os.File, error) {
 	entries, err := dir.ReadDir(-1)
 	if err != nil {
-		return "", -1, fmt.Errorf("inspect retained atomic-save recovery files: %w", err)
+		return "", nil, fmt.Errorf("inspect retained atomic-save recovery files: %w", err)
 	}
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -271,18 +267,29 @@ func acquireTempAt(dirFD int, dir *os.File) (string, int, error) {
 		}
 		if reusable {
 			if _, seekErr := file.Seek(0, io.SeekStart); seekErr == nil {
-				return name, fd, nil
+				// Transfer the existing owner. A second os.NewFile wrapper would
+				// leave this wrapper eligible for cleanup while its fd is still in use.
+				return name, file, nil
 			}
 		}
 		_ = file.Close()
 	}
 	if len(names) >= maxRetainedUnixSaveRecoveryFiles {
-		return "", -1, fmt.Errorf(
+		return "", nil, fmt.Errorf(
 			"refusing to create another atomic-save staging file because %d non-reusable recovery files already exist in the selected directory; inspect and remove .apexload-save-*.tmp files before retrying",
 			len(names),
 		)
 	}
-	return createTempAt(dirFD)
+	name, fd, err := createTempAt(dirFD)
+	if err != nil {
+		return "", nil, err
+	}
+	file := os.NewFile(uintptr(fd), name)
+	if file == nil {
+		_ = unix.Close(fd)
+		return "", nil, fmt.Errorf("create atomic save file: invalid descriptor")
+	}
+	return name, file, nil
 }
 
 func isUnixSaveRecoveryName(name string) bool {
