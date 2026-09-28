@@ -354,7 +354,7 @@ func TestSystemReadinessDoesNotMultiplyRunnerLockWaiters(t *testing.T) {
 	locked = false
 }
 
-func TestSystemReadinessUsesPublishedSnapshotWithinTinyBudgetForLargeCatalog(t *testing.T) {
+func TestSystemReadinessUsesPublishedSnapshotForLargeCatalog(t *testing.T) {
 	server := newRunnerLockReadinessTestServer(t)
 
 	const (
@@ -390,15 +390,17 @@ func TestSystemReadinessUsesPublishedSnapshotWithinTinyBudgetForLargeCatalog(t *
 	}
 
 	// Keep the unbounded source fields and the runner write lock live while the
-	// request runs. The response can only meet this budget if it performs the
-	// atomic fixed-size projection load and never touches either catalog.
+	// request runs. Changing the live source without publishing makes the
+	// projection assertion deterministic: a direct catalog scan would report zero.
+	// The timeout checks lock independence, not sub-millisecond OS scheduling.
 	server.runner.mu.Lock()
+	schedule.Enabled = false
 
-	const responseBudget = time.Millisecond
+	const responseBudget = 100 * time.Millisecond
 	requestStarted := time.Now()
 	response := server.systemReadinessWithin(context.Background(), responseBudget)
 	server.runner.mu.Unlock()
-	if elapsed := time.Since(requestStarted); elapsed > 250*time.Millisecond {
+	if elapsed := time.Since(requestStarted); elapsed > time.Second {
 		t.Fatalf("readiness response took %s with large settings and schedule catalogs", elapsed)
 	}
 	if len(response.Checks) == 0 {

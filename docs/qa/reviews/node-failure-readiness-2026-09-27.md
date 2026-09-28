@@ -2026,3 +2026,14 @@ findings remain.
 This transfers preexisting standby ownership. Actual spare-capacity admission,
 activation during evacuation, durable combined controller/generator recovery,
 and deployed reserved-spare qualification remain separate work.
+
+### Readiness regression stability
+
+The large-catalog readiness regression previously required ten concurrent probes
+within one millisecond, which failed during the live load run while the production
+readiness path remained bounded. The test now changes the live schedule source
+without publishing and holds the runner write lock: only the previously published
+projection can return the expected 250,000 schedules. Its 100 ms response budget
+and one-second outer check test lock independence without asserting real-time OS
+scheduling. Fifty race repetitions passed (30.650 seconds). Production readiness
+deadlines are unchanged. Review found no further issue in this test adjustment.
