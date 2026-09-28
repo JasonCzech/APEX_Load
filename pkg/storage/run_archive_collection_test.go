@@ -153,6 +153,12 @@ func TestRunArchiveCollectionRejectsCorruptStoredMetadata(t *testing.T) {
 		value        any
 	}{
 		{"invalid JSON", "sources_json", "{"},
+		{"negative cache ceiling", "cache_limit_bytes", -1},
+		{"unbounded cache ceiling", "cache_limit_bytes", MaxRunArchiveCollectionCacheBytes + 1},
+		{"invalid cache JSON", "cached_sources_json", "{"},
+		{"oversized cache JSON", "cached_sources_json", strings.Repeat(" ", (512<<10)+1)},
+		{"unconfigured cache receipt", "cached_sources_json", `{"a":{"receipt_sha256":"` + strings.Repeat("a", 64) + `","bytes":1}}`},
+
 		{"empty sources", "sources_json", "{}"},
 		{"oversized sources", "sources_json", strings.Repeat(" ", (512<<10)+1)},
 		{"invalid token", "intent_token", "../../other"},

@@ -16,16 +16,18 @@ const MaxRunArchiveCollectionSources = 256
 // and to the original supervised assignment on each expected generator. These
 // digests grant no execution authority and remain private storage metadata.
 type RunArchiveCollectionIntent struct {
-	TestID      string
-	ProjectID   string
-	StartTime   time.Time
-	IntentToken string
-	Sources     map[string]string
-	Attempts    int
-	Exhausted   bool
-	Resolved    bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	TestID          string
+	ProjectID       string
+	StartTime       time.Time
+	IntentToken     string
+	Sources         map[string]string
+	CacheLimitBytes int64
+	CachedSources   map[string]RunArchiveCollectionSource
+	Attempts        int
+	Exhausted       bool
+	Resolved        bool
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 func validateArchiveCollectionSources(sources map[string]string) error {
@@ -141,7 +143,7 @@ func (s *SQLiteStore) PrepareRunArchiveCollection(testID, projectID string, star
 	return job, true, nil
 }
 
-const archiveCollectionColumns = `c.test_id, c.project_id, c.test_start_time, c.intent_token, c.sources_json, c.attempts, c.exhausted, c.resolved, c.created_at, c.updated_at`
+const archiveCollectionColumns = `c.test_id, c.project_id, c.test_start_time, c.intent_token, c.sources_json, c.cache_limit_bytes, c.cached_sources_json, c.attempts, c.exhausted, c.resolved, c.created_at, c.updated_at`
 const currentArchiveCollection = ` FROM run_archive_collection_intents c JOIN tests t ON t.id = c.test_id
  WHERE c.project_id = COALESCE(NULLIF(t.project_id, ''), 'unassigned') AND c.test_start_time = t.start_time`
 
@@ -149,9 +151,9 @@ type collectionRowScanner interface{ Scan(...any) error }
 
 func scanRunArchiveCollection(row collectionRowScanner) (*RunArchiveCollectionIntent, error) {
 	var job RunArchiveCollectionIntent
-	var raw string
+	var raw, cached string
 	var exhausted, resolved int
-	if err := row.Scan(&job.TestID, &job.ProjectID, &job.StartTime, &job.IntentToken, &raw, &job.Attempts, &exhausted, &resolved, &job.CreatedAt, &job.UpdatedAt); err != nil {
+	if err := row.Scan(&job.TestID, &job.ProjectID, &job.StartTime, &job.IntentToken, &raw, &job.CacheLimitBytes, &cached, &job.Attempts, &exhausted, &resolved, &job.CreatedAt, &job.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if len(raw) > 512<<10 {
@@ -168,6 +170,15 @@ func scanRunArchiveCollection(row collectionRowScanner) (*RunArchiveCollectionIn
 	}
 	if job.Attempts < 0 || job.Attempts > 100 || exhausted < 0 || exhausted > 1 || resolved < 0 || resolved > 1 || job.StartTime.IsZero() || job.CreatedAt.IsZero() || job.UpdatedAt.IsZero() {
 		return nil, errors.New("invalid archive collection progress")
+	}
+	if len(cached) > 512<<10 {
+		return nil, errors.New("archive collection cache metadata exceeds limit")
+	}
+	if err := json.Unmarshal([]byte(cached), &job.CachedSources); err != nil {
+		return nil, err
+	}
+	if err := validateCollectionCacheMetadata(&job); err != nil {
+		return nil, err
 	}
 	job.Exhausted = exhausted != 0
 	job.Resolved = resolved != 0

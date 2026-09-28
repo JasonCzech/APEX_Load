@@ -89,3 +89,26 @@ removed with the completed job. A record-only update cannot replace its digest.
 Custom outbox implementations without the preparation extension retain their
 previous behavior. Jobs damaged by older writers without a prepared payload are
 not automatically re-trusted; their source must still be investigated separately.
+
+Distributed runs with durable source identities also retain successfully downloaded
+sources under `_collection/<run-id>/<intent-token>`. A required-source failure does
+not discard completed peers. SQLite/PostgreSQL anchor each private receipt's hash
+and byte count; replays verify the receipt and payload hashes while copying into a
+fresh transfer spool. Original assignment identity survives controller/token changes.
+Legacy unbound runs retain their existing collection behavior.
+
+`APEXLOAD_ARCHIVE_COLLECTION_MAX_BYTES` freezes a positive per-run cache ceiling
+(default and maximum 32 GiB). `APEXLOAD_ARCHIVE_COLLECTION_CACHE_MAX_BYTES` limits
+payload and receipt bytes across the configured cache root (default 128 GiB).
+Both accept integer byte counts; invalid values fail collection. The shared capacity
+file lock serializes admission, counts orphan/unanchored files, rejects symlinks,
+and bounds traversal to 100,000 entries and six directory levels. Each new copy
+requires its entire size plus 64 MiB of currently available space. Existing verified
+sources remain readable when the aggregate ceiling is lowered. Changing configuration
+cannot enlarge an already frozen run ceiling.
+
+These limits cover the collection cache; transfer spools, merged sources, producer
+archives, filesystem metadata and publication backlog still require separate sizing.
+No unconfirmed cache evidence is automatically pruned. Cache cleanup after confirmed
+publication and the bounded background collection retry worker remain follow-up work.
+This cache has source/unit/database validation; deployed fault qualification is pending.

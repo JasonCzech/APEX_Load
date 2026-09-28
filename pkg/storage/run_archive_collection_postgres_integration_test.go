@@ -41,6 +41,7 @@ func TestPostgresRunArchiveCollectionDurability(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	checkRunArchiveCollectionCache(t, store.SQLiteStore)
 	checkRunArchiveCollectionDurability(t, store.SQLiteStore)
 	checkRunArchiveCollectionPublicationPrecedence(t, store.SQLiteStore)
 }

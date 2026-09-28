@@ -51,6 +51,14 @@ func lockArchivePublicationSource(ctx context.Context, testID string) (func(), e
 	if err := validateArchiveRunID(testID); err != nil {
 		return nil, err
 	}
+	return lockArchiveNamespace(ctx, "_source_locks", sha256BytesHex([]byte(testID))+".lock")
+}
+
+// Separate namespaces prevent capacity locks from colliding with run locks.
+func lockArchiveNamespace(ctx context.Context, namespace, name string) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	rootPath, err := resolveArchiveDirectoryRoot(resolveArchiveRoot(), true)
 	if err != nil {
 		return nil, err
@@ -60,12 +68,11 @@ func lockArchivePublicationSource(ctx context.Context, testID string) (func(), e
 		return nil, err
 	}
 	defer root.Close()
-	locks, err := openArchiveChildDirectoryAt(root, "_source_locks", true, 0o700)
+	locks, err := openArchiveChildDirectoryAt(root, namespace, true, 0o700)
 	if err != nil {
 		return nil, err
 	}
 	defer locks.Close()
-	name := sha256BytesHex([]byte(testID)) + ".lock"
 	var expected os.FileInfo
 	file, err := locks.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o600)
 	if os.IsExist(err) {

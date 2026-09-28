@@ -672,6 +672,8 @@ func schemaCreateTableStatements() []string {
             test_start_time DATETIME NOT NULL,
             intent_token TEXT NOT NULL,
             sources_json TEXT NOT NULL,
+            cache_limit_bytes BIGINT NOT NULL DEFAULT 0,
+            cached_sources_json TEXT NOT NULL DEFAULT '{}',
             attempts INTEGER NOT NULL DEFAULT 0,
             exhausted INTEGER NOT NULL DEFAULT 0,
             resolved INTEGER NOT NULL DEFAULT 0,
@@ -1577,6 +1579,8 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		{name: "run_archive_collection_intents.cache_limit_bytes", query: `ALTER TABLE run_archive_collection_intents ADD COLUMN cache_limit_bytes BIGINT NOT NULL DEFAULT 0`},
+		{name: "run_archive_collection_intents.cached_sources_json", query: `ALTER TABLE run_archive_collection_intents ADD COLUMN cached_sources_json TEXT NOT NULL DEFAULT '{}'`},
 		{name: "scenarios.termination_mode", query: `ALTER TABLE scenarios ADD COLUMN termination_mode TEXT NOT NULL DEFAULT 'duration'`},
 		{name: "tests.termination_mode", query: `ALTER TABLE tests ADD COLUMN termination_mode TEXT NOT NULL DEFAULT 'duration'`},
 		// Defaults to 0 (no sanitized document). Existing rows are all Bruno

@@ -2566,3 +2566,33 @@ pass for all 69 active Markdown files. The full Go gate is still running.
 The full Go suite passed all 108 test-bearing packages (API 437.618 s).
 Final scoped review found no further actionable issues. Focused, repeated race,
 full-suite and documentation checks now pass for this source-fencing slice.
+
+## Anchored partial-source collection cache (2026-09-28)
+
+Schema release 20 adds frozen per-run cache ceilings and immutable source receipt
+anchors. Collection saves completed peers before a required-source failure; retries
+can replay them after controller restart without the original transport. Receipt
+identity and copy-time payload hashes reject cross-run, corrupt and replaced sources.
+A separate shared capacity lock bounds actual cache bytes, including unanchored
+crash leftovers, with bounded descriptor-based traversal. No unconfirmed evidence
+is pruned. This slice does not implement the background retry worker or confirmed
+cache cleanup, and does not bound producer, merge or publication-backlog storage.
+
+Review fixed crash-blocking partial destinations by staging and syncing before
+rename, synced ancestor directory entries before SQL acknowledgement, retained
+completed peers when another download errors, and rejected source-set changes
+within an attempt. Validation is running in `/tmp/apex-collection-cache-*` logs.
+The isolated PostgreSQL check passed three repetitions (11.955 s).
+
+Focused validation passed (API 4.965 s, storage 4.195 s). The repeated race run
+passed all three iterations (API 56.150 s, storage 80.154 s), and documentation
+checks passed for all 69 active Markdown files. The full suite has passed 107
+packages without failures; the API package remains in progress. A separate review
+of the upcoming retry path identified the collection-to-publication handoff:
+existing unconfirmed merged sources need protection against replacement before
+any background collector is enabled. That follow-up is not claimed fixed here.
+
+The full Go suite passed all 108 test-bearing packages (API 466.261 s), with no
+failures. Final cache review found no further actionable findings in this slice.
+Focused, repeated race, PostgreSQL, full-suite, and documentation gates passed.
+The collection-to-publication handoff safeguard remains the next review/fix slice.

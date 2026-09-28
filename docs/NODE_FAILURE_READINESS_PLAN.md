@@ -366,7 +366,7 @@ initial dispatch and evacuation. Identity-bound artifact reads fail closed when 
 generator cannot confirm the original assignment, and controller restart retains
 missing-source coverage. Publication permanently resolves the collection intent,
 including after catalog retention. This is the durable-source foundation; the
-bounded retry worker, anchored partial-source cache and retry-status UI remain work.
+anchored partial-source cache is now implemented with immutable SQL receipts and shared-root byte admission; the bounded retry worker, confirmed cache cleanup and retry-status UI remain work.
 
 Collection source locking now applies independently of confirmed-source retirement,
 including filesystem archives. Collection inherits leadership cancellation and
