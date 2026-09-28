@@ -811,6 +811,9 @@ func (s *Server) startArchiveFinalizationRetry() {
 	s.archiveFinalizationDone = make(chan struct{})
 	go func() {
 		defer close(s.archiveFinalizationDone)
+		cleanupDone := make(chan struct{})
+		go func() { defer close(cleanupDone); s.runner.runCollectionCacheCleanup(ctx) }()
+		defer func() { cancel(); <-cleanupDone }()
 		ticker := time.NewTicker(archiveFinalizationRetryInterval)
 		defer ticker.Stop()
 		runSweep := func(recoverOrphans bool) {

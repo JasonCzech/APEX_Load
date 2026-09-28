@@ -122,7 +122,7 @@ func TestOrphanRecoveryVerifiesExistingPayloads(t *testing.T) {
 
 type changedOrphanRunStore struct{ *storage.SQLiteStore }
 
-func (s *changedOrphanRunStore) SaveArchiveFinalizationJobIfOrphanForRun(job *storage.ArchiveFinalizationJob, status, lease, owner string) (bool, error) {
+func (s *changedOrphanRunStore) SaveArchiveFinalizationJobIfOrphanForRun(job *storage.ArchiveFinalizationJob, requestedAt time.Time, status, lease, owner string) (bool, error) {
 	row, err := s.GetTest(job.TestID)
 	if err != nil {
 		return false, err
@@ -131,7 +131,7 @@ func (s *changedOrphanRunStore) SaveArchiveFinalizationJobIfOrphanForRun(job *st
 	if err := s.SaveTest(row); err != nil {
 		return false, err
 	}
-	return s.SQLiteStore.SaveArchiveFinalizationJobIfOrphanForRun(job, status, lease, owner)
+	return s.SQLiteStore.SaveArchiveFinalizationJobIfOrphanForRun(job, requestedAt, status, lease, owner)
 }
 func TestOrphanRecoveryFencesRunChangedAfterInspection(t *testing.T) {
 	root := t.TempDir()
@@ -207,5 +207,30 @@ func TestOrphanDiscoveryBoundsNonCandidateEntries(t *testing.T) {
 	candidates, err := discoverOrphanArchiveDirectories(context.Background(), root)
 	if err == nil || !strings.Contains(err.Error(), "entry limit") || len(candidates) != 0 {
 		t.Fatalf("unbounded scan: %d %v", len(candidates), err)
+	}
+}
+
+func TestOrphanRecoveryUsesControllerRequestIdentityForDistributedArchive(t *testing.T) {
+	tr, store, run, backend := collectionCacheFixture(t, "a")
+	ended := time.Now().UTC()
+	record, err := backend.stageRemoteArchive(tr, run, "COMPLETE", "", ended, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.CreatedAt.Equal(run.CreatedAt) {
+		t.Fatal("fixture must have a distinct generator creation time")
+	}
+	if _, err := store.UpdateTestStatusIfActive(run.ID, "COMPLETE", &ended, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.recoverOrphanedLocalRunArchives(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	job, err := store.GetArchiveFinalizationJob(run.ID)
+	if err != nil || job == nil {
+		t.Fatal("distributed orphan was not recovered", err)
+	}
+	if !job.ArchiveRecord.CreatedAt.Equal(record.CreatedAt) {
+		t.Fatal("recovery rewrote immutable generator creation time")
 	}
 }

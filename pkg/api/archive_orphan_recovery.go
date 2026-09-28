@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -24,7 +25,7 @@ type orphanArchiveFinalizationStore interface {
 }
 
 type incarnationOrphanArchiveFinalizationStore interface {
-	SaveArchiveFinalizationJobIfOrphanForRun(*storage.ArchiveFinalizationJob, string, string, string) (bool, error)
+	SaveArchiveFinalizationJobIfOrphanForRun(*storage.ArchiveFinalizationJob, time.Time, string, string, string) (bool, error)
 }
 
 type orphanArchiveCandidate struct {
@@ -112,7 +113,7 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchive(ctx context.Context, store 
 	if declared := strings.TrimSpace(manifest.Provenance.ProjectID); declared != "" && normalizeProjectID(declared) != project {
 		return fmt.Errorf("orphan archive %s belongs to another project", record.TestID)
 	}
-	if row.EndTime == nil || manifest.Status != row.Status || !archiveRunTimestampMatches(manifest.CreatedAt, row.StartTime, tr.testStore) || !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
+	if row.EndTime == nil || manifest.Status != row.Status || !archiveRunTimestampMatches(archiveManifestRequestedAt(manifest), row.StartTime, tr.testStore) || !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
 		return fmt.Errorf("orphan archive %s does not match the durable terminal incarnation", record.TestID)
 	}
 	lease, owner := "", ""
@@ -128,7 +129,7 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchive(ctx context.Context, store 
 	}
 	record.RefKey = strings.TrimSpace(row.RefKey)
 	return tr.trackDurableWrite(func() error {
-		_, err := store.SaveArchiveFinalizationJobIfOrphanForRun(&storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, ArchiveRecord: *record, PersistArtifacts: true}, manifest.Status, lease, owner)
+		_, err := store.SaveArchiveFinalizationJobIfOrphanForRun(&storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, ArchiveRecord: *record, PersistArtifacts: true}, archiveManifestRequestedAt(manifest), manifest.Status, lease, owner)
 		return err
 	})
 }
@@ -299,4 +300,13 @@ func orphanArchiveRecordFromDirectoryWithIdentity(ctx context.Context, archivePa
 		return nil, nil, err
 	}
 	return record, &manifest, nil
+}
+
+// Generator archive creation can differ from the controller request time.
+// Legacy manifests without provenance can only use their creation timestamp.
+func archiveManifestRequestedAt(manifest *RunArchiveManifest) time.Time {
+	if !manifest.Provenance.RequestedAt.IsZero() {
+		return manifest.Provenance.RequestedAt
+	}
+	return manifest.CreatedAt
 }

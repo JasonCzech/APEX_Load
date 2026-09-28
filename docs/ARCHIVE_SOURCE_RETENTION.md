@@ -111,8 +111,8 @@ cannot enlarge an already frozen run ceiling.
 
 These limits cover the collection cache; transfer spools, merged sources, producer
 archives, filesystem metadata and publication backlog still require separate sizing.
-No unconfirmed cache evidence is automatically pruned. Cache cleanup after confirmed
-publication and the bounded background collection retry worker remain follow-up work.
+No unconfirmed cache evidence is automatically pruned. The bounded background
+collection retry worker remains follow-up work.
 This cache has source/unit/database validation; deployed fault qualification is pending.
 
 Startup orphan recovery now requires a storage extension that atomically checks
@@ -138,3 +138,23 @@ local copy still counts against its own root's physical byte quota. An existing
 incomplete or corrupt cache directory is preserved and rejected, not silently replaced.
 Receipts alone cannot recreate bytes when neither a local copy nor the original
 generator source is available. Per-pod `emptyDir` staging is not shared durable storage.
+
+Confirmed collection-cache copies are now retired independently on each controller's
+local staging root. A serial worker checks immediately and every minute, with a
+30-minute sweep deadline and a one-second source-lock acquisition budget. It requires
+the exact terminal run, resolved collection intent, no pending publication/cleanup,
+and a catalog-bound primary manifest that records the source as collected. Filesystem
+primaries also have their payload hashes checked; immutable object primaries require
+only their manifest commit marker. Corrupt/missing markers preserve cached sources.
+
+Before removal, cleanup verifies the SQL-anchored receipt, every cached payload,
+exact directory contents, and directory identity. Source/capacity locks protect
+removal; unexpected files and unanchored siblings are preserved. Partial publication
+retires only sources explicitly marked collected. SQL receipts remain unchanged so
+other staging roots retain independent cleanup/refetch authority. This worker runs
+separately from publication retries and is canceled and joined on server shutdown.
+
+Run identity comes from `provenance.requested_at`, independently of the earliest
+generator creation time in `created_at`. Legacy manifests without request provenance
+must match their creation timestamp instead. The SQL orphan-insertion fence receives
+the inspected request time separately and never rewrites the immutable creation time.

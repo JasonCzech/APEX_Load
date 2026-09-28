@@ -31,7 +31,7 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 	job := func(record RunArchiveRecord) *ArchiveFinalizationJob {
 		return &ArchiveFinalizationJob{TestID: row.ID, ProjectID: row.ProjectID, ArchiveRecord: record}
 	}
-	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), "COMPLETE", lease, owner); err != nil || ok {
+	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), record.CreatedAt, "COMPLETE", lease, owner); err != nil || ok {
 		t.Fatal("active run published", err)
 	}
 	if _, err := s.UpdateTestStatusIfActive(row.ID, "COMPLETE", &now, ""); err != nil {
@@ -44,19 +44,22 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 		record      RunArchiveRecord
 		status, who string
 	}{{wrongStart, "COMPLETE", owner}, {wrongEnd, "COMPLETE", owner}, {record, "FAILED", owner}, {record, "COMPLETE", "stale"}} {
-		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(tc.record), tc.status, lease, tc.who); err != nil || ok {
+		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(tc.record), tc.record.CreatedAt, tc.status, lease, tc.who); err != nil || ok {
 			t.Fatalf("stale recovery accepted: %v %v", ok, err)
 		}
 	}
 	if _, err := s.GetArchiveFinalizationJob(row.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("rejected recovery left outbox")
 	}
+	// The payload creation time is not the controller request identity.
+	record.CreatedAt = record.CreatedAt.Add(2 * time.Second)
+	requestedAt := row.StartTime
 	var wg sync.WaitGroup
 	results := make(chan bool, 8)
 	errs := make(chan error, 8)
 	for i := 0; i < 8; i++ {
 		wg.Go(func() {
-			ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), "COMPLETE", lease, owner)
+			ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), requestedAt, "COMPLETE", lease, owner)
 			results <- ok
 			errs <- err
 		})
@@ -85,7 +88,7 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 	if err := s.DeleteArchiveFinalizationJob(row.ID); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), "COMPLETE", lease, owner); err != nil || ok {
+	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), requestedAt, "COMPLETE", lease, owner); err != nil || ok {
 		t.Fatal("resolved collection resurrected", err)
 	}
 	if ok, err := s.SaveArchiveFinalizationJobIfOrphan(job(record)); err != nil || ok {
@@ -94,7 +97,7 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 	if err := s.DeleteTest(row.ID); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), "COMPLETE", lease, owner); err != nil || ok {
+	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), requestedAt, "COMPLETE", lease, owner); err != nil || ok {
 		t.Fatal("deleted run resurrected", err)
 	}
 	row.StartTime = row.StartTime.Add(time.Second)
@@ -103,7 +106,7 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 	if err := s.SaveTest(row); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), "COMPLETE", lease, owner); err != nil || ok {
+	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job(record), requestedAt, "COMPLETE", lease, owner); err != nil || ok {
 		t.Fatal("replacement run inherited orphan", err)
 	}
 }
@@ -111,13 +114,16 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 func TestArchiveOrphanIncarnationRequiresIdentity(t *testing.T) {
 	s := newHAFencingStore(t)
 	for _, job := range []*ArchiveFinalizationJob{nil, {}, {ArchiveRecord: RunArchiveRecord{CreatedAt: time.Now()}}, {ArchiveRecord: RunArchiveRecord{CompletedAt: time.Now()}}} {
-		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job, "COMPLETE", "", ""); err == nil || ok {
+		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job, time.Now(), "COMPLETE", "", ""); err == nil || ok {
 			t.Fatal("missing recovery identity accepted")
 		}
 	}
 	job := &ArchiveFinalizationJob{ArchiveRecord: RunArchiveRecord{CreatedAt: time.Now(), CompletedAt: time.Now()}}
+	if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job, time.Time{}, "COMPLETE", "", ""); err == nil || ok {
+		t.Fatal("zero request time accepted")
+	}
 	for _, tc := range [][3]string{{"RUNNING", "", ""}, {"COMPLETE", "lease", ""}, {"COMPLETE", "", "owner"}} {
-		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job, tc[0], tc[1], tc[2]); err == nil || ok {
+		if ok, err := s.SaveArchiveFinalizationJobIfOrphanForRun(job, time.Now(), tc[0], tc[1], tc[2]); err == nil || ok {
 			t.Fatal("invalid recovery fence accepted")
 		}
 	}

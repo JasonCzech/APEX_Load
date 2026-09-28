@@ -2677,3 +2677,37 @@ Documentation checks passed for all 69 active Markdown files, and final scoped
 review found no further cache-refetch findings. The preceding orphan-recovery
 commit passed the full 108-package suite; this API-only portability repair was
 validated with the repeated cache and source-collection race matrix.
+
+## Confirmed collection-cache cleanup and request-time identity (2026-09-28)
+
+Implemented per-root cleanup of SQL-anchored source copies after confirmed primary
+publication. Cleanup preserves shared SQL receipts, unanchored siblings, unexpected
+files, corrupt copies, missing commit markers and sources not collected by a partial
+publication. It verifies terminal incarnation, catalog digest, coverage, cached hashes
+and directory identity, and uses the existing source and capacity fences. Filesystem
+primaries require artifact verification; immutable object primaries require only the
+manifest commit marker. A separate serial worker is canceled and joined with the
+publication worker, avoiding publication delays from cache hashing.
+
+Review found that distributed `created_at` identifies the earliest generator bundle,
+not the controller's durable request time. Both cleanup and orphan recovery now use
+`provenance.requested_at` (legacy creation-time fallback), and SQL orphan insertion
+accepts the inspected request time independently without rewriting archive metadata.
+Regression tests cover differing generator/controller times, exact terminal outcomes,
+partial coverage, independent roots, object commit markers, lock cancellation, worker
+shutdown, quota release, corrupt payloads and unanchored evidence preservation.
+
+Expanded focused tests passed (API 6.242 s, storage 1.124 s). Isolated PostgreSQL
+checks passed three repetitions (2.969 s). Documentation checks passed for all 69
+active Markdown files. Repeated race and full-suite results follow below. The initial
+request-time regression and object-fixture backend correction are retained in private
+`/tmp/apex-cache-cleanup-*` logs; they are not deployed qualification evidence.
+
+The combined cleanup/orphan race matrix passed three repetitions (API 80.827 s,
+storage 20.582 s). Final cleanup-only race checks passed three repetitions
+(56.408 s), including replaced-directory rejection. Discovery now shares the physical
+cache's 100,000-entry bound, avoiding a smaller cleanup limit that could strand
+admitted copies. The full Go suite passed all 108 test-bearing packages. Final scoped
+review found no further cleanup/request-time findings; documentation checks passed
+for all 69 active Markdown files. Durable collection retry, recovery-state UI,
+unconfirmed producer/backlog admission, and deployed fault qualification remain work.

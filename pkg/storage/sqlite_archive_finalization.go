@@ -152,19 +152,19 @@ func (s *SQLiteStore) SaveArchiveFinalizationJob(job *ArchiveFinalizationJob) er
 // checked in the same transaction, so an orphan scan cannot overwrite a newer
 // note refresh or resurrect publication after test deletion.
 func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizationJob) (bool, error) {
-	return s.saveArchiveFinalizationJobIfOrphan(job, "", "", "")
+	return s.saveArchiveFinalizationJobIfOrphan(job, time.Time{}, "", "", "")
 }
 
 // SaveArchiveFinalizationJobIfOrphanForRun atomically binds recovery to the
 // terminal incarnation inspected by the caller and the current execution lease.
-func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphanForRun(job *ArchiveFinalizationJob, status, lease, owner string) (bool, error) {
-	if job == nil || job.ArchiveRecord.CreatedAt.IsZero() || job.ArchiveRecord.CompletedAt.IsZero() || (status != "COMPLETE" && status != "FAILED" && status != "ABORTED") || (lease == "") != (owner == "") {
+func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphanForRun(job *ArchiveFinalizationJob, requestedAt time.Time, status, lease, owner string) (bool, error) {
+	if job == nil || requestedAt.IsZero() || job.ArchiveRecord.CreatedAt.IsZero() || job.ArchiveRecord.CompletedAt.IsZero() || (status != "COMPLETE" && status != "FAILED" && status != "ABORTED") || (lease == "") != (owner == "") {
 		return false, errors.New("invalid orphan recovery identity")
 	}
-	return s.saveArchiveFinalizationJobIfOrphan(job, status, lease, owner)
+	return s.saveArchiveFinalizationJobIfOrphan(job, requestedAt, status, lease, owner)
 }
 
-func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizationJob, status, lease, owner string) (bool, error) {
+func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizationJob, requestedAt time.Time, status, lease, owner string) (bool, error) {
 	if job == nil {
 		return false, errors.New("archive finalization job is nil")
 	}
@@ -207,7 +207,7 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	projectArgs := []any{job.TestID}
 	projectQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
 	if status != "" {
-		started, ended := job.ArchiveRecord.CreatedAt, job.ArchiveRecord.CompletedAt
+		started, ended := requestedAt, job.ArchiveRecord.CompletedAt
 		if s.db.dialect == storeDialectPostgres {
 			started, ended = started.Truncate(time.Microsecond), ended.Truncate(time.Microsecond)
 		}
