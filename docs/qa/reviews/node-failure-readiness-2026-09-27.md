@@ -1568,3 +1568,26 @@ The final full `go test ./...` suite passed (API 326.006 s). The source review a
 focused regressions found no remaining actionable issue in this terminal-marker
 slice. Global documentation checking still reports pre-existing missing ignored
 evidence links; neither modified readiness document appears among those errors.
+
+
+## Reusable phased stack deployment
+
+`deploy_stack.py` renders and deploys the private dependency/application/monitoring
+profile into a fresh namespace in an already-created owned kind cluster with KEDA.
+It verifies Docker container and Kubernetes node identities, refuses all existing
+installation namespaces, binds the namespace UID returned by create, and rechecks
+ownership between phases. The local kindnet adjustment uses strategic merge and a
+bounded rollout wait. Authentication SQL executes with ON_ERROR_STOP before any
+controller starts, and KEDA ownership is present in the initial ConfigMap. Errors
+and interruption preserve resources and private phase evidence, without reset or
+delete. Command failures never echo possibly credential-bearing manifests.
+
+Review added returned-namespace identity binding, a CNI rollout readiness gate and
+identity-bearing phase receipts. The 155-case Python suite passed (7.444 s),
+including real OpenSSL/Kustomize rendering, interrupted/failed stages, stale owners,
+container/namespace replacement and forbidden output reuse. A live read-only guard
+check on the existing installation refused deployment with zero cluster mutations.
+This command has not yet completed a fresh-cluster live deployment; readiness is
+explicitly labelled `qualified: false`. Cluster/KEDA creation, image availability,
+scenario seeding and the load/fault matrix remain separate steps. Final review
+found no further actionable issue in this deployment-command slice.

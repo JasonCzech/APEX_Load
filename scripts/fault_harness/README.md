@@ -2,7 +2,7 @@
 
 This is the repository-owned safety/evidence foundation for the
 [node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It renders a phased local HA stack and includes a bounded deployed-run observation
-adapter. Automatic provisioning and the complete fault matrix remain unfinished. Docker Desktop recovered after an authorized restart; target and
+adapter. A bounded deployment command now applies that stack to a fresh namespace of an owned kind cluster. Cluster/KEDA creation and the complete fault matrix remain separate. Docker Desktop recovered after an authorized restart; target and
 PostgreSQL/Redis component checks now pass in a fresh three-node kind cluster.
 A ten-minute idle dependency outage also passed on two HA controllers; see the
 [review ledger](../../docs/qa/reviews/node-failure-readiness-2026-09-27.md) for scope and measurements.
@@ -870,3 +870,42 @@ Namespace/run/target incarnation changes and invalid safety evidence emit the fi
 `{"safety_violation":true}` marker. The drivers latch that marker as failure rather than
 retrying it away as an ordinary outage; diagnostic text or credentials are never emitted.
 Terminal runs are returned with their terminal status so the driver rejects them immediately.
+
+
+## Deploy the prepared disposable stack
+
+`deploy_stack.py` runs the phased deployment after the owned three-node kind cluster
+and KEDA are installed. Keep the cluster kubeconfig in the private input directory
+as `kubeconfig`. All images must be digest-pinned and available to their assigned
+nodes; use `load_image.py` for local controller/generator images. The command does
+not build images, create clusters, install KEDA, create load-test records or inject
+faults. It refuses any existing `apexload-fault` namespace, including an owned one,
+so it cannot upgrade an existing installation or interrupt its active tests.
+
+```sh
+python3 scripts/fault_harness/deploy_stack.py \
+  --inputs /absolute/private/inputs --output /absolute/new/private-deployment \
+  --controller-image "$CONTROLLER_DIGEST" --generator-image "$GENERATOR_DIGEST" \
+  --target-image "$TARGET_DIGEST" --postgres-image "$POSTGRES_DIGEST" \
+  --redis-image "$REDIS_DIGEST" --s3-image "$S3_DIGEST" \
+  --prometheus-image "$PROMETHEUS_DIGEST" --minimum 2 --maximum 4 \
+  --pod-capacity 100 --accelerated
+```
+
+Omit `--accelerated` to preserve production HPA timings. Rendering derives every
+resource from the reviewed profiles and fresh private inputs. Before mutation, the
+command checks all three Docker kind owners, Kubernetes node identities, namespace
+absence, and KEDA/metrics API readiness. It binds the namespace UID returned by
+`create`, then rechecks cluster and namespace identities between phases. It applies
+the local kindnet resource adjustment, dependencies, non-overwriting authentication
+bootstrap, application resources, Prometheus and autoscaling. KEDA ownership is in
+the initial controller configuration, before controllers start.
+
+Each rollout has a bounded readiness wait. Authentication bootstrap, readiness or
+identity failures stop subsequent phases. Interruptions preserve resources, PVCs
+and private phase evidence; there is no reset, automatic rollback or cluster delete.
+A partial installation requires explicit inspection before a new deployment; do not
+remove its data just to make the command accept the namespace. `result.json` records
+`deployed: true` and **`qualified: false`**: Kubernetes readiness does not establish
+application admission, sustained traffic, failover, archive integrity or production
+availability. Run those evidence gates separately.
