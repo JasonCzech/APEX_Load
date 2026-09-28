@@ -210,6 +210,8 @@ func (k kubeopsRestarter) ListPods(ctx context.Context, namespace, selector stri
 
 func kubePodRefFrom(pod kubeops.PodRef) KubePodRef {
 	return KubePodRef{
+		UID:         pod.UID,
+		NodeName:    pod.NodeName,
 		Name:        pod.Name,
 		Namespace:   pod.Namespace,
 		IP:          pod.IP,

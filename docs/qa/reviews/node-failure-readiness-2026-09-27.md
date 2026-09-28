@@ -1404,3 +1404,95 @@ four assignments, current demand 320 and zero survivor restarts; the slowest too
 0.629 s. No node fault was injected for this adapter verification. The adapter reports
 controller-declared assignments; it does not independently prove generator fencing,
 reserve spares, or complete combined-loss recovery.
+
+
+## Idle archive-cache maintenance
+
+Three consecutive cycles after the scratch/profile adjustment completed with 320
+active VUsers and independent loaded target rates 3,174.3, 3,179.6 and 3,177.7
+requests/s. Each scaled back to two without manual drain repair. The first cycle's
+archive passed the PostgreSQL incarnation and four-source checksum checks. This
+qualifies these accelerated clean cycles, not worker-loss recovery.
+
+Storage inspection then found idle materialized caches at roughly 765 MiB on the
+follower and 1.30 GiB on the leader despite the configured 256-MiB cache budget.
+The initial asynchronous sweep could encounter pinned readers, while final releases
+inside its one-minute coalescing window scheduled no later work. Without another
+read, eligible idle files remained over budget indefinitely.
+
+The coordinator now has one periodic maintenance worker for known cache roots.
+The bounded notification queue still coalesces bursts; saturated notifications retain
+the root for periodic retry. Eviction retains existing reader/reservation gates and
+filesystem-identity checks. Regression tests exercise byte and TTL eviction after the
+last release without another read, pending-reservation protection, and a saturated
+wake queue. Test coordinators stop their workers before cleanup; the clock used by
+the coalescing regression is atomic.
+
+The deployed maximum test also held 640 queued VUsers at four Ready generator pods
+with no target traffic. A subsequent missing-metric trial did not establish its
+four-pod baseline and injected no fault: it started during scale-down at three pods,
+then held three against demand 320. That ratio is inside the standard HPA 10% tolerance.
+The strict admission boundary must continue rejecting insufficient actual capacity;
+this edge remains a separate qualification item. A repeat starts from a verified
+idle two-pod baseline. Failed evidence is preserved.
+
+
+The clean-baseline missing-metric repeat passed: an empty required Prometheus query
+held four pods for 75 seconds with zero target traffic; restoring the exact original
+query resumed downscale to two. The initial failed attempt did not patch the query.
+
+Cache-focused tests passed (4.412 s), the focused race run passed (5.825 s), and
+five repeats of the retention race cases including pending-reservation protection
+passed (7.147 s). The first full suite failed its ten-minute API timeout and two
+short adoption timing checks. Its stack dump contained 14,527 VUsers blocked in
+archive recording: the capacity-override HTTP handler test had dispatched 15,000
+real VUsers without waiting for their teardown. That admission test now uses the
+existing dispatch test boundary, checks the truthful INITIALIZING/202 response,
+retained override authorization, and the exact dispatched run ID. Three focused
+repeats including both real-generator adoption scenarios passed (21.073 s).
+The test-isolation fix is committed separately as `cc926579`.
+
+
+A second runner-level override test had the same uncontrolled 15,000-VUser launch;
+it now verifies dispatch at the existing execution boundary (`cefb8225`). The
+preceding full-suite rerun finished in 379.066 s with no execution assertion failures;
+its sole failure was generated OpenAPI freshness while the following placement slice
+was being authored. Contracts were regenerated before the final combined checks.
+
+## Kubernetes-observed generator placement
+
+Generator inventory now carries an optional pod-placement observation with immutable
+pod UID, namespace/name, worker node, readiness and termination state. The Kubernetes
+client and local/remote controller adapters preserve those fields. The inventory join
+requires a literal target IP, the generator name and configured namespace; unknown
+UIDs/nodes, ambiguous IPs and reused names at a new IP cannot produce placement.
+DNS hints remain insufficient for this stronger join. Unready or terminating pods
+remain observable, with their state preserved explicitly.
+
+Placement is cleared on unavailable or disabled Kubernetes inventory and copied when
+inventory is cached or returned, preventing stale/self-reported placement and caller
+mutation. This uses the existing pod-list permission and bounded pod cache, not a new
+cluster-wide node permission. It supplies observed topology for subsequent recovery
+capacity work; it does not reserve spares, attest execution ownership or itself prove
+that an old generator is fenced. Generated OpenAPI and TypeScript contracts include
+the additive field. The focused client/controller/API checks passed (API 4.913 s),
+and the placement/contract/start-test checks passed (2.488 s).
+
+
+The combined cache/placement race checks passed (API 5.826 s, Kubernetes client
+1.269 s). Dashboard typecheck and lint passed, as did eight relevant unit tests
+and the production build. Existing browser workflows passed: three dev-admin
+checks (Fleet capacity at 390/1440 px and Monitoring navigation, 2.5 s) and the
+local-auth Monitoring check (7.8 s), each against an isolated real controller.
+The generated field does not add a new dashboard control. The final full Go run
+uses the completed contracts and embedded dashboard build.
+
+The final full `go test ./...` suite passed, including API in 343.559 s.
+Final source review found no further actionable cache or placement defect.
+
+The production-timing cycle 13 is **not a pass**: the workload completed and
+scale-down reached three pods, but a bounded TLS handshake to the independent
+target timed out before the final two-pod observation. Its terminal projection
+also contained 79 errors, despite clean fully-loaded samples. The original
+autoscaling specification was restored by cleanup; the failed evidence remains
+available for diagnosis.

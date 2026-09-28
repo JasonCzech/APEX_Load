@@ -936,6 +936,10 @@ func cloneGeneratorInventoryEntries(entries []GeneratorInventoryEntry) []Generat
 	cloned := make([]GeneratorInventoryEntry, len(entries))
 	copy(cloned, entries)
 	for index := range cloned {
+		if entries[index].PodPlacement != nil {
+			placement := *entries[index].PodPlacement
+			cloned[index].PodPlacement = &placement
+		}
 		cloned[index].PodCapacity = entries[index].PodCapacity.Clone()
 		cloned[index].SupportedProtocols = append([]string(nil), entries[index].SupportedProtocols...)
 		cloned[index].Labels = cloneStringMap(entries[index].Labels)

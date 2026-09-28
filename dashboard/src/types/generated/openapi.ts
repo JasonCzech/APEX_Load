@@ -43646,6 +43646,14 @@ export interface operations {
                 "open_fd_count"?: number;
                 "pod_capacity"?: (Record<string, unknown>) | null;
                 "pod_name"?: string;
+                "pod_placement"?: ({
+                  "name": string;
+                  "namespace": string;
+                  "node_name": string;
+                  "ready": boolean;
+                  "terminating": boolean;
+                  "uid": string;
+                }) | null;
                 "pool_name"?: string;
                 "region"?: string;
                 "restart_blocked_reason"?: string;
@@ -44246,6 +44254,14 @@ export interface operations {
                 "open_fd_count"?: number;
                 "pod_capacity"?: (Record<string, unknown>) | null;
                 "pod_name"?: string;
+                "pod_placement"?: ({
+                  "name": string;
+                  "namespace": string;
+                  "node_name": string;
+                  "ready": boolean;
+                  "terminating": boolean;
+                  "uid": string;
+                }) | null;
                 "pool_name"?: string;
                 "region"?: string;
                 "restart_blocked_reason"?: string;
@@ -45392,6 +45408,7 @@ export interface operations {
                   "open_fd_count"?: number;
                   "pod_capacity"?: (Record<string, unknown>) | null;
                   "pod_name"?: string;
+                  "pod_placement"?: (Record<string, unknown>) | null;
                   "pool_name"?: string;
                   "region"?: string;
                   "restart_blocked_reason"?: string;
@@ -45643,6 +45660,7 @@ export interface operations {
                   "open_fd_count"?: number;
                   "pod_capacity"?: (Record<string, unknown>) | null;
                   "pod_name"?: string;
+                  "pod_placement"?: (Record<string, unknown>) | null;
                   "pool_name"?: string;
                   "region"?: string;
                   "restart_blocked_reason"?: string;
@@ -49087,6 +49105,14 @@ export interface operations {
               "open_fd_count"?: number;
               "pod_capacity"?: (Record<string, unknown>) | null;
               "pod_name"?: string;
+              "pod_placement"?: ({
+                "name": string;
+                "namespace": string;
+                "node_name": string;
+                "ready": boolean;
+                "terminating": boolean;
+                "uid": string;
+              }) | null;
               "pool_name"?: string;
               "region"?: string;
               "restart_blocked_reason"?: string;
@@ -53944,6 +53970,14 @@ export interface operations {
                 "open_fd_count"?: number;
                 "pod_capacity"?: (Record<string, unknown>) | null;
                 "pod_name"?: string;
+                "pod_placement"?: ({
+                  "name": string;
+                  "namespace": string;
+                  "node_name": string;
+                  "ready": boolean;
+                  "terminating": boolean;
+                  "uid": string;
+                }) | null;
                 "pool_name"?: string;
                 "region"?: string;
                 "restart_blocked_reason"?: string;

@@ -93,6 +93,8 @@ type Config struct {
 }
 
 type PodRef struct {
+	UID         string
+	NodeName    string
 	Name        string
 	Namespace   string
 	IP          string
@@ -314,6 +316,8 @@ func (c *Client) ListPods(ctx context.Context, namespace, selector string) ([]Po
 	out := make([]PodRef, 0, len(list.Items))
 	for _, item := range list.Items {
 		out = append(out, PodRef{
+			UID:         strings.TrimSpace(item.Metadata.UID),
+			NodeName:    strings.TrimSpace(item.Spec.NodeName),
 			Name:        strings.TrimSpace(item.Metadata.Name),
 			Namespace:   firstNonEmpty(strings.TrimSpace(item.Metadata.Namespace), strings.TrimSpace(namespace)),
 			IP:          strings.TrimSpace(item.Status.PodIP),
@@ -531,10 +535,14 @@ func firstNonEmpty(values ...string) string {
 type podList struct {
 	Items []struct {
 		Metadata struct {
+			UID               string `json:"uid"`
 			Name              string `json:"name"`
 			Namespace         string `json:"namespace"`
 			DeletionTimestamp string `json:"deletionTimestamp"`
 		} `json:"metadata"`
+		Spec struct {
+			NodeName string `json:"nodeName"`
+		} `json:"spec"`
 		Status struct {
 			PodIP      string         `json:"podIP"`
 			Phase      string         `json:"phase"`

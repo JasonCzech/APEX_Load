@@ -39,7 +39,20 @@ type GeneratorSafetyExitEvidence struct {
 	OutstandingExecutions int32     `json:"outstanding_executions"`
 }
 
+// GeneratorPodPlacement is a Kubernetes inventory observation, not execution
+// fencing evidence. UID and node are assigned only for an unambiguous namespace,
+// IP and generator-name match; a reused StatefulSet name alone is insufficient.
+type GeneratorPodPlacement struct {
+	UID         string `json:"uid"`
+	Namespace   string `json:"namespace"`
+	Name        string `json:"name"`
+	NodeName    string `json:"node_name"`
+	Ready       bool   `json:"ready"`
+	Terminating bool   `json:"terminating"`
+}
+
 type GeneratorInventoryEntry struct {
+	PodPlacement                      *GeneratorPodPlacement                 `json:"pod_placement,omitempty"`
 	PodCapacity                       *protocol.CapacitySnapshot             `json:"pod_capacity,omitempty"`
 	Target                            string                                 `json:"target"`
 	GeneratorID                       string                                 `json:"generator_id"`
@@ -212,6 +225,10 @@ func (s *Server) enrichGeneratorInventoryWithPools(entries []GeneratorInventoryE
 }
 
 func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []GeneratorInventoryEntry) {
+	// Never carry topology from a generator's self-report or a previous probe.
+	for i := range entries {
+		entries[i].PodPlacement = nil
+	}
 	if s == nil || !s.k8sRestart.Enabled || s.kubeRestarter == nil || len(entries) == 0 {
 		return
 	}
@@ -223,6 +240,7 @@ func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []Ge
 		return
 	}
 	for i := range entries {
+		entries[i].PodPlacement = observedGeneratorPodPlacement(entries[i], pods, s.k8sRestart.Namespace)
 		pod := resolveGeneratorPodFromList(entries[i], pods, s.k8sRestart.GeneratorStatefulSet)
 		if pod.Name != "" {
 			entries[i].PodName = pod.Name

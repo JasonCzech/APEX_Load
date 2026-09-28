@@ -75,6 +75,8 @@ type identityDrainableExecutionBackend interface {
 }
 
 type KubePodRef struct {
+	UID         string `json:"uid,omitempty"`
+	NodeName    string `json:"node_name,omitempty"`
 	Name        string `json:"name"`
 	Namespace   string `json:"namespace"`
 	IP          string `json:"ip,omitempty"`

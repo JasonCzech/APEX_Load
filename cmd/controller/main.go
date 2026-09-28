@@ -625,7 +625,7 @@ func (a kubeRestarterAdapter) ScaleStatefulSet(ctx context.Context, namespace st
 
 func (a kubeRestarterAdapter) PodByIP(ctx context.Context, namespace string, selector string, ip string) (api.KubePodRef, error) {
 	pod, err := a.client.PodByIP(ctx, namespace, selector, ip)
-	return api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase, Ready: pod.Ready, Terminating: pod.Terminating}, err
+	return api.KubePodRef{UID: pod.UID, NodeName: pod.NodeName, Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase, Ready: pod.Ready, Terminating: pod.Terminating}, err
 }
 
 func (a kubeRestarterAdapter) ListPods(ctx context.Context, namespace string, selector string) ([]api.KubePodRef, error) {
@@ -635,7 +635,7 @@ func (a kubeRestarterAdapter) ListPods(ctx context.Context, namespace string, se
 	}
 	out := make([]api.KubePodRef, 0, len(pods))
 	for _, pod := range pods {
-		out = append(out, api.KubePodRef{Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase, Ready: pod.Ready, Terminating: pod.Terminating})
+		out = append(out, api.KubePodRef{UID: pod.UID, NodeName: pod.NodeName, Name: pod.Name, Namespace: pod.Namespace, IP: pod.IP, Phase: pod.Phase, Ready: pod.Ready, Terminating: pod.Terminating})
 	}
 	return out, nil
 }

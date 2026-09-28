@@ -432,3 +432,21 @@ func nestedString(value map[string]any, keys ...string) string {
 	out, _ := current.(string)
 	return out
 }
+
+func TestClientListPodsPreservesImmutableUIDAndNode(t *testing.T) {
+	client, cleanup := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requireBearer(t, r, "token-a")
+		_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"gen-0","namespace":"apex","uid":"pod-uid"},"spec":{"nodeName":"worker-2"},"status":{"podIP":"10.0.0.1","phase":"Running","conditions":[{"type":"Ready","status":"True"}]}},{"metadata":{"name":"unscheduled"},"status":{"phase":"Pending"}}]}`))
+	}))
+	defer cleanup()
+	pods, err := client.ListPods(context.Background(), "apex", "app=generator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pods) != 2 || pods[0].UID != "pod-uid" || pods[0].NodeName != "worker-2" || pods[0].Namespace != "apex" || !pods[0].Ready {
+		t.Fatalf("lost pod placement: %+v", pods)
+	}
+	if pods[1].UID != "" || pods[1].NodeName != "" || pods[1].Namespace != "apex" {
+		t.Fatalf("fabricated missing placement: %+v", pods[1])
+	}
+}

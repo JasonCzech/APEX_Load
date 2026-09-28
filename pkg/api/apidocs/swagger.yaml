@@ -223874,6 +223874,29 @@ paths:
                           nullable: true
                         pod_name:
                           type: string
+                        pod_placement:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                            node_name:
+                              type: string
+                            ready:
+                              type: boolean
+                            terminating:
+                              type: boolean
+                            uid:
+                              type: string
+                          required:
+                            - name
+                            - namespace
+                            - node_name
+                            - ready
+                            - terminating
+                            - uid
+                          nullable: true
                         pool_name:
                           type: string
                         region:
@@ -243576,6 +243599,29 @@ paths:
                               nullable: true
                             pod_name:
                               type: string
+                            pod_placement:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                namespace:
+                                  type: string
+                                node_name:
+                                  type: string
+                                ready:
+                                  type: boolean
+                                terminating:
+                                  type: boolean
+                                uid:
+                                  type: string
+                              required:
+                                - name
+                                - namespace
+                                - node_name
+                                - ready
+                                - terminating
+                                - uid
+                              nullable: true
                             pool_name:
                               type: string
                             region:
@@ -245353,6 +245399,29 @@ paths:
                               nullable: true
                             pod_name:
                               type: string
+                            pod_placement:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                namespace:
+                                  type: string
+                                node_name:
+                                  type: string
+                                ready:
+                                  type: boolean
+                                terminating:
+                                  type: boolean
+                                uid:
+                                  type: string
+                              required:
+                                - name
+                                - namespace
+                                - node_name
+                                - ready
+                                - terminating
+                                - uid
+                              nullable: true
                             pool_name:
                               type: string
                             region:
@@ -248773,6 +248842,11 @@ paths:
                                   nullable: true
                                 pod_name:
                                   type: string
+                                pod_placement:
+                                  type: object
+                                  description: 'Go type: GeneratorPodPlacement'
+                                  additionalProperties: true
+                                  nullable: true
                                 pool_name:
                                   type: string
                                 region:
@@ -249580,6 +249654,11 @@ paths:
                                   nullable: true
                                 pod_name:
                                   type: string
+                                pod_placement:
+                                  type: object
+                                  description: 'Go type: GeneratorPodPlacement'
+                                  additionalProperties: true
+                                  nullable: true
                                 pool_name:
                                   type: string
                                 region:
@@ -275050,6 +275129,29 @@ paths:
                               nullable: true
                             pod_name:
                               type: string
+                            pod_placement:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                namespace:
+                                  type: string
+                                node_name:
+                                  type: string
+                                ready:
+                                  type: boolean
+                                terminating:
+                                  type: boolean
+                                uid:
+                                  type: string
+                              required:
+                                - name
+                                - namespace
+                                - node_name
+                                - ready
+                                - terminating
+                                - uid
+                              nullable: true
                             pool_name:
                               type: string
                             region:
