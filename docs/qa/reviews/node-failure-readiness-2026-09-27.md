@@ -1092,3 +1092,48 @@ transport smoke passed. Documentation checks for 68 active Markdown files and
 whitespace checks passed. Application runtime code did not change, so the full
 application Go suite was not repeated. The prior watchdog regressions remain the
 separate internal-wedge evidence. Unrelated Java/performance edits were preserved.
+
+
+## Private TLS S3 component and signed retention checker
+
+Added fresh S3 certificates and a private digest-pinned SeaweedFS renderer with
+bucket-scoped credentials, separate client/server Secrets, TLS-only S3, authenticated
+S3 gRPC, loopback internal services, restricted pod settings and PVC-backed metadata
+and object storage. Added a bounded repository Go checker for signed probe creation,
+exact retained reads, invalid-credential rejection and foreign-bucket rejection.
+It confines transport to an explicit loopback port-forward, uses fresh installation
+credentials and CA, refuses redirects/proxies, and saves private exclusive evidence
+with fixed failure stages. The retention mode does not rewrite the probe.
+
+Review/live trials caught and fixed three image-specific problems: port zero opens
+an ephemeral listener rather than disabling HTTP; the gRPC TLS configuration needs
+an explicit maximum compatible with its minimum; and internal metadata collections
+consume volume slots before the archive bucket. The final profile serves primary
+port 8333 with TLS, requires client certificates on its extra gRPC endpoint, and
+allows four small volumes with one-at-a-time growth. These settings were checked
+against pinned image source commit `4a5243886`, not only its nominal 4.17 tag.
+
+The standalone Docker component used image digest
+`sha256:186de7ef977a20343ee9a5544073f081976a29e2d29ecf8379891e7bf177fbe9`.
+Signed virtual-hosted upload/read and bucket/auth rejection passed. Gracefully
+replacing the owned container while preserving its named volume retained the exact
+probe bytes. TLS rejected an untrusted CA; plaintext did not serve S3; the S3 gRPC
+endpoint rejected clients without certificates and accepted the private client
+certificate. The first cold upload exceeded the exploratory five-second timeout;
+a subsequent upload received a successful response. Reads immediately after
+replacement failed during startup and passed once the service initialized. These
+failures are retained as startup observations, not counted as passing availability.
+The reusable checker uses a bounded twenty-second request timeout and one-minute
+whole-run deadline without SDK retries.
+
+The component is a single-instance local archive service. These checks do not
+establish Kubernetes DNS/PVC behavior, application publication/replay, leadership
+transfer, replication, physical-node resilience or complete fault qualification.
+All prior volumes, Compose services and the existing kind cluster were preserved.
+
+Final slice review found no further actionable issue after fixes. All 112 Python
+harness tests passed; `go test ./scripts/... -count=1` passed (scripts: 24.911 s),
+and the S3 checker race tests passed. Whitespace checks passed. The clean-worktree
+documentation check exposed existing links to ignored local evidence in historical
+reviews; those artifacts are absent here. The two such links in the edited plan
+were converted to explicit local artifact paths. No new broken links were added.

@@ -3,8 +3,9 @@
 Status: In progress on `codex/node-failure-readiness`; see implementation ledger below.
 Date: 2026-09-27.
 Baseline: application commit `72e17af3c24fdd46089792679f9b6cb1a105daf2`.
-Evidence: [KEDA and node-failure report](../artifacts/scalability/2026-09-27/REPORT.md)
-and [machine-readable results](../artifacts/scalability/2026-09-27/summary.json).
+Evidence: local KEDA and node-failure report at
+`artifacts/scalability/2026-09-27/REPORT.md` and machine-readable `summary.json`
+in the same ignored directory.
 These local evidence files are ignored artifacts, not distributed repository fixtures.
 This plan extends [HA Run Continuity](HA_RUN_CONTINUITY_PLAN.md) to worker loss;
 it does not equate successful controller-only adoption with combined controller/generator recovery.
@@ -18,7 +19,7 @@ recovery and production node-loss readiness remain unfinished.
 
 | Package | Current implementation | Qualification still required |
 |---|---|---|
-| 1 | [Repository fault-driver foundation](../scripts/fault_harness/README.md): fresh credentials/TLS, explicit disposable targeting, sustained target-load gates with completion-based recovery deadlines and bounded observation calls, latched safety violations, counter continuity across outages, immutable-container cleanup, safety tests, and sanitized read-only Kubernetes inventory with optional preflight/post-restoration checkpoints and a separately bounded Kubernetes restoration-readiness gate, plus optional bounded background Kubernetes samples during the trial and an incarnation-bound apexctl final archive evidence command and an authenticated independent traffic-counter target with a bounded, verified snapshot reader, process-identity continuity enforcement, and private digest-pinned target and TLS PostgreSQL/Redis Kubernetes resources with local component validation, plus a bounded healthy-control comparison command | Stack provisioner, real observation adapter, deployed scaling/dependency time series, recorded final archive/failover evidence and repeated baseline runs |
+| 1 | [Repository fault-driver foundation](../scripts/fault_harness/README.md): fresh credentials/TLS, explicit disposable targeting, sustained target-load gates with completion-based recovery deadlines and bounded observation calls, latched safety violations, counter continuity across outages, immutable-container cleanup, safety tests, and sanitized read-only Kubernetes inventory with optional preflight/post-restoration checkpoints and a separately bounded Kubernetes restoration-readiness gate, plus optional bounded background Kubernetes samples during the trial and an incarnation-bound apexctl final archive evidence command and an authenticated independent traffic-counter target with a bounded, verified snapshot reader, process-identity continuity enforcement, and private digest-pinned target and TLS PostgreSQL/Redis Kubernetes resources with local component validation, plus a bounded healthy-control comparison command and private TLS S3 resources with a signed retention/access checker | Stack provisioner, real observation adapter, deployed scaling/dependency time series, recorded final archive/failover evidence and repeated baseline runs |
 | 2 | Health uses local settings and cached inventory; bounded durable-write bypass remains; ten-minute idle PostgreSQL/Redis/generator outage passed on two HA controllers (601 requests each, p99 11.431/11.937 ms, zero failures/restarts); dependencies and readiness restored; bounded reusable HTTP sampler | Active-load/node-loss confirmation in the broader fault matrix |
 | 3 | PostgreSQL provenance and comparisons use pgx microsecond precision; SQLite remains exact; real PostgreSQL reload regression | Recorded-archive replay and actual leadership-transfer evidence |
 | 4 | Fleet-scoped, expiring leader demand across all KEDA variants; peak queued demand; ordinal-floor protection; executable PromQL and cloud HA render tests; existing start-boundary placement and launch-window conflicts retain structured non-overridable HTTP 409 details | Spare-capacity admission, broader placement/discovery admission, deployed scale/failover qualification |

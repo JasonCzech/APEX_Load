@@ -16,7 +16,7 @@ python3 scripts/fault_harness/prepare_inputs.py /absolute/new/private-directory
 ```
 
 The second command refuses an existing directory and generates fresh credentials,
-a private CA, controller/generator/target/PostgreSQL/Redis certificates, a three-node kind configuration and
+a private CA, controller/generator/target/PostgreSQL/Redis/S3 certificates, a three-node kind configuration and
 a random ownership record, and a separate target/observer credential pair in `target.json`. Nothing is copied from earlier deployment snapshots.
 The directory must remain private; do not commit it or include its credentials in
 public evidence. Certificates last two days. Install the generated values through
@@ -610,3 +610,77 @@ when available. Repeated before/after-failover checks must use separate director
 These reads are not an atomic database snapshot, and a stable catalog does not prove
 that no later mutation occurred. Running the command alone does not establish a
 leadership transfer, S3 restart, data-service failover or production availability.
+
+
+## Private S3 archive component
+
+Render a single-instance SeaweedFS service for the same owned installation:
+
+```sh
+python3 scripts/fault_harness/render_s3.py \
+  --inputs /absolute/private/inputs \
+  --image docker.io/chrislusf/seaweedfs@sha256:186de7ef977a20343ee9a5544073f081976a29e2d29ecf8379891e7bf177fbe9 \
+  --output /absolute/new/private-s3-resources
+```
+
+The tested image reports SeaweedFS 4.17, source commit `4a5243886`. The renderer
+requires a repository digest, validates the captured certificate/key/CA against
+both the service and bucket DNS names, and writes private, exclusive Kustomize
+resources. It does not apply resources, create the namespace, create the bucket,
+or configure application controllers. Apply only to the explicitly owned
+`apexload-fault` namespace in the matching disposable cluster.
+
+The non-root, read-only-root container runs on the control-plane node and retains
+object volumes, master state and filer metadata on one 2 Gi RWO PVC. Four small
+volume slots and one-at-a-time volume growth leave space for internal metadata and
+the archive collection. This is a small local test store, with no replication,
+capacity guarantee, production durability or primary failover claim. PVC capacity
+and disk free space still require monitoring; do not load production-sized archives.
+
+The headless service and stable pod hostname provide the application's virtual-hosted
+bucket address, `apexload-archives.apexload-s3.apexload-fault.svc`. The fresh certificate
+covers that address. Port 8333 serves TLS only; internal filer/master/volume endpoints
+bind loopback. The extra S3 gRPC listener requires a client certificate from the
+private CA. Both TLS minimum and maximum are explicit because the pinned server's
+TLS option validation rejects a minimum above its default maximum. The policy
+exposes only 8333 to controller/observer pods; policy enforcement requires a capable
+CNI. TCP pod probes indicate listener health, not signed object availability.
+
+The server and client Secrets are separate. The client Secret contains only archive
+configuration, CA and bucket-scoped AWS credentials. Mount its CA and configure
+controller root trust; never disable verification. All controllers must share the
+same bucket/prefix. The server's IAM identity permits only `apexload-archives`.
+The source behaviors used here are in the pinned
+[S3 server](https://github.com/seaweedfs/seaweedfs/blob/4a5243886/weed/command/s3.go)
+and [TLS configuration](https://github.com/seaweedfs/seaweedfs/blob/4a5243886/weed/security/tls.go).
+
+After establishing an explicit loopback port-forward to service port 8333, seed and
+verify a run-bound probe with the repository command:
+
+```sh
+go run ./scripts/fault_s3_probe --inputs /absolute/private/inputs \
+  --address 127.0.0.1:18333 --mode seed --output /absolute/new/private-s3-seed
+# After replacing the owned server pod while retaining its PVC:
+go run ./scripts/fault_s3_probe --inputs /absolute/private/inputs \
+  --address 127.0.0.1:18333 --mode check --output /absolute/new/private-s3-check
+```
+
+`seed` creates the fixed bucket if needed, writes `fault/<run-id>/retention-probe`,
+and reads the exact expected bytes. `check` never rewrites that object. Both modes
+also attempt a foreign-bucket creation and an invalid-credential read, requiring
+explicit access/signature rejection rather than accepting transport failure. An
+incorrectly permissive server can therefore create the fixed negative-test bucket;
+use only the disposable service. The command never deletes buckets, objects or PVCs.
+It uses only the supplied credentials/CA, verifies service/bucket DNS identities,
+dials only the supplied IPv4 loopback port and refuses redirects and proxies.
+It does not test Kubernetes DNS routing through the port-forward.
+
+One minute bounds all requests, each capped at 20 seconds, with no SDK retries.
+Wait for startup before invoking it; a listener can start before cold volume
+allocation finishes. Failures save a fixed stage without raw server errors. Evidence
+is reserved before writes, stored in a new 0700 directory/0600 JSON file and never
+overwritten. Restart/replacement actions and pod/PVC identities are separate
+evidence; a passing read alone does not prove that a replacement happened. The
+component trial passed signed put/get and retained reads after container replacement,
+plus separate TLS/plaintext/untrusted-CA and gRPC client-certificate checks. It does
+not qualify application archive publication, Kubernetes PVC retention or HA failover.
