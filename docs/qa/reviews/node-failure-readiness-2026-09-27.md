@@ -2656,3 +2656,24 @@ found no further orphan-incarnation/integrity findings. A subsequent manifest re
 identified a separate cache portability issue: AKS controllers use per-pod emptyDir
 staging, so a new controller must be able to refetch absent local cache files against
 the existing immutable SQL receipt. That repair and per-root confirmed cleanup follow.
+
+## Collection cache portability across controller staging roots (2026-09-28)
+
+The AKS controller manifest uses per-pod emptyDir staging. A durable receipt could
+therefore exist without local cache files after leadership moved to another pod.
+Absent target/receipt directories now permit a network refetch, which must reproduce
+the exact immutable SQL receipt hash and byte count before local caching. The same
+logical source does not consume its frozen run ceiling twice; physical admission
+still counts every local copy. Existing incomplete/corrupt directories fail closed.
+
+Regression cases use two separate roots and an exact-fit logical byte allowance,
+verify identical refetches, reject changed source bytes, preserve missing-source
+coverage, and prove incomplete directories trigger no replacement download. Repeated
+race validation is in `/tmp/apex-cache-portability-race.log`. Confirmed cache cleanup
+must remain per-root and retain shared SQL anchors for other controllers' copies.
+
+The cache/source-collection race run passed all three repetitions (66.049 s).
+Documentation checks passed for all 69 active Markdown files, and final scoped
+review found no further cache-refetch findings. The preceding orphan-recovery
+commit passed the full 108-package suite; this API-only portability repair was
+validated with the repeated cache and source-collection race matrix.

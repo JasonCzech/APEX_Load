@@ -152,6 +152,9 @@ func (c *collectionSourceCache) targetRoot(target string, create bool) (*os.Root
 	return owned, nil
 }
 func (c *collectionSourceCache) load(ctx context.Context, target string) (*cachedArchiveSource, error) {
+	// SQL anchors are shared across controllers, but staging may be per-pod.
+	// Missing directories permit a refetch against the original immutable receipt.
+	// An existing directory with missing/corrupt content remains fail-closed.
 	c.mu.Lock()
 	anchor, ok := c.intent.CachedSources[target]
 	c.mu.Unlock()
@@ -159,11 +162,17 @@ func (c *collectionSourceCache) load(ctx context.Context, target string) (*cache
 		return nil, nil
 	}
 	parent, err := c.targetRoot(target, false)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer parent.Close()
 	root, err := openArchiveChildDirectoryAt(parent, anchor.ReceiptSHA256, false, 0o700)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -362,14 +371,20 @@ func (c *collectionSourceCache) save(ctx context.Context, bundle remoteArchiveBu
 		return errors.New("collection receipt exceeds limit")
 	}
 	size := payloadBytes + int64(len(data))
+	anchor := storage.RunArchiveCollectionSource{ReceiptSHA256: sha256BytesHex(data), Bytes: size}
 	remaining := c.intent.CacheLimitBytes
-	for _, source := range c.intent.CachedSources {
+	for target, source := range c.intent.CachedSources {
+		if target == bundle.target {
+			if source != anchor {
+				return errors.New("refetched collection source differs from its durable receipt")
+			}
+			continue // One logical source may have a verified copy in each local root.
+		}
 		remaining -= source.Bytes
 	}
 	if size > remaining {
 		return errors.New("collection cache exceeds frozen run limit")
 	}
-	anchor := storage.RunArchiveCollectionSource{ReceiptSHA256: sha256BytesHex(data), Bytes: size}
 	release, err := lockArchiveNamespace(ctx, "_collection_locks", "capacity.lock")
 	if err != nil {
 		return err

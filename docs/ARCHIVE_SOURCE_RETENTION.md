@@ -129,3 +129,12 @@ ceiling. Missing, changed, unanchored or excessive payloads remain untouched for
 investigation. Legacy orphan sources without integrity descriptors are preserved
 rather than automatically re-trusted. Discovery counts all directory entries toward
 its 10,000-entry budget, including entries that are not archive candidates.
+
+SQL receipts are shared metadata; cached files belong to the configured local
+staging root. A controller with a fresh staging directory can download an absent
+source again only if the full receipt and byte count match the existing SQL anchor.
+That verified copy does not spend the logical per-run ceiling twice, while every
+local copy still counts against its own root's physical byte quota. An existing
+incomplete or corrupt cache directory is preserved and rejected, not silently replaced.
+Receipts alone cannot recreate bytes when neither a local copy nor the original
+generator source is available. Per-pod `emptyDir` staging is not shared durable storage.
