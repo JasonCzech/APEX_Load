@@ -59,6 +59,7 @@ func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Requ
 // 200 with the verdict in the body — a tampered or corrupt archive is a reportable
 // result, not a server error.
 func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	id := r.PathValue("id")
 	archives := s.archiveDomainService()
 	if _, ok := archives.GetTest(id); !ok {
@@ -673,6 +674,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	var req struct {
 		IDs []string `json:"ids"`
 	}
@@ -1130,6 +1132,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) requireRunArchive(w http.ResponseWriter, r *http.Request) (*storage.RunArchiveRecord, *archiveMaterializationLease, bool) {
+	extendArtifactWriteDeadline(w)
 	id := r.PathValue("id")
 	archives := s.archiveDomainService()
 	if _, ok := archives.GetTest(id); !ok {

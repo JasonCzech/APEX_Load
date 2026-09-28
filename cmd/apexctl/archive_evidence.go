@@ -89,7 +89,21 @@ func archiveEvidenceHash(value string) bool {
 }
 
 func (c *ApiClient) archiveEvidenceRead(ctx context.Context, path string, destination any) (int, string) {
-	response, err := c.doStatusReadContext(ctx, path)
+	reader := c
+	if _, bounded := ctx.Deadline(); bounded {
+		// Evidence has an explicit overall budget. Cold archive preparation can
+		// exceed the ordinary status-read timeout; let that same caller context
+		// bound headers and body without changing the shared client or transport.
+		copy := *c
+		httpClient := http.Client{}
+		if c.Client != nil {
+			httpClient = *c.Client
+		}
+		httpClient.Timeout = 0
+		copy.Client = &httpClient
+		reader = &copy
+	}
+	response, err := reader.doStatusReadContext(ctx, path)
 	if err != nil {
 		return 0, "api_unavailable"
 	}

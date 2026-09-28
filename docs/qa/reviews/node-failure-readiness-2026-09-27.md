@@ -1947,3 +1947,50 @@ the final full Go suite passed in `/tmp/apex-archive-preparation-full-final.log`
 remain. Deployed evidence is recorded separately when complete. This is process-crash
 recovery on a surviving verified source, not proof that node-local staging survives
 permanent worker loss or that a filesystem honors durability under physical faults.
+
+### Restored controllers and legacy archive recovery
+
+Controller `58f85c9b` was built from its exact committed tree and loaded on both
+owned workers. Two new controllers started with zero restarts, a 3 GiB data
+volume and 300-second confirmed-source retention. Both saved source directories
+were restored to both pods and all declared artifact digests were verified.
+The first repair guard rejected a stale pre-restoration missing-source error
+without changing metadata. After the normal worker retried, two exact-token and
+exact-record compare-and-swap repairs updated only the legacy manifest digest;
+the ordinary durable worker then published both archives. Trials 22 and 23 remain
+failed and this manual recovery is not qualification evidence.
+
+The two-minute idle baseline passed with stable controller and PostgreSQL pod
+identities/restart counts, no active tests or archive jobs, and an unchanged
+independent target counter. Cold API verification of both recovered archives then
+failed at manifest reads: requests exceeded the ordinary 30-second HTTP/CLI
+budget. Their catalog publication alone is not an API-readability pass. Private
+receipts are under `controller-restoration-58f85c9b`,
+`scheduled-archive-manual-recovery-3`, `journal-restored-stable-baseline`, and
+`scheduled-{22,23}-manually-recovered` in the owned trial root.
+
+### Cold archive read deadlines
+
+The failed cold reads exposed two independent deadline mismatches. Manifest,
+verification and paginated archive handlers retained the server's ordinary
+30-second write deadline even though object materialization has its own bounded
+preparation budget. The evidence CLI also retained its ordinary 30-second HTTP
+client timeout inside an explicitly longer `archive evidence --timeout` budget.
+A real HTTP server with a short write deadline reproduced EOF for delayed
+manifest, verification and transaction reads; a delayed CLI manifest request
+reproduced premature `api_unavailable` despite its longer overall deadline.
+
+Archive read and batch-report handlers now use the existing bounded artifact
+write deadline, including its error-response grace. Evidence reads with an
+explicit context deadline use that same deadline throughout headers and body;
+they clone the client settings and retain transport, authentication and redirect
+policy. Other API calls and evidence calls without a deadline retain their
+ordinary timeout. Cancellation remains effective and shared client settings do
+not change. Focused checks passed, and three race repetitions passed (CLI 6.692
+seconds, API 4.153 seconds). The cancellation check was tightened to retain
+an explicit deadline on the canceled context and passed another three race
+repetitions (2.578 seconds). The full Go suite passed (API 345.632 seconds);
+a final repeat after the test-only adjustment passed with API results cached
+and CLI tests in 12.130 seconds. Logs are
+`/tmp/apex-archive-read-deadline-full{,-final}.log`. No further scoped review
+findings remain; deployed cold-read verification follows.

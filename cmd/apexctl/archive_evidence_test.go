@@ -265,3 +265,28 @@ func TestArchiveEvidenceBoundedReadsAndRedactedErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestArchiveEvidenceUsesExplicitDeadlineWithoutMutatingClient(t *testing.T) {
+	expected, data := archiveEvidenceFixture()
+	client, _ := evidenceServer(t, data, func(r *http.Request, _ int) {
+		if strings.HasSuffix(r.URL.Path, "/manifest") {
+			time.Sleep(80 * time.Millisecond)
+		}
+	})
+	client.Client.Timeout = 10 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	report := collectArchiveEvidence(ctx, client, expected)
+	if !report.Passed {
+		t.Fatalf("explicit evidence deadline was shortened: %+v", report)
+	}
+	if client.Client.Timeout != 10*time.Millisecond {
+		t.Fatal("shared HTTP client timeout changed")
+	}
+	canceled, stop := context.WithTimeout(context.Background(), time.Second)
+	stop()
+	var response any
+	if _, reason := client.archiveEvidenceRead(canceled, "/api/v1/tests/run-1", &response); reason != "api_unavailable" {
+		t.Fatalf("cancellation ignored: %s", reason)
+	}
+}
