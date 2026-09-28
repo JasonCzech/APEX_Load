@@ -339,7 +339,8 @@ be treated as a complete archive. No capacity failure deletes earlier evidence.
 
 This is a per-run raw-byte bound. It does not reserve the entire allowance on disk,
 limit aggregate concurrent capture or retained unpublished sources, or cover derived
-Parquet/CSV files, merge copies and publication backlog. Those budgets remain separate
+Parquet/CSV files, merge copies or publication backlog. Conversion and merge have
+separate per-attempt limits below; publication and aggregate admission remain separate
 work. Include filesystem overhead and other writers when sizing the volume; free-space
 checks cannot enforce an `emptyDir.sizeLimit` smaller than its backing filesystem.
 
@@ -355,13 +356,44 @@ distributed collection freezes them before conversion.
 Admission checks occur at each physical write, including Parquet headers, row groups
 and footers. Conversions coordinate the free-space check with raw capture under the
 same archive root. The first write failure stops further output through that shared
-budget. Removed incomplete output stays charged for the attempt. Conversion does not modify source JSONL files. A failed conversion cannot publish
-a complete manifest or change an otherwise successful execution result. Local raw
-capture remains on disk; distributed collection retains its existing source-cache
+budget. Removed incomplete output stays charged for the attempt. Conversion does not
+modify source JSONL files. A failed conversion cannot publish a complete manifest.
+Local conversion failures preserve the execution outcome. Distributed merge/conversion
+byte-limit and free-space rejection also preserve that outcome and record a durable
+archive-failure marker; missing or invalid required sources keep the existing strict
+failure behavior. Local raw capture remains on disk; distributed collection retains its existing source-cache
 and temporary-file lifecycle. CSV metadata records incomplete
 exports when their writes fail.
 
-This allowance covers format conversion only. Distributed merge files, report and
-publication copies, aggregate concurrent producer retention, and retained unpublished
-backlogs still require separate admission. A per-attempt conversion limit is not a
+This allowance covers format conversion only. Distributed merge uses its own
+allowance below. Report and publication copies, aggregate concurrent producer
+retention, and retained unpublished backlogs still require separate admission. A per-attempt conversion limit is not a
 total archive-root quota.
+
+
+## Distributed merge limits
+
+One allowance covers merged transaction and resource JSONL, both the provisional
+and final interval summaries, controller Elasticsearch/Dynatrace evidence and its
+resource appends, and the final manifest. `APEXLOAD_ARCHIVE_MERGE_MAX_BYTES` defaults
+to 64 GiB and accepts positive integer bytes up to 128 GiB.
+`APEXLOAD_ARCHIVE_MERGE_MIN_FREE_BYTES` defaults to 64 MiB and accepts positive
+integer bytes up to 1 PiB. Both settings are frozen before source collection for
+that merge attempt. Parquet and declared CSV output use the separate conversion
+allowance; both allowances must fit alongside retained sources and filesystem overhead.
+
+Each physical output write checks remaining bytes and free space under the shared
+`_capture_locks/capacity.lock` fence. JSONL uses bounded 64 KiB buffers that must flush
+before a successful merge stage can finish. The first write failure or cancellation is
+latched across output files. Removed provisional output stays charged for the attempt.
+Telemetry evidence is serialized incrementally. A failed attempt cannot commit the
+merged archive directory. Output-capacity rejection preserves the observed execution
+outcome and records a durable archive-failure marker. Verified cached sources remain
+available for a later retry; incomplete private merge output follows the existing
+cleanup path. Artifact data and nested directory entries are synced before the merged
+manifest and final directory rename; Parquet writers sync their writable descriptors.
+
+This limits one merge attempt, not aggregate retained or concurrently produced archives.
+Physical free-space checks cannot enforce a smaller Kubernetes `emptyDir.sizeLimit`.
+Publication copies, aggregate producer/source backlog and report output remain separate
+admission work; no pressure-based deletion of unconfirmed evidence is introduced.

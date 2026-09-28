@@ -3343,3 +3343,63 @@ lock-held-write guards. The full Go suite passed all 108 test-bearing packages
 Scoped re-review found no further issues. The database backup restored successfully;
 the first staging-backup attempt stopped before copying at its disk-headroom guard.
 Cache reclamation and a fresh staging backup precede the reviewed rollout.
+
+
+## Distributed merge output admission (2026-09-28)
+
+The merge draft freezes a shared byte allowance before source collection and bounds
+physical writes across transaction/resource JSONL, provisional/final summaries,
+controller telemetry evidence and appends, and the final manifest. Conversion keeps
+its separate allowance. All output families coordinate physical headroom with raw
+capture under the existing cross-process capacity fence. Source-cache receipts survive
+failed output, and private incomplete merge directories are discarded. Artifact and
+directory durability precedes publication; Parquet now syncs its writable descriptor.
+
+The first focused run exposed per-record lock overhead: distributed archive completion
+missed its existing eight-second deadline. JSONL output now uses bounded 64 KiB buffers,
+with checked flushes before successful stage completion. The expanded focused matrix
+then passed (9.851 seconds). This is a regression check, not a production throughput
+benchmark. Review additionally found that distributed terminalization changed completed
+execution to `FAILED` on controller output-capacity rejection. Four regressions reproduced
+that behavior for merge/conversion byte and free-space bounds. A typed local admission
+error now preserves the observed outcome with a durable archive-failure marker while
+retaining strict behavior for missing or invalid required sources. The outcome regressions passed (2.299 seconds), followed by the expanded focused
+matrix (10.308 seconds) and three race repetitions (20.998 seconds). The full Go suite passed all 108 test-bearing packages (API 392.661 seconds),
+and documentation checks passed for 69 active Markdown files. Scoped re-review
+found no further issues. Publication and aggregate backlog bounds remain separate.
+
+
+## Archive-safe epoch recovery: deployed repetition (2026-09-28)
+
+Controller `9f16bee8477d907869664d9b19f68dc74c7ff203` was built from its exact
+committed source with the owned kind cluster stopped, then restored and deployed
+by manifest digest `sha256:6e0ec5e6cde97fb83d0b1898917e27b9c155aeea9e67cb2d2a467f574ea4131b`.
+Fresh database restore verification and both controller staging backups preceded
+rollout; generator revision remained `1642d9200d2e74068666826dd9ba3a661d38a6bf`.
+The healthy gate completed with a minimum 317.406 target-observed requests/second
+over 60.434 seconds, verified archive hashes and zero controller restarts.
+
+Three consecutive cold-spare worker-container trials passed admission, reserved
+surviving-worker traffic recovery, worker restoration and available-archive integrity:
+
+| Trial | Test ID | Recovery seconds |
+| --- | --- | ---: |
+| 1 | `543da513-abba-4b3e-9207-bcdcea656c91` | 106.730 |
+| 2 | `687997fe-1d08-4b3f-b942-19fc66638086` | 108.744 |
+| 3 | `6362533e-0c48-40f0-8c50-82cf833218fa` | 107.022 |
+
+Each trial finished `ABORTED` through harness cleanup and published an explicitly
+best-effort archive: surviving-source hashes verified, stopped-source history missing.
+Atomic PostgreSQL observations in trials 2 and 3 saw archive work pending with the
+original generation held, then turnover after it settled (67→68 and 69→70).
+Trial 1's initial epoch observer failed because it read a generation field absent
+from the API response; its corrected follow-up observed 66→67 only after publication,
+so it does not demonstrate the pending interval. That helper failure is retained.
+
+Private evidence lives under
+`artifacts/scalability/2026-09-27/remaining-e7fgcem4/`, in
+`reviewed-controller-smoke-9f16bee8-cold-gate` and
+`worker-spare-9f16bee8-cold-{1,2,3}`. These are Docker Desktop worker-container
+failures with a surviving leader, PostgreSQL, Redis, KEDA and S3 fixture. They do
+not qualify combined leader/generator loss, independent physical hosts, CSI recovery,
+permanent node/zone loss or managed database replication.

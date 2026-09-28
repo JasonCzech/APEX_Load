@@ -1841,9 +1841,14 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 		return
 	}
 	archiveRecord, archiveErr := b.stageRemoteArchive(tr, test, finalStatus, finalError, completedAt, finalStatus == "COMPLETE")
-	if archiveErr != nil {
+	if archiveErr != nil && !isArchiveOutputAdmissionError(archiveErr) {
 		finalStatus = "FAILED"
 		finalError = testexec.AppendRunError(finalError, "remote archive stage failed", archiveErr)
+	} else if archiveErr != nil {
+		// The generators finished; controller output capacity only prevents
+		// archive availability. The durable failure marker below and retained
+		// source intent expose recovery without rewriting the execution result.
+		slog.Error("distributed archive output admission failed without changing the execution outcome", "test_id", test.ID, "error", archiveErr)
 	}
 	b.closeRemoteResources(tr, test)
 	if test.cancel != nil {

@@ -107,6 +107,11 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if existing, err := tr.existingCollectedArchive(test); err != nil || existing != nil {
 		return existing, err
 	}
+	mergeOutput, err := newArchiveMergeBudget(archiveRoot)
+	if err != nil {
+		return nil, err
+	}
+	mergeOutput.ctx = sourceCtx
 	archiveParent, err := ensureArchiveRelativeDirectory(archiveRoot, "remote", 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("prepare distributed archive parent: %w", err)
@@ -158,13 +163,13 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	}
 	defer func() { _ = removeArchiveSubdirectory(archiveParent, workingDir) }()
 
-	if err := writeMergedRemoteArchiveFiles(workingDir, &manifest, bundles, targetHistory, test); err != nil {
+	if err := writeMergedRemoteArchiveFilesWithBudget(workingDir, &manifest, bundles, targetHistory, mergeOutput, test); err != nil {
 		return nil, err
 	}
-	if err := writeDistributedELKEvidence(workingDir, &manifest, tr, test, completedAt); err != nil {
+	if err := writeDistributedELKEvidence(workingDir, &manifest, tr, test, completedAt, mergeOutput); err != nil {
 		return nil, err
 	}
-	if err := writeDistributedDynatraceEvidence(workingDir, &manifest, tr, test, completedAt); err != nil {
+	if err := writeDistributedDynatraceEvidence(workingDir, &manifest, tr, test, completedAt, mergeOutput); err != nil {
 		return nil, err
 	}
 	if err := applyTransactionSLARules(workingDir, &manifest); err != nil {
@@ -177,6 +182,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if err != nil {
 		return nil, err
 	}
+	conversion.ctx = sourceCtx
 	if err := writeArchiveParquetFiles(workingDir, &manifest, conversion); err != nil {
 		return nil, err
 	}
@@ -191,7 +197,7 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 		return nil, err
 	}
 	workingManifestPath := filepath.Join(workingDir, runArchiveManifestFileName)
-	if err := writeSyncedArchiveFile(workingManifestPath, manifestContent); err != nil {
+	if err := writeDurableArchiveMergeManifest(workingManifestPath, manifestContent, mergeOutput); err != nil {
 		return nil, err
 	}
 	if err := sourceCtx.Err(); err != nil {
@@ -240,9 +246,13 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	return record, nil
 }
 
-func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, completedAt time.Time) error {
+func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, completedAt time.Time, budgets ...*archiveOutputBudget) error {
 	if manifest == nil || test == nil || test.ELKCapture == nil {
 		return nil
+	}
+	outputBudget, err := mergeBudget(root, budgets)
+	if err != nil {
+		return err
 	}
 	manifest.ELKEvidenceFile = "elk_evidence.jsonl"
 	var artifacts *runArtifacts
@@ -264,16 +274,16 @@ func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *
 		}
 		artifacts.elkMu.Unlock()
 	}
-	var evidence bytes.Buffer
-	encoder := json.NewEncoder(&evidence)
-	for _, sample := range samples {
-		sample = sanitizeELKSample(sample)
-		if err := encoder.Encode(sample); err != nil {
-			return err
+	if err := writeArchiveMergeJSONL(filepath.Join(root, manifest.ELKEvidenceFile), outputBudget, func(encoder *json.Encoder) error {
+		for _, sample := range samples {
+			sample = sanitizeELKSample(sample)
+			if err := encoder.Encode(sample); err != nil {
+				return err
+			}
+			manifest.ELKEvidenceCount++
 		}
-		manifest.ELKEvidenceCount++
-	}
-	if err := writeSyncedArchiveFile(filepath.Join(root, manifest.ELKEvidenceFile), evidence.Bytes()); err != nil {
+		return nil
+	}); err != nil {
 		return err
 	}
 	if len(metrics) == 0 {
@@ -283,12 +293,12 @@ func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(resourcePath, os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := openArchiveArtifactForAppend(filepath.Dir(resourcePath), filepath.Base(resourcePath))
 	if err != nil {
 		return err
 	}
 	record := ResourceSample{Timestamp: completedAt, TestID: test.ID, TestName: test.Name, External: elkExternalMetrics(test.ELKCapture.ConnectionID, metrics)}
-	encodeErr := json.NewEncoder(file).Encode(record)
+	encodeErr := json.NewEncoder(&archiveOutputFile{file: file, budget: outputBudget}).Encode(record)
 	syncErr := file.Sync()
 	closeErr := file.Close()
 	if err := errors.Join(encodeErr, syncErr, closeErr); err != nil {
@@ -298,9 +308,13 @@ func writeDistributedELKEvidence(root string, manifest *RunArchiveManifest, tr *
 	return nil
 }
 
-func writeDistributedDynatraceEvidence(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, completedAt time.Time) error {
+func writeDistributedDynatraceEvidence(root string, manifest *RunArchiveManifest, tr *TestRunner, test *ManagedTest, completedAt time.Time, budgets ...*archiveOutputBudget) error {
 	if manifest == nil || test == nil || test.DynatraceCapture == nil {
 		return nil
+	}
+	outputBudget, err := mergeBudget(root, budgets)
+	if err != nil {
+		return err
 	}
 	manifest.DynatraceEvidenceFile = "dynatrace_evidence.jsonl"
 	var artifacts *runArtifacts
@@ -329,23 +343,23 @@ func writeDistributedDynatraceEvidence(root string, manifest *RunArchiveManifest
 		}
 		artifacts.dynatraceMu.Unlock()
 	}
-	var evidence bytes.Buffer
-	encoder := json.NewEncoder(&evidence)
-	for _, record := range records {
-		if record.Log != nil {
-			sample := sanitizeDynatraceLog(*record.Log)
-			record.Log = &sample
+	if err := writeArchiveMergeJSONL(filepath.Join(root, manifest.DynatraceEvidenceFile), outputBudget, func(encoder *json.Encoder) error {
+		for _, record := range records {
+			if record.Log != nil {
+				sample := sanitizeDynatraceLog(*record.Log)
+				record.Log = &sample
+			}
+			if record.Problem != nil {
+				problem := sanitizeDynatraceProblem(*record.Problem)
+				record.Problem = &problem
+			}
+			if err := encoder.Encode(record); err != nil {
+				return err
+			}
+			manifest.DynatraceEvidenceCount++
 		}
-		if record.Problem != nil {
-			problem := sanitizeDynatraceProblem(*record.Problem)
-			record.Problem = &problem
-		}
-		if err := encoder.Encode(record); err != nil {
-			return err
-		}
-		manifest.DynatraceEvidenceCount++
-	}
-	if err := writeSyncedArchiveFile(filepath.Join(root, manifest.DynatraceEvidenceFile), evidence.Bytes()); err != nil {
+		return nil
+	}); err != nil {
 		return err
 	}
 	if len(metrics) == 0 {
@@ -355,12 +369,12 @@ func writeDistributedDynatraceEvidence(root string, manifest *RunArchiveManifest
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(resourcePath, os.O_APPEND|os.O_WRONLY, 0o600)
+	file, err := openArchiveArtifactForAppend(filepath.Dir(resourcePath), filepath.Base(resourcePath))
 	if err != nil {
 		return err
 	}
 	record := ResourceSample{Timestamp: completedAt, TestID: test.ID, TestName: test.Name, External: dynatraceExternalMetrics(test.DynatraceCapture.ConnectionID, metrics)}
-	encodeErr := json.NewEncoder(file).Encode(record)
+	encodeErr := json.NewEncoder(&archiveOutputFile{file: file, budget: outputBudget}).Encode(record)
 	syncErr := file.Sync()
 	closeErr := file.Close()
 	if err := errors.Join(encodeErr, syncErr, closeErr); err != nil {
@@ -1044,6 +1058,14 @@ func snapshotRemoteArchiveTargetHistory(tr *TestRunner, test *ManagedTest) []rem
 }
 
 func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot, tests ...*ManagedTest) error {
+	budget, err := newArchiveMergeBudget(rootDir)
+	if err != nil {
+		return err
+	}
+	return writeMergedRemoteArchiveFilesWithBudget(rootDir, manifest, bundles, targetHistory, budget, tests...)
+}
+
+func writeMergedRemoteArchiveFilesWithBudget(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot, budget *archiveOutputBudget, tests ...*ManagedTest) error {
 	transactionsPath, err := archiveArtifactPath(rootDir, manifest.TransactionsFile)
 	if err != nil {
 		return err
@@ -1052,7 +1074,7 @@ func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest,
 	if len(tests) > 0 {
 		test = tests[0]
 	}
-	if err := mergeRemoteArchiveTransactions(transactionsPath, manifest, bundles, messageDetailBudgetsForTest(test)); err != nil {
+	if err := mergeRemoteArchiveTransactions(transactionsPath, manifest, bundles, messageDetailBudgetsForTest(test), budget); err != nil {
 		return err
 	}
 
@@ -1072,7 +1094,7 @@ func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest,
 		if err != nil {
 			return err
 		}
-		if err := mergeRemoteArchiveDataset(destinationPath, bundles, dataset.kind, dataset.path, dataset.expectedCount); err != nil {
+		if err := mergeRemoteArchiveDataset(destinationPath, bundles, dataset.kind, dataset.path, dataset.expectedCount, budget); err != nil {
 			return err
 		}
 	}
@@ -1080,7 +1102,7 @@ func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest,
 	if err != nil {
 		return err
 	}
-	count, err := mergeRemoteArchiveIntervalSummariesWithTargets(summariesPath, bundles, targetHistory)
+	count, err := mergeRemoteArchiveIntervalSummariesWithTargets(summariesPath, bundles, targetHistory, budget)
 	if err != nil {
 		return err
 	}
@@ -1156,7 +1178,11 @@ func messageDetailBudgetForEvent(budgets map[string]*controllerMessageDetailBudg
 	return nil
 }
 
-func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, budgets map[string]*controllerMessageDetailBudget) (err error) {
+func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle, budgets map[string]*controllerMessageDetailBudget, outputs ...*archiveOutputBudget) (err error) {
+	outputBudget, err := mergeBudget(filepath.Dir(destinationPath), outputs)
+	if err != nil {
+		return err
+	}
 	destination, err := createArchiveArtifactExclusive(filepath.Dir(destinationPath), filepath.Base(destinationPath), 0o644, false)
 	if err != nil {
 		return err
@@ -1166,7 +1192,8 @@ func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchive
 			err = closeErr
 		}
 	}()
-	encoder := json.NewEncoder(destination)
+	output := newArchiveMergeOutput(destination, outputBudget)
+	encoder := json.NewEncoder(output)
 	var ordinal int64
 	if len(budgets) > 0 {
 		if manifest.MessageDetailCapture == nil {
@@ -1221,6 +1248,9 @@ func mergeRemoteArchiveTransactions(destinationPath string, manifest *RunArchive
 		if count != bundle.manifest.TransactionCount {
 			return fmt.Errorf("remote transaction count for target %q is %d, manifest declares %d", bundle.target, count, bundle.manifest.TransactionCount)
 		}
+	}
+	if err := output.Flush(); err != nil {
+		return err
 	}
 	return destination.Sync()
 }
@@ -1332,7 +1362,11 @@ func mergeRemoteArchiveIntervalSummaries(destinationPath string, bundles []remot
 	return mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath, bundles, nil)
 }
 
-func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot) (count int64, err error) {
+func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bundles []remoteArchiveBundle, targetHistory []remoteArchiveTargetSnapshot, budgets ...*archiveOutputBudget) (count int64, err error) {
+	outputBudget, err := mergeBudget(filepath.Dir(destinationPath), budgets)
+	if err != nil {
+		return 0, err
+	}
 	provisionalName := "." + filepath.Base(destinationPath) + ".fleet-merge"
 	provisionalPath := filepath.Join(filepath.Dir(destinationPath), provisionalName)
 	provisional, err := createArchiveArtifactExclusive(filepath.Dir(provisionalPath), filepath.Base(provisionalPath), 0o600, false)
@@ -1390,14 +1424,15 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			return 0, err
 		}
 		provisionalOpen = false
-		return writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath, nil, false, targetHistory)
+		return writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath, nil, false, targetHistory, outputBudget)
 	}
 
 	windowCapacity := len(cursors)
 	singleGenerator := len(bundles) == 1
 	heap.Init(&cursors)
 
-	encoder := json.NewEncoder(provisional)
+	output := newArchiveMergeOutput(provisional, outputBudget)
+	encoder := json.NewEncoder(output)
 	windowEnds := make([]time.Time, 0, min(len(bundles)*16, maxArchiveAnalysisRecords))
 	collectWindowEnds := true
 	sourceWindows := make([][]remoteArchiveSourceWindow, len(bundles))
@@ -1575,6 +1610,9 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 			}
 		}
 	}
+	if err := output.Flush(); err != nil {
+		return count, err
+	}
 	if err := provisional.Sync(); err != nil {
 		return count, err
 	}
@@ -1589,7 +1627,7 @@ func mergeRemoteArchiveIntervalSummariesWithTargets(destinationPath string, bund
 	if err != nil {
 		return count, err
 	}
-	written, err := writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath, intervals, exact, targetHistory)
+	written, err := writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath, intervals, exact, targetHistory, outputBudget)
 	if err != nil {
 		return count, err
 	}
@@ -2199,7 +2237,11 @@ func remoteArchiveFleetIntervalMetrics(bundles []remoteArchiveBundle, windowEnds
 	return intervals, true, nil
 }
 
-func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, intervals []remoteArchiveFleetIntervalMetric, exact bool, targetHistory []remoteArchiveTargetSnapshot) (count int64, err error) {
+func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, intervals []remoteArchiveFleetIntervalMetric, exact bool, targetHistory []remoteArchiveTargetSnapshot, budgets ...*archiveOutputBudget) (count int64, err error) {
+	outputBudget, err := mergeBudget(filepath.Dir(destinationPath), budgets)
+	if err != nil {
+		return 0, err
+	}
 	source, _, err := openArchiveArtifactForRead(filepath.Dir(provisionalPath), filepath.Base(provisionalPath))
 	if err != nil {
 		return 0, err
@@ -2215,7 +2257,8 @@ func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, i
 		}
 	}()
 	decoder := json.NewDecoder(source)
-	encoder := json.NewEncoder(destination)
+	output := newArchiveMergeOutput(destination, outputBudget)
+	encoder := json.NewEncoder(output)
 	var sourceCumulativeTx, exactCumulativeTx, exactCumulativeErrors int64
 	var previousTimestamp time.Time
 	for {
@@ -2283,6 +2326,9 @@ func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, i
 		}
 		previousTimestamp = record.Timestamp
 		count++
+	}
+	if err := output.Flush(); err != nil {
+		return count, err
 	}
 	if err := destination.Sync(); err != nil {
 		return count, err
@@ -2408,7 +2454,12 @@ func mergeRemoteArchiveDataset(
 	kind string,
 	sourcePath func(remoteArchiveBundle) string,
 	expectedCount func(remoteArchiveBundle) int64,
+	budgets ...*archiveOutputBudget,
 ) (err error) {
+	outputBudget, err := mergeBudget(filepath.Dir(destinationPath), budgets)
+	if err != nil {
+		return err
+	}
 	destination, err := createArchiveArtifactExclusive(filepath.Dir(destinationPath), filepath.Base(destinationPath), 0o644, false)
 	if err != nil {
 		return err
@@ -2418,6 +2469,7 @@ func mergeRemoteArchiveDataset(
 			err = closeErr
 		}
 	}()
+	output := newArchiveMergeOutput(destination, outputBudget)
 	for _, bundle := range bundles {
 		path := sourcePath(bundle)
 		source, _, openErr := openArchiveArtifactForRead(filepath.Dir(path), filepath.Base(path))
@@ -2433,11 +2485,11 @@ func mergeRemoteArchiveDataset(
 				_ = source.Close()
 				return fmt.Errorf("decode remote %s record for target %q: %w", kind, bundle.target, decodeErr)
 			}
-			if _, writeErr := destination.Write(line); writeErr != nil {
+			if _, writeErr := output.Write(line); writeErr != nil {
 				_ = source.Close()
 				return writeErr
 			}
-			if _, writeErr := destination.Write([]byte{'\n'}); writeErr != nil {
+			if _, writeErr := output.Write([]byte{'\n'}); writeErr != nil {
 				_ = source.Close()
 				return writeErr
 			}
@@ -2454,6 +2506,9 @@ func mergeRemoteArchiveDataset(
 		if count != expected {
 			return fmt.Errorf("remote %s count for target %q is %d, manifest declares %d", kind, bundle.target, count, expected)
 		}
+	}
+	if err := output.Flush(); err != nil {
+		return err
 	}
 	return destination.Sync()
 }

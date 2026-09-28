@@ -54,7 +54,7 @@ func declaredCSVExports(test *ManagedTest) []RunArchiveCSVExport {
 	return out
 }
 
-func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest, budgets ...*archiveConversionBudget) error {
+func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest, budgets ...*archiveOutputBudget) error {
 	budget, err := conversionBudget(root, budgets)
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest, bu
 			if err != nil {
 				return err
 			}
-			rows, writeErr := writeDeclaredCSVExport(context.Background(), root, manifest, declaration, &archiveConversionFile{file: file, budget: budget})
+			rows, writeErr := writeDeclaredCSVExport(context.Background(), root, manifest, declaration, &archiveOutputFile{file: file, budget: budget})
 			syncErr := file.Sync()
 			closeErr := file.Close()
 			if writeErr != nil || syncErr != nil || closeErr != nil {

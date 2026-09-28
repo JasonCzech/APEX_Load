@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,7 +130,7 @@ type parquetIntervalSummary struct {
 	TelemetryStatusJSON    string  `parquet:"name=telemetry_status_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
-func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budgets ...*archiveConversionBudget) error {
+func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budgets ...*archiveOutputBudget) error {
 	budget, err := conversionBudget(rootDir, budgets)
 	if err != nil {
 		return err
@@ -180,7 +181,7 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budg
 // Error snapshots can legitimately exceed Scanner's small default token size,
 // so use the repository's 64 MiB JSONL ceiling rather than decoding a record
 // with no allocation bound.
-func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, convert func(In) Out, budgets ...*archiveConversionBudget) (count int64, err error) {
+func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, convert func(In) Out, budgets ...*archiveOutputBudget) (count int64, err error) {
 	budget, err := conversionBudget(filepath.Dir(outputPath), budgets)
 	if err != nil {
 		return 0, err
@@ -195,7 +196,7 @@ func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, 
 	if err != nil {
 		return 0, err
 	}
-	fw := &archiveConversionFile{file: file, budget: budget}
+	fw := &archiveOutputFile{file: file, budget: budget}
 	pw, err := writer.NewParquetWriter(fw, new(Out), 4)
 	if budgetErr := budget.failure(); budgetErr != nil {
 		err = budgetErr
@@ -230,7 +231,9 @@ func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, 
 		_ = fw.Close()
 		return count, err
 	}
-	return count, fw.Close()
+	// Commit data through the writable descriptor before any manifest can
+	// reference it; read-only Sync is not supported on every platform.
+	return count, errors.Join(fw.Sync(), fw.Close())
 }
 
 func toParquetTransactions(items []TransactionEvent) []parquetTransactionEvent {

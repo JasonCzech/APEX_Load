@@ -38,14 +38,14 @@ func TestArchiveConversionConfigurationFrozenAndValidated(t *testing.T) {
 	if b.remaining != 7 || b.minFree != 1 {
 		t.Fatal("configuration changed after admission")
 	}
-	if _, err := conversionBudget(b.root, []*archiveConversionBudget{nil}); err == nil {
+	if _, err := conversionBudget(b.root, []*archiveOutputBudget{nil}); err == nil {
 		t.Fatal("nil shared budget accepted")
 	}
 }
 
 func TestArchiveConversionConcurrentFilesShareBoundary(t *testing.T) {
 	root := t.TempDir()
-	b := &archiveConversionBudget{root: root, remaining: 100, minFree: 1}
+	b := &archiveOutputBudget{limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace, root: root, remaining: 100, minFree: 1}
 	var accepted atomic.Int64
 	var wg sync.WaitGroup
 	for range 10 {
@@ -55,7 +55,7 @@ func TestArchiveConversionConcurrentFilesShareBoundary(t *testing.T) {
 		}
 		wg.Go(func() {
 			defer f.Close()
-			w := &archiveConversionFile{file: f, budget: b}
+			w := &archiveOutputFile{file: f, budget: b}
 			for range 10 {
 				n, err := w.Write([]byte("xx"))
 				accepted.Add(int64(n))
@@ -82,8 +82,8 @@ func TestArchiveConversionPhysicalFailureLatchesAcrossFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := &archiveConversionBudget{root: root, remaining: 100, minFree: free + 1<<30}
-	w := &archiveConversionFile{file: f, budget: b}
+	b := &archiveOutputBudget{limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace, root: root, remaining: 100, minFree: free + 1<<30}
+	w := &archiveOutputFile{file: f, budget: b}
 	if n, err := w.Write([]byte("no")); n != 0 || !errors.Is(err, errArchiveConversionFreeSpace) {
 		t.Fatal(n, err)
 	}
@@ -93,7 +93,7 @@ func TestArchiveConversionPhysicalFailureLatchesAcrossFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
-	if n, err := (&archiveConversionFile{file: other, budget: b}).Write([]byte("still no")); n != 0 || !errors.Is(err, errArchiveConversionFreeSpace) {
+	if n, err := (&archiveOutputFile{file: other, budget: b}).Write([]byte("still no")); n != 0 || !errors.Is(err, errArchiveConversionFreeSpace) {
 		t.Fatal("failure not latched", n, err)
 	}
 	for _, file := range []*os.File{f, other} {
@@ -119,7 +119,7 @@ func TestArchiveConversionParquetHeaderFooterAndSharedFiles(t *testing.T) {
 	for _, limit := range []int64{3, 4} {
 		t.Run(strconv.FormatInt(limit, 10), func(t *testing.T) {
 			root, m := conversionFixture(t)
-			b := &archiveConversionBudget{root: root, remaining: limit, minFree: 1}
+			b := &archiveOutputBudget{limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace, root: root, remaining: limit, minFree: 1}
 			err := writeArchiveParquetFiles(root, m, b)
 			if !errors.Is(err, errArchiveConversionLimit) {
 				t.Fatal(err)
@@ -157,7 +157,7 @@ func TestArchiveConversionParquetHeaderFooterAndSharedFiles(t *testing.T) {
 		f.Close()
 	}
 	root, m = conversionFixture(t)
-	b := &archiveConversionBudget{root: root, remaining: total - 1, minFree: 1}
+	b := &archiveOutputBudget{limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace, root: root, remaining: total - 1, minFree: 1}
 	if err := writeArchiveParquetFiles(root, m, b); !errors.Is(err, errArchiveConversionLimit) {
 		t.Fatal("three files did not share quota", err)
 	}
@@ -165,7 +165,7 @@ func TestArchiveConversionParquetHeaderFooterAndSharedFiles(t *testing.T) {
 
 func TestArchiveConversionCSVUsesRemainingParquetAllowance(t *testing.T) {
 	root, m := conversionFixture(t)
-	b := &archiveConversionBudget{root: root, remaining: 1 << 20, minFree: 1}
+	b := &archiveOutputBudget{limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace, root: root, remaining: 1 << 20, minFree: 1}
 	if err := writeArchiveParquetFiles(root, m, b); err != nil {
 		t.Fatal(err)
 	}
@@ -282,8 +282,8 @@ func TestArchiveConversionFileCannotBypassWriteAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := &archiveConversionBudget{root: root, remaining: 5, minFree: 1}
-	w := &archiveConversionFile{file: f, budget: b}
+	b := &archiveOutputBudget{limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace, root: root, remaining: 5, minFree: 1}
+	w := &archiveOutputFile{file: f, budget: b}
 	if _, err := w.Read(make([]byte, 1)); err == nil {
 		t.Fatal("read allowed")
 	}
