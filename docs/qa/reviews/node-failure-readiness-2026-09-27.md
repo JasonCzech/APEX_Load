@@ -1731,3 +1731,24 @@ heartbeat test also passed with both reservation capabilities advertised (0.414 
 Final review found no further actionable issue in this slice. Documentation checks
 remain blocked by pre-existing links to absent ignored evidence; `git diff --check`
 passed. These checks do not qualify controller spare admission or recovery.
+
+## Three production-timing scaling cycles on the reviewed controller
+
+Cycles 19–21 on controller `28713a69dc01d73f10bec32338fbc3e9edff22bc`
+passed queued demand, explicit Start, four loaded generators, completion, S3 archive
+identity/integrity checks, and return to two idle generators with zero controller
+restarts. The production profile used a 600-second downscale stabilization window
+and a 25%-per-300-second policy. Observed time from the first post-terminal
+scale-down sample to two Ready replicas was 910.49, 892.30 and 889.85 seconds.
+Independent target rates across the clean loaded samples were 3115.26, 3162.95 and
+3118.22 requests/second (21, 20 and 21 samples). Terminal cumulative error counts
+were 57, 79 and 20: these are not whole-run zero-error claims.
+
+Private evidence is in `production-timing-{19,20,21}`, `keda-trial-{19,20,21}` and
+`production-cycle-{19,20,21}-archive` under the owned `remaining-e7fgcem4` trial root.
+A bounded read-only HPA observer captured 54 snapshots during cycles 20–21: 52
+matched the ScaledObject behavior, while two captured the accelerated-profile
+transition between trials/at restoration. Cycle 19 has applied ScaledObject and
+observed timing evidence, not a pre-load actual-HPA snapshot. These runs explicitly
+started tests; they do not qualify automatic scheduled dispatch or node-loss
+recovery. The original accelerated ScaledObject spec was restored after every cycle.
