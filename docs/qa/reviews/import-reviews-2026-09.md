@@ -1,5 +1,7 @@
 # Import reviews with open items (September 2026)
 
+Historical `.log` files are ignored private evidence and are not included in a clean checkout. Their paths below identify the original artifacts; they are not bundled links or new validation results.
+
 Status: Open. Every review below still carries remaining work; see each section's Status line.
 
 Grouped from the JMeter, LoadRunner, importer-consistency and fixture-matrix reviews. The evidence folders (`import-fixture-matrix-2026-09-12/`, `importer-consistency-2026-09-23/`, `jmeter-import-fidelity-2026-09-23/`, `loadrunner-issue-detail-2026-09-23/`, `loadrunner-panel-design-2026-09-23/`) stay next to this file. Completed import reviews were moved to [AUDITS_2026-09.md](../../archive/qa-reviews/AUDITS_2026-09.md) (sections "Import reviews 2026-09" and "Import From Source audit").
@@ -16,28 +18,28 @@ Date: 2026-09-12. This follows the [Import From Source usability audit](../../ar
 
 **16 of 20 cases passed; 4 are blocked; no executed case failed.** The final matrix includes real Kafka and Solace round trips, three attached canonical Bruno SOAP assets, source preservation, mock messaging, and enterprise execution constraints. It does not certify every customer application or full original-tool parity.
 
-The source-backed [manifest](../import-fixture-matrix.json), [machine-readable results](import-fixture-matrix-2026-09-12/evidence/results.json), per-case logs, source hashes, and [reproduction runbook](#import-fixture-matrix-and-broker-runbook) make each claim inspectable.
+The source-backed [manifest](../import-fixture-matrix.json), [machine-readable results](import-fixture-matrix-2026-09-12/evidence/results.json), source hashes, and [reproduction runbook](#import-fixture-matrix-and-broker-runbook) provide the checked-in evidence. Per-case private logs use the paths recorded below and require the original evidence collection.
 
 #### Matrix
 
 | Case | Result | Provenance | Evidence scope |
 | --- | --- | --- | --- |
-| bruno-attached-preservation | [PASSED](import-fixture-matrix-2026-09-12/evidence/bruno-attached-preservation.log) | repository-attached | Byte preservation, variables, headers, body and scripts across three attached SOAP sources |
-| bruno-canonical-replay | [PASSED](import-fixture-matrix-2026-09-12/evidence/bruno-canonical-replay.log) | repository-attached-with-synthetic-environment | Attached source → encrypted bundle → Go replay → pinned Node runner → loopback SOAP target |
-| bruno-runner-conformance | [PASSED](import-fixture-matrix-2026-09-12/evidence/bruno-runner-conformance.log) | synthetic | Pinned runtime behavior and egress/lease/cleanup contracts against local test servers |
-| bruno-commit-revisions | [PASSED](import-fixture-matrix-2026-09-12/evidence/bruno-commit-revisions.log) | synthetic | Canonical inspection, persisted source revision, synchronization and rollback |
-| asyncapi-mock-replay | [PASSED](import-fixture-matrix-2026-09-12/evidence/asyncapi-mock-replay.log) | synthetic | Kafka JSON/Avro/request-reply, JMS publish/consume and mixed-provider split; in-memory brokers |
-| broker-topology-mock-replay | [PASSED](import-fixture-matrix-2026-09-12/evidence/broker-topology-mock-replay.log) | synthetic | MQSC and JNDI topology drafts replay through mock IBM MQ/Solace adapters |
-| capture-mock-replay | [PASSED](import-fixture-matrix-2026-09-12/evidence/capture-mock-replay.log) | synthetic | Capture Avro → persisted/reloaded DSL → mock Event Hubs produce/observe |
-| provider-adapter-contracts | [PASSED](import-fixture-matrix-2026-09-12/evidence/provider-adapter-contracts.log) | synthetic | Real adapter builds and local/unit transport contracts; no live provider certification |
-| enterprise-persisted-gates | [PASSED](import-fixture-matrix-2026-09-12/evidence/enterprise-persisted-gates.log) | synthetic | CloudTest, SAP GUI and disabled Java runner reject execution after draft persistence |
-| cloudtest-commit-attestation | [PASSED](import-fixture-matrix-2026-09-12/evidence/cloudtest-commit-attestation.log) | synthetic | CloudTest commit cannot replace unproven mappings with unattested executable actions |
-| enterprise-runtime-fidelity | [PASSED](import-fixture-matrix-2026-09-12/evidence/enterprise-runtime-fidelity.log) | synthetic | Source runtime options that are not implemented cannot claim execution parity |
-| truclient-conversion | [PASSED](import-fixture-matrix-2026-09-12/evidence/truclient-conversion.log) | synthetic | TruClient archive inventory and preservation; supported browser subset is not universally gated |
-| java-conversion-lifecycle | [PASSED](import-fixture-matrix-2026-09-12/evidence/java-conversion-lifecycle.log) | synthetic | Java VUser and JMS-family sources retain combined lifecycle, manifests and runner constraints |
-| pinned-public-corpus | [PASSED](import-fixture-matrix-2026-09-12/evidence/pinned-public-corpus.log) | public-pinned-corpus | Pinned public LoadRunner/DevWeb/JMeter corpus conversion and protocol posture; no customer replay parity |
-| kafka-live-import-replay | [PASSED](import-fixture-matrix-2026-09-12/evidence/kafka-live-import-replay.log) | synthetic-live-broker | Imported AsyncAPI order event → real Kafka broker → exact consumed JSON, isolated topic and cleanup |
-| solace-live | [PASSED](import-fixture-matrix-2026-09-12/evidence/solace-live.log) | synthetic-live-provider | Imported JNDI topology → live Solace AMQP queue → exact consumed payload |
+| bruno-attached-preservation | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/bruno-attached-preservation.log`) | repository-attached | Byte preservation, variables, headers, body and scripts across three attached SOAP sources |
+| bruno-canonical-replay | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/bruno-canonical-replay.log`) | repository-attached-with-synthetic-environment | Attached source → encrypted bundle → Go replay → pinned Node runner → loopback SOAP target |
+| bruno-runner-conformance | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/bruno-runner-conformance.log`) | synthetic | Pinned runtime behavior and egress/lease/cleanup contracts against local test servers |
+| bruno-commit-revisions | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/bruno-commit-revisions.log`) | synthetic | Canonical inspection, persisted source revision, synchronization and rollback |
+| asyncapi-mock-replay | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/asyncapi-mock-replay.log`) | synthetic | Kafka JSON/Avro/request-reply, JMS publish/consume and mixed-provider split; in-memory brokers |
+| broker-topology-mock-replay | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/broker-topology-mock-replay.log`) | synthetic | MQSC and JNDI topology drafts replay through mock IBM MQ/Solace adapters |
+| capture-mock-replay | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/capture-mock-replay.log`) | synthetic | Capture Avro → persisted/reloaded DSL → mock Event Hubs produce/observe |
+| provider-adapter-contracts | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/provider-adapter-contracts.log`) | synthetic | Real adapter builds and local/unit transport contracts; no live provider certification |
+| enterprise-persisted-gates | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/enterprise-persisted-gates.log`) | synthetic | CloudTest, SAP GUI and disabled Java runner reject execution after draft persistence |
+| cloudtest-commit-attestation | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/cloudtest-commit-attestation.log`) | synthetic | CloudTest commit cannot replace unproven mappings with unattested executable actions |
+| enterprise-runtime-fidelity | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/enterprise-runtime-fidelity.log`) | synthetic | Source runtime options that are not implemented cannot claim execution parity |
+| truclient-conversion | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/truclient-conversion.log`) | synthetic | TruClient archive inventory and preservation; supported browser subset is not universally gated |
+| java-conversion-lifecycle | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/java-conversion-lifecycle.log`) | synthetic | Java VUser and JMS-family sources retain combined lifecycle, manifests and runner constraints |
+| pinned-public-corpus | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/pinned-public-corpus.log`) | public-pinned-corpus | Pinned public LoadRunner/DevWeb/JMeter corpus conversion and protocol posture; no customer replay parity |
+| kafka-live-import-replay | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/kafka-live-import-replay.log`) | synthetic-live-broker | Imported AsyncAPI order event → real Kafka broker → exact consumed JSON, isolated topic and cleanup |
+| solace-live | PASSED (private log: `import-fixture-matrix-2026-09-12/evidence/solace-live.log`) | synthetic-live-provider | Imported JNDI topology → live Solace AMQP queue → exact consumed payload |
 | servicebus-live | BLOCKED | synthetic-live-provider | Live Azure Service Bus queue publish/consume; topic/session cases remain separate |
 | eventhubs-live | BLOCKED | synthetic-live-provider | Existing live Event Hubs produce/observe smoke; does not assert exact marker identity |
 | ibmmq-live | BLOCKED | customer-provider-needed | IBM MQ provider certification |
