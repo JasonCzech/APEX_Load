@@ -626,6 +626,9 @@ func reservedReplicaFloor(claims []storage.PodCapacityReservation, fallback int)
 			host = parsed
 		}
 		pod := strings.Split(host, ".")[0]
+		if proof := claim.RecoveryPlacement; proof != nil && proof.PodName != "" {
+			pod = proof.PodName
+		}
 		index := strings.LastIndex(pod, "-")
 		n, err := strconv.Atoi(pod[index+1:])
 		if index < 0 || err != nil || n < 0 || n >= maxManagedTestVUsers {

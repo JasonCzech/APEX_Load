@@ -77,7 +77,7 @@ func TestRecoverySpareAdmissionFreezesDistinctWorkerPlan(t *testing.T) {
 }
 
 func TestRecoverySpareAdmissionRejectsUnprovenCapacity(t *testing.T) {
-	for _, mode := range []string{"off", "quota envelope", "stale", "missing scale limit", "replica maximum", "same worker", "occupied", "hard maximum", "legacy", "replaced pod", "ambiguous", "weighted", "non-http", "iterations", "no fence"} {
+	for _, mode := range []string{"off", "quota envelope", "stale", "missing scale limit", "missing source name", "missing spare name", "replica maximum", "same worker", "occupied", "hard maximum", "legacy", "replaced pod", "ambiguous", "weighted", "non-http", "iterations", "no fence"} {
 		t.Run(mode, func(t *testing.T) {
 			tr, test, claims, loads := recoveryAdmissionFixture()
 			switch mode {
@@ -89,6 +89,10 @@ func TestRecoverySpareAdmissionRejectsUnprovenCapacity(t *testing.T) {
 				tr.liveInventoryAt = time.Now().Add(-time.Hour)
 			case "missing scale limit":
 				tr.liveInventory[0].PodPlacement.scaleLimit = kubeops.StatefulSetAutoscalingLimit{}
+			case "missing source name":
+				tr.liveInventory[0].PodPlacement.Name = ""
+			case "missing spare name":
+				tr.liveInventory[2].PodPlacement.Name = ""
 			case "replica maximum":
 				for i := range tr.liveInventory {
 					tr.liveInventory[i].PodPlacement.scaleLimit.MaximumReplicas = 3
@@ -253,7 +257,7 @@ func TestRecoverySparePreviewIncludesReservedFootprint(t *testing.T) {
 }
 
 func TestRecoveryStandbyIdentityRequiresCurrentKubernetesProof(t *testing.T) {
-	for _, mode := range []string{"valid", "pod", "node", "workload", "stale", "terminating", "ambiguous"} {
+	for _, mode := range []string{"valid", "legacy proof", "pod", "pod name", "node", "workload", "stale", "terminating", "ambiguous"} {
 		t.Run(mode, func(t *testing.T) {
 			tr, test, claims, loads := recoveryAdmissionFixture()
 			got, err := tr.addRecoverySpareClaims(test, claims, loads)
@@ -262,8 +266,12 @@ func TestRecoveryStandbyIdentityRequiresCurrentKubernetesProof(t *testing.T) {
 			}
 			spare := got[2]
 			switch mode {
+			case "legacy proof":
+				spare.RecoveryPlacement.PodName = ""
 			case "pod":
 				tr.liveInventory[2].PodPlacement.UID = "new"
+			case "pod name":
+				tr.liveInventory[2].PodPlacement.Name = "changed-3"
 			case "node":
 				tr.liveInventory[2].PodPlacement.NodeName = "new"
 			case "workload":
@@ -275,7 +283,7 @@ func TestRecoveryStandbyIdentityRequiresCurrentKubernetesProof(t *testing.T) {
 			case "ambiguous":
 				tr.liveInventory = append(tr.liveInventory, tr.liveInventory[2])
 			}
-			if tr.recoveryStandbyIdentityCurrent(spare) != (mode == "valid") {
+			if tr.recoveryStandbyIdentityCurrent(spare) != (mode == "valid" || mode == "legacy proof") {
 				t.Fatal("accepted changed identity or rejected current proof")
 			}
 		})

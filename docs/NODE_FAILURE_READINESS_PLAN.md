@@ -353,7 +353,10 @@ Queued recovery admission also requests new StatefulSet ordinals when all eligib
 observed pods share one worker, even if their combined VUser budget is sufficient.
 The request accounts for existing ready but ineligible pods and remains bounded by
 the observed KEDA/HPA maximum. A new replica is not treated as recovery capacity:
-actual distinct-worker identity and atomic spare admission still gate dispatch.
+actual distinct-worker identity and atomic spare admission still gate dispatch. Pending retention uses observed Kubernetes pod names, and new recovery claims
+freeze that name with the pod UID. The ordinal floor therefore survives IP-based
+discovery, pod disappearance and a transition from queued admission to committed
+spares. Older claims without the optional name retain their existing fallback.
 
 Controller adoption now journals wrapped proposed tokens before RPC with a fenced
 checkpoint compare-and-swap. A bounded prior-proof chain lets a subsequent leader

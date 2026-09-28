@@ -1,8 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"testing"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestRecoveryAdmissionReplicaFloorRequestsWholeSourceAndSparePods(t *testing.T) {
@@ -174,5 +177,60 @@ func TestRecoveryAdmissionReplicaFloorIgnoresIneligibleWorker(t *testing.T) {
 				t.Fatalf("unusable worker prevented spare request: floor=%d complete=%v", floor, complete)
 			}
 		})
+	}
+}
+
+// An IP-discovered ordinal must remain requested after its Ready transition.
+// Otherwise discovery of the first cross-worker spare removes the single-worker
+// floor and KEDA deletes that spare before admission can finish.
+func TestRecoveryAdmissionRetainsIPDiscoveredCrossWorkerSpare(t *testing.T) {
+	tr, run, _, _ := recoveryAdmissionFixture()
+	run.Status = "PENDING"
+	run.TotalVUsers = 50
+	run.Groups[0].VUsers = 50
+	entries := tr.liveInventory[:3]
+	targets := []string{}
+	for i := range entries {
+		entries[i].Target = fmt.Sprintf("10.244.%d.%d:9090", i/2+1, i+20)
+		entries[i].PodPlacement.Name = fmt.Sprintf("generator-%d", i)
+		targets = append(targets, entries[i].Target)
+	}
+	tr.execution = newDistributedExecutionBackend(targets, time.Second, nil)
+	tr.liveInventory = entries[:2]
+	before, ok := tr.recoveryAdmissionReplicaFloor([]*ManagedTest{run}, tr.settings, 0, time.Now())
+	if !ok || before != 3 {
+		t.Fatalf("before spare: %d %v", before, ok)
+	}
+	tr.liveInventory = entries
+	after, ok := tr.recoveryAdmissionReplicaFloor([]*ManagedTest{run}, tr.settings, 0, time.Now())
+	if !ok || after != 3 {
+		t.Fatalf("ready spare lost ordinal: %d %v", after, ok)
+	}
+	entries[2].PodPlacement.Name = "my.generator-7"
+	for i := range entries {
+		entries[i].PodPlacement.scaleLimit.MaximumReplicas = 8
+	}
+	after, ok = tr.recoveryAdmissionReplicaFloor([]*ManagedTest{run}, tr.settings, 0, time.Now())
+	if !ok || after != 8 {
+		t.Fatalf("high ordinal lost: %d %v", after, ok)
+	}
+}
+
+func TestReservedReplicaFloorUsesDurableObservedPodName(t *testing.T) {
+	for _, target := range []string{"10.244.2.123:9090", "[fd00::12]:9090", "transport-alias:9090"} {
+		claims := []storage.PodCapacityReservation{{Target: target, RecoveryPlacement: &storage.PodCapacityRecoveryPlacement{Namespace: "ns", WorkloadUID: "workload", PodUID: "uid", PodName: "my.generator-7", NodeName: "worker-2"}}}
+		if got := reservedReplicaFloor(claims, 2); got != 8 {
+			t.Fatalf("%s: floor %d", target, got)
+		}
+	}
+	tr, run, claims, loads := recoveryAdmissionFixture()
+	got, err := tr.addRecoverySpareClaims(run, claims, loads)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range got {
+		if claim.RecoveryPlacement == nil || claim.RecoveryPlacement.PodName == "" {
+			t.Fatal("admission did not freeze pod name")
+		}
 	}
 }

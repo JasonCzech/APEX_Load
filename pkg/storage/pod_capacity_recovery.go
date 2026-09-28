@@ -11,9 +11,12 @@ import (
 // ReplacementSources records the planner's distinct destinations for each
 // single-worker contingency. Live source claims have no replacement sources.
 type PodCapacityRecoveryPlacement struct {
-	Namespace          string   `json:"namespace"`
-	WorkloadUID        string   `json:"workload_uid"`
-	PodUID             string   `json:"pod_uid"`
+	Namespace   string `json:"namespace"`
+	WorkloadUID string `json:"workload_uid"`
+	PodUID      string `json:"pod_uid"`
+	// PodName is observed through Kubernetes and retained across pod loss.
+	// Older reservations may omit it. Transport IPs do not encode ordinals.
+	PodName            string   `json:"pod_name,omitempty"`
 	NodeName           string   `json:"node_name"`
 	ReplacementSources []string `json:"replacement_sources,omitempty"`
 }
@@ -30,6 +33,9 @@ func validatePodCapacityRecoveryPlacement(claim PodCapacityReservation) error {
 		if !valid(value) {
 			return errors.New("invalid recovery capacity placement identity")
 		}
+	}
+	if p.PodName != "" && (!valid(p.PodName) || len(p.PodName) > 253 || strings.ContainsAny(p.PodName, "/\\: ")) {
+		return errors.New("invalid recovery capacity pod name")
 	}
 	if len(p.ReplacementSources) > 256 {
 		return errors.New("recovery capacity placement exceeds source bound")

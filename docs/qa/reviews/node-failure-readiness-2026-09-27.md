@@ -3079,3 +3079,48 @@ cleanup, so this is not a complete-archive qualification. Attempt 5 hit a privat
 helper's historical-pod `podIP` assumption before admission/injection; the helper
 now binds the EndpointSlice's pod name/UID and address, preserving the failed
 attempt. Further independent repetitions are underway.
+
+
+## IP-discovered recovery reservation ordinals (2026-09-28)
+
+The cold-spare trial exposed a retention gap: when the first cross-worker pod
+became Ready, the single-worker replica request disappeared, and the remaining
+ordinal floor was calculated from its IP transport address. New recovery claims
+now freeze the Kubernetes-observed pod name alongside its UID, workload and node;
+committed ordinal floors use that durable name even if the pod disappears. Pending
+admission uses observed names for both existing and newly eligible pods. Existing
+claims that omit the new optional field remain readable with their earlier fallback.
+New admission requires names; later activation rechecks a frozen name against the
+current UID-bound pod. Storage comparison keeps the name immutable across activation.
+
+Review additionally covered dotted pod names, IPv4/IPv6/alias transport endpoints,
+legacy proof compatibility, missing names, changed names and storage persistence.
+The first focused API/storage matrix passed (1.652/1.022 s). Final regression and
+race checks, PostgreSQL integration and the full Go suite are being run before commit.
+
+The user-requested pause fast-forwarded all 111 completed commits to main through
+`94cb2ebbfaab762d99df568763eea30ef086a999`; the ordinal fix was left uncommitted and
+its initial compilation was stopped without claiming a test pass. Worker attempt 6
+had already passed traffic and restoration gates and restored KEDA's original
+minimum. Attempt 4's archive later became available through the durable recovery
+path; its original collection-pending receipt remains unchanged. Archive coverage
+and content hashes still require inspection before claiming complete evidence.
+
+Final focused ordinal regressions passed (API 1.370 s, storage 0.714 s), followed
+by three race repetitions (API 5.509 s, storage 4.813 s). The isolated PostgreSQL 16
+capacity placement/adoption/compare-and-swap suite passed three repetitions
+(4.636 s), including frozen pod-name persistence. Its disposable database was removed
+after the identity check. The full Go suite passed all 108 test-bearing packages (API 402.363 s).
+Documentation checks passed for all 69 active Markdown files. Final scoped re-review
+found no further ordinal-retention issues.
+
+Post-trial archive inspection verified all published artifact hashes for attempts
+4 and 6. Both manifests explicitly use `best_effort` source coverage: the surviving
+replacement was collected, while the stopped worker's original source is missing.
+These are verified partial archives, not complete evidence recovery. Attempt 7
+prewarmed four pods but timed out before admission/injection; all sampled pending
+reasons said “ready to start when the queue advances.” A separate review found that
+the queue metadata refresh can overwrite the peak-capacity requeue explanation.
+That observability fix and another deployed repetition remain; no third worker pass
+is claimed. A retained releasing reservation for an older transport address was also
+observed and needs further investigation before assigning a cause to the timeout.

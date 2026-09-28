@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ func TestPodCapacityRecoveryPlacementIsFrozen(t *testing.T) {
 
 func checkPodCapacityRecoveryPlacementIsFrozen(t *testing.T, s *SQLiteStore) {
 	t.Helper()
-	for index, mode := range []string{"activation", "drop proof", "namespace", "workload", "pod", "node", "sources"} {
+	for index, mode := range []string{"activation", "drop proof", "namespace", "workload", "pod", "pod name", "node", "sources"} {
 		t.Run(mode, func(t *testing.T) {
 			name := fmt.Sprintf("recovery-proof-%d", index)
 			ok, lease, err := s.TryAcquireSchedulerLeaseTerm(name, "controller", time.Now(), time.Minute)
@@ -23,7 +24,7 @@ func checkPodCapacityRecoveryPlacementIsFrozen(t *testing.T, s *SQLiteStore) {
 				t.Fatal(err)
 			}
 			budget := protocol.CapacityVector{CPUCores: 4, MemoryMB: 1000, NetworkMbps: 100, VUsers: 100}
-			claim := PodCapacityReservation{ReservationID: "attempt", Revision: 1, Target: name + "-spare", TestID: name, Incarnation: name + "-incarnation", Generation: lease.Generation, State: "pending", ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget, Dedicated: true, RecoveryPlacement: &PodCapacityRecoveryPlacement{Namespace: "test", WorkloadUID: "workload", PodUID: "pod", NodeName: "worker2", ReplacementSources: []string{"source"}}}
+			claim := PodCapacityReservation{ReservationID: "attempt", Revision: 1, Target: name + "-spare", TestID: name, Incarnation: name + "-incarnation", Generation: lease.Generation, State: "pending", ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget, Dedicated: true, RecoveryPlacement: &PodCapacityRecoveryPlacement{Namespace: "test", WorkloadUID: "workload", PodUID: "pod", PodName: "generator-2", NodeName: "worker2", ReplacementSources: []string{"source"}}}
 			if err := s.ReservePodCapacity([]PodCapacityReservation{claim}, name, "controller", lease.Generation); err != nil {
 				t.Fatal(err)
 			}
@@ -46,6 +47,8 @@ func checkPodCapacityRecoveryPlacementIsFrozen(t *testing.T, s *SQLiteStore) {
 				proof.WorkloadUID = "other"
 			case "pod":
 				proof.PodUID = "other"
+			case "pod name":
+				proof.PodName = "generator-3"
 			case "node":
 				proof.NodeName = "other"
 			case "sources":
@@ -110,5 +113,15 @@ func TestPodCapacityRecoveryPlacementValidation(t *testing.T) {
 				t.Fatalf("validation=%v", err)
 			}
 		})
+	}
+}
+
+func TestRecoveryPodNameValidationAndLegacyCompatibility(t *testing.T) {
+	for _, name := range []string{"", "generator-2", "bad/name", "bad\\name", "host:9090", "has space", "tab\tname", strings.Repeat("a", 254)} {
+		c := PodCapacityReservation{Target: "spare", RecoveryPlacement: &PodCapacityRecoveryPlacement{Namespace: "ns", WorkloadUID: "workload", PodUID: "pod", NodeName: "node", PodName: name}}
+		err := validatePodCapacityRecoveryPlacement(c)
+		if (err == nil) != (name == "" || name == "generator-2") {
+			t.Fatalf("name %q: %v", name, err)
+		}
 	}
 }

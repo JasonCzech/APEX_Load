@@ -45,7 +45,7 @@ func (tr *TestRunner) recoveryAdmissionReplicaFloor(tests []*ManagedTest, settin
 			return base, false
 		}
 		limit = p.scaleLimit
-		observedPods = append(observedPods, storage.PodCapacityReservation{Target: p.Name})
+		observedPods = append(observedPods, storage.PodCapacityReservation{Target: p.Name, RecoveryPlacement: &storage.PodCapacityRecoveryPlacement{PodName: p.Name}})
 		if !generatorInventoryEntryReachable(e) || e.Cordoned || e.DrainState != "active" || e.CompatibilityState != "compatible" || b.generatorDrainState(e.Target) != "active" {
 			continue
 		}
@@ -109,7 +109,8 @@ func (tr *TestRunner) recoveryAdmissionReplicaFloor(tests []*ManagedTest, settin
 				}
 				needed = max(needed, int(math.Ceil(math.Min(float64(maximum), ratio))))
 				eligiblePods[target] = placements[target]
-				retained = append(retained, storage.PodCapacityReservation{Target: target})
+				// Retain the observed StatefulSet ordinal even when discovery uses IPs.
+				retained = append(retained, storage.PodCapacityReservation{Target: target, RecoveryPlacement: &storage.PodCapacityRecoveryPlacement{PodName: placements[target].Name}})
 			}
 			if needed == 0 {
 				return base, false

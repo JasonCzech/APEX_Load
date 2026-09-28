@@ -91,7 +91,7 @@ func (tr *TestRunner) addRecoverySpareClaims(test *ManagedTest, claims []storage
 		e := index[claim.Target]
 		p := e.PodPlacement
 		load := loads[claim.Target]
-		if p == nil || !p.Ready || p.Terminating || !recoveryScaleLimitFresh(p.scaleLimit) || p.Namespace != p.scaleLimit.Namespace || !load.HeartbeatOK || load.PodCapacity == nil || load.PodCapacity.Incarnation != claim.Incarnation || e.PodCapacity == nil || e.PodCapacity.Incarnation != claim.Incarnation {
+		if p == nil || p.Name == "" || !p.Ready || p.Terminating || !recoveryScaleLimitFresh(p.scaleLimit) || p.Namespace != p.scaleLimit.Namespace || !load.HeartbeatOK || load.PodCapacity == nil || load.PodCapacity.Incarnation != claim.Incarnation || e.PodCapacity == nil || e.PodCapacity.Incarnation != claim.Incarnation {
 			return nil, fmt.Errorf("participating generator lacks current Kubernetes identity")
 		}
 		if limit.WorkloadUID != "" && limit != p.scaleLimit {
@@ -100,14 +100,14 @@ func (tr *TestRunner) addRecoverySpareClaims(test *ManagedTest, claims []storage
 		limit = p.scaleLimit
 		participants = append(participants, recoveryCapacityParticipant{Target: claim.Target, PodUID: p.UID, Incarnation: claim.Incarnation, Node: p.NodeName, Demand: claim.Demand})
 		participating[claim.Target] = true
-		result[i].RecoveryPlacement = &storage.PodCapacityRecoveryPlacement{Namespace: p.Namespace, WorkloadUID: limit.WorkloadUID, PodUID: p.UID, NodeName: p.NodeName}
+		result[i].RecoveryPlacement = &storage.PodCapacityRecoveryPlacement{Namespace: p.Namespace, WorkloadUID: limit.WorkloadUID, PodUID: p.UID, PodName: p.Name, NodeName: p.NodeName}
 	}
 	var spares []recoveryCapacitySpare
 	for _, e := range entries {
 		load, found := loads[e.Target]
 		p := e.PodPlacement
 		c := load.PodCapacity
-		if !found || participating[e.Target] || !allowedSet[e.Target] || !load.HeartbeatOK || !generatorInventoryEntryReachable(e) || e.ActiveVUsers != 0 || load.Stats.ActiveVUsers != 0 || load.MaxVUsers <= 0 || load.AvailableCapacity <= 0 || e.Cordoned || e.DrainState != "active" || b.generatorDrainState(e.Target) != "active" || e.CompatibilityState != "compatible" || p == nil || !p.Ready || p.Terminating || p.Namespace != limit.Namespace || p.scaleLimit != limit || c == nil || c.State != "ready" || c.Dedicated || !capacityVectorEmpty(c.Reserved) || len(c.ReportedTestIDs) > 0 || e.PodCapacity == nil || e.PodCapacity.Incarnation != c.Incarnation || !stringSliceContainsEqualFold(load.CompatibleFeatures, generatorrpc.FeaturePodCapacityStandbyV1) {
+		if !found || participating[e.Target] || !allowedSet[e.Target] || !load.HeartbeatOK || !generatorInventoryEntryReachable(e) || e.ActiveVUsers != 0 || load.Stats.ActiveVUsers != 0 || load.MaxVUsers <= 0 || load.AvailableCapacity <= 0 || e.Cordoned || e.DrainState != "active" || b.generatorDrainState(e.Target) != "active" || e.CompatibilityState != "compatible" || p == nil || p.Name == "" || !p.Ready || p.Terminating || p.Namespace != limit.Namespace || p.scaleLimit != limit || c == nil || c.State != "ready" || c.Dedicated || !capacityVectorEmpty(c.Reserved) || len(c.ReportedTestIDs) > 0 || e.PodCapacity == nil || e.PodCapacity.Incarnation != c.Incarnation || !stringSliceContainsEqualFold(load.CompatibleFeatures, generatorrpc.FeaturePodCapacityStandbyV1) {
 			continue
 		}
 		eligible := true
@@ -162,7 +162,7 @@ func (tr *TestRunner) addRecoverySpareClaims(test *ManagedTest, claims []storage
 			}
 		}
 		sort.Strings(sources)
-		result = append(result, storage.PodCapacityReservation{ReservationID: claims[0].ReservationID, Revision: 1, Target: target, TestID: test.ID, Incarnation: c.Incarnation, Generation: claims[0].Generation, State: "pending", ModelVersion: claims[0].ModelVersion, HeadroomPct: c.HeadroomPct, Budget: c.Schedulable, Demand: c.Schedulable, Dedicated: true, RecoveryPlacement: &storage.PodCapacityRecoveryPlacement{Namespace: p.Namespace, WorkloadUID: limit.WorkloadUID, PodUID: p.UID, NodeName: p.NodeName, ReplacementSources: sources}})
+		result = append(result, storage.PodCapacityReservation{ReservationID: claims[0].ReservationID, Revision: 1, Target: target, TestID: test.ID, Incarnation: c.Incarnation, Generation: claims[0].Generation, State: "pending", ModelVersion: claims[0].ModelVersion, HeadroomPct: c.HeadroomPct, Budget: c.Schedulable, Demand: c.Schedulable, Dedicated: true, RecoveryPlacement: &storage.PodCapacityRecoveryPlacement{Namespace: p.Namespace, WorkloadUID: limit.WorkloadUID, PodUID: p.UID, PodName: p.Name, NodeName: p.NodeName, ReplacementSources: sources}})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Target < result[j].Target })
 	return result, nil
@@ -184,7 +184,7 @@ func (tr *TestRunner) recoveryStandbyIdentityCurrent(claim storage.PodCapacityRe
 		}
 		matches++
 		p := e.PodPlacement
-		if p == nil || p.UID != proof.PodUID || p.Namespace != proof.Namespace || p.NodeName != proof.NodeName || p.scaleLimit.WorkloadUID != proof.WorkloadUID || !recoveryScaleLimitFresh(p.scaleLimit) || !p.Ready || p.Terminating || e.PodCapacity == nil || e.PodCapacity.Incarnation != claim.Incarnation || e.Cordoned || e.DrainState != "active" {
+		if p == nil || p.UID != proof.PodUID || (proof.PodName != "" && p.Name != proof.PodName) || p.Namespace != proof.Namespace || p.NodeName != proof.NodeName || p.scaleLimit.WorkloadUID != proof.WorkloadUID || !recoveryScaleLimitFresh(p.scaleLimit) || !p.Ready || p.Terminating || e.PodCapacity == nil || e.PodCapacity.Incarnation != claim.Incarnation || e.Cordoned || e.DrainState != "active" {
 			return false
 		}
 	}
