@@ -83,15 +83,27 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext
 	if err := validateArchiveRunID(test.ID); err != nil {
 		return nil, err
 	}
-	archiveRoot, err := resolveArchiveDirectoryRoot(resolveArchiveRoot(), true)
-	if err != nil {
-		return nil, fmt.Errorf("prepare distributed archive root: %w", err)
-	}
 	releaseSource, err := lockArchivePublicationSource(sourceCtx, test.ID)
 	if err != nil {
 		return nil, err
 	}
 	defer releaseSource()
+	return b.stageRemoteArchiveUnderSourceFence(sourceCtx, tr, test, finalStatus, finalError, completedAt, requireAll, targetHistory, false)
+}
+
+// The caller owns the source fence and operation deadline. Recovery uses a
+// detached durable terminal snapshot and never overwrites an unconfirmed source.
+func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceCtx context.Context, tr *TestRunner, test *ManagedTest, finalStatus, finalError string, completedAt time.Time, requireAll bool, targetHistory []remoteArchiveTargetSnapshot, recovered bool) (*storage.RunArchiveRecord, error) {
+	if err := sourceCtx.Err(); err != nil {
+		return nil, err
+	}
+	if tr != nil && !tr.isExecutionLeader() {
+		return nil, errNotExecutionLeader
+	}
+	archiveRoot, err := resolveArchiveDirectoryRoot(resolveArchiveRoot(), true)
+	if err != nil {
+		return nil, fmt.Errorf("prepare distributed archive root: %w", err)
+	}
 	if existing, err := tr.existingCollectedArchive(test); err != nil || existing != nil {
 		return existing, err
 	}
@@ -134,6 +146,11 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext
 	manifest.SourceCoverage = coverage
 	if !requireAll {
 		manifest.CSVExportIncomplete = "not all generator archives were required; complete export cannot be verified"
+	}
+	if recovered {
+		// Generator receipts cannot reconstruct volatile controller-only evidence.
+		manifest.SourceCoverage.Mode = "best_effort"
+		manifest.CSVExportIncomplete = "archive recovered from retained generator sources; controller-only timeline and telemetry evidence may be unavailable"
 	}
 	workingDir, err := createArchiveTemporaryDirectory(archiveParent, filepath.Base(archiveDir)+"-staging", 0o755)
 	if err != nil {

@@ -2711,3 +2711,38 @@ admitted copies. The full Go suite passed all 108 test-bearing packages. Final s
 review found no further cleanup/request-time findings; documentation checks passed
 for all 69 active Markdown files. Durable collection retry, recovery-state UI,
 unconfirmed producer/backlog admission, and deployed fault qualification remain work.
+
+## Durable bounded terminal archive collection retries (2026-09-28)
+
+Added a separate leader-only collection worker. SQL claims count attempts before
+network I/O; three network attempts survive controller restart and are spaced by
+one minute. After the budget or a six-hour terminal-age cutoff, a cache-only pass
+queues verified partial evidence or marks exhaustion. It never dispatches/controls
+VUsers or changes the durable terminal status/end time. Only recorded source targets
+are dialed, with eight-way admission and owned-transport cleanup. Source fences and
+the transactional request-time/status/end-time/lease check protect publication.
+
+The collector can recover a committed merged source left before its outbox insert.
+Invalid or mismatched sources are preserved; final recovery errors exhaust rather
+than retrying forever. Reconstructed evidence deliberately remains best-effort and
+carries an incompleteness notice for unavailable controller-only history. Fresh
+inventory probes are suppressed so current fleet state cannot masquerade as history.
+Already-resolved pending publication whose local source disappeared remains a
+separate recovery item; this worker only processes unresolved collection intents.
+
+Focused retry tests passed (2.139 s); expanded stale-owner/incarnation, pending
+publication, source preservation, orphan handoff and cancellation checks passed
+(3.933 s). Review added cancellation checks before queued dials, failure-path transport
+closure coverage, database changes immediately before publication, and final-decision
+exhaustion for corrupt existing sources. Repeated race and full-suite results follow.
+
+The expanded collection-retry/orphan/worker-shutdown race matrix passed three
+repetitions (58.184 s). Documentation checks passed for all 69 active Markdown files.
+Final scoped review found no further retry-worker findings. The full suite remains
+in progress; a separate pending-publication review identified the next slice:
+transactional completion identity/lease fencing before recovering an already-uploaded
+immutable commit marker after loss of local staging.
+
+The full Go suite passed all 108 test-bearing packages (API 362.471 s). Final
+review and documentation checks passed. This establishes source-level retry behavior;
+latest-image Docker fault qualification remains pending.

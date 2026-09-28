@@ -79,6 +79,16 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchive(ctx context.Context, store 
 		return err
 	}
 	defer release()
+	return tr.recoverOrphanedLocalRunArchiveUnderSourceFence(ctx, store, candidate)
+}
+
+func (tr *TestRunner) recoverOrphanedLocalRunArchiveUnderSourceFence(ctx context.Context, store incarnationOrphanArchiveFinalizationStore, candidate orphanArchiveCandidate) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	// Already cataloged, pending, deleted or resolved runs are not orphans. Check
 	// durable ownership before reading payloads so startup never rehashes the
 	// entire retained archive history.

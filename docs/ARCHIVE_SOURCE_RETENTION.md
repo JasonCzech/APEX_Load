@@ -111,8 +111,8 @@ cannot enlarge an already frozen run ceiling.
 
 These limits cover the collection cache; transfer spools, merged sources, producer
 archives, filesystem metadata and publication backlog still require separate sizing.
-No unconfirmed cache evidence is automatically pruned. The bounded background
-collection retry worker remains follow-up work.
+No unconfirmed cache evidence is automatically pruned. Terminal bound runs now have
+a durable, bounded collection retry worker as described below.
 This cache has source/unit/database validation; deployed fault qualification is pending.
 
 Startup orphan recovery now requires a storage extension that atomically checks
@@ -158,3 +158,26 @@ Run identity comes from `provenance.requested_at`, independently of the earliest
 generator creation time in `created_at`. Legacy manifests without request provenance
 must match their creation timestamp instead. The SQL orphan-insertion fence receives
 the inspected request time separately and never rewrites the immutable creation time.
+
+A separate leader-only collection worker checks unresolved terminal intents at startup
+and once per minute. It scans at most 100 due intents per sweep, with a 30-minute
+operation context and one-second source-lock acquisition budget. Each network attempt
+is claimed in SQL before I/O; retries wait at least one minute and cannot reset their
+three-attempt budget after controller restart. Only the recorded generator targets
+are dialed (at most eight concurrently), using the configured distributed transport.
+Every owned transport closes after the attempt. No VUsers are dispatched or controlled.
+
+After three network attempts, or six hours after durable terminality, a separate
+cache-only pass performs no generator RPCs. Verified surviving sources may become
+an explicitly partial archive; no usable sources or invalid retained evidence mark
+collection exhausted while preserving files. Shutdown or leadership cancellation
+leaves the final decision for a later owner. Existing merged sources are recovered
+through the same terminal-incarnation and integrity fences instead of being replaced.
+
+Recovered manifests retain the exact durable terminal outcome and completion time.
+They use best-effort coverage and an explicit incompleteness notice even when all
+recorded generator sources are available, because volatile controller-only timeline
+and telemetry evidence cannot be reconstructed from those receipts. Publication is
+queued through the transactional request-time/status/end-time/lease fence. Automatic
+collection does not recreate a lost source for an already-resolved publication outbox;
+per-pod emptyDir loss during pending publication remains a separate recovery item.
