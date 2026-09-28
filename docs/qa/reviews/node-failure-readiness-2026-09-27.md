@@ -2308,3 +2308,30 @@ Final standby-focused race checks passed three repetitions (30.939 seconds),
 including the timeout and missing-ledger guards. The full Go suite passed
 (`/tmp/apex-standby-evacuation-full.log`), including a wire-level deadline assertion.
 Final scoped review found no further actionable issues.
+
+### Three reviewed active Redis outage repetitions
+
+Trials 3, 5 and 6 passed on controller revision
+`72a5303789756576ef800d625586873087479e21` and the existing `6be3855` generator
+image. Each 40-VUser three-minute run sustained its baseline, lost the single Redis
+instance for 90 seconds (confirmed absent for at least 60 seconds), retained
+controller identities with zero restarts, and completed naturally. Both controller
+health endpoints passed all 141 samples per trial. The API exposed the completed
+run and published archive within the observation deadlines; the strict CLI archive
+identity/integrity check passed every time.
+
+| Trial | Baseline RPS | Minimum outage ten-second RPS | Controller health p99, ms |
+|---|---:|---:|---|
+| 3 | 304.54 | 393.91 | 21.92 / 7.94 |
+| 5 | 302.39 | 393.95 | 34.50 / 9.28 |
+| 6 | 302.48 | 394.25 | 34.47 / 19.07 |
+
+Private receipts are under `active-redis-{3,5,6}` and
+`active-redis-reviewed-matrix/summary.json` in the owned trial root. The original
+failed trials 1 and 2 remain failed; follow-up archive recovery does not replace
+their missed observation gates. Trial 4 stopped at the four-GiB disk guard before
+creating a run or injecting a fault. Only this worktree's identifiable rebuildable
+Go archives were removed before retrying; runtime volumes and evidence were kept.
+These tests establish this local single-instance outage behavior, not Redis
+replication failover or physical-host availability. Review found no further
+scoped evidence discrepancies.
