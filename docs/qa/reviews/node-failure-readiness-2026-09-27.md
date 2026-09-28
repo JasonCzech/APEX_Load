@@ -3012,3 +3012,27 @@ with a 60.643-second qualifying window (minimum 301.408 requests/s), COMPLETE st
 a published S3 archive with every recorded artifact hash verified, and no controller
 restarts. This is a bounded healthy integration check with PostgreSQL, TLS Redis and
 TLS S3 on Docker Desktop, not a production throughput or physical-HA qualification.
+
+## Reserved-spare preflight and historical pod evidence (2026-09-28)
+
+The first reviewed-image worker trial timed out in admission before injection. The
+image-only upgrade had retained an older controller Role lacking the KEDA/HPA list
+rules already present in the reviewed manifests. The two namespace-scoped read
+rules were applied with Role identity/version checks and verified with impersonated
+ServiceAccount authorization checks. The second trial admitted an exact dedicated
+standby on the surviving worker, but correctly stopped before injection when the
+cluster-readiness gate reported an old evicted controller pod.
+
+Inspection confirmed that pod belonged to a retained, zero-replica historical
+ReplicaSet. The readiness evaluator now excludes an already-failed baseline pod
+from live replica counts only when its UID and owner are unchanged, the complete
+ReplicaSet-to-Deployment identity chain is valid, and the nonterminating ReplicaSet
+has observed its zero desired/actual replica state. It retains all pod evidence.
+New failures, active/unknown owners, incomplete convergence and missing healthy
+replicas still fail the gate. Neither attempt injected a fault; both were stopped
+and their terminal archives remained available. Both failed attempts are preserved.
+
+Review and regression checks covered owner replacement, termination, unobserved
+zero state, active replica counts, missing live replicas and newly failed pods.
+All 189 fault-harness tests passed (7.640 s); scoped re-review found no further
+issues. This harness correction is not itself a worker-recovery qualification.

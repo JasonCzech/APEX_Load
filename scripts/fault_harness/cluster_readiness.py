@@ -102,6 +102,28 @@ def assess(baseline, current):
                 if name in before_pods and before_pods[name]["phase"] != "Succeeded" and obj["controller_owner"] is None:
                     issue("pods", name, "baseline_pod_completed")
                 continue
+            # Kubernetes retains terminal pods as evidence after a rollout. An
+            # already-failed baseline pod belonging to a fully retired ReplicaSet
+            # cannot contribute a live replica. Keep it in the evidence, but do
+            # not demand that it become Running. Verify the full owner chain and
+            # observed zero state; new failures and active/unknown owners still
+            # block qualification.
+            owner = obj["controller_owner"]
+            before = before_pods.get(name)
+            if (obj["phase"] == "Failed" and not obj["terminating"] and before
+                    and before["uid"] == obj["uid"] and before["phase"] == "Failed"
+                    and before["controller_owner"] == owner and owner
+                    and owner["kind"] == "ReplicaSet"):
+                rs = replicasets.get(owner["name"])
+                deployment = rs["controller_owner"] if rs else None
+                key = tuple(deployment[k] for k in ("kind", "name", "uid")) if deployment else None
+                if (rs and rs["uid"] == owner["uid"] and not rs["terminating"]
+                        and rs["desired_replicas"] == 0 and type(rs["generation"]) is int
+                        and rs["generation"] > 0 and type(rs["status"]["observedGeneration"]) is int
+                        and rs["status"]["observedGeneration"] >= rs["generation"]
+                        and all(rs["status"][k] in (None, 0) for k in ("replicas", "readyReplicas", "availableReplicas"))
+                        and deployment["kind"] == "Deployment" and key in workloads):
+                    continue
             applications = [c for c in obj["containers"] if c["category"] == "application"]
             if (obj["terminating"] or obj["phase"] != "Running" or condition(obj, "Ready") != "True"
                     or condition(obj, "ContainersReady") != "True" or not applications

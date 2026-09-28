@@ -125,6 +125,54 @@ class ClusterReadinessTest(unittest.TestCase):
         self.data["pods"]["items"][-1]["status"]["phase"] = "Succeeded"
         self.assertIn("baseline_pod_completed", self.reasons())
 
+    def retired_failed_pod(self):
+        rs = copy.deepcopy(self.data["replicasets"]["items"][0])
+        rs["metadata"].update(name="retired-rs", uid="retired-uid")
+        rs["spec"]["replicas"] = 0
+        rs["status"] = {"observedGeneration": 1}
+        self.data["replicasets"]["items"].append(rs)
+        pod = copy.deepcopy(self.data["pods"]["items"][0])
+        pod["metadata"].update(name="evicted-old-pod", uid="evicted-uid")
+        pod["metadata"]["ownerReferences"][0].update(name="retired-rs", uid="retired-uid")
+        pod["status"].update(phase="Failed", conditions=[], containerStatuses=[])
+        self.data["pods"]["items"].append(pod)
+        return rs, pod
+
+    def test_retained_failed_pod_of_retired_replica_set_is_evidence_not_live_replica(self):
+        self.retired_failed_pod()
+        self.baseline = self.capture()
+        self.assertTrue(assess(self.baseline, self.capture())["ready"])
+        # Active replica evidence is still mandatory even when status claims ready.
+        self.data["pods"]["items"].pop(0)
+        self.assertIn("pod_inventory_not_converged", self.reasons())
+
+    def test_failed_retired_pod_exception_requires_complete_identity_and_zero_state(self):
+        mutations = (
+            lambda rs, p: rs["spec"].update(replicas=1),
+            lambda rs, p: rs["status"].update(replicas=1),
+            lambda rs, p: rs["status"].update(readyReplicas=1),
+            lambda rs, p: rs["status"].update(availableReplicas=1),
+            lambda rs, p: rs["status"].update(observedGeneration=0),
+            lambda rs, p: rs["status"].pop("observedGeneration"),
+            lambda rs, p: rs["metadata"].update(uid="replaced"),
+            lambda rs, p: rs["metadata"].update(deletionTimestamp="2026-09-28T00:00:00Z"),
+            lambda rs, p: rs["metadata"]["ownerReferences"][0].update(uid="replaced"),
+            lambda rs, p: p["metadata"].update(uid="replaced"),
+            lambda rs, p: p["metadata"].update(deletionTimestamp="2026-09-28T00:00:00Z"),
+            lambda rs, p: p["metadata"]["ownerReferences"][0].update(uid="replaced"),
+        )
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                self.data = cluster_fixture(self.config)
+                rs, pod = self.retired_failed_pod()
+                self.baseline = self.capture()
+                mutation(rs, pod)
+                self.assertIn("not_ready", self.reasons())
+
+    def test_new_failed_pod_is_not_hidden_by_retired_replica_set(self):
+        self.retired_failed_pod()
+        self.assertIn("not_ready", self.reasons())
+
     def test_completed_jobs_and_finished_init_containers_do_not_block(self):
         job = copy.deepcopy(self.data["pods"]["items"][0])
         job["metadata"].update(name="finished-job", uid="job-uid")
