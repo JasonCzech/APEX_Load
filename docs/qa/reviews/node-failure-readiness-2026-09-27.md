@@ -1637,3 +1637,26 @@ generator RPC 6.642 s, storage 3.401 s), and the three PostgreSQL runs (3.625 s)
 Final source review found no further actionable issue in this transfer slice.
 Documentation checking still fails on the pre-existing missing ignored evidence
 links; neither modified readiness document is among its reported failures.
+
+
+## Reusable authenticated scenario setup
+
+`seed_scenario.py` now creates the private project's load secret, HTTP script and
+saved 40-VUser/five-minute scenario through the owned controller API. It creates
+no test and starts no traffic. Namespace, node and controller UIDs, the execution
+generation and kubeconfig bytes are pinned during setup. TLS target credentials
+remain project secrets; receipts omit credentials and raw API responses. A bounded
+loopback forward drains output continuously. Failure preserves resource receipts
+and explicitly records which mutation may have committed without acknowledgement.
+
+Review added credential validation before any API mutation, returned-project
+identity checks, node identity pinning, and unconditional transport cleanup even
+when writing the failure receipt itself fails. The 167-case Python suite passed
+(11.277 s), including interruption, ownership replacement, wrong-project responses,
+private output, partial failure and stream drainage. Live setup succeeded in the
+owned Docker Desktop stack, and the saved scenario was read back independently.
+The first readback probe used the create-request field `groups`; it was corrected
+to the stored scenario response's `scripts` field. No application changes were
+needed. This establishes setup only, with `qualified: false`; fault execution and
+fresh-cluster deployment qualification remain separate. Final source review found
+no further actionable issue in this setup-command slice.

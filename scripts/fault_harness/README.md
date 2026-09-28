@@ -2,7 +2,7 @@
 
 This is the repository-owned safety/evidence foundation for the
 [node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It renders a phased local HA stack and includes a bounded deployed-run observation
-adapter. A bounded deployment command now applies that stack to a fresh namespace of an owned kind cluster. Cluster/KEDA creation and the complete fault matrix remain separate. Docker Desktop recovered after an authorized restart; target and
+adapter. A bounded deployment command now applies that stack to a fresh namespace of an owned kind cluster. Scenario seeding now uses the owned, authenticated API. Cluster/KEDA creation and the complete fault matrix remain separate. Docker Desktop recovered after an authorized restart; target and
 PostgreSQL/Redis component checks now pass in a fresh three-node kind cluster.
 A ten-minute idle dependency outage also passed on two HA controllers; see the
 [review ledger](../../docs/qa/reviews/node-failure-readiness-2026-09-27.md) for scope and measurements.
@@ -909,3 +909,31 @@ remove its data just to make the command accept the namespace. `result.json` rec
 `deployed: true` and **`qualified: false`**: Kubernetes readiness does not establish
 application admission, sustained traffic, failover, archive integrity or production
 availability. Run those evidence gates separately.
+
+
+## Seed a private scenario
+
+After deploying the owned stack, create its project, project-scoped load credential,
+HTTP script and saved scenario:
+
+```sh
+python3 scripts/fault_harness/seed_scenario.py \
+  --inputs /absolute/private/inputs \
+  --output /absolute/new/private-seed-evidence
+```
+
+The command requires PostgreSQL, Redis and S3 in authenticated inventory. It pins
+the kubeconfig, namespace UID, three node UIDs, active controller UID and execution
+generation across its bounded setup window. Requests go through a loopback-only
+pod forward with redirects/proxies disabled; the forwarding log pipe is drained
+without retaining a buffer. The fresh target credential is stored as a project
+secret, while the script uses `{{secret.fault_load}}` and the private TLS target.
+The saved scenario has 40 VUsers, fixed 100 ms pacing, a five-minute duration and
+controller failover policy `continue`. It does not opt into generator-loss recovery.
+
+This command never creates or starts a test. `seeded: true` means saved resources,
+and `qualified: false` remains explicit. Receipts contain resource IDs, not keys
+or raw responses. Failure, interruption or leader replacement stops setup and
+preserves already-created resources. The last mutation may have committed even
+when its response was lost; inspect the receipts and owned project before retrying.
+Existing output directories are refused, and no automatic deletion or rollback runs.
