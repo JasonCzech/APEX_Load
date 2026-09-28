@@ -640,7 +640,11 @@ migration to a new claim; applying a larger request is not an in-place migration
 Keep the original claim until the copied service's object reads and writes have
 been verified. This remains a single-pod local fixture without replication or a
 production durability/primary-failover claim. Monitor both free disk space and
-writable volume slots during repeated trials.
+writable volume slots during repeated trials. `--memory-mib` sets an explicit
+512–2048 MiB container limit (default 512 MiB); the request is one quarter of that
+limit. A retained dataset can cause sustained memory reclaim before an OOM kill,
+so inspect cgroup memory events and signed request latency when selecting the
+allowance. The 4 GiB migration trial uses `--memory-mib 1024`.
 
 The headless service and stable pod hostname provide the application's virtual-hosted
 bucket address, `apexload-archives.apexload-s3.apexload-fault.svc`. The fresh certificate

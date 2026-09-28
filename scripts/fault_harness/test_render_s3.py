@@ -130,6 +130,21 @@ class S3ResourcesTest(unittest.TestCase):
         claim = next(x for x in rendered['items'] if x['kind'] == 'PersistentVolumeClaim')
         self.assertEqual(claim['spec']['resources']['requests']['storage'], '4Gi')
 
+    def test_memory_allowance_is_explicit_and_bounded(self):
+        for memory in (512, 1024, 2048):
+            _, manifest = resources(self.inputs, self.image, memory_mib=memory)
+            container = next(x for x in manifest['items'] if x['kind'] == 'Deployment')['spec']['template']['spec']['containers'][0]
+            self.assertEqual(container['resources']['limits']['memory'], str(memory) + 'Mi')
+            self.assertEqual(container['resources']['requests']['memory'], str(memory // 4) + 'Mi')
+        for memory in (0, 511, 2049, True, '1024', None, 1024.0):
+            with self.subTest(memory=memory), self.assertRaises(RenderError):
+                resources(self.inputs, self.image, memory_mib=memory)
+        output = self.root / 's3-memory'
+        render(self.inputs, self.image, output, memory_mib=1024)
+        manifest = json.loads((output / 's3-resources.json').read_text())
+        container = next(x for x in manifest['items'] if x['kind'] == 'Deployment')['spec']['template']['spec']['containers'][0]
+        self.assertEqual(container['resources']['limits']['memory'], '1024Mi')
+
     def test_render_is_private_exclusive_and_kustomize_compatible(self):
         output = self.root / 'rendered'
         render(self.inputs, self.image, output)

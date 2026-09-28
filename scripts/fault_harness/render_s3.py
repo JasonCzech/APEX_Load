@@ -9,12 +9,14 @@ from render_target import (RenderError, input_root, read_input, read_json, read_
                            validate_image, validate_tls, write_resources)
 
 
-def resources(inputs, image, storage_class="standard", volume_count=6, storage_gib=2):
+def resources(inputs, image, storage_class="standard", volume_count=6, storage_gib=2, memory_mib=512):
     if type(storage_gib) is not int or not 2 <= storage_gib <= 16:
         raise RenderError("S3 storage must be an integer from 2 through 16 GiB")
     # Keep at least one quarter of the claim for metadata and filesystem overhead.
     if type(volume_count) is not int or not 1 <= volume_count <= storage_gib * 3:
         raise RenderError("256 MiB volume slots must fit within three quarters of the S3 claim")
+    if type(memory_mib) is not int or not 512 <= memory_mib <= 2048:
+        raise RenderError("S3 memory must be an integer from 512 through 2048 MiB")
     root = input_root(inputs)
     run_id, cluster = read_ownership(root)
     validate_image(image)
@@ -79,7 +81,7 @@ def resources(inputs, image, storage_class="standard", volume_count=6, storage_g
                 'ports': [{'name': 'https', 'containerPort': 8333}],
                 'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True,
                                     'capabilities': {'drop': ['ALL']}},
-                'resources': {'requests': {'cpu': '100m', 'memory': '128Mi'}, 'limits': {'cpu': '1', 'memory': '512Mi'}},
+                'resources': {'requests': {'cpu': '100m', 'memory': str(memory_mib // 4) + 'Mi'}, 'limits': {'cpu': '1', 'memory': str(memory_mib) + 'Mi'}},
                 'volumeMounts': [{'name': 'data', 'mountPath': '/data'}, {'name': 'tmp', 'mountPath': '/tmp'},
                                  {'name': 'server', 'mountPath': '/run/apexfault', 'readOnly': True},
                                  {'name': 'config', 'mountPath': '/etc/seaweedfs', 'readOnly': True}],
@@ -104,8 +106,8 @@ def resources(inputs, image, storage_class="standard", volume_count=6, storage_g
     return run_id, {'apiVersion': 'v1', 'kind': 'List', 'items': [secret, client, claim, deployment, service, policy]}
 
 
-def render(inputs, image, output, storage_class='standard', volume_count=6, storage_gib=2):
-    run_id, manifest = resources(inputs, image, storage_class, volume_count, storage_gib)
+def render(inputs, image, output, storage_class='standard', volume_count=6, storage_gib=2, memory_mib=512):
+    run_id, manifest = resources(inputs, image, storage_class, volume_count, storage_gib, memory_mib)
     write_resources(output, manifest, 's3-resources.json')
     return run_id
 
@@ -120,9 +122,11 @@ def main():
                         help='256 MiB object slots; at most three per storage GiB (default: 6)')
     parser.add_argument('--storage-gib', type=int, choices=range(2, 17), default=2,
                         help='new S3 PVC size; existing local-path claims require migration (default: 2)')
+    parser.add_argument('--memory-mib', type=int, default=512,
+                        help='S3 memory limit in MiB, 512–2048; request is one quarter (default: 512)')
     args = parser.parse_args()
     try:
-        run_id = render(args.inputs, args.image, args.output, args.storage_class, args.volume_count, args.storage_gib)
+        run_id = render(args.inputs, args.image, args.output, args.storage_class, args.volume_count, args.storage_gib, args.memory_mib)
     except RenderError as error:
         print(str(error), file=sys.stderr)
         return 1
