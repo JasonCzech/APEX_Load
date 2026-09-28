@@ -2404,3 +2404,25 @@ Repeated race validation exposed a pre-existing protocol-registration collision 
 uses a unique protocol name. The final repeated race run passed all three iterations;
 see `/tmp/apex-archive-admission-final-race-fixed.log`. This test-only repair followed
 the passing full suite. The first repeated run remains recorded as failed.
+
+## Single-worker queued recovery scale-up (2026-09-28)
+
+Review after reserved-capacity admission found a low-load queue stall: two current
+pods on one worker could satisfy the arithmetic replica floor while leaving no
+cross-worker spare. Queued recovery now requests new ordinals beyond the observed
+pods, bounded by the fresh KEDA/HPA maximum. Pod names preserve high ordinals even
+when transport targets are aliases. Ready but ineligible pods count toward existing
+ordinals without being mistaken for spare capacity. Missing node identity does not
+prove single-worker placement.
+
+Regression coverage checks small demand, 80-VUser usable pod capacity, multiple
+sources, replica caps, high ordinals, existing cross-worker spread and unusable
+workers. A placement regression verifies that requesting a replica still refuses
+admission until a real eligible spare is observed on another worker. Focused tests
+passed; private validation logs use `/tmp/apex-recovery-single-worker-*`.
+
+Final review found no further scoped actionable issues. Repeated race checks passed
+three iterations (API 2.812 s), and the full Go suite passed. No new deployed
+qualification is claimed by these tests. Cleanup receipt 32 records removal of
+3,784,353,092 bytes of positively identified rebuildable worktree Go archives;
+container volumes and private evidence were preserved.

@@ -348,3 +348,9 @@ excess cold reads wait within the request deadline before object-store access.
 Legacy cache payload sizes are checked before a reader lease is granted. This closes
 the aggregate reader-admission implementation gap; unconfirmed producer-source bounds,
 combined recovery and durable collection retries remain local implementation work.
+
+Queued recovery admission also requests new StatefulSet ordinals when all eligible
+observed pods share one worker, even if their combined VUser budget is sufficient.
+The request accounts for existing ready but ineligible pods and remains bounded by
+the observed KEDA/HPA maximum. A new replica is not treated as recovery capacity:
+actual distinct-worker identity and atomic spare admission still gate dispatch.
