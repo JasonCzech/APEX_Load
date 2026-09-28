@@ -63,6 +63,13 @@ func lockArchiveNamespace(ctx context.Context, namespace, name string) (func(), 
 	if err != nil {
 		return nil, err
 	}
+	return lockArchiveNamespaceAt(ctx, rootPath, namespace, name)
+}
+
+func lockArchiveNamespaceAt(ctx context.Context, rootPath, namespace, name string) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	root, err := openArchiveDirectoryNoSymlink(rootPath)
 	if err != nil {
 		return nil, err

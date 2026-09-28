@@ -267,3 +267,43 @@ It does not replicate generator raw files, recover lost execution ownership, or
 qualify physical CSI detach/reattach, permanent-node or zone failures. The local
 cross-process test exercises shared-directory locking and publication after process
 loss; production multi-host storage qualification remains required.
+
+## Controller transfer capacity
+
+Controller downloads now use a dedicated transfer directory, with aggregate
+admission before any generator or cached-source read. These settings apply to every
+controller that uses the same directory:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `APEXLOAD_ARCHIVE_TRANSFER_DIR` | `apexload-archive-transfers` under the process temporary directory | Absolute, dedicated transfer scratch directory. Keep it separate from source staging and reader caches. |
+| `APEXLOAD_ARCHIVE_TRANSFER_MAX_BYTES` | 128 GiB | Aggregate admitted payload bytes, supplied as a positive decimal integer (maximum 1 PiB). |
+| `APEXLOAD_ARCHIVE_TRANSFER_MIN_FREE_BYTES` | 64 MiB | Minimum filesystem free space preserved before each payload write, supplied as a positive decimal integer (maximum 1 PiB). |
+
+Admission reserves the run's full frozen collection-byte ceiling, or 32 GiB for
+legacy collections without a durable cache intent. A reservation lasts until the
+merge finishes and releases the downloaded bundles. For example, a 512 MiB transfer
+quota admits two collections whose frozen ceilings are 256 MiB each, even if their
+actual files are small. A lower new configuration does not shrink existing durable
+run ceilings; such runs may remain unable to collect until capacity is restored.
+The transfer quota is separate from collection-cache, reader-cache and active-reader
+budgets. Size their combined possible usage, merge/publication copies, filesystem
+metadata and other scratch users below the actual volume limit. Filesystem free
+space checks do not discover Kubernetes `emptyDir.sizeLimit`.
+
+Cross-process file locks serialize admission and free-space checks. Operations
+retain their full reservations after a crash. Unrecognized leftovers count at their
+actual size; oversized, malformed, linked or excessively deep inventories fail
+admission. Capacity pressure and elapsed time never authorize deleting abandoned
+files. Investigate stale reservations only after quiescing all users of the root
+and preserving or verifying any evidence needed for collection/publication recovery.
+Keep capacity lock inodes intact. Normal cleanup only removes the operation's own
+unchanged directory and reservation; uncertain cleanup leaves evidence charged.
+
+The quota counts payload reservations; small marker files, directory entries and
+filesystem allocation overhead require additional volume headroom. It is not a
+bound on RAM used by manifests or on unrelated writers to the same filesystem.
+Old transfer directories directly under the process temporary directory are left
+untouched after upgrade and are outside the new logical inventory; physical free
+space checks still include their disk usage. Transfer admission does not yet bound
+controller-local capture, derived merge/report expansion or publication backlog.

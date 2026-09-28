@@ -373,11 +373,21 @@ type remoteArchiveBundle struct {
 	resourcesPath     string
 	summariesPath     string
 	transferStageRoot string
+	transferLease     *archiveTransferLease
 }
 
 func cleanupRemoteArchiveBundles(bundles []remoteArchiveBundle) {
 	seen := make(map[string]struct{})
+	leases := make(map[*archiveTransferLease]struct{})
 	for _, bundle := range bundles {
+		if bundle.transferLease != nil {
+			if _, ok := leases[bundle.transferLease]; ok {
+				continue
+			}
+			leases[bundle.transferLease] = struct{}{}
+			_ = bundle.transferLease.close()
+			continue
+		}
 		root := strings.TrimSpace(bundle.transferStageRoot)
 		if root == "" {
 			continue
@@ -395,6 +405,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundles(tr *TestRunner, 
 }
 
 type remoteArchiveTransferBudget struct {
+	lease     *archiveTransferLease
 	mu        sync.Mutex
 	remaining int64
 }
@@ -518,18 +529,19 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 	if len(clients) > remoteArchiveMaxTargets {
 		return nil, nil, fmt.Errorf("remote archive target count %d exceeds limit %d", len(clients), remoteArchiveMaxTargets)
 	}
-	tempRoot, err := resolveArchiveDirectoryRoot(os.TempDir(), false)
-	if err != nil {
-		return nil, nil, fmt.Errorf("resolve remote archive transfer root: %w", err)
+	limit := remoteArchiveTotalMaxBytes
+	if cache != nil {
+		limit = cache.intent.CacheLimitBytes
 	}
-	transferStageRoot, err := createArchiveTemporaryDirectory(tempRoot, "apexload-remote-archive", 0o700)
+	lease, err := reserveArchiveTransfer(ctx, limit)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create remote archive transfer staging directory: %w", err)
+		return nil, nil, err
 	}
+	transferStageRoot := lease.path
 	keepStaging := false
 	defer func() {
 		if !keepStaging {
-			_ = removeArchiveSubdirectory(tempRoot, transferStageRoot)
+			_ = lease.close()
 		}
 	}()
 
@@ -538,10 +550,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 	targets := orderedGeneratorTargets(clients, b.configuredTargets())
 	results := make(chan remoteArchiveFetchResult, len(targets))
 	semaphore := make(chan struct{}, remoteArchiveFetchConcurrency)
-	budget := &remoteArchiveTransferBudget{remaining: remoteArchiveTotalMaxBytes}
-	if cache != nil {
-		budget.remaining = cache.intent.CacheLimitBytes
-	}
+	budget := &remoteArchiveTransferBudget{remaining: limit, lease: lease}
 	var workers sync.WaitGroup
 	for index, target := range targets {
 		workers.Add(1)
@@ -608,6 +617,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCache(ctx con
 			missingTargets = append(missingTargets, targets[index])
 			continue
 		}
+		result.bundle.transferLease = lease
 		bundles = append(bundles, result.bundle)
 	}
 	if len(bundles) == 0 {
@@ -730,6 +740,15 @@ func (w *boundedArchiveWriter) Write(content []byte) (int, error) {
 		}
 	}
 	n, err := w.destination.Write(content)
+	if n < 0 || n > len(content) {
+		// An invalid writer count cannot justify refunding reserved capacity.
+		w.remaining -= int64(len(content))
+		w.written += int64(len(content))
+		return 0, fmt.Errorf("archive writer returned invalid byte count")
+	}
+	if n < len(content) && err == nil {
+		err = io.ErrShortWrite
+	}
 	if w.totalBudget != nil && n < len(content) {
 		w.totalBudget.release(int64(len(content) - n))
 	}
@@ -750,15 +769,11 @@ func copyRemoteArchiveArtifactWithBudget(ctx context.Context, client archiveArti
 	if streaming, ok := client.(streamingArchiveGeneratorClient); ok {
 		copied, err := streaming.StreamArchiveArtifact(ctx, request, bounded, maxBytes)
 		if err != nil {
-			if totalBudget != nil {
-				totalBudget.release(bounded.written)
-			}
+			// Failed file cleanup is not guaranteed; keep written bytes charged
+			// until this operation releases its entire spool reservation.
 			return bounded.written, err
 		}
 		if copied != bounded.written {
-			if totalBudget != nil {
-				totalBudget.release(bounded.written)
-			}
 			return bounded.written, fmt.Errorf("archive artifact stream reported %d bytes but wrote %d", copied, bounded.written)
 		}
 		return copied, nil
@@ -775,9 +790,6 @@ func copyRemoteArchiveArtifactWithBudget(ctx context.Context, client archiveArti
 		return 0, fmt.Errorf("archive artifact is %d bytes, limit is %d", len(content), maxBytes)
 	}
 	n, err := bounded.Write(content)
-	if err != nil && totalBudget != nil {
-		totalBudget.release(bounded.written)
-	}
 	return int64(n), err
 }
 
@@ -808,7 +820,11 @@ func fetchRemoteArchiveArtifactFileForSource(ctx context.Context, client archive
 			_ = os.Remove(destinationPath)
 		}
 	}()
-	copied, err = copyRemoteArchiveArtifactWithBudget(ctx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: name, SourceIdentity: sourceIdentity}, file, maxBytes, totalBudget)
+	var destination io.Writer = file
+	if totalBudget != nil && totalBudget.lease != nil {
+		destination = archiveTransferFileWriter{ctx: ctx, lease: totalBudget.lease, file: file}
+	}
+	copied, err = copyRemoteArchiveArtifactWithBudget(ctx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: name, SourceIdentity: sourceIdentity}, destination, maxBytes, totalBudget)
 	if err != nil {
 		return copied, err
 	}

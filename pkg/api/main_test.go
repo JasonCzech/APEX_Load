@@ -39,5 +39,14 @@ func runArchiveSandboxedTests(m *testing.M) int {
 		defer os.RemoveAll(dir)
 		os.Setenv(config.EnvArchiveDir, dir)
 	}
+	if strings.TrimSpace(os.Getenv(envArchiveTransferDir)) == "" {
+		dir, err := os.MkdirTemp("", "apexload-api-transfer-*")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "transfer test sandbox:", err)
+			return 1
+		}
+		defer os.RemoveAll(dir)
+		os.Setenv(envArchiveTransferDir, dir)
+	}
 	return m.Run()
 }

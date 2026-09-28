@@ -2940,3 +2940,75 @@ The final full Go suite passed all 108 test-bearing packages with no failures
 (API 374.358 s). Final scoped re-review found no further staging/cache-isolation
 issues. Physical CSI qualification and live deployment of this optional volume
 remain separate from the successful local process and render tests.
+
+## Controller transfer-spool admission (2026-09-28)
+
+Distributed archive downloads now reserve their full frozen per-run ceiling in a
+dedicated aggregate-capacity directory before making source RPCs. Reservations stay
+held through merge cleanup; canceled/failed attempts release only their own spool.
+A bounded descriptor-relative inventory charges crash reservations and unknown
+leftovers, rejects ambiguous entries, and never prunes evidence to admit new work.
+Payload writes preserve configured physical free space under the same cross-process
+capacity fence. This does not yet bound producer capture, derived merge outputs or
+publication backlog.
+
+Review added parent-directory durability before starting downloads, deduplicated
+shared-lease cleanup (including error paths), and prevented failed/invalid writer
+counts from refunding bytes whose files may survive failed cleanup. Tests cover
+concurrent admission, live and killed separate-process reservations, cancellation,
+unknown evidence, lowered limits, replacement identity, malformed/linked/deep
+inventory, free-space rejection, transport admission and bundle lifetime. Focused,
+race, full-suite and documentation validation results follow.
+
+Before image rollout, both current controller archive trees were also preserved as
+private compressed snapshots with hashes and pod UIDs. These are transport/tree
+backups, not retrospective artifact-integrity qualification. Two reviewed-image
+build attempts were interrupted deliberately when another checkout's Compose build
+caused severe shared Docker VM memory pressure. Only this task's verified build
+processes were signaled; all attempt logs and the other checkout's containers were
+preserved. The next rollout requires a fresh healthy baseline.
+
+The first focused matrix passed (2.215 s), the broader archive matrix passed
+(8.780 s), and three race repetitions passed (17.684 s). A further review found
+that the new directory-sync code needed the archive publisher's existing Windows
+access-denied handling. The preliminary full suite had passed 107 packages when
+its remaining API test process was intentionally stopped to apply that fix; this
+interrupted run is retained and is not counted as a full-suite pass. Final source
+validation is being repeated after the compatibility correction.
+
+The third controller build completed at the reviewed commit using the canonical
+Dockerfile. Its default compiler concurrency caused additional shared-VM restarts,
+so the subsequent generator build uses the same exact source and standard runtime
+profile with build-only `GOMAXPROCS=2`, `go build -p 1`, and a dedicated locked compiler
+cache. The private recipe and its checksum are recorded separately from the source.
+The target process restarted during contention; new trials must bind its fresh
+instance and establish new controller/restart baselines.
+
+Final validation after the Windows sync correction passed: the focused archive
+matrix (8.811 s), three race repetitions (17.832 s), all 108 test-bearing Go packages
+(API 461.146 s), and documentation checks for all 69 active Markdown files. Final
+scoped re-review found no further transfer-capacity issues. Shared-cache cleanup 40
+removed 15 old large build-cache entries (4,913,542,824 bytes) only after host Go work
+was idle; its private receipt records the checks and preserves source/module caches.
+
+## Reviewed schema-20 deployment and healthy control (2026-09-28)
+
+Controller and generator images from `1642d9200d2e74068666826dd9ba3a661d38a6bf`
+were imported by digest onto both owned workers. Generators rolled first, followed
+by controllers. The verified PostgreSQL backup and both controller staging snapshots
+were checked before migration. Schema versions 1–20, unchanged historical test/archive
+counts, no active runs/pending publications, exact controller revision, four idle
+connected generators and zero new-pod restarts were verified. The temporary KEDA
+minimum of four was restored to two. Collection/cache/active-reader ceilings were
+set to 256/512/512 MiB, with private reader scratch. Shared RWX staging was not enabled.
+The transfer-capacity change in this commit was not part of those deployed images.
+
+The first one-minute healthy run completed and its published archive verified, but
+its trial failed because the harness required its minimum traffic rate throughout
+RUNNING, including normal setup and terminal handoff. All samples and that failed
+result remain preserved. The corrected fresh trial required at least 30 continuous
+seconds of independently measured traffic, retaining setup/drain samples. It passed
+with a 60.643-second qualifying window (minimum 301.408 requests/s), COMPLETE status,
+a published S3 archive with every recorded artifact hash verified, and no controller
+restarts. This is a bounded healthy integration check with PostgreSQL, TLS Redis and
+TLS S3 on Docker Desktop, not a production throughput or physical-HA qualification.
