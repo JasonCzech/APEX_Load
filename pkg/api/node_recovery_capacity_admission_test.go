@@ -370,3 +370,37 @@ func TestRecoveryBoundEvacuationRequiresFrozenReplacement(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoverySparePreviewAdmitsColdCrossWorkerPod(t *testing.T) {
+	tr, test, _, _ := recoveryAdmissionFixture()
+	test.Groups[0].VUsers = 50
+	test.Assignment.RecoverySpareVUsers = 100
+	entries := tr.liveInventory[:3]
+	for i := range entries {
+		e := &entries[i]
+		budget := protocol.CapacityVector{CPUCores: .8, MemoryMB: 409.6, NetworkMbps: 800, VUsers: 80, Protocols: map[string]float64{"http": 8000}}
+		c := protocol.NewCapacitySnapshot(budget, protocol.CapacityVector{}, 20)
+		c.Incarnation = e.PodCapacity.Incarnation
+		e.PodCapacity = &c
+	}
+	tr.liveInventory = entries[:2]
+	b := tr.execution.(*distributedExecutionBackend)
+	b.SetTargets([]string{"a", "b"})
+	if _, warnings := tr.previewPodPlacementLocked(test); len(warnings) == 0 {
+		t.Fatal("same-worker fleet admitted without a spare")
+	}
+	tr.liveInventory = entries
+	b.SetTargets([]string{"a", "b", "c"})
+	placements, warnings := tr.previewPodPlacementLocked(test)
+	if len(warnings) != 0 || len(placements) != 2 {
+		t.Fatalf("cold admission: %+v %v", placements, warnings)
+	}
+	if placements[0].Target != "a" || placements[0].Proposed.VUsers != 50 || placements[0].After.Dedicated || placements[1].Target != "c" || !placements[1].After.Dedicated || placements[1].Proposed.VUsers != 80 {
+		t.Fatalf("source/spare plan=%+v", placements)
+	}
+	for _, e := range entries {
+		if e.PodCapacity.ReservedPct != 0 || e.PodCapacity.Dedicated {
+			t.Fatal("preview mutated observed capacity")
+		}
+	}
+}

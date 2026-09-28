@@ -3221,3 +3221,29 @@ reads recovered; inspection found the existing identity-verification gate, not a
 newly established catalog-attachment defect. The original failed healthy-run gate
 and both failed signed-read attempts remain recorded. A new healthy execution is
 being qualified before cold-spare worker trials resume.
+
+## Cold-spare queue wake-up (2026-09-28)
+
+The second healthy gate on controller `0870b95f` passed: run
+`0ecdc204-2e04-49fe-8407-506cdbb13687` completed, sustained at least 317.737 RPS
+across the 60.464-second independent-target window, and verified all archive hashes.
+Both controllers retained zero restarts. The first subsequent cold-spare attempt
+(`cce2cd46-da14-4e45-949e-356b2aad715f`) timed out in `PENDING`, was explicitly
+stopped to `ABORTED`, and never injected a worker fault. KEDA had created a third
+Ready idle generator on the second worker; no capacity reservation was committed.
+The original failed attempt and its inventory/log evidence remain preserved.
+
+Replaying the observed three-pod capacity and placement in a focused diagnostic
+accepted one 50-VUser source and one dedicated 80-VUser spare. Inspection then
+identified the missing trigger: background inventory refresh updated admission
+inputs, but did not wake the pending-promotion worker when new capacity arrived.
+A regression test reproduced the failure before the fix. Background refresh now
+wakes the existing coalesced, leadership-term-bound retry worker after a completed
+probe and capacity reconciliation. That worker rechecks all admission gates;
+read-only inventory requests do not start tests. Focused coverage includes cold
+cross-worker admission, a quota-blocked run released by fleet growth, no duplicate
+launch, follower/shutdown/canceled-probe exclusion, and untouched unstarted rows.
+The reviewed focused matrix passed (2.439 s), three race repetitions passed
+(3.891 s), and the full Go suite passed all 108 test-bearing packages (API 388.478 s).
+Documentation checks passed for 69 active Markdown files. Scoped re-review found
+no further issues. Deployment and new cold-spare fault repetitions remain pending.

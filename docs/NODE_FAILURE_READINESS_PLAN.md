@@ -391,3 +391,11 @@ are frozen when capture begins. Conversion failures preserve raw evidence and pr
 a complete manifest without changing the execution outcome. Distributed merge,
 publication copies and aggregate producer/backlog admission remain separate local
 implementation work.
+
+The first cold-spare attempt on controller `0870b95f` created the cross-worker pod
+but remained pending without injecting a fault. Inventory refresh now wakes the
+existing fenced pending-promotion worker so a lone capacity waiter can advance
+when KEDA adds pods. The change retains all ordinary admission checks and keeps
+read-only inventory requests free of launch side effects. Focused and repeated race
+checks and the full 108-package Go suite pass; fresh deployed cold-spare repetitions
+remain pending.

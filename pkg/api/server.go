@@ -2587,6 +2587,15 @@ func (s *Server) refreshGeneratorInventory(ctx context.Context) {
 	inventory := s.systemInventory(probeCtx)
 	if s.runner.isExecutionLeader() {
 		s.runner.reconcilePodCapacity(probeCtx, inventory.Generators)
+		// A cold fleet can gain capacity without another test completing or an
+		// operator touching the queue. Wake the coalesced, term-bound promotion
+		// worker after refreshing its evidence; it rechecks every admission gate
+		// outside this inventory probe and never starts an unrequested QUEUED row.
+		if probeCtx.Err() == nil {
+			if term, err := s.runner.captureExecutionLeaseTerm(); err == nil {
+				s.runner.enqueuePendingPromotionRetryWithTerm(term)
+			}
+		}
 		alerts := buildFleetAlerts(inventory, s.runner.GetSystemSettings().Thresholds)
 		s.applyFleetAlertAcknowledgements(alerts)
 		s.routeFleetAlertNotifications(alerts)
