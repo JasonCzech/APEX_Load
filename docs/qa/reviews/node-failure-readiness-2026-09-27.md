@@ -2173,3 +2173,36 @@ passed in 4.777 seconds. The full Go suite passed (API 356.436 seconds,
 `/tmp/apex-cache-deadline-full.log`). Final review found no further scoped issues.
 This enables caller deadlines; it does not turn cache failure into successful
 cache writes, nor qualify Redis replication failover.
+
+### Active PostgreSQL outage repetitions
+
+Three reviewed trials (2, 4 and 5) passed against controller
+`37370c708e92e882ff343930473580b5e963dc52` and the existing `6be3855`
+generators. Each established a 40-VUser HTTP workload, scaled the owned
+single-instance PostgreSQL StatefulSet from one replica to zero for a 90-second
+fault window, verified at least 60 seconds of pod absence, and restored its
+original replica count through UID-checked patches. Both controller identities
+and their zero restart counts remained unchanged. Private evidence is in
+`active-postgres-reviewed-matrix` and the individual trial directories.
+
+| Trial | Baseline target RPS | Traffic plateau observed by seconds after first outage sample | Health samples per controller | Controller health p99 (ms) |
+|---|---:|---:|---:|---|
+| 2 | 306.25 | 22.75 | 106 | 22.42 / 21.71 |
+| 4 | 303.14 | 23.75 | 100 | 22.01 / 20.05 |
+| 5 | 303.01 | 24.94 | 100 | 15.78 / 21.99 |
+
+The final outage windows contained no new target requests. All runs recovered to
+`FAILED` under the default strict policy with the explicit durable reason
+`archive_collection_unconfirmed`. These are fail-closed execution/liveness
+checks, not successful archive recovery, PostgreSQL replication failover, or
+physical-host availability claims. Trial 1 preserved a harness failure caused
+by checking the active endpoint before leader election completed; trial 3
+stopped at the four-GiB host free-space guard before creating a run or injecting
+a fault. They remain failed attempts and are not counted among the three passes.
+
+The two earlier Redis attempts also remain failed: trial 1 checked an aborted
+run's archive too early; trial 2 kept traffic flowing (minimum ten-second rate
+395.30 RPS, 99 health samples per controller, p99 25.59 / 25.48 ms, zero failures
+or restarts) but exceeded the completion-observation deadline. Redis was restored
+in both cases. Publication/terminal reporting and a fresh Redis repetition are
+still under investigation; these partial observations do not qualify that case.
