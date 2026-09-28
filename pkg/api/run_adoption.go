@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -171,13 +170,11 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		if decodeErr == nil && checkpoint.ExecutionGeneration >= generation {
 			decodeErr = fmt.Errorf("checkpoint generation %d is not older than %d", checkpoint.ExecutionGeneration, generation)
 		}
-		var priorToken []byte
-		if decodeErr == nil {
-			priorToken, decodeErr = openRunSupervisionToken(ctx, tr.continuityKeyWrapper, test.ID, checkpoint)
-		}
 		candidate := &runAdoptionCandidate{test: test, checkpoint: checkpoint, stopping: stopping}
+		var adoption generatorrpc.RunAdoption
 		if decodeErr == nil {
-			_, decodeErr = rand.Read(candidate.newToken[:])
+			candidate.checkpoint, adoption, decodeErr = tr.planRunAdoptionIntent(ctx, test.ID, checkpoint, generation, ownerID)
+			copy(candidate.newToken[:], adoption.NewToken)
 		}
 		if decodeErr != nil {
 			if stopping {
@@ -187,15 +184,18 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			tr.failRunAdoption(b, test, nil, generation, ownerID, candidate.newToken, fmt.Sprintf("controller failover: the run's adoption checkpoint is unusable (%v)", decodeErr))
 			continue
 		}
+		// No generator may see the rotation until its encrypted token and prior
+		// proof chain survive a controller crash. A stale snapshot cannot replace
+		// a newer intent from this or another lease owner.
+		if err := tr.persistRunAdoptionIntent(test, raw, candidate.checkpoint, ownerID); err != nil {
+			return fmt.Errorf("persist adoption intent for %s: %w", test.ID, err)
+		}
 		candidate.targets = checkpointTargets(checkpoint)
 		for _, target := range candidate.targets {
 			if slices.Contains(checkpoint.CompletedTargets, target) {
 				continue
 			}
-			byTarget[target] = append(byTarget[target], generatorrpc.RunAdoption{
-				TestID: test.ID, PriorGeneration: checkpoint.ExecutionGeneration,
-				PriorToken: priorToken, NewToken: append([]byte(nil), candidate.newToken[:]...),
-			})
+			byTarget[target] = append(byTarget[target], adoption)
 		}
 		candidates = append(candidates, candidate)
 	}

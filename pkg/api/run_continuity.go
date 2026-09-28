@@ -50,7 +50,8 @@ type runContinuityCheckpoint struct {
 	ArmedAt             time.Time                          `json:"armed_at"`
 	// Failovers is the run's adoption history, carried forward on every re-arm
 	// so it survives further failovers and is available after the run ends.
-	Failovers []RunFailover `json:"failovers,omitempty"`
+	Failovers        []RunFailover       `json:"failovers,omitempty"`
+	PendingAdoptions []runAdoptionIntent `json:"pending_adoptions,omitempty"`
 }
 
 // RunFailover records one controller failover the run survived.

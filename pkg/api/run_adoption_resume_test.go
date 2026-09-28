@@ -105,7 +105,7 @@ func runAdoptedResumeScenario(t *testing.T, lossTolerant bool) {
 	})
 	started := time.Now().UTC()
 	test := &ManagedTest{ID: "resume-run", Name: "resume-run", Status: "RUNNING", StartedAt: &started, Assignment: &GeneratorAssignmentSettings{FailoverPolicy: "continue", TolerateGeneratorLoss: lossTolerant}}
-	setContinuityCheckpointLocked(test, string(checkpoint))
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(checkpoint))
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
 	runner.mu.Unlock()

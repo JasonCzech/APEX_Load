@@ -2426,3 +2426,53 @@ three iterations (API 2.812 s), and the full Go suite passed. No new deployed
 qualification is claimed by these tests. Cleanup receipt 32 records removal of
 3,784,353,092 bytes of positively identified rebuildable worktree Go archives;
 container volumes and private evidence were preserved.
+
+## Durable controller adoption token intent (2026-09-28)
+
+Prepared token rotations now survive the RPC/checkpoint crash window. The controller
+persists wrapped credentials through a lease-fenced exact checkpoint CAS before any
+generator receives a rotation, reuses the same token for same-term retries, and
+retains a bounded chain for a later controller. Generators choose an exact prior
+generation/token while preserving first-claim, supervision, stop and capacity checks.
+They retain execution identity rather than repeating initialization. Completed
+adoption replaces the journal with the ordinary checkpoint; no private credentials
+are added to public projections. Older generators fail closed where they cannot
+consume the additional proof. Missing-shard replacement is not implemented here.
+
+Focused storage/generator/controller checks passed (0.524 / 0.931 / 3.526 s).
+Real isolated PostgreSQL CAS, concurrency, terminal and stale-owner checks passed
+three repetitions (2.491 s); the owned temporary container was removed with identity
+and label checks. Private validation logs use `/tmp/apex-adoption-intent-*`.
+Cleanup receipt 33 records 1,721,799,622 bytes of identified rebuildable worktree Go
+archives removed; runtime volumes and evidence were preserved.
+
+Repeated race validation passed three iterations (storage 9.709 s, generator
+13.003 s, API 115.614 s). The first full-suite attempt was deliberately stopped
+when free disk space fell below 1 GiB; that run is not a passing result. With the
+user's explicit approval, shared Go build-cache cleanup waited until all active
+Go tests/builds finished, then ran `go clean -cache`. Receipt 35 records free space
+increasing from 3,299,450,880 to 39,226,908,672 bytes. The module cache, Docker
+volumes, sources and private test evidence were preserved.
+
+The first completed full-suite rerun found two real-generator resume fixtures
+that armed only an in-memory checkpoint. Both now persist that checkpoint before
+adoption, matching the new production CAS contract. The failing full log is
+retained as `apex-adoption-intent-final-full.log`; the repaired validation uses
+`apex-adoption-intent-resume-race.log` and `apex-adoption-intent-fixed-full.log`.
+The repaired real-generator resume scenarios passed all three race-test repetitions
+(API 25.173 s). Post-fix review found no further scoped actionable issues.
+The repaired full run hit the default ten-minute package timeout while starting
+`TestScenarioRuntimeSettingsReportShowsScheduleOverride` (zero seconds in that
+test), without a test assertion failure. It is retained as a failed aggregate
+run. The next full invocation uses `-timeout 20m` for the package budget, keeping
+individual assertions and fault deadlines unchanged; its log is
+`apex-adoption-intent-complete-full.log`.
+
+The historical documentation blocker was repaired separately in `4b193563`:
+23 absent ignored-log links now retain their original paths as explicitly private
+evidence. Historical pass/fail records remain unchanged. `scripts/check-docs.py`
+now passes for all 69 active Markdown files.
+The final full Go suite passed with that package budget (API 751.054 s, storage
+198.722 s). A brief read-only process sample during the longer run confirmed it
+was progressing through generated OpenAPI contract checks. Focused, repeated race,
+real PostgreSQL, full-suite and documentation validation now pass for this slice.

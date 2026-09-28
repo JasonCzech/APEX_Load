@@ -518,3 +518,29 @@ The harness now keeps every archive under its run directory (`APEXLOAD_ARCHIVE_D
 | Harness `TOLERATE_LOSS=1 KILL_GENERATOR_AT=50` (generator killed during the gap) | **FAILED** with the explicit reason; the surviving generator stopped at adoption. No archive attached: the FAILED path collects archives best-effort, and a generator stopped at that moment hasn't finalized its archive yet. That is existing behaviour for any distributed FAILED run. |
 | Generator tests | orphaned-and-adopted on controller death; **deliberate fence still stops**; realistic timing (run lease lapses 5.5s before the epoch) orphans; negative controls: always-orphan fails the fence test, window-only fails the realistic-timing test |
 | Controller test | real-generator Phase A+B for a loss-tolerant run; without the Phase B lease re-establishment the run FAILs (negative control) |
+
+## Interrupted adoption token rotations (2026-09-28)
+
+Before the first adoption RPC, the controller now stores the proposed supervision
+token as a wrapped credential in the private continuity checkpoint. A lease-fenced
+compare-and-swap binds this write to the exact prior checkpoint. Retrying the same
+term reuses that token. If another controller takes over before the adoption is
+fully checkpointed, it can present the original proof and proofs from interrupted
+rotations, allowing each generator to select its exact generation/token lineage.
+Confirmed adoption compacts the journal into the ordinary checkpoint.
+
+The request accepts at most four prior proofs, including the original. Four
+consecutive unconfirmed takeover attempts can be prepared; a further attempt fails
+closed. Every prior generation is distinct and older than the new claim; the new
+token must differ from every prior token. The journal remains encrypted, is not part
+of API projections, and does not change supervision/grace deadlines or authorize a
+restart. Stop state, terminal outcomes, the first-epoch claim boundary, and frozen
+capacity lineage retain their existing checks. Older generators ignore the additive
+proof field and fail closed if their lineage requires it; upgrade every participating
+generator before relying on interrupted-rotation recovery.
+
+Storage, controller and real generator-RPC regressions cover persistence before RPC,
+stale writes, same-term replay, a later controller takeover, partially rotated
+assignments, wrong proofs, retained terminal outcomes and unchanged execution identity.
+This closes the token-loss crash window, not the separate combined missing-shard
+replacement or deployed multi-node qualification work.

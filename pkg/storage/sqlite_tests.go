@@ -1332,6 +1332,16 @@ func preciseDatabaseTime(tx *storeTx, dialect storeDialect) (time.Time, error) {
 // stale leader cannot arm adoption for a run a successor already finished; an
 // empty checkpoint clears the column in any status.
 func (s *SQLiteStore) UpdateTestContinuityCheckpointIfLeaseHeld(id, checkpoint, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {
+	return s.updateTestContinuityCheckpointIfLeaseHeld(id, nil, checkpoint, leaseName, leaseOwnerID)
+}
+
+// CompareAndSwapTestContinuityCheckpointIfLeaseHeld additionally binds the write
+// to the exact durable snapshot read before planning an adoption token rotation.
+func (s *SQLiteStore) CompareAndSwapTestContinuityCheckpointIfLeaseHeld(id, expected, checkpoint, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {
+	return s.updateTestContinuityCheckpointIfLeaseHeld(id, &expected, checkpoint, leaseName, leaseOwnerID)
+}
+
+func (s *SQLiteStore) updateTestContinuityCheckpointIfLeaseHeld(id string, expected *string, checkpoint, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {
 	leaseName = strings.TrimSpace(leaseName)
 	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
 	if leaseName == "" || leaseOwnerID == "" {
@@ -1355,7 +1365,12 @@ func (s *SQLiteStore) UpdateTestContinuityCheckpointIfLeaseHeld(id, checkpoint, 
 		value = checkpoint
 		query += ` AND status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING')`
 	}
-	result, err := tx.Exec(query, value, id)
+	args := []any{value, id}
+	if expected != nil {
+		query += ` AND COALESCE(continuity_checkpoint_json, '') = ?`
+		args = append(args, *expected)
+	}
+	result, err := tx.Exec(query, args...)
 	if err != nil {
 		return "", err
 	}

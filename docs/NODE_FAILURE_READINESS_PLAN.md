@@ -354,3 +354,9 @@ observed pods share one worker, even if their combined VUser budget is sufficien
 The request accounts for existing ready but ineligible pods and remains bounded by
 the observed KEDA/HPA maximum. A new replica is not treated as recovery capacity:
 actual distinct-worker identity and atomic spare admission still gate dispatch.
+
+Controller adoption now journals wrapped proposed tokens before RPC with a fenced
+checkpoint compare-and-swap. A bounded prior-proof chain lets a subsequent leader
+recover a rotation interrupted before checkpoint completion. Existing assignments
+are adopted in place, with existing stop/expiry/fencing checks. Durable missing-shard
+replacement intent/progress and combined-loss qualification remain separate work.

@@ -266,6 +266,9 @@ message RunAdoption {
   uint64 prior_generation = 2;
   bytes prior_run_supervision_token = 3;
   bytes new_run_supervision_token = 4;
+  // Additional exact lineage proofs from durable, interrupted controller
+  // rotations. Including the primary proof, at most four are accepted.
+  repeated RunAdoptionProof prior_proofs = 5;
 }
 
 enum RunAdoptionOutcome {
@@ -702,4 +705,9 @@ message ArchiveArtifactChunk {
   int64 offset = 3;
   int64 total_size = 4;
   bool eof = 5;
+}
+
+message RunAdoptionProof {
+  uint64 generation = 1;
+  bytes run_supervision_token = 2;
 }

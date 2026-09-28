@@ -57,7 +57,7 @@ func storedContinueRun(t *testing.T, runner *TestRunner, store *storage.SQLiteSt
 		Shards:              map[string][]GeneratorShardSummary{"ga": {{Group: "ga", Target: "gen-a:9091", VUsers: 5}}},
 	})
 	test := &ManagedTest{ID: id, Name: id, Status: "RUNNING", Assignment: &GeneratorAssignmentSettings{FailoverPolicy: policy}}
-	setContinuityCheckpointLocked(test, string(checkpoint))
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(checkpoint))
 	return test
 }
 
@@ -236,7 +236,7 @@ func TestKnownCompletedGeneratorSurvivesAnotherAdoption(t *testing.T) {
 	checkpoint.CompletedTargets = []string{"gen-a:9091"}
 	checkpoint.ArchiveTargets = []string{"retired:9091"}
 	encoded, _ := json.Marshal(checkpoint)
-	setContinuityCheckpointLocked(test, string(encoded))
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(encoded))
 	runner.tests[test.ID] = test
 	if err := runner.adoptOrphanedRuns(); err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestAdoptionSharesCompletedAndRetiredGeneratorConnections(t *testing.T) {
 				checkpoint.ArchiveTargets = []string{"gen-a:9091"}
 			}
 			encoded, _ := json.Marshal(checkpoint)
-			setContinuityCheckpointLocked(finished, string(encoded))
+			setStoredAdoptionTestCheckpoint(t, runner, store, finished, string(encoded))
 			runner.tests[active.ID], runner.tests[finished.ID] = active, finished
 			if err := runner.adoptOrphanedRuns(); err != nil {
 				t.Fatal(err)
@@ -323,7 +323,7 @@ func TestPartialAdoptionFailureRetainsCompletedGeneratorEvidence(t *testing.T) {
 	checkpoint.Shards["ga"] = append(checkpoint.Shards["ga"], GeneratorShardSummary{Group: "ga", Target: "gen-b:9091", VUsers: 5})
 	checkpoint.ArchiveTargets = []string{"retired:9091"}
 	encoded, _ := json.Marshal(checkpoint)
-	setContinuityCheckpointLocked(test, string(encoded))
+	setStoredAdoptionTestCheckpoint(t, runner, store, test, string(encoded))
 	runner.tests[test.ID] = test
 	if err := runner.adoptOrphanedRuns(); err != nil {
 		t.Fatal(err)
@@ -468,7 +468,7 @@ func TestStoppingRunIsFinishedAsAbortedAfterFailover(t *testing.T) {
 			checkpoint, _, _ := decodeRunContinuityCheckpoint(test.continuityCheckpoint)
 			checkpoint.ArchiveTargets = []string{"retired:9091"}
 			encoded, _ := json.Marshal(checkpoint)
-			setContinuityCheckpointLocked(test, string(encoded))
+			setStoredAdoptionTestCheckpoint(t, runner, store, test, string(encoded))
 			if _, err := store.UpdateTestStatusIfActive(test.ID, "STOPPING", nil, ""); err != nil {
 				t.Fatalf("mark STOPPING: %v", err)
 			}
@@ -558,4 +558,15 @@ func TestFinishedGeneratorsAreExcludedFromRenewal(t *testing.T) {
 	if backend.testExecutionLeaseFenced(test, "gen-live:9091") || test.remoteRunSupervisionFencedTargets["gen-live:9091"] {
 		t.Fatal("an adopted generator was excluded from renewal")
 	}
+}
+
+// Adoption now consumes an exact durable checkpoint snapshot. Fixtures that
+// change completed/retired shards must persist that same snapshot before reconcile.
+func setStoredAdoptionTestCheckpoint(t *testing.T, runner *TestRunner, store *storage.SQLiteStore, test *ManagedTest, raw string) {
+	t.Helper()
+	owner, _ := runner.leadership.executionLeaseTerm()
+	if result, err := store.UpdateTestContinuityCheckpointIfLeaseHeld(test.ID, raw, executionLeaseName, owner); err != nil || result != storage.TestStatusTransitionUpdated {
+		t.Fatalf("persist checkpoint fixture: %s %v", result, err)
+	}
+	setContinuityCheckpointLocked(test, raw)
 }

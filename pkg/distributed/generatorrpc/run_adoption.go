@@ -66,14 +66,22 @@ func validateRunAdoptions(adoptions []*pb.RunAdoption) error {
 			return status.Errorf(codes.InvalidArgument, "adoptions lists test %q more than once", testID)
 		}
 		seen[testID] = struct{}{}
-		if adoption.GetPriorGeneration() == 0 {
-			return status.Errorf(codes.InvalidArgument, "adoption of %q requires a positive prior_generation", testID)
+		if len(adoption.GetPriorProofs()) >= MaxRunAdoptionPriorProofs {
+			return status.Error(codes.InvalidArgument, "too many adoption lineage proofs")
 		}
-		if !validRunSupervisionToken(adoption.GetPriorRunSupervisionToken()) || !validRunSupervisionToken(adoption.GetNewRunSupervisionToken()) {
-			return status.Errorf(codes.InvalidArgument, "adoption of %q requires prior and new run supervision tokens of %d non-zero bytes", testID, RunSupervisionTokenSize)
+		if !validRunSupervisionToken(adoption.GetNewRunSupervisionToken()) {
+			return status.Error(codes.InvalidArgument, "invalid new adoption supervision token")
 		}
-		if sameRunSupervisionToken(runSupervisionTokenHash(adoption.GetPriorRunSupervisionToken()), adoption.GetNewRunSupervisionToken()) {
-			return status.Errorf(codes.InvalidArgument, "adoption of %q must rotate the run supervision token", testID)
+		generations := make(map[uint64]bool)
+		for _, proof := range adoptionPriorProofs(adoption) {
+			generation := proof.GetGeneration()
+			if generation == 0 || generations[generation] || !validRunSupervisionToken(proof.GetRunSupervisionToken()) {
+				return status.Error(codes.InvalidArgument, "adoption requires distinct positive prior generations and valid tokens")
+			}
+			generations[generation] = true
+			if sameRunSupervisionToken(runSupervisionTokenHash(proof.GetRunSupervisionToken()), adoption.GetNewRunSupervisionToken()) {
+				return status.Error(codes.InvalidArgument, "adoption must rotate every prior supervision token")
+			}
 		}
 	}
 	return nil
@@ -96,6 +104,12 @@ func (s *Service) adoptRunsLocked(generation uint64, adoptions []*pb.RunAdoption
 }
 
 func (s *Service) adoptRunLocked(generation uint64, adoption *pb.RunAdoption, rebind bool, now time.Time) *pb.RunAdoptionResult {
+	for _, proof := range adoptionPriorProofs(adoption) {
+		if proof.GetGeneration() >= generation {
+			return &pb.RunAdoptionResult{TestId: strings.TrimSpace(adoption.GetTestId()), Outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED, Detail: "prior proof generation is not older than the claimed generation"}
+		}
+	}
+	adoption = s.selectAdoptionPriorLocked(adoption)
 	testID := strings.TrimSpace(adoption.GetTestId())
 	prior := adoption.GetPriorGeneration()
 	result := func(outcome pb.RunAdoptionOutcome, detail string) *pb.RunAdoptionResult {

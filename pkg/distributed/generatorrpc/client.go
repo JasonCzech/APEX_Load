@@ -358,6 +358,12 @@ type RunAdoption struct {
 	PriorGeneration uint64
 	PriorToken      []byte
 	NewToken        []byte
+	PriorProofs     []RunAdoptionProof
+}
+
+type RunAdoptionProof struct {
+	Generation uint64
+	Token      []byte
 }
 
 type RunAdoptionResult struct {
@@ -706,11 +712,16 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 	}
 	protoAdoptions := make([]*pb.RunAdoption, 0, len(adoptions))
 	for _, adoption := range adoptions {
+		proofs := make([]*pb.RunAdoptionProof, 0, len(adoption.PriorProofs))
+		for _, proof := range adoption.PriorProofs {
+			proofs = append(proofs, &pb.RunAdoptionProof{Generation: proof.Generation, RunSupervisionToken: append([]byte(nil), proof.Token...)})
+		}
 		protoAdoptions = append(protoAdoptions, &pb.RunAdoption{
 			TestId:                   strings.TrimSpace(adoption.TestID),
 			PriorGeneration:          adoption.PriorGeneration,
 			PriorRunSupervisionToken: append([]byte(nil), adoption.PriorToken...),
 			NewRunSupervisionToken:   append([]byte(nil), adoption.NewToken...),
+			PriorProofs:              proofs,
 		})
 	}
 	ack, err := c.rpc.ClaimExecutionEpoch(ctx, &pb.ExecutionEpochClaim{
