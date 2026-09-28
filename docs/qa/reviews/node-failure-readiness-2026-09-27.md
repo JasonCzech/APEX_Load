@@ -2746,3 +2746,30 @@ immutable commit marker after loss of local staging.
 The full Go suite passed all 108 test-bearing packages (API 362.471 s). Final
 review and documentation checks passed. This establishes source-level retry behavior;
 latest-image Docker fault qualification remains pending.
+
+## Terminal-identity publication completion storage fence (2026-09-28)
+
+Added an optional completion method that accepts the inspected terminal project,
+controller request time, end time, status and execution lease. The transaction locks
+and checks that identity, the opaque publication token and job project before any
+catalog/cleanup/refresh mutation. It preserves generator archive creation timestamps
+and the existing conditional refresh acknowledgement. The compatibility method keeps
+its prior contract; wiring the production finalizer to this stronger method and
+validating source identity before adjunct edits is the next controller slice.
+
+Review found a lease may expire while completion waits for a locked run row. The
+transaction now rechecks the database clock after acquiring run/job locks; holding
+the lease row lock does not extend its TTL. The isolated PostgreSQL regression waits
+until the completion transaction is blocked on the run, crosses the lease expiry,
+then releases the run lock and verifies no catalog commit or pending-job deletion.
+The expanded PostgreSQL matrix passed three repetitions (9.637 s), including stale
+identity/owner/token rejection, current-token single-winner completion and newer
+refresh preservation. Focused SQLite checks passed (0.899 s); the full storage race
+run is in progress. No schema migration or released fingerprint changed.
+
+The complete storage package passed under the race detector (379.898 s), and final
+scoped review found no further completion-fence findings. Documentation checks passed
+for all 69 active Markdown files. The preceding retry-worker commit passed the full
+108-package suite; this storage-only extension is additionally validated by the full
+storage race run and three isolated PostgreSQL repetitions. Controller integration
+will receive another full-suite gate before its review/fix/commit cycle completes.

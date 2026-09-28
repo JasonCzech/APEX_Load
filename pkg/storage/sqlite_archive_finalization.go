@@ -499,6 +499,10 @@ func (s *SQLiteStore) updateArchiveFinalizationRecordIfToken(testID string, inte
 // retention cancellation, or test deletion makes the operation a no-op instead
 // of allowing a stale worker to resurrect/overwrite archive metadata.
 func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken string, refreshToken string, record *RunArchiveRecord) (bool, error) {
+	return s.completeArchiveFinalization(testID, intentToken, refreshToken, record, nil)
+}
+
+func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken string, refreshToken string, record *RunArchiveRecord, identity *ArchiveFinalizationRunIdentity) (bool, error) {
 	testID = strings.TrimSpace(testID)
 	intentToken = strings.TrimSpace(intentToken)
 	if testID == "" || intentToken == "" || record == nil {
@@ -512,25 +516,43 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 		return false, err
 	}
 	defer tx.Rollback()
+	if identity != nil && identity.LeaseName != "" {
+		held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, identity.LeaseName, identity.LeaseOwner)
+		if err != nil || !held {
+			return false, err
+		}
+	}
+	testArgs := []any{testID}
 	testQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
-	jobQuery := `SELECT COALESCE(intent_token, '') FROM archive_finalization_jobs WHERE test_id = ?`
+	if identity != nil {
+		start, end := identity.StartTime, identity.EndTime
+		if s.db.dialect == storeDialectPostgres {
+			start, end = start.Truncate(time.Microsecond), end.Truncate(time.Microsecond)
+		}
+		testQuery += ` AND start_time = ? AND end_time = ? AND status = ?`
+		testArgs = append(testArgs, start, end, identity.Status)
+	}
+	jobQuery := `SELECT COALESCE(intent_token, ''), COALESCE(project_id, '') FROM archive_finalization_jobs WHERE test_id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		testQuery += ` FOR UPDATE`
 		jobQuery += ` FOR UPDATE`
 	}
 	var durableProjectID string
-	if err := tx.QueryRow(testQuery, testID).Scan(&durableProjectID); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRow(testQuery, testArgs...).Scan(&durableProjectID); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
-	var currentToken string
-	if err := tx.QueryRow(jobQuery, testID).Scan(&currentToken); errors.Is(err, sql.ErrNoRows) {
+	if identity != nil && normalizeProjectID(durableProjectID) != identity.ProjectID {
+		return false, nil
+	}
+	var currentToken, jobProject string
+	if err := tx.QueryRow(jobQuery, testID).Scan(&currentToken, &jobProject); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
-	if currentToken != intentToken {
+	if currentToken != intentToken || (identity != nil && normalizeProjectID(jobProject) != identity.ProjectID) {
 		return false, nil
 	}
 	var cleanupExists int
@@ -547,6 +569,14 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return false, err
+	}
+	// Acquiring the test/job locks may have waited past the lease deadline.
+	// Retaining the lease row lock prevents takeover, but does not extend its TTL.
+	if identity != nil && identity.LeaseName != "" {
+		held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, identity.LeaseName, identity.LeaseOwner)
+		if err != nil || !held {
+			return false, err
+		}
 	}
 	record.SchemaVersion = normalizeTelemetrySchemaVersion(record.SchemaVersion, archiveRecordSchemaVersion)
 	if superseded != nil {

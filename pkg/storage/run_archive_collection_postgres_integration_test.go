@@ -5,6 +5,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -41,8 +42,90 @@ func TestPostgresRunArchiveCollectionDurability(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	checkArchiveFinalizationTerminalIdentity(t, store.SQLiteStore)
+	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore)
 	checkArchiveOrphanIncarnationFence(t, store.SQLiteStore)
 	checkRunArchiveCollectionCache(t, store.SQLiteStore)
 	checkRunArchiveCollectionDurability(t, store.SQLiteStore)
 	checkRunArchiveCollectionPublicationPrecedence(t, store.SQLiteStore)
+}
+
+// The completion transaction locks the lease before the run row. Waiting for a
+// busy run must not implicitly extend the lease while holding its row lock.
+func checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t *testing.T, s *SQLiteStore) {
+	t.Helper()
+	now := time.Now().UTC()
+	id := fmt.Sprintf("completion-expiry-%d", now.UnixNano())
+	row := &TestRecord{ID: id, Name: id, ProjectID: DefaultProjectID, StartTime: now.Add(-time.Minute), EndTime: &now, Status: "COMPLETE"}
+	if err := s.SaveTest(row); err != nil {
+		t.Fatal(err)
+	}
+	record := RunArchiveRecord{TestID: id, CreatedAt: row.StartTime, CompletedAt: now}
+	job := &ArchiveFinalizationJob{TestID: id, ProjectID: row.ProjectID, ArchiveRecord: record}
+	if err := s.SaveArchiveFinalizationJob(job); err != nil {
+		t.Fatal(err)
+	}
+	held, lease, err := s.TryAcquireSchedulerLeaseTerm(id, "owner", time.Now(), 2*time.Second)
+	if err != nil || !held || lease == nil {
+		t.Fatal(err)
+	}
+	blocker, err := s.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Rollback()
+	var locked string
+	var blockerPID int
+	if err := blocker.QueryRow(`SELECT id FROM tests WHERE id = ? FOR UPDATE`, id).Scan(&locked); err != nil {
+		t.Fatal(err)
+	}
+	if err := blocker.QueryRow(`SELECT pg_backend_pid()`).Scan(&blockerPID); err != nil {
+		t.Fatal(err)
+	}
+	type completionResult struct {
+		committed bool
+		err       error
+	}
+	done := make(chan completionResult, 1)
+	go func() {
+		ok, err := s.CompleteArchiveFinalizationForRun(id, job.IntentToken, "", &record, ArchiveFinalizationRunIdentity{ProjectID: row.ProjectID, StartTime: row.StartTime, EndTime: now, Status: row.Status, LeaseName: id, LeaseOwner: "owner"})
+		done <- completionResult{ok, err}
+	}()
+	defer func() { _ = blocker.Rollback() }()
+	deadline := time.Now().Add(time.Second)
+	blocked := false
+	for time.Now().Before(deadline) {
+		var count int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM pg_stat_activity WHERE ? = ANY(pg_blocking_pids(pid))`, blockerPID).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count > 0 {
+			blocked = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !blocked {
+		t.Fatal("completion did not wait for the locked run row")
+	}
+	if delay := time.Until(lease.ExpiresAt.Add(50 * time.Millisecond)); delay > 0 {
+		time.Sleep(delay)
+	}
+	if err := blocker.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case result := <-done:
+		if result.err != nil || result.committed {
+			t.Fatalf("expired waiting completion=%v: %v", result.committed, result.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("completion did not release after run unlock")
+	}
+	if _, err := s.GetRunArchive(id); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal("expired transaction published catalog", err)
+	}
+	if _, err := s.GetArchiveFinalizationJob(id); err != nil {
+		t.Fatal("expired transaction erased pending job", err)
+	}
 }
