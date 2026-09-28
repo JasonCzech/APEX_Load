@@ -407,3 +407,16 @@ durable expired-generation fence. Idle-only leadership turnover is implemented a
 PostgreSQL and full Go-suite checks as the recovery path: it preserves generator fencing, gates on local and durable
 test state, and serializes the exact-term release against renewal and fenced start
 commits. Three consecutive deployed passes remain outstanding.
+
+
+The first cold-spare trial on `af7074b6` passed traffic recovery (106.946 seconds),
+worker restoration and available-archive integrity with explicit missing-source
+coverage. Review identified that terminal status can precede archive cleanup.
+The follow-up idle-turnover guard waits for remote cleanup, local archive fences,
+current unresolved source collection and unpublished archive jobs. It may delay
+queued runs until primary archive work settles; it preserves private staging during
+voluntary turnover without promising survival of involuntary leader/storage loss.
+Focused SQLite/API, three PostgreSQL repetitions, three race repetitions, and the
+full 108-package Go suite pass. The exact-term database release also participates
+in the existing bounded health bypass while holding the runner lock. Three
+consecutive trials on the reviewed follow-up deployment remain pending.

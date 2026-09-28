@@ -35,6 +35,12 @@ func (tr *TestRunner) recoverExpiredGeneratorEpoch(ctx context.Context, generati
 		if test == nil {
 			continue
 		}
+		// Failed/aborted outcomes become durable before remote cleanup and
+		// archive transfer finish. These handles still own terminal evidence.
+		if test.remoteClient != nil || len(test.remoteClientsByTarget) != 0 ||
+			len(test.remoteArchiveClientsByTarget) != 0 || test.remoteLifecycleCancel != nil {
+			return false
+		}
 		switch test.Status {
 		case "DRAFT", "PENDING", "QUEUED", "SHAKEOUT_REVIEW", "COMPLETE", "FAILED", "ABORTED":
 		default:
@@ -43,6 +49,18 @@ func (tr *TestRunner) recoverExpiredGeneratorEpoch(ctx context.Context, generati
 			return false
 		}
 	}
+	// Keep the reference registry closed across the release decision, so a new
+	// local collection/publication cannot start in the snapshot-to-release gap.
+	// Remote terminal cleanup above bridges the earlier pre-collection phase.
+	tr.archiveCommitMu.Lock()
+	defer tr.archiveCommitMu.Unlock()
+	if len(tr.archiveCommitGates) != 0 {
+		return false
+	}
+	// The exact-term transaction holds tr.mu through database I/O. Publish that
+	// wait to the bounded liveness and panic-recovery bypasses.
+	tr.beginLockHeldDurableWrite()
+	defer tr.endLockHeldDurableWrite()
 	return tr.leadership.releaseIdleExecutionTerm(ctx, generation, owner)
 }
 

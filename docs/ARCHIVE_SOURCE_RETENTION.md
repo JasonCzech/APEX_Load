@@ -182,6 +182,15 @@ queued through the transactional request-time/status/end-time/lease fence. Autom
 collection does not recreate a lost source for an already-resolved publication outbox;
 per-pod emptyDir loss during pending publication remains a separate recovery item.
 
+Voluntary idle epoch turnover, used to recover restored generators that reject an
+expired generation, waits for terminal remote cleanup, active local archive fences,
+current unresolved collection intents and pending primary publication jobs. Queued
+runs may therefore wait for archive retries to settle before the fleet obtains a
+new generation. Resolved or explicitly exhausted collection does not block this
+turnover, and the guard never retires source data. This protects private staging
+during voluntary turnover; it does not make private files survive involuntary
+controller or volume loss.
+
 Single-run terminal API reads expose a bounded `archive_recovery` projection of
 durable bookkeeping. Results distinguish queued collection, cache-only recovery,
 pending publication, exhausted recovery and resolved-but-unavailable archives.

@@ -3296,3 +3296,50 @@ cases passed three additional race repetitions (10.448 s). The final full Go sui
 passed all 108 test-bearing packages (API 388.76 s), and documentation
 checks passed for 69 active Markdown files. Scoped re-review found no further
 issues in this slice. Deployment and new cold-spare repetitions remain pending.
+
+
+## Archive-safe idle turnover (2026-09-28)
+
+Controller `af7074b6` was built and deployed after verified PostgreSQL and controller
+staging backups; generators remained on `1642d920`. The fresh healthy gate (`d5428a16-d294-429b-b239-e703f28a94a4`) sustained a
+minimum 317.117 RPS across 60.568 seconds and passed complete-source archive
+integrity and zero-controller-restart checks.
+Cold-spare worker trial 1 (`4da642eb-4d46-46fd-b66a-8a3bf50a5806`) recovered sustained
+traffic in 106.946 seconds, restored the worker, and retained zero restarts on the
+surviving controller. Cleanup stopped the run to `ABORTED`. The separate archive
+follow-up verified every available artifact and retained explicit best-effort
+coverage: the original source was missing and the replacement source was collected.
+The first archive-check receipt failed because its helper compared nanosecond API
+and microsecond PostgreSQL timestamp strings; it is preserved alongside the corrected,
+separately recorded follow-up. No lost history is claimed to have been reconstructed.
+
+Review of the observed idle generation turnover found a terminal-cleanup gap:
+`ABORTED`/`FAILED` can be durable before source collection finishes. Turnover now
+waits for remote cleanup handles, local archive commit fences, pending publication
+jobs, and current unresolved collection intents. Resolved, explicitly exhausted,
+and stale-incarnation collection rows do not block it. The fence registry remains
+locked across the release decision, preventing a new local archive operation from
+entering between the check and release. This preserves current-leader private staging;
+it does not make private storage available after an involuntary leader failure.
+Pending next runs may wait for collection retries or publication to settle before
+the fleet can obtain a fresh generation. No retry budget or data-retirement rule
+is weakened. Regression tests reproduced both local and durable guard failures
+before the fix. Three consecutive trials on this reviewed follow-up deployment remain outstanding.
+
+
+A second review finding concerned liveness during the exact-term database call:
+it held the runner mutex without publishing an in-flight durable-write count.
+A stalled-store regression reproduced the missing health bypass on both commit
+and error paths. The release now uses the existing bounded liveness/panic-recovery
+accounting; the test checks that the bypass expires normally and clears after
+the database call returns. No probe timeout or bypass duration was extended.
+
+
+Validation passed: focused SQLite/API checks (0.658 / 3.567 seconds), three
+isolated PostgreSQL repetitions (4.074 seconds), and three final race repetitions
+(API 72.762 seconds, storage 7.502 seconds), including the health-accounting and
+lock-held-write guards. The full Go suite passed all 108 test-bearing packages
+(API 416.075 seconds). Documentation checks passed for 69 active Markdown files.
+Scoped re-review found no further issues. The database backup restored successfully;
+the first staging-backup attempt stopped before copying at its disk-headroom guard.
+Cache reclamation and a fresh staging backup precede the reviewed rollout.

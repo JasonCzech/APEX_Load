@@ -42,4 +42,5 @@ func TestPostgresIdleExecutionLeaseRelease(t *testing.T) {
 	}
 	defer store.Close()
 	checkIdleExecutionLeaseRelease(t, store.SQLiteStore)
+	checkIdleExecutionLeaseArchiveGuards(t, store.SQLiteStore)
 }

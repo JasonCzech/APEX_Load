@@ -107,3 +107,75 @@ func checkIdleExecutionLeaseRelease(t *testing.T, s *SQLiteStore) {
 		t.Fatalf("stale successor release: %v %v", ok, err)
 	}
 }
+
+func TestIdleExecutionLeaseArchiveGuards(t *testing.T) {
+	checkIdleExecutionLeaseArchiveGuards(t, newHAFencingStore(t))
+}
+
+func checkIdleExecutionLeaseArchiveGuards(t *testing.T, s *SQLiteStore) {
+	t.Helper()
+	for _, mode := range []string{"collection", "publication", "resolved", "exhausted", "stale-incarnation"} {
+		t.Run(mode, func(t *testing.T) {
+			id := "idle-archive-" + mode
+			owner := "owner-" + mode
+			ok, term, err := s.TryAcquireSchedulerLeaseTerm(id, owner, time.Now(), time.Minute)
+			if err != nil || !ok {
+				t.Fatal(ok, err)
+			}
+			now := time.Now().UTC()
+			start := now.Add(-time.Minute)
+			row := &TestRecord{ID: id, Name: id, ProjectID: DefaultProjectID, Status: "RUNNING", StartTime: start}
+			if err := s.SaveTest(row); err != nil {
+				t.Fatal(err)
+			}
+			if mode != "publication" {
+				_, prepared, err := s.PrepareRunArchiveCollection(id, row.ProjectID, start, map[string]string{"source": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, id, owner)
+				if err != nil || !prepared {
+					t.Fatal(prepared, err)
+				}
+			}
+			if err := s.UpdateTestStatus(id, "COMPLETE", &now, ""); err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "publication":
+				job := &ArchiveFinalizationJob{TestID: id, ProjectID: row.ProjectID, ArchiveRecord: RunArchiveRecord{TestID: id, CreatedAt: start, CompletedAt: now, ArchivePath: "/archive/" + id, ManifestPath: "/archive/" + id + "/manifest.json"}}
+				if err := s.SaveArchiveFinalizationJob(job); err != nil {
+					t.Fatal(err)
+				}
+			case "resolved":
+				if _, err := s.db.Exec(`UPDATE run_archive_collection_intents SET resolved=1 WHERE test_id=?`, id); err != nil {
+					t.Fatal(err)
+				}
+			case "exhausted":
+				if _, err := s.db.Exec(`UPDATE run_archive_collection_intents SET exhausted=1 WHERE test_id=?`, id); err != nil {
+					t.Fatal(err)
+				}
+			case "stale-incarnation":
+				if _, err := s.db.Exec(`UPDATE run_archive_collection_intents SET test_start_time=? WHERE test_id=?`, start.Add(-time.Hour), id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			released, err := s.ReleaseSchedulerLeaseTermIfTestsIdle(id, owner, term.Generation)
+			want := mode != "collection" && mode != "publication"
+			if err != nil || released != want {
+				t.Fatalf("release=%v %v, want %v", released, err, want)
+			}
+			if !want {
+				// Retiring the bookkeeping after publication permits the next attempt.
+				if err := s.DeleteArchiveFinalizationJob(id); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := s.db.Exec(`UPDATE run_archive_collection_intents SET resolved=1 WHERE test_id=?`, id); err != nil {
+					t.Fatal(err)
+				}
+				if released, err := s.ReleaseSchedulerLeaseTermIfTestsIdle(id, owner, term.Generation); err != nil || !released {
+					t.Fatalf("finished archive blocked release: %v %v", released, err)
+				}
+			}
+			if err := s.DeleteTest(id); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
