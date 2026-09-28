@@ -1219,3 +1219,46 @@ containerd import lacked its normalized repository alias. Restoring that alias f
 the verified manifest allowed Prometheus to start. This is preserved as setup evidence.
 At minimum two replicas, existing generator PVCs pin both low ordinals to one worker;
 at four replicas there are two per worker. No volumes were deleted to alter placement.
+
+## Capacity admission correction from live KEDA trials
+
+The live oversized-group failure exposed an auto-placement fallback that ignored
+available capacity. Removed that fallback while retaining the documented one-host
+legacy auto contract. Explicit host sharding now bounds weighted allocations by each
+host's available VUsers as well as persistent Java runtime limits, including zero
+capacity and seed-rounding cases. Failed heartbeat probes advertise zero capacity.
+Known HTTP capacity shortages now use the existing non-overridable structured start
+conflict and leave the queued run unchanged; cold discovery checks the complete
+placement before sending any AssignWork RPC. Reservation-mode queuing remains intact.
+
+Review found that two concurrency fixtures depended on failed heartbeat probes being
+unlimited. Their heartbeat observations now use real in-process gRPC services while
+their scale barriers continue testing serialization and independent-group concurrency.
+A new cold-discovery integration test verifies zero assignments when the first group
+fits but the complete run cannot. No source-affinity, fencing, run-goal or persistent
+Java safety restriction was relaxed. Concurrent legacy launches still require opt-in
+peak reservations for atomic admission; this change does not add reserved node-loss
+headroom or guarantee replacement of participating shards.
+
+Live investigation then found one already-draining generator, despite all four pods
+being Ready/connected. Restoring that owned idle generator allowed one complete
+four-group cycle: queued demand 320, scale 2 → 4, explicit dispatch of four 80-VUser
+HTTP groups on four generators, sustained 320 active VUsers with zero observed errors,
+independent loaded target rate 3,173.3 requests/s, COMPLETE, and idle scale-down to two.
+Nine archive artifacts passed checksum/incarnation verification, with four declared
+sources and zero missing sources. A separate queued 640-VUser trial reached four
+replicas, HPA `ScalingLimited=True/TooManyReplicas`, and unchanged target traffic.
+These results used the preceding application image and accelerated HPA timing.
+
+The next attempt caught a pending pod without an IP in the private observation
+helper; that helper now waits for a full set of matching, connected, active targets.
+Its following trial correctly refused dispatch: ordinal 3 returned as `draining`
+after KEDA recreated it. Code inspection found that the pod watcher persists a
+termination drain under the stable generator name. This is a new actionable runtime
+finding, so repeated-cycle qualification remains incomplete until that separate fix
+is reviewed and deployed. No node fault was injected during these trials.
+
+Final capacity-slice validation: `go test ./...` passed (API package 410.475 s),
+focused capacity/start/discovery/concurrent-scale tests passed, and the corresponding
+race run passed (5.080 s). `git diff --check` passed. Final review found no further
+capacity-slice issue; the independently identified watcher defect is the next slice.

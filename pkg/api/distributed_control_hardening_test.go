@@ -18,10 +18,15 @@ import (
 
 type orderedScaleClient struct {
 	*evacuationFakeGeneratorClient
-	mu           sync.Mutex
-	calls        []int32
-	firstEntered chan struct{}
-	releaseFirst <-chan struct{}
+	heartbeatClient generatorClient
+	mu              sync.Mutex
+	calls           []int32
+	firstEntered    chan struct{}
+	releaseFirst    <-chan struct{}
+}
+
+func (c *orderedScaleClient) OpenHeartbeat(ctx context.Context) (*generatorrpc.HeartbeatStream, error) {
+	return c.heartbeatClient.OpenHeartbeat(ctx)
 }
 
 func (c *orderedScaleClient) AdjustVUsers(ctx context.Context, adjustment generatorrpc.VUserAdjustment) (generatorrpc.AdjustmentResult, error) {
@@ -58,6 +63,8 @@ func TestDistributedScaleSerializesControllerTransactionPerTestGroup(t *testing.
 		firstEntered:                  make(chan struct{}),
 		releaseFirst:                  releaseFirst,
 	}
+	clientA.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-a", 100)
+	clientB.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-b", 100)
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
 	hub := NewHub()
 	test := &ManagedTest{
@@ -153,6 +160,8 @@ func TestDistributedScaleDifferentGroupsCommitConcurrently(t *testing.T) {
 		firstEntered:                  make(chan struct{}),
 		releaseFirst:                  releaseScales,
 	}
+	buyersClient.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-buyers", 100)
+	sellersClient.heartbeatClient, _ = newTestGeneratorRPCClient(t, "gen-sellers", 100)
 	backend := newDistributedExecutionBackend([]string{"gen-buyers", "gen-sellers"}, time.Second, nil)
 	test := &ManagedTest{
 		ID:               "parallel-group-scale",

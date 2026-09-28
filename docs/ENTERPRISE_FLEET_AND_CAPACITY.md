@@ -83,6 +83,24 @@ Placement enforces the effective capability set before work is assigned:
 
 The inventory response exposes `compatibility_state` and `compatibility_issues` so operators can see why a target is excluded before a run starts.
 
+### Placement capacity bounds
+
+Legacy auto placement keeps each group on one eligible generator. Scaling the fleet
+with KEDA does not implicitly split an oversized group. Use an explicit group-level
+`specific_hosts` assignment for sharding, separate fitting groups, or enable peak pod
+reservations below for reservation-aware partitioning.
+
+Available generator VUsers are a hard placement limit even when peak reservations
+are disabled. Explicit sharding respects each selected host's capacity, including
+rounding and capacity already projected for preceding groups. Persistent Java must
+also fit its advertised runtime process slots. Failed heartbeat probes provide no
+available capacity. A fresh cached inventory shortage is a non-overridable structured
+HTTP 409 at start; a cold inventory is checked by fresh execution discovery. The
+complete discovered placement is checked before any group is staged. Reservation
+mode retains its existing capacity queue and transactional claims. Legacy admission
+is not an atomic reservation against concurrent launches; use peak reservations when
+that guarantee is required.
+
 ### Saturation Metrics And Rejection Reasons
 
 Prometheus exposes fleet rollups for dashboarding and alerts:

@@ -544,7 +544,7 @@ func (tr *TestRunner) loadStartLaunchEvidenceOnce(id string, start time.Time) (s
 		runtimeGatesLoaded: true,
 		javaConflicts:      snapshot.javaVuserRunnerLaunchConflictsForManagedTestLocked(projection),
 	}
-	if groupsUseJavaVuserProtocol(projection.Groups) {
+	if snapshot.shouldCheckStartPlacement(projection) {
 		evidence.placementConflicts = snapshot.generatorPlacementLaunchConflictsLocked(projection)
 	}
 	return evidence, nil
@@ -1466,7 +1466,7 @@ func (tr *TestRunner) startRuntimeGateConflictsLocked(test *ManagedTest, evidenc
 	}
 	javaConflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(test)
 	var placementConflicts []LaunchConflict
-	if groupsUseJavaVuserProtocol(test.Groups) {
+	if tr.shouldCheckStartPlacement(test) {
 		placementConflicts = tr.generatorPlacementLaunchConflictsLocked(test)
 	}
 	return javaConflicts, placementConflicts, nil

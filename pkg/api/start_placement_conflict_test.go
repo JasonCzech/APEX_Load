@@ -124,3 +124,30 @@ func TestHandleStartTestPreservesPlacementConflicts(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleStartRejectsKnownHTTPPlacementShortage(t *testing.T) {
+	const projectID = "project-http-capacity"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	storePreflightScript(server.runner, "http-capacity", projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen:9090|protocols=http"}, time.Second, nil))
+	setPreflightJavaVuserInventoryEntries(server.runner, GeneratorInventoryEntry{Target: "gen:9090", GeneratorID: "gen", Status: "connected", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 100, SupportedProtocols: []string{"http"}})
+	run, err := server.runner.CreateTest(CreateTestRequest{Name: "Exceeds real pod limit", ProjectID: projectID, ScriptID: "http-capacity", VUsers: 320, Duration: "1m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, override := range []bool{false, true} {
+		body, _ := json.Marshal(StartTestOptions{OverrideCapacityShortfall: override})
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+run.ID+"/start", bytes.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		server.mux.ServeHTTP(response, request)
+		if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "generator_placement_conflict") || !strings.Contains(response.Body.String(), "100 available VUsers") {
+			t.Fatalf("override=%v status=%d body=%s", override, response.Code, response.Body)
+		}
+	}
+	after, _ := server.runner.GetTest(run.ID)
+	persisted, err := server.store.GetTest(run.ID)
+	if err != nil || after.Status != run.Status || after.StartedAt != nil || persisted.StartedAt != nil || persisted.Status != run.Status {
+		t.Fatalf("rejection changed lifecycle: memory=%+v stored=%+v error=%v", after, persisted, err)
+	}
+}

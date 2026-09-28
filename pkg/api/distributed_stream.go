@@ -1993,9 +1993,10 @@ func (b *distributedExecutionBackend) stopRemainingRemoteTargets(tr *TestRunner,
 
 func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, target string, client generatorClient) generatorLoadSnapshot {
 	snapshot := generatorLoadSnapshot{
-		Target:            target,
-		GeneratorID:       target,
-		AvailableCapacity: int32(^uint32(0) >> 1),
+		Target:      target,
+		GeneratorID: target,
+		// Failed probes supply no capacity evidence. In particular, callers
+		// must not mistake an unreachable generator for an unlimited one.
 	}
 	heartbeat, err := client.OpenHeartbeat(ctx)
 	if err != nil {

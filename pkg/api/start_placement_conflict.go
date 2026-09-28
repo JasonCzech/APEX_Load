@@ -15,3 +15,17 @@ func (e *StartPlacementConflictError) Error() string {
 	}
 	return fmt.Sprintf("%s: %s", e.Conflicts[0].Code, e.Conflicts[0].Message)
 }
+
+// shouldCheckStartPlacement preserves reservation-mode queuing. Legacy placement
+// can reject known shortages at admission; a cold inventory is revalidated by
+// the execution backend's fresh discovery before work is assigned.
+func (tr *TestRunner) shouldCheckStartPlacement(test *ManagedTest) bool {
+	if groupsUseJavaVuserProtocol(test.Groups) {
+		return true
+	}
+	if tr.settings.CapacityPlanning.PodReservationsEnabled {
+		return false
+	}
+	inventory, _ := tr.cachedGeneratorInventorySnapshot()
+	return len(inventory) > 0
+}

@@ -276,6 +276,9 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 			reasons = append(reasons, fmt.Sprintf("%s does not match required labels %s", spec.Address, formatRequiredLabels(requiredLabels)))
 			continue
 		}
+		if int64(snapshot.AvailableCapacity) < int64(group.VUsers) {
+			reasons = append(reasons, fmt.Sprintf("%s has %d available VUsers for group demand %d", spec.Address, max(0, snapshot.AvailableCapacity), group.VUsers))
+		}
 		requiredOccupancy := javaVuserOccupancyModeForGroup(group)
 		if occupied, advertised := protocolRuntimeOccupancyMode(snapshot, "java_vuser"); requiredOccupancy != "" &&
 			advertised && occupied != generatorrpc.RuntimeOccupancyModeIdle && occupied != requiredOccupancy {

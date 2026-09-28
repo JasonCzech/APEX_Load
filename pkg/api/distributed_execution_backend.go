@@ -1156,6 +1156,16 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 	}
 	peakGroupShards := planDistributedGroupShardsForCandidates(reservationGroups, loadByTarget, defaultLoadByTarget, allTargets, allowedTargets, assignment, targetSpecs)
+	// Validate the complete discovered placement before staging any group. A
+	// later unplaceable group must not start earlier groups and then abort them.
+	if !podSettings.CapacityPlanning.PodReservationsEnabled {
+		for _, group := range reservationGroups {
+			if len(peakGroupShards[group.Name]) == 0 {
+				failStartup("insufficient compatible generator capacity for complete placement: " + generatorPlacementRejectionMessage(group, loadByTarget, targetSpecs, assignment))
+				return
+			}
+		}
+	}
 	if podSettings.CapacityPlanning.PodReservationsEnabled {
 		podClaims, err = tr.reservePodPlacement(executionCtx, test, loadByTarget, peakGroupShards, clientsByTarget, executionGeneration, executionLeaseOwnerID)
 		if err != nil {
@@ -2192,7 +2202,7 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	scaleGroup.VUsers = targetVUsers
 	nextShards := capacityWeightedShardsForGroupIncludingZero(scaleGroup, targets, loadByTarget, shardStrategyForGroupShards(shards))
 	if len(nextShards) == 0 {
-		return fmt.Errorf("no selected generator has sufficient java_vuser runtime capacity for %d VUsers", targetVUsers)
+		return fmt.Errorf("selected generators have insufficient generator or runtime capacity for %d VUsers", targetVUsers)
 	}
 	nextShards, err = preserveShardCoordinatesByTarget(nextShards, shards)
 	if err != nil {

@@ -281,9 +281,6 @@ func capacityWeightedShardsForGroup(group TestGroup, targets []string, loadByTar
 		}
 	}
 	plan := javaVuserCapacityPlanForGroup(group)
-	if !plan.RequiresPersistentLifecycle() {
-		return capacityWeightedShards(group.Name, group.VUsers, targets, loadByTarget, strategy)
-	}
 	if len(targets) == 0 || group.VUsers <= 0 {
 		return nil
 	}
@@ -296,13 +293,16 @@ func capacityWeightedShardsForGroup(group TestGroup, targets []string, loadByTar
 		if !ok {
 			return nil
 		}
-		// Persistent Java VUsers pin one external process slot for their entire
-		// lifecycle. A general generator heartbeat or top-level feature bit cannot
-		// prove how many such slots exist, so a missing protocol capacity
-		// advertisement is unusable rather than an unbounded fallback.
-		maximum := 0
-		if available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser"); advertised {
-			maximum = maximumVUsersWithinRuntimeCapacity(plan, group.VUsers, available)
+		// General generator capacity is a hard limit, even when reservation
+		// enforcement is disabled. Persistent Java also needs advertised JVM
+		// slots; neither limit may be exceeded by weighted rounding.
+		maximum := max(0, int(snapshot.AvailableCapacity))
+		if plan.RequiresPersistentLifecycle() {
+			runtimeMaximum := 0
+			if available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser"); advertised {
+				runtimeMaximum = maximumVUsersWithinRuntimeCapacity(plan, group.VUsers, available)
+			}
+			maximum = min(maximum, runtimeMaximum)
 		}
 		if snapshot.AvailableCapacity > int32(maximum) {
 			snapshot.AvailableCapacity = int32(maximum)
@@ -383,10 +383,6 @@ func capacityWeightedShardsForGroupIncludingZero(group TestGroup, targets []stri
 		if len(targets) == 0 {
 			return nil
 		}
-	}
-	plan := javaVuserCapacityPlanForGroup(group)
-	if !plan.RequiresPersistentLifecycle() {
-		return capacityWeightedShardsIncludingZero(group.Name, group.VUsers, targets, loadByTarget, strategy)
 	}
 	if len(targets) == 0 || group.VUsers < 0 {
 		return nil
@@ -602,52 +598,6 @@ func restoreGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGrou
 	}
 }
 
-func capacityWeightedShards(groupName string, vusers int, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string) []GeneratorShardSummary {
-	return buildCapacityWeightedShards(groupName, vusers, targets, loadByTarget, strategy, false)
-}
-
-func capacityWeightedShardsIncludingZero(groupName string, vusers int, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string) []GeneratorShardSummary {
-	return buildCapacityWeightedShards(groupName, vusers, targets, loadByTarget, strategy, true)
-}
-
-func buildCapacityWeightedShards(groupName string, vusers int, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string, includeZero bool) []GeneratorShardSummary {
-	if len(targets) == 0 || vusers <= 0 {
-		if !includeZero {
-			return nil
-		}
-		shards := make([]GeneratorShardSummary, 0, len(targets))
-		for _, target := range targets {
-			shards = append(shards, GeneratorShardSummary{
-				Group:         groupName,
-				Target:        target,
-				VUsers:        0,
-				ShardStrategy: firstNonEmpty(strategy, generatorShardStrategyCapacityWeighted),
-			})
-		}
-		return shards
-	}
-	if len(targets) == 1 {
-		return []GeneratorShardSummary{{Group: groupName, Target: targets[0], VUsers: vusers}}
-	}
-	if strategy == "" {
-		strategy = generatorShardStrategyCapacityWeighted
-	}
-	allocations := allocateCapacityWeightedVUsers(vusers, targets, loadByTarget)
-	shards := make([]GeneratorShardSummary, 0, len(targets))
-	for _, target := range targets {
-		if allocations[target] <= 0 && !includeZero {
-			continue
-		}
-		shards = append(shards, GeneratorShardSummary{
-			Group:         groupName,
-			Target:        target,
-			VUsers:        allocations[target],
-			ShardStrategy: strategy,
-		})
-	}
-	return shards
-}
-
 func allocateCapacityWeightedVUsers(total int, targets []string, loadByTarget map[string]generatorLoadSnapshot) map[string]int {
 	allocations := make(map[string]int, len(targets))
 	if total <= 0 || len(targets) == 0 {
@@ -725,13 +675,7 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 		if !runtimeCapacityAllowsGroup(group, loadByTarget[target], group.VUsers) {
 			continue
 		}
-		if loadByTarget[target].AvailableCapacity >= int32(group.VUsers) {
-			return target
-		}
-	}
-	for _, target := range ordered {
-		if (compatibility == nil || compatibility.targetCanRun(target, group.Protocol, groupRequiredRuntimeFeature(group), requiredLabels)) &&
-			runtimeCapacityAllowsGroup(group, loadByTarget[target], group.VUsers) {
+		if int64(loadByTarget[target].AvailableCapacity) >= int64(group.VUsers) {
 			return target
 		}
 	}
