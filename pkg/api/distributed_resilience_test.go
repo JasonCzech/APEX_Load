@@ -1320,6 +1320,7 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 	pausedAt := time.Now()
 	test := &ManagedTest{
 		ID:           "run-provision-survivor",
+		CreatedAt:    started,
 		Name:         "provision survivor",
 		Status:       "PAUSED",
 		Duration:     time.Minute,

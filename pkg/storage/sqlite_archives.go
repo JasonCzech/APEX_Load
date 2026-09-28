@@ -78,6 +78,9 @@ func (s *SQLiteStore) SaveRunArchive(record *RunArchiveRecord) error {
 	}
 	// A successful collection supersedes its earlier failure permanently, even
 	// after retention eventually removes this catalog entry.
+	if _, err := tx.Exec(`UPDATE run_archive_collection_intents SET resolved = 1 WHERE test_id = ?`, record.TestID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, record.TestID); err != nil {
 		return err
 	}

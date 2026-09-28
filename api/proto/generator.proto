@@ -194,6 +194,9 @@ message WorkAssignment {
   // adopt it through ExecutionEpochClaim.adoptions, then stops with
   // controller_adoption_timeout. Zero (the default) keeps fail-fast behaviour.
   google.protobuf.Duration adoption_grace = 39;
+  // Original controller target namespace for identity-bound archive collection.
+  // Omission preserves legacy collection; groups on one generator must agree.
+  string archive_source_target = 40;
 }
 
 message WorkCommitRequest {
@@ -692,11 +695,14 @@ message ScriptAck {
 message ArchiveArtifactRequest {
   string test_id = 1;
   string name = 2;
+  // Optional retained assignment identity; a mismatch must emit no artifact bytes.
+  string source_identity = 3;
 }
 
 message ArchiveArtifact {
   string name = 1;
   bytes content = 2;
+  string source_identity = 3;
 }
 
 message ArchiveArtifactChunk {
@@ -705,6 +711,7 @@ message ArchiveArtifactChunk {
   int64 offset = 3;
   int64 total_size = 4;
   bool eof = 5;
+  string source_identity = 6;
 }
 
 message RunAdoptionProof {

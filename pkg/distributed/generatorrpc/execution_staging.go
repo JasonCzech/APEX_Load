@@ -133,6 +133,9 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 	if len(assignment.GetRunSupervisionToken()) > 0 && !validRunSupervisionToken(assignment.GetRunSupervisionToken()) {
 		return nil, status.Errorf(codes.InvalidArgument, "run_supervision_token must contain exactly %d non-zero bytes", RunSupervisionTokenSize)
 	}
+	if target := assignment.GetArchiveSourceTarget(); target != "" && (!validArchiveSourceTarget(target) || !validRunSupervisionToken(assignment.GetRunSupervisionToken())) {
+		return nil, status.Error(codes.InvalidArgument, "invalid archive source target or missing supervision token")
+	}
 	if err := validateAdoptionGrace(assignment); err != nil {
 		return nil, err
 	}
@@ -329,6 +332,9 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		return rejectedAssignmentStage("test id already has a retained completed archive", available)
 	}
 	if currentExists {
+		if current.archiveSourceTarget != request.GetArchiveSourceTarget() {
+			return rejectedAssignmentStage("all groups in a test must use the same archive source target", available)
+		}
 		if dsl.CanonicalTerminationMode(current.terminationMode) != dsl.CanonicalTerminationMode(request.GetTerminationMode()) || (current.terminationMode == "iterations" && current.committed) {
 			return rejectedAssignmentStage("iteration runs cannot admit late groups or mixed termination modes", available)
 		}
@@ -643,6 +649,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 		next.sourcePlan = cloneSourcePlan(request.SourcePlan)
 	}
 	next.testID = request.GetTestId()
+	next.archiveSourceTarget = request.GetArchiveSourceTarget()
 	next.terminationMode = request.GetTerminationMode()
 	next.lifecycle = plan.nextLifecycle
 	next.executionGeneration = request.GetExecutionGeneration()
@@ -683,7 +690,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	service.assignments[request.GetTestId()] = next
 	coordinator.finishPendingStageLocked(request.GetTestId(), plan.token)
 	if prepared != nil && prepared.writer != nil {
-		prepared.writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName())
+		prepared.writer.bindExecution(request.GetExecutionGeneration(), request.GetGroupName(), ArchiveSourceIdentity(request.GetTestId(), request.GetRunSupervisionToken(), request.GetArchiveSourceTarget()))
 	}
 	coordinator.scheduleStageExpiryLocked(service, request.GetTestId())
 	return service.metricsBatchLocked(request.GetTestId()), service.availableCapacityLocked(), nil
@@ -815,6 +822,7 @@ func assignmentControlFingerprint(assignment assignedTest, exists bool) [sha256.
 		return fingerprintDigest(h)
 	}
 	fingerprintWriteString(h, assignment.testID)
+	fingerprintWriteString(h, assignment.archiveSourceTarget)
 	fingerprintWriteUint64(h, uint64(assignment.lifecycle))
 	fingerprintWriteUint64(h, assignment.executionGeneration)
 	fingerprintWriteBool(h, assignment.requireTestExecutionLease)

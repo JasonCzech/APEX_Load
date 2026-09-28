@@ -411,10 +411,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx 
 	// Snapshot active and retired-archive transports in one critical section.
 	// Otherwise a concurrent evacuation could move a source between the two maps
 	// between reads and make the final evidence merge omit it.
-	clients, err := b.clientsFromSnapshot(clientsByTarget, singleClient, remoteTarget)
-	if err != nil && len(archivedClients) == 0 && len(shards) == 0 {
-		return nil, nil, err
-	}
+	clients, snapshotErr := b.clientsFromSnapshot(clientsByTarget, singleClient, remoteTarget)
 	if clients == nil {
 		clients = make(map[string]generatorClient, len(archivedClients))
 	}
@@ -436,6 +433,29 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx 
 				clients[target] = nil
 			}
 		}
+	}
+	var sourceIdentities map[string]string
+	if tr != nil {
+		intent, err := tr.runArchiveCollectionIntent(test)
+		if err != nil {
+			return nil, nil, err
+		}
+		if intent != nil {
+			sourceIdentities = intent.Sources
+			for target := range sourceIdentities {
+				if _, exists := clients[target]; !exists {
+					clients[target] = nil
+				}
+			}
+			for target := range clients {
+				if sourceIdentities[target] == "" {
+					return nil, nil, fmt.Errorf("archive target %s has no durable source identity", target)
+				}
+			}
+		}
+	}
+	if snapshotErr != nil && len(clients) == 0 {
+		return nil, nil, snapshotErr
 	}
 	if len(clients) > remoteArchiveMaxTargets {
 		return nil, nil, fmt.Errorf("remote archive target count %d exceeds limit %d", len(clients), remoteArchiveMaxTargets)
@@ -473,7 +493,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx 
 				results <- remoteArchiveFetchResult{index: index, err: ctx.Err()}
 				return
 			}
-			bundle, missing, err := b.fetchRemoteArchiveBundleTarget(ctx, clients[target], test.ID, target, index, transferStageRoot, requireAll, budget)
+			bundle, missing, err := b.fetchRemoteArchiveBundleTargetForSource(ctx, clients[target], test.ID, target, sourceIdentities[target], index, transferStageRoot, requireAll, budget)
 			results <- remoteArchiveFetchResult{index: index, bundle: bundle, missing: missing, err: err}
 		}(index, target)
 	}
@@ -527,6 +547,9 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx 
 }
 
 func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context.Context, client generatorClient, testID, target string, index int, transferStageRoot string, requireAll bool, budget *remoteArchiveTransferBudget) (remoteArchiveBundle, bool, error) {
+	return b.fetchRemoteArchiveBundleTargetForSource(ctx, client, testID, target, "", index, transferStageRoot, requireAll, budget)
+}
+func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTargetForSource(ctx context.Context, client generatorClient, testID, target, sourceIdentity string, index int, transferStageRoot string, requireAll bool, budget *remoteArchiveTransferBudget) (remoteArchiveBundle, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return remoteArchiveBundle{}, false, err
 	}
@@ -540,7 +563,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context
 		return remoteArchiveBundle{}, false, err
 	}
 	var manifestBuffer bytes.Buffer
-	_, err = copyRemoteArchiveArtifactWithBudget(targetCtx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: runArchiveManifestFileName}, &manifestBuffer, remoteArchiveManifestMaxBytes, budget)
+	_, err = copyRemoteArchiveArtifactWithBudget(targetCtx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: runArchiveManifestFileName, SourceIdentity: sourceIdentity}, &manifestBuffer, remoteArchiveManifestMaxBytes, budget)
 	if err != nil {
 		code := grpcStatus.Code(err)
 		if code == grpcCodes.NotFound || code == grpcCodes.Unimplemented || (!requireAll && (code == grpcCodes.Canceled || code == grpcCodes.Unavailable)) {
@@ -554,6 +577,14 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context
 	}
 	if strings.TrimSpace(manifest.TestID) != strings.TrimSpace(testID) {
 		return remoteArchiveBundle{}, false, fmt.Errorf("validate archive manifest from %s: test_id %q does not match requested test %q", target, manifest.TestID, testID)
+	}
+	if sourceIdentity != "" {
+		var sourceProof struct {
+			SourceIdentity string `json:"source_identity"`
+		}
+		if err := json.Unmarshal(manifestBuffer.Bytes(), &sourceProof); err != nil || sourceProof.SourceIdentity != sourceIdentity {
+			return remoteArchiveBundle{}, false, fmt.Errorf("archive source from %s does not match the durable assignment identity", target)
+		}
 	}
 	transactionsName, err := requiredArchiveArtifactName("transactions_file", manifest.TransactionsFile)
 	if err != nil {
@@ -571,7 +602,7 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context
 	names := []string{transactionsName, resourcesName, summariesName}
 	labels := []string{"transaction", "resource", "interval summaries"}
 	for i := range paths {
-		if _, err := fetchRemoteArchiveArtifactFileWithBudget(targetCtx, client, testID, names[i], paths[i], remoteArchiveArtifactMaxBytes, budget); err != nil {
+		if _, err := fetchRemoteArchiveArtifactFileForSource(targetCtx, client, testID, names[i], sourceIdentity, paths[i], remoteArchiveArtifactMaxBytes, budget); err != nil {
 			return remoteArchiveBundle{}, false, fmt.Errorf("fetch %s archive from %s: %w", labels[i], target, err)
 		}
 	}
@@ -675,6 +706,9 @@ func fetchRemoteArchiveArtifactFile(ctx context.Context, client generatorClient,
 }
 
 func fetchRemoteArchiveArtifactFileWithBudget(ctx context.Context, client generatorClient, testID, name, destinationPath string, maxBytes int64, totalBudget *remoteArchiveTransferBudget) (copied int64, err error) {
+	return fetchRemoteArchiveArtifactFileForSource(ctx, client, testID, name, "", destinationPath, maxBytes, totalBudget)
+}
+func fetchRemoteArchiveArtifactFileForSource(ctx context.Context, client generatorClient, testID, name, sourceIdentity, destinationPath string, maxBytes int64, totalBudget *remoteArchiveTransferBudget) (copied int64, err error) {
 	if err := validateArchiveRunID(testID); err != nil {
 		return 0, err
 	}
@@ -694,7 +728,7 @@ func fetchRemoteArchiveArtifactFileWithBudget(ctx context.Context, client genera
 			_ = os.Remove(destinationPath)
 		}
 	}()
-	copied, err = copyRemoteArchiveArtifactWithBudget(ctx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: name}, file, maxBytes, totalBudget)
+	copied, err = copyRemoteArchiveArtifactWithBudget(ctx, client, generatorrpc.ArchiveArtifactRequest{TestID: testID, Name: name, SourceIdentity: sourceIdentity}, file, maxBytes, totalBudget)
 	if err != nil {
 		return copied, err
 	}

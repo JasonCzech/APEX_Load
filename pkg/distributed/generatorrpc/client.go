@@ -32,6 +32,7 @@ const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 type Assignment struct {
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
 	AdoptionGrace                time.Duration
+	ArchiveSourceTarget          string
 	SourcePlan                   *pb.SourcePlanManifest
 	TerminationMode              string
 	TestID                       string
@@ -324,8 +325,9 @@ const (
 )
 
 type ArchiveArtifactRequest struct {
-	TestID string
-	Name   string
+	TestID         string
+	Name           string
+	SourceIdentity string
 }
 
 type Script struct {
@@ -1083,11 +1085,14 @@ func (c *Client) StopTestAtGenerationWithToken(ctx context.Context, testID strin
 func (c *Client) GetArchiveArtifact(ctx context.Context, request ArchiveArtifactRequest) ([]byte, error) {
 	artifact, err := c.rpc.GetArchiveArtifact(
 		ctx,
-		&pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name},
+		&pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name, SourceIdentity: request.SourceIdentity},
 		grpc.MaxCallRecvMsgSize(grpcMessageSize(archiveArtifactUnaryReceiveMaxSize)),
 	)
 	if err != nil {
 		return nil, err
+	}
+	if request.SourceIdentity != "" && artifact.GetSourceIdentity() != request.SourceIdentity {
+		return nil, fmt.Errorf("generator did not confirm the requested archive source identity")
 	}
 	return artifact.GetContent(), nil
 }
@@ -1102,7 +1107,7 @@ func (c *Client) StreamArchiveArtifact(ctx context.Context, request ArchiveArtif
 	if maxBytes <= 0 {
 		return 0, fmt.Errorf("archive artifact max bytes must be positive")
 	}
-	stream, err := c.rpc.StreamArchiveArtifact(ctx, &pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name})
+	stream, err := c.rpc.StreamArchiveArtifact(ctx, &pb.ArchiveArtifactRequest{TestId: request.TestID, Name: request.Name, SourceIdentity: request.SourceIdentity})
 	if err != nil {
 		return 0, err
 	}
@@ -1118,6 +1123,9 @@ func (c *Client) StreamArchiveArtifact(ctx context.Context, request ArchiveArtif
 		}
 		if recvErr != nil {
 			return written, recvErr
+		}
+		if request.SourceIdentity != "" && chunk.GetSourceIdentity() != request.SourceIdentity {
+			return written, fmt.Errorf("generator did not confirm the requested archive source identity")
 		}
 		if chunk.GetName() != request.Name {
 			return written, fmt.Errorf("archive artifact stream name %q does not match %q", chunk.GetName(), request.Name)
@@ -1534,6 +1542,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		SecretBundle:              cloneSecretBundle(assignment.SecretBundle),
 		SecretBundleId:            assignment.SecretBundleID,
 		RunSupervisionToken:       append([]byte(nil), assignment.RunSupervisionToken...),
+		ArchiveSourceTarget:       assignment.ArchiveSourceTarget,
 		Region:                    assignment.Region,
 		StartOffset:               preciseDurationProto(assignment.StartOffset, 0),
 		MessageDetailMaxItems:     int32(partitionAssignmentInt(assignment.MessageDetailMaxItems, assignment.ShardCount, assignment.ShardOrdinal)),

@@ -2476,3 +2476,66 @@ The final full Go suite passed with that package budget (API 751.054 s, storage
 198.722 s). A brief read-only process sample during the longer run confirmed it
 was progressing through generated OpenAPI contract checks. Focused, repeated race,
 real PostgreSQL, full-suite and documentation validation now pass for this slice.
+
+
+## Durable archive collection source identity (2026-09-28)
+
+SQLite/PostgreSQL schema release 19 persists exact run incarnation, original
+assignment digest by target, opaque collection token and bounded attempt state.
+Initial dispatch and evacuation save sources before AssignWork; SQL lease checks
+reject stale execution owners. Generator manifests retain the original digest
+across adoption. Bound unary/streaming reads verify the retained manifest before
+opening data and echo the verified identity; new clients reject absent/wrong
+confirmation from older servers. Requests without an identity preserve the legacy
+contract. Expected missing sources survive loss of all in-memory connections.
+
+Review repaired evacuation ordering so failed metadata writes cannot stop a standby
+that never received AssignWork. It also added permanent collection resolution in
+the publication transaction: retention must not make an old intent runnable again.
+List, claim and exhaustion reject resolved/currently published work; preparation
+rejects corrupt existing metadata. A prior-release migration fixture now checks
+the current release while still verifying every historical ledger identity.
+
+Focused checks passed (storage 0.710 s, generator 0.587 s, API 1.800 s), followed by
+three isolated PostgreSQL repetitions including publication/retention precedence
+(4.467 s). The owned temporary PostgreSQL container was removed using its immutable
+identity and test label. Private logs use `/tmp/apex-archive-collection-final-*`.
+The fingerprint-discovery run intentionally failed before the new release identity
+was set; it is not recorded as a passing validation. Repeated race and full Go
+validation are in progress. No retry worker or deployed qualification is claimed
+by this foundation slice.
+
+The first full run found the continuity-evacuation fixture's missing durable
+CreatedAt timestamp. That fixture is corrected. Review also identified a rolling
+upgrade case: evacuation of an older active run must not invent a partial identity
+map containing only its replacement target. Such runs retain legacy collection;
+only runs bound before their initial dispatch extend that binding during evacuation.
+A dedicated regression covers both paths and rejection of missing supervision tokens
+on already-bound runs. Source metadata also checks its encoded JSON size before
+commit, including JSON escaping expansion. Repeated storage race checks for that
+repair passed (53.508 s). The failed full invocation is retained in
+`apex-archive-collection-final-full.jsonl`; it is not a passing result.
+
+The same full invocation also found the foreign-key inventory assertion still
+expecting 97 rather than the new 99 constraints. Its fixed regression now names
+both collection foreign keys and checks CASCADE. Migration/foreign-key tests
+passed (2.672 s), the repaired evacuation/collection race tests passed three
+repetitions (25.811 s), and the repeated PostgreSQL checks passed again (4.256 s).
+
+A further source-identity review found that a run token alone could not distinguish
+two targets within the same run. The assignment now carries its original target
+namespace; the digest binds test ID, original token and target. Generator admission
+rejects mixed target namespaces across a run's groups, fingerprints include the
+binding, and token rotation preserves it. Legacy unbound runs remain unbound.
+Cross-target archive reads fail closed. Focused controller/generator checks passed
+(2.678 / 0.769 s), and generator target-admission checks passed three repetitions
+(1.355 s). Broader repeated race and the corrected full suite use
+`apex-archive-collection-reviewed-race.log` and
+`apex-archive-collection-reviewed-full.jsonl` respectively.
+
+The final repeated race run passed all three iterations (storage 42.012 s,
+generator 4.844 s, API 44.649 s). The documentation checker passed for all 69
+active Markdown files. Final scoped review found no further actionable issues;
+the corrected full Go suite remains in progress before this slice is committed.
+
+The corrected full Go suite passed all 108 test-bearing packages (API 412.495 s, storage 25.025 s). Final review, focused/race, PostgreSQL, full-suite and documentation gates pass. No deployed qualification or durable retry-worker completion is claimed.

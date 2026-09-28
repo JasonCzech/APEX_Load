@@ -43,6 +43,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 16, Name: "ha-run-continuity-checkpoints", Fingerprint: "9f50fe7c91b938c6e590e79b3079ea8e8509c12a7707e60c689a90a76cadb4d1"},
 	{Version: 17, Name: "durable-run-archive-collection-failures", Fingerprint: "658982a6cc5a08e06b9d565b2b7cd51f8887eae525c3893309aec364164d682e"},
 	{Version: 18, Name: "durable-archive-manifest-preparation", Fingerprint: "5dae09fe85185355f15b1206033dc147f87842b1e005d81fbbe87ec09d78196d"},
+	{Version: 19, Name: "durable-archive-collection-sources", Fingerprint: "876b8e155f956851ead8d8a726f3603e4111ac06e3b822a62fe692af02bc8ddf"},
 }
 
 type SchemaMigrationRecord struct {

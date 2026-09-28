@@ -145,7 +145,7 @@ func TestArchiveManifestPreparationMigratesLegacyTable(t *testing.T) {
 	}
 	defer s.Close()
 	status, err := s.SchemaStatus()
-	if err != nil || status.AppliedVersion != 18 || len(status.Applied) != 18 || len(status.Pending) != 0 {
+	if err != nil || status.AppliedVersion != currentSchemaRelease().Version || len(status.Applied) != len(schemaReleases) || len(status.Pending) != 0 {
 		t.Fatalf("release 17 upgrade: %+v %v", status, err)
 	}
 	for i, applied := range status.Applied[:17] {

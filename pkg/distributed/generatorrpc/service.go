@@ -42,6 +42,7 @@ type assignedTest struct {
 	executionGeneration       uint64
 	requireTestExecutionLease bool
 	runSupervisionTokenHash   [sha256.Size]byte
+	archiveSourceTarget       string
 	// adoptionGrace > 0 opts this run into HA continuity: on controller epoch
 	// expiry it is orphaned (keeps running) until orphanedUntil instead of being
 	// fenced, awaiting a successor's RunAdoption.
@@ -1236,7 +1237,7 @@ func (s *Service) GetArchiveArtifact(_ context.Context, request *pb.ArchiveArtif
 	if len(content) > archiveArtifactUnaryMaxSize {
 		return nil, status.Errorf(codes.ResourceExhausted, "archive artifact exceeds %d bytes; use StreamArchiveArtifact", archiveArtifactUnaryMaxSize)
 	}
-	return &pb.ArchiveArtifact{Name: request.GetName(), Content: content}, nil
+	return &pb.ArchiveArtifact{Name: request.GetName(), Content: content, SourceIdentity: request.GetSourceIdentity()}, nil
 }
 
 // StreamArchiveArtifact transfers an artifact without materializing it in a
@@ -1256,9 +1257,10 @@ func (s *Service) StreamArchiveArtifact(request *pb.ArchiveArtifactRequest, stre
 	totalSize := artifact.info.Size()
 	if totalSize == 0 {
 		return stream.Send(&pb.ArchiveArtifactChunk{
-			Name:      request.GetName(),
-			TotalSize: 0,
-			Eof:       true,
+			Name:           request.GetName(),
+			SourceIdentity: request.GetSourceIdentity(),
+			TotalSize:      0,
+			Eof:            true,
 		})
 	}
 
@@ -1280,11 +1282,12 @@ func (s *Service) StreamArchiveArtifact(request *pb.ArchiveArtifactRequest, stre
 		chunkOffset := offset
 		offset += int64(n)
 		if err := stream.Send(&pb.ArchiveArtifactChunk{
-			Name:      request.GetName(),
-			Content:   readBuffer[:n],
-			Offset:    chunkOffset,
-			TotalSize: totalSize,
-			Eof:       offset == totalSize,
+			Name:           request.GetName(),
+			SourceIdentity: request.GetSourceIdentity(),
+			Content:        readBuffer[:n],
+			Offset:         chunkOffset,
+			TotalSize:      totalSize,
+			Eof:            offset == totalSize,
 		}); err != nil {
 			return err
 		}

@@ -1214,6 +1214,13 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				if err != nil {
 					return fail(fmt.Errorf("distribute evacuation script %q to %s: %w", group.ScriptName, shard.Target, err))
 				}
+				if err := tr.extendRunArchiveSources(managedTest, []string{shard.Target}, executionGeneration, runSupervisionToken); err != nil {
+					return fail(err)
+				}
+				archiveSourceTarget, err := tr.archiveSourceTargetForRun(managedTest, shard.Target)
+				if err != nil {
+					return fail(err)
+				}
 				ctx, cancel = context.WithTimeout(parent, b.timeout)
 				// Record the attempted assignment before the RPC. A timeout can mean
 				// the generator committed but its response was lost; rollback must then
@@ -1221,6 +1228,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				changes = append(changes, appliedChange{target: shard.Target, group: groupName, newlyAssigned: true})
 				touchedTargets[shard.Target] = struct{}{}
 				assignment, assignErr := client.AssignWork(ctx, generatorrpc.Assignment{
+					ArchiveSourceTarget:        archiveSourceTarget,
 					TestID:                     testID,
 					ExecutionGeneration:        executionGeneration,
 					ScenarioID:                 scenarioID,

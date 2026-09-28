@@ -332,7 +332,7 @@ func TestTerminalTombstoneRecoversFromFinalizedArchiveAfterRestart(t *testing.T)
 	if err != nil {
 		t.Fatalf("new archive recorder: %v", err)
 	}
-	writer.bindExecution(9, "buyers")
+	writer.bindExecution(9, "buyers", "")
 	state, finalError := first.finishStoppedTestWithState(testID, assignedTest{
 		testID: testID, executionGeneration: 9, groups: map[string]int32{"buyers": 4},
 		groupStats:     map[string]GeneratorStats{"buyers": {CPUPercent: 17.5}},

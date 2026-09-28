@@ -161,6 +161,9 @@ func (s *Service) acquireArchiveArtifact(request *pb.ArchiveArtifactRequest) (*l
 	if err != nil {
 		return nil, nil, status.Errorf(codes.InvalidArgument, "invalid artifact name: %v", err)
 	}
+	if identity := request.GetSourceIdentity(); identity != "" && !validArchiveSourceIdentity(identity) {
+		return nil, nil, status.Error(codes.InvalidArgument, "invalid archive source identity")
+	}
 	s.sweepArchivedRecords(time.Now())
 
 	manager := s.archiveManager
@@ -198,6 +201,13 @@ func (s *Service) acquireArchiveArtifact(request *pb.ArchiveArtifactRequest) (*l
 		_ = runRoot.Close()
 		release()
 		return nil, nil, status.Error(codes.FailedPrecondition, "archive run was replaced")
+	}
+	if identity := request.GetSourceIdentity(); identity != "" {
+		if err := verifyArchiveSourceIdentity(runRoot, testID, identity); err != nil {
+			_ = runRoot.Close()
+			release()
+			return nil, nil, status.Errorf(codes.FailedPrecondition, "verify archive source identity: %v", err)
+		}
 	}
 	file, info, err := openGeneratorArchiveRegularFile(runRoot, name)
 	_ = runRoot.Close()

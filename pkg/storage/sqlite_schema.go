@@ -666,6 +666,20 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(test_id) REFERENCES tests(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS run_archive_collection_intents (
+            test_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            test_start_time DATETIME NOT NULL,
+            intent_token TEXT NOT NULL,
+            sources_json TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            exhausted INTEGER NOT NULL DEFAULT 0,
+            resolved INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            FOREIGN KEY(test_id) REFERENCES tests(id) ON DELETE CASCADE,
+            FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+        )`,
 		`CREATE TABLE IF NOT EXISTS run_archive_failures (
 			test_id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -1829,6 +1843,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_archive_cleanup_jobs_updated ON archive_cleanup_jobs(updated_at)`, "idx_archive_cleanup_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_version_cleanup_jobs_updated ON archive_version_cleanup_jobs(updated_at)`, "idx_archive_version_cleanup_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_version_cleanup_jobs_test ON archive_version_cleanup_jobs(test_id)`, "idx_archive_version_cleanup_jobs_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_run_archive_collection_pending ON run_archive_collection_intents(resolved, exhausted, updated_at)`, "idx_run_archive_collection_pending"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_finalization_jobs_updated ON archive_finalization_jobs(updated_at)`, "idx_archive_finalization_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_refresh_jobs_updated ON archive_refresh_jobs(updated_at)`, "idx_archive_refresh_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_notes_test_id ON test_notes(test_id)`, "idx_test_notes_test_id"},

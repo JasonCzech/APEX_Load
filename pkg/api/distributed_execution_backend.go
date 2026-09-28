@@ -1350,6 +1350,18 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			cleanup(true)
 			return
 		}
+		archiveTargets := make([]string, 0, len(shards))
+		for _, shard := range shards {
+			archiveTargets = append(archiveTargets, shard.Target)
+		}
+		if err := tr.prepareRunArchiveSources(test, archiveTargets, executionGeneration, runSupervisionTokenBytes); err != nil {
+			failStartup(err.Error())
+			return
+		}
+		if err := tr.bindRunArchiveSourcePlans(test, plans); err != nil {
+			failStartup(err.Error())
+			return
+		}
 		outcomes := b.assignDistributedGroupTargets(
 			executionCtx,
 			plans,
@@ -1535,10 +1547,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 // received it yet) and then assign every shard placed on it, in placement
 // order.
 type distributedTargetAssignmentPlan struct {
-	target           string
-	client           generatorClient
-	shards           []GeneratorShardSummary
-	distributeScript bool
+	archiveSourceTarget string
+	target              string
+	client              generatorClient
+	shards              []GeneratorShardSummary
+	distributeScript    bool
 }
 
 // distributedTargetAssignmentOutcome carries a plan's result back to the
@@ -1637,6 +1650,7 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 				markStarted(plan.target)
 			}
 			assignment := template
+			assignment.ArchiveSourceTarget = plan.archiveSourceTarget
 			assignment.Region = b.regionForTarget(plan.target)
 			assignment.VUserCount = int32(shard.VUsers)
 			assignment.ShardOrdinal = shard.ShardOrdinal

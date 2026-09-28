@@ -134,6 +134,9 @@ func (s *SQLiteStore) SaveArchiveFinalizationJob(job *ArchiveFinalizationJob) er
 	if err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`UPDATE run_archive_collection_intents SET resolved = 1 WHERE test_id = ?`, job.TestID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, job.TestID); err != nil {
 		return err
 	}
@@ -219,6 +222,9 @@ func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 		return false, err
 	}
 	if affected > 0 {
+		if _, err := tx.Exec(`UPDATE run_archive_collection_intents SET resolved = 1 WHERE test_id = ?`, job.TestID); err != nil {
+			return false, err
+		}
 		if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, job.TestID); err != nil {
 			return false, err
 		}
@@ -540,6 +546,9 @@ func (s *SQLiteStore) CompleteArchiveFinalization(testID string, intentToken str
 	}
 	if affected == 0 {
 		return false, nil
+	}
+	if _, err := tx.Exec(`UPDATE run_archive_collection_intents SET resolved = 1 WHERE test_id = ?`, testID); err != nil {
+		return false, err
 	}
 	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, testID); err != nil {
 		return false, err

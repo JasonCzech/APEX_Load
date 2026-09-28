@@ -735,8 +735,11 @@ type WorkAssignment struct {
 	// adopt it through ExecutionEpochClaim.adoptions, then stops with
 	// controller_adoption_timeout. Zero (the default) keeps fail-fast behaviour.
 	AdoptionGrace *durationpb.Duration `protobuf:"bytes,39,opt,name=adoption_grace,json=adoptionGrace,proto3" json:"adoption_grace,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Original controller target namespace for identity-bound archive collection.
+	// Omission preserves legacy collection; groups on one generator must agree.
+	ArchiveSourceTarget string `protobuf:"bytes,40,opt,name=archive_source_target,json=archiveSourceTarget,proto3" json:"archive_source_target,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *WorkAssignment) Reset() {
@@ -1040,6 +1043,13 @@ func (x *WorkAssignment) GetAdoptionGrace() *durationpb.Duration {
 		return x.AdoptionGrace
 	}
 	return nil
+}
+
+func (x *WorkAssignment) GetArchiveSourceTarget() string {
+	if x != nil {
+		return x.ArchiveSourceTarget
+	}
+	return ""
 }
 
 type WorkCommitRequest struct {
@@ -4914,11 +4924,13 @@ func (x *ScriptAck) GetContentHash() string {
 }
 
 type ArchiveArtifactRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TestId        string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TestId string                 `protobuf:"bytes,1,opt,name=test_id,json=testId,proto3" json:"test_id,omitempty"`
+	Name   string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Optional retained assignment identity; a mismatch must emit no artifact bytes.
+	SourceIdentity string `protobuf:"bytes,3,opt,name=source_identity,json=sourceIdentity,proto3" json:"source_identity,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ArchiveArtifactRequest) Reset() {
@@ -4965,12 +4977,20 @@ func (x *ArchiveArtifactRequest) GetName() string {
 	return ""
 }
 
+func (x *ArchiveArtifactRequest) GetSourceIdentity() string {
+	if x != nil {
+		return x.SourceIdentity
+	}
+	return ""
+}
+
 type ArchiveArtifact struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Content        []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	SourceIdentity string                 `protobuf:"bytes,3,opt,name=source_identity,json=sourceIdentity,proto3" json:"source_identity,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ArchiveArtifact) Reset() {
@@ -5017,15 +5037,23 @@ func (x *ArchiveArtifact) GetContent() []byte {
 	return nil
 }
 
+func (x *ArchiveArtifact) GetSourceIdentity() string {
+	if x != nil {
+		return x.SourceIdentity
+	}
+	return ""
+}
+
 type ArchiveArtifactChunk struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Content       []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
-	Offset        int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
-	TotalSize     int64                  `protobuf:"varint,4,opt,name=total_size,json=totalSize,proto3" json:"total_size,omitempty"`
-	Eof           bool                   `protobuf:"varint,5,opt,name=eof,proto3" json:"eof,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Content        []byte                 `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`
+	Offset         int64                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	TotalSize      int64                  `protobuf:"varint,4,opt,name=total_size,json=totalSize,proto3" json:"total_size,omitempty"`
+	Eof            bool                   `protobuf:"varint,5,opt,name=eof,proto3" json:"eof,omitempty"`
+	SourceIdentity string                 `protobuf:"bytes,6,opt,name=source_identity,json=sourceIdentity,proto3" json:"source_identity,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ArchiveArtifactChunk) Reset() {
@@ -5091,6 +5119,13 @@ func (x *ArchiveArtifactChunk) GetEof() bool {
 		return x.Eof
 	}
 	return false
+}
+
+func (x *ArchiveArtifactChunk) GetSourceIdentity() string {
+	if x != nil {
+		return x.SourceIdentity
+	}
+	return ""
 }
 
 type RunAdoptionProof struct {
@@ -5204,7 +5239,7 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x0fsource_group_id\x18\x02 \x01(\tR\rsourceGroupId\x12\x1f\n" +
 	"\vscript_hash\x18\x03 \x01(\tR\n" +
 	"scriptHash\x12\x16\n" +
-	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\xe4\x10\n" +
+	"\x06vusers\x18\x04 \x01(\x05R\x06vusers\"\x98\x11\n" +
 	"\x0eWorkAssignment\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x1d\n" +
 	"\n" +
@@ -5251,7 +5286,8 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x10termination_mode\x18% \x01(\tR\x0fterminationMode\x12@\n" +
 	"\vsource_plan\x18& \x01(\v2\x1f.apexload.v1.SourcePlanManifestR\n" +
 	"sourcePlan\x12@\n" +
-	"\x0eadoption_grace\x18' \x01(\v2\x19.google.protobuf.DurationR\radoptionGrace\x1a>\n" +
+	"\x0eadoption_grace\x18' \x01(\v2\x19.google.protobuf.DurationR\radoptionGrace\x122\n" +
+	"\x15archive_source_target\x18( \x01(\tR\x13archiveSourceTarget\x1a>\n" +
 	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a?\n" +
@@ -5625,20 +5661,23 @@ const file_api_proto_generator_proto_rawDesc = "" +
 	"\x14execution_generation\x18\x04 \x01(\x04R\x13executionGeneration\"F\n" +
 	"\tScriptAck\x12\x16\n" +
 	"\x06cached\x18\x01 \x01(\bR\x06cached\x12!\n" +
-	"\fcontent_hash\x18\x02 \x01(\tR\vcontentHash\"E\n" +
+	"\fcontent_hash\x18\x02 \x01(\tR\vcontentHash\"n\n" +
 	"\x16ArchiveArtifactRequest\x12\x17\n" +
 	"\atest_id\x18\x01 \x01(\tR\x06testId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"?\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12'\n" +
+	"\x0fsource_identity\x18\x03 \x01(\tR\x0esourceIdentity\"h\n" +
 	"\x0fArchiveArtifact\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\acontent\x18\x02 \x01(\fR\acontent\"\x8d\x01\n" +
+	"\acontent\x18\x02 \x01(\fR\acontent\x12'\n" +
+	"\x0fsource_identity\x18\x03 \x01(\tR\x0esourceIdentity\"\xb6\x01\n" +
 	"\x14ArchiveArtifactChunk\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\fR\acontent\x12\x16\n" +
 	"\x06offset\x18\x03 \x01(\x03R\x06offset\x12\x1d\n" +
 	"\n" +
 	"total_size\x18\x04 \x01(\x03R\ttotalSize\x12\x10\n" +
-	"\x03eof\x18\x05 \x01(\bR\x03eof\"f\n" +
+	"\x03eof\x18\x05 \x01(\bR\x03eof\x12'\n" +
+	"\x0fsource_identity\x18\x06 \x01(\tR\x0esourceIdentity\"f\n" +
 	"\x10RunAdoptionProof\x12\x1e\n" +
 	"\n" +
 	"generation\x18\x01 \x01(\x04R\n" +

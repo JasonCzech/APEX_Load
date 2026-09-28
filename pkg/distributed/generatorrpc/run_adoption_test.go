@@ -28,7 +28,7 @@ func startAdoptableRun(t *testing.T, grace, epochTTL time.Duration) (*Service, [
 // startAdoptableRunWithLease is startAdoptableRun for a loss-tolerant run
 // (require_test_execution_lease) whose run lease lasts runLeaseTTL; zero
 // stages an ordinary run.
-func startAdoptableRunWithLease(t *testing.T, grace, epochTTL, runLeaseTTL time.Duration) (*Service, []byte) {
+func startAdoptableRunWithLease(t *testing.T, grace, epochTTL, runLeaseTTL time.Duration, archiveSourceTargets ...string) (*Service, []byte) {
 	t.Helper()
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
@@ -55,6 +55,9 @@ func startAdoptableRunWithLease(t *testing.T, grace, epochTTL, runLeaseTTL time.
 		ExpectedScriptHash: scriptContentHash(content), VuserCount: 1, ExecutionGeneration: 1,
 		RunSupervisionToken: token, TargetDuration: durationpb.New(time.Minute),
 		RequireTestExecutionLease: runLeaseTTL > 0,
+	}
+	if len(archiveSourceTargets) > 0 {
+		request.ArchiveSourceTarget = archiveSourceTargets[0]
 	}
 	if grace > 0 {
 		request.AdoptionGrace = durationpb.New(grace)

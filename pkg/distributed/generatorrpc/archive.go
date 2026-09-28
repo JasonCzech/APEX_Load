@@ -32,6 +32,7 @@ import (
 const archiveSchemaVersion = "apexload.archive.v4"
 
 type archiveManifest struct {
+	SourceIdentity               string                       `json:"source_identity,omitempty"`
 	SchemaVersion                string                       `json:"schema_version"`
 	TestID                       string                       `json:"test_id"`
 	TestName                     string                       `json:"test_name"`
@@ -367,13 +368,16 @@ type archiveRecorder struct {
 	detailPriorityBytes [4]int64
 }
 
-func (w *archiveRecorder) bindExecution(generation uint64, group string) {
+func (w *archiveRecorder) bindExecution(generation uint64, group, sourceIdentity string) {
 	if w == nil {
 		return
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.manifest.ExecutionGeneration = generation
+	if w.manifest.SourceIdentity == "" && validArchiveSourceIdentity(sourceIdentity) {
+		w.manifest.SourceIdentity = sourceIdentity
+	}
 	group = strings.TrimSpace(group)
 	if group == "" {
 		return
