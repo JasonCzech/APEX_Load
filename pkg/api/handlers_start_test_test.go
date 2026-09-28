@@ -96,6 +96,10 @@ func TestHandleStartTestReturnsCapacityShortfallPayload(t *testing.T) {
 
 func TestHandleStartTestAllowsOverridePayload(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	// Exercise HTTP admission and dispatch without starting 15,000 real VUsers
+	// that outlive this handler test and starve unrelated execution tests.
+	started := make(chan string, 1)
+	server.runner.setExecutionBackend(&scheduleExecutionBackend{started: started})
 	server.runner.StoreScript(&dsl.Script{
 		ID:       "script-api-capacity-override",
 		Name:     "API Capacity Override Script",
@@ -127,8 +131,20 @@ func TestHandleStartTestAllowsOverridePayload(t *testing.T) {
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	if resp.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusAccepted, resp.Body.String())
+	}
+	admitted, ok := server.runner.GetTest(testRun.ID)
+	if !ok || admitted.StartAuthorization == nil || admitted.StartAuthorization.CapacityShortfall == nil || admitted.StartAuthorization.CapacityShortfall.TotalVUsers != 15000 {
+		t.Fatal("admitted run lost its explicit capacity override")
+	}
+	select {
+	case id := <-started:
+		if id != testRun.ID {
+			t.Fatalf("dispatched %q, want %q", id, testRun.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("capacity override did not dispatch the admitted run")
 	}
 }
 
