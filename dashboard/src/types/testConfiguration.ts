@@ -1,6 +1,7 @@
 import type { LoadStageDraft } from './loadModels'
 import type { RuntimeSettingsOverride } from './runtimeSettings'
 import type { ActiveLoadLevel } from './metrics'
+import type { JavaHostProfileSummary } from './system'
 
 /** Shared load-group and generator-assignment contracts. */
 export interface TestGroup {
@@ -42,7 +43,14 @@ export interface ContinueOnErrorResolution {
   conflict?: boolean
 }
 
+export interface JavaHostAssignmentSettings {
+  profile_id: string
+  preparation_ms: number
+  run_lifetime_ms: number
+}
+
 export interface GeneratorAssignmentSettings {
+  java_host?: JavaHostAssignmentSettings
   source_affinity?: string
   sharing_mode?: 'shared' | 'dedicated'
   mode?: 'auto' | 'specific_hosts' | 'region_weighted' | 'load_zone_weighted'
@@ -63,7 +71,22 @@ export interface GeneratorAssignmentSettings {
   failover_policy?: 'fail' | 'continue'
 }
 
+export interface JavaHostPlacementSummary {
+  prepared_vusers?: number
+  admitted_vusers?: number
+  contract: string
+  mode: string
+  containment: string
+  profile: JavaHostProfileSummary
+  preparation_ms: number
+  run_lifetime_ms: number
+  max_hosts: number
+  max_vusers: number
+  reservation_id?: string
+}
+
 export interface GeneratorShardSummary {
+  java_host?: JavaHostPlacementSummary
   group: string
   target: string
   vusers: number

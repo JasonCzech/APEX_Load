@@ -26,6 +26,7 @@ export type ScenarioDraftAction =
 function cloneGeneratorAssignment(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings {
   return {
     mode: assignment?.mode || 'auto',
+    ...(assignment?.java_host ? { java_host: { ...assignment.java_host } } : {}),
     ...(assignment?.pool_id ? { pool_id: assignment.pool_id } : {}),
     ...(assignment?.selected_targets ? { selected_targets: [...assignment.selected_targets] } : { selected_targets: [] }),
     ...(assignment?.region_weights ? { region_weights: { ...assignment.region_weights } } : {}),

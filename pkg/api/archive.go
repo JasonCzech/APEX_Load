@@ -945,6 +945,7 @@ func cloneGeneratorInventoryEntries(entries []GeneratorInventoryEntry) []Generat
 		cloned[index].Labels = cloneStringMap(entries[index].Labels)
 		cloned[index].CompatibleFeatures = append([]string(nil), entries[index].CompatibleFeatures...)
 		cloned[index].RuntimeCapacities = cloneProtocolRuntimeCapacities(entries[index].RuntimeCapacities)
+		cloned[index].JavaHost = cloneJavaHostCapabilitySummary(entries[index].JavaHost)
 		cloned[index].CompatibilityIssues = append([]string(nil), entries[index].CompatibilityIssues...)
 		cloned[index].LastSafetyExit = cloneGeneratorSafetyExitEvidence(entries[index].LastSafetyExit)
 		cloned[index].SafetyExits = append([]GeneratorSafetyExitEvidence(nil), entries[index].SafetyExits...)

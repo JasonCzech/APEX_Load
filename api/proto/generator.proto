@@ -197,6 +197,49 @@ message WorkAssignment {
   // Original controller target namespace for identity-bound archive collection.
   // Omission preserves legacy collection; groups on one generator must agree.
   string archive_source_target = 40;
+  // Explicit negotiated dedicated execution-pod placement. Omission preserves
+  // the local dedicated path; send only to java_host_broker_v1 peers.
+  JavaHostSelection java_host = 41;
+}
+
+// Operator approval binds immutable source and the complete placement profile.
+message JavaHostSelection {
+  string contract = 1;
+  string script_sha256 = 2;
+  string profile_id = 3;
+  string configuration_sha256 = 4;
+  string policy_sha256 = 5;
+  int64 preparation_ms = 6;
+  int64 run_lifetime_ms = 7;
+  string facade_resources_sha256 = 8;
+  // Requires java_host_prepared_population_v1. Zero uses the initial count.
+  // Nonzero reserves lifetime admissions; closed sessions are never reused.
+  int32 prepared_vusers = 9;
+}
+message JavaHostProfile {
+  string script_sha256 = 1;
+  string profile_id = 2;
+  string configuration_sha256 = 3;
+  string policy_sha256 = 4;
+  int64 memory_bytes = 5;
+  int64 preparation_ms = 6;
+  int64 max_run_ms = 7;
+  int64 invocation_ms = 8;
+  // Optional operator budget for generator/facade overhead per dedicated Vuser.
+  // Execution pod/JVM memory remains in memory_bytes above.
+  int64 facade_cpu_millicores = 9;
+  int64 facade_memory_bytes = 10;
+  int64 facade_network_kbps = 11;
+  string facade_resources_sha256 = 12;
+}
+message JavaHostCapabilities {
+  string contract = 1;
+  string mode = 2;
+  string containment = 3;
+  int32 max_hosts = 4;
+  int32 max_vusers = 5;
+  int64 max_memory_bytes = 6;
+  repeated JavaHostProfile profiles = 7;
 }
 
 message WorkCommitRequest {
@@ -320,10 +363,19 @@ message DataFile {
   string sha256 = 3;
 }
 
+message JavaHostPlacement {
+  JavaHostSelection selection = 1;
+  string reservation_id = 2;
+  string mode = 3;
+  string containment = 4;
+  int32 max_hosts = 5;
+  int32 max_vusers = 6;
+}
 message AssignmentAck {
   bool accepted = 1;
   string error_message = 2;
   int32 available_capacity = 3;
+  JavaHostPlacement java_host = 4;
 }
 
 message VUserAdjustment {
@@ -678,6 +730,7 @@ message HeartbeatPong {
   GeneratorSafetyExitEvidence last_safety_exit = 16;
   repeated GeneratorSafetyExitEvidence safety_exits = 17;
   PodCapacitySnapshot pod_capacity = 18;
+  JavaHostCapabilities java_host = 19;
 }
 
 message ScriptPayload {

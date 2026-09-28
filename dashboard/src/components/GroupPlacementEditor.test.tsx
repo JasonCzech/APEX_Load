@@ -475,3 +475,38 @@ describe('GroupPlacementEditor', () => {
   })
 
 })
+
+it('preserves an explicit Java profile across placement edits and removes it only when selected', () => {
+  const generator = runtimeCapacityGenerator([])
+  generator.java_host = { contract: 'apexload.java-placement/v1', mode: 'dedicated', containment: 'execution_pod', max_hosts: 25, max_vusers: 25, max_memory_bytes: 1 << 30, profiles: [{ script_sha256: 'a'.repeat(64), profile_id: 'approved', configuration_sha256: 'b'.repeat(64), policy_sha256: 'c'.repeat(64), memory_bytes: 1 << 28, preparation_ms: 120000, max_run_ms: 600000, invocation_ms: 30000 }] }
+  act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} generatorInventory={[generator]} protocol="java_vuser" />))
+  const select = container.querySelector<HTMLSelectElement>('[aria-label="Java execution profile"]')!
+  expect(select.value).toBe('')
+  act(() => { select.value = 'approved'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  const value = () => JSON.parse(container.querySelector('output')!.textContent || '{}')
+  expect(value().java_host).toEqual({ profile_id: 'approved', preparation_ms: 120000, run_lifetime_ms: 600000 })
+  const pin = Array.from(container.querySelectorAll('label')).find(label => label.textContent === 'Pin to host(s)')!.querySelector<HTMLInputElement>('input')!
+  act(() => pin.click())
+  expect(value().java_host.profile_id).toBe('approved')
+  expect(container.textContent).toContain('host ceiling')
+  const inherit = Array.from(container.querySelectorAll('label')).find(label => label.textContent === 'Inherit scenario default')!.querySelector<HTMLInputElement>('input')!
+  expect(inherit.disabled).toBe(true)
+  act(() => { select.value = ''; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  expect(value().java_host).toBeUndefined()
+})
+
+it('keeps an unavailable restored Java profile visible without silently defaulting', () => {
+  act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto', java_host: { profile_id: 'missing', preparation_ms: 1000, run_lifetime_ms: 60000 } }} protocol="java_vuser" />))
+  expect(container.querySelector<HTMLSelectElement>('[aria-label="Java execution profile"]')!.value).toBe('missing')
+  expect(container.querySelector('[role="alert"]')!.textContent).toContain('not currently advertised')
+})
+
+it.each(['ready', 'exhausted', 'missing profile', 'dedicated'] as const)('checks the separate facade budget: %s', state => {
+  const generator = runtimeCapacityGenerator([])
+  generator.java_host = { contract: 'apexload.java-placement/v1', mode: 'dedicated', containment: 'execution_pod', max_hosts: 25, max_vusers: 25, max_memory_bytes: 1073741824, profiles: [{ script_sha256: 'a'.repeat(64), profile_id: 'approved', configuration_sha256: 'b'.repeat(64), policy_sha256: 'c'.repeat(64), memory_bytes: 268435456, preparation_ms: 120000, max_run_ms: 600000, invocation_ms: 30000, facade_resources_sha256: state === 'missing profile' ? undefined : 'd'.repeat(64), facade_cpu_millicores: 100, facade_memory_bytes: 8388608, facade_network_kbps: 100 }] }
+  const budget = { cpu_cores: 1, memory_mb: 16, network_mbps: 10, vusers: 100, protocols: { java_host_facade: 100 } }
+  generator.pod_capacity = { state: 'ready', model_version: 'peak_capacity_v1', incarnation: 'pod', headroom_pct: 0, schedulable: budget, reserved: { cpu_cores: 0, memory_mb: 0, network_mbps: 0, vusers: 0 }, remaining: { ...budget, memory_mb: state === 'exhausted' ? 0 : 16 }, reserved_pct: 0, remaining_pct: 100, observed_at_unix_ms: 1, confidence: 'configured', dedicated: state === 'dedicated' }
+  act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'specific_hosts', java_host: { profile_id: 'approved', preparation_ms: 120000, run_lifetime_ms: 600000 } }} generatorInventory={[generator]} protocol="java_vuser" />))
+  expect(container.querySelector<HTMLInputElement>('.new-test-generator-option input')!.disabled).toBe(state !== 'ready')
+  expect(container.textContent).toContain(`${state === 'ready' ? 2 : 0} host ceiling`)
+})

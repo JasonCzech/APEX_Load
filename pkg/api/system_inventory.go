@@ -55,6 +55,7 @@ type GeneratorPodPlacement struct {
 
 type GeneratorInventoryEntry struct {
 	PodPlacement                      *GeneratorPodPlacement                 `json:"pod_placement,omitempty"`
+	JavaHost                          *JavaHostCapabilitySummary             `json:"java_host,omitempty"`
 	PodCapacity                       *protocol.CapacitySnapshot             `json:"pod_capacity,omitempty"`
 	Target                            string                                 `json:"target"`
 	GeneratorID                       string                                 `json:"generator_id"`

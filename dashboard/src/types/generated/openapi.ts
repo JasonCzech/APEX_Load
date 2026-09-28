@@ -2543,6 +2543,11 @@ export interface operations {
           "scenario"?: ({
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -2609,6 +2614,7 @@ export interface operations {
             "groups"?: Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: (Record<string, unknown>) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -10706,6 +10712,11 @@ export interface operations {
             "scenario": ({
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -11038,6 +11049,7 @@ export interface operations {
               "scripts": Array<{
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -20626,6 +20638,11 @@ export interface operations {
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
+            "java_host"?: ({
+              "preparation_ms"?: number;
+              "profile_id"?: string;
+              "run_lifetime_ms"?: number;
+            }) | null;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -20701,6 +20718,7 @@ export interface operations {
           "groups"?: Array<{
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: (Record<string, unknown>) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -20955,6 +20973,11 @@ export interface operations {
             "application_id"?: string;
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -21030,6 +21053,7 @@ export interface operations {
             "groups"?: Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: (Record<string, unknown>) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -21470,6 +21494,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -21661,6 +21690,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -21723,6 +21765,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -23164,6 +23207,11 @@ export interface operations {
         "application/json": {
           "assignment"?: ({
             "failover_policy"?: string;
+            "java_host"?: ({
+              "preparation_ms"?: number;
+              "profile_id"?: string;
+              "run_lifetime_ms"?: number;
+            }) | null;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -23240,6 +23288,11 @@ export interface operations {
           "groups": Array<{
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -23840,6 +23893,11 @@ export interface operations {
           "application/json": ({
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -24305,6 +24363,11 @@ export interface operations {
             "scripts": Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -26495,6 +26558,11 @@ export interface operations {
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
+            "java_host"?: ({
+              "preparation_ms"?: number;
+              "profile_id"?: string;
+              "run_lifetime_ms"?: number;
+            }) | null;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -26580,6 +26648,11 @@ export interface operations {
           "groups"?: Array<{
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -27219,6 +27292,11 @@ export interface operations {
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -27496,6 +27574,32 @@ export interface operations {
             "folder_id"?: (string) | null;
             "generator_shards"?: Array<{
               "group": string;
+              "java_host"?: ({
+                "admitted_vusers"?: number;
+                "containment": string;
+                "contract": string;
+                "max_hosts": number;
+                "max_vusers": number;
+                "mode": string;
+                "preparation_ms": number;
+                "prepared_vusers"?: number;
+                "profile": {
+                  "configuration_sha256": string;
+                  "facade_cpu_millicores"?: number;
+                  "facade_memory_bytes"?: number;
+                  "facade_network_kbps"?: number;
+                  "facade_resources_sha256"?: string;
+                  "invocation_ms": number;
+                  "max_run_ms": number;
+                  "memory_bytes": number;
+                  "policy_sha256": string;
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "script_sha256": string;
+                };
+                "reservation_id"?: string;
+                "run_lifetime_ms": number;
+              }) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -27568,6 +27672,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -31322,6 +31431,11 @@ export interface operations {
           "scenario_draft"?: {
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -31388,6 +31502,7 @@ export interface operations {
             "groups"?: Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: (Record<string, unknown>) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -31948,6 +32063,11 @@ export interface operations {
             "scenario_draft": {
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -32014,6 +32134,7 @@ export interface operations {
               "groups": Array<{
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -32496,6 +32617,11 @@ export interface operations {
           "scenario_draft"?: {
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -32562,6 +32688,7 @@ export interface operations {
             "groups"?: Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: (Record<string, unknown>) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -33122,6 +33249,11 @@ export interface operations {
             "scenario_draft": {
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -33188,6 +33320,7 @@ export interface operations {
               "groups": Array<{
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -34721,6 +34854,11 @@ export interface operations {
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
+            "java_host"?: ({
+              "preparation_ms"?: number;
+              "profile_id"?: string;
+              "run_lifetime_ms"?: number;
+            }) | null;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -34806,6 +34944,11 @@ export interface operations {
           "groups"?: Array<{
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -35415,6 +35558,11 @@ export interface operations {
           "application/json": ({
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -35521,6 +35669,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -35856,6 +36009,7 @@ export interface operations {
               "test_name"?: string;
               "to_shards"?: Array<{
                 "group": string;
+                "java_host"?: (Record<string, unknown>) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -41942,6 +42096,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -42133,6 +42292,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -42195,6 +42367,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -43581,6 +43754,11 @@ export interface operations {
               "application_id"?: string;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -43684,6 +43862,16 @@ export interface operations {
                 "health_score": number;
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
+                "java_host"?: ({
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_memory_bytes": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "prepared_population"?: boolean;
+                  "profiles": Array<Record<string, unknown>>;
+                }) | null;
                 "labels"?: Record<string, string>;
                 "last_safety_exit"?: ({
                   "execution_generation": number;
@@ -43737,6 +43925,19 @@ export interface operations {
               }>;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -43826,6 +44027,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -44191,6 +44393,11 @@ export interface operations {
               "application_id"?: string;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -44294,6 +44501,16 @@ export interface operations {
                 "health_score": number;
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
+                "java_host"?: ({
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_memory_bytes": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "prepared_population"?: boolean;
+                  "profiles": Array<Record<string, unknown>>;
+                }) | null;
                 "labels"?: Record<string, string>;
                 "last_safety_exit"?: ({
                   "execution_generation": number;
@@ -44347,6 +44564,19 @@ export interface operations {
               }>;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -44436,6 +44666,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -45383,6 +45614,7 @@ export interface operations {
                 "application_id"?: string;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -45457,6 +45689,7 @@ export interface operations {
                   "health_score": number;
                   "heap_alloc_mb"?: number;
                   "heap_in_use_mb"?: number;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "labels"?: Record<string, string>;
                   "last_safety_exit"?: (Record<string, unknown>) | null;
                   "max_vusers": number;
@@ -45496,6 +45729,7 @@ export interface operations {
                 }>;
                 "generator_shards"?: Array<{
                   "group": string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
                   "shard_ordinal"?: number;
                   "shard_strategy"?: string;
@@ -45636,6 +45870,7 @@ export interface operations {
                 "application_id"?: string;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -45710,6 +45945,7 @@ export interface operations {
                   "health_score": number;
                   "heap_alloc_mb"?: number;
                   "heap_in_use_mb"?: number;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "labels"?: Record<string, string>;
                   "last_safety_exit"?: (Record<string, unknown>) | null;
                   "max_vusers": number;
@@ -45749,6 +45985,7 @@ export interface operations {
                 }>;
                 "generator_shards"?: Array<{
                   "group": string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "shard_count"?: number;
                   "shard_ordinal"?: number;
                   "shard_strategy"?: string;
@@ -46697,6 +46934,11 @@ export interface operations {
           "application/json": ({
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -47162,6 +47404,11 @@ export interface operations {
             "scripts": Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -49150,6 +49397,16 @@ export interface operations {
               "health_score": number;
               "heap_alloc_mb"?: number;
               "heap_in_use_mb"?: number;
+              "java_host"?: ({
+                "containment": string;
+                "contract": string;
+                "max_hosts": number;
+                "max_memory_bytes": number;
+                "max_vusers": number;
+                "mode": string;
+                "prepared_population"?: boolean;
+                "profiles": Array<Record<string, unknown>>;
+              }) | null;
               "labels"?: Record<string, string>;
               "last_safety_exit"?: ({
                 "execution_generation": number;
@@ -49540,6 +49797,11 @@ export interface operations {
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -49817,6 +50079,32 @@ export interface operations {
             "folder_id"?: (string) | null;
             "generator_shards"?: Array<{
               "group": string;
+              "java_host"?: ({
+                "admitted_vusers"?: number;
+                "containment": string;
+                "contract": string;
+                "max_hosts": number;
+                "max_vusers": number;
+                "mode": string;
+                "preparation_ms": number;
+                "prepared_vusers"?: number;
+                "profile": {
+                  "configuration_sha256": string;
+                  "facade_cpu_millicores"?: number;
+                  "facade_memory_bytes"?: number;
+                  "facade_network_kbps"?: number;
+                  "facade_resources_sha256"?: string;
+                  "invocation_ms": number;
+                  "max_run_ms": number;
+                  "memory_bytes": number;
+                  "policy_sha256": string;
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "script_sha256": string;
+                };
+                "reservation_id"?: string;
+                "run_lifetime_ms": number;
+              }) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -49889,6 +50177,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -53060,6 +53353,11 @@ export interface operations {
               "active_vusers"?: number;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -53086,6 +53384,19 @@ export interface operations {
               "ended_at"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -53143,6 +53454,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -53516,6 +53828,11 @@ export interface operations {
               "active_vusers"?: number;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -53542,6 +53859,19 @@ export interface operations {
               "ended_at"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -53599,6 +53929,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -53957,6 +54288,11 @@ export interface operations {
             "load_generators": {
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -54030,6 +54366,16 @@ export interface operations {
                 "health_score": number;
                 "heap_alloc_mb"?: number;
                 "heap_in_use_mb"?: number;
+                "java_host"?: ({
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_memory_bytes": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "prepared_population"?: boolean;
+                  "profiles": Array<Record<string, unknown>>;
+                }) | null;
                 "labels"?: Record<string, string>;
                 "last_safety_exit"?: ({
                   "execution_generation": number;
@@ -54083,6 +54429,19 @@ export interface operations {
               }>;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -54107,6 +54466,11 @@ export interface operations {
             "scripts"?: Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -64292,6 +64656,11 @@ export interface operations {
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -64569,6 +64938,32 @@ export interface operations {
             "folder_id"?: (string) | null;
             "generator_shards"?: Array<{
               "group": string;
+              "java_host"?: ({
+                "admitted_vusers"?: number;
+                "containment": string;
+                "contract": string;
+                "max_hosts": number;
+                "max_vusers": number;
+                "mode": string;
+                "preparation_ms": number;
+                "prepared_vusers"?: number;
+                "profile": {
+                  "configuration_sha256": string;
+                  "facade_cpu_millicores"?: number;
+                  "facade_memory_bytes"?: number;
+                  "facade_network_kbps"?: number;
+                  "facade_resources_sha256"?: string;
+                  "invocation_ms": number;
+                  "max_run_ms": number;
+                  "memory_bytes": number;
+                  "policy_sha256": string;
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "script_sha256": string;
+                };
+                "reservation_id"?: string;
+                "run_lifetime_ms": number;
+              }) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -64641,6 +65036,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -66584,6 +66984,11 @@ export interface operations {
           "application_id"?: string;
           "assignment"?: ({
             "failover_policy"?: string;
+            "java_host"?: ({
+              "preparation_ms"?: number;
+              "profile_id"?: string;
+              "run_lifetime_ms"?: number;
+            }) | null;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -66659,6 +67064,7 @@ export interface operations {
           "groups"?: Array<{
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: (Record<string, unknown>) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -74863,6 +75269,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -75054,6 +75465,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -75116,6 +75540,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -76240,6 +76665,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -76431,6 +76861,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -76493,6 +76936,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -77617,6 +78061,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -77808,6 +78257,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -77870,6 +78332,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -78994,6 +79457,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -79185,6 +79653,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -79247,6 +79728,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -80371,6 +80853,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -80562,6 +81049,19 @@ export interface operations {
               "folder_id"?: (string) | null;
               "generator_shards"?: Array<{
                 "group": string;
+                "java_host"?: ({
+                  "admitted_vusers"?: number;
+                  "containment": string;
+                  "contract": string;
+                  "max_hosts": number;
+                  "max_vusers": number;
+                  "mode": string;
+                  "preparation_ms": number;
+                  "prepared_vusers"?: number;
+                  "profile": Record<string, unknown>;
+                  "reservation_id"?: string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "shard_count"?: number;
                 "shard_ordinal"?: number;
                 "shard_strategy"?: string;
@@ -80624,6 +81124,7 @@ export interface operations {
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -88361,6 +88862,11 @@ export interface operations {
             "scenario_draft": {
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -88427,6 +88933,7 @@ export interface operations {
               "groups": Array<{
                 "assignment"?: ({
                   "failover_policy"?: string;
+                  "java_host"?: (Record<string, unknown>) | null;
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
@@ -98439,6 +98946,11 @@ export interface operations {
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -98716,6 +99228,32 @@ export interface operations {
             "folder_id"?: (string) | null;
             "generator_shards"?: Array<{
               "group": string;
+              "java_host"?: ({
+                "admitted_vusers"?: number;
+                "containment": string;
+                "contract": string;
+                "max_hosts": number;
+                "max_vusers": number;
+                "mode": string;
+                "preparation_ms": number;
+                "prepared_vusers"?: number;
+                "profile": {
+                  "configuration_sha256": string;
+                  "facade_cpu_millicores"?: number;
+                  "facade_memory_bytes"?: number;
+                  "facade_network_kbps"?: number;
+                  "facade_resources_sha256"?: string;
+                  "invocation_ms": number;
+                  "max_run_ms": number;
+                  "memory_bytes": number;
+                  "policy_sha256": string;
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "script_sha256": string;
+                };
+                "reservation_id"?: string;
+                "run_lifetime_ms": number;
+              }) | null;
               "shard_count"?: number;
               "shard_ordinal"?: number;
               "shard_strategy"?: string;
@@ -98788,6 +99326,11 @@ export interface operations {
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -104607,6 +105150,11 @@ export interface operations {
         "application/json": {
           "assignment"?: ({
             "failover_policy"?: string;
+            "java_host"?: ({
+              "preparation_ms"?: number;
+              "profile_id"?: string;
+              "run_lifetime_ms"?: number;
+            }) | null;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -104683,6 +105231,11 @@ export interface operations {
           "groups": Array<{
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -105283,6 +105836,11 @@ export interface operations {
           "application/json": ({
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms": number;
+                "profile_id": string;
+                "run_lifetime_ms": number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
@@ -105748,6 +106306,11 @@ export interface operations {
             "scripts": Array<{
               "assignment"?: ({
                 "failover_policy"?: string;
+                "java_host"?: ({
+                  "preparation_ms": number;
+                  "profile_id": string;
+                  "run_lifetime_ms": number;
+                }) | null;
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
@@ -112121,6 +112684,11 @@ export interface operations {
         "application/json": {
           "assignment"?: ({
             "failover_policy"?: string;
+            "java_host"?: ({
+              "preparation_ms"?: number;
+              "profile_id"?: string;
+              "run_lifetime_ms"?: number;
+            }) | null;
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
@@ -112197,6 +112765,11 @@ export interface operations {
           "groups"?: Array<{
             "assignment"?: ({
               "failover_policy"?: string;
+              "java_host"?: ({
+                "preparation_ms"?: number;
+                "profile_id"?: string;
+                "run_lifetime_ms"?: number;
+              }) | null;
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;

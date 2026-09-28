@@ -198,9 +198,9 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
 }
 
 export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings | undefined {
-	if (!assignment?.mode && !assignment?.required_labels && !assignment?.tolerate_generator_loss) return undefined
+	if (!assignment?.mode && !assignment?.required_labels && !assignment?.tolerate_generator_loss && !assignment?.java_host) return undefined
 	const requiredLabels = normalizeRequiredLabels(assignment.required_labels)
-	const lossTolerance = assignment.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}
+	const lossTolerance = { ...(assignment.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}), ...(assignment.java_host ? { java_host: { ...assignment.java_host } } : {}) }
 	if (assignment.mode === 'specific_hosts') {
 		const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
 		return {
@@ -227,7 +227,7 @@ export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSett
 			...lossTolerance,
 		}
 	}
-	if (assignment.mode === 'auto' || requiredLabels || assignment.tolerate_generator_loss) {
+	if (assignment.mode === 'auto' || requiredLabels || assignment.tolerate_generator_loss || assignment.java_host) {
 		return {
 			mode: 'auto',
 			...(requiredLabels ? { required_labels: requiredLabels } : {}),

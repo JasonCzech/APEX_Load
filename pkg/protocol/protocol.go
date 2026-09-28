@@ -623,6 +623,14 @@ type ThinkTimeConfig struct {
 	Ignore     bool    `json:"ignore,omitempty"`     // Skip think time for this action
 }
 
+// LifecycleControl is an in-process control receipt from a stateful protocol.
+// It continues after an action or ends the main iteration, with separate status.
+// It is never decoded from script content or retained in exported results.
+type LifecycleControl struct {
+	EndIteration bool
+	Failed       bool
+}
+
 // Result contains the outcome of a single action execution.
 //
 // Values a protocol adapter HARVESTS FROM THE SYSTEM UNDER TEST — HTTP
@@ -636,6 +644,7 @@ type ThinkTimeConfig struct {
 // This says nothing about Extractions below, which IS carried to the engine and
 // whose sensitively-named entries are still registered for redaction.
 type Result struct {
+	LifecycleControl *LifecycleControl `json:"-"`
 	// CSVExportIDs binds finalized samples to declared exports before display-name redaction.
 	CSVExportIDs             []string
 	ExtractionsIncomplete    bool     `json:"extractions_incomplete,omitempty"`

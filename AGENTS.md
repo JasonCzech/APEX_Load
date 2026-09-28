@@ -26,7 +26,10 @@ cmd/
   apexctl/       — CLI tool for running/managing tests
   apexload-record-agent/ — Local browser-recording bridge agent (run on operator workstations)
   apexload-collector-agent/ — Monitoring collector agent (controller heartbeat + host-metric packs)
+  apexload-java-host-facade/ — Experimental loopback facade for dedicated broker execution
   apexload-java-vuser-runner/ — Java Vuser runner bridge (external-runner container for `java_vuser`)
+  apexload-java-host-supervisor/ — Experimental dedicated Java execution-pod PID 1 supervisor (not enabled by default)
+  apexload-java-host-broker/ — Experimental mTLS broker for dedicated Java pods and externally attested cleanup (not enabled by default)
   apexfault-target/ — Authenticated independent HTTP traffic counter for disposable fault trials
   apexbench/     — Controlled local performance-evidence harness (`make performance-smoke`)
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md

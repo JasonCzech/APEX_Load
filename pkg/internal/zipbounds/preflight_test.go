@@ -2,6 +2,7 @@ package zipbounds
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/binary"
 	"os"
 	"path/filepath"
@@ -71,5 +72,14 @@ func TestValidateFileAcceptsBoundedClassicZip(t *testing.T) {
 		MaxNameBytes: 128, MaxExtraBytes: 128, MaxCommentBytes: 128,
 	}); err != nil {
 		t.Fatalf("valid zip rejected: %v", err)
+	}
+}
+
+func TestValidateReaderRejectsMissingInput(t *testing.T) {
+	if err := ValidateReader(nil, 30, Limits{}); err == nil {
+		t.Fatal("nil reader accepted")
+	}
+	if err := ValidateReader(bytes.NewReader(nil), -1, Limits{}); err == nil {
+		t.Fatal("negative size accepted")
 	}
 }

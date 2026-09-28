@@ -100,7 +100,7 @@ func (tr *TestRunner) previewPodPlacementLocked(test *ManagedTest) ([]PodCapacit
 		if e.DrainState != "active" || e.Cordoned {
 			continue
 		}
-		loads[e.Target] = generatorLoadSnapshot{Target: e.Target, HeartbeatOK: generatorInventoryEntryReachable(e), PodCapacity: e.PodCapacity, AvailableCapacity: e.AvailableCapacity, CPULimitCores: e.CPULimitCores, MemoryLimitBytes: e.MemoryLimitBytes, MaxVUsers: e.MaxVUsers, SupportedProtocols: e.SupportedProtocols, CompatibleFeatures: e.CompatibleFeatures, RuntimeCapacities: e.RuntimeCapacities}
+		loads[e.Target] = generatorLoadSnapshot{Target: e.Target, HeartbeatOK: generatorInventoryEntryReachable(e), PodCapacity: e.PodCapacity, AvailableCapacity: e.AvailableCapacity, CPULimitCores: e.CPULimitCores, MemoryLimitBytes: e.MemoryLimitBytes, MaxVUsers: e.MaxVUsers, SupportedProtocols: e.SupportedProtocols, CompatibleFeatures: e.CompatibleFeatures, RuntimeCapacities: e.RuntimeCapacities, JavaHost: cloneJavaHostCapabilitySummary(e.JavaHost)}
 	}
 	configurePodLoads(tr.settings, loads)
 	shards := planDistributedGroupShardsForCandidates(groups, loads, loadSnapshotsForTargets(loads, allowed), orderedUniqueTargets(mapKeys(loads)), allowed, test.Assignment, tr.enrichGeneratorTargetSpecsWithLabels(b.configuredTargetSpecs()))
@@ -110,7 +110,7 @@ func (tr *TestRunner) previewPodPlacementLocked(test *ManagedTest) ([]PodCapacit
 			return nil, []string{podPlacementShortage(group, loadSnapshotsForTargets(loads, allowed))}
 		}
 		for _, s := range shards[group.Name] {
-			demand[s.Target] = demand[s.Target].Add(podGroupDemand(group).Scale(float64(s.VUsers) / float64(group.VUsers)))
+			demand[s.Target] = demand[s.Target].Add(podShardDemand(group, s))
 		}
 	}
 	var out []PodCapacityPreview
@@ -149,6 +149,9 @@ func (tr *TestRunner) previewPodPlacementLocked(test *ManagedTest) ([]PodCapacit
 }
 
 func podPlacementShortage(group TestGroup, loads map[string]generatorLoadSnapshot) string {
+	if javaHostSettings(group) != nil {
+		return generatorPlacementRejectionMessage(group, loads, nil, nil)
+	}
 	targets := mapKeys(loads)
 	sort.Strings(targets)
 	var reasons []string
@@ -242,6 +245,14 @@ func configurePodCapacity(settings SystemSettings, load generatorLoadSnapshot) *
 			raw.Protocols[name] = limit
 		}
 	}
+	if load.JavaHost != nil {
+		for _, p := range load.JavaHost.Profiles {
+			if p.FacadeResourcesSHA256 != "" {
+				raw.Protocols[javaHostFacadeCapacityProtocol] = raw.VUsers
+				break
+			}
+		}
+	}
 	budget := raw.Scale(1 - settings.CapacityPlanning.HeadroomPct/100)
 	if budget.Validate(true) != nil {
 		return unavailable
@@ -264,7 +275,11 @@ func consumePodGroupCapacity(load *generatorLoadSnapshot, group TestGroup, n int
 		return
 	}
 	before := load.PodCapacity
-	next := protocol.NewCapacitySnapshot(before.Schedulable, before.Reserved.Add(podGroupDemand(group).Scale(float64(n)/float64(group.VUsers))), before.HeadroomPct)
+	demand := podGroupDemand(group).Scale(float64(n) / float64(group.VUsers))
+	if javaHostSettings(group) != nil {
+		demand = projectedJavaHostFacadeDemand(group, *load, n)
+	}
+	next := protocol.NewCapacitySnapshot(before.Schedulable, before.Reserved.Add(demand), before.HeadroomPct)
 	next.State = before.State
 	next.Incarnation = before.Incarnation
 	next.Dedicated = before.Dedicated
@@ -385,9 +400,9 @@ func (tr *TestRunner) reservePodPlacement(ctx context.Context, test *ManagedTest
 				r = &storage.PodCapacityReservation{ReservationID: reservationID, Revision: 1, GroupDemands: map[string]protocol.CapacityVector{}, Target: shard.Target, TestID: test.ID, Incarnation: load.PodCapacity.Incarnation, Generation: generation, State: "pending", ModelVersion: protocol.CapacityReservationModel, HeadroomPct: load.PodCapacity.HeadroomPct, Budget: load.PodCapacity.Schedulable, GroupPeaks: map[string]int32{}, Dedicated: test.Assignment != nil && test.Assignment.SharingMode == "dedicated"}
 				byTarget[shard.Target] = r
 			}
-			r.Demand = r.Demand.Add(podGroupDemand(group).Scale(float64(shard.VUsers) / float64(group.VUsers)))
+			r.Demand = r.Demand.Add(podShardDemand(group, shard))
 			r.GroupPeaks[group.Name] += int32(shard.VUsers)
-			r.GroupDemands[group.Name] = r.GroupDemands[group.Name].Add(podGroupDemand(group).Scale(float64(shard.VUsers) / float64(group.VUsers)))
+			r.GroupDemands[group.Name] = r.GroupDemands[group.Name].Add(podShardDemand(group, shard))
 		}
 	}
 	var claims []storage.PodCapacityReservation
@@ -482,7 +497,7 @@ func (tr *TestRunner) enrichPodCapacityInventory(entries []GeneratorInventoryEnt
 	tr.mu.RUnlock()
 	for i := range entries {
 		e := &entries[i]
-		load := generatorLoadSnapshot{HeartbeatOK: generatorInventoryEntryReachable(*e), PodCapacity: e.PodCapacity, CPULimitCores: e.CPULimitCores, MemoryLimitBytes: e.MemoryLimitBytes, MaxVUsers: e.MaxVUsers, SupportedProtocols: e.SupportedProtocols, CompatibleFeatures: e.CompatibleFeatures, RuntimeCapacities: e.RuntimeCapacities}
+		load := generatorLoadSnapshot{HeartbeatOK: generatorInventoryEntryReachable(*e), PodCapacity: e.PodCapacity, CPULimitCores: e.CPULimitCores, MemoryLimitBytes: e.MemoryLimitBytes, MaxVUsers: e.MaxVUsers, SupportedProtocols: e.SupportedProtocols, CompatibleFeatures: e.CompatibleFeatures, RuntimeCapacities: e.RuntimeCapacities, JavaHost: cloneJavaHostCapabilitySummary(e.JavaHost)}
 		e.PodCapacity = configurePodCapacity(settings, load)
 		if e.PodCapacity != nil && e.PodCapacity.ReservedPct > 0 {
 			e.Restartable = false

@@ -18,7 +18,9 @@ const enforcedDisableOpenJ9Dumps = "-Xdump:none"
 // Java harness launch. VMParameters are already exact argv tokens; no quoting
 // or shell expansion is performed.
 type CommandSpec struct {
-	VMParameters []string
+	OperatorCDSManifest string
+	ResolvedJDK         *ResolvedJDK
+	VMParameters        []string
 	// JavaMajor is the already-probed launcher major. Zero means unknown and
 	// keeps the modern fail-closed defaults. The explicit legacy Java 8 lane
 	// omits flags introduced after Java 8 so its JVM can still start.
@@ -75,6 +77,15 @@ func BuildCommand(spec CommandSpec) (CommandPlan, error) {
 
 	plan := CommandPlan{
 		Args: append([]string(nil), spec.VMParameters...),
+	}
+	if spec.OperatorCDSManifest != "" {
+		archive, err := validateOperatorCDS(spec, userClasspath)
+		if err != nil {
+			return CommandPlan{}, err
+		}
+		// Fail closed on archive/JDK incompatibility instead of reporting an
+		// AppCDS measurement while silently running without the archive.
+		plan.Args = append(plan.Args, "-Xshare:on", "-XX:SharedArchiveFile="+archive)
 	}
 	// Every VUser JVM in a sidecar shares an OS identity and working directory.
 	// Enforce attach isolation and dump suppression after all caller-owned VM

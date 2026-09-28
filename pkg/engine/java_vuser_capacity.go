@@ -257,7 +257,7 @@ func persistentJavaScaleCapacityDemand(groups []GroupConfig, liveByGroup map[str
 	var total int64
 	for index := range groups {
 		plan := NewJavaVuserCapacityPlan(groups[index].Script)
-		if !plan.RequiresPersistentLifecycle() {
+		if groups[index].javaBroker != nil || !plan.RequiresPersistentLifecycle() {
 			continue
 		}
 		configuredDemand := plan.Demand(groups[index].VUsers)

@@ -83,6 +83,7 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 					// names and controller defaults are not runtime feature evidence.
 					entry.CompatibleFeatures = normalizedProtocolList(snapshot.CompatibleFeatures)
 					entry.RuntimeCapacities = cloneProtocolRuntimeCapacities(snapshot.RuntimeCapacities)
+					entry.JavaHost = cloneJavaHostCapabilitySummary(snapshot.JavaHost)
 					entry.CompatibilityState = generatorCompatibilityState(effectiveSpec)
 					entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
 					entry.Status = "connected"

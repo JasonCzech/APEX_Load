@@ -275,6 +275,7 @@ type JavaVuser struct {
 }
 
 type configuration struct {
+	OperatorCDSManifest    string
 	Enabled                bool
 	RunnerMode             string
 	RunnerURL              string
@@ -436,6 +437,7 @@ func (j *JavaVuser) init(ctx context.Context, cfg map[string]any, claimSidecarOw
 		_ = fileasset.RegisterProjectRoot(operator.ClasspathAssetDir)
 	}
 	j.cfg = configuration{
+		OperatorCDSManifest:    operator.CDSManifest,
 		Enabled:                operator.Enabled,
 		RunnerMode:             runnerMode,
 		RunnerURL:              operator.RunnerURL,
@@ -2450,6 +2452,7 @@ func (j *JavaVuser) commandArgs(cmd runCommand) ([]string, error) {
 			sharedClasspath = sharedClasspath[scriptCount:]
 		}
 		plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
+			OperatorCDSManifest: j.cfg.OperatorCDSManifest, ResolvedJDK: j.cfg.ResolvedJDK,
 			VMParameters:         j.cfg.AdditionalVMParameters,
 			JavaMajor:            resolvedJavaMajor(j.cfg.ResolvedJDK),
 			VMFamily:             resolvedJavaVMFamily(j.cfg.ResolvedJDK),

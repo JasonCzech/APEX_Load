@@ -178,7 +178,7 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 		if assignment, ok := s.assignments[claim.TestId]; ok {
 			for name, n := range assignment.groups {
 				peak, found := claim.GroupPeaks[name]
-				if !found || n > peak {
+				if !found || max(n, assignment.groupJavaHostPrepared[name]) > peak {
 					return reject(fmt.Errorf("live VUsers exceed proposed reservation"))
 				}
 			}

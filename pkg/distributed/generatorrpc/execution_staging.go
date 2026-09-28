@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type assignmentStageDecisionKind uint8
@@ -118,6 +119,26 @@ type preparedAssignmentStage struct {
 // bounded request validation, one coordinator reservation, unlocked execution
 // preparation, and an atomic coordinator commit or rollback.
 func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (ack *pb.AssignmentAck, callErr error) {
+	defer func() {
+		if callErr == nil && ack.GetAccepted() && assignment.GetJavaHost() != nil {
+			service.mu.RLock()
+			execution := service.executions[assignment.GetTestId()][assignment.GetGroupName()]
+			service.mu.RUnlock()
+			if execution == nil || execution.engine == nil {
+				ack = nil
+				callErr = status.Error(codes.Aborted, "java_host_reservation_unavailable")
+				return
+			}
+			placements := execution.engine.JavaBrokerPlacements()
+			caps := service.javaHostCapabilities()
+			if len(placements) != 1 || caps == nil {
+				ack = nil
+				callErr = status.Error(codes.Aborted, "java_host_reservation_unavailable")
+				return
+			}
+			ack.JavaHost = &pb.JavaHostPlacement{Selection: proto.Clone(assignment.GetJavaHost()).(*pb.JavaHostSelection), ReservationId: placements[0].ReservationID, Mode: caps.Mode, Containment: caps.Containment, MaxHosts: caps.MaxHosts, MaxVusers: caps.MaxVusers}
+		}
+	}()
 	defer func() {
 		if assignment != nil && (callErr != nil || !ack.GetAccepted()) {
 			service.abortSourcePlanStage(assignment.TestId, assignment.ExecutionGeneration, assignment.RunSupervisionToken)
@@ -294,7 +315,7 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 	if err := service.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
 		return assignmentStageDecision{err: err, availableCapacity: available}
 	}
-	if err := service.validatePodCapacityAssignmentLocked(request.GetTestId(), request.GetGroupName(), request.GetVuserCount()); err != nil {
+	if err := service.validatePodCapacityAssignmentLocked(request.GetTestId(), request.GetGroupName(), javaHostPreparedVUsers(request)); err != nil {
 		return rejectedAssignmentStage(err.Error(), available)
 	}
 	if request.GetExecutionGeneration() == 0 && service.executionEpochManager.runSupervisionRestartFenceInherited {
@@ -379,7 +400,7 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		return rejectedAssignmentStage(err.Error(), available)
 	}
 	persistentJavaDemand := int64(0)
-	if cached.requiresPhaseLifecycle {
+	if request.GetJavaHost() == nil && cached.requiresPhaseLifecycle {
 		if strings.EqualFold(strings.TrimSpace(validated.initStrategy), "at_once") {
 			return rejectedAssignmentStage("init_strategy at_once is incompatible with persistent java_vuser lifecycle; use at_runtime", available)
 		}
@@ -395,7 +416,7 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 				return rejectedAssignmentStage(fmt.Sprintf("insufficient java_vuser runtime capacity: maximum %d", maxVUsers), available)
 			}
 		}
-	} else if strings.EqualFold(cached.protocol, "java_vuser") &&
+	} else if request.GetJavaHost() == nil && strings.EqualFold(cached.protocol, "java_vuser") &&
 		service.persistentJavaRuntimeOccupiedLocked() {
 		return rejectedAssignmentStage("legacy java_vuser full_lifecycle cannot share generator process slots with an active persistent lifecycle assignment", available)
 	}
@@ -415,14 +436,14 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 			}
 		}
 	}
-	additional := int64(request.GetVuserCount())
+	additional := int64(javaHostPreparedVUsers(request))
 	if request.SourcePlan != nil {
 		additional = sourcePlanUsers(request.SourcePlan)
 		if currentExists {
 			additional = 0
 		}
 	}
-	if service.activeVUsers64Locked()+coordinator.pendingVUsersLocked()+additional > int64(service.maxVUsers) {
+	if service.capacityVUsers64Locked()+coordinator.pendingVUsersLocked()+additional > int64(service.maxVUsers) {
 		return rejectedAssignmentStage("insufficient generator capacity", available)
 	}
 
@@ -470,8 +491,8 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 		scriptID:                request.GetScriptId(),
 		protocol:                cached.protocol,
 		vusers:                  int32(additional),
-		persistentJavaLifecycle: cached.requiresPhaseLifecycle,
-		legacyJavaLifecycle:     strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
+		persistentJavaLifecycle: request.GetJavaHost() == nil && cached.requiresPhaseLifecycle,
+		legacyJavaLifecycle:     request.GetJavaHost() == nil && strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
 		persistentJavaDemand:    persistentJavaDemand,
 		done:                    make(chan struct{}),
 	}
@@ -486,8 +507,8 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 			executionEnabled:        service.executionEnabled,
 			scriptContent:           append([]byte(nil), cached.content...),
 			protocol:                cached.protocol,
-			persistentJavaLifecycle: cached.requiresPhaseLifecycle,
-			legacyJavaLifecycle:     strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
+			persistentJavaLifecycle: request.GetJavaHost() == nil && cached.requiresPhaseLifecycle,
+			legacyJavaLifecycle:     request.GetJavaHost() == nil && strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
 			persistentJavaDemand:    persistentJavaDemand,
 			executionDuration:       executionDuration,
 			durationOffset:          executionDurationOffset,
@@ -584,7 +605,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if service.draining {
 		return nil, service.availableCapacityLocked(), status.Error(codes.Unavailable, "generator is draining")
 	}
-	if err := service.validatePodCapacityAssignmentLocked(request.GetTestId(), request.GetGroupName(), request.GetVuserCount()); err != nil {
+	if err := service.validatePodCapacityAssignmentLocked(request.GetTestId(), request.GetGroupName(), javaHostPreparedVUsers(request)); err != nil {
 		return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, err.Error())
 	}
 	current, currentExists := service.assignments[request.GetTestId()]
@@ -599,7 +620,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if currentExists != plan.hadCurrent || !sameSHA256Digest(assignmentControlFingerprint(current, currentExists), plan.currentGuard) {
 		return nil, service.availableCapacityLocked(), status.Error(codes.Aborted, "test assignment changed while execution was prepared")
 	}
-	if service.activeVUsers64Locked()+coordinator.pendingVUsersLocked() > int64(service.maxVUsers) {
+	if service.capacityVUsers64Locked()+coordinator.pendingVUsersLocked() > int64(service.maxVUsers) {
 		return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, "insufficient generator capacity")
 	}
 	if strings.EqualFold(plan.protocol, "java_vuser") {
@@ -676,6 +697,10 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	next.groupAssignments[request.GetGroupName()] = plan.validated.fingerprint
 	next.groupSecretBundleIDs[request.GetGroupName()] = request.GetSecretBundleId()
 	next.groupScripts[request.GetGroupName()] = request.GetScriptId()
+	if request.GetJavaHost() != nil {
+		next.groupJavaHosts[request.GetGroupName()] = request.GetJavaHost().PolicySha256
+		next.groupJavaHostPrepared[request.GetGroupName()] = request.GetJavaHost().PreparedVusers
+	}
 	next.vuserCount += request.GetVuserCount()
 
 	if plan.executionEnabled {
@@ -766,6 +791,14 @@ func cloneAssignmentForStage(current assignedTest) assignedTest {
 	next.groupAssignments = cloneStringFingerprintMap(current.groupAssignments)
 	next.groupSecretBundleIDs = cloneStringMap(current.groupSecretBundleIDs)
 	next.groupScripts = cloneStringMap(current.groupScripts)
+	next.groupJavaHostPrepared = cloneStringInt32Map(current.groupJavaHostPrepared)
+	if next.groupJavaHostPrepared == nil {
+		next.groupJavaHostPrepared = map[string]int32{}
+	}
+	next.groupJavaHosts = cloneStringMap(current.groupJavaHosts)
+	if next.groupJavaHosts == nil {
+		next.groupJavaHosts = make(map[string]string)
+	}
 	if next.groups == nil {
 		next.groups = make(map[string]int32)
 	}
@@ -844,6 +877,8 @@ func assignmentControlFingerprint(assignment assignedTest, exists bool) [sha256.
 		fingerprintWriteBytes(h, assignmentFingerprint[:])
 		fingerprintWriteString(h, assignment.groupSecretBundleIDs[name])
 		fingerprintWriteString(h, assignment.groupScripts[name])
+		fingerprintWriteString(h, assignment.groupJavaHosts[name])
+		fingerprintWriteUint64(h, uint64(assignment.groupJavaHostPrepared[name]))
 	}
 	return fingerprintDigest(h)
 }
@@ -859,6 +894,9 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		}
 	}
 	prepared := &preparedAssignmentStage{}
+	if request.GetJavaHost() != nil && (!plan.executionEnabled || service.javaHostRuntime == nil) {
+		return nil, status.Error(codes.FailedPrecondition, "java_host_backend_unavailable")
+	}
 	if plan.persistentJavaLifecycle {
 		// Capability providers may probe a JVM or sidecar. Preparation runs
 		// outside the service coordinator lock so the probe cannot stall
@@ -899,8 +937,23 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
 
+	javaHost, hostErr := service.javaHostGroupOptions(request, &script, &script)
+	if hostErr != nil {
+		return nil, status.Error(codes.FailedPrecondition, hostErr.Error())
+	}
 	applyAssignmentMessageDetailBudget(&script, request)
-	if instance, getErr := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol))); getErr == nil {
+	if javaHost != nil {
+		javaHost.ScriptSHA256, err = engine.JavaPooledScriptSHA256(&script)
+		if err != nil {
+			return nil, err
+		}
+	}
+	var instance protocol.Protocol
+	var getErr error
+	if javaHost == nil {
+		instance, getErr = protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol)))
+	}
+	if javaHost == nil && getErr == nil {
 		if strings.EqualFold(script.Protocol, "java_vuser") {
 			observation := prepared.javaCapacity
 			if !observation.probed {
@@ -1030,7 +1083,11 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		}
 	}
 	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())
-	preflight, preflightErr := engine.PreflightScriptRuntime(ctx, &script, runtimeSecrets)
+	var preflight protocol.RuntimePreflightResult
+	var preflightErr error
+	if javaHost == nil {
+		preflight, preflightErr = engine.PreflightScriptRuntime(ctx, &script, runtimeSecrets)
+	}
 	if preflightErr != nil {
 		if ctx != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -1063,6 +1120,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	groupConfig := engine.MultiGroupConfig{
 		TerminationMode: request.GetTerminationMode(),
 		Groups: []engine.GroupConfig{{
+			JavaBroker:                   javaHost,
 			Name:                         request.GetGroupName(),
 			StartOffset:                  plan.validated.startOffset,
 			Region:                       strings.TrimSpace(request.GetRegion()),
@@ -1095,12 +1153,8 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "build execution engine: %v", err)
 	}
-	if ctx != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, status.FromContextError(ctxErr).Err()
-		}
-	}
 	prepared.execution = &groupExecution{
+		javaHost:            javaHost != nil,
 		stagedConfig:        &groupConfig,
 		groupName:           request.GetGroupName(),
 		executionGeneration: request.GetExecutionGeneration(),
@@ -1110,6 +1164,16 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		results:             results,
 		publisherDone:       make(chan struct{}),
 		done:                make(chan struct{}),
+	}
+	if javaHost != nil {
+		if err := mge.PreflightRuntime(ctx); err != nil {
+			return nil, status.Error(codes.FailedPrecondition, "java_host_preparation_failed")
+		}
+	}
+	if ctx != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, status.FromContextError(ctxErr).Err()
+		}
 	}
 	return prepared, nil
 }
@@ -1271,6 +1335,9 @@ func normalizedRuntimeWarningCode(value string) string {
 }
 
 func (service *Service) cleanupPreparedAssignmentStage(plan *assignmentStagePlan, prepared *preparedAssignmentStage) {
+	if prepared != nil && prepared.execution != nil && prepared.execution.javaHost {
+		_ = prepared.execution.engine.ClosePreparedRuntime()
+	}
 	if service == nil || plan == nil || prepared == nil || !prepared.createdWriter || prepared.writer == nil {
 		return
 	}

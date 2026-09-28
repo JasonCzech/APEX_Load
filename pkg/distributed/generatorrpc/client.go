@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -30,6 +31,7 @@ type DataFile struct {
 const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 
 type Assignment struct {
+	JavaHost *pb.JavaHostSelection
 	// AdoptionGrace > 0 opts the run into HA continuity (WorkAssignment.adoption_grace).
 	AdoptionGrace                time.Duration
 	ArchiveSourceTarget          string
@@ -74,6 +76,7 @@ type Assignment struct {
 }
 
 type AssignmentResult struct {
+	JavaHost          *pb.JavaHostPlacement
 	Accepted          bool
 	ErrorMessage      string
 	AvailableCapacity int32
@@ -402,6 +405,7 @@ type ProtocolRuntimeCapacity struct {
 }
 
 type HeartbeatResponse struct {
+	JavaHost                       *pb.JavaHostCapabilities
 	PodCapacity                    *pb.PodCapacitySnapshot
 	GeneratorID                    string
 	TimestampUnixMs                int64
@@ -518,8 +522,11 @@ type Client struct {
 }
 
 type sharedClientConnection struct {
-	mu   sync.Mutex
-	refs int
+	javaHostCaps     *pb.JavaHostCapabilities
+	javaHostObserved time.Time
+	javaHostPrepared bool
+	mu               sync.Mutex
+	refs             int
 }
 
 type HeartbeatStream struct {
@@ -756,7 +763,20 @@ func (c *Client) claimExecutionEpoch(ctx context.Context, generation uint64, lea
 }
 
 func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (AssignmentResult, error) {
-	ack, err := c.rpc.AssignWork(ctx, toProtoAssignment(assignment))
+	request := toProtoAssignment(assignment)
+	if err := validateJavaHostSelection(request); err != nil {
+		return AssignmentResult{}, err
+	}
+	if request.GetJavaHost() != nil && !c.javaHostSelectionNegotiated(request) {
+		return AssignmentResult{}, fmt.Errorf("java_host_capability_not_negotiated")
+	}
+	ack, err := c.rpc.AssignWork(ctx, request)
+	if err == nil && ack.GetAccepted() && request.GetJavaHost() != nil {
+		placement := ack.GetJavaHost()
+		if placement == nil || !proto.Equal(placement.GetSelection(), request.GetJavaHost()) || placement.ReservationId == "" || len(placement.ReservationId) > 128 || placement.Mode != "dedicated" || placement.Containment != "execution_pod" || placement.MaxHosts < javaHostPreparedVUsers(request) || placement.MaxVusers < javaHostPreparedVUsers(request) {
+			return AssignmentResult{}, fmt.Errorf("java_host_negotiation_failed")
+		}
+	}
 	if err == nil && ack.GetAccepted() && assignment.SourcePlan != nil {
 		c.sourcePlans.Store(sourcePlanClientKey{assignment.TestID, assignment.ExecutionGeneration}, SourcePlanDigest(assignment.SourcePlan))
 	}
@@ -765,6 +785,7 @@ func (c *Client) AssignWork(ctx context.Context, assignment Assignment) (Assignm
 	}
 
 	return AssignmentResult{
+		JavaHost:          cloneJavaHostPlacement(ack.GetJavaHost()),
 		Accepted:          ack.GetAccepted(),
 		ErrorMessage:      ack.GetErrorMessage(),
 		AvailableCapacity: ack.GetAvailableCapacity(),
@@ -1206,7 +1227,13 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 	pong, err := s.stream.Recv()
 	receivedAt := time.Now()
 	if err != nil {
+		if s.owner != nil {
+			s.owner.observeJavaHosts(nil)
+		}
 		return HeartbeatResponse{}, err
+	}
+	if s.owner != nil {
+		s.owner.observeJavaHosts(pong)
 	}
 	s.clockMu.Lock()
 	sentAt := s.clockSentAt
@@ -1242,6 +1269,7 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 
 	return HeartbeatResponse{
 		GeneratorID:                    pong.GetGeneratorId(),
+		JavaHost:                       cloneJavaHostCapabilities(pong.GetJavaHost()),
 		TimestampUnixMs:                pong.GetTimestampUnixMs(),
 		TimestampUnixNano:              pong.GetTimestampUnixNano(),
 		ActiveTestIDs:                  pong.GetActiveTestIds(),
@@ -1510,6 +1538,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	rampUp := resolvedPreciseDuration(assignment.RampUp, int64(assignment.RampUpSeconds))
 	return &pb.WorkAssignment{
 		SourcePlan:                assignment.SourcePlan,
+		JavaHost:                  cloneJavaHostSelection(assignment.JavaHost),
 		TestId:                    assignment.TestID,
 		ExecutionGeneration:       assignment.ExecutionGeneration,
 		ScenarioId:                assignment.ScenarioID,
@@ -1915,4 +1944,78 @@ func generatorStatsFromProto(stats *pb.GeneratorStats) GeneratorStats {
 		DiskWeightedIOTimePct:             stats.GetDiskWeightedIoTimePct(),
 		DiskInProgress:                    stats.GetDiskInProgress(),
 	}
+}
+
+func cloneJavaHostSelection(value *pb.JavaHostSelection) *pb.JavaHostSelection {
+	if value == nil {
+		return nil
+	}
+	return proto.Clone(value).(*pb.JavaHostSelection)
+}
+func cloneJavaHostPlacement(value *pb.JavaHostPlacement) *pb.JavaHostPlacement {
+	if value == nil {
+		return nil
+	}
+	return proto.Clone(value).(*pb.JavaHostPlacement)
+}
+func cloneJavaHostCapabilities(value *pb.JavaHostCapabilities) *pb.JavaHostCapabilities {
+	if value == nil {
+		return nil
+	}
+	return proto.Clone(value).(*pb.JavaHostCapabilities)
+}
+
+// Placement negotiation is tied to this physical connection and a recent
+// heartbeat. Retained per-run clients share the same evidence. An older or
+// malformed advertisement clears admission rather than falling back locally.
+func (c *Client) observeJavaHosts(pong *pb.HeartbeatPong) {
+	if c.connection == nil {
+		return
+	}
+	var caps *pb.JavaHostCapabilities
+	if pong != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureJavaHostBrokerV1) && ValidJavaHostCapabilities(pong.GetJavaHost()) {
+		caps = cloneJavaHostCapabilities(pong.GetJavaHost())
+	}
+	c.connection.mu.Lock()
+	c.connection.javaHostCaps = caps
+	c.connection.javaHostPrepared = caps != nil && protocol.RuntimeFeaturesSatisfy(pong.CompatibleFeatures, FeatureJavaHostPreparedPopulationV1)
+	c.connection.javaHostObserved = time.Now()
+	c.connection.mu.Unlock()
+}
+
+// ValidJavaHostCapabilities validates negotiated dedicated-host advertisements.
+// The limits are configured ceilings, not evidence of currently free reservations.
+func ValidJavaHostCapabilities(caps *pb.JavaHostCapabilities) bool {
+	if caps == nil || caps.Contract != JavaHostSelectionContract || caps.Mode != "dedicated" || caps.Containment != "execution_pod" || caps.MaxHosts < 1 || caps.MaxHosts > 10000 || caps.MaxVusers < 1 || caps.MaxVusers > 10000 || caps.MaxMemoryBytes < 1 || len(caps.Profiles) < 1 || len(caps.Profiles) > 256 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, p := range caps.Profiles {
+		if p == nil || !validJavaHostProfileResources(p) || !javaHostDigest(p.ScriptSha256) || !javaHostDigest(p.PolicySha256) || !javaHostDigest(p.ConfigurationSha256) || p.ProfileId == "" || len(p.ProfileId) > 128 || p.MemoryBytes < 1 || p.PreparationMs < 1 || p.PreparationMs > 3600000 || p.MaxRunMs < 1 || p.MaxRunMs > 86400000 || p.InvocationMs < 1 || p.InvocationMs > 3600000 || seen[p.ScriptSha256] {
+			return false
+		}
+		seen[p.ScriptSha256] = true
+	}
+	return true
+}
+func (c *Client) javaHostSelectionNegotiated(q *pb.WorkAssignment) bool {
+	if c.connection == nil {
+		return false
+	}
+	c.connection.mu.Lock()
+	defer c.connection.mu.Unlock()
+	caps := c.connection.javaHostCaps
+	if q.GetJavaHost().GetPreparedVusers() > 0 && !c.connection.javaHostPrepared {
+		return false
+	}
+	if caps == nil || time.Since(c.connection.javaHostObserved) > 30*time.Second || javaHostPreparedVUsers(q) > caps.MaxHosts || javaHostPreparedVUsers(q) > caps.MaxVusers {
+		return false
+	}
+	s := q.GetJavaHost()
+	for _, p := range caps.Profiles {
+		if p.FacadeResourcesSha256 == s.FacadeResourcesSha256 && p.ScriptSha256 == s.ScriptSha256 && p.ProfileId == s.ProfileId && p.PolicySha256 == s.PolicySha256 && p.ConfigurationSha256 == s.ConfigurationSha256 && s.PreparationMs <= p.PreparationMs && s.RunLifetimeMs <= p.MaxRunMs && int64(javaHostPreparedVUsers(q)) <= caps.MaxMemoryBytes/p.MemoryBytes {
+			return true
+		}
+	}
+	return false
 }

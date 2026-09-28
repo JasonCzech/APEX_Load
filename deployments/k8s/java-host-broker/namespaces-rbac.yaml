@@ -1,0 +1,55 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apexload-java-broker
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apexload-java-execution
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: java-broker
+  namespace: apexload-java-broker
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: java-execution
+  namespace: apexload-java-execution
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: java-hosts
+  namespace: apexload-java-execution
+rules:
+  - apiGroups: [""]
+    resources: [pods, secrets]
+    verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: java-hosts
+  namespace: apexload-java-execution
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: java-hosts
+subjects:
+  - kind: ServiceAccount
+    name: java-broker
+    namespace: apexload-java-broker

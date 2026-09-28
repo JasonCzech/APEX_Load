@@ -371,6 +371,7 @@ type managedTestBuildTestFence struct {
 }
 
 type managedTestBuildInventoryFence struct {
+	JavaHost           *JavaHostCapabilitySummary             `json:"java_host,omitempty"`
 	Target             string                                 `json:"target"`
 	GeneratorID        string                                 `json:"generator_id"`
 	Region             string                                 `json:"region"`
@@ -509,6 +510,7 @@ func managedTestBuildAdmissionFingerprint(tests map[string]*ManagedTest, identit
 			Labels:             cloneStringMap(entry.Labels),
 			CompatibleFeatures: append([]string(nil), entry.CompatibleFeatures...),
 			RuntimeCapacities:  cloneProtocolRuntimeCapacities(entry.RuntimeCapacities),
+			JavaHost:           cloneJavaHostCapabilitySummary(entry.JavaHost),
 			DrainState:         entry.DrainState,
 			CapacityState:      entry.CapacityState,
 			AvailableCapacity:  entry.AvailableCapacity,

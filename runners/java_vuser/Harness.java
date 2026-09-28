@@ -1,4 +1,5 @@
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStreamReader;
@@ -103,6 +104,18 @@ public final class Harness {
         DiagnosticBuffer userStderr = new DiagnosticBuffer(MAX_DIAGNOSTIC_BYTES);
         System.setOut(new PrintStream(userStdout, true, StandardCharsets.UTF_8.name()));
         System.setErr(new PrintStream(userStderr, true, StandardCharsets.UTF_8.name()));
+
+        // Opt-in pod preparation: the saved reader remains the control input.
+        // No target class is loaded or initialized before the first IPC command.
+        String readyNonce = Command.argValue(args, "--host-ready-nonce");
+        if (!readyNonce.isEmpty()) {
+            if (!readyNonce.matches("[a-f0-9]{64}")) {
+                throw new IllegalArgumentException("Invalid host readiness nonce");
+            }
+            System.setIn(new ByteArrayInputStream(new byte[0]));
+            protocolOut.println("APEXLOAD_JAVA_HOST_READY_V1 " + readyNonce);
+            protocolOut.flush();
+        }
 
         ActionsHandle actions = null;
         byte[] sessionSecret = null;
@@ -674,7 +687,7 @@ public final class Harness {
 
     private static boolean takesValue(String arg) {
         return "--class".equals(arg) || "--method".equals(arg)
-                || "--source-archive-ref".equals(arg) || "--startup-timeout-ms".equals(arg);
+                || "--host-ready-nonce".equals(arg) || "--source-archive-ref".equals(arg) || "--startup-timeout-ms".equals(arg);
     }
 
     private static String escape(String value) {

@@ -42,19 +42,28 @@ func ValidateFile(path string, limits Limits) error {
 	if err != nil {
 		return err
 	}
-	if info.Size() < endOfCentralDirectoryBytes {
+	return ValidateReader(file, info.Size(), limits)
+}
+
+// ValidateReader applies the same central-directory preflight to a bounded
+// in-memory or nested archive, before archive/zip allocates entry objects.
+func ValidateReader(file io.ReaderAt, size int64, limits Limits) error {
+	if file == nil {
+		return fmt.Errorf("zip reader is required")
+	}
+	if size < endOfCentralDirectoryBytes {
 		return fmt.Errorf("zip end-of-central-directory record is missing")
 	}
-	if limits.MaxArchiveBytes > 0 && info.Size() > limits.MaxArchiveBytes {
-		return fmt.Errorf("zip is %d bytes, limit is %d", info.Size(), limits.MaxArchiveBytes)
+	if limits.MaxArchiveBytes > 0 && size > limits.MaxArchiveBytes {
+		return fmt.Errorf("zip is %d bytes, limit is %d", size, limits.MaxArchiveBytes)
 	}
 
 	searchBytes := int64(endOfCentralDirectoryBytes + maxZIPCommentBytes)
-	if searchBytes > info.Size() {
-		searchBytes = info.Size()
+	if searchBytes > size {
+		searchBytes = size
 	}
 	tail := make([]byte, searchBytes)
-	if _, err := file.ReadAt(tail, info.Size()-searchBytes); err != nil && err != io.EOF {
+	if _, err := file.ReadAt(tail, size-searchBytes); err != nil && err != io.EOF {
 		return err
 	}
 	eocdOffset := -1
@@ -93,7 +102,7 @@ func ValidateFile(path string, limits Limits) error {
 	if limits.MaxCentralDirectoryBytes > 0 && centralBytes > limits.MaxCentralDirectoryBytes {
 		return fmt.Errorf("zip central directory is %d bytes, limit is %d", centralBytes, limits.MaxCentralDirectoryBytes)
 	}
-	absoluteEOCD := uint64(info.Size()-searchBytes) + uint64(eocdOffset)
+	absoluteEOCD := uint64(size-searchBytes) + uint64(eocdOffset)
 	if centralOffset > absoluteEOCD || centralBytes > absoluteEOCD-centralOffset {
 		return fmt.Errorf("zip central directory points outside the archive")
 	}

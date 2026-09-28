@@ -61,6 +61,11 @@ as proof that the complete transaction harness meets the target.
 
 ## Local performance evidence harness
 
+Java Vuser measurements use a separate evidence schema and opt-in commands. See
+[Java Vuser pooling implementation status](JAVA_VUSER_POOLING_IMPLEMENTATION.md)
+for fixture builds, dedicated Linux collection, operator AppCDS, comparison
+rules, and the unimplemented pooled/AKS execution and qualification stages.
+
 APEX Load has an opt-in, reproducible local benchmark harness for each design
 target listed in `AGENTS.md`. The harness emits a versioned JSON artifact and a
 deterministic Markdown companion. It does **not** claim that any production

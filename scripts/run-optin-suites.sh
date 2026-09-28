@@ -102,6 +102,22 @@ run_suite "LR_Scripts corpus smoke" \
   "a pinned LR_Scripts checkout (./scripts/fetch-lr-scripts-corpus.sh)" "true" \
   go test -count=1 -run TestPinnedLRScriptsCorpusSmoke -v ./pkg/convert/enterprisearchive
 
+# Local Java evidence checks require explicitly supplied artifacts/JDKs.
+run_suite "Java operator AppCDS archive" \
+  "APEXLOAD_JAVA_CDS_TEST_JDK_HOME (HotSpot 17+ JDK)" \
+  '[[ -n "${APEXLOAD_JAVA_CDS_TEST_JDK_HOME:-}" ]]' \
+  go test -count=1 -v -run '^TestOperatorCDSRealArchive$' ./pkg/javarunner
+
+run_suite "Java dedicated evidence fixtures" \
+  "APEXLOAD_JAVA_EVIDENCE_FIXTURE_DIR (built fixtures.jar and lib/*.jar), java and javac" \
+  '[[ -n "${APEXLOAD_JAVA_EVIDENCE_FIXTURE_DIR:-}" ]] && command -v java >/dev/null && command -v javac >/dev/null' \
+  go test -count=1 -v -run '^TestJavaEvidenceFixturesThroughDedicatedHarness$' ./runners/java_vuser
+
+run_suite "Java execution-pod local containment" \
+  "APEXLOAD_JAVA_POD_DOCKER_IMAGE (local Alpine JDK21 image), Docker, Go, javac and jar" \
+  '[[ -n "${APEXLOAD_JAVA_POD_DOCKER_IMAGE:-}" ]] && command -v docker >/dev/null && command -v go >/dev/null && command -v javac >/dev/null && command -v jar >/dev/null' \
+  go test -count=1 -v -run '^TestDedicatedPodDockerContainment$' ./runners/java_vuser
+
 # --- Category 2: needs live infrastructure or is long-running. --all only. ---
 run_suite "HA failover soak" \
   "--all" "[[ ${run_all} == 1 ]]" \

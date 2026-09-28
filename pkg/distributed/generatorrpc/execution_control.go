@@ -172,7 +172,9 @@ func (service *Service) revalidateCommitRuntime(ctx context.Context, request *pb
 		generation: generation,
 		executions: make(map[string]*groupExecution, len(candidates)),
 	}
+	localJava := false
 	for _, candidate := range candidates {
+		localJava = localJava || !candidate.execution.javaHost
 		if ctx != nil {
 			if err := ctx.Err(); err != nil {
 				return nil, status.FromContextError(err).Err()
@@ -199,7 +201,7 @@ func (service *Service) revalidateCommitRuntime(ctx context.Context, request *pb
 		}
 		validation.executions[candidate.groupName] = candidate.execution
 	}
-	if len(candidates) > 0 {
+	if localJava {
 		// Probe capacity after target validation so the locked commit decision
 		// uses the freshest available aggregate limit. Per-group validation alone
 		// cannot detect a sidecar restart that lowers MaxVUsers below the sum of
@@ -349,7 +351,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 					runtimeValidation.executions[groupName] != execution) {
 				return commitTransition{err: status.Errorf(codes.Aborted, "group %q Java runtime validation is stale; retry commit", groupName)}
 			}
-			persistentJavaStarting = persistentJavaStarting || (cachedOK && cached.requiresPhaseLifecycle)
+			persistentJavaStarting = persistentJavaStarting || (cachedOK && cached.requiresPhaseLifecycle && !execution.javaHost)
 		}
 		if persistentJavaStarting {
 			if runtimeValidation == nil || !runtimeValidation.javaCapacityValid {
@@ -413,6 +415,8 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 		var owner *sourcePlanExecution
 		var ownerCtx context.Context
 		var ownerCancel context.CancelFunc
+		ownerTransferred := false
+
 		if assignment.sourcePlan != nil && !assignment.committed {
 			var err error
 			owner, err = assembleSourcePlan(executions)
@@ -420,6 +424,11 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 				return commitTransition{err: status.Error(codes.FailedPrecondition, err.Error())}
 			}
 			ownerCtx, ownerCancel = context.WithCancel(apptelemetry.Detach(ctx))
+			defer func() {
+				if !ownerTransferred {
+					ownerCancel()
+				}
+			}()
 		}
 		for _, groupName := range groupNames {
 			execution := executions[groupName]
@@ -430,6 +439,7 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(ser
 			var cancel context.CancelFunc
 			if owner != nil {
 				executionContext, cancel = ownerCtx, ownerCancel
+				ownerTransferred = true
 				execution.owner = owner
 				execution.engine = owner.engine
 			} else {
@@ -733,7 +743,7 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 		acknowledged:             true,
 		pendingVUsers:            assignment.vuserCount,
 		persistentJavaDrainToken: persistentJavaDrainToken,
-		capacityDrainVUsers:      assignment.vuserCount,
+		capacityDrainVUsers:      reservedAssignmentVUsers(assignment),
 		writer:                   writer,
 		trackedFinalizer:         trackedFinalizer,
 		graceful:                 request.GetGraceful(),
@@ -1180,6 +1190,9 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	if service.draining && request.GetTargetVusers() > currentGroupVUsers {
 		return scaleTransitionDecision{err: status.Error(codes.Unavailable, "generator is draining and cannot increase vusers")}
 	}
+	if assignment.groupJavaHosts[request.GetGroupName()] != "" && request.GetTargetVusers() > currentGroupVUsers && request.GetTargetVusers() > assignment.groupJavaHostPrepared[request.GetGroupName()] {
+		return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "java_host_additional_ready_reservation_required")}
+	}
 	var persistentJavaCurrentDemand int64
 	var persistentJavaTargetDemand int64
 	legacyJavaLifecycle := false
@@ -1188,7 +1201,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		if !cachedOK {
 			return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "group script is no longer available in the generator cache")}
 		}
-		if cached.requiresPhaseLifecycle {
+		if assignment.groupJavaHosts[request.GetGroupName()] == "" && cached.requiresPhaseLifecycle {
 			persistentJavaCurrentDemand = cached.javaVuserCapacity.Demand(int(currentGroupVUsers))
 			persistentJavaTargetDemand = cached.javaVuserCapacity.Demand(int(request.GetTargetVusers()))
 			if persistentJavaTargetDemand > persistentJavaCurrentDemand {
@@ -1204,7 +1217,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 					return scaleTransitionDecision{err: status.Errorf(codes.ResourceExhausted, "insufficient java_vuser runtime capacity: maximum %d", maxVUsers)}
 				}
 			}
-		} else if strings.EqualFold(cached.protocol, "java_vuser") {
+		} else if assignment.groupJavaHosts[request.GetGroupName()] == "" && strings.EqualFold(cached.protocol, "java_vuser") {
 			legacyJavaLifecycle = true
 			if request.GetTargetVusers() > currentGroupVUsers &&
 				service.persistentJavaRuntimeOccupiedLocked() {
@@ -1214,7 +1227,11 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	}
 
 	updatedTotal64 := int64(assignment.vuserCount) - int64(currentGroupVUsers) + int64(request.GetTargetVusers())
-	projected := service.activeVUsers64Locked() - int64(assignment.vuserCount) + updatedTotal64
+	projected := service.capacityVUsers64Locked() - int64(assignment.vuserCount) + updatedTotal64
+	if prepared := assignment.groupJavaHostPrepared[request.GetGroupName()]; prepared > 0 {
+		projected -= max(0, int64(prepared)-int64(currentGroupVUsers))
+		projected += max(0, int64(prepared)-int64(request.GetTargetVusers()))
+	}
 	if updatedTotal64 < 0 || updatedTotal64 > maxGeneratorVUsers || projected > int64(service.maxVUsers) {
 		return scaleTransitionDecision{err: status.Error(codes.ResourceExhausted, "insufficient generator capacity")}
 	}
@@ -1243,7 +1260,7 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 		persistentJavaDrainToken = service.reserveLegacyJavaDrainLocked()
 	}
 	capacityDrainVUsers := int32(0)
-	if executionEngine != nil && currentGroupVUsers > request.GetTargetVusers() {
+	if executionEngine != nil && assignment.groupJavaHostPrepared[request.GetGroupName()] == 0 && currentGroupVUsers > request.GetTargetVusers() {
 		capacityDrainVUsers = currentGroupVUsers - request.GetTargetVusers()
 		service.runSupervisionDrainingVUsers += int64(capacityDrainVUsers)
 	}
@@ -1558,6 +1575,17 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 			return &pb.AdjustmentAck{Accepted: true, CurrentVusers: currentVUsers}, nil
 		}
 
+		service.mu.RLock()
+		remoteJava := service.assignments[plan.testID].groupJavaHosts[plan.groupName] != ""
+		service.mu.RUnlock()
+		if plan.engine != nil && remoteJava {
+			service.mu.Lock()
+			service.lifecycleCoordinator.releaseScaleWithoutRollbackLocked(service, plan)
+			service.mu.Unlock()
+			service.releaseScaleDrainAfterReap(plan, plan.targetGroupVUsers)
+			service.FailTest(plan.testID, "java_host_scale_commit_uncertain")
+			return nil, commitErr
+		}
 		if plan.engine != nil {
 			service.mu.Lock()
 			assignment, assignmentExists := service.assignments[plan.testID]

@@ -26,6 +26,7 @@ const (
 	EnvJavaVuserWorkDir         = "APEXLOAD_JAVA_VUSER_WORK_DIR"
 	EnvJavaVuserMaxProcesses    = "APEXLOAD_JAVA_VUSER_MAX_PROCESSES"
 	EnvJavaVuserRunnerAuthToken = "APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN"
+	EnvJavaVuserCDSManifest     = "APEXLOAD_JAVA_VUSER_CDS_MANIFEST"
 
 	// EnvJavaVuserAllowLegacyJava lowers the runner's Java floor from 17 to 8 so
 	// imported Vusers whose middleware only runs on a legacy JVM can execute.
@@ -86,6 +87,9 @@ const (
 // JavaVuserOperatorConfig is the operator-owned runtime configuration for the
 // Java Vuser external runner, resolved entirely from process environment.
 type JavaVuserOperatorConfig struct {
+	// CDSManifest is an operator-owned, immutable AppCDS identity manifest.
+	// It is intentionally absent from script settings and the runner wire API.
+	CDSManifest   string
 	Enabled       bool
 	RunnerCommand string
 	// RunnerCommandExplicit distinguishes an operator override from the
@@ -135,6 +139,7 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 		runnerCommand = DefaultJavaVuserRunnerCommand
 	}
 	cfg := JavaVuserOperatorConfig{
+		CDSManifest:            strings.TrimSpace(os.Getenv(EnvJavaVuserCDSManifest)),
 		Enabled:                envBool(EnvJavaVuserRunnerEnabled),
 		RunnerCommand:          runnerCommand,
 		RunnerCommandExplicit:  runnerCommandExplicit,

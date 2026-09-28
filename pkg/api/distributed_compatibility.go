@@ -236,6 +236,25 @@ func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName s
 // group blocked by inherited required_labels reports the actual unmet labels
 // instead of an empty/misleading reason.
 func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, specs []generatorTargetSpec, inherited *GeneratorAssignmentSettings) string {
+	if javaHostSettings(group) != nil {
+		admissions, err := javaHostScheduleAdmissions(group)
+		if err != nil {
+			return err.Error()
+		}
+		required := group
+		required.VUsers = admissions
+		reasons := []string{}
+		for target, load := range loadByTarget {
+			if _, err := javaHostPlacementForGroup(required, load); err != nil {
+				reasons = append(reasons, target+": "+err.Error())
+			}
+		}
+		if len(reasons) == 0 {
+			reasons = append(reasons, "java_host_aggregate_capacity_or_placement_unavailable")
+		}
+		sort.Strings(reasons)
+		return fmt.Sprintf("java_host_placement_unavailable for group %q (%d lifetime admissions required): %s", group.Name, admissions, strings.Join(reasons, "; "))
+	}
 	protocolName := usageKey(group.Protocol, "unknown")
 	reasons := make([]string, 0)
 	if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {

@@ -23,6 +23,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) > 1 && os.Args[1] == "java" {
+		return runJava(os.Args[2:])
+	}
 	profile := flag.String("profile", "smoke", "benchmark profile: smoke or release")
 	output := flag.String("output", "", "explicit JSON output path (default: stdout)")
 	markdownOutput := flag.String("markdown-output", "", "explicit Markdown companion output path")

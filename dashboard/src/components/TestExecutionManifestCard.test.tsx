@@ -145,11 +145,21 @@ describe('TestExecutionManifestCard', () => {
     expect(container.textContent).toContain('Every group matches the scenario policy.')
   })
 
-  async function renderCard(manifest: TestRunManifest | null, options: { error?: string; loading?: boolean } = {}) {
+  it.each([false, true])('reports the frozen dedicated Java placement and reservation (compact: %s)', async compact => {
+    const manifest = makeManifest()
+    manifest.load_generators.generator_shards![0].java_host = { contract: 'apexload.java-placement/v1', mode: 'dedicated', containment: 'execution_pod', profile: { profile_id: 'approved', script_sha256: 'a'.repeat(64), configuration_sha256: 'b'.repeat(64), policy_sha256: 'c'.repeat(64), memory_bytes: 268435456, preparation_ms: 120000, max_run_ms: 3600000, invocation_ms: 30000 }, preparation_ms: 120000, run_lifetime_ms: 600000, max_hosts: 25, max_vusers: 25, reservation_id: 'reservation-opaque', prepared_vusers: 4, admitted_vusers: 2 }
+    await renderCard(manifest, { compact })
+    expect(container.textContent).toContain('dedicated · execution_pod · approved')
+    expect(container.textContent).toContain('reservation-opaque')
+    expect(container.textContent).toContain('Prepared / admitted sessions4 / 2')
+  })
+
+  async function renderCard(manifest: TestRunManifest | null, options: { error?: string; loading?: boolean; compact?: boolean } = {}) {
     await act(async () => {
       root.render(
         <TestExecutionManifestCard
           manifest={manifest}
+          compact={options.compact}
           error={options.error || ''}
           loading={options.loading || false}
           onReload={vi.fn()}

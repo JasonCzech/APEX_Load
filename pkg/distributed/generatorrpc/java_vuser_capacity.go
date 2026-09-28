@@ -65,7 +65,7 @@ func (observation javaVuserCapacityObservation) persistentRuntimeError() error {
 }
 
 func (service *Service) assignmentJavaVuserCapacityObservation(validated validatedWorkAssignment) javaVuserCapacityObservation {
-	if validated.request == nil {
+	if validated.request == nil || validated.request.GetJavaHost() != nil {
 		return javaVuserCapacityObservation{}
 	}
 	request := validated.request
@@ -99,7 +99,10 @@ func (service *Service) activePersistentJavaVusersLocked() int64 {
 }
 
 func (service *Service) assignmentHasPersistentJavaLocked(assignment assignedTest) bool {
-	for _, scriptID := range assignment.groupScripts {
+	for groupName, scriptID := range assignment.groupScripts {
+		if assignment.groupJavaHosts[groupName] != "" {
+			continue
+		}
 		cached, ok := service.scriptCache.get(scriptID)
 		if ok && strings.EqualFold(cached.protocol, "java_vuser") && cached.requiresPhaseLifecycle {
 			return true
@@ -109,7 +112,10 @@ func (service *Service) assignmentHasPersistentJavaLocked(assignment assignedTes
 }
 
 func (service *Service) assignmentHasLegacyJavaLocked(assignment assignedTest) bool {
-	for _, scriptID := range assignment.groupScripts {
+	for groupName, scriptID := range assignment.groupScripts {
+		if assignment.groupJavaHosts[groupName] != "" {
+			continue
+		}
 		cached, ok := service.scriptCache.get(scriptID)
 		if ok && strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle {
 			return true
@@ -121,6 +127,9 @@ func (service *Service) assignmentHasLegacyJavaLocked(assignment assignedTest) b
 func (service *Service) assignmentPersistentJavaDemandLocked(assignment assignedTest) int64 {
 	var total int64
 	for groupName, scriptID := range assignment.groupScripts {
+		if assignment.groupJavaHosts[groupName] != "" {
+			continue
+		}
 		cached, ok := service.scriptCache.get(scriptID)
 		if !ok || !cached.requiresPhaseLifecycle {
 			continue

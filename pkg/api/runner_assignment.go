@@ -68,10 +68,18 @@ func (tr *TestRunner) poolMemberTargets(poolID string) []string {
 }
 
 func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
+	if in != nil && in.JavaHost != nil {
+		return nil, fmt.Errorf("assignment.java_host is group-scoped")
+	}
+	return normalizeGeneratorAssignmentSettingsBase(in)
+}
+
+func normalizeGeneratorAssignmentSettingsBase(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
 	if in == nil {
 		return nil, nil
 	}
 	out := &GeneratorAssignmentSettings{
+		JavaHost:              cloneJavaHostAssignmentSettings(in.JavaHost),
 		SourceAffinity:        strings.TrimSpace(in.SourceAffinity),
 		SharingMode:           strings.TrimSpace(in.SharingMode),
 		Mode:                  strings.TrimSpace(in.Mode),
@@ -86,6 +94,9 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	}
 	if out.RecoverySpareVUsers > 0 && (!out.TolerateGeneratorLoss || !simpleRecoveryAssignment(out)) {
 		return nil, fmt.Errorf("reserved recovery capacity requires generator-loss tolerance and automatic or explicit-host placement")
+	}
+	if err := validateJavaHostAssignmentSettings(out.JavaHost); err != nil {
+		return nil, err
 	}
 	switch out.FailoverPolicy {
 	case "", failoverPolicyFail, failoverPolicyContinue:
@@ -249,7 +260,7 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 	if strings.TrimSpace(in.FailoverPolicy) != "" {
 		return nil, fmt.Errorf("assignment.failover_policy is test-scoped; set it on the test-level assignment")
 	}
-	out, err := normalizeGeneratorAssignmentSettings(in)
+	out, err := normalizeGeneratorAssignmentSettingsBase(in)
 	if err != nil {
 		return nil, err
 	}
@@ -282,6 +293,7 @@ func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *Generato
 		return nil
 	}
 	out := *in
+	out.JavaHost = cloneJavaHostAssignmentSettings(in.JavaHost)
 	out.SelectedTargets = append([]string(nil), in.SelectedTargets...)
 	if len(in.RegionWeights) > 0 {
 		out.RegionWeights = make(map[string]int, len(in.RegionWeights))
@@ -310,5 +322,8 @@ func cloneGeneratorShardSummaries(in []GeneratorShardSummary) []GeneratorShardSu
 	}
 	out := make([]GeneratorShardSummary, len(in))
 	copy(out, in)
+	for i := range out {
+		out[i].JavaHost = cloneJavaHostPlacementSummary(in[i].JavaHost)
+	}
 	return out
 }

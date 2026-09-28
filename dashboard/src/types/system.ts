@@ -68,7 +68,34 @@ export interface DataPlatformInventory {
   metrics_retention: string
 }
 
+export interface JavaHostProfileSummary {
+  script_sha256: string
+  profile_id: string
+  configuration_sha256: string
+  policy_sha256: string
+  memory_bytes: number
+  preparation_ms: number
+  max_run_ms: number
+  invocation_ms: number
+  facade_cpu_millicores?: number
+  facade_memory_bytes?: number
+  facade_network_kbps?: number
+  facade_resources_sha256?: string
+}
+
+export interface JavaHostCapabilitySummary {
+  prepared_population?: boolean
+  contract: string
+  mode: string
+  containment: string
+  max_hosts: number
+  max_vusers: number
+  max_memory_bytes: number
+  profiles: JavaHostProfileSummary[]
+}
+
 export interface SystemInventoryGenerator {
+  java_host?: JavaHostCapabilitySummary
   pod_capacity?: import('./capacity').PodCapacitySnapshot
   target: string
   generator_id: string

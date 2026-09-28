@@ -781,13 +781,14 @@ type TestGroup struct {
 }
 
 type GeneratorShardSummary struct {
-	Group         string `json:"group"`
-	Target        string `json:"target"`
-	VUsers        int    `json:"vusers"`
-	ShardStrategy string `json:"shard_strategy,omitempty"`
-	ShardOrdinal  uint32 `json:"shard_ordinal,omitempty"`
-	ShardCount    uint32 `json:"shard_count,omitempty"`
-	VUserIDOffset uint64 `json:"vuser_id_offset,omitempty"`
+	JavaHost      *JavaHostPlacementSummary `json:"java_host,omitempty"`
+	Group         string                    `json:"group"`
+	Target        string                    `json:"target"`
+	VUsers        int                       `json:"vusers"`
+	ShardStrategy string                    `json:"shard_strategy,omitempty"`
+	ShardOrdinal  uint32                    `json:"shard_ordinal,omitempty"`
+	ShardCount    uint32                    `json:"shard_count,omitempty"`
+	VUserIDOffset uint64                    `json:"vuser_id_offset,omitempty"`
 }
 
 type RunLogicGoalSnapshot struct {
@@ -1354,14 +1355,15 @@ type GeneratorAssignmentSettings struct {
 	// envelope for dedicated idle spare pods, not additional executable VUsers.
 	RecoverySpareVUsers int `json:"recovery_spare_vusers,omitempty"`
 
-	SourceAffinity  string            `json:"source_affinity,omitempty"` // single_generator: preserved source-engine requirement; execution currently gated.
-	SharingMode     string            `json:"sharing_mode,omitempty"`
-	Mode            string            `json:"mode,omitempty"`
-	SelectedTargets []string          `json:"selected_targets,omitempty"`
-	RegionWeights   map[string]int    `json:"region_weights,omitempty"`
-	LoadZoneWeights map[string]int    `json:"load_zone_weights,omitempty"`
-	ShardStrategy   string            `json:"shard_strategy,omitempty"`
-	RequiredLabels  map[string]string `json:"required_labels,omitempty"`
+	SourceAffinity  string                      `json:"source_affinity,omitempty"` // single_generator: preserved source-engine requirement; execution currently gated.
+	SharingMode     string                      `json:"sharing_mode,omitempty"`
+	Mode            string                      `json:"mode,omitempty"`
+	SelectedTargets []string                    `json:"selected_targets,omitempty"`
+	RegionWeights   map[string]int              `json:"region_weights,omitempty"`
+	LoadZoneWeights map[string]int              `json:"load_zone_weights,omitempty"`
+	ShardStrategy   string                      `json:"shard_strategy,omitempty"`
+	RequiredLabels  map[string]string           `json:"required_labels,omitempty"`
+	JavaHost        *JavaHostAssignmentSettings `json:"java_host,omitempty"`
 	// TolerateGeneratorLoss allows the controller to keep a distributed run alive
 	// when one generator disappears by resharding safe stateless groups onto
 	// surviving generators. Strict failure remains the default.

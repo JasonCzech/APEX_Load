@@ -45,6 +45,9 @@ kept for planning or audit context only.
 | [IMPORT_FIDELITY_AND_REPAIRS.md](IMPORT_FIDELITY_AND_REPAIRS.md) | JMeter and LoadRunner import fidelity, source-plan execution, guided repair, native archive compatibility, and regression coverage |
 | [RUNTIME_SETTINGS_PARITY.md](RUNTIME_SETTINGS_PARITY.md) | Runtime-settings parity evidence and API contract |
 | [PERFORMANCE_BENCHMARKS.md](PERFORMANCE_BENCHMARKS.md) | Harness-overhead benchmark, local performance evidence, and browser benchmark procedures |
+| [JAVA_VUSER_POOLING_IMPLEMENTATION.md](JAVA_VUSER_POOLING_IMPLEMENTATION.md) | Experimental Java evidence tooling, operator AppCDS, slot foundations, and remaining pooling/AKS gates |
+| [JAVA_BOUNDARY_ATTESTOR_CONTRACT.md](JAVA_BOUNDARY_ATTESTOR_CONTRACT.md) | Authenticated external runtime and infrastructure-fencing proof contract for dedicated Java cleanup |
+| [JAVA_BROKER_SERVICE.md](JAVA_BROKER_SERVICE.md) | Experimental dedicated Java broker command, operator profiles, host credentials and authenticated preparation API |
 | [ACCESS_SURFACES.md](ACCESS_SURFACES.md) | Supported hosted, desktop, and CLI access surfaces |
 | [AI_ASSISTED_WORKFLOWS.md](AI_ASSISTED_WORKFLOWS.md) | Governed assisted-authoring workflow and API contract |
 | [COMPETITIVE_COMPARISON.md](COMPETITIVE_COMPARISON.md) | Competitive positioning, evaluator trust pack, REST API comparison, and migration reference |

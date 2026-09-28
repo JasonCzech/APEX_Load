@@ -277,6 +277,9 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 	// --- Build pacing config ---
+	if vu.Metrics != nil && vu.Metrics.initializationObserver != nil {
+		vu.Metrics.initializationObserver(vu.ID)
+	}
 	pacingCfg := PacingRuntimeConfig{
 		Type:          dsl.CanonicalPacingType(cfg.Pacing.Type),
 		DelayMs:       cfg.Pacing.DelayMs,
@@ -1008,6 +1011,18 @@ func (vu *VUser) Run(ctx context.Context) {
 			if actionTxMode {
 				vu.recordTransaction(action.Name, vu.sourceSampleDuration(actionTxStart, result), result.Success, result)
 				restoreIterationBoundary()
+			}
+
+			// A stateful adapter's authenticated iteration-exit receipt is a
+			// control transfer, independent of ContinueOnError. Nested action
+			// lists unwind through the existing iteration boundary; teardown
+			// and subsequent main iterations retain their normal lifecycle.
+			if result.LifecycleControl != nil {
+				iterSuccess = iterSuccess && result.Success && !result.LifecycleControl.Failed
+				if result.LifecycleControl.EndIteration {
+					iterationExitRequested = true
+					return flowTeardown
+				}
 			}
 
 			if !result.Success {

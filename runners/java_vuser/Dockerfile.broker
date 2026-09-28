@@ -1,0 +1,18 @@
+# Experimental broker only: no Java, facade/generator credentials or signing
+# keys are baked into this image. Supply operator configuration at runtime.
+FROM golang:1.26.5-alpine3.24@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags "-s -w" \
+    -o /apexload-java-host-broker ./cmd/apexload-java-host-broker
+
+FROM scratch
+COPY --from=builder /apexload-java-host-broker /apexload-java-host-broker
+USER 10001:10001
+EXPOSE 9444
+ENTRYPOINT ["/apexload-java-host-broker"]
+# Use a read-only root and a separately protected persistent /state mount.
+# Only this broker receives namespace-scoped pod/Secret permissions. Never mount
+# its signing key, client key, Kubernetes token or state into execution pods.

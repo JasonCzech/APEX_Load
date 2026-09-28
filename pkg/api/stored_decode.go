@@ -306,7 +306,7 @@ func decodeStoredGeneratorAssignment(value any) *GeneratorAssignmentSettings {
 	if err := json.Unmarshal(data, &assignment); err != nil {
 		return nil
 	}
-	normalized, err := normalizeGeneratorAssignmentSettings(&assignment)
+	normalized, err := normalizeGeneratorAssignmentSettingsBase(&assignment)
 	if err != nil {
 		return nil
 	}
