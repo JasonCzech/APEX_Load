@@ -16,6 +16,28 @@ import (
 
 const FeaturePodCapacityV1 = "pod_capacity_v1"
 
+// FeaturePodCapacityStandbyV1 permits a dedicated full-budget claim with no
+// executable groups. Controllers must still plan and durably reserve failure-
+// domain coverage; this generator primitive alone makes no recovery guarantee.
+const FeaturePodCapacityStandbyV1 = "pod_capacity_standby_v1"
+
+func standbyPodCapacityClaim(claim *pb.PodCapacityClaim) bool {
+	return claim != nil && claim.Dedicated && !claim.Release && len(claim.GroupPeaks) == 0
+}
+
+func (s *Service) idleForStandbyCapacityLocked() bool {
+	if len(s.assignments) != 0 || len(s.stoppingTests) != 0 ||
+		len(s.lifecycleCoordinator.pendingStages) != 0 || len(s.lifecycleCoordinator.pendingControls) != 0 {
+		return false
+	}
+	for _, groups := range s.executions {
+		if len(groups) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 func newPodCapacityIncarnation() string { return uuid.NewString() }
 
 func CapacityVectorToProto(v protocol.CapacityVector) *pb.CapacityVector {
@@ -97,8 +119,8 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 		if _, ok := s.assignments[claim.TestId]; ok {
 			return reject(fmt.Errorf("test still assigned"))
 		}
-		if len(s.executions[claim.TestId]) > 0 || s.lifecycleCoordinator.pendingStages[claim.TestId] != nil {
-			return reject(fmt.Errorf("test still executing or staging"))
+		if len(s.executions[claim.TestId]) > 0 || s.lifecycleCoordinator.pendingStages[claim.TestId] != nil || s.lifecycleCoordinator.pendingControls[claim.TestId] != nil {
+			return reject(fmt.Errorf("test still executing, staging or controlling"))
 		}
 		if _, ok := s.stoppingTests[claim.TestId]; ok {
 			return reject(fmt.Errorf("test is still draining"))
@@ -123,7 +145,27 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 	if budget.VUsers > float64(s.maxVUsers)*factor+1e-9 || (s.podResources.CPULimitCores > 0 && budget.CPUCores > s.podResources.CPULimitCores*factor+1e-9) || (s.podResources.MemoryLimitBytes > 0 && budget.MemoryMB > float64(s.podResources.MemoryLimitBytes)/(1024*1024)*factor+1e-9) {
 		return reject(fmt.Errorf("budget exceeds generator limits after headroom"))
 	}
+	if standbyPodCapacityClaim(claim) || standbyPodCapacityClaim(current) {
+		if !s.idleForStandbyCapacityLocked() || (len(s.podCapacityClaims) > 0 && (len(s.podCapacityClaims) != 1 || current == nil)) {
+			return reject(fmt.Errorf("standby capacity requires an idle unshared generator"))
+		}
+		if standbyPodCapacityClaim(claim) && !proto.Equal(claim.Demand, claim.Schedulable) {
+			return reject(fmt.Errorf("standby reservation must claim the full budget"))
+		}
+	}
 	if current != nil {
+		// An idle standby has no run supervision token to adopt. A successor
+		// that already claimed the authoritative global epoch may transfer its
+		// unchanged claim. Activation is a separate revision in that new term.
+		if standbyPodCapacityClaim(current) && standbyPodCapacityClaim(claim) && claim.ExecutionGeneration > current.ExecutionGeneration {
+			transferred := proto.Clone(current).(*pb.PodCapacityClaim)
+			transferred.ExecutionGeneration = claim.ExecutionGeneration
+			if !proto.Equal(transferred, claim) {
+				return reject(fmt.Errorf("standby ownership transfer must preserve the frozen reservation"))
+			}
+			s.podCapacityClaims[claim.TestId] = transferred
+			return &pb.PodCapacityAck{Accepted: true, Snapshot: s.podCapacitySnapshotLocked()}, nil
+		}
 		if proto.Equal(current, claim) {
 			return &pb.PodCapacityAck{Accepted: true, Snapshot: s.podCapacitySnapshotLocked()}, nil
 		}
@@ -167,7 +209,7 @@ func (s *Service) ReservePodCapacity(ctx context.Context, claim *pb.PodCapacityC
 		}
 		totalPeaks += int64(n)
 	}
-	if len(claim.GroupPeaks) == 0 || float64(totalPeaks) > demand.VUsers+1e-9 {
+	if (len(claim.GroupPeaks) == 0 && !standbyPodCapacityClaim(claim)) || float64(totalPeaks) > demand.VUsers+1e-9 {
 		return reject(fmt.Errorf("group peaks exceed reserved VUsers"))
 	}
 	used := protocol.CapacityVector{}

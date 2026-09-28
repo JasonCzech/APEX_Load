@@ -330,6 +330,11 @@ func TestClientRoundTripDistributeAssignAndHeartbeat(t *testing.T) {
 	if !hasString(pong.CompatibleFeatures, FeatureEvacuationAssignmentStateV1) {
 		t.Fatalf("compatible features = %v, want %s", pong.CompatibleFeatures, FeatureEvacuationAssignmentStateV1)
 	}
+	for _, feature := range []string{FeaturePodCapacityV1, FeaturePodCapacityStandbyV1} {
+		if !hasString(pong.CompatibleFeatures, feature) {
+			t.Fatalf("compatible features = %v, want %s", pong.CompatibleFeatures, feature)
+		}
+	}
 	if pong.Stats.ActiveVUsers != 12 {
 		t.Fatalf("heartbeat active vusers = %d, want 12", pong.Stats.ActiveVUsers)
 	}

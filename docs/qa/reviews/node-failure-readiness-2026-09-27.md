@@ -1707,3 +1707,27 @@ The full `go test ./...` suite passed for the scheduled-demand change (API
 351.098 s). Final source review found no further actionable issue in this slice.
 Deployed automatic dispatch is still unqualified until the reviewed image is
 rolled out after the existing production-timing trials finish.
+
+## Idle full-pod standby reservation primitive
+
+Generators advertise `pod_capacity_standby_v1` and accept a dedicated full-budget
+reservation with no executable groups only on an idle, unshared pod. The claim
+consumes all capacity and rejects even zero-VUser assignment until a separate,
+revision-fenced activation supplies group peaks. A successor that has claimed the
+authoritative execution epoch may transfer an unchanged idle standby reservation;
+activation and ownership transfer cannot be combined. Unknown/staged/controlling/
+draining/executing work blocks confirmation, transfer and activation. Release also
+waits for pending execution control, closing a gap found during source review.
+
+Tests exercise full-budget admission, assignment and release fences, frozen
+identity/model/revision transfer, stale-owner rejection, idempotent confirmation,
+and concurrent stale activation versus successor confirmation. Three focused
+repetitions passed (24.277 s); three race repetitions passed (27.312 s).
+This is a generator primitive only: the controller does not yet reserve or activate
+node-domain spares, and no node-loss continuity guarantee follows from it.
+
+The full `go test ./...` suite passed for the standby primitive. The gRPC round-trip
+heartbeat test also passed with both reservation capabilities advertised (0.414 s).
+Final review found no further actionable issue in this slice. Documentation checks
+remain blocked by pre-existing links to absent ignored evidence; `git diff --check`
+passed. These checks do not qualify controller spare admission or recovery.

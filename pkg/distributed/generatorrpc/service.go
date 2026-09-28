@@ -1357,7 +1357,7 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			map[string]string{"java_vuser": javaOccupancyMode},
 		)
 		activeTestIDs := s.activeTestIDs()
-		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeatureIterationTerminationV1, FeatureSourcePlanV1)
+		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1)
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
 		generatorNow := time.Now()
 		if err := stream.Send(&pb.HeartbeatPong{
