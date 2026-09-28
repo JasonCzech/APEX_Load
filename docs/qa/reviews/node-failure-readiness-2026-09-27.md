@@ -2037,3 +2037,23 @@ projection can return the expected 250,000 schedules. Its 100 ms response budget
 and one-second outer check test lock independence without asserting real-time OS
 scheduling. Fifty race repetitions passed (30.650 seconds). Production readiness
 deadlines are unchanged. Review found no further issue in this test adjustment.
+
+### Bounded deployed autoscaling-limit observation
+
+The Kubernetes client can now read the KEDA ScaledObject and its owning HPA for
+an explicitly named StatefulSet in one five-second attempt. It checks namespace,
+UID/resource-version evidence, HPA ownership, explicit replica bounds, pause
+annotations, duplicate controllers, and complete inventories of at most 256
+objects. During reconciliation it uses the lower observed maximum. Missing
+permissions, absent controllers/CRDs, terminating objects, or truncated lists
+leave capacity unknown. Review added rejection of a competing StatefulSet
+controller using an unsupported API version.
+
+Three race repetitions of the whole kubeops package passed (2.464 seconds). A
+read-only check through the owned disposable kubeconfig observed the deployed
+four-replica cap and matching HPA ownership; its private receipt is under
+`observed-autoscaling-limit-2`. The first check stopped at local proxy transport
+setup before any bound was read. This is a client prerequisite: automatic
+controller admission integration, its scoped read RBAC, quotas and atomic spare
+reservation still remain. No deployment permissions or autoscaling settings were
+changed by this check.
