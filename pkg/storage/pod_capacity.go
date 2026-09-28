@@ -31,6 +31,10 @@ type PodCapacityReservation struct {
 // ReservePodCapacity atomically claims the entire placement, serialized with
 // other capacity decisions in both SQLite and PostgreSQL. Preview never calls it.
 func (s *SQLiteStore) ReservePodCapacity(claims []PodCapacityReservation, leaseName, owner string, generation uint64) error {
+	return s.reservePodCapacity(claims, nil, false, leaseName, owner, generation)
+}
+
+func (s *SQLiteStore) reservePodCapacity(claims, expected []PodCapacityReservation, compare bool, leaseName, owner string, generation uint64) error {
 	if len(claims) == 0 {
 		return errors.New("empty pod reservation placement")
 	}
@@ -56,6 +60,11 @@ func (s *SQLiteStore) ReservePodCapacity(claims []PodCapacityReservation, leaseN
 		}
 		if !enabled {
 			return errors.New("peak pod reservations are disabled")
+		}
+	}
+	if compare {
+		if err := comparePodCapacityPlacement(tx, claims, expected, generation); err != nil {
+			return err
 		}
 	}
 	seen := map[string]bool{}

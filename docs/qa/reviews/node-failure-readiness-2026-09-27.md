@@ -2266,3 +2266,19 @@ existing startup/adoption/execution-plan checks passed in 1.854 seconds; the ful
 Go suite passed in the same reviewed snapshot (API 352.940 seconds,
 `/tmp/apex-reviewed-local-fixes-full.log`). Final review found no further issues
 in this diagnostic change.
+
+### Atomic standby capacity replacement
+
+The storage capacity ledger can now replace exact expected reservations and add
+new targets in one execution-lease-fenced transaction. Releasing, missing, changed
+and stale-owner claims fail without partially changing the placement. Replacements
+remain pending until generator acknowledgment; dedicated claims retain the full
+frozen budget. Concurrent replacements have exactly one winner.
+
+Review and regression coverage include activation, idle restoration, state/revision/
+incarnation changes, unexpected existing claims, invalid proposals, capacity failure
+and concurrency. Focused checks passed in 0.748 seconds; five race repetitions
+passed in 13.924 seconds. The shared checks passed three times against an isolated
+PostgreSQL instance. The full Go suite passed (API 350.792 seconds,
+`/tmp/apex-capacity-compare-full.log`). Final scoped review found no further issues.
+This storage primitive alone does not enable standby admission or activation.
