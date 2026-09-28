@@ -32,3 +32,15 @@ func Acquire(path string) (func() error, error) {
 		)
 	}, nil
 }
+
+// tryLockFile never blocks and leaves descriptor ownership with the caller.
+func tryLockFile(file *os.File) (func() error, bool, error) {
+	err := unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+	if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EINTR) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return func() error { return unix.Flock(int(file.Fd()), unix.LOCK_UN) }, true, nil
+}

@@ -37,3 +37,16 @@ func Acquire(path string) (func() error, error) {
 		)
 	}, nil
 }
+
+func tryLockFile(file *os.File) (func() error, bool, error) {
+	var overlapped windows.Overlapped
+	handle := windows.Handle(file.Fd())
+	err := windows.LockFileEx(handle, windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &overlapped)
+	if errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return func() error { return windows.UnlockFileEx(handle, 0, 1, 0, &overlapped) }, true, nil
+}

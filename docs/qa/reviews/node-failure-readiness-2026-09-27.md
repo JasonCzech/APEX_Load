@@ -1803,3 +1803,57 @@ volume-write failure, invalid slot counts and unchanged PVC/resource ownership.
 Three Go probe repetitions passed (0.494 s); all 184 Python harness tests passed
 (6.606 s). Final review found no further actionable issue in this harness slice.
 Live service resizing and a new v2 seed/retention check remain unqualified.
+
+
+## Preserve durable publication metadata and retire confirmed local sources
+
+An S3 upload failure revealed a retry ordering defect: the durable worker rewrote
+adjuncts and persisted their new manifest hash, then an in-memory producer retry
+replaced that intent with an older record. Production stores now use the existing
+atomic create-only transition. A retry resumes the current intent after checking
+run identity, or returns the already committed catalog without creating another
+publication. Different incarnations and cancelled/superseded work fail closed.
+The regression reproduces a stale producer after a background adjunct rewrite and
+checks both successful retry and post-commit idempotency.
+
+[Confirmed-source TTL retention](../../ARCHIVE_SOURCE_RETENTION.md) is opt-in.
+Collection/publication and cleanup use a cancellable cross-process file lock; the
+lock inode is retained. Cleanup receipts are written only after upload/catalog
+success. Retirement rechecks pending jobs, source identity, immutable object
+namespace and manifest hash. A missing receipt can be reconstructed from an exact
+catalog/source match plus the remote manifest commit marker, starting a fresh TTL.
+Filesystem archives, reader caches and unpublished sources remain protected.
+This bounds the age of confirmed copies, not total disk use during an outage.
+
+Review/tests covered failed uploads/catalog commits, stale producer records,
+changed identities/hashes/endpoints, symlinks, active publishers, bounded directory
+scans, receipt loss, remote-marker mismatch and archive readability after source
+removal. Testing found and fixed canonical `/var` versus `/private/var` handling on
+macOS. Three archive race repetitions passed (57.251 s); lock race tests, including
+separate-process exclusion, passed (7.853 s). The final full `go test -p 2 ./...
+-timeout=20m` passed (API 343.385 s); the lock package cross-compiled for Windows.
+Final review found no further actionable issue in this implementation slice.
+`git diff --check` passed. Deployed source-retention qualification remains pending.
+
+## Scheduled trial failures and bounded S3 recovery
+
+Controller `832c4531b97ffbcdbcd410a4dc877896af21559e` automatically dispatched
+trials 22 and 23 without a Start request. Trial 22 failed its 120-second completion
+observation deadline; traffic itself stopped after approximately 61 seconds.
+Trial 23 passed scaling/load/completion observation using separate 90-second
+execution and 300-second execution-plus-finalization budgets: 27 clean loaded
+samples, 3181.20 requests/second and zero controller restarts during the trial.
+Its terminal cumulative error count was 18. Both runs failed archive qualification:
+S3 volume allocation failed, then stale producer retries damaged the pending
+manifest metadata as described above. Neither run is an overall qualification
+pass, and subsequent trials were halted.
+
+The new 64 KiB probe failed at `put_probe` on the exhausted service. An owned,
+UID-checked Recreate rollout changed only the S3 volume-slot argument from four to
+six, preserving the same 2 GiB PVC and PV. New signed seed and retained-read checks
+passed. A prior cycle-21 archive passed incarnation/source/integrity validation
+afterward. Evidence is under `s3-volume-capacity-6` and
+`post-s3-resize-cycle-21` in the private trial root. The two failed local sources
+were exported under `scheduled-pending-source-backup-2`; all eight declared
+artifact hashes were verified for each. Their durable metadata was not repaired
+by that backup, and source recovery/rollout qualification remains open.

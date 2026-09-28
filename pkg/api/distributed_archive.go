@@ -62,6 +62,13 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	if err != nil {
 		return nil, fmt.Errorf("prepare distributed archive root: %w", err)
 	}
+	sourceCtx, cancelSource := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
+	defer cancelSource()
+	releaseSource, err := lockArchivePublicationSource(sourceCtx, test.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseSource()
 	archiveParent, err := ensureArchiveRelativeDirectory(archiveRoot, "remote", 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("prepare distributed archive parent: %w", err)

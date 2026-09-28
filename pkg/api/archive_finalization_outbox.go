@@ -83,6 +83,12 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	releaseSource, err := lockArchivePublicationSource(ctx, test.ID)
+	if err != nil {
+		return err
+	}
+	defer releaseSource()
+
 	recordCopy := *record
 	job := &storage.ArchiveFinalizationJob{
 		TestID:           strings.TrimSpace(test.ID),
@@ -102,12 +108,18 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 
 	outbox := tr.archiveFinalizationOutbox()
 	if outbox != nil {
-		if err := retryDurableTransition(func() error { return outbox.SaveArchiveFinalizationJob(job) }); err != nil {
+		completed, err := tr.prepareProducerArchiveIntent(outbox, job)
+		if err != nil {
 			return fmt.Errorf("save archive finalization intent: %w", err)
+		}
+		if completed {
+			*record = job.ArchiveRecord
+			tr.attachFinalizedRunArchive(job.TestID, record)
+			return nil
 		}
 	}
 	defer func() { *record = job.ArchiveRecord }()
-	if err := tr.processArchiveFinalizationJobUnderFence(ctx, job, test); err != nil {
+	if err := tr.processArchiveFinalizationJobUnderSourceFence(ctx, job, test); err != nil {
 		tr.markArchiveFinalizationFailed(job.TestID, job.IntentToken, err)
 		return err
 	}
@@ -149,6 +161,18 @@ func (tr *TestRunner) processArchiveFinalizationJob(ctx context.Context, job *st
 }
 
 func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Context, job *storage.ArchiveFinalizationJob, test *ManagedTest) error {
+	if job == nil {
+		return nil
+	}
+	release, err := lockArchivePublicationSource(ctx, job.TestID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return tr.processArchiveFinalizationJobUnderSourceFence(ctx, job, test)
+}
+
+func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.Context, job *storage.ArchiveFinalizationJob, test *ManagedTest) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -326,6 +350,9 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 		if !tr.isExecutionLeader() {
 			return errNotExecutionLeader
 		}
+	}
+	if err := markPublishedArchiveSource(record); err != nil {
+		slog.Warn("confirmed archive source retained without cleanup receipt", "test_id", job.TestID, "error", err)
 	}
 	tr.attachFinalizedRunArchive(job.TestID, record)
 	return nil
@@ -779,6 +806,14 @@ func (s *Server) startArchiveFinalizationRetry() {
 		ticker := time.NewTicker(archiveFinalizationRetryInterval)
 		defer ticker.Stop()
 		runSweep := func(recoverOrphans bool) {
+			// Confirmed local sources can be retired on followers too. The file fence
+			// protects shared staging writers independently of execution leadership.
+			sourceCtx, sourceCancel := context.WithTimeout(ctx, 20*time.Second)
+			sourceErr := s.runner.retirePublishedArchiveSources(sourceCtx)
+			sourceCancel()
+			if sourceErr != nil && ctx.Err() == nil {
+				slog.Warn("archive source retirement incomplete", "error", sourceErr)
+			}
 			if !s.isExecutionLeader() {
 				return
 			}
