@@ -347,6 +347,7 @@ func cloneRunArchiveManifest(manifest *RunArchiveManifest) (*RunArchiveManifest,
 }
 
 func forgetRunArchiveCache(testID string) {
+	archiveCatalogIdentities.deleteTest(testID)
 	runArchiveReportCache.deleteTest(testID)
 	runArchiveManifestCache.deleteTest(testID)
 	runArchiveSanitizedPlanCache.deleteTest(testID)

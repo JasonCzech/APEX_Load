@@ -21,12 +21,14 @@ import (
 
 func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	test, ok := tr.getTestSnapshot(id, true)
+	tr.attachTerminalArchiveCatalog(test)
 	tr.attachRunArchiveFailure(test)
 	return test, ok
 }
 
 func (tr *TestRunner) GetTestSummary(id string) (*ManagedTest, bool) {
 	test, ok := tr.getTestSnapshot(id, false)
+	tr.attachTerminalArchiveCatalog(test)
 	tr.attachRunArchiveFailure(test)
 	return test, ok
 }
@@ -66,6 +68,7 @@ func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit in
 		tr.attachStoredTerminalHistory(test)
 		test.History = selectLiveMetricsHistory(test.History, since, 0)
 	}
+	tr.attachTerminalArchiveCatalog(test)
 	tr.attachRunArchiveFailure(test)
 	return test, true
 }
@@ -136,7 +139,7 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 	// could otherwise attach the recreated row's archive to a stale live handle.
 	if archive, found, loadErr := tr.loadRunArchiveFromStore(managed.ID); loadErr != nil {
 		slog.Warn("failed to load stored test archive during durable read", "test_id", managed.ID, "error", loadErr)
-	} else if found && runArchiveRecordAvailable(archive) {
+	} else if found && storedArchiveCatalogAvailable(archive) {
 		managed.Archive = archive
 	}
 	tr.mu.Lock()

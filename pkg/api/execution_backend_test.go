@@ -1420,7 +1420,9 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist after execution", testRun.ID)
 		}
-		if completed.Status == "COMPLETE" && completed.EndedAt != nil {
+		// Terminal execution is visible before publication finishes. Keep this
+		// fixture's archive directory alive until publication is attached.
+		if completed.Status == "COMPLETE" && completed.EndedAt != nil && completed.Archive != nil {
 			break
 		}
 		if time.Now().After(deadline) {

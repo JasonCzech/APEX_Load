@@ -2226,3 +2226,29 @@ catalog was published. An explicit manifest read repaired the cached link and
 the strict archive evidence check passed (`active-redis-2-followup`). The
 original trial remains failed because it missed its observation deadline; this
 follow-up is not a substitute for new repetitions against the reviewed fixes.
+
+### HA archive catalog discovery
+
+A terminal HA replica could retain a missing archive link after a peer committed
+the catalog. Single-run terminal reads now reload that catalog and verify only
+its bounded manifest, including its digest, test/project/creation identity and
+a second durable identity/catalog check after I/O. Verified identity proofs are
+small, bounded and coalesced; unanchored legacy manifests are not cached. Object
+reads have a two-second deadline and two concurrent slots; summary waiters have
+a separate 500 ms budget. Explicit artifact routes retain full artifact checks.
+List polling does not add per-row catalog queries.
+
+Review also found that the earlier startup optimization did not cover new-row
+reloads and fallback reads. These paths now use the same namespace-validated
+catalog handling, avoiding bulk object downloads during leader recovery. The
+regression fixture covers publication after follower startup, new-row reloads,
+wrong identity/digest, concurrent deletion/recreation and catalog replacement,
+and slow anchored/legacy manifests. Focused checks passed in 5.727 seconds.
+Three race repetitions passed in 48.425 seconds
+(`/tmp/apex-catalog-projection-race.log`). The full Go suite passed (API 352.940 seconds,
+`/tmp/apex-reviewed-local-fixes-full.log`). The first full run exposed the
+separately repaired desktop descriptor-ownership defect and a multi-group test
+fixture that removed its archive directory at terminal status. That fixture now
+waits for catalog attachment; three repetitions passed in 25.505 seconds while
+the blocked-publication regression still verifies earlier terminal visibility.
+Final review found no further scoped issues.

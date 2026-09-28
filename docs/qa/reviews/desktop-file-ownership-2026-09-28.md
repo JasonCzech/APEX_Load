@@ -19,5 +19,5 @@ is the reused file. Both cases failed before the fix. Three complete desktop
 suite repetitions passed in 3.320 seconds; thirty forced-GC repetitions passed
 in 5.525 seconds (`/tmp/apex-desktop-fd-after.log` and
 `/tmp/apex-desktop-fd-gc-repeated.log`). This verifies the native save operation;
-no dashboard source or user workflow changed. The repository suite is being
-rerun separately after the original run finishes.
+no dashboard source or user workflow changed. The full repository suite subsequently passed
+(`/tmp/apex-reviewed-local-fixes-full.log`).

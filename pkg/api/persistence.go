@@ -608,7 +608,7 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 			}
 			if archive, found, loadErr := tr.loadRunArchiveFromStore(managedTest.ID); loadErr != nil {
 				slog.Warn("failed to load stored test archive", "test_id", managedTest.ID, "error", loadErr)
-			} else if found && runArchiveRecordAvailable(archive) {
+			} else if found && storedArchiveCatalogAvailable(archive) {
 				managedTest.Archive = archive
 			}
 		}
@@ -1333,19 +1333,8 @@ func (tr *TestRunner) loadStoredTestArchive(test *ManagedTest) {
 	if err != nil || archive == nil || archive.TestID != test.ID {
 		return
 	}
-	if archiveRecordBackend(archive) == archiveBackendFilesystem {
-		if !runArchiveRecordAvailable(archive) {
-			return
-		}
-	} else {
-		// A durable object catalog is metadata, not a startup download request.
-		// Cold-starting every historical archive delays health serving and makes
-		// controller startup depend on object-store availability. Validate the
-		// persisted namespace here; explicit archive reads still materialize and
-		// verify the manifest, artifacts and current durable run identity.
-		if _, err := archiveMaterializationRuntime(currentArchiveBackend(), archive); err != nil {
-			return
-		}
+	if !storedArchiveCatalogAvailable(archive) {
+		return
 	}
 	test.Archive = archive
 	tr.mu.Lock()
