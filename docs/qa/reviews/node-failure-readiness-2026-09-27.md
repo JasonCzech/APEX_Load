@@ -1291,3 +1291,15 @@ Final termination-state validation: focused lifecycle/metadata tests passed,
 `go test ./...` passed (API 387.817 s), and targeted race checks passed (11.151 s).
 `git diff --check` passed. Final review found no additional issue in this slice.
 Deployed repeated-cycle verification will use a new image built from this commit.
+
+## Reusable scaling readiness gate
+
+Promoted the corrected pre-dispatch eligibility check into the fault harness.
+It fails closed for pending pods without IPs, drains, stale/duplicate target rows,
+identity mismatches, unavailable capacity and malformed observations. It requires a
+one-to-one match between Ready pod identities and compatible idle HTTP generators;
+namespace ownership and observation freshness remain caller responsibilities.
+The live trial helper now uses this same function. All 123 Python harness tests
+passed, including both previously observed readiness failures and IPv6 matching.
+Final review added malformed protocol/address and contradictory Ready-condition
+coverage; the rerun passed and `git diff --check` is clean.

@@ -775,3 +775,15 @@ oversized group shardable. Use explicit group host selection, separate fitting g
 or configure and validate opt-in peak pod reservations for automatic partitioning.
 Existing retained local-path PVCs may pin low ordinals to the same worker; inspect
 actual placement after scale-down. Never infer worker redundancy from replica count.
+
+`scaling_readiness.generator_fleet_ready(pods, generators, replicas, pod_capacity,
+namespace)` is the reusable pre-dispatch gate for the local HTTP profile. Pass the
+fresh PodList `items` and inventory `generators` arrays after verifying namespace
+ownership. It requires unique pod identities, Ready containers, matching current
+IPv4/IPv6 RPC targets, HTTP compatibility, active scheduling state, zero active
+VUsers and sufficient advertised capacity. Pending pods without IPs, stale or
+extra inventory rows, drains, malformed evidence and duplicate identities all
+return false. Poll within a fixed deadline; do not weaken the gate to make a trial
+start. Callers must additionally check HPA/StatefulSet state, scrape freshness,
+controller restart baselines and the independent sustained-traffic gate. This helper
+does not reserve capacity or prove load delivery.
