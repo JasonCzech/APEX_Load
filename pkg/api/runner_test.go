@@ -5768,7 +5768,10 @@ func TestStartTestBlocksWhenCapacityShortfallRequiresOverride(t *testing.T) {
 
 func TestStartTestAllowsOverrideOnCapacityShortfall(t *testing.T) {
 	hub := NewHub()
-	runner := NewTestRunner(2, hub, nil)
+	dispatched := make(chan string, 1)
+	// This tests capacity authorization, not engine throughput. Keep the
+	// admitted 15,000-VUser run at the execution boundary.
+	runner := NewTestRunner(2, hub, nil, WithExecutionBackend(&scheduleExecutionBackend{started: dispatched}))
 	runner.StoreScript(&dsl.Script{
 		ID:       "script-capacity-override",
 		Name:     "Capacity Override Script",
@@ -5801,6 +5804,14 @@ func TestStartTestAllowsOverrideOnCapacityShortfall(t *testing.T) {
 	started := waitForStatusAny(t, runner, test.ID, 5*time.Second, "INITIALIZING", "RUNNING", "COMPLETE")
 	if started.Status == "QUEUED" {
 		t.Fatalf("expected override start to leave QUEUED state, got %s", started.Status)
+	}
+	select {
+	case id := <-dispatched:
+		if id != test.ID {
+			t.Fatalf("dispatched %q, want %q", id, test.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("capacity-authorized run was not dispatched")
 	}
 }
 
