@@ -1896,3 +1896,22 @@ explicit source-retention duration, disabled by default and bounded to 60 throug
 2,592,000 seconds. This does not turn unpublished-source retention into a disk cap.
 The fixes do not close the separate crash window between first-publication adjunct
 writes and durable manifest-hash persistence; durable preparation remains work.
+
+### Object archive catalog startup isolation
+
+Startup and leadership reload previously called full object-archive availability
+checks for every historical run. A fresh controller could download all historical
+telemetry before serving health, and unavailable object storage delayed startup.
+Catalog restoration now validates persisted object namespaces without downloading
+objects. It preserves durable catalog metadata during an outage. Explicit archive
+reads retain manifest/artifact integrity and current-run identity checks; metadata
+presence is not a new assertion of remote-object availability. Filesystem catalog
+restoration still checks its local manifest.
+
+The regression contacted the loopback object service during all three old-code
+startup cases (available, unavailable, corrupt). The corrected tests make zero
+startup object requests, reject unavailable/corrupt explicit reads, and recover
+reads when storage returns. Focused checks passed (2.042 seconds), three race
+repetitions passed (14.905 seconds), and the full Go suite passed in
+`/tmp/apex-archive-startup-full.log`. No further findings remain in this slice;
+deployed cold-start confirmation is still pending.

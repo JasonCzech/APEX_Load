@@ -326,3 +326,10 @@ limits inside a 5 GiB ephemeral budget and an explicit, default-off confirmed-so
 retention option. This still requires deployed qualification and does not solve
 concurrent-reader admission, unconfirmed-source disk bounds, or the crash window
 between initial adjunct mutation and durable preparation metadata.
+
+Object-backed archive catalog restoration no longer downloads historical
+telemetry during controller startup or leadership reload. Namespace validation
+is local; explicit reads still verify remote integrity and run identity. This
+removes an object-storage dependency from startup, with unavailable/corrupt-store
+regressions, race checks and the full Go suite passing. Deployed confirmation is
+pending alongside controller restoration and archive recovery.
