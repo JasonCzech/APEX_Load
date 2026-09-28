@@ -58,6 +58,20 @@ def resources(inputs, image):
     return run_id, {'apiVersion': 'v1', 'kind': 'List', 'items': [config, workload, service, metrics, scrape, ingress]}
 
 
+def http_scaling_threshold(pod_capacity):
+    """Leave room below hard capacity for the standard HPA 10% tolerance.
+
+    At a target equal to the hard limit, 320 queued VUsers can stick at three
+    100-VUser pods (320/300 is inside the tolerance). A 90% target makes any
+    demand above the hard capacity exceed that tolerance, including small pods.
+    This is a local scaling target, not a change to demand or admission limits.
+    """
+    if type(pod_capacity) is not int or not 1 <= pod_capacity <= 1000:
+        raise RenderError('invalid local pod capacity')
+    whole, fraction = divmod(pod_capacity * 9, 10)
+    return str(whole) + ('.' + str(fraction) if fraction else '')
+
+
 def render(inputs, image, output, pod_capacity=100, minimum=2, maximum=4, accelerated=False):
     run_id, manifest = resources(inputs, image)
     if (type(pod_capacity) is not int or not 1 <= pod_capacity <= 1000
@@ -80,7 +94,7 @@ def render(inputs, image, output, pod_capacity=100, minimum=2, maximum=4, accele
         patches.append({'op': 'replace', 'path': '/spec/triggers/' + str(i) + '/metadata/serverAddress',
                         'value': 'http://apexload-fault-prometheus.apexload-fault.svc:9090'})
     for i in (0, 1):
-        patches.append({'op': 'replace', 'path': '/spec/triggers/' + str(i) + '/metadata/threshold', 'value': str(pod_capacity)})
+        patches.append({'op': 'replace', 'path': '/spec/triggers/' + str(i) + '/metadata/threshold', 'value': http_scaling_threshold(pod_capacity)})
     if accelerated:
         patches.extend([{'op': 'replace', 'path': '/spec/pollingInterval', 'value': 5},
                         {'op': 'replace', 'path': '/spec/cooldownPeriod', 'value': 30},
@@ -104,6 +118,8 @@ def render(inputs, image, output, pod_capacity=100, minimum=2, maximum=4, accele
                               (root / 'controller-autoscaling-merge-patch.json', json.dumps({'data': {'APEXLOAD_GENERATOR_AUTOSCALING_OWNER': 'keda'}})),
                               (root / 'profile.json', json.dumps({'run_id': run_id, 'prometheus_image': image,
                                   'minimum': minimum, 'maximum': maximum, 'pod_capacity': pod_capacity,
+                                  'http_scaling_threshold': http_scaling_threshold(pod_capacity),
+                                  'supported_hpa_tolerance': '0.1',
                                   'timing': 'accelerated' if accelerated else 'production'}, indent=2))):
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, 'w') as stream:

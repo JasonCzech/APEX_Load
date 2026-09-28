@@ -1,8 +1,8 @@
 # Disposable node-fault driver
 
 This is the repository-owned safety/evidence foundation for the
-[node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It renders a phased local HA stack but does not yet automatically
-provision it, provide its observation adapter, or qualify the complete fault matrix. Docker Desktop recovered after an authorized restart; target and
+[node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It renders a phased local HA stack and includes a bounded deployed-run observation
+adapter. Automatic provisioning and the complete fault matrix remain unfinished. Docker Desktop recovered after an authorized restart; target and
 PostgreSQL/Redis component checks now pass in a fresh three-node kind cluster.
 A ten-minute idle dependency outage also passed on two HA controllers; see the
 [review ledger](../../docs/qa/reviews/node-failure-readiness-2026-09-27.md) for scope and measurements.
@@ -30,8 +30,8 @@ its kubeconfig into that private directory, and deploy the test stack in namespa
 `apexload-fault`, labelled with `namespace_label` from the ownership record. Keep the
 control plane and instrumented target independent of the selected failed worker.
 Use at least two worker nodes, multiple generator pods on each, PostgreSQL, Redis,
-object storage, Prometheus and KEDA. Pin and record images. The production-like stack
-preparer and real observation adapter are still required before an end-to-end run.
+object storage, Prometheus and KEDA. Pin and record images. Deploy the rendered stack and configure the observation adapter below before an
+end-to-end run.
 
 Check host free space and Docker storage before building or importing images. A
 local trial exhausted host storage and left zero-byte application binaries in an
@@ -173,7 +173,7 @@ before `control_gate_passed` is recorded. Interruption stops that worker and rec
 a failed control, with no restoration needed. Output permissions and overwrite
 protections match the fault driver.
 
-This control path still requires the real observation adapter and deployed stack.
+This control path requires the configured observation adapter and deployed stack.
 Its local safety tests do not qualify a live healthy run, archive completeness,
 KEDA scale transitions, dependency failover or the production fault matrix.
 
@@ -761,11 +761,18 @@ apply that file as a partial ConfigMap. It selects KEDA as the sole fleet autosc
 Prometheus discovers both controller metrics endpoints through a headless service.
 The six production queries retain installation scoping, leader-evidence expiry,
 missing-metric errors and the reserved ordinal floor. Defaults are minimum two,
-maximum four and 100 VUsers per pod; override with `--minimum`, `--maximum` and
+maximum four and a hard capacity of 100 VUsers per pod; override with `--minimum`, `--maximum` and
 `--pod-capacity` within the documented local bounds. `--accelerated` uses a zero
 scale-up window and 30-second scale-down window with bounded pod increments. With
 a positive minimum, HPA behavior governs replica timing; KEDA's cooldown is not
-an idle scale-down timer for this profile. Default output retains production timing.
+an idle scale-down timer for this profile. Default output retains production timing. The local HTTP scaling
+threshold is 90% of hard pod capacity (90 for a 100-VUser pod), leaving room for
+Kubernetes' default 10% HPA tolerance. Otherwise demand 320 can remain at three
+100-VUser pods. This margin may provision an extra idle pod; it does not change
+reported demand or relax dispatch capacity checks. A cluster configured with a
+larger tolerance needs separate qualification. `profile.json` records the actual
+threshold and assumed tolerance. Browser triggers retain their production defaults;
+this disposable application profile is qualified only for HTTP.
 
 Require two healthy scrape targets and an idle, restart-free baseline before each
 trial. Record queued demand, desired/Ready replicas, discovered generators, explicit

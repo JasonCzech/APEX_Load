@@ -1,11 +1,12 @@
 import json
+from fractions import Fraction
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
 
-from render_monitoring import render, resources
+from render_monitoring import render, resources, http_scaling_threshold
 from render_target import RenderError
 
 
@@ -47,6 +48,8 @@ class MonitoringResourcesTest(unittest.TestCase):
                 render(self.inputs, self.image, root, 75, 2, 6, accelerated)
                 profile = json.loads((root / 'profile.json').read_text())
                 self.assertEqual(profile['timing'], 'accelerated' if accelerated else 'production')
+                self.assertEqual(profile['http_scaling_threshold'], '67.5')
+                self.assertEqual(profile['pod_capacity'], 75)
                 for path in (root, *root.rglob('*')):
                     self.assertEqual(path.stat().st_mode & 0o777, 0o700 if path.is_dir() else 0o600)
                 original = (root / 'autoscaling/scaledobject-base.yaml').read_text()
@@ -64,10 +67,28 @@ class MonitoringResourcesTest(unittest.TestCase):
                     result = subprocess.run(['kubectl', 'kustomize', str(root / 'autoscaling')], capture_output=True, text=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertIn('maxReplicaCount: 6', result.stdout)
-                    self.assertEqual(result.stdout.count('threshold: "75"'), 2)
+                    self.assertEqual(result.stdout.count('threshold: "67.5"'), 2)
                     self.assertIn('cooldownPeriod: ' + ('30\n' if accelerated else '300\n'), result.stdout)
                     self.assertNotIn('prometheus-operated', result.stdout)
                     self.assertEqual(result.stdout.count('serverAddress: http://apexload-fault-prometheus.apexload-fault.svc:9090'), 6)
+
+    def test_hard_capacity_shortfall_exceeds_default_hpa_tolerance(self):
+        # Check every supported local capacity, including fractional thresholds
+        # below one VUser; this target must never round up to the hard limit.
+        for capacity in range(1, 1001):
+            threshold = Fraction(http_scaling_threshold(capacity))
+            self.assertGreater(threshold, 0)
+            self.assertLess(threshold, capacity)
+            for replicas in (1, 2, 3, 10, 11):
+                ratio = Fraction(capacity * replicas + 1, replicas) / threshold
+                self.assertGreater(ratio, Fraction(11, 10))
+        self.assertEqual(http_scaling_threshold(1), '0.9')
+        self.assertEqual(http_scaling_threshold(100), '90')
+        self.assertLess(Fraction(320, 300), Fraction(11, 10))
+        self.assertGreater(Fraction(320, 270), Fraction(11, 10))
+        for invalid in (0, 1001, True, 1.5, '100'):
+            with self.subTest(invalid=invalid), self.assertRaises(RenderError):
+                http_scaling_threshold(invalid)
 
     def test_invalid_inputs_do_not_create_output(self):
         for capacity, minimum, maximum, accelerated in ((0, 2, 4, False), (True, 2, 4, False), (1001, 2, 4, False),
