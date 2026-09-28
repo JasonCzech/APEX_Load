@@ -11,8 +11,10 @@ import (
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -430,5 +432,58 @@ func TestLossTolerantRunOrphansWhenRunLeaseLapsesBeforeEpoch(t *testing.T) {
 	orphan := waitForOrphan(t, service)
 	if orphan.executionGeneration != 1 {
 		t.Fatalf("orphan generation = %d", orphan.executionGeneration)
+	}
+}
+
+func TestRunAdoptionTransfersFrozenCapacity(t *testing.T) {
+	for _, invalid := range []string{"", "generation", "incarnation", "token"} {
+		t.Run("lineage_"+invalid, func(t *testing.T) {
+			service, token := startAdoptableRun(t, 3*time.Second, 5*time.Second)
+			budget := protocol.CapacityVector{CPUCores: 1, MemoryMB: 100, NetworkMbps: 100, VUsers: 10}
+			before := &pb.PodCapacityClaim{TestId: "run", ReservationId: "attempt", Incarnation: service.podCapacityIncarnation, ExecutionGeneration: 1, ModelVersion: protocol.CapacityReservationModel, Revision: 1, Schedulable: CapacityVectorToProto(budget), Demand: CapacityVectorToProto(budget.Scale(.5)), GroupPeaks: map[string]int32{"group": 5}}
+			switch invalid {
+			case "generation":
+				before.ExecutionGeneration = 3
+			case "incarnation":
+				before.Incarnation = "replaced"
+			case "token":
+				token = supervisionTestToken(99)
+			}
+			service.mu.Lock()
+			service.podResources = podResourceCapacity{CPULimitCores: 1, MemoryLimitBytes: 100 * 1024 * 1024, MaxVUsers: 10}
+			service.podCapacityClaims = map[string]*pb.PodCapacityClaim{"run": proto.Clone(before).(*pb.PodCapacityClaim)}
+			service.mu.Unlock()
+			adoption := &pb.RunAdoption{TestId: "run", PriorGeneration: 1, PriorRunSupervisionToken: token, NewRunSupervisionToken: supervisionTestToken(22)}
+			ack := claimWithAdoptions(t, service, 2, adoption)
+			service.mu.RLock()
+			got := proto.Clone(service.podCapacityClaims["run"]).(*pb.PodCapacityClaim)
+			service.mu.RUnlock()
+			if invalid != "" {
+				if ack.GetAdoptions()[0].GetOutcome() == pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED || !proto.Equal(got, before) {
+					t.Fatalf("invalid lineage transferred capacity: %+v %+v", ack, got)
+				}
+				return
+			}
+			expected := proto.Clone(before).(*pb.PodCapacityClaim)
+			expected.ExecutionGeneration = 2
+			if ack.GetAdoptions()[0].GetOutcome() != pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED || !proto.Equal(got, expected) {
+				t.Fatalf("capacity transfer: %+v %+v", ack, got)
+			}
+			if ack, err := service.ReservePodCapacity(context.Background(), expected); err != nil || !ack.GetAccepted() {
+				t.Fatalf("confirmation: %+v %v", ack, err)
+			}
+			retry := claimWithAdoptions(t, service, 2, adoption)
+			if retry.GetAdoptions()[0].GetOutcome() != pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED {
+				t.Fatalf("retry: %+v", retry)
+			}
+			expected.Revision++
+			expected.Demand = CapacityVectorToProto(budget.Scale(.6))
+			if ack, err := service.ReservePodCapacity(context.Background(), expected); err != nil || !ack.GetAccepted() {
+				t.Fatalf("resize: %+v %v", ack, err)
+			}
+			if ack, err := service.ReservePodCapacity(context.Background(), before); err == nil && ack.GetAccepted() {
+				t.Fatal("old owner changed capacity")
+			}
+		})
 	}
 }

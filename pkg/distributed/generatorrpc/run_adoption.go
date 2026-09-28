@@ -150,6 +150,15 @@ func (s *Service) adoptRunLocked(generation uint64, adoption *pb.RunAdoption, re
 		return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED, "the run has no live supervision lease to transfer")
 	}
 
+	// Capacity belongs to the same execution lineage as the assignment. Keep
+	// the frozen reservation intact while transferring only its owner term.
+	if claim := s.podCapacityClaims[testID]; claim != nil {
+		if claim.ExecutionGeneration != prior || claim.Incarnation != s.podCapacityIncarnation {
+			return result(pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_REJECTED, "capacity reservation does not belong to the adopted lineage")
+		}
+		claim.ExecutionGeneration = generation
+	}
+
 	assignment.executionGeneration = generation
 	assignment.runSupervisionTokenHash = newHash
 	assignment.orphanedUntil = time.Time{}

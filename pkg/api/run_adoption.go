@@ -272,6 +272,11 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			continue
 		}
 		tr.isolateRunAdoption(b, candidate.test, generation, ownerID, func() {
+			if len(problems) == 0 {
+				if err := tr.adoptPodCapacity(ctx, candidate.test.ID, adopted, generation, ownerID); err != nil {
+					problems = append(problems, "capacity ownership transfer: "+err.Error())
+				}
+			}
 			if len(problems) > 0 {
 				message := "controller failover: the run could not be adopted by the new controller: " + strings.Join(problems, "; ")
 				tr.mu.RLock()

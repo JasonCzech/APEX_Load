@@ -42,4 +42,8 @@ func TestPodCapacityPostgresAtomicPlacement(t *testing.T) {
 	}
 	defer store.Close()
 	checkPodCapacityAtomicPlacementAndFencing(t, store.SQLiteStore)
+	if _, err := store.db.Exec(`DELETE FROM app_settings WHERE key='system_settings'`); err != nil {
+		t.Fatal(err)
+	}
+	checkAdoptPodCapacity(t, store.SQLiteStore)
 }

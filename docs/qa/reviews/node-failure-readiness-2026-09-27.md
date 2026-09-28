@@ -1591,3 +1591,49 @@ This command has not yet completed a fresh-cluster live deployment; readiness is
 explicitly labelled `qualified: false`. Cluster/KEDA creation, image availability,
 scenario seeding and the load/fault matrix remain separate steps. Final review
 found no further actionable issue in this deployment-command slice.
+
+## Repeated reviewed scaling cycles and capacity ownership
+
+Cycles 16, 17 and 18 on controller `28713a69dc01d73f10bec32338fbc3e9edff22bc`
+passed queued scale-up, explicit dispatch, 20 clean full-load samples, completion,
+and idle scale-down from two to four to two generators. Independently measured
+loaded target rates were 3172.4, 3175.7 and 3150.0 requests/second. Controller
+identities remained stable with no restarts. Each completed run passed
+incarnation-bound S3 archive identity/integrity/source checks. Terminal metrics
+recorded 22, 34 and 97 errors respectively; these trials do not establish zero
+errors over the entire run or automatic dispatch. Timing was accelerated, the
+HTTP threshold was 90 against a hard per-pod capacity of 100, and no worker was
+faulted. Private receipts are in `keda-trial-16` through `keda-trial-18` and
+`terminal-cycle-16-archive` through `terminal-cycle-18-archive` within the owned run.
+
+
+Controller-only adoption previously changed assignment generations without changing
+live capacity-claim ownership. Subsequent peak expansion or evacuation could then
+fail with an old-generation reservation. The generator now transfers only the
+claim generation while holding the same lock and proving the same prior token,
+generation and incarnation used for assignment adoption. The controller confirms
+the exact unchanged claim on each adopted generator, then atomically transfers
+its durable snapshots under the current execution lease. A changed snapshot or
+releasing claim rolls back the entire ledger transfer. Completed/retired claims
+remain held until ordinary confirmed release. Older generators reject the new-term
+confirmation, causing explicit failed adoption while retaining capacity; mixed
+versions cannot silently claim recovery support.
+
+Review kept this step inside the existing per-run panic isolation. Regressions
+cover lineage/token/incarnation rejection, idempotent retries, post-adoption resize,
+old-owner fencing, partial-transfer rollback, changed durable state, negative/nil
+acknowledgements, and completed participants. Focused Go tests passed three times;
+the same durable transfer and rollback matrix passed three times against an
+isolated PostgreSQL 16 instance. Initial fixture failures involved a missing
+network budget, an uninitialized test claim map and comparing in-memory empty
+maps with their JSON-omitted durable form; the final fixtures use real durable
+snapshots. Full-suite and race validation are recorded below when completed.
+This change neither reserves spares nor implements combined controller/generator
+recovery or resumable adoption after a second controller crash.
+
+Final capacity-ownership validation passed: full `go test ./...` (API 381.921 s,
+generator RPC 42.918 s, storage 49.269 s), focused race checks (API 7.483 s,
+generator RPC 6.642 s, storage 3.401 s), and the three PostgreSQL runs (3.625 s).
+Final source review found no further actionable issue in this transfer slice.
+Documentation checking still fails on the pre-existing missing ignored evidence
+links; neither modified readiness document is among its reported failures.
