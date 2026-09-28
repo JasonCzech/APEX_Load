@@ -2,7 +2,7 @@
 
 This is the repository-owned safety/evidence foundation for the
 [node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It renders a phased local HA stack and includes a bounded deployed-run observation
-adapter. A bounded deployment command now applies that stack to a fresh namespace of an owned kind cluster. Scenario seeding now uses the owned, authenticated API. Cluster/KEDA creation and the complete fault matrix remain separate. Docker Desktop recovered after an authorized restart; target and
+adapter. A bounded deployment command now applies that stack to a fresh namespace of an owned kind cluster. Scenario seeding now uses the owned, authenticated API. A fresh-cluster bootstrap command creates the kind/KEDA prerequisites; fresh end-to-end deployment and the complete fault matrix remain to be qualified. Docker Desktop recovered after an authorized restart; target and
 PostgreSQL/Redis component checks now pass in a fresh three-node kind cluster.
 A ten-minute idle dependency outage also passed on two HA controllers; see the
 [review ledger](../../docs/qa/reviews/node-failure-readiness-2026-09-27.md) for scope and measurements.
@@ -937,3 +937,43 @@ or raw responses. Failure, interruption or leader replacement stops setup and
 preserves already-created resources. The last mutation may have committed even
 when its response was lost; inspect the receipts and owned project before retrying.
 Existing output directories are refused, and no automatic deletion or rollback runs.
+
+
+## Bootstrap a fresh Docker Desktop cluster
+
+Prepare new inputs first, preload the approved `kindest/node@sha256:...` image into
+Docker Desktop, and obtain a trusted local KEDA 2.21.0 chart archive with its
+independently recorded SHA-256. Supply a private JSON file mapping `keda`,
+`metricsApiServer` and `webhooks` to the corresponding official
+`ghcr.io/kedacore/<component>@sha256:...` image references. Then run:
+
+```sh
+python3 scripts/fault_harness/bootstrap_cluster.py \
+  --inputs /absolute/new/private-inputs \
+  --output /absolute/new/private-bootstrap-evidence \
+  --kind-binary /absolute/path/to/kind \
+  --node-image kindest/node@sha256:<approved-digest> \
+  --keda-chart /absolute/path/to/keda-2.21.0.tgz \
+  --keda-chart-sha256 <approved-chart-checksum> \
+  --keda-images /absolute/private/keda-images.json
+```
+
+The command is specific to the `desktop-linux` Docker Desktop context and a
+three-node topology: one control plane and two workers. It requires at least
+8 GiB of host free space, refuses existing cluster containers or kubeconfig files,
+and never changes the user's default kubeconfig. Chart/values/config bytes and
+engine/container/node/namespace identities are checked between phases. KEDA runs
+on the control plane and all three deployed image references must match the pins.
+The supported server versions are Kubernetes 1.34–1.36, matching the
+[KEDA 2.21 compatibility range](https://keda.sh/docs/2.21/deploy/).
+
+The supplied chart checksum authenticates only the artifact chosen by the operator;
+obtain both chart and expected checksum from a trusted source. The command does not
+fetch a chart or resolve mutable image tags. It uses `kind --retain` and ordinary
+Helm install, preserves failed/interrupted resources and private receipts, and never
+uninstalls or deletes clusters. Inspect retained resources before preparing another
+run. A successful receipt reports Kubernetes/KEDA readiness with `qualified: false`;
+application image loading, `deploy_stack.py`, `seed_scenario.py`, healthy controls
+and fault trials are subsequent steps. This bootstrap command has passed simulated
+lifecycle tests and a real pinned-chart render; fresh-cluster live qualification is
+still pending.

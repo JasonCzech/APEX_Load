@@ -1660,3 +1660,26 @@ to the stored scenario response's `scripts` field. No application changes were
 needed. This establishes setup only, with `qualified: false`; fault execution and
 fresh-cluster deployment qualification remain separate. Final source review found
 no further actionable issue in this setup-command slice.
+
+
+## Reusable fresh cluster and KEDA bootstrap
+
+`bootstrap_cluster.py` creates only a fresh three-node Docker Desktop kind cluster,
+using an explicit local kind binary and preloaded digest-pinned node image. It
+installs the checksum-pinned local KEDA 2.21.0 chart with all three component images
+pinned, places KEDA on the control plane, and checks CRD/external-metrics readiness
+and the deployed image references. The kubeconfig is exclusively created in the
+private inputs directory. Existing clusters/configs are refused. Failed creation
+uses `--retain`; interrupted installation never triggers delete/uninstall/rollback.
+
+Review added immutable chart/values/topology checks between phases, repeated engine
+identity checks before creation, Kubernetes compatibility validation, deployed-image
+verification, and explicit Docker Desktop/provider environment selection. Tests cover
+existing installations, checksum/image/version errors, low disk, changed artifacts,
+engine/node/namespace replacement, failed creation/readiness and interrupted install.
+The 183-case Python suite passed (15.202 s). Real Helm rendering of the pinned chart
+confirmed three digest-pinned components with control-plane placement. Fresh live
+cluster/bootstrap/deployment qualification remains pending and is not represented
+as a pass. Host space was recovered only from rebuildable Go archives containing
+this worktree's path; no source, test evidence or runtime volume was removed.
+Final source review found no further actionable issue in this bootstrap-command slice.
