@@ -1303,3 +1303,25 @@ The live trial helper now uses this same function. All 123 Python harness tests
 passed, including both previously observed readiness failures and IPv6 matching.
 Final review added malformed protocol/address and contradictory Ready-condition
 coverage; the rerun passed and `git diff --check` is clean.
+
+## Refresh operator drains on HA takeover
+
+The queued-demand leader-transfer trial exposed another stale-state path: a standby
+loaded drain settings only at startup. It could restore an already-cleared exclusion
+when it became leader. Leadership recovery now strictly reloads the persisted map and
+offline cordon metadata before reconciling runs or admitting work. Storage errors,
+malformed states and canceled reads retain the previous projection and keep admission
+closed for retry. Operator drains and the separate temporary termination overlay are
+preserved. Reacquisition by the same process also refreshes the snapshot.
+
+Review also found that discovery on a standby could persist its entire stale map when
+reconciling one generator's metadata cordon. Reconnect reconciliation now updates only
+the local projection; metadata already stores the intent durably. Regression tests
+cover newer settings, offline metadata, failed reads, invalid states, retry, canceled
+reads, reacquisition and standby write-back. The fixture uses SQLite's real durable
+lease generation; omitting that interface correctly failed the admission gate.
+
+Focused tests passed (5.235 s); targeted race checks, including execution leadership,
+passed (15.124 s). `go test ./...` passed (API 343.241 s), and
+`git diff --check` passed. Final review found no further issue in this slice.
+Deployed verification will use the reviewed image built from this commit.

@@ -604,7 +604,9 @@ func NewServer(cfg ServerConfig) *Server {
 				if runner.runAdoptionEnabled() {
 					s.publishExecutionEndpoint(true)
 				}
-				if err := s.repairScriptRecordingsOnLeadershipAcquire(); err != nil {
+				if err := s.reloadGeneratorDrainStatesOnLeadershipAcquire(); err != nil {
+					slog.Warn("generator drain-state leadership refresh failed; admission remains closed", "error", err)
+				} else if err := s.repairScriptRecordingsOnLeadershipAcquire(); err != nil {
 					slog.Warn("script recording leadership repair failed; admission remains closed", "error", err)
 				} else if err := runner.reloadAndReconcile(); err != nil {
 					slog.Warn("execution leadership recovery failed; admission remains closed", "error", err)

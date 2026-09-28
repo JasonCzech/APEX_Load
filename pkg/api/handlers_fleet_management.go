@@ -715,11 +715,9 @@ func (s *Server) applyMetadataCordonOnReconnect(backend identityDrainableExecuti
 		slog.Warn("reconcile cordon on reconnect: set drain state failed", "generator_id", generatorID, "desired", desired, "err", err)
 		return
 	}
-	if persistent, ok := backend.(persistentDrainBackend); ok {
-		if err := s.saveGeneratorDrainStates(persistent.GeneratorDrainStates()); err != nil {
-			slog.Warn("reconcile cordon on reconnect: persist drain states failed", "generator_id", generatorID, "err", err)
-		}
-	}
+	// Metadata already durably records this intent. Discovery also runs on HA
+	// followers, whose cached drain maps must never overwrite newer operator
+	// settings. Reconciliation therefore changes only the local projection.
 }
 
 // ---- provisioning requests -----------------------------------------------
