@@ -785,6 +785,10 @@ func safeManifestAuditDetails(details map[string]any) map[string]any {
 }
 
 func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *storage.RunArchiveRecord) error {
+	return tr.persistTestManifestArtifactWithPreparation(test, record, nil)
+}
+
+func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTest, record *storage.RunArchiveRecord, prepare func([]byte) error) error {
 	if test == nil || record == nil || strings.TrimSpace(record.ArchivePath) == "" || strings.TrimSpace(record.ManifestPath) == "" {
 		return nil
 	}
@@ -835,7 +839,16 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	}); err != nil {
 		return err
 	}
-	if err := writeArchiveJSONArtifactDurable(record.ArchivePath, runArchiveManifestFileName, archiveManifest); err != nil {
+	manifestData, err := json.MarshalIndent(archiveManifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	if prepare != nil {
+		if err := prepare(manifestData); err != nil {
+			return err
+		}
+	}
+	if err := writeArchiveArtifactDurable(record.ArchivePath, runArchiveManifestFileName, manifestData, 0o644); err != nil {
 		return err
 	}
 	if err := refreshRunArchiveManifestTrust(record); err != nil {

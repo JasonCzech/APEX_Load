@@ -167,6 +167,7 @@ func (s *SQLiteStore) RebindArchiveRefreshToFinalization(testID string, refreshT
 	}
 	// Resolve the publication source only after taking the durable test-row lock.
 	// A caller snapshot could otherwise race a concurrent catalog completion.
+	var preparedManifest string
 	record, recordErr := getRunArchiveTx(tx, testID)
 	if errors.Is(recordErr, sql.ErrNoRows) {
 		pending, pendingErr := getArchiveFinalizationJobTx(tx, testID)
@@ -176,6 +177,7 @@ func (s *SQLiteStore) RebindArchiveRefreshToFinalization(testID string, refreshT
 		if pendingErr != nil {
 			return nil, false, pendingErr
 		}
+		preparedManifest = pending.PreparedManifestJSON
 		copy := pending.ArchiveRecord
 		record = &copy
 	} else if recordErr != nil {
@@ -187,19 +189,20 @@ func (s *SQLiteStore) RebindArchiveRefreshToFinalization(testID string, refreshT
 	}
 	now := time.Now().UTC()
 	job := &ArchiveFinalizationJob{
-		TestID:           testID,
-		ProjectID:        normalizeProjectID(projectID),
-		ArchiveRecord:    *record,
-		PersistArtifacts: true,
-		IntentToken:      uuid.NewString(),
-		RefreshToken:     refreshToken,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		TestID:               testID,
+		ProjectID:            normalizeProjectID(projectID),
+		ArchiveRecord:        *record,
+		PersistArtifacts:     true,
+		PreparedManifestJSON: preparedManifest,
+		IntentToken:          uuid.NewString(),
+		RefreshToken:         refreshToken,
+		CreatedAt:            now,
+		UpdatedAt:            now,
 	}
 	err = tx.QueryRow(`INSERT INTO archive_finalization_jobs (
 		test_id, project_id, archive_record_json, persist_artifacts, generation,
-		intent_token, refresh_token, attempts, last_error, created_at, updated_at
-	) VALUES (?, ?, ?, 1, 1, ?, ?, 0, NULL, ?, ?)
+		intent_token, refresh_token, prepared_manifest_json, attempts, last_error, created_at, updated_at
+	) VALUES (?, ?, ?, 1, 1, ?, ?, ?, 0, NULL, ?, ?)
 	ON CONFLICT(test_id) DO UPDATE SET
 		project_id=excluded.project_id,
 		archive_record_json=excluded.archive_record_json,
@@ -207,9 +210,10 @@ func (s *SQLiteStore) RebindArchiveRefreshToFinalization(testID string, refreshT
 		generation=archive_finalization_jobs.generation + 1,
 		intent_token=excluded.intent_token,
 		refresh_token=excluded.refresh_token,
+		prepared_manifest_json=excluded.prepared_manifest_json,
 		updated_at=excluded.updated_at
 	RETURNING generation, created_at, updated_at`, job.TestID, job.ProjectID,
-		encoded, job.IntentToken, job.RefreshToken, job.CreatedAt, job.UpdatedAt).Scan(&job.Generation, &job.CreatedAt, &job.UpdatedAt)
+		encoded, job.IntentToken, job.RefreshToken, job.PreparedManifestJSON, job.CreatedAt, job.UpdatedAt).Scan(&job.Generation, &job.CreatedAt, &job.UpdatedAt)
 	if err != nil {
 		return nil, false, err
 	}

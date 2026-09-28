@@ -1915,3 +1915,35 @@ reads when storage returns. Focused checks passed (2.042 seconds), three race
 repetitions passed (14.905 seconds), and the full Go suite passed in
 `/tmp/apex-archive-startup-full.log`. No further findings remain in this slice;
 deployed cold-start confirmation is still pending.
+
+### Durable archive manifest preparation
+
+An injected failure after adjunct replacement but before metadata persistence
+reproduced the remaining first-publication crash window. The repaired path fsyncs
+adjuncts, atomically stores the prepared manifest bytes and digest under the durable
+intent token, then replaces the local manifest. Recovery verifies the private
+payload digest, run ID and every declared artifact before restoring it. Missing,
+changed or incompletely described artifacts remain failures. Legacy damaged jobs
+without prepared bytes are not silently repaired.
+
+The SQLite/PostgreSQL schema migration is additive. Point reads load the bounded
+8 MiB preparation payload; job/project list snapshots omit it, and API JSON never
+includes it. A pending-source refresh carries its preparation through rebinding;
+a catalog-based refresh or new logical producer intent clears it. Review also
+fixed a late record-only update that could detach the prepared bytes from their
+digest, and repaired the intent-order test interceptor to cover the actual
+create-only producer path instead of silently observing no calls.
+
+Tests cover interruptions before preparation, after its durable commit and after
+local manifest replacement, changed-artifact rejection, migration of an older
+table, opaque-token rejection, digest/identity/size validation, narrow metadata
+updates and both refresh sources. The first full-suite run caught the missing
+schema release fingerprint; release 18 was appended and migration tests now
+verify preservation of release 17 ledger identities and timestamps. Isolated
+PostgreSQL passed three repetitions after that repair (2.491 seconds total).
+Three race repetitions passed (API 84.723 seconds, storage 11.424 seconds), and
+the final full Go suite passed in `/tmp/apex-archive-preparation-full-final.log`
+(API 352.291 seconds, storage 25.774 seconds). No further scoped review findings
+remain. Deployed evidence is recorded separately when complete. This is process-crash
+recovery on a surviving verified source, not proof that node-local staging survives
+permanent worker loss or that a filesystem honors durability under physical faults.

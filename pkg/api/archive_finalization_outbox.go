@@ -307,7 +307,7 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		}
 	}
 	if job.PersistArtifacts {
-		if err := tr.persistTestManifestArtifact(test, record); err != nil {
+		if err := tr.persistArchiveFinalizationArtifacts(ctx, job, test); err != nil {
 			return fmt.Errorf("persist archive adjunct artifacts: %w", err)
 		}
 	}

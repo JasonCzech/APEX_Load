@@ -18,10 +18,10 @@ func getArchiveFinalizationJobTx(tx *storeTx, testID string) (*ArchiveFinalizati
 		persistArtifacts int
 	)
 	err := tx.QueryRow(`SELECT test_id, project_id, archive_record_json,
-		persist_artifacts, generation, COALESCE(intent_token, ''), COALESCE(refresh_token, ''), attempts, COALESCE(last_error, ''), created_at, updated_at
+		persist_artifacts, generation, COALESCE(intent_token, ''), COALESCE(refresh_token, ''), attempts, COALESCE(last_error, ''), created_at, updated_at, COALESCE(prepared_manifest_json, '')
 		FROM archive_finalization_jobs WHERE test_id = ?`, strings.TrimSpace(testID)).Scan(
 		&job.TestID, &job.ProjectID, &recordJSON, &persistArtifacts, &job.Generation, &job.IntentToken, &job.RefreshToken, &job.Attempts,
-		&job.LastError, &job.CreatedAt, &job.UpdatedAt,
+		&job.LastError, &job.CreatedAt, &job.UpdatedAt, &job.PreparedManifestJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -125,6 +125,7 @@ func (s *SQLiteStore) SaveArchiveFinalizationJob(job *ArchiveFinalizationJob) er
 		generation=archive_finalization_jobs.generation + 1,
 		intent_token=excluded.intent_token,
 		refresh_token=excluded.refresh_token,
+		prepared_manifest_json='',
 		updated_at=excluded.updated_at
 	RETURNING generation, intent_token, created_at, updated_at`,
 		job.TestID, job.ProjectID, string(recordJSON), persistArtifacts, job.IntentToken, strings.TrimSpace(job.RefreshToken), job.Attempts,
@@ -136,7 +137,11 @@ func (s *SQLiteStore) SaveArchiveFinalizationJob(job *ArchiveFinalizationJob) er
 	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, job.TestID); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	job.PreparedManifestJSON = ""
+	return nil
 }
 
 // SaveArchiveFinalizationJobIfOrphan is the create-only startup-recovery path.
@@ -223,6 +228,7 @@ func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	}
 	if affected > 0 {
 		job.Generation = 1
+		job.PreparedManifestJSON = ""
 	}
 	return affected > 0, nil
 }
@@ -234,10 +240,10 @@ func (s *SQLiteStore) GetArchiveFinalizationJob(testID string) (*ArchiveFinaliza
 		persistArtifacts int
 	)
 	err := s.db.QueryRow(`SELECT test_id, project_id, archive_record_json,
-		persist_artifacts, generation, COALESCE(intent_token, ''), COALESCE(refresh_token, ''), attempts, COALESCE(last_error, ''), created_at, updated_at
+		persist_artifacts, generation, COALESCE(intent_token, ''), COALESCE(refresh_token, ''), attempts, COALESCE(last_error, ''), created_at, updated_at, COALESCE(prepared_manifest_json, '')
 		FROM archive_finalization_jobs WHERE test_id = ?`, strings.TrimSpace(testID)).Scan(
 		&job.TestID, &job.ProjectID, &recordJSON, &persistArtifacts, &job.Generation, &job.IntentToken, &job.RefreshToken, &job.Attempts,
-		&job.LastError, &job.CreatedAt, &job.UpdatedAt,
+		&job.LastError, &job.CreatedAt, &job.UpdatedAt, &job.PreparedManifestJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -355,6 +361,10 @@ func (s *SQLiteStore) DeleteArchiveFinalizationJobIfToken(testID string, intentT
 // opaque token makes this a compare-and-swap: a stale leader cannot redirect a
 // replacement intent or restore an intent canceled by retention/deletion.
 func (s *SQLiteStore) UpdateArchiveFinalizationRecordIfToken(testID string, intentToken string, record *RunArchiveRecord) (bool, error) {
+	return s.updateArchiveFinalizationRecordIfToken(testID, intentToken, record, nil)
+}
+
+func (s *SQLiteStore) updateArchiveFinalizationRecordIfToken(testID string, intentToken string, record *RunArchiveRecord, prepared *string) (bool, error) {
 	testID = strings.TrimSpace(testID)
 	intentToken = strings.TrimSpace(intentToken)
 	if testID == "" || intentToken == "" || record == nil {
@@ -374,7 +384,9 @@ func (s *SQLiteStore) UpdateArchiveFinalizationRecordIfToken(testID string, inte
 	defer tx.Rollback()
 
 	testQuery := `SELECT 1 FROM tests WHERE id = ?`
-	jobQuery := `SELECT COALESCE(intent_token, '') FROM archive_finalization_jobs WHERE test_id = ?`
+	jobQuery := `SELECT COALESCE(intent_token, ''), archive_record_json,
+		CASE WHEN LENGTH(COALESCE(prepared_manifest_json, '')) > 0 THEN 1 ELSE 0 END
+		FROM archive_finalization_jobs WHERE test_id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		testQuery += ` FOR UPDATE`
 		jobQuery += ` FOR UPDATE`
@@ -385,14 +397,26 @@ func (s *SQLiteStore) UpdateArchiveFinalizationRecordIfToken(testID string, inte
 	} else if err != nil {
 		return false, err
 	}
-	var currentToken string
-	if err := tx.QueryRow(jobQuery, testID).Scan(&currentToken); errors.Is(err, sql.ErrNoRows) {
+	var currentToken, currentRecordJSON string
+	var hasPrepared int
+	if err := tx.QueryRow(jobQuery, testID).Scan(&currentToken, &currentRecordJSON, &hasPrepared); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
 	if currentToken != intentToken {
 		return false, nil
+	}
+	if prepared == nil && hasPrepared != 0 {
+		var currentRecord RunArchiveRecord
+		if err := json.Unmarshal([]byte(currentRecordJSON), &currentRecord); err != nil {
+			return false, fmt.Errorf("decode prepared archive record: %w", err)
+		}
+		// A late record-only write must not detach a committed recovery marker
+		// from its digest. Advancing that digest requires another atomic prepare.
+		if !strings.EqualFold(strings.TrimSpace(record.ManifestSHA256), strings.TrimSpace(currentRecord.ManifestSHA256)) {
+			return false, errors.New("archive manifest changed after durable preparation")
+		}
 	}
 	var cleanupExists int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM archive_cleanup_jobs WHERE test_id = ?`, testID).Scan(&cleanupExists); err != nil {
@@ -401,9 +425,16 @@ func (s *SQLiteStore) UpdateArchiveFinalizationRecordIfToken(testID string, inte
 	if cleanupExists != 0 {
 		return false, nil
 	}
-	result, err := tx.Exec(`UPDATE archive_finalization_jobs
-		SET archive_record_json = ?, updated_at = ?
-		WHERE test_id = ? AND intent_token = ?`, string(encoded), time.Now().UTC(), testID, intentToken)
+	var result sql.Result
+	if prepared == nil {
+		result, err = tx.Exec(`UPDATE archive_finalization_jobs
+			SET archive_record_json = ?, updated_at = ?
+			WHERE test_id = ? AND intent_token = ?`, string(encoded), time.Now().UTC(), testID, intentToken)
+	} else {
+		result, err = tx.Exec(`UPDATE archive_finalization_jobs
+			SET archive_record_json = ?, prepared_manifest_json = ?, updated_at = ?
+			WHERE test_id = ? AND intent_token = ?`, string(encoded), *prepared, time.Now().UTC(), testID, intentToken)
+	}
 	if err != nil {
 		return false, err
 	}

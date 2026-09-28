@@ -333,3 +333,10 @@ is local; explicit reads still verify remote integrity and run identity. This
 removes an object-storage dependency from startup, with unavailable/corrupt-store
 regressions, race checks and the full Go suite passing. Deployed confirmation is
 pending alongside controller restoration and archive recovery.
+
+The initial adjunct-write crash window now has a durable prepared-manifest journal
+for SQLite/PostgreSQL. Recovery verifies every declared artifact before restoring
+database-anchored manifest bytes; legacy jobs without that journal remain
+fail-closed. Refreshes preserve a pending source's journal when rebinding and clear
+it when starting from the catalog. This closes the implementation gap noted above;
+deployed restart/upgrade qualification remains separate from storage/API regressions.

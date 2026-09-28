@@ -42,22 +42,36 @@ type archiveIntentOrderStore struct {
 	adjunctPath string
 	mu          sync.Mutex
 	orderErr    error
+	orderCalls  int
 }
 
 func (s *archiveIntentOrderStore) SaveArchiveFinalizationJob(job *storage.ArchiveFinalizationJob) error {
+	s.observeIntentOrder()
+	return s.SQLiteStore.SaveArchiveFinalizationJob(job)
+}
+
+func (s *archiveIntentOrderStore) SaveArchiveFinalizationJobIfOrphan(job *storage.ArchiveFinalizationJob) (bool, error) {
+	s.observeIntentOrder()
+	return s.SQLiteStore.SaveArchiveFinalizationJobIfOrphan(job)
+}
+
+func (s *archiveIntentOrderStore) observeIntentOrder() {
 	s.mu.Lock()
+	s.orderCalls++
 	if _, err := os.Stat(s.adjunctPath); err == nil {
 		s.orderErr = errors.New("adjunct existed before archive finalization intent")
 	} else if !os.IsNotExist(err) {
 		s.orderErr = err
 	}
 	s.mu.Unlock()
-	return s.SQLiteStore.SaveArchiveFinalizationJob(job)
 }
 
 func (s *archiveIntentOrderStore) observedOrderError() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.orderCalls == 0 {
+		return errors.New("intent ordering was not observed")
+	}
 	return s.orderErr
 }
 

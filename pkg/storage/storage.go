@@ -1195,8 +1195,9 @@ type ArchiveVersionCleanupJob struct {
 
 // ArchiveFinalizationJob is the durable intent to finish publishing an archive
 // and commit its catalog record. The local archive is already committed before
-// this row is written; retries may therefore safely repeat adjunct generation,
-// object upload, and the final RunArchiveRecord UPSERT after a restart.
+// this row is written. Adjunct publication prepares its next manifest bytes and
+// digest durably before local replacement, allowing fenced retries after a
+// restart without changing the immutable telemetry trust anchors.
 type ArchiveFinalizationJob struct {
 	TestID           string           `json:"test_id"`
 	ProjectID        string           `json:"project_id"`
@@ -1208,11 +1209,14 @@ type ArchiveFinalizationJob struct {
 	IntentToken string `json:"-"`
 	// RefreshToken is the archive-refresh intent observed while this publication
 	// was created. Completion conditionally acknowledges only that token.
-	RefreshToken string    `json:"-"`
-	Attempts     int       `json:"attempts"`
-	LastError    string    `json:"last_error,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	// PreparedManifestJSON is a private durable commit marker for adjunct recovery.
+	// It is loaded only for individual jobs, never in list snapshots or API JSON.
+	PreparedManifestJSON string    `json:"-"`
+	RefreshToken         string    `json:"-"`
+	Attempts             int       `json:"attempts"`
+	LastError            string    `json:"last_error,omitempty"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 // ArchiveRefreshJob records that archive adjunct artifacts (currently test

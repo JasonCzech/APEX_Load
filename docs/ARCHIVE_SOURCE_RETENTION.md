@@ -52,3 +52,14 @@ newly downloaded archives enforce the idle byte policy synchronously when their
 reader lease is released. Cache hits and idle TTL maintenance still use coalesced
 periodic sweeps. Concurrent active readers remain protected and can exceed the
 idle byte budget, so deployment sizing must allow their combined working set.
+
+SQLite and PostgreSQL finalization also keep a private prepared-manifest journal.
+After adjunct files are durably written, the next manifest bytes and SHA-256 are
+committed together in the pending job before the local manifest is replaced. A
+retry can recover an interrupted replacement only from that database-anchored
+payload and only after all declared artifact sizes and hashes pass validation.
+The payload is capped at 8 MiB, excluded from job-list snapshots and API JSON, and
+removed with the completed job. A record-only update cannot replace its digest.
+Custom outbox implementations without the preparation extension retain their
+previous behavior. Jobs damaged by older writers without a prepared payload are
+not automatically re-trusted; their source must still be investigated separately.

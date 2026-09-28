@@ -173,12 +173,12 @@ func TestRunArchiveFailureUpgradeAndProjectDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Model the immediately preceding released schema, then reopen through the
+	// Model the pre-failure release 16 ledger, then reopen through the
 	// normal convergence path rather than creating the new table in the test.
 	if _, err := s.db.Exec("DROP TABLE run_archive_failures"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("DELETE FROM schema_migrations WHERE version = 17"); err != nil {
+	if _, err := s.db.Exec("DELETE FROM schema_migrations WHERE version >= 17"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
