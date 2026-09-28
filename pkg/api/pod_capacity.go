@@ -330,6 +330,10 @@ func podCapacityShards(group TestGroup, loads map[string]generatorLoadSnapshot, 
 	return nil
 }
 
+func podCapacityAckConfirms(ack *pb.PodCapacityAck, incarnation string) bool {
+	return incarnation != "" && ack.GetAccepted() && ack.GetSnapshot().GetIncarnation() == incarnation
+}
+
 func podClaim(r storage.PodCapacityReservation, release bool) *pb.PodCapacityClaim {
 	return &pb.PodCapacityClaim{ReservationId: r.ReservationID, TestId: r.TestID, ExecutionGeneration: r.Generation, Incarnation: r.Incarnation, ModelVersion: r.ModelVersion, Schedulable: generatorrpc.CapacityVectorToProto(r.Budget), Demand: generatorrpc.CapacityVectorToProto(r.Demand), HeadroomPct: r.HeadroomPct, Dedicated: r.Dedicated, GroupPeaks: r.GroupPeaks, Release: release, Revision: r.Revision}
 }
@@ -386,8 +390,8 @@ func (tr *TestRunner) reservePodPlacement(ctx context.Context, test *ManagedTest
 		if err != nil {
 			return claims, err
 		}
-		if !ack.Accepted {
-			return claims, fmt.Errorf("generator %s: %s", claim.Target, ack.ErrorMessage)
+		if !podCapacityAckConfirms(ack, claim.Incarnation) {
+			return claims, fmt.Errorf("generator %s did not confirm capacity: %s", claim.Target, ack.GetErrorMessage())
 		}
 	}
 	return claims, nil
@@ -411,7 +415,7 @@ func (tr *TestRunner) releasePodClaims(claims []storage.PodCapacityReservation, 
 		request.ExecutionGeneration = generation
 		ack, err := client.ReservePodCapacity(ctx, request)
 		cancel()
-		if err == nil && ack.Accepted {
+		if err == nil && podCapacityAckConfirms(ack, claim.Incarnation) {
 			_ = tr.transitionPodLedger(store, claim.Target, claim.TestID, claim.Incarnation, claim.ReservationID, "released", executionLeaseName, owner, generation)
 		}
 	}
@@ -571,7 +575,7 @@ func (tr *TestRunner) reconcilePodCapacity(ctx context.Context, entries []Genera
 				request := podClaim(r, true)
 				request.ExecutionGeneration = generation
 				ack, releaseErr := capacity.ReservePodCapacity(callCtx, request)
-				if releaseErr == nil && ack.Accepted {
+				if releaseErr == nil && podCapacityAckConfirms(ack, r.Incarnation) {
 					_ = tr.transitionPodLedger(store, r.Target, r.TestID, r.Incarnation, r.ReservationID, "released", executionLeaseName, owner, generation)
 				}
 			}

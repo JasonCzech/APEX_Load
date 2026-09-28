@@ -2141,3 +2141,21 @@ passed; the final API run took 354.727 seconds in
 the real StatefulSet UID and four-replica bound (`observed-autoscaling-limit-3`).
 No further scoped findings remain. Atomic spare admission, quotas, activation and
 combined-loss recovery are still outstanding.
+
+### Capacity acknowledgments retain uncertain reservations
+
+Review found that placement, evacuation, release and resize paths either
+dereferenced a missing acknowledgment or accepted a success response without
+checking its generator incarnation. All now require an accepted acknowledgment
+with the exact nonempty incarnation. An uncertain placement stays pending in the
+SQL ledger; an uncertain release stays reserved; an uncertain resize rollback
+keeps the larger budget until both confirmations match. Controller adoption uses
+the same predicate. This prevents ambiguous responses from freeing capacity or
+allowing execution on an unconfirmed generator.
+
+Real SQLite regressions exercise accepted, nil, rejected, missing-identity and
+wrong-identity acknowledgments across placement, release, reconciliation and
+resize, including a wrong identity during rollback. Focused tests passed in
+2.878 seconds and three race repetitions passed in 57.926 seconds. The empty-identity regression also passed three race repetitions (3.206 seconds).
+The full Go suite passed (`/tmp/apex-capacity-ack-full.log`). Final review found
+no further scoped issues. This does not implement standby admission or activation.

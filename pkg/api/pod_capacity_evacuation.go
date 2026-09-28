@@ -111,8 +111,8 @@ func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedEx
 		if err != nil {
 			return claims, err
 		}
-		if !ack.Accepted {
-			return claims, fmt.Errorf("replacement %s: %s", r.Target, ack.ErrorMessage)
+		if !podCapacityAckConfirms(ack, r.Incarnation) {
+			return claims, fmt.Errorf("replacement %s did not confirm capacity: %s", r.Target, ack.GetErrorMessage())
 		}
 	}
 	return claims, nil

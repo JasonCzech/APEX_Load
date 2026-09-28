@@ -55,7 +55,7 @@ func (tr *TestRunner) adoptPodCapacity(ctx context.Context, testID string, adopt
 		if err != nil {
 			return fmt.Errorf("generator %s: %w", claim.Target, err)
 		}
-		if !ack.GetAccepted() || ack.GetSnapshot().GetIncarnation() != claim.Incarnation {
+		if !podCapacityAckConfirms(ack, claim.Incarnation) {
 			return fmt.Errorf("generator %s did not confirm adopted capacity", claim.Target)
 		}
 	}

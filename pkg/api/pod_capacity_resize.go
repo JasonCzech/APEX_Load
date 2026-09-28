@@ -103,11 +103,11 @@ func (tr *TestRunner) expandPodScale(ctx context.Context, testID, group string, 
 			}
 			callCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			ack, err := client.ReservePodCapacity(callCtx, podClaim(r, false))
-			if err == nil && ack.Accepted {
+			if err == nil && podCapacityAckConfirms(ack, r.Incarnation) {
 				restore := clonePodReservation(previous[i])
 				restore.Revision = r.Revision + 1
 				ack, err = client.ReservePodCapacity(callCtx, podClaim(restore, false))
-				if err == nil && ack.Accepted {
+				if err == nil && podCapacityAckConfirms(ack, r.Incarnation) {
 					_ = tr.reservePodLedger(store, []storage.PodCapacityReservation{restore}, executionLeaseName, owner, generation)
 				}
 			}
@@ -127,9 +127,9 @@ func (tr *TestRunner) expandPodScale(ctx context.Context, testID, group string, 
 			rollback()
 			return noop, err
 		}
-		if !ack.Accepted {
+		if !podCapacityAckConfirms(ack, r.Incarnation) {
 			rollback()
-			return noop, fmt.Errorf("generator %s: %s", r.Target, ack.ErrorMessage)
+			return noop, fmt.Errorf("generator %s did not confirm capacity: %s", r.Target, ack.GetErrorMessage())
 		}
 	}
 	return rollback, nil
