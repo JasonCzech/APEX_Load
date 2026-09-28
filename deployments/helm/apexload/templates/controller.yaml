@@ -216,6 +216,12 @@ spec:
 {{ end }}
             - name: APEXLOAD_ARCHIVE_DIR
               value: /var/lib/apexload/archives
+{{- if .Values.archiveStaging.persistence.enabled }}
+            - name: APEXLOAD_ARCHIVE_STAGING_DIR
+              value: /var/lib/apexload/archives/_object_staging
+            - name: APEXLOAD_ARCHIVE_READER_CACHE_DIR
+              value: /var/lib/apexload/archive-read-cache
+{{- end }}
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
             - name: APEXLOAD_IMPORT_ASSET_DIR
@@ -266,6 +272,10 @@ spec:
               mountPath: /tmp
             - name: data
               mountPath: /var/lib/apexload
+{{- if .Values.archiveStaging.persistence.enabled }}
+            - name: archive-staging
+              mountPath: /var/lib/apexload/archives
+{{- end }}
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
@@ -302,6 +312,11 @@ spec:
         - name: data
           emptyDir:
             sizeLimit: {{ .Values.controller.scratch.dataSizeLimit }}
+{{- if .Values.archiveStaging.persistence.enabled }}
+        - name: archive-staging
+          persistentVolumeClaim:
+            claimName: {{ include "apexload.archiveStagingClaimName" . | quote }}
+{{- end }}
         - name: grpc-tls
           secret:
             secretName: {{ .Values.controller.grpcTlsSecretName }}

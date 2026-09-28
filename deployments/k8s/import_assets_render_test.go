@@ -14,11 +14,15 @@ import (
 type importAssetsManifest struct {
 	Kind     string `yaml:"kind"`
 	Metadata struct {
-		Name      string `yaml:"name"`
-		Namespace string `yaml:"namespace"`
+		Name        string            `yaml:"name"`
+		Namespace   string            `yaml:"namespace"`
+		Annotations map[string]string `yaml:"annotations"`
 	} `yaml:"metadata"`
 	Data map[string]string `yaml:"data"`
 	Spec struct {
+		Resources struct {
+			Requests map[string]string `yaml:"requests"`
+		} `yaml:"resources"`
 		AccessModes      []string `yaml:"accessModes"`
 		StorageClassName string   `yaml:"storageClassName"`
 		Strategy         struct {

@@ -752,6 +752,10 @@ func acquireArchiveMaterialized(ctx context.Context, record *storage.RunArchiveR
 	if err != nil {
 		return nil, err
 	}
+	backend, err = archiveReaderRuntime(backend)
+	if err != nil {
+		return nil, err
+	}
 	localRoot, err := archiveMaterializationLocalRoot(backend, record)
 	if err != nil {
 		return nil, err

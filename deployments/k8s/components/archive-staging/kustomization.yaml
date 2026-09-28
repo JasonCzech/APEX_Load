@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# Provision this existing claim in the deployment namespace before applying.
+# See docs/ARCHIVE_SOURCE_RETENTION.md for the shared filesystem contract.
+patches:
+  - path: controller-archive-staging.yaml

@@ -78,8 +78,9 @@ spec:
             # Change this to the production ingress URL before deployment.
             - name: APEXLOAD_PUBLIC_URL
               value: https://apexload.example.com
-            # Local staging/scratch only; durable state lives in PostgreSQL,
-            # object storage, and Redis — pods are fully disposable.
+            # Pending evidence can exist only in this local staging directory.
+            # Opt into components/archive-staging with a qualified shared claim
+            # to retain not-yet-uploaded sources across controller replacement.
             - name: APEXLOAD_ARCHIVE_DIR
               value: /var/lib/apexload/archives
             - name: APEXLOAD_EXPORT_DIR

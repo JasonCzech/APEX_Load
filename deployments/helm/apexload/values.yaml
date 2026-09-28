@@ -125,6 +125,19 @@ importAssets:
     storageClassName: ""
     size: 10Gi
 
+# Optional durable controller evidence staging. The claim must provide POSIX
+# flock, atomic rename and fsync; access mode alone does not prove that contract.
+archiveStaging:
+  persistence:
+    enabled: false
+    existingClaim: ""
+    accessModes:
+      - ReadWriteMany
+    # Empty uses the cluster default only when creating a claim. Select and
+    # qualify the storage class before enabling this option in production.
+    storageClassName: ""
+    size: 256Gi
+
 generator:
   replicas: 2
   serviceAccountName: apexload-generator

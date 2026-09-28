@@ -190,3 +190,80 @@ Attempt counts are durable budget claims and do not prove a network call occurre
 Uncertain identity or storage reads omit the projection; they never probe generators
 or storage files to guess progress. Earlier collection failures remain historical
 context. **Check again** refreshes the read; it does not restart recovery.
+
+## Shared controller staging
+
+Controller archive staging is ephemeral by default. Helm now supports a dedicated
+claim at `/var/lib/apexload/archives`, separate from imported assets and exports:
+
+```yaml
+archiveStaging:
+  persistence:
+    enabled: true
+    existingClaim: apexload-controller-archive-staging
+    accessModes: [ReadWriteMany]
+```
+
+HA requires an explicit `ReadWriteMany` declaration, including for existing claims.
+Helm cannot verify the actual access mode or filesystem semantics of an existing
+claim. Provision and qualify it in the release namespace first. For chart-created
+claims, leave `existingClaim` empty and set `storageClassName` to a qualified class;
+`size` defaults to `256Gi` and accepts positive integer Kubernetes binary quantities.
+An empty class uses the cluster default. The chart selects no cloud-specific class.
+Chart-created staging PVCs carry `helm.sh/resource-policy: keep`: disabling the
+option or uninstalling the chart preserves the PVC, but detaches it from controllers.
+Retained claims require explicit operator management before reuse or deletion.
+
+Kustomize users can add `deployments/k8s/components/archive-staging` to an overlay
+of `aks`, `eks`, `onprem`, or their HA variants. For example, a sibling directory
+under `deployments/k8s` can contain:
+
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../onprem-ha
+components:
+  - ../components/archive-staging
+```
+
+The component mounts an **existing** `apexload-controller-archive-staging` claim in
+the deployment namespace; it does not create a PVC or select a storage class. Patch
+the `archive-staging` volume's claim name if needed. HA requires a shared writable
+claim accessible to all controller replicas. Both deployment methods pin object
+staging beneath the mounted archive directory so a ConfigMap override cannot move
+it back to ephemeral scratch. Downloaded reader caches stay in each pod's private
+`/var/lib/apexload/archive-read-cache` scratch directory through
+`APEXLOAD_ARCHIVE_READER_CACHE_DIR`. Their leases and eviction locks are process-local,
+so this directory must never be a shared volume. Custom deployments must set a
+private absolute reader-cache directory when sharing source staging. Source/cache
+path overlap (including existing symlink aliases) is rejected on materialization;
+without the override, legacy deployments retain their original cache layout.
+
+The filesystem must support cross-process and cross-client advisory `flock`, atomic
+rename and durable `fsync`. Access mode alone does not establish those properties.
+Use the same absolute mount path, backend namespace and controller UID/GID on every
+replica. Preserve the complete directory tree, including `_source_locks` and capacity
+lock inodes; replacing lock files while writers exist can allow concurrent owners.
+Only one deployment may own a staging namespace. Do not share this claim with import
+assets, Bruno artifacts or unrelated applications. Validate mount permissions and
+storage-network access for the selected CSI driver before rollout.
+
+Enabling a volume does not migrate existing per-pod sources. Before changing mounts,
+quiesce archive writers, inventory every controller's pending publication and cached
+sources, and copy verified evidence while preserving namespace layout and identity.
+Conflicting or unverified copies need investigation; never overwrite them blindly.
+Keep the old evidence until the migrated publication is verified. Apply the same
+procedure before disabling persistence, changing claims, or rolling back the mount.
+All writers must run the source-fencing implementation before sharing this tree.
+
+Size collection quotas below the claim's usable capacity, reserving space for
+transfer/merge copies, prepared publication and filesystem overhead. Size each pod's
+private scratch separately for reader caches and their active-reader budget.
+The default 128 GiB collection-cache quota is not a total staging-disk bound;
+producer/publication backlog admission remains separate work. Exhaustion must not
+be resolved by deleting unconfirmed evidence. This option does not enable source TTL.
+It does not replicate generator raw files, recover lost execution ownership, or
+qualify physical CSI detach/reattach, permanent-node or zone failures. The local
+cross-process test exercises shared-directory locking and publication after process
+loss; production multi-host storage qualification remains required.

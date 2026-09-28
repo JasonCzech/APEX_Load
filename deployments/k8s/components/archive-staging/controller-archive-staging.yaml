@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apexload-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: controller
+          env:
+            - name: APEXLOAD_ARCHIVE_DIR
+              value: /var/lib/apexload/archives
+            - name: APEXLOAD_ARCHIVE_STAGING_DIR
+              value: /var/lib/apexload/archives/_object_staging
+            - name: APEXLOAD_ARCHIVE_READER_CACHE_DIR
+              value: /var/lib/apexload/archive-read-cache
+          volumeMounts:
+            - name: archive-staging
+              mountPath: /var/lib/apexload/archives
+      volumes:
+        - name: archive-staging
+          persistentVolumeClaim:
+            claimName: apexload-controller-archive-staging

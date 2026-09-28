@@ -2895,3 +2895,48 @@ The final full Go suite passed all 108 test-bearing packages with no failures.
 Final scoped re-review found no additional recovery-status issues. Shared staging,
 producer/backlog disk admission, combined-loss recovery and deployed qualification
 remain local work.
+
+## Optional shared archive staging (2026-09-28)
+
+Helm can now mount a dedicated existing or chart-created archive claim; HA requires
+an explicit RWX declaration. The optional Kustomize component mounts an existing
+claim across AKS/EKS/on-prem and HA variants without selecting a storage class.
+Defaults remain ephemeral. Chart-created claims have Helm's keep policy, and docs
+cover migration, retained claims, POSIX locking/rename/fsync, volume sizing and the
+limits of local qualification. Import/Bruno path and claim collisions are rejected.
+
+Review found that reader cache leases and eviction are process-local. Shared source
+staging must therefore be paired with private reader caches. The manifests pin
+`APEXLOAD_ARCHIVE_READER_CACHE_DIR` to pod-local scratch; materialization preserves
+object identity and publication still copies back into shared staging. Cache/source
+overlap, including existing path aliases, is rejected without creating directories.
+The private retention scan cannot delete a peer cache, a publication source or a
+legacy reader marker left in shared staging.
+
+A separate-process test prepares publication, holds its source file lock, verifies
+that a competing publisher cannot write, abruptly kills the owner, then completes
+and replays publication from a fresh process. It checks the catalog checksum,
+unchanged terminal outcome and preserved lock inode. This exercises process loss on
+one shared local directory; it does not qualify CSI, physical nodes or zones.
+
+Initial test corrections enabled adjunct preparation in the interrupted fixture,
+normalized Helm 3/4 schema diagnostic separators, and compared canonical macOS
+paths in the publication-location assertion. The reviewed focused API matrix passed
+(5.560 s); deployment render tests passed across defaults, six component overlays,
+created/existing claims, HA modes, capacity/retention and rejected collisions (4.125 s).
+Final repeated race, full-suite and documentation results follow.
+
+The final focused matrix includes canonical reader-cache paths and passed (5.560 s).
+Three repetitions of the source-process, reader-isolation and materialization race
+matrix passed (26.141 s). Documentation checks passed for all 69 active Markdown
+files. Before the forthcoming image rollout, the owned Docker cluster had no active
+runs or pending publications; its schema-18 PostgreSQL backup was restored into a
+separate temporary PostgreSQL 16 container with matching migration ledger and row
+counts. The private backup is retained and the temporary container was removed.
+An initial backup-verification attempt used an unavailable local image tag; the
+verified attempt used the cached PostgreSQL 16 Alpine image and preserved both logs.
+
+The final full Go suite passed all 108 test-bearing packages with no failures
+(API 374.358 s). Final scoped re-review found no further staging/cache-isolation
+issues. Physical CSI qualification and live deployment of this optional volume
+remain separate from the successful local process and render tests.

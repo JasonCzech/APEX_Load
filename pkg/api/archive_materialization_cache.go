@@ -361,6 +361,13 @@ func archiveMaterializationCacheMarkerPath(cacheRoot string) string {
 }
 
 func archiveMaterializationCacheScanRoot(_ string) string {
+	if root := strings.TrimSpace(os.Getenv(envArchiveReaderCacheDir)); root != "" {
+		canonical, err := archiveReaderCacheCanonicalRoot(root)
+		if err != nil {
+			return ""
+		}
+		return canonical
+	}
 	if root := strings.TrimSpace(os.Getenv("APEXLOAD_ARCHIVE_STAGING_DIR")); root != "" {
 		return filepath.Clean(root)
 	}

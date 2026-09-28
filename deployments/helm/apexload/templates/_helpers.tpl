@@ -86,3 +86,7 @@ chart default while explicit false values remain false.
 {{- end -}}
 {{- $id -}}
 {{- end -}}
+
+{{- define "apexload.archiveStagingClaimName" -}}
+{{- default "apexload-controller-archive-staging" .Values.archiveStaging.persistence.existingClaim -}}
+{{- end -}}

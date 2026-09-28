@@ -126,6 +126,13 @@ new claim before rollout. The generated generator discovery target uses the
 effective chart namespace (`namespace.name`, falling back to the Helm release
 namespace) unless `dataPlatform.generators` is set explicitly.
 
+Controller evidence staging can use a separate persistent claim through
+`archiveStaging.persistence`. It is disabled by default. HA requires a declared
+ReadWriteMany claim with qualified POSIX locking, rename and fsync semantics.
+Chart-created staging claims are retained on disable/uninstall. See
+[shared controller staging](../../../docs/ARCHIVE_SOURCE_RETENTION.md#shared-controller-staging)
+for values, Kustomize setup, migration, capacity limits and qualification boundaries.
+
 Generator pods no longer assume a dedicated node pool. Clusters that used the
 old defaults must set `generator.nodeSelector` and `generator.tolerations`
 explicitly before upgrading if those scheduling constraints remain required.
