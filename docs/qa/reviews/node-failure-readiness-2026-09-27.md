@@ -1752,3 +1752,36 @@ transition between trials/at restoration. Cycle 19 has applied ScaledObject and
 observed timing evidence, not a pre-load actual-HPA snapshot. These runs explicitly
 started tests; they do not qualify automatic scheduled dispatch or node-loss
 recovery. The original accelerated ScaledObject spec was restored after every cycle.
+
+
+## Bounded, unreserved single-worker capacity preview
+
+Opted-in HTTP runs now receive a preflight warning describing whether their peak
+placement can find distinct, compatible unused generators outside each failed
+worker. The planner uses Kubernetes-observed pod/node identities and frozen demand,
+not generator-reported node names. A deterministic augmenting-path matcher handles
+heterogeneous eligibility without the greedy-assignment trap. Every contingency
+must fit the supplied replica bound; the union of its selected spares is deliberately
+conservative rather than a minimum-spare optimization.
+
+The preview rejects stale/ambiguous placement and bounds the fleet before allocating
+the compatibility graph. It excludes unavailable, draining, occupied, reserved,
+wrong-namespace and incompatible spares, requires the idle-standby capability, and
+honors target and label restrictions. Review additionally clamped spare VUsers to
+both reported available capacity and the configured generator maximum. Weighted,
+regional, source-affinity and non-HTTP placement are explicitly outside this first
+estimate. Strict-default runs keep their existing behavior.
+
+The warning always says capacity is unreserved and worker-loss continuity is not
+guaranteed. Idle-state, quota, ownership and deployed replica-limit admission still
+need an atomic reservation path; this preview does not implement that path or execute
+recovery. Tests cover all 512 three-by-three eligibility graphs against independent
+exhaustive assignments, alternate node contingencies, dimension/identity/cap errors,
+input immutability, compatibility filters and preview limits. Three exact-source
+race repetitions passed (3.900 s). Full-suite validation is recorded below.
+
+The exact reviewed source passed `go test -p 2 ./... -timeout 20m`. An earlier
+unbounded-package-parallelism run hit the default ten-minute API package timeout
+while host builds were running; no passing result is claimed for that attempt.
+Reduced package parallelism and the explicit budget passed. Final source review
+found no further actionable issue in this preview slice; `git diff --check` passed.

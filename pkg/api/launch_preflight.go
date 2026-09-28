@@ -580,6 +580,9 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 
 	tr.mu.RLock()
 	podPlacements, _ := tr.previewPodPlacementLocked(preview)
+	if warning := tr.nodeRecoveryCapacityWarningLocked(preview, podPlacements); warning != nil {
+		warnings = append(warnings, *warning)
+	}
 	tr.mu.RUnlock()
 	return &LaunchPreflightResponse{
 		PodPlacements:         podPlacements,
