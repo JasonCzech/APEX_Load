@@ -333,3 +333,26 @@ limit aggregate concurrent capture or retained unpublished sources, or cover der
 Parquet/CSV files, merge copies and publication backlog. Those budgets remain separate
 work. Include filesystem overhead and other writers when sizing the volume; free-space
 checks cannot enforce an `emptyDir.sizeLimit` smaller than its backing filesystem.
+
+## Parquet and CSV conversion limits
+
+The controller shares one output-byte allowance across all three Parquet files and
+all declared CSV exports in a finalization attempt. `APEXLOAD_ARCHIVE_CONVERSION_MAX_BYTES`
+defaults to 32 GiB and accepts positive integer bytes up to 128 GiB.
+`APEXLOAD_ARCHIVE_CONVERSION_MIN_FREE_BYTES` defaults to 64 MiB and accepts positive
+integer bytes up to 1 PiB. Local writers freeze both settings at creation;
+distributed collection freezes them before conversion.
+
+Admission checks occur at each physical write, including Parquet headers, row groups
+and footers. Conversions coordinate the free-space check with raw capture under the
+same archive root. The first write failure stops further output through that shared
+budget. Removed incomplete output stays charged for the attempt. Conversion does not modify source JSONL files. A failed conversion cannot publish
+a complete manifest or change an otherwise successful execution result. Local raw
+capture remains on disk; distributed collection retains its existing source-cache
+and temporary-file lifecycle. CSV metadata records incomplete
+exports when their writes fail.
+
+This allowance covers format conversion only. Distributed merge files, report and
+publication copies, aggregate concurrent producer retention, and retained unpublished
+backlogs still require separate admission. A per-attempt conversion limit is not a
+total archive-root quota.

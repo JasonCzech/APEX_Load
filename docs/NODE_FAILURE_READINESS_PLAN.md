@@ -384,3 +384,10 @@ at its current address. Reused IPs, conflicting identity observations, stale pla
 and active committed runs keep their reservations. Queue refresh preserves peak-pod
 capacity admission failures instead of reporting an apparently launchable run. These
 changes address findings from local attempt 7; deployed repetition remains pending.
+
+Parquet and declared CSV conversion now share a write-time output budget, with a
+physical free-space guard and a latched failure across formats. Local writer limits
+are frozen when capture begins. Conversion failures preserve raw evidence and prevent
+a complete manifest without changing the execution outcome. Distributed merge,
+publication copies and aggregate producer/backlog admission remain separate local
+implementation work.

@@ -54,7 +54,11 @@ func declaredCSVExports(test *ManagedTest) []RunArchiveCSVExport {
 	return out
 }
 
-func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest) {
+func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest, budgets ...*archiveConversionBudget) error {
+	budget, err := conversionBudget(root, budgets)
+	if err != nil {
+		return err
+	}
 	provenance := manifest.InitialProvenance
 	if provenance == nil {
 		provenance = &manifest.Provenance
@@ -87,7 +91,7 @@ func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest) {
 			if err != nil {
 				return err
 			}
-			rows, writeErr := writeDeclaredCSVExport(context.Background(), root, manifest, declaration, file)
+			rows, writeErr := writeDeclaredCSVExport(context.Background(), root, manifest, declaration, &archiveConversionFile{file: file, budget: budget})
 			syncErr := file.Sync()
 			closeErr := file.Close()
 			if writeErr != nil || syncErr != nil || closeErr != nil {
@@ -109,7 +113,11 @@ func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest) {
 			status.Status = "complete"
 		}
 		manifest.CSVExports = append(manifest.CSVExports, status)
+		if err := budget.failure(); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // Stream the complete, deterministically merged dataset. Budgets and malformed

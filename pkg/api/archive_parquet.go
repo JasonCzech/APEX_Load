@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	local "github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
 )
@@ -130,13 +129,17 @@ type parquetIntervalSummary struct {
 	TelemetryStatusJSON    string  `parquet:"name=telemetry_status_json, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
-func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest) error {
+func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budgets ...*archiveConversionBudget) error {
+	budget, err := conversionBudget(rootDir, budgets)
+	if err != nil {
+		return err
+	}
 	count, err := streamJSONLToParquet(
 		filepath.Join(rootDir, manifest.TransactionsFile),
 		filepath.Join(rootDir, manifest.TransactionsParquetFile),
 		func(item TransactionEvent) parquetTransactionEvent {
 			return toParquetTransactions([]TransactionEvent{item})[0]
-		},
+		}, budget,
 	)
 	if err != nil {
 		return fmt.Errorf("write transaction parquet: %w", err)
@@ -149,7 +152,7 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest) erro
 		filepath.Join(rootDir, manifest.ResourceSamplesParquetFile),
 		func(item ResourceSample) parquetResourceSample {
 			return toParquetResources([]ResourceSample{item})[0]
-		},
+		}, budget,
 	)
 	if err != nil {
 		return fmt.Errorf("write resource parquet: %w", err)
@@ -162,7 +165,7 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest) erro
 		filepath.Join(rootDir, manifest.IntervalSummariesParquetFile),
 		func(item IntervalSummaryRecord) parquetIntervalSummary {
 			return toParquetSummaries([]IntervalSummaryRecord{item})[0]
-		},
+		}, budget,
 	)
 	if err != nil {
 		return fmt.Errorf("write summary parquet: %w", err)
@@ -177,18 +180,26 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest) erro
 // Error snapshots can legitimately exceed Scanner's small default token size,
 // so use the repository's 64 MiB JSONL ceiling rather than decoding a record
 // with no allocation bound.
-func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, convert func(In) Out) (count int64, err error) {
+func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, convert func(In) Out, budgets ...*archiveConversionBudget) (count int64, err error) {
+	budget, err := conversionBudget(filepath.Dir(outputPath), budgets)
+	if err != nil {
+		return 0, err
+	}
 	input, err := os.Open(inputPath)
 	if err != nil {
 		return 0, err
 	}
 	defer input.Close()
 
-	fw, err := local.NewLocalFileWriter(outputPath)
+	file, err := replaceArchiveArtifactForWrite(filepath.Dir(outputPath), filepath.Base(outputPath), 0o644, false)
 	if err != nil {
 		return 0, err
 	}
+	fw := &archiveConversionFile{file: file, budget: budget}
 	pw, err := writer.NewParquetWriter(fw, new(Out), 4)
+	if budgetErr := budget.failure(); budgetErr != nil {
+		err = budgetErr
+	}
 	if err != nil {
 		_ = fw.Close()
 		return 0, err

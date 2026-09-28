@@ -36,6 +36,10 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 	if err != nil {
 		return nil, err
 	}
+	conversion, err := newArchiveConversionBudget(rootDir)
+	if err != nil {
+		return nil, err
+	}
 	archiveDir, err := ensureArchiveRelativeDirectory(rootDir, test.ID, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
@@ -128,6 +132,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		},
 		region:           strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
 		rootDir:          archiveDir,
+		conversionBudget: conversion,
 		manifestPath:     filepath.Join(archiveDir, runArchiveManifestFileName),
 		txFile:           txFile,
 		resourceFile:     resourceFile,
@@ -704,10 +709,12 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	); err != nil {
 		return nil, err
 	}
-	if err := writeArchiveParquetFiles(w.rootDir, &w.manifest); err != nil {
+	if err := writeArchiveParquetFiles(w.rootDir, &w.manifest, w.conversionBudget); err != nil {
 		return nil, err
 	}
-	materializeDeclaredCSVExports(w.rootDir, &w.manifest)
+	if err := materializeDeclaredCSVExports(w.rootDir, &w.manifest, w.conversionBudget); err != nil {
+		return nil, err
+	}
 	if err := updateRunArchiveArtifactIntegrity(w.rootDir, &w.manifest); err != nil {
 		return nil, err
 	}

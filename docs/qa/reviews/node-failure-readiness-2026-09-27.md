@@ -3152,3 +3152,53 @@ Final scoped re-review found no further issues. Before rollout, the current sche
 PostgreSQL backup was restored in an isolated disposable database and its state
 verified; both controller staging trees were preserved separately. Deployment and
 cold-spare fault qualification remain subsequent gates.
+
+## Shared Parquet and CSV conversion admission (2026-09-28)
+
+Conversion writes now share a frozen output allowance across Parquet and declared
+CSV files, including headers and footers. Descriptor-relative output replacement
+also removes Parquet's direct path-truncation boundary. The Parquet adapter rejects
+unused open/create/seek/read operations so they cannot bypass admission. Physical
+writes share the raw-capture capacity lock under the same archive root; the first
+failure is latched across every converted output. Local finalization and distributed
+collection pass one budget across both formats. Conversion does not edit raw source files or change execution
+outcomes; distributed collection keeps its existing temporary-file lifecycle.
+
+The first focused run found that the test incorrectly rejected the shared parser's
+supported positive `+1` spelling; the configuration expectation was corrected to
+match existing positive-integer semantics. The next focused matrix passed (1.829 s).
+Additional review added an end-to-end finalization boundary where Parquet fits but
+CSV cannot, plus checks that the adapter cannot open another file or seek past its
+byte admission. Final validation is pending. This does not cover distributed merge,
+report/publication copies or aggregate producer backlogs.
+
+Review also stopped the CSV loop immediately after a shared-budget write failure,
+preventing repeated file creation after the attempt has already failed. The focused
+conversion matrix passed (2.148 s), and the final three race repetitions including
+that correction passed (4.408 s). The final full Go suite passed all 108 test-bearing
+packages (API 395.061 s). Documentation checks passed for 69 active Markdown files.
+Final scoped re-review found no further conversion-admission issues.
+
+## Reviewed-controller rollout and local S3 fixture capacity (2026-09-28)
+
+Controller revision `0870b95f` was built from its exact commit. Dashboard compilation
+exhausted the shared Docker VM's memory and restarted fixture services; that attempt
+was stopped and its diagnostics retained. The completed dashboard layer was reused
+while this disposable kind cluster was stopped, then the bounded Go build completed
+and all owned nodes were restarted. The controller rollout preserved schema 20,
+started two fresh zero-restart controller pods, and removed the previously stuck
+terminal capacity reservation. Generators remained on `1642d920`; this is a recorded
+controller-only upgrade, not an all-binaries-at-one-revision qualification.
+
+The healthy execution completed, but its archive-publication gate failed because
+the S3 fixture exhausted all six writable 256 MiB object slots. The durable
+publication job remains pending and the failed gate evidence is retained. The S3
+renderer now supports explicit 2–16 GiB new claims and at most three 256 MiB slots
+per GiB, keeping at least one quarter for metadata. Its default remains 2 GiB/six
+slots. All 190 harness tests passed (6.969 s), documentation checks passed, and
+scoped re-review found no further renderer issues before commit `251e4a59`.
+Existing local-path data is being migrated offline to a new 4 GiB claim, retaining
+the original claim. The first copy matched file checksums, but the wrapper stopped
+on mount-root metadata warnings and restored the original service. Its retry must
+refresh and re-verify the destination before switching writers; a copied filesystem
+alone does not establish signed object availability or a healthy archive gate.

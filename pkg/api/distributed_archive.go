@@ -173,10 +173,16 @@ func (b *distributedExecutionBackend) stageRemoteArchiveUnderSourceFence(sourceC
 	if err := applyTransactionResponseTimeSLAs(workingDir, &manifest); err != nil {
 		return nil, err
 	}
-	if err := writeArchiveParquetFiles(workingDir, &manifest); err != nil {
+	conversion, err := newArchiveConversionBudget(archiveRoot)
+	if err != nil {
 		return nil, err
 	}
-	materializeDeclaredCSVExports(workingDir, &manifest)
+	if err := writeArchiveParquetFiles(workingDir, &manifest, conversion); err != nil {
+		return nil, err
+	}
+	if err := materializeDeclaredCSVExports(workingDir, &manifest, conversion); err != nil {
+		return nil, err
+	}
 	if err := updateRunArchiveArtifactIntegrity(workingDir, &manifest); err != nil {
 		return nil, err
 	}
