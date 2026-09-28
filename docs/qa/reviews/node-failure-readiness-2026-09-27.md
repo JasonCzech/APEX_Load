@@ -2252,3 +2252,17 @@ fixture that removed its archive directory at terminal status. That fixture now
 waits for catalog attachment; three repetitions passed in 25.505 seconds while
 the blocked-publication regression still verifies earlier terminal visibility.
 Final review found no further scoped issues.
+
+### Accurate interruption diagnostics
+
+Reconciliation now reports interrupted controller execution ownership instead of
+asserting a process restart. The PostgreSQL outage trials demonstrated why this
+matters: execution ownership was interrupted with unchanged controller identities
+and zero restarts. The default strict outcome remains `FAILED`; shakeout retains
+its explicit ambiguity/no-replay explanation, and existing errors are preserved.
+A real SQLite/HA regression covers initializing, running, paused, stopping and
+shakeout rows. All five cases failed before the wording fix. The regression and
+existing startup/adoption/execution-plan checks passed in 1.854 seconds; the full
+Go suite passed in the same reviewed snapshot (API 352.940 seconds,
+`/tmp/apex-reviewed-local-fixes-full.log`). Final review found no further issues
+in this diagnostic change.

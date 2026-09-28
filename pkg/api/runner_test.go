@@ -4886,14 +4886,14 @@ func TestRunnerFailsStoredActiveTestsOnStartup(t *testing.T) {
 	if testRun.EndedAt == nil {
 		t.Fatal("expected stale active run to receive an end time")
 	}
-	if !strings.Contains(testRun.Error, "controller restarted") {
+	if !strings.Contains(testRun.Error, "execution ownership was interrupted") {
 		t.Fatalf("error = %q, want restart reconciliation message", testRun.Error)
 	}
 	if len(store.statusUpdates) != 1 {
 		t.Fatalf("status update count = %d, want 1", len(store.statusUpdates))
 	}
 	update := store.statusUpdates[0]
-	if update.id != "stale-initializing" || update.status != "FAILED" || update.endTime == nil || !strings.Contains(update.errStr, "controller restarted") {
+	if update.id != "stale-initializing" || update.status != "FAILED" || update.endTime == nil || !strings.Contains(update.errStr, "execution ownership was interrupted") {
 		t.Fatalf("status update = %#v, want failed restart reconciliation", update)
 	}
 }

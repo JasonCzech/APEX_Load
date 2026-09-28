@@ -294,7 +294,7 @@ func TestSequentialPlanRecoveryHaltsInterruptedEntryByDefault(t *testing.T) {
 	if run.Status != "halted" || run.Entries[0].Status != "failed" || run.Entries[1].Status != "skipped" {
 		t.Fatalf("halt recovery run = %+v", run)
 	}
-	if !strings.Contains(run.Entries[0].Detail, "controller restarted") {
+	if !strings.Contains(run.Entries[0].Detail, "execution ownership was interrupted") {
 		t.Fatalf("recovered failure detail = %q", run.Entries[0].Detail)
 	}
 }

@@ -798,9 +798,9 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	test.EndedAt = &now
 	if test.Error == "" {
 		if previousStatus == "SHAKEOUT" {
-			test.Error = "controller restarted after script shakeout began; its outcome is ambiguous, so external shakeout actions were not replayed"
+			test.Error = "controller execution ownership was interrupted after script shakeout began; its outcome is ambiguous, so external shakeout actions were not replayed"
 		} else {
-			test.Error = "controller restarted before the run completed"
+			test.Error = "controller execution ownership was interrupted before the run completed; this run could not be resumed"
 		}
 	}
 	if err := tr.persistStoredTestStatus(test.ID, test.executionFence, test.Status, &now, test.Error); err != nil {
