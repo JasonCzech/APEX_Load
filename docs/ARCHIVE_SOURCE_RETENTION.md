@@ -305,5 +305,31 @@ filesystem allocation overhead require additional volume headroom. It is not a
 bound on RAM used by manifests or on unrelated writers to the same filesystem.
 Old transfer directories directly under the process temporary directory are left
 untouched after upgrade and are outside the new logical inventory; physical free
-space checks still include their disk usage. Transfer admission does not yet bound
-controller-local capture, derived merge/report expansion or publication backlog.
+space checks still include their disk usage. Transfer admission is separate from controller-local raw capture, derived
+merge/report expansion and publication backlog.
+
+
+## Controller raw capture limits
+
+Each new controller-local run freezes `APEXLOAD_ARCHIVE_CAPTURE_MAX_BYTES`
+(default 32 GiB, maximum 32 GiB) and `APEXLOAD_ARCHIVE_CAPTURE_MIN_FREE_BYTES`
+(default 64 MiB, maximum 1 PiB). Both accept positive decimal byte counts. Invalid
+configuration prevents creation of the writer. The byte ceiling is shared by the
+transaction, resource, interval-summary, Elasticsearch and Dynatrace JSONL files.
+Whole serialized records are admitted before buffering; a record over the remaining
+allowance is rejected without appending a partial JSON line. The physical free-space
+check runs at buffered file writes under a cross-process lock in the archive root.
+Keep `_capture_locks` and its lock inode intact while writers can use this root.
+
+Any capture failure is sticky across all five record types. Finalization attempts
+to flush accepted records and close every file, preserves raw evidence, and refuses
+to publish a complete manifest. The execution result remains unchanged; the existing
+terminal archive-availability marker reports an unconfirmed archive where applicable.
+A filesystem/write error can leave a partial final raw record; that source must not
+be treated as a complete archive. No capacity failure deletes earlier evidence.
+
+This is a per-run raw-byte bound. It does not reserve the entire allowance on disk,
+limit aggregate concurrent capture or retained unpublished sources, or cover derived
+Parquet/CSV files, merge copies and publication backlog. Those budgets remain separate
+work. Include filesystem overhead and other writers when sizing the volume; free-space
+checks cannot enforce an `emptyDir.sizeLimit` smaller than its backing filesystem.

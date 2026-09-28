@@ -32,6 +32,10 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 	if err != nil {
 		return nil, fmt.Errorf("prepare archive root: %w", err)
 	}
+	budget, err := newArchiveCaptureBudget(rootDir)
+	if err != nil {
+		return nil, err
+	}
 	archiveDir, err := ensureArchiveRelativeDirectory(rootDir, test.ID, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
@@ -52,8 +56,9 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		writer := bufio.NewWriterSize(file, 256*1024)
-		return file, writer, json.NewEncoder(writer), nil
+		writer := bufio.NewWriterSize(archiveCaptureFileWriter{file: file, budget: budget}, 256*1024)
+		encoder := json.NewEncoder(archiveCaptureRecordWriter{destination: writer, budget: budget})
+		return file, writer, encoder, nil
 	}
 
 	txFile, txBuf, txEncoder, err := open("transactions.jsonl")
@@ -518,6 +523,7 @@ func (w *runArchiveWriter) RecordResourceSample(timestamp time.Time, activeVUser
 		External:                          cloneFloat64Map(resources.External),
 	}
 	if err := w.resourceEncoder.Encode(record); err != nil {
+		w.flushErr = err
 		return err
 	}
 	w.manifest.ResourceSampleCount++
@@ -567,6 +573,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 		Dynatrace:                cloneDynatraceCaptureStatus(live.Dynatrace),
 	}
 	if err := w.summaryEncoder.Encode(record); err != nil {
+		w.flushErr = err
 		return err
 	}
 	w.manifest.IntervalSummaryCount++
@@ -588,6 +595,7 @@ func (w *runArchiveWriter) RecordELKSamples(samples []ELKLogSample) error {
 	for _, sample := range samples {
 		sample = sanitizeELKSample(sample)
 		if err := w.elkEncoder.Encode(sample); err != nil {
+			w.flushErr = err
 			return err
 		}
 		w.manifest.ELKEvidenceCount++
@@ -614,6 +622,7 @@ func (w *runArchiveWriter) RecordDynatraceEvidence(records []DynatraceEvidenceRe
 			record.Problem = &problem
 		}
 		if err := w.dynatraceEncoder.Encode(record); err != nil {
+			w.flushErr = err
 			return err
 		}
 		w.manifest.DynatraceEvidenceCount++
@@ -651,7 +660,10 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.flushErr != nil {
-		return nil, errors.Join(w.flushErr, w.syncAndCloseDataFilesLocked())
+		// A logical admission failure did not accept the rejected record. Flush
+		// earlier accepted records where possible, preserving a recoverable raw
+		// prefix without ever publishing it as a complete archive.
+		return nil, errors.Join(w.flushErr, w.flushBuffersLocked(), w.syncAndCloseDataFilesLocked())
 	}
 	if w.manifest.TerminationReason == "" {
 		w.manifest.TerminationReason = "unknown"

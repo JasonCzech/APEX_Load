@@ -3036,3 +3036,46 @@ Review and regression checks covered owner replacement, termination, unobserved
 zero state, active replica counts, missing live replicas and newly failed pods.
 All 189 fault-harness tests passed (7.640 s); scoped re-review found no further
 issues. This harness correction is not itself a worker-recovery qualification.
+
+## Controller-local raw capture bound (2026-09-28)
+
+A new per-run byte allowance is frozen when the controller creates its archive
+writer and shared across all five JSONL capture streams. Whole encoded records are
+charged before buffering. Actual buffered file writes check filesystem headroom
+under a shared namespace lock. Invalid limits fail writer creation; short/invalid
+writer counts cannot silently overrun or refund uncertain bytes. Defaults are
+32 GiB of raw records and 64 MiB of physical free space.
+
+Review found that resource, interval, Elasticsearch and Dynatrace encoder errors
+were not latched like transaction errors. All record types now make capture failure
+sticky. Finalization attempts to preserve previously accepted records and closes
+all files, but emits no complete manifest after any failure. Archive failure does
+not rewrite the execution result. Tests cover all record types, shared concurrent
+admission, exact boundaries, bad configuration, frozen settings, writer errors,
+physical headroom, the five-encoder shared allowance, and valid retained JSONL
+prefixes with an unchanged COMPLETE execution result. This slice does not bound
+aggregate producer retention, derived output, or publication backlog.
+
+The initial focused matrix passed (1.683 s), followed by three race repetitions
+(4.214 s). The final full suite including the five-stream wiring regression passed all
+108 test-bearing packages (API 381.556 s). Documentation checks passed for all
+69 active Markdown files. Final scoped re-review found no further capture issues.
+
+## Live worker trial follow-up (2026-09-28)
+
+Attempt 3 timed out before injection while spare admission and KEDA's minimum
+oscillated. Code inspection identified that pending retention used IP transport
+addresses instead of observed pod names when computing the StatefulSet ordinal
+floor; committed recovery claims also need a frozen pod name. This remains an
+implementation item, not an accepted cold-admission result.
+
+Attempt 4 temporarily prewarmed four pods and then passed the worker-only traffic
+and cluster-restoration gates: the target measured recovered traffic while the
+worker container remained stopped, and the surviving leader retained its generation
+and did not restart. The 50-VUser shard moved to an 80-VUser reserved spare. The
+worker was restored and the original KEDA minimum reinstated. Its explicit stop
+produced ABORTED execution status; archive collection was still pending at trial
+cleanup, so this is not a complete-archive qualification. Attempt 5 hit a private
+helper's historical-pod `podIP` assumption before admission/injection; the helper
+now binds the EndpointSlice's pod name/UID and address, preserving the failed
+attempt. Further independent repetitions are underway.
