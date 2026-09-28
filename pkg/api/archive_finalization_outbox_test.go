@@ -37,6 +37,13 @@ func (s *failingArchiveCatalogStore) CompleteArchiveFinalization(testID string, 
 	return s.SQLiteStore.CompleteArchiveFinalization(testID, intentToken, refreshToken, record)
 }
 
+func (s *failingArchiveCatalogStore) CompleteArchiveFinalizationForRun(id, token, refresh string, record *storage.RunArchiveRecord, identity storage.ArchiveFinalizationRunIdentity) (bool, error) {
+	if s.failCatalog {
+		return false, errors.New("injected archive catalog failure")
+	}
+	return s.SQLiteStore.CompleteArchiveFinalizationForRun(id, token, refresh, record, identity)
+}
+
 type archiveIntentOrderStore struct {
 	*storage.SQLiteStore
 	adjunctPath string
@@ -361,7 +368,7 @@ func TestArchiveRefreshRematerializesPersistedObjectVersionBeforeMutation(t *tes
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	err = runner.processArchiveRefreshJob(ctx, refresh)
-	if err == nil || !strings.Contains(err.Error(), "materialize archive") {
+	if err == nil || !strings.Contains(err.Error(), "read finalization identity") {
 		t.Fatalf("refresh error = %v, want remote rematerialization failure", err)
 	}
 	if _, err := os.Stat(filepath.Join(record.ArchivePath, testNotesArchiveFileName)); !os.IsNotExist(err) {

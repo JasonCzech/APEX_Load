@@ -18,7 +18,7 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 	if held, err := s.TryAcquireSchedulerLease(lease, owner, time.Now(), time.Minute); err != nil || !held {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := time.Now().In(time.FixedZone("EDT", -4*60*60))
 	row := &TestRecord{ID: "orphan-fenced", Name: "orphan", ProjectID: DefaultProjectID, StartTime: now.Add(-time.Minute), Status: "RUNNING"}
 	if err := s.SaveTest(row); err != nil {
 		t.Fatal(err)
@@ -53,7 +53,8 @@ func checkArchiveOrphanIncarnationFence(t *testing.T, s *SQLiteStore) {
 	}
 	// The payload creation time is not the controller request identity.
 	record.CreatedAt = record.CreatedAt.Add(2 * time.Second)
-	requestedAt := row.StartTime
+	requestedAt := row.StartTime.UTC()
+	record.CompletedAt = record.CompletedAt.UTC()
 	var wg sync.WaitGroup
 	results := make(chan bool, 8)
 	errs := make(chan error, 8)

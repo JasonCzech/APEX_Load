@@ -14,10 +14,13 @@ func TestArchiveFinalizationTerminalIdentity(t *testing.T) {
 }
 func checkArchiveFinalizationTerminalIdentity(t *testing.T, s *SQLiteStore) {
 	t.Helper()
-	for _, mode := range []string{"valid", "new refresh", "start changed", "end changed", "status changed", "active", "project mismatch", "job project mismatch", "stale owner", "released lease", "expired lease", "deleted", "new token", "cleanup"} {
+	for _, mode := range []string{"valid", "offset roundtrip", "new refresh", "start changed", "end changed", "status changed", "active", "project mismatch", "job project mismatch", "stale owner", "released lease", "expired lease", "deleted", "new token", "cleanup"} {
 		t.Run("completion "+mode, func(t *testing.T) {
 			id := fmt.Sprintf("completion-%d", time.Now().UnixNano())
 			now := time.Now().UTC()
+			if mode == "offset roundtrip" {
+				now = now.In(time.FixedZone("EDT", -4*60*60))
+			}
 			start := now.Add(-time.Minute)
 			row := &TestRecord{ID: id, Name: id, ProjectID: DefaultProjectID, StartTime: start, EndTime: &now, Status: "COMPLETE"}
 			if err := s.SaveTest(row); err != nil {
@@ -38,6 +41,9 @@ func checkArchiveFinalizationTerminalIdentity(t *testing.T, s *SQLiteStore) {
 				t.Fatal(err)
 			}
 			switch mode {
+			case "offset roundtrip":
+				identity.StartTime = identity.StartTime.UTC()
+				identity.EndTime = identity.EndTime.UTC()
 			case "new refresh":
 				if _, err := s.BumpArchiveRefreshJob(id); err != nil {
 					t.Fatal(err)
@@ -95,7 +101,7 @@ func checkArchiveFinalizationTerminalIdentity(t *testing.T, s *SQLiteStore) {
 				}
 			}
 			committed, err := s.CompleteArchiveFinalizationForRun(id, token, refresh.IntentToken, &record, identity)
-			want := mode == "valid" || mode == "new refresh"
+			want := mode == "valid" || mode == "offset roundtrip" || mode == "new refresh"
 			if err != nil || committed != want {
 				t.Fatalf("commit %s=%v: %v", mode, committed, err)
 			}

@@ -204,25 +204,23 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 			return false, err
 		}
 	}
-	projectArgs := []any{job.TestID}
-	projectQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
-	if status != "" {
-		started, ended := requestedAt, job.ArchiveRecord.CompletedAt
-		if s.db.dialect == storeDialectPostgres {
-			started, ended = started.Truncate(time.Microsecond), ended.Truncate(time.Microsecond)
-		}
-		projectQuery += ` AND start_time = ? AND end_time = ? AND status = ?`
-		projectArgs = append(projectArgs, started, ended, status)
-	}
+	projectQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status FROM tests WHERE id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		projectQuery += ` FOR UPDATE`
 	}
-	var projectID string
-	if err := tx.QueryRow(projectQuery, projectArgs...).Scan(&projectID); err != nil {
+	var projectID, durableStatus string
+	var durableStart time.Time
+	var durableEnd sql.NullTime
+	if err := tx.QueryRow(projectQuery, job.TestID).Scan(&projectID, &durableStart, &durableEnd, &durableStatus); err != nil {
 		if status != "" && errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, err
+	}
+	if status != "" && (!durableEnd.Valid || durableStatus != status ||
+		!archiveIdentityTimestampEqual(s.db.dialect, durableStart, requestedAt) ||
+		!archiveIdentityTimestampEqual(s.db.dialect, durableEnd.Time, job.ArchiveRecord.CompletedAt)) {
+		return false, nil
 	}
 	if normalizeProjectID(projectID) != job.ProjectID {
 		return false, fmt.Errorf("archive finalization project %q does not match durable test project %q", job.ProjectID, projectID)
@@ -249,6 +247,13 @@ func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 	}
 	if resolved != 0 {
 		return false, nil
+	}
+	// The run lock can outlive the lease deadline while this transaction waits.
+	if lease != "" {
+		held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, lease, owner)
+		if err != nil || !held {
+			return false, err
+		}
 	}
 	result, err := tx.Exec(`INSERT INTO archive_finalization_jobs (
 		test_id, project_id, archive_record_json, persist_artifacts, generation, intent_token, refresh_token, attempts, last_error, created_at, updated_at
@@ -522,28 +527,24 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 			return false, err
 		}
 	}
-	testArgs := []any{testID}
-	testQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
-	if identity != nil {
-		start, end := identity.StartTime, identity.EndTime
-		if s.db.dialect == storeDialectPostgres {
-			start, end = start.Truncate(time.Microsecond), end.Truncate(time.Microsecond)
-		}
-		testQuery += ` AND start_time = ? AND end_time = ? AND status = ?`
-		testArgs = append(testArgs, start, end, identity.Status)
-	}
+	testQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status FROM tests WHERE id = ?`
 	jobQuery := `SELECT COALESCE(intent_token, ''), COALESCE(project_id, '') FROM archive_finalization_jobs WHERE test_id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		testQuery += ` FOR UPDATE`
 		jobQuery += ` FOR UPDATE`
 	}
-	var durableProjectID string
-	if err := tx.QueryRow(testQuery, testArgs...).Scan(&durableProjectID); errors.Is(err, sql.ErrNoRows) {
+	var durableProjectID, durableStatus string
+	var durableStart time.Time
+	var durableEnd sql.NullTime
+	if err := tx.QueryRow(testQuery, testID).Scan(&durableProjectID, &durableStart, &durableEnd, &durableStatus); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
-	if identity != nil && normalizeProjectID(durableProjectID) != identity.ProjectID {
+	if identity != nil && (normalizeProjectID(durableProjectID) != identity.ProjectID ||
+		!durableEnd.Valid || durableStatus != identity.Status ||
+		!archiveIdentityTimestampEqual(s.db.dialect, durableStart, identity.StartTime) ||
+		!archiveIdentityTimestampEqual(s.db.dialect, durableEnd.Time, identity.EndTime)) {
 		return false, nil
 	}
 	var currentToken, jobProject string

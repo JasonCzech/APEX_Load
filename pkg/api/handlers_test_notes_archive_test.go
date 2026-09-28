@@ -36,11 +36,13 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 		}
 	}
 	manifestPath := filepath.Join(archiveDir, "manifest.json")
+	now := time.Now().UTC()
 	if err := store.SaveTest(&storage.TestRecord{
 		ID:        testID,
 		Name:      "Sync Notes Run",
 		Status:    "COMPLETE",
-		StartTime: time.Now().UTC(),
+		StartTime: now,
+		EndTime:   &now,
 	}); err != nil {
 		t.Fatalf("SaveTest returned error: %v", err)
 	}
@@ -48,7 +50,9 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 		SchemaVersion:         archiveSchemaVersion,
 		TestID:                testID,
 		TestName:              "Sync Notes Run",
-		CreatedAt:             time.Now().UTC(),
+		CreatedAt:             now,
+		CompletedAt:           now,
+		Status:                "COMPLETE",
 		TransactionsFile:      "transactions.jsonl",
 		ResourceSamplesFile:   "resource_samples.jsonl",
 		IntervalSummariesFile: "interval_summaries.jsonl",
@@ -59,8 +63,8 @@ func TestTestNoteMutationSyncsArchiveArtifact(t *testing.T) {
 		TestID:       testID,
 		ArchivePath:  archiveDir,
 		ManifestPath: manifestPath,
-		CreatedAt:    time.Now().UTC(),
-		CompletedAt:  time.Now().UTC(),
+		CreatedAt:    now,
+		CompletedAt:  now,
 	}); err != nil {
 		t.Fatalf("SaveRunArchive returned error: %v", err)
 	}
@@ -129,11 +133,13 @@ func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
 			t.Fatalf("write archive dataset %s: %v", name, err)
 		}
 	}
+	now := time.Now().UTC()
 	if err := store.SaveTest(&storage.TestRecord{
 		ID:        testID,
 		Name:      "Tamper Notes Run",
 		Status:    "COMPLETE",
-		StartTime: time.Now().UTC(),
+		StartTime: now,
+		EndTime:   &now,
 	}); err != nil {
 		t.Fatalf("SaveTest returned error: %v", err)
 	}
@@ -141,15 +147,17 @@ func TestTestNoteMutationDoesNotReblessTamperedArchiveArtifacts(t *testing.T) {
 		TestID:       testID,
 		ArchivePath:  archiveDir,
 		ManifestPath: manifestPath,
-		CreatedAt:    time.Now().UTC(),
-		CompletedAt:  time.Now().UTC(),
+		CreatedAt:    now,
+		CompletedAt:  now,
 	}
 	originalSum := sha256.Sum256(originalTransactions)
 	if err := writeIndentedJSONFile(manifestPath, RunArchiveManifest{
 		SchemaVersion:         archiveSchemaVersion,
 		TestID:                testID,
 		TestName:              "Tamper Notes Run",
-		CreatedAt:             time.Now().UTC(),
+		CreatedAt:             now,
+		CompletedAt:           now,
+		Status:                "COMPLETE",
 		TransactionsFile:      "transactions.jsonl",
 		ResourceSamplesFile:   "resource_samples.jsonl",
 		IntervalSummariesFile: "interval_summaries.jsonl",

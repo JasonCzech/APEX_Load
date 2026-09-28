@@ -211,6 +211,28 @@ func (s *Server) pruneSupersededArchiveVersion(ctx context.Context, record *stor
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	releaseSource, err := lockArchivePublicationSource(ctx, record.TestID)
+	if err != nil {
+		return err
+	}
+	defer releaseSource()
+	var pending *storage.ArchiveFinalizationJob
+	var pendingOutbox archiveFinalizationOutbox
+	if s.runner != nil {
+		pendingOutbox = s.runner.archiveFinalizationOutbox()
+	}
+	if pendingOutbox == nil {
+		pendingOutbox, _ = s.store.(archiveFinalizationOutbox)
+	}
+	if outbox := pendingOutbox; outbox != nil {
+		pending, err = outbox.GetArchiveFinalizationJob(record.TestID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	if pending != nil && (sameArchivePublicationPointer(&pending.ArchiveRecord, record) || sameArchiveLocalPath(pending.ArchiveRecord.ArchivePath, record.ArchivePath)) {
+		return errors.New("archive version still owns a pending publication source")
+	}
 	var current *storage.RunArchiveRecord
 	if s.store != nil {
 		loaded, err := s.store.GetRunArchive(record.TestID)
@@ -227,7 +249,7 @@ func (s *Server) pruneSupersededArchiveVersion(ctx context.Context, record *stor
 	if err := deleteArchiveBackendObjects(ctx, record); err != nil {
 		return err
 	}
-	if current == nil || !sameArchiveLocalPath(current.ArchivePath, record.ArchivePath) {
+	if (current == nil || !sameArchiveLocalPath(current.ArchivePath, record.ArchivePath)) && (pending == nil || !sameArchiveLocalPath(pending.ArchiveRecord.ArchivePath, record.ArchivePath)) {
 		if err := removeLocalArchiveDirectory(record.ArchivePath); err != nil {
 			return err
 		}

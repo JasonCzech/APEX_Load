@@ -24,6 +24,12 @@ func (s *gatedPublicationStore) CompleteArchiveFinalization(id, token, refresh s
 	return s.SQLiteStore.CompleteArchiveFinalization(id, token, refresh, record)
 }
 
+func (s *gatedPublicationStore) CompleteArchiveFinalizationForRun(id, token, refresh string, record *storage.RunArchiveRecord, identity storage.ArchiveFinalizationRunIdentity) (bool, error) {
+	close(s.entered)
+	<-s.release
+	return s.SQLiteStore.CompleteArchiveFinalizationForRun(id, token, refresh, record, identity)
+}
+
 func TestDistributedCompletionVisibleWhilePublicationPending(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)

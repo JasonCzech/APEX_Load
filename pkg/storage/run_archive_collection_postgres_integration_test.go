@@ -43,7 +43,8 @@ func TestPostgresRunArchiveCollectionDurability(t *testing.T) {
 	}
 	defer store.Close()
 	checkArchiveFinalizationTerminalIdentity(t, store.SQLiteStore)
-	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore)
+	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore, false)
+	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore, true)
 	checkArchiveOrphanIncarnationFence(t, store.SQLiteStore)
 	checkRunArchiveCollectionCache(t, store.SQLiteStore)
 	checkRunArchiveCollectionDurability(t, store.SQLiteStore)
@@ -52,7 +53,7 @@ func TestPostgresRunArchiveCollectionDurability(t *testing.T) {
 
 // The completion transaction locks the lease before the run row. Waiting for a
 // busy run must not implicitly extend the lease while holding its row lock.
-func checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t *testing.T, s *SQLiteStore) {
+func checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t *testing.T, s *SQLiteStore, orphan bool) {
 	t.Helper()
 	now := time.Now().UTC()
 	id := fmt.Sprintf("completion-expiry-%d", now.UnixNano())
@@ -62,8 +63,10 @@ func checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t *testing.T, s *SQLi
 	}
 	record := RunArchiveRecord{TestID: id, CreatedAt: row.StartTime, CompletedAt: now}
 	job := &ArchiveFinalizationJob{TestID: id, ProjectID: row.ProjectID, ArchiveRecord: record}
-	if err := s.SaveArchiveFinalizationJob(job); err != nil {
-		t.Fatal(err)
+	if !orphan {
+		if err := s.SaveArchiveFinalizationJob(job); err != nil {
+			t.Fatal(err)
+		}
 	}
 	held, lease, err := s.TryAcquireSchedulerLeaseTerm(id, "owner", time.Now(), 2*time.Second)
 	if err != nil || !held || lease == nil {
@@ -88,7 +91,13 @@ func checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t *testing.T, s *SQLi
 	}
 	done := make(chan completionResult, 1)
 	go func() {
-		ok, err := s.CompleteArchiveFinalizationForRun(id, job.IntentToken, "", &record, ArchiveFinalizationRunIdentity{ProjectID: row.ProjectID, StartTime: row.StartTime, EndTime: now, Status: row.Status, LeaseName: id, LeaseOwner: "owner"})
+		var ok bool
+		var err error
+		if orphan {
+			ok, err = s.SaveArchiveFinalizationJobIfOrphanForRun(job, row.StartTime, row.Status, id, "owner")
+		} else {
+			ok, err = s.CompleteArchiveFinalizationForRun(id, job.IntentToken, "", &record, ArchiveFinalizationRunIdentity{ProjectID: row.ProjectID, StartTime: row.StartTime, EndTime: now, Status: row.Status, LeaseName: id, LeaseOwner: "owner"})
+		}
 		done <- completionResult{ok, err}
 	}()
 	defer func() { _ = blocker.Rollback() }()
@@ -125,7 +134,12 @@ func checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t *testing.T, s *SQLi
 	if _, err := s.GetRunArchive(id); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("expired transaction published catalog", err)
 	}
-	if _, err := s.GetArchiveFinalizationJob(id); err != nil {
+	_, err = s.GetArchiveFinalizationJob(id)
+	if orphan {
+		if !errors.Is(err, sql.ErrNoRows) {
+			t.Fatal("expired orphan transaction queued publication", err)
+		}
+	} else if err != nil {
 		t.Fatal("expired transaction erased pending job", err)
 	}
 }

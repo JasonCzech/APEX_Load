@@ -2773,3 +2773,45 @@ for all 69 active Markdown files. The preceding retry-worker commit passed the f
 108-package suite; this storage-only extension is additionally validated by the full
 storage race run and three isolated PostgreSQL repetitions. Controller integration
 will receive another full-suite gate before its review/fix/commit cycle completes.
+
+## Controller publication identity and pending-source ownership (2026-09-28)
+
+The production finalizer now validates the SHA-bound manifest's project, request
+instant, terminal status and end instant before snapshot capture or adjunct writes,
+then checks the final prepared manifest again before upload. Catalog completion uses
+the transactional terminal-identity/lease fence. A rejected completion whose opaque
+intent remains current preserves its source and does not enqueue version deletion.
+Superseded-version cleanup takes the source file fence and defers deletion while a
+pending publication owns either the object pointer or local staging path.
+
+Review reproduced a SQLite offset-representation defect: equal instants serialized
+with different timezone offsets failed SQL text equality. Completion and orphan
+recovery now compare instants read from the locked row, retaining exact SQLite
+precision and PostgreSQL microsecond canonicalization. The orphan insertion also
+rechecks lease expiry after waiting for the run lock. Real PostgreSQL tests cover
+both completion and orphan insertion blocked beyond the lease deadline; the expanded
+matrix passed three repetitions (18.211 s). No schema migration was introduced.
+
+Regression coverage rejects changed start/end/status/project or untrusted prepared
+bytes before adjunct mutation, preserves pending evidence after lease loss at commit,
+and checks cleanup against current/pending sources and a held cross-process source
+fence. Focused, repeated race and full-suite results follow below.
+
+The first full run found two incomplete fixtures: distributed finalization replaced
+the controller request instant with the generator start instant, and note-refresh
+fixtures omitted terminal end/status metadata. Fixtures now preserve the real terminal
+identity; the tampered-note fixture was corrected too so it continues to exercise
+payload integrity rather than failing at the earlier identity guard. Review also
+added an explicit job/record/durable test-ID check before snapshot capture.
+The revised focused regression set passed (2.462 s). The initial repeated race matrix
+passed API 33.293 s and storage 9.766 s; final repeated race/full results follow.
+
+The final controller race matrix passed three repetitions (34.949 s), including both
+corrected lifecycle fixtures. Documentation checks passed for all 69 active Markdown
+files. Scoped re-review found no further identity/cleanup findings; the final full
+suite is completing its generated-contract and integration checks.
+
+The final full Go suite passed all 108 test-bearing packages with no failures.
+The controller identity, timestamp and pending-source cleanup slice is ready to
+commit. Uploaded-marker recovery, recovery-state UI, durable staging, combined-loss
+recovery and latest-image Docker qualification remain separate local work items.

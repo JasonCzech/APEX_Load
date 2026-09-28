@@ -34,3 +34,12 @@ func (s *SQLiteStore) CompleteArchiveFinalizationForRun(testID, intentToken, ref
 	identity.ProjectID = normalizeProjectID(identity.ProjectID)
 	return s.completeArchiveFinalization(testID, intentToken, refreshToken, record, &identity)
 }
+
+// SQLite preserves the original timestamp's textual offset. Compare instants
+// after reading the locked row so equivalent offsets do not fail the SQL fence.
+func archiveIdentityTimestampEqual(dialect storeDialect, a, b time.Time) bool {
+	if dialect == storeDialectPostgres {
+		a, b = a.Truncate(time.Microsecond), b.Truncate(time.Microsecond)
+	}
+	return a.Equal(b)
+}

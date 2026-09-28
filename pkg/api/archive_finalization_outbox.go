@@ -235,6 +235,21 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		return fmt.Errorf("test %s is unavailable for archive finalization", job.TestID)
 	}
 
+	var finalizationIdentity *storage.ArchiveFinalizationRunIdentity
+	if _, fenced := tr.archiveStore.(incarnationArchiveFinalizationStore); fenced && outbox != nil && durableTest != nil {
+		var err error
+		finalizationIdentity, err = tr.inspectArchiveFinalizationIdentity(ctx, job, durableTest, true)
+		if err != nil {
+			return err
+		}
+		if tr.durableExecutionFence {
+			_, owner, _, err := tr.generatorExecutionClaim()
+			if err != nil || owner == "" {
+				return errNotExecutionLeader
+			}
+			finalizationIdentity.LeaseName, finalizationIdentity.LeaseOwner = executionLeaseName, owner
+		}
+	}
 	snapshotRetryNeeded := false
 	snapshotCtx, cancelSnapshot := context.WithTimeout(ctx, importedDashboardSnapshotTimeout)
 	snapshotErr := tr.captureImportedDashboardSnapshotAttempt(snapshotCtx, test, job.ArchiveRecord.CompletedAt, strings.TrimSpace(job.RefreshToken) != "" && job.Attempts >= 2)
@@ -313,6 +328,11 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 			return fmt.Errorf("persist archive adjunct artifacts: %w", err)
 		}
 	}
+	if finalizationIdentity != nil {
+		if _, err := tr.inspectArchiveFinalizationIdentity(ctx, job, durableTest, false); err != nil {
+			return err
+		}
+	}
 	if outbox != nil {
 		tr.populateRunArchiveTrendPoint(record)
 		current, err := outbox.UpdateArchiveFinalizationRecordIfToken(job.TestID, job.IntentToken, record)
@@ -341,11 +361,26 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		}
 	}
 	if outbox != nil {
-		committed, err := outbox.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, record)
+		var committed bool
+		var err error
+		if finalizationIdentity != nil {
+			committed, err = tr.archiveStore.(incarnationArchiveFinalizationStore).CompleteArchiveFinalizationForRun(job.TestID, job.IntentToken, job.RefreshToken, record, *finalizationIdentity)
+		} else {
+			committed, err = outbox.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, record)
+		}
 		if err != nil {
 			return fmt.Errorf("commit archive finalization: %w", err)
 		}
 		if !committed {
+			// A lost lease or changed terminal row does not retire this opaque token.
+			// Another leader may still need its source and immutable object version.
+			current, err := outbox.GetArchiveFinalizationJob(job.TestID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if current != nil && current.IntentToken == job.IntentToken {
+				return errors.New("archive completion was fenced; current publication preserved")
+			}
 			return tr.enqueueArchiveVersionCleanup(job.ProjectID, record)
 		}
 	} else {

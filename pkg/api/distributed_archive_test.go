@@ -272,7 +272,7 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	test.EndedAt = &completedAt
 	if err := store.SaveTest(&storage.TestRecord{
 		ID: test.ID, RefKey: test.RefKey, Name: test.Name, Status: test.Status,
-		ProjectID: test.ProjectID, StartTime: startedAt, EndTime: &completedAt,
+		ProjectID: test.ProjectID, StartTime: test.CreatedAt, EndTime: &completedAt,
 		Error: test.Error,
 	}); err != nil {
 		t.Fatalf("persist terminal test: %v", err)
