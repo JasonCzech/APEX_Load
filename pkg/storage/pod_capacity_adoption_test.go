@@ -101,3 +101,73 @@ func checkAdoptPodCapacity(t *testing.T, s *SQLiteStore) {
 		t.Fatal("old owner changed adopted capacity")
 	}
 }
+
+func TestAdoptPodCapacityRequiresEveryStandby(t *testing.T) {
+	checkAdoptStandbyPodCapacity(t, newAtomicBindingStore(t))
+}
+
+func checkAdoptStandbyPodCapacity(t *testing.T, s *SQLiteStore) {
+	t.Helper()
+	const name = "standby-capacity-adoption"
+	ok, old, err := s.TryAcquireSchedulerLeaseTerm(name, "standby-old", time.Now(), time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("old lease: %v", err)
+	}
+	budget := protocol.CapacityVector{CPUCores: 4, MemoryMB: 1000, NetworkMbps: 100, VUsers: 100}
+	claims := []PodCapacityReservation{
+		{ReservationID: "standby-attempt", Revision: 1, Target: "standby-active", TestID: "standby-run", Incarnation: "active-pod", Generation: old.Generation, ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget.Scale(.5), GroupPeaks: map[string]int32{"g": 50}},
+		{ReservationID: "standby-attempt", Revision: 1, Target: "standby-idle", TestID: "standby-run", Incarnation: "idle-pod", Generation: old.Generation, ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget, Dedicated: true},
+	}
+	if err := s.ReservePodCapacity(claims, name, "standby-old", old.Generation); err != nil {
+		t.Fatal(err)
+	}
+	for _, claim := range claims {
+		if err := s.TransitionPodCapacity(claim.Target, claim.TestID, claim.Incarnation, claim.ReservationID, "committed", name, "standby-old", old.Generation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot := func() []PodCapacityReservation {
+		all, err := s.ListPodCapacityReservations()
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := []PodCapacityReservation{}
+		for _, claim := range all {
+			if claim.TestID == "standby-run" {
+				result = append(result, claim)
+			}
+		}
+		return result
+	}
+	claims = snapshot()
+	if len(claims) != 2 {
+		t.Fatal("missing fixture reservations")
+	}
+	if err := s.ReleaseSchedulerLease(name, "standby-old"); err != nil {
+		t.Fatal(err)
+	}
+	ok, next, err := s.TryAcquireSchedulerLeaseTerm(name, "standby-new", time.Now(), time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("new lease: %v", err)
+	}
+	// Model a standby appearing after the caller's capacity snapshot. Even a
+	// correctly confirmed live claim must roll back when coverage is incomplete.
+	if err := s.AdoptPodCapacity(claims[:1], name, "standby-new", next.Generation); err == nil {
+		t.Fatal("unconfirmed standby was ignored")
+	}
+	if got := snapshot(); !reflect.DeepEqual(got, claims) {
+		t.Fatalf("partial transfer: %+v", got)
+	}
+	for i := 0; i < 2; i++ {
+		if err := s.AdoptPodCapacity(claims, name, "standby-new", next.Generation); err != nil {
+			t.Fatalf("complete adoption/retry: %v", err)
+		}
+	}
+	expected := append([]PodCapacityReservation(nil), claims...)
+	for i := range expected {
+		expected[i].Generation = next.Generation
+	}
+	if got := snapshot(); !reflect.DeepEqual(got, expected) {
+		t.Fatalf("frozen standby changed: %+v", got)
+	}
+}

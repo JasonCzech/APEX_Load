@@ -1994,3 +1994,35 @@ a final repeat after the test-only adjustment passed with API results cached
 and CLI tests in 12.130 seconds. Logs are
 `/tmp/apex-archive-read-deadline-full{,-final}.log`. No further scoped review
 findings remain; deployed cold-read verification follows.
+
+### Idle standby ownership across controller adoption
+
+A regression demonstrated that a run could resume after controller failover while
+its idle dedicated reservation retained the old execution generation. Standbys
+have no executable assignment to include in the ordinary run-adoption list.
+They now join the same first-epoch batch as live participants, preserving any
+other run's adoption entries for that generator. Their unchanged claims are
+confirmed before the existing atomic ledger transfer. Standby transports never
+enter the run's executable or archive-source maps and close after confirmation.
+Unavailable, legacy, changed-incarnation or changed-ledger standbys fail the run
+closed. An unavailable reservation snapshot prevents the first epoch claim.
+
+Review added a second-snapshot check and transactional coverage check: a standby
+that appears after the caller's snapshot must not be silently left under the old
+owner. The SQL capacity fence checks every remaining standby before committing;
+a missing confirmation rolls back earlier live-claim updates. Tests also cover
+all live shards already completed, idempotent transfer, and preserving another
+run's first-epoch adoption entries. Focused SQLite/API checks passed. Isolated
+PostgreSQL passed three repetitions (2.593 seconds), and three race repetitions
+passed for storage (5.089 seconds), API (30.433 seconds) and generator standby
+primitives (5.475 seconds). The first full suite failed only the existing
+one-millisecond readiness scheduling assertion while the live load matrix was
+running (API 368.209 seconds). That test passed 50 isolated repetitions (3.871
+seconds). The full-suite repeat passed; its log is
+`/tmp/apex-standby-adoption-full-repeat.log`. The failed run remains in
+`/tmp/apex-standby-adoption-full.log`. No further scoped ownership-transfer
+findings remain.
+
+This transfers preexisting standby ownership. Actual spare-capacity admission,
+activation during evacuation, durable combined controller/generator recovery,
+and deployed reserved-spare qualification remain separate work.

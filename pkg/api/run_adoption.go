@@ -118,11 +118,12 @@ func runAdoptionStatus(status string) bool {
 }
 
 type runAdoptionCandidate struct {
-	stopping   bool
-	test       *ManagedTest
-	checkpoint runContinuityCheckpoint
-	newToken   [generatorrpc.RunSupervisionTokenSize]byte
-	targets    []string
+	stopping       bool
+	test           *ManagedTest
+	checkpoint     runContinuityCheckpoint
+	newToken       [generatorrpc.RunSupervisionTokenSize]byte
+	targets        []string
+	standbyTargets []string
 }
 
 type runAdoptionTargetResult struct {
@@ -199,6 +200,10 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		candidates = append(candidates, candidate)
 	}
 
+	if err := tr.addStandbyCapacityAdoptionTargets(candidates, byTarget); err != nil {
+		return err
+	}
+
 	results := b.claimRunAdoptions(ctx, byTarget, generation, ownerID, leaseDeadline)
 	defer func() {
 		for _, result := range results {
@@ -272,8 +277,20 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			continue
 		}
 		tr.isolateRunAdoption(b, candidate.test, generation, ownerID, func() {
+			capacityClients := make(map[string]generatorClient, len(adopted)+len(candidate.standbyTargets))
+			for target, client := range adopted {
+				capacityClients[target] = client
+			}
+			for _, target := range candidate.standbyTargets {
+				result := results[target]
+				if slices.Contains(candidate.targets, target) || result.err != nil || result.client == nil {
+					problems = append(problems, fmt.Sprintf("standby %s could not be fenced for capacity transfer", target))
+					continue
+				}
+				capacityClients[target] = result.client
+			}
 			if len(problems) == 0 {
-				if err := tr.adoptPodCapacity(ctx, candidate.test.ID, adopted, generation, ownerID); err != nil {
+				if err := tr.adoptPodCapacity(ctx, candidate.test.ID, capacityClients, generation, ownerID); err != nil {
 					problems = append(problems, "capacity ownership transfer: "+err.Error())
 				}
 			}

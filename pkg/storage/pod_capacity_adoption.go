@@ -7,9 +7,10 @@ import (
 	"time"
 )
 
-// AdoptPodCapacity transfers acknowledged live reservations to the successor
-// term. The caller must first prove adoption and confirm each unchanged claim
-// on its generator. No capacity is released or recalculated by this operation.
+// AdoptPodCapacity transfers acknowledged live and idle standby reservations
+// to the successor term. The caller must confirm each unchanged claim under the
+// new epoch and first adopt any live assignment. No capacity is released or
+// recalculated by this operation.
 func (s *SQLiteStore) AdoptPodCapacity(expected []PodCapacityReservation, leaseName, owner string, generation uint64) error {
 	if len(expected) == 0 {
 		return errors.New("empty capacity adoption")
@@ -53,6 +54,37 @@ func (s *SQLiteStore) AdoptPodCapacity(expected []PodCapacityReservation, leaseN
 		if _, err := tx.Exec(`UPDATE pod_capacity_reservations SET generation=?,reservation_json=?,updated_at=? WHERE target=? AND test_id=?`, generation, string(encoded), time.Now().UTC(), before.Target, before.TestID); err != nil {
 			return err
 		}
+	}
+	// A standby inserted after the caller's snapshot must not be silently left
+	// with an old owner. Capacity mutations share this transaction fence, so
+	// checking all idle dedicated claims here closes that observation race.
+	rows, err := tx.Query(`SELECT target, reservation_json FROM pod_capacity_reservations WHERE test_id=?`, expected[0].TestID)
+	if err != nil {
+		return err
+	}
+	var coverageErr error
+	for rows.Next() {
+		var target, raw string
+		if err := rows.Scan(&target, &raw); err != nil {
+			coverageErr = err
+			break
+		}
+		var claim PodCapacityReservation
+		if err := json.Unmarshal([]byte(raw), &claim); err != nil {
+			coverageErr = err
+			break
+		}
+		if claim.Dedicated && len(claim.GroupPeaks) == 0 && !seen[target] {
+			coverageErr = errors.New("standby capacity changed during adoption")
+			break
+		}
+	}
+	if coverageErr == nil {
+		coverageErr = rows.Err()
+	}
+	rows.Close()
+	if coverageErr != nil {
+		return coverageErr
 	}
 	return tx.Commit()
 }
