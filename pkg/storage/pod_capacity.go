@@ -12,20 +12,21 @@ import (
 )
 
 type PodCapacityReservation struct {
-	ReservationID string                             `json:"reservation_id"`
-	Revision      uint64                             `json:"revision"`
-	GroupDemands  map[string]protocol.CapacityVector `json:"group_demands"`
-	Target        string                             `json:"target"`
-	TestID        string                             `json:"test_id"`
-	Incarnation   string                             `json:"incarnation"`
-	Generation    uint64                             `json:"generation"`
-	State         string                             `json:"state"`
-	ModelVersion  string                             `json:"model_version"`
-	HeadroomPct   float64                            `json:"headroom_pct"`
-	Budget        protocol.CapacityVector            `json:"budget"`
-	Demand        protocol.CapacityVector            `json:"demand"`
-	Dedicated     bool                               `json:"dedicated"`
-	GroupPeaks    map[string]int32                   `json:"group_peaks"`
+	RecoveryPlacement *PodCapacityRecoveryPlacement      `json:"recovery_placement,omitempty"`
+	ReservationID     string                             `json:"reservation_id"`
+	Revision          uint64                             `json:"revision"`
+	GroupDemands      map[string]protocol.CapacityVector `json:"group_demands"`
+	Target            string                             `json:"target"`
+	TestID            string                             `json:"test_id"`
+	Incarnation       string                             `json:"incarnation"`
+	Generation        uint64                             `json:"generation"`
+	State             string                             `json:"state"`
+	ModelVersion      string                             `json:"model_version"`
+	HeadroomPct       float64                            `json:"headroom_pct"`
+	Budget            protocol.CapacityVector            `json:"budget"`
+	Demand            protocol.CapacityVector            `json:"demand"`
+	Dedicated         bool                               `json:"dedicated"`
+	GroupPeaks        map[string]int32                   `json:"group_peaks"`
 }
 
 // ReservePodCapacity atomically claims the entire placement, serialized with
@@ -73,6 +74,9 @@ func (s *SQLiteStore) reservePodCapacity(claims, expected []PodCapacityReservati
 			return errors.New("invalid pod reservation identity")
 		}
 		seen[claim.Target] = true
+		if err := validatePodCapacityRecoveryPlacement(claim); err != nil {
+			return err
+		}
 		if err := claim.Budget.Fits(claim.Demand); err != nil {
 			return err
 		}
@@ -111,7 +115,7 @@ func (s *SQLiteStore) reservePodCapacity(claims, expected []PodCapacityReservati
 				r.State = "pending"
 				copy := claim
 				copy.State = "pending"
-				if !reflect.DeepEqual(r, copy) && (claim.Revision != r.Revision+1 || claim.Revision == 0 || r.Generation != claim.Generation || r.Dedicated != claim.Dedicated || r.ModelVersion != claim.ModelVersion || r.HeadroomPct != claim.HeadroomPct || !reflect.DeepEqual(r.Budget, claim.Budget)) {
+				if !reflect.DeepEqual(r, copy) && (claim.Revision != r.Revision+1 || claim.Revision == 0 || r.Generation != claim.Generation || r.Dedicated != claim.Dedicated || r.ModelVersion != claim.ModelVersion || r.HeadroomPct != claim.HeadroomPct || !reflect.DeepEqual(r.Budget, claim.Budget) || !reflect.DeepEqual(r.RecoveryPlacement, claim.RecoveryPlacement)) {
 					return errors.New("reservation revision or frozen model changed")
 				}
 				continue

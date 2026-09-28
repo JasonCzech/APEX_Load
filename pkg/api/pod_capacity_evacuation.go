@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"time"
 
@@ -78,6 +79,12 @@ func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedEx
 			load := b.probeGeneratorLoad(ctx, destination, client)
 			capacity := configurePodCapacity(settings, load)
 			standby, reserved := standbys[destination]
+			if original.RecoveryPlacement != nil || standby.RecoveryPlacement != nil {
+				sourceProof, spareProof := original.RecoveryPlacement, standby.RecoveryPlacement
+				if !reserved || sourceProof == nil || spareProof == nil || sourceProof.Namespace != spareProof.Namespace || sourceProof.WorkloadUID != spareProof.WorkloadUID || sourceProof.NodeName == spareProof.NodeName || !slices.Contains(spareProof.ReplacementSources, source) || !tr.recoveryStandbyIdentityCurrent(standby) {
+					return nil, fmt.Errorf("replacement does not match the frozen worker recovery placement")
+				}
+			}
 			if reserved {
 				fresh := standbyEvacuationLoad(load, standby, testID, original.Generation)
 				if fresh.AvailableCapacity <= 0 {

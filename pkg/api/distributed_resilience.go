@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -213,6 +214,12 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	if standbyErr != nil {
 		return nil, fmt.Errorf("read standby capacity before evacuation: %w", standbyErr)
 	}
+	for candidate, standby := range standbys {
+		proof := standby.RecoveryPlacement
+		if (recoverySpareVUsers(test) > 0 && proof == nil) || (proof != nil && (!slices.Contains(proof.ReplacementSources, target) || !tr.recoveryStandbyIdentityCurrent(standby))) {
+			delete(standbys, candidate)
+		}
+	}
 	dialedClients := b.connectEvacuationCandidates(executionCtx, test, target, clientsByTarget, states, executionGeneration, executionLeaseOwnerID, claimDeadline, standbys)
 	closeDialedClients := func() {
 		for candidate, client := range dialedClients {
@@ -327,6 +334,9 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		replacementTarget := ""
 		bestCapacity := int32(-1)
 		for _, candidate := range survivors {
+			if recoverySpareVUsers(test) > 0 && standbys[candidate].RecoveryPlacement == nil {
+				continue
+			}
 			if _, alreadyParticipates := runParticipantTargets[candidate]; alreadyParticipates {
 				continue
 			}
@@ -997,6 +1007,9 @@ func (b *distributedExecutionBackend) connectEvacuationCandidates(parent context
 	candidates = b.filterTestPlacementTargets(test, candidates)
 	dialed := make(map[string]generatorClient)
 	for _, candidate := range candidates {
+		if recoverySpareVUsers(test) > 0 && standbys[candidate].RecoveryPlacement == nil {
+			continue
+		}
 		if candidate == evacuatedTarget || clients[candidate] != nil || remoteTargetStateDone(states[candidate]) {
 			continue
 		}

@@ -78,7 +78,14 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 		PoolID:                strings.TrimSpace(in.PoolID),
 		RequiredLabels:        normalizeRequiredLabels(in.RequiredLabels),
 		TolerateGeneratorLoss: in.TolerateGeneratorLoss,
+		RecoverySpareVUsers:   in.RecoverySpareVUsers,
 		FailoverPolicy:        strings.ToLower(strings.TrimSpace(in.FailoverPolicy)),
+	}
+	if out.RecoverySpareVUsers < 0 || out.RecoverySpareVUsers > maxManagedTestVUsers {
+		return nil, fmt.Errorf("assignment.recovery_spare_vusers must be between 0 and %d", maxManagedTestVUsers)
+	}
+	if out.RecoverySpareVUsers > 0 && (!out.TolerateGeneratorLoss || !simpleRecoveryAssignment(out)) {
+		return nil, fmt.Errorf("reserved recovery capacity requires generator-loss tolerance and automatic or explicit-host placement")
 	}
 	switch out.FailoverPolicy {
 	case "", failoverPolicyFail, failoverPolicyContinue:
@@ -225,6 +232,9 @@ func effectiveRegionWeights(assignment *GeneratorAssignmentSettings) map[string]
 func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
 	if in == nil {
 		return nil, nil
+	}
+	if in.RecoverySpareVUsers != 0 {
+		return nil, fmt.Errorf("assignment.recovery_spare_vusers is test-scoped")
 	}
 	if strings.TrimSpace(in.SharingMode) != "" {
 		return nil, fmt.Errorf("assignment.sharing_mode is test-scoped; set it on the test-level assignment")

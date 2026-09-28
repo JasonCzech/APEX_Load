@@ -253,10 +253,10 @@ func managedTestCapacityVUsers(test *ManagedTest) int {
 		return 0
 	}
 	peak := trafficProfileCapacityVUsers(test.TrafficProfile, test.Groups, test.Duration, test.GoalConfig)
-	if peak > 0 {
-		return peak
+	if peak <= 0 {
+		peak = test.TotalVUsers
 	}
-	return test.TotalVUsers
+	return saturatingAddNonNegative(peak, recoverySpareVUsers(test))
 }
 
 func launchGroupPeakVUsers(groups []launchGroupCapacity) int {

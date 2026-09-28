@@ -6956,6 +6956,9 @@ paths:
                           type: string
                         pool_id:
                           type: string
+                        recovery_spare_vusers:
+                          type: integer
+                          format: int64
                         region_weights:
                           type: object
                           additionalProperties:
@@ -7145,6 +7148,9 @@ paths:
                                 type: string
                               pool_id:
                                 type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
                               region_weights:
                                 type: object
                                 additionalProperties:
@@ -48674,6 +48680,9 @@ paths:
                       type: string
                     pool_id:
                       type: string
+                    recovery_spare_vusers:
+                      type: integer
+                      format: int64
                     region_weights:
                       type: object
                       additionalProperties:
@@ -48882,6 +48891,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -49575,6 +49587,9 @@ paths:
                           type: string
                         pool_id:
                           type: string
+                        recovery_spare_vusers:
+                          type: integer
+                          format: int64
                         region_weights:
                           type: object
                           additionalProperties:
@@ -49783,6 +49798,9 @@ paths:
                                 type: string
                               pool_id:
                                 type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
                               region_weights:
                                 type: object
                                 additionalProperties:
@@ -50958,6 +50976,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -51735,6 +51756,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -55099,6 +55123,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -55876,6 +55903,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -59237,6 +59267,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -60014,6 +60047,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -63387,6 +63423,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -64164,6 +64203,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -67537,6 +67579,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -68314,6 +68359,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -71687,6 +71735,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -72464,6 +72515,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -75837,6 +75891,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -76614,6 +76671,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -88345,6 +88405,9 @@ paths:
                       type: string
                     pool_id:
                       type: string
+                    recovery_spare_vusers:
+                      type: integer
+                      format: int64
                     region_weights:
                       type: object
                       additionalProperties:
@@ -88564,6 +88627,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -90105,6 +90171,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -91368,6 +91437,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -92377,6 +92449,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -93640,6 +93715,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -94592,6 +94670,9 @@ paths:
                       type: string
                     pool_id:
                       type: string
+                    recovery_spare_vusers:
+                      type: integer
+                      format: int64
                     region_weights:
                       type: object
                       additionalProperties:
@@ -94811,6 +94892,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -96352,6 +96436,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -97615,6 +97702,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -99270,6 +99360,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -100223,6 +100316,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -102579,6 +102675,9 @@ paths:
                           type: string
                         pool_id:
                           type: string
+                        recovery_spare_vusers:
+                          type: integer
+                          format: int64
                         region_weights:
                           type: object
                           additionalProperties:
@@ -102768,6 +102867,9 @@ paths:
                                 type: string
                               pool_id:
                                 type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
                               region_weights:
                                 type: object
                                 additionalProperties:
@@ -104298,6 +104400,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -104502,6 +104607,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -106245,6 +106353,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -106449,6 +106560,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -107824,6 +107938,9 @@ paths:
                           type: string
                         pool_id:
                           type: string
+                        recovery_spare_vusers:
+                          type: integer
+                          format: int64
                         region_weights:
                           type: object
                           additionalProperties:
@@ -108013,6 +108130,9 @@ paths:
                                 type: string
                               pool_id:
                                 type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
                               region_weights:
                                 type: object
                                 additionalProperties:
@@ -109543,6 +109663,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -109747,6 +109870,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -111019,6 +111145,9 @@ paths:
                       type: string
                     pool_id:
                       type: string
+                    recovery_spare_vusers:
+                      type: integer
+                      format: int64
                     region_weights:
                       type: object
                       additionalProperties:
@@ -111238,6 +111367,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -227168,6 +227300,9 @@ paths:
                       type: string
                     pool_id:
                       type: string
+                    recovery_spare_vusers:
+                      type: integer
+                      format: int64
                     region_weights:
                       type: object
                       additionalProperties:
@@ -227406,6 +227541,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -229027,6 +229165,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -230114,6 +230255,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -235714,6 +235858,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -236801,6 +236948,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -243236,6 +243386,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -243999,6 +244152,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -245036,6 +245192,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -245799,6 +245958,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -248602,6 +248764,9 @@ paths:
                                 type: string
                               pool_id:
                                 type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
                               region_weights:
                                 type: object
                                 additionalProperties:
@@ -249414,6 +249579,9 @@ paths:
                                 type: string
                               pool_id:
                                 type: string
+                              recovery_spare_vusers:
+                                type: integer
+                                format: int64
                               region_weights:
                                 type: object
                                 additionalProperties:
@@ -253823,6 +253991,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -254910,6 +255081,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -260454,6 +260628,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -261541,6 +261718,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -272263,6 +272443,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -272518,6 +272701,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -273575,6 +273761,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -273830,6 +274019,9 @@ paths:
                                   type: string
                                 pool_id:
                                   type: string
+                                recovery_spare_vusers:
+                                  type: integer
+                                  format: int64
                                 region_weights:
                                   type: object
                                   additionalProperties:
@@ -274850,6 +275042,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -275323,6 +275518,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -278023,6 +278221,9 @@ paths:
                       type: string
                     pool_id:
                       type: string
+                    recovery_spare_vusers:
+                      type: integer
+                      format: int64
                     region_weights:
                       type: object
                       additionalProperties:
@@ -278261,6 +278462,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:
@@ -279819,6 +280023,9 @@ paths:
                         type: string
                       pool_id:
                         type: string
+                      recovery_spare_vusers:
+                        type: integer
+                        format: int64
                       region_weights:
                         type: object
                         additionalProperties:
@@ -280146,6 +280353,9 @@ paths:
                               type: string
                             pool_id:
                               type: string
+                            recovery_spare_vusers:
+                              type: integer
+                              format: int64
                             region_weights:
                               type: object
                               additionalProperties:
@@ -280974,6 +281184,9 @@ paths:
                       type: string
                     pool_id:
                       type: string
+                    recovery_spare_vusers:
+                      type: integer
+                      format: int64
                     region_weights:
                       type: object
                       additionalProperties:
@@ -281182,6 +281395,9 @@ paths:
                             type: string
                           pool_id:
                             type: string
+                          recovery_spare_vusers:
+                            type: integer
+                            format: int64
                           region_weights:
                             type: object
                             additionalProperties:

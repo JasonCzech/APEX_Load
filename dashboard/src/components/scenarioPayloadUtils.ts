@@ -243,6 +243,7 @@ function buildRootAssignmentPayload(assignment?: GeneratorAssignmentSettings): G
     ...(assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}),
     // Only the non-default value is sent, so fail-policy payloads are unchanged.
     ...(assignment?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
+    ...(assignment?.recovery_spare_vusers !== undefined ? { recovery_spare_vusers: assignment?.recovery_spare_vusers } : {}),
   }
   const pool = assignment?.pool_id?.trim() ? { pool_id: assignment.pool_id.trim() } : {}
   if (assignment?.mode === 'specific_hosts') {

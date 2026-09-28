@@ -58,6 +58,11 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 			podReplicaFloor = max(settings.CapacityPlanning.Availability.ConfiguredAvailableGenerators, reservedReplicaFloor(unknown, len(entries)))
 		}
 	}
+	if floor, complete := s.runner.recoveryAdmissionReplicaFloor(tests, settings, podReplicaFloor, demandAt); complete {
+		podReplicaFloor = floor
+	} else {
+		observationComplete = false
+	}
 	statusCounts := make(map[string]int)
 	for _, test := range tests {
 		if test == nil || strings.TrimSpace(test.Status) == "" {
@@ -421,8 +426,11 @@ func scalingSignalStatsAt(tests []*ManagedTest, now time.Time) scalingSignals {
 			for _, group := range groups {
 				peakVUsers += group.VUsers
 			}
-			stats.QueuedVUsers += max(test.TotalVUsers, peakVUsers)
+			stats.QueuedVUsers += saturatingAddNonNegative(max(test.TotalVUsers, peakVUsers), recoverySpareVUsers(test))
 			addProtocolVUsers(stats.QueuedProtocolVUsers, groups)
+			if spare := recoverySpareVUsers(test); spare > 0 {
+				stats.QueuedProtocolVUsers["http"] = saturatingAddNonNegative(stats.QueuedProtocolVUsers["http"], spare)
+			}
 		case "INITIALIZING", "STARTING", "SHAKEOUT", "SHAKEOUT_REVIEW", "RUNNING", "PAUSED", "STOPPING":
 			stats.ActiveTests++
 			stats.ActiveVUsers += test.TotalVUsers

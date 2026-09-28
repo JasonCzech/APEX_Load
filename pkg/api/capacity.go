@@ -233,7 +233,7 @@ func (tr *TestRunner) evaluateQuotaBlockWithTimeslotsAndProjectQuotaLocked(test 
 	if test == nil {
 		return false, ""
 	}
-	if tr.settings.CapacityPlanning.PodReservationsEnabled || (test.Assignment != nil && test.Assignment.SharingMode == "dedicated") {
+	if recoverySpareVUsers(test) > 0 || tr.settings.CapacityPlanning.PodReservationsEnabled || (test.Assignment != nil && test.Assignment.SharingMode == "dedicated") {
 		if _, warnings := tr.previewPodPlacementLocked(test); len(warnings) > 0 {
 			return true, "waiting for peak pod capacity: " + warnings[0]
 		}

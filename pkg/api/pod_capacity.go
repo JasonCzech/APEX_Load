@@ -71,6 +71,9 @@ func podReservationGroups(test *ManagedTest) ([]TestGroup, error) {
 
 func (tr *TestRunner) previewPodPlacementLocked(test *ManagedTest) ([]PodCapacityPreview, []string) {
 	if !tr.settings.CapacityPlanning.PodReservationsEnabled {
+		if recoverySpareVUsers(test) > 0 {
+			return nil, []string{"enable peak pod reservations before reserving recovery spares"}
+		}
 		if test.Assignment != nil && test.Assignment.SharingMode == "dedicated" {
 			return nil, []string{"enable peak pod reservations before selecting dedicated generators"}
 		}
@@ -121,6 +124,25 @@ func (tr *TestRunner) previewPodPlacementLocked(test *ManagedTest) ([]PodCapacit
 		after.ObservedAtUnixMS = before.ObservedAtUnixMS
 		after.Dedicated = before.Dedicated || (test.Assignment != nil && test.Assignment.SharingMode == "dedicated")
 		out = append(out, PodCapacityPreview{Target: target, Before: before, Proposed: d, After: after})
+	}
+	if recoverySpareVUsers(test) > 0 {
+		var claims []storage.PodCapacityReservation
+		for _, p := range out {
+			claims = append(claims, storage.PodCapacityReservation{Target: p.Target, TestID: test.ID, Incarnation: p.Before.Incarnation, Budget: p.Before.Schedulable, Demand: p.Proposed, ModelVersion: protocol.CapacityReservationModel})
+		}
+		reserved, err := tr.addRecoverySpareClaims(test, claims, loads)
+		if err != nil {
+			return out, []string{err.Error()}
+		}
+		for _, claim := range reserved {
+			if claim.RecoveryPlacement == nil || len(claim.RecoveryPlacement.ReplacementSources) == 0 {
+				continue
+			}
+			before := *loads[claim.Target].PodCapacity
+			after := protocol.NewCapacitySnapshot(before.Schedulable, claim.Demand, before.HeadroomPct)
+			after.Incarnation, after.Dedicated, after.ObservedAtUnixMS = before.Incarnation, true, before.ObservedAtUnixMS
+			out = append(out, PodCapacityPreview{Target: claim.Target, Before: before, Proposed: claim.Demand, After: after})
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Target < out[j].Target })
 	return out, nil
@@ -375,6 +397,10 @@ func (tr *TestRunner) reservePodPlacement(ctx context.Context, test *ManagedTest
 		}
 		claims = append(claims, *r)
 	}
+	claims, err = tr.addRecoverySpareClaims(test, claims, loads)
+	if err != nil {
+		return nil, err
+	}
 	sort.Slice(claims, func(i, j int) bool { return claims[i].Target < claims[j].Target })
 	if err := tr.reservePodLedger(store, claims, executionLeaseName, owner, generation); err != nil {
 		return nil, err
@@ -392,6 +418,13 @@ func (tr *TestRunner) reservePodPlacement(ctx context.Context, test *ManagedTest
 		}
 		if !podCapacityAckConfirms(ack, claim.Incarnation) {
 			return claims, fmt.Errorf("generator %s did not confirm capacity: %s", claim.Target, ack.GetErrorMessage())
+		}
+	}
+	if recoverySpareVUsers(test) > 0 {
+		for _, claim := range claims {
+			if err := tr.transitionPodLedger(store, claim.Target, claim.TestID, claim.Incarnation, claim.ReservationID, "committed", executionLeaseName, owner, generation); err != nil {
+				return claims, fmt.Errorf("confirm recovery capacity before work staging: %w", err)
+			}
 		}
 	}
 	return claims, nil

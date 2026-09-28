@@ -642,12 +642,13 @@ describe('scenarioPayloadUtils', () => {
       goalConfig: {},
       runtimeSettings: { iterations: undefined, pacing: undefined, think_time: undefined, log_level: '', auto_transactions: '' },
     }
-    const continuing = buildScenarioUpsertPayload({ ...base, assignment: { mode: 'specific_hosts', selected_targets: ['gen-a'], failover_policy: 'continue' } })
-    expect(continuing.assignment).toMatchObject({ mode: 'specific_hosts', failover_policy: 'continue' })
+    const continuing = buildScenarioUpsertPayload({ ...base, assignment: { mode: 'specific_hosts', selected_targets: ['gen-a'], failover_policy: 'continue', tolerate_generator_loss: true, recovery_spare_vusers: 200 } })
+    expect(continuing.assignment).toMatchObject({ mode: 'specific_hosts', failover_policy: 'continue', recovery_spare_vusers: 200 })
     const failing = buildScenarioUpsertPayload({ ...base, assignment: { mode: 'auto', failover_policy: 'fail' } })
     expect(failing.assignment).toEqual({ mode: 'auto' })
-    const draft = buildScenarioDraftFromTest({ id: 'run', name: 'Run', status: 'COMPLETE', total_vusers: 1, duration: '1m', created_at: '', assignment: { mode: 'auto', failover_policy: 'continue' } } as never)
+    const draft = buildScenarioDraftFromTest({ id: 'run', name: 'Run', status: 'COMPLETE', total_vusers: 1, duration: '1m', created_at: '', assignment: { mode: 'auto', failover_policy: 'continue', tolerate_generator_loss: true, recovery_spare_vusers: 200 } } as never)
     expect(draft.assignment?.failover_policy).toBe('continue')
+    expect(draft.assignment?.recovery_spare_vusers).toBe(200)
   })
 
   it('keeps a single unnamed group in the groups array when it has an iterations override', () => {

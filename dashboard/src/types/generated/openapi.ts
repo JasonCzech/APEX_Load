@@ -2546,6 +2546,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -2611,6 +2612,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -10707,6 +10709,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -11038,6 +11041,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -20625,6 +20629,7 @@ export interface operations {
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
+            "recovery_spare_vusers"?: number;
             "region_weights"?: Record<string, number>;
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
@@ -20699,6 +20704,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -20952,6 +20958,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -21026,6 +21033,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -21457,6 +21465,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -21709,6 +21718,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -23149,6 +23159,7 @@ export interface operations {
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
+            "recovery_spare_vusers"?: number;
             "region_weights"?: Record<string, number>;
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
@@ -23224,6 +23235,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -23823,6 +23835,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -24287,6 +24300,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -26476,6 +26490,7 @@ export interface operations {
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
+            "recovery_spare_vusers"?: number;
             "region_weights"?: Record<string, number>;
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
@@ -26560,6 +26575,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -27190,6 +27206,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -27538,6 +27555,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -31291,6 +31309,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -31356,6 +31375,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -31915,6 +31935,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -31980,6 +32001,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -32461,6 +32483,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -32526,6 +32549,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -33085,6 +33109,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -33150,6 +33175,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -34682,6 +34708,7 @@ export interface operations {
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
+            "recovery_spare_vusers"?: number;
             "region_weights"?: Record<string, number>;
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
@@ -34766,6 +34793,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -35374,6 +35402,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -35479,6 +35508,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -41891,6 +41921,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -42143,6 +42174,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -43528,6 +43560,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -43772,6 +43805,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -44136,6 +44170,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -44380,6 +44415,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -45326,6 +45362,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -45578,6 +45615,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -46638,6 +46676,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -47102,6 +47141,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -49471,6 +49511,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -49819,6 +49860,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -52989,6 +53031,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -53071,6 +53114,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -53443,6 +53487,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -53525,6 +53570,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -53882,6 +53928,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -54031,6 +54078,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -64206,6 +64254,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -64554,6 +64603,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -66496,6 +66546,7 @@ export interface operations {
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
+            "recovery_spare_vusers"?: number;
             "region_weights"?: Record<string, number>;
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
@@ -66570,6 +66621,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -74765,6 +74817,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -75017,6 +75070,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -76132,6 +76186,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -76384,6 +76439,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -77499,6 +77555,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -77751,6 +77808,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -78866,6 +78924,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -79118,6 +79177,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -80233,6 +80293,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -80485,6 +80546,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -88221,6 +88283,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -88286,6 +88349,7 @@ export interface operations {
                   "load_zone_weights"?: Record<string, number>;
                   "mode"?: string;
                   "pool_id"?: string;
+                  "recovery_spare_vusers"?: number;
                   "region_weights"?: Record<string, number>;
                   "required_labels"?: Record<string, string>;
                   "selected_targets"?: Array<string>;
@@ -98289,6 +98353,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -98637,6 +98702,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -104455,6 +104521,7 @@ export interface operations {
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
+            "recovery_spare_vusers"?: number;
             "region_weights"?: Record<string, number>;
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
@@ -104530,6 +104597,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -105129,6 +105197,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;
@@ -105593,6 +105662,7 @@ export interface operations {
                 "load_zone_weights"?: Record<string, number>;
                 "mode"?: string;
                 "pool_id"?: string;
+                "recovery_spare_vusers"?: number;
                 "region_weights"?: Record<string, number>;
                 "required_labels"?: Record<string, string>;
                 "selected_targets"?: Array<string>;
@@ -111965,6 +112035,7 @@ export interface operations {
             "load_zone_weights"?: Record<string, number>;
             "mode"?: string;
             "pool_id"?: string;
+            "recovery_spare_vusers"?: number;
             "region_weights"?: Record<string, number>;
             "required_labels"?: Record<string, string>;
             "selected_targets"?: Array<string>;
@@ -112040,6 +112111,7 @@ export interface operations {
               "load_zone_weights"?: Record<string, number>;
               "mode"?: string;
               "pool_id"?: string;
+              "recovery_spare_vusers"?: number;
               "region_weights"?: Record<string, number>;
               "required_labels"?: Record<string, string>;
               "selected_targets"?: Array<string>;

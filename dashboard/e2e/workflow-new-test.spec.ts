@@ -1,7 +1,7 @@
 import { test, expect, seedScript, seedScenario, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
-test('Scenario builder preserves controller continuity together with generator-loss tolerance', async ({ page }, testInfo) => {
+test('Scenario builder preserves controller continuity and the recovery spare budget', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request
   const workspace = await createWorkspace(request)
@@ -21,6 +21,9 @@ test('Scenario builder preserves controller continuity together with generator-l
   const lossTolerance = page.getByRole('checkbox', { name: 'Tolerate generator loss' })
   await continuity.check()
   await lossTolerance.check()
+  const spareBudget = page.getByRole('spinbutton', { name: 'Recovery spare VUser budget' })
+  await spareBudget.fill('200')
+  await expect(spareBudget).toHaveValue('200')
   await expect(continuity).toBeChecked()
   await expect(lossTolerance).toBeChecked()
   await page.setViewportSize({ width: 850, height: 1000 })
@@ -28,12 +31,13 @@ test('Scenario builder preserves controller continuity together with generator-l
   await steps.getByRole('button', { name: /^Data/ }).click()
   await steps.getByRole('button', { name: /^Run Settings/ }).click()
   await expect(continuity).toBeChecked()
+  await expect(spareBudget).toHaveValue('200')
   await steps.getByRole('button', { name: /^Review/ }).click()
   const saved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/scenarios')
   await page.getByRole('button', { name: 'Save draft', exact: true }).click()
   const response = await saved
   expect(response.ok(), await response.text()).toBeTruthy()
-  expect(response.request().postDataJSON().assignment).toMatchObject({ failover_policy: 'continue', tolerate_generator_loss: true })
+  expect(response.request().postDataJSON().assignment).toMatchObject({ failover_policy: 'continue', tolerate_generator_loss: true, recovery_spare_vusers: 200 })
 })
 
 test('New Test saves drafts without execution, retains both tabs and validates recurring triggers', async ({ page }) => {

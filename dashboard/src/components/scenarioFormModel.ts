@@ -269,6 +269,7 @@ export function assignmentFromForm(form: ScenarioFormState): GeneratorAssignment
     ...(preserved?.required_labels ? { required_labels: { ...preserved.required_labels } } : {}),
     ...(preserved?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}),
     ...(preserved?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
+    ...(preserved?.recovery_spare_vusers !== undefined ? { recovery_spare_vusers: preserved?.recovery_spare_vusers } : {}),
   }
   if (form.assignment_mode === 'specific_hosts') {
     return { ...common, mode: 'specific_hosts', selected_targets: [...form.assignment_targets] }

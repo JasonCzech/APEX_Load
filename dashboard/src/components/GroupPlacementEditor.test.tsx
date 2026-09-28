@@ -451,4 +451,27 @@ describe('GroupPlacementEditor', () => {
     act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} availableTargets={['gen-a']} scope="group" />))
     expect(container.querySelector('input[aria-label="Continue through controller failover"]')).toBeNull()
   })
+  it('preserves the spare quota budget across placement changes and removes it when loss tolerance is disabled', () => {
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto', tolerate_generator_loss: true, recovery_spare_vusers: 200 }} availableTargets={['gen-a']} scope="scenario" />))
+    const serialized = () => JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    const input = container.querySelector<HTMLInputElement>('[aria-label="Recovery spare VUser budget"]')!
+    expect(input.value).toBe('200')
+    act(() => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(input, '300')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(serialized().recovery_spare_vusers).toBe(300)
+    act(() => radio('Pin to host(s)').click())
+    expect(serialized().recovery_spare_vusers).toBe(300)
+    const card = Array.from(container.querySelectorAll<HTMLLabelElement>('.scenario-option-card')).find(value => value.textContent?.includes('Tolerate generator loss'))!
+    act(() => card.querySelector<HTMLInputElement>('input')!.click())
+    expect(serialized().recovery_spare_vusers).toBeUndefined()
+    expect(container.querySelector('[aria-label="Recovery spare VUser budget"]')).toBeNull()
+  })
+
+  it('does not offer a spare budget at group scope', () => {
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} availableTargets={['gen-a']} scope="group" />))
+    expect(container.querySelector('[aria-label="Recovery spare VUser budget"]')).toBeNull()
+  })
+
 })

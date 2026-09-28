@@ -18,6 +18,9 @@ func (tr *TestRunner) nodeRecoveryCapacityWarningLocked(test *ManagedTest, place
 	if test == nil || !assignmentToleratesGeneratorLoss(test.Assignment) {
 		return nil
 	}
+	if recoverySpareVUsers(test) > 0 {
+		return &LaunchConflict{Code: "node_recovery_capacity_admission_required", Severity: "warning", Source: "controller", Message: fmt.Sprintf("The %d-VUser recovery spare budget counts toward project and pool quotas. Dispatch must reserve and confirm the full workload and eligible idle spares together. The estimate does not reserve capacity; combined controller/generator loss remains unsupported.", recoverySpareVUsers(test))}
+	}
 	warning := func(reason string) *LaunchConflict {
 		return &LaunchConflict{Code: "node_recovery_capacity_unreserved", Severity: "warning", Source: "controller", Message: reason + " Recovery capacity is not reserved; worker-loss continuity is not guaranteed."}
 	}

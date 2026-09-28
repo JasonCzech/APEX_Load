@@ -24,4 +24,13 @@ describe('validateGeneratorAssignment', () => {
     expect(validateGeneratorAssignment({ mode: 'auto', failover_policy: 'continue', tolerate_generator_loss: true }, 'scenario', 'Scenario')).toBeUndefined()
     expect(validateGeneratorAssignment({ mode: 'auto', failover_policy: 'continue' }, 'scenario', 'Scenario')).toBeUndefined()
   })
+  it('validates the scenario spare envelope without silently discarding invalid values', () => {
+    for (const budget of [-1, 0.5, NaN, Infinity, 1000001]) {
+      expect(validateGeneratorAssignment({ mode: 'auto', tolerate_generator_loss: true, recovery_spare_vusers: budget }, 'scenario', 'Scenario')).toContain('whole number')
+    }
+    expect(validateGeneratorAssignment({ mode: 'auto', recovery_spare_vusers: 100 }, 'scenario', 'Scenario')).toContain('generator-loss tolerance')
+    expect(validateGeneratorAssignment({ mode: 'auto', tolerate_generator_loss: true, recovery_spare_vusers: 100 }, 'group', 'Group')).toContain('scenario scope')
+    expect(validateGeneratorAssignment({ mode: 'auto', tolerate_generator_loss: true, recovery_spare_vusers: 100 }, 'scenario', 'Scenario')).toBeUndefined()
+  })
+
 })

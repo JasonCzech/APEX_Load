@@ -11,6 +11,11 @@ import (
 
 func clonePodReservation(r storage.PodCapacityReservation) storage.PodCapacityReservation {
 	out := r
+	if r.RecoveryPlacement != nil {
+		proof := *r.RecoveryPlacement
+		proof.ReplacementSources = append([]string(nil), proof.ReplacementSources...)
+		out.RecoveryPlacement = &proof
+	}
 	out.Budget = r.Budget.Scale(1)
 	out.Demand = r.Demand.Scale(1)
 	out.GroupPeaks = make(map[string]int32, len(r.GroupPeaks))
@@ -61,6 +66,9 @@ func (tr *TestRunner) expandPodScale(ctx context.Context, testID, group string, 
 		}
 		if shard.VUsers <= int(peak) {
 			continue
+		}
+		if r.RecoveryPlacement != nil {
+			return noop, fmt.Errorf("expanding a frozen recovery placement requires a new run and spare admission")
 		}
 		if r.Generation != generation {
 			return noop, fmt.Errorf("reservation belongs to a previous execution owner")

@@ -2335,3 +2335,40 @@ Go archives were removed before retrying; runtime volumes and evidence were kept
 These tests establish this local single-instance outage behavior, not Redis
 replication failover or physical-host availability. Review found no further
 scoped evidence discrepancies.
+
+
+## Explicit reserved worker capacity admission (2026-09-28)
+
+Added the opt-in `recovery_spare_vusers` quota envelope to scenario/API assignment.
+Loss-tolerant stateless HTTP placement now reserves source claims and full dedicated
+idle spares together before work staging. Fresh Kubernetes workload/pod/node identities,
+KEDA/HPA bounds, generator incarnations and standby capabilities constrain a frozen
+single-worker contingency map. Evacuation may activate only its admitted spare after
+revalidating the identity. The proof survives revision changes and cannot be rewritten
+or dropped. The envelope participates in per-test/project/pool/fleet quota checks;
+queued scaling includes it and requests enough whole pods for source/spare placement.
+Scaling beyond a frozen peak requires new admission.
+
+Review added missing whole-pod scaling protection, identity-bound activation coverage,
+and PostgreSQL checks for immutable recovery proofs. Visual review found and fixed
+an inline field layout defect. A final scoped code review found no further actionable
+issues. Combined leader/generator recovery and deployed qualification remain open.
+
+Validation: focused admission/storage tests passed; race tests across recovery,
+reservation, standby and evacuation paths passed three repetitions (storage 19.063 s,
+API 136.485 s). The full Go suite passed (API 386.084 s). The added transport/ledger
+activation test passed (1.651 s); its final race run and the immutable-proof checks
+also passed three repetitions (storage 3.119 s, API 12.072 s). Real isolated PostgreSQL placement, compare-and-reserve,
+adoption and immutable-proof tests passed three repetitions (2.987 s).
+Dashboard typecheck, lint, all 4,548 tests across 432 files and production build passed.
+The existing scenario workflow passed all three cases in dev-admin (6.9 s) and local-auth
+(27.0 s) after the layout repair. An additional headed browser inspection verified the
+field at 850 px and the expected HA-unavailable admission error on the isolated local
+controller. Temporary browser/controller/Vite processes were stopped afterward.
+
+Private logs use `/tmp/apex-recovery-admission-*`; captures are under ignored
+`dashboard/test-results/recovery-admission-fixed` and `output/playwright/recovery-admission`.
+The documentation check exposed a missing retention-guide index entry, now repaired;
+23 existing links to absent ignored historical QA logs still prevent a global docs pass.
+Runtime volumes and evidence were preserved; cleanup receipt 30 records removal of
+4,411,058,718 bytes of positively identified, rebuildable worktree Go archives.

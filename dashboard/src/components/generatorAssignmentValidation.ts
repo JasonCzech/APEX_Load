@@ -23,6 +23,14 @@ export function validateGeneratorAssignment(
 ): string | undefined {
   if (!assignment) return undefined
 
+  const spareBudget = assignment.recovery_spare_vusers ?? 0
+  if (!Number.isSafeInteger(spareBudget) || spareBudget < 0 || spareBudget > 1000000) {
+    return `${label}: recovery spare VUser budget must be a whole number from 0 to 1000000.`
+  }
+  if (spareBudget > 0 && (scope !== 'scenario' || !assignment.tolerate_generator_loss || assignment.source_affinity || assignment.mode === 'region_weighted' || assignment.mode === 'load_zone_weighted')) {
+    return `${label}: recovery spare reservations require generator-loss tolerance with automatic or specific-host placement at scenario scope.`
+  }
+
   if (scope === 'group') {
     if (assignment.mode === 'region_weighted' || assignment.mode === 'load_zone_weighted') {
       return `${label}: weighted placement is supported only at scenario scope. Choose inherit, automatic, specific hosts, or required capabilities.`

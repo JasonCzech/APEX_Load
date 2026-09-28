@@ -551,7 +551,7 @@ multiplying them. The queries return no value when evidence is missing. All trig
 set `ignoreNullValues: "false"`; this surfaces unavailable evidence instead of presenting
 it as idle demand. Keep Prometheus and controller clocks synchronized and scrape every
 15 seconds or faster. The reservation floor protects retained ordinals; reserved
-recovery headroom is a separate, unfinished policy.
+recovery headroom is opt-in through the admission policy below.
 
 The [KEDA Prometheus scaler documentation](https://keda.sh/docs/2.18/scalers/prometheus/)
 describes missing-result behavior. The executable regression cases live in
@@ -559,3 +559,38 @@ describes missing-result behavior. The executable regression cases live in
 cover duplicate observations, stale followers, independent installations, expiry,
 browser demand, saturation, and the ordinal floor. Deployment tests ensure every shipped
 query matches a tested expression.
+
+
+### Reserved worker recovery capacity
+
+For fenced stateless HTTP runs, enable peak pod reservations and set
+`assignment.tolerate_generator_loss: true` plus a positive
+`assignment.recovery_spare_vusers` budget. The scenario builder exposes this as
+**Recovery spare VUser budget** under Controller/Generator. Zero preserves ordinary
+placement. The budget is an integer quota envelope, not additional generated traffic;
+it is charged alongside peak workload demand to test, project, pool and fleet VUser
+limits. Group-level budgets, weighted/source-affinity placement and bounded iteration
+workloads are rejected.
+
+Admission requires fresh Kubernetes pod UID, node and workload identity, a current
+KEDA/HPA maximum, and compatible idle generators supporting standby reservations.
+The controller matches each source to a spare on another worker, checks every
+single-worker contingency and reserves the union of full dedicated spare budgets.
+For example, two source pods on one worker with two 100-VUser spares on another
+require a spare budget of at least 200 and a maximum of at least four replicas.
+Preview reports the footprint; dispatch rechecks it and reserves all source/spare
+claims in one lease-fenced database transaction before staging work. Unconfirmed
+acknowledgments retain capacity for ordinary cleanup rather than releasing uncertain
+claims. Queued demand includes the envelope and a bounded whole-pod replica floor.
+
+The frozen reservation records bind spares to permitted sources, pod/workload identity
+and worker placement. Evacuation revalidates those identities before activation;
+a changed pod or stale observation fails closed. Scaling within the original frozen
+peak remains supported; exceeding it requires a new run and admission. Idle spares
+remain outside execution metrics and archive participant sets and are retained by
+the normal reservation scale-down floor.
+
+This policy enables reserved capacity for the existing generator-evacuation path.
+Combined controller/generator loss still needs durable recovery intent and takeover
+reconciliation. Physical host, zone and storage recovery require separate multi-host
+qualification; a Docker Desktop worker-container trial cannot establish those claims.

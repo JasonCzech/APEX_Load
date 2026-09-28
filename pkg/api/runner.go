@@ -1349,6 +1349,10 @@ type latencyRouteCacheEntry struct {
 }
 
 type GeneratorAssignmentSettings struct {
+	// RecoverySpareVUsers opts into single-worker spare admission. It is a quota
+	// envelope for dedicated idle spare pods, not additional executable VUsers.
+	RecoverySpareVUsers int `json:"recovery_spare_vusers,omitempty"`
+
 	SourceAffinity  string            `json:"source_affinity,omitempty"` // single_generator: preserved source-engine requirement; execution currently gated.
 	SharingMode     string            `json:"sharing_mode,omitempty"`
 	Mode            string            `json:"mode,omitempty"`

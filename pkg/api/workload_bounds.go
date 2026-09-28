@@ -19,6 +19,9 @@ func validateManagedTestWorkloadBounds(test *ManagedTest) error {
 	if test == nil {
 		return fmt.Errorf("test is required")
 	}
+	if err := validateRecoverySpareWorkload(test); err != nil {
+		return err
+	}
 	if len(test.Groups) == 0 {
 		return fmt.Errorf("test must contain at least one group")
 	}

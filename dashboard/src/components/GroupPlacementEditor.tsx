@@ -214,6 +214,7 @@ export default function GroupPlacementEditor({
     ...(scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}),
     ...(scope === 'scenario' && assignment?.sharing_mode ? { sharing_mode: assignment.sharing_mode } : {}),
     ...(scope === 'scenario' && assignment?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
+    ...(scope === 'scenario' && assignment?.recovery_spare_vusers !== undefined ? { recovery_spare_vusers: assignment?.recovery_spare_vusers } : {}),
   }
   const regionKeys = Array.from(new Set((generatorInventory || []).map(generator => generator.region?.trim()).filter((value): value is string => Boolean(value)))).sort()
   const loadZoneKeys = Array.from(new Set((generatorInventory || []).map(generator => (
@@ -318,7 +319,10 @@ export default function GroupPlacementEditor({
   const setLossTolerance = (enabled: boolean) => {
     const next: GeneratorAssignmentSettings = assignment ? { ...assignment } : { mode: 'auto' }
     if (enabled) next.tolerate_generator_loss = true
-    else delete next.tolerate_generator_loss
+    else {
+      delete next.tolerate_generator_loss
+      delete next.recovery_spare_vusers
+    }
     onChange(next)
   }
 
@@ -500,6 +504,15 @@ export default function GroupPlacementEditor({
         <label className={`scenario-option-card ${assignment?.tolerate_generator_loss ? 'selected' : ''}`}>
           <input type="checkbox" checked={Boolean(assignment?.tolerate_generator_loss)} onChange={event => setLossTolerance(event.target.checked)} />
           <div><strong>Tolerate generator loss</strong><span>Continue on surviving assigned generators when policy permits.</span></div>
+        </label>
+      )}
+      {scope === 'scenario' && mode !== 'inherit' && assignment?.tolerate_generator_loss && (
+        <label className="recovery-spare-budget">
+          <span>Recovery spare VUser budget</span>
+          <input type="number" aria-label="Recovery spare VUser budget" min={0} max={1000000} step={1}
+            value={assignment.recovery_spare_vusers ?? 0}
+            onChange={event => onChange({ ...assignment, recovery_spare_vusers: Number(event.target.value) })} />
+          <small>Zero disables spare reservations. A positive budget reserves idle generators on other workers and counts toward project and pool quotas. Admission requires stateless HTTP and observed Kubernetes capacity. A generator lost during a controller failover still fails the run.</small>
         </label>
       )}
       {scope === 'scenario' && mode !== 'inherit' && (

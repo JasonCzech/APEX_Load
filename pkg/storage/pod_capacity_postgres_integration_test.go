@@ -48,4 +48,5 @@ func TestPodCapacityPostgresAtomicPlacement(t *testing.T) {
 	checkAdoptPodCapacity(t, store.SQLiteStore)
 	checkAdoptStandbyPodCapacity(t, store.SQLiteStore)
 	checkPodCapacityCompareAndReserve(t, store.SQLiteStore)
+	checkPodCapacityRecoveryPlacementIsFrozen(t, store.SQLiteStore)
 }

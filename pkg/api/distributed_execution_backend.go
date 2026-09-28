@@ -882,6 +882,10 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	tr.mu.RLock()
 	podSettings := cloneSystemSettings(tr.settings)
 	tr.mu.RUnlock()
+	if recoverySpareVUsers(test) > 0 && !podSettings.CapacityPlanning.PodReservationsEnabled {
+		tr.failTestBeforeRunAndLog(test, "reserved recovery capacity requires peak pod reservations")
+		return
+	}
 	var podClaims []storage.PodCapacityReservation
 	var runSupervisionToken [generatorrpc.RunSupervisionTokenSize]byte
 	var runSupervisionTokenBytes []byte

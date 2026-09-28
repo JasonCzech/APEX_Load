@@ -1379,6 +1379,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if capacityVUsers <= 0 {
 		capacityVUsers = totalVUsers
 	}
+	capacityVUsers = saturatingAddNonNegative(capacityVUsers, recoverySpareVUsers(&ManagedTest{Assignment: req.Assignment}))
 	if err := enforceTestQuotaWithProjectQuota(projectQuota, capacityVUsers, dur, status); err != nil {
 		return nil, err
 	}
