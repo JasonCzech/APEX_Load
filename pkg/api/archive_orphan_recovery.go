@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -21,6 +21,10 @@ import (
 // intent or recreate work after the archive catalog has committed.
 type orphanArchiveFinalizationStore interface {
 	SaveArchiveFinalizationJobIfOrphan(job *storage.ArchiveFinalizationJob) (bool, error)
+}
+
+type incarnationOrphanArchiveFinalizationStore interface {
+	SaveArchiveFinalizationJobIfOrphanForRun(*storage.ArchiveFinalizationJob, string, string, string) (bool, error)
 }
 
 type orphanArchiveCandidate struct {
@@ -38,7 +42,7 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchives(ctx context.Context) error
 	if tr == nil || tr.archiveStore == nil || tr.testStore == nil {
 		return nil
 	}
-	orphanStore, ok := tr.archiveStore.(orphanArchiveFinalizationStore)
+	orphanStore, ok := tr.archiveStore.(incarnationOrphanArchiveFinalizationStore)
 	if !ok {
 		return nil
 	}
@@ -54,57 +58,79 @@ func (tr *TestRunner) recoverOrphanedLocalRunArchives(ctx context.Context) error
 		failures = append(failures, discoveryErr)
 	}
 	for _, candidate := range candidates {
-		archivePath := candidate.path
 		if err := ctx.Err(); err != nil {
 			return errors.Join(append(failures, err)...)
 		}
-		if !tr.isExecutionLeader() {
-			return errors.Join(append(failures, errNotExecutionLeader)...)
+		if err := tr.recoverOrphanedLocalRunArchive(ctx, orphanStore, candidate); err != nil {
+			failures = append(failures, err)
 		}
-		record, manifest, err := orphanArchiveRecordFromDirectoryWithIdentity(ctx, archivePath, candidate.identity)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("inspect orphan archive %q: %w", archivePath, err))
-			continue
-		}
-
-		testRecord, err := tr.testStore.GetTest(record.TestID)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && testRecord == nil) {
-			// A deleted test is not recoverable publication work. Deletion/cleanup
-			// owns physical removal; importantly, recovery never recreates metadata.
-			continue
-		}
-		if err != nil {
-			failures = append(failures, fmt.Errorf("load test %s for orphan recovery: %w", record.TestID, err))
-			continue
-		}
-		if !isTerminalTestStatus(testRecord.Status) || !isTerminalTestStatus(manifest.Status) {
-			continue
-		}
-		projectID := normalizeProjectID(testRecord.ProjectID)
-		manifestProjectID := strings.TrimSpace(manifest.Provenance.ProjectID)
-		if manifestProjectID != "" && normalizeProjectID(manifestProjectID) != projectID {
-			failures = append(failures, fmt.Errorf("orphan archive %s belongs to project %q, durable test belongs to %q", record.TestID, manifestProjectID, projectID))
-			continue
-		}
-		record.RefKey = strings.TrimSpace(testRecord.RefKey)
-		created, err := orphanStore.SaveArchiveFinalizationJobIfOrphan(&storage.ArchiveFinalizationJob{
-			TestID:           record.TestID,
-			ProjectID:        projectID,
-			ArchiveRecord:    *record,
-			PersistArtifacts: true,
-		})
-		if errors.Is(err, sql.ErrNoRows) {
-			// The test/catalog state changed after the scan. The conditional
-			// transition intentionally turns that race into a harmless no-op.
-			continue
-		}
-		if err != nil {
-			failures = append(failures, fmt.Errorf("queue orphan archive %s: %w", record.TestID, err))
-			continue
-		}
-		_ = created // false means a catalog or newer outbox row already won.
 	}
+
 	return errors.Join(failures...)
+}
+
+func (tr *TestRunner) recoverOrphanedLocalRunArchive(ctx context.Context, store incarnationOrphanArchiveFinalizationStore, candidate orphanArchiveCandidate) error {
+	if !tr.isExecutionLeader() {
+		return errNotExecutionLeader
+	}
+	release, err := lockArchivePublicationSource(ctx, filepath.Base(candidate.path))
+	if err != nil {
+		return err
+	}
+	defer release()
+	// Already cataloged, pending, deleted or resolved runs are not orphans. Check
+	// durable ownership before reading payloads so startup never rehashes the
+	// entire retained archive history.
+	row, err := tr.testStore.GetTest(filepath.Base(candidate.path))
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && row == nil) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !isTerminalTestStatus(row.Status) {
+		return nil
+	}
+	existing, err := tr.existingCollectedArchive(managedTestFromRecord(row))
+	if errors.Is(err, storage.ErrArchiveCleanupPending) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		return nil
+	}
+	record, manifest, err := orphanArchiveRecordFromDirectoryWithIdentity(ctx, candidate.path, candidate.identity)
+	if err != nil {
+		return fmt.Errorf("inspect orphan archive %q: %w", candidate.path, err)
+	}
+	if !isTerminalTestStatus(manifest.Status) {
+		return nil
+	}
+	project := normalizeProjectID(row.ProjectID)
+	if declared := strings.TrimSpace(manifest.Provenance.ProjectID); declared != "" && normalizeProjectID(declared) != project {
+		return fmt.Errorf("orphan archive %s belongs to another project", record.TestID)
+	}
+	if row.EndTime == nil || manifest.Status != row.Status || !archiveRunTimestampMatches(manifest.CreatedAt, row.StartTime, tr.testStore) || !archiveRunTimestampMatches(manifest.CompletedAt, *row.EndTime, tr.testStore) {
+		return fmt.Errorf("orphan archive %s does not match the durable terminal incarnation", record.TestID)
+	}
+	lease, owner := "", ""
+	if tr.durableExecutionFence {
+		_, holder, _, err := tr.generatorExecutionClaim()
+		if err != nil {
+			return err
+		}
+		lease, owner = executionLeaseName, holder
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	record.RefKey = strings.TrimSpace(row.RefKey)
+	return tr.trackDurableWrite(func() error {
+		_, err := store.SaveArchiveFinalizationJobIfOrphanForRun(&storage.ArchiveFinalizationJob{TestID: record.TestID, ProjectID: project, ArchiveRecord: *record, PersistArtifacts: true}, manifest.Status, lease, owner)
+		return err
+	})
 }
 
 func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orphanArchiveCandidate, error) {
@@ -126,47 +152,61 @@ func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orpha
 	defer rootHandle.Close()
 
 	seen := make(map[string]orphanArchiveCandidate)
+	remaining := maxOrphanArchiveRecoveryCandidates
 	failures := make([]error, 0)
 	inspectChildren := func(parent *os.Root, parentPath string) {
 		if err := ctx.Err(); err != nil {
 			failures = append(failures, err)
 			return
 		}
-		entries, err := fs.ReadDir(parent.FS(), ".")
+		directory, err := parent.Open(".")
 		if err != nil {
-			failures = append(failures, fmt.Errorf("read archive recovery directory %q: %w", parentPath, err))
+			failures = append(failures, err)
 			return
 		}
-		for _, entry := range entries {
-			if len(seen) >= maxOrphanArchiveRecoveryCandidates {
-				failures = append(failures, fmt.Errorf("archive orphan recovery candidate limit %d exceeded", maxOrphanArchiveRecoveryCandidates))
+		defer directory.Close()
+		for {
+			entries, readErr := directory.ReadDir(256)
+
+			for _, entry := range entries {
+				remaining--
+				if remaining < 0 {
+					failures = append(failures, fmt.Errorf("archive orphan recovery entry limit %d exceeded", maxOrphanArchiveRecoveryCandidates))
+					return
+				}
+				if err := ctx.Err(); err != nil {
+					failures = append(failures, err)
+					return
+				}
+				if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
+					continue
+				}
+				if err := validateArchiveRunID(entry.Name()); err != nil {
+					continue
+				}
+				runRoot, err := openArchiveChildDirectoryAt(parent, entry.Name(), false, 0)
+				if err != nil {
+					continue
+				}
+				identity, identityErr := runRoot.Stat(".")
+				manifest, _, manifestErr := openArchiveArtifactForReadAt(runRoot, runArchiveManifestFileName)
+				if manifest != nil {
+					_ = manifest.Close()
+				}
+				_ = runRoot.Close()
+				if identityErr != nil || manifestErr != nil {
+					continue
+				}
+				candidatePath := filepath.Join(parentPath, entry.Name())
+				seen[candidatePath] = orphanArchiveCandidate{path: candidatePath, identity: identity}
+			}
+			if readErr == io.EOF {
 				return
 			}
-			if err := ctx.Err(); err != nil {
-				failures = append(failures, err)
+			if readErr != nil {
+				failures = append(failures, readErr)
 				return
 			}
-			if entry.Type()&os.ModeSymlink != 0 || !entry.IsDir() {
-				continue
-			}
-			if err := validateArchiveRunID(entry.Name()); err != nil {
-				continue
-			}
-			runRoot, err := openArchiveChildDirectoryAt(parent, entry.Name(), false, 0)
-			if err != nil {
-				continue
-			}
-			identity, identityErr := runRoot.Stat(".")
-			manifest, _, manifestErr := openArchiveArtifactForReadAt(runRoot, runArchiveManifestFileName)
-			if manifest != nil {
-				_ = manifest.Close()
-			}
-			_ = runRoot.Close()
-			if identityErr != nil || manifestErr != nil {
-				continue
-			}
-			candidatePath := filepath.Join(parentPath, entry.Name())
-			seen[candidatePath] = orphanArchiveCandidate{path: candidatePath, identity: identity}
 		}
 	}
 
@@ -175,6 +215,8 @@ func discoverOrphanArchiveDirectories(ctx context.Context, root string) ([]orpha
 	if remoteErr == nil {
 		inspectChildren(remoteRoot, filepath.Join(absRoot, "remote"))
 		_ = remoteRoot.Close()
+	} else if !os.IsNotExist(remoteErr) {
+		failures = append(failures, remoteErr)
 	}
 
 	candidates := make([]orphanArchiveCandidate, 0, len(seen))
@@ -253,5 +295,8 @@ func orphanArchiveRecordFromDirectoryWithIdentity(ctx context.Context, archivePa
 	record.IntervalSummaryCount = manifest.IntervalSummaryCount
 	record.CreatedAt = manifest.CreatedAt
 	record.CompletedAt = manifest.CompletedAt
+	if err := validateOrphanArchiveArtifacts(ctx, runRoot, &manifest, int64(len(data))); err != nil {
+		return nil, nil, err
+	}
 	return record, &manifest, nil
 }

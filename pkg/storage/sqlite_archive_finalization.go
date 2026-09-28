@@ -152,6 +152,19 @@ func (s *SQLiteStore) SaveArchiveFinalizationJob(job *ArchiveFinalizationJob) er
 // checked in the same transaction, so an orphan scan cannot overwrite a newer
 // note refresh or resurrect publication after test deletion.
 func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizationJob) (bool, error) {
+	return s.saveArchiveFinalizationJobIfOrphan(job, "", "", "")
+}
+
+// SaveArchiveFinalizationJobIfOrphanForRun atomically binds recovery to the
+// terminal incarnation inspected by the caller and the current execution lease.
+func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphanForRun(job *ArchiveFinalizationJob, status, lease, owner string) (bool, error) {
+	if job == nil || job.ArchiveRecord.CreatedAt.IsZero() || job.ArchiveRecord.CompletedAt.IsZero() || (status != "COMPLETE" && status != "FAILED" && status != "ABORTED") || (lease == "") != (owner == "") {
+		return false, errors.New("invalid orphan recovery identity")
+	}
+	return s.saveArchiveFinalizationJobIfOrphan(job, status, lease, owner)
+}
+
+func (s *SQLiteStore) saveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizationJob, status, lease, owner string) (bool, error) {
 	if job == nil {
 		return false, errors.New("archive finalization job is nil")
 	}
@@ -185,12 +198,30 @@ func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 		return false, err
 	}
 	defer tx.Rollback()
+	if lease != "" {
+		held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, lease, owner)
+		if err != nil || !held {
+			return false, err
+		}
+	}
+	projectArgs := []any{job.TestID}
 	projectQuery := `SELECT COALESCE(project_id, '') FROM tests WHERE id = ?`
+	if status != "" {
+		started, ended := job.ArchiveRecord.CreatedAt, job.ArchiveRecord.CompletedAt
+		if s.db.dialect == storeDialectPostgres {
+			started, ended = started.Truncate(time.Microsecond), ended.Truncate(time.Microsecond)
+		}
+		projectQuery += ` AND start_time = ? AND end_time = ? AND status = ?`
+		projectArgs = append(projectArgs, started, ended, status)
+	}
 	if s.db.dialect == storeDialectPostgres {
 		projectQuery += ` FOR UPDATE`
 	}
 	var projectID string
-	if err := tx.QueryRow(projectQuery, job.TestID).Scan(&projectID); err != nil {
+	if err := tx.QueryRow(projectQuery, projectArgs...).Scan(&projectID); err != nil {
+		if status != "" && errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
 		return false, err
 	}
 	if normalizeProjectID(projectID) != job.ProjectID {
@@ -208,6 +239,15 @@ func (s *SQLiteStore) SaveArchiveFinalizationJobIfOrphan(job *ArchiveFinalizatio
 		return false, err
 	}
 	if catalogExists != 0 {
+		return false, nil
+	}
+	// Publication/retention permanently resolves collection. A leftover source
+	// must never recreate work after its catalog and cleanup records disappear.
+	var resolved int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM run_archive_collection_intents WHERE test_id = ? AND resolved = 1`, job.TestID).Scan(&resolved); err != nil {
+		return false, err
+	}
+	if resolved != 0 {
 		return false, nil
 	}
 	result, err := tx.Exec(`INSERT INTO archive_finalization_jobs (

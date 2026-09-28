@@ -114,3 +114,18 @@ archives, filesystem metadata and publication backlog still require separate siz
 No unconfirmed cache evidence is automatically pruned. Cache cleanup after confirmed
 publication and the bounded background collection retry worker remain follow-up work.
 This cache has source/unit/database validation; deployed fault qualification is pending.
+
+Startup orphan recovery now requires a storage extension that atomically checks
+the exact run start/end timestamps, terminal status, project and current execution
+lease before creating publication work. Resolved collection intents cannot be
+resurrected after catalog retention, including by producer retries. Recovery holds
+the source file fence and skips already-published, pending, deleted and resolved
+runs before reading their payloads.
+
+A genuine orphan must have complete artifact size/hash descriptors; existing files
+are verified through the inspected directory handle before publication can rewrite
+adjunct metadata. Verification uses the configured per-archive materialization byte
+ceiling. Missing, changed, unanchored or excessive payloads remain untouched for
+investigation. Legacy orphan sources without integrity descriptors are preserved
+rather than automatically re-trusted. Discovery counts all directory entries toward
+its 10,000-entry budget, including entries that are not archive candidates.

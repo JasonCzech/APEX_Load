@@ -2623,3 +2623,36 @@ evacuation archive paths. Documentation checks passed for all 69 active Markdown
 files. Final scoped review found no further handoff-replacement findings. The full
 108-package Go suite passed on the immediately preceding cache commit; this small
 API-only safeguard was validated with focused and broader archive race checks.
+
+## Orphan recovery incarnation and evidence validation (2026-09-28)
+
+Review found that orphan publication checked the durable project but not the exact
+run incarnation/outcome in the insert transaction. Recovery now checks source
+identity under the source file fence, verifies the durable terminal start/end/status,
+and uses a SQLite/PostgreSQL conditional insertion with the execution lease. A
+changed/deleted run cannot inherit an earlier orphan. Resolved collection intents
+also prevent the legacy producer create-only path from resurrecting publication
+after catalog/outbox removal.
+
+Recovery now verifies declared artifact sizes and hashes through a stable directory
+handle before adjunct generation can recalculate metadata. Missing descriptors,
+corruption, symlinks and byte-limit violations preserve the source and reject recovery.
+Review moved durable ownership checks ahead of payload verification so cataloged or
+pending archives are not rehashed at startup. Discovery counts every entry against
+the existing 10,000-entry work budget. Timestamp fixtures now use one exact instant
+for both the durable row and source manifest.
+
+Initial focused checks passed (API 2.519 s, storage 1.034 s). Final repeated race,
+PostgreSQL and full validation are being recorded in `/tmp/apex-orphan-incarnation-*`.
+
+The reviewed race checks passed three repetitions (API 40.670 s, storage 21.658 s).
+Isolated PostgreSQL checks passed three repetitions (3.951 s), including conditional
+orphan insertion, stale owner/incarnation rejection, concurrent single-winner claims
+and refusal to resurrect resolved collection work. The full Go suite is in progress.
+
+The full Go suite passed all 108 test-bearing packages (API 357.248 s).
+Documentation checks passed for all 69 active Markdown files. Final scoped review
+found no further orphan-incarnation/integrity findings. A subsequent manifest review
+identified a separate cache portability issue: AKS controllers use per-pod emptyDir
+staging, so a new controller must be able to refetch absent local cache files against
+the existing immutable SQL receipt. That repair and per-root confirmed cleanup follow.

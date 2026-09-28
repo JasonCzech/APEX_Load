@@ -18,7 +18,7 @@ func writeOrphanArchiveFixture(t *testing.T, root, testID, manifestTestID, proje
 	if err := os.MkdirAll(archivePath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC().Truncate(time.Millisecond)
+	now := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
 	manifest := RunArchiveManifest{
 		SchemaVersion: archiveSchemaVersion,
 		TestID:        manifestTestID,
@@ -37,7 +37,7 @@ func writeOrphanArchiveFixture(t *testing.T, root, testID, manifestTestID, proje
 
 func saveTerminalOrphanTest(t *testing.T, store storage.Store, testID, projectID string) {
 	t.Helper()
-	now := time.Now().UTC()
+	now := time.Date(2026, 9, 28, 0, 0, 0, 0, time.UTC)
 	if err := store.SaveTest(&storage.TestRecord{
 		ID:        testID,
 		RefKey:    "RUN-" + testID,
