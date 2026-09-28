@@ -1040,6 +1040,9 @@ func (s *SQLiteStore) UpdateTestStatus(id string, status string, endTime *time.T
 			return fmt.Errorf("reconcile queued scenario occurrence at test failure: %w", err)
 		}
 	}
+	if err := recordUnconfirmedTerminalArchive(tx, id, status); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -1068,6 +1071,9 @@ func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime
 				return "", fmt.Errorf("reconcile queued scenario occurrence at test failure: %w", err)
 			}
 		}
+		if err := recordUnconfirmedTerminalArchive(tx, id, status); err != nil {
+			return "", err
+		}
 		if err := tx.Commit(); err != nil {
 			return "", err
 		}
@@ -1090,6 +1096,9 @@ func (s *SQLiteStore) UpdateTestStatusIfActive(id string, status string, endTime
 				return "", fmt.Errorf("reconcile queued scenario occurrence at unchanged test failure: %w", err)
 			}
 		}
+		if err := recordUnconfirmedTerminalArchive(tx, id, status); err != nil {
+			return "", err
+		}
 		if err := tx.Commit(); err != nil {
 			return "", err
 		}
@@ -1107,7 +1116,12 @@ func (s *SQLiteStore) UpdateTestStatusIfActiveAndMaterializationKey(id, material
 	if materializationKey == "" {
 		return TestStatusTransitionFenced, nil
 	}
-	result, err := s.db.Exec(`UPDATE tests SET status = ?, end_time = ?, error = ?
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE tests SET status = ?, end_time = ?, error = ?
 		WHERE id = ? AND TRIM(COALESCE(materialization_key, '')) = ?
 		  AND (status = ? OR status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING', 'RESERVED', 'PENDING', 'SCHEDULED', 'SHAKEOUT', 'SHAKEOUT_REVIEW', 'QUEUED'))`,
 		status, endTime, errStr, id, materializationKey, status)
@@ -1119,7 +1133,16 @@ func (s *SQLiteStore) UpdateTestStatusIfActiveAndMaterializationKey(id, material
 		return "", err
 	}
 	if affected == 1 {
+		if err := recordUnconfirmedTerminalArchive(tx, id, status); err != nil {
+			return "", err
+		}
+		if err := tx.Commit(); err != nil {
+			return "", err
+		}
 		return TestStatusTransitionUpdated, nil
+	}
+	if err := tx.Rollback(); err != nil {
+		return "", err
 	}
 	return s.classifyMaterializationStatusTransition(id, materializationKey, status)
 }
@@ -1159,6 +1182,9 @@ func (s *SQLiteStore) UpdateTestStatusIfActiveAndMaterializationKeyAndLeaseTermH
 		return "", err
 	}
 	if affected == 1 {
+		if err := recordUnconfirmedTerminalArchive(tx, id, status); err != nil {
+			return "", err
+		}
 		if err := tx.Commit(); err != nil {
 			return "", err
 		}
@@ -1241,6 +1267,9 @@ func (s *SQLiteStore) UpdateTestStatusIfActiveAndLeaseHeld(id string, status str
 				return "", fmt.Errorf("reconcile queued scenario occurrence at lease-fenced test failure: %w", err)
 			}
 		}
+		if err := recordUnconfirmedTerminalArchive(tx, id, status); err != nil {
+			return "", err
+		}
 		if err := tx.Commit(); err != nil {
 			return "", err
 		}
@@ -1262,6 +1291,9 @@ func (s *SQLiteStore) UpdateTestStatusIfActiveAndLeaseHeld(id string, status str
 			if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, id, scenarioScheduleOccurrenceFailed, failedAt, errStr, false); err != nil {
 				return "", fmt.Errorf("reconcile queued scenario occurrence at unchanged lease-fenced test failure: %w", err)
 			}
+		}
+		if err := recordUnconfirmedTerminalArchive(tx, id, status); err != nil {
+			return "", err
 		}
 		if err := tx.Commit(); err != nil {
 			return "", err

@@ -467,8 +467,10 @@ export default function RunReportPage({
       </section>}
       {!hasArchive && <section className="run-report-panel run-evidence-notice" aria-label="Evidence availability">
         <div>{test.archive_failure ? <>
-          <h2>Archive collection failed</h2>
-          <p>{test.archive_failure.reason === 'remote_collection_unavailable'
+          <h2>{test.archive_failure.reason === 'archive_collection_unconfirmed' ? 'Archive collection unconfirmed' : 'Archive collection failed'}</h2>
+          <p>{test.archive_failure.reason === 'archive_collection_unconfirmed'
+            ? 'The run ended before archive collection was confirmed. Collection may still be in progress or may have been interrupted.'
+            : test.archive_failure.reason === 'remote_collection_unavailable'
             ? 'No generator archive was available when collection finished.'
             : 'The controller could not collect the generator archive.'}</p>
           <p>Recorded: {executionDate(test.archive_failure.recorded_at)}</p>

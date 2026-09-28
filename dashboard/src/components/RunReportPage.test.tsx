@@ -258,6 +258,7 @@ describe('RunReportPage', () => {
   })
 
   it.each([
+    ['archive_collection_unconfirmed', 'The run ended before archive collection was confirmed. Collection may still be in progress or may have been interrupted.'],
     ['remote_collection_failed', 'The controller could not collect the generator archive.'],
     ['remote_collection_unavailable', 'No generator archive was available when collection finished.'],
     ['future_reason_with_private_detail', 'The controller could not collect the generator archive.'],
@@ -266,7 +267,7 @@ describe('RunReportPage', () => {
     const render = () => <RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
     await act(async () => root.render(render()))
     const notice = container.querySelector('[aria-label="Evidence availability"]')!
-    expect(notice.textContent).toContain('Archive collection failed')
+    expect(notice.textContent).toContain(reason === 'archive_collection_unconfirmed' ? 'Archive collection unconfirmed' : 'Archive collection failed')
     expect(notice.textContent).toContain(explanation)
     expect(notice.textContent).toContain('Recorded: Not recorded')
     expect(notice.textContent).toContain('may be incomplete')

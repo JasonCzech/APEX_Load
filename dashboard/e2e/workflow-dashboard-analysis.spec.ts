@@ -303,6 +303,7 @@ test('run results distinguishes recorded archive failure and refreshes availabil
   // Keep the actual catalog/topbar terminal too; only the evidence below is a fixture.
   await json(await request.post(`/api/v1/tests/${id}/abort`))
   let failureVisible = true
+  let collectionReason = 'archive_collection_unconfirmed'
   // Real scoped run and navigation; the archive failure projection is controlled
   // here. Storage and distributed completion are exercised by Go regressions.
   await page.route(`**/api/v1/tests/${id}`, async route => {
@@ -310,7 +311,7 @@ test('run results distinguishes recorded archive failure and refreshes availabil
     const response = await route.fetch()
     const payload = await response.json()
     await route.fulfill({ response, json: { ...payload, status: 'ABORTED', ended_at: '2026-09-27T12:01:00Z',
-      archive_failure: failureVisible ? { reason: 'remote_collection_unavailable', recorded_at: '2026-09-27T12:01:02Z' } : undefined,
+      archive_failure: failureVisible ? { reason: collectionReason, recorded_at: '2026-09-27T12:01:02Z' } : undefined,
       live_metrics: { timestamp: '2026-09-27T12:00:00Z', observation_state: 'historical', active_vusers: 120,
         tps: 100, total_transactions: 5000, total_errors: 0, error_pct: 0, avg_response_ms: 10,
         p50_ms: 10, p90_ms: 15, p95_ms: 20, p99_ms: 25 } } })
@@ -318,6 +319,11 @@ test('run results distinguishes recorded archive failure and refreshes availabil
   await page.goto(`/#/test/${id}?${scopeQuery(workspace)}`)
   await page.reload()
   const notice = page.getByRole('region', { name: 'Evidence availability', exact: true })
+  await expect(notice).toContainText('Archive collection unconfirmed')
+  await expect(notice).toContainText('may still be in progress or may have been interrupted')
+  await expect(notice).not.toContainText('Archive collection failed')
+  collectionReason = 'remote_collection_unavailable'
+  await notice.getByRole('button', { name: 'Check again', exact: true }).click()
   await expect(notice).toContainText('Archive collection failed')
   await expect(notice).toContainText('No generator archive was available')
   await expect(notice).toContainText('does not restart collection')

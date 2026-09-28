@@ -111,14 +111,15 @@ func (b *distributedExecutionBackend) finalizeEvacuationArchiveUnderFence(tr *Te
 			return false, completionErr
 		}
 	}
-	// A previous best-effort attempt has a durable outcome. In particular, a
-	// stop-cleanup retry must not keep dialing already closed archive sources.
+	// Only an observed best-effort failure finishes collection. The atomic
+	// unconfirmed marker predates collection and must allow this attempt to run.
+	// A stop-cleanup retry must not redial sources after an observed outcome.
 	if store := tr.archiveFailureStore(); store != nil {
 		failure, err := store.GetRunArchiveFailure(test.ID)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return true, fmt.Errorf("read evacuation archive failure: %w", err)
 		}
-		if failure != nil {
+		if failure != nil && (failure.Reason == storage.RunArchiveFailureRemoteCollection || failure.Reason == storage.RunArchiveFailureRemoteUnavailable) {
 			b.closeRemoteResources(tr, test)
 			return false, completionErr
 		}

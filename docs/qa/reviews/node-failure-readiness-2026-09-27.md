@@ -1496,3 +1496,75 @@ target timed out before the final two-pod observation. Its terminal projection
 also contained 79 errors, despite clean fully-loaded samples. The original
 autoscaling specification was restored by cleanup; the failed evidence remains
 available for diagnosis.
+
+
+## Atomic terminal archive availability
+
+The five lifecycle status mutation entry points now commit an incarnation-bound
+`archive_collection_unconfirmed` marker in the same SQLite/PostgreSQL transaction
+as terminality when neither a catalog record nor publication intent exists. This
+covers the crash interval before best-effort remote collection begins, including
+pre-start failures and adoption failure using these lifecycle writes. A marker
+write failure rolls back the status transition. Existing lease/materialization
+predicates remain authoritative. Repeated writes preserve the original marker;
+a subsequently observed collection failure replaces it, and publication evidence
+supersedes it. This marker is not a collection retry job, a data-loss assertion,
+or an implementation of durable partial-archive recovery.
+
+Results distinguishes unconfirmed collection from observed failure, explains that
+collection could still be running or interrupted, and retains the explicit warning
+that checking availability does not restart collection. SQLite tests cover all five
+entry points and three terminal statuses, stale owners/keys, idempotence, observed
+failure precedence, publication precedence, rollback and reopen. The same 15-case
+matrix passed three times against isolated PostgreSQL 16. The first Kubernetes
+port-forward run passed all assertions but failed schema cleanup after its forward
+closed; it is not counted as a pass.
+
+The cache/placement image from `ebc3d918` was loaded by digest on both workers and
+rolled out at idle with no restart or drain repair. The API's pod UIDs and node
+names matched Kubernetes. Cycle 14 passed 2→4→2 at 3,180.2 requests/s and passed
+incarnation-bound S3 archive checks. Cycle 15 failed closed before traffic because
+coordinated-start persistence exhausted the commit safety window while local
+builds/tests were also using this single Docker Desktop host. No fencing timeout
+was weakened. Subsequent load qualification is sequenced after compilation.
+
+The production cycle 13 archive passed integrity checks. Sampled failed archive
+transactions report `context canceled` at the duration boundary; those records
+remain errors, and no claim of zero terminal errors is made. The private long-trial
+helper also now drains port-forward output continuously to avoid blocking the
+forward on a full stdout pipe.
+
+The full suite exposed an interaction with evacuation retry: its existing
+"any failure record means collection finished" guard also matched the new
+unconfirmed marker. The guard now recognizes only the two observed collection
+outcomes, allowing unconfirmed work to collect. A dedicated regression starts
+from a durable unconfirmed terminal row and verifies archive publication. The
+new restart-readback fixture was also corrected to avoid startup reconciliation
+of a deliberately incomplete active run before the transition under test.
+
+Three deployed tolerance-edge trials passed with a 100-VUser hard pod capacity
+and a 90-VUser scaling threshold. Observed Ready-three to Ready-four intervals
+were 22.23, 25.75 and 27.76 seconds. Each retained zero target traffic and unchanged
+controller identities/restarts, cancelled its queued run and returned to two.
+These are queued capacity tests, not worker-failure or automatic-dispatch tests.
+
+Marked idle materializations measured 196,685,914 bytes on one controller and
+212,328,874 bytes on the other, each below 256 MiB without further reads. Total
+staging disk use is larger because confirmed-upload sources without cache markers
+are retained separately; the cache policy deliberately does not delete unmarked
+publication sources. Cycle 14's terminal metrics recorded 242 errors; its pass
+applies to clean fully-loaded samples and scale transitions, not zero errors over
+the complete duration-boundary shutdown.
+
+After that fix, the complete focused API race set, including fail-closed evacuation,
+passed (17.608 s); storage race checks passed (12.741 s). Both Results browser
+profiles passed (dev-admin 1.5 s, local-auth 8.2 s). Typecheck, lint, 25 Results
+unit cases and the rebuilt dashboard passed. Final review also verified that both
+catalog-publication transactions permanently remove superseded collection markers,
+so archive retention cannot resurrect the old marker. The final full suite is run
+against these completed sources without concurrent dashboard regeneration.
+
+The final full `go test ./...` suite passed (API 326.006 s). The source review and
+focused regressions found no remaining actionable issue in this terminal-marker
+slice. Global documentation checking still reports pre-existing missing ignored
+evidence links; neither modified readiness document appears among those errors.

@@ -181,3 +181,24 @@ func TestDistributedCompletionRecordsArchiveFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestTerminalUnconfirmedArchiveReadbackAfterRestart(t *testing.T) {
+	s, run := archiveFailureFixture(t)
+	// Model the last durable write before process loss. No archive collection or
+	// in-memory failure notification has happened, and no retry job is invented.
+	runner := NewTestRunner(1, nil, s)
+	if err := s.UpdateTestStatus(run.ID, "RUNNING", nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.persistStoredTestStatus(run.ID, "", "ABORTED", run.EndedAt, ""); err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewTestRunner(1, nil, s)
+	got, ok := restarted.GetTestSummary(run.ID)
+	if !ok || got.Status != "ABORTED" || got.ArchiveFailure == nil || got.ArchiveFailure.Reason != storage.RunArchiveFailureUnconfirmed {
+		t.Fatalf("crash window was invisible: %+v", got)
+	}
+	if _, err := s.GetArchiveFinalizationJob(run.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("marker masquerades as retry job: %v", err)
+	}
+}

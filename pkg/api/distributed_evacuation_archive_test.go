@@ -348,3 +348,29 @@ func TestFailClosedEvacuationRetryDoesNotSuppressReplacementRun(t *testing.T) {
 		t.Fatal("replacement publication attached to superseded run")
 	}
 }
+
+func TestFailClosedEvacuationCollectsAfterUnconfirmedTerminality(t *testing.T) {
+	s, run := archiveFailureFixture(t)
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
+	if err := s.UpdateTestStatus(run.ID, run.Status, run.EndedAt, run.Error); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := s.GetRunArchiveFailure(run.ID)
+	if err != nil || marker.Reason != storage.RunArchiveFailureUnconfirmed {
+		t.Fatalf("missing pre-collection marker: %+v %v", marker, err)
+	}
+	client := coverageArchiveClient(t, run.ID)
+	run.remoteClientsByTarget = map[string]generatorClient{"generator-a": client}
+	runner := NewTestRunner(1, nil, s)
+	runner.tests[run.ID] = run
+	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
+	if err := backend.finalizeFailClosedEvacuation(runner, run); err != nil {
+		t.Fatal(err)
+	}
+	if run.Archive == nil {
+		t.Fatal("unconfirmed marker suppressed archive collection")
+	}
+	if _, err := s.GetRunArchiveFailure(run.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("publication did not supersede marker: %v", err)
+	}
+}

@@ -7,10 +7,14 @@ import (
 	"time"
 )
 
+// RunArchiveFailureUnconfirmed is committed with terminality before collection
+// or publication. It makes a crash in that interval visible after restart.
+const RunArchiveFailureUnconfirmed = "archive_collection_unconfirmed"
+
 const RunArchiveFailureRemoteCollection = "remote_collection_failed"
 const RunArchiveFailureRemoteUnavailable = "remote_collection_unavailable"
 
-// RunArchiveFailure describes an observed collection failure, not a retry job.
+// RunArchiveFailure describes unavailable or unconfirmed collection, not a retry job.
 // Identity fields stay internal; only the fixed reason and recording time are public.
 type RunArchiveFailure struct {
 	TestID     string    `json:"-"`
@@ -81,7 +85,8 @@ func (s *SQLiteStore) SaveRunArchiveFailure(failure *RunArchiveFailure, leaseNam
         ON CONFLICT(test_id) DO UPDATE SET project_id = excluded.project_id, test_start_time = excluded.test_start_time,
         test_end_time = excluded.test_end_time, test_status = excluded.test_status, reason = excluded.reason, recorded_at = excluded.recorded_at
         WHERE run_archive_failures.project_id <> excluded.project_id OR run_archive_failures.test_start_time <> excluded.test_start_time
-        OR run_archive_failures.test_end_time <> excluded.test_end_time OR run_archive_failures.test_status <> excluded.test_status`, failure.Reason, time.Now().UTC(), failure.TestID)
+        OR run_archive_failures.test_end_time <> excluded.test_end_time OR run_archive_failures.test_status <> excluded.test_status
+        OR run_archive_failures.reason = ?`, failure.Reason, time.Now().UTC(), failure.TestID, RunArchiveFailureUnconfirmed)
 	if err != nil {
 		return false, err
 	}
@@ -106,4 +111,27 @@ func (s *SQLiteStore) GetRunArchiveFailure(testID string) (*RunArchiveFailure, e
 		return nil, err
 	}
 	return &failure, nil
+}
+
+// recordUnconfirmedTerminalArchive shares the lifecycle transaction: a terminal
+// row cannot commit without either existing publication evidence or a durable
+// explanation that collection has not been confirmed. A later observed failure
+// replaces this placeholder; catalog/publication intent always takes precedence.
+// Identity comes from the locked/updated database row, including its native time
+// precision. This is deliberately not a collection retry or proof of data loss.
+func recordUnconfirmedTerminalArchive(tx *storeTx, id, status string) error {
+	if status != "COMPLETE" && status != "FAILED" && status != "ABORTED" {
+		return nil
+	}
+	_, err := tx.Exec(`INSERT INTO run_archive_failures (test_id, project_id, test_start_time, test_end_time, test_status, reason, recorded_at)
+ SELECT id, COALESCE(NULLIF(project_id, ''), 'unassigned'), start_time, end_time, status, ?, ? FROM tests
+ WHERE id = ? AND status = ? AND end_time IS NOT NULL
+ AND NOT EXISTS (SELECT 1 FROM run_archives a WHERE a.test_id = tests.id)
+ AND NOT EXISTS (SELECT 1 FROM archive_finalization_jobs j WHERE j.test_id = tests.id)
+ ON CONFLICT(test_id) DO UPDATE SET project_id = excluded.project_id, test_start_time = excluded.test_start_time,
+ test_end_time = excluded.test_end_time, test_status = excluded.test_status, reason = excluded.reason, recorded_at = excluded.recorded_at
+ WHERE run_archive_failures.project_id <> excluded.project_id OR run_archive_failures.test_start_time <> excluded.test_start_time
+ OR run_archive_failures.test_end_time <> excluded.test_end_time OR run_archive_failures.test_status <> excluded.test_status`,
+		RunArchiveFailureUnconfirmed, time.Now().UTC(), id, status)
+	return err
 }
