@@ -1137,3 +1137,61 @@ and the S3 checker race tests passed. Whitespace checks passed. The clean-worktr
 documentation check exposed existing links to ignored local evidence in historical
 reviews; those artifacts are absent here. The two such links in the edited plan
 were converted to explicit local artifact paths. No new broken links were added.
+
+
+## Phased HA application profile and deployed shared archive replay
+
+Added a private stack renderer that composes the actual `onprem-ha` base with
+fresh target/data/S3 resources. It retains production authentication, PostgreSQL
+leases, Redis, mTLS/token transport and S3 archives; pins two controllers to distinct
+kind workers and defaults to four generators with 100-VUser local capacity. It
+preserves per-generator local-path PVCs and explicitly limits import assets to
+an ephemeral HTTP-only test profile. PostgreSQL authentication bootstrap is a
+separate transactional SQL step; a subject-pinned audited first-admin bootstrap
+allows authenticated test setup without enabling a bypass mode. No renderer
+applies resources or injects faults.
+
+Review/render testing caught an import-volume patch that retained a deleted PVC
+reference and a RoleBinding retaining the base namespace; both were corrected and
+regression-tested against actual Kustomize output. The application phase no longer
+owns the Namespace, preventing it from removing dependency-phase Pod Security
+labels. Fresh bootstrap, exact retry, incompatible-auth rejection and rollback
+passed against PostgreSQL 16 in a separate disposable database. All 114 harness
+tests and the uncached scripts suites passed (scripts: 20.463 s); the final optional
+CNI-patch output was covered by a subsequent focused renderer test. No application
+runtime source changed. Final review found no additional actionable renderer issue.
+
+Both phases passed Kubernetes server dry-run and were applied to the existing owned
+three-node trial with its original credentials and volumes. S3 signed put/get and
+retention checks passed before/after normal pod replacement with the same PVC UID
+and volume name. The first application rollout stalled with new cross-node PostgreSQL
+connections in SYN-SENT. Kindnet's active policy engine retained old pod addresses
+under its default 100m CPU/50 Mi limits and logged watch/TLS timeouts. Raising only
+this disposable cluster's kindnet limits to one CPU/128 Mi and rolling that DaemonSet
+restored connectivity. Original CNI configuration and diagnostics were saved. Two
+controller startup restarts are recorded setup failures, not passing availability
+evidence. No policy was removed or broadened to bypass the failure. An optional
+resource patch and its limited scope are documented; the two interventions do not
+isolate CPU throttling from stale-cache recovery as the sole cause.
+
+After the new rollout, both controllers and all four generators were Ready, with
+one controller and two generators per worker. The authenticated inventory confirmed
+PostgreSQL, Redis and S3. A 40-VUser, 30-second HTTP smoke with a two-second ramp
+completed on one generator; sampled steady live observations reached 40 VUsers with
+zero observed errors. Its v4 archive has 23,120 transaction records, 31 resource
+samples, 31 intervals and required source coverage with its one generator collected.
+These transaction records are not a count of independent target HTTP requests; this
+smoke is not the sustained independent-counter load gate or a performance benchmark.
+
+`apexctl archive evidence` passed with the launch project/test/creation identity,
+PostgreSQL microsecond semantics, nine verified artifacts and no missing declared
+sources. Normal replacement of the idle execution leader moved the authoritative
+active endpoint from generation 6 to 7. The successor, which had not previously
+materialized this archive, passed the same evidence command with the identical
+catalog manifest SHA-256. This demonstrates fresh shared S3 archive replay across
+an actual controller leadership transfer. It does not establish abrupt active-run
+adoption, combined generator loss, older investigation-archive migration, data-service
+HA, KEDA scaling or multi-host/zone resilience. An expiring project-scoped
+`results:read` service account was used for the evidence command; its key and all
+raw profile inputs remain private. The original Compose services and all prior
+PVCs were preserved.

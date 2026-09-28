@@ -20,7 +20,7 @@ def prepare(directory):
         subprocess.run(["openssl", *args], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     credentials = {key: secrets.token_urlsafe(32) for key in
                    ("http", "grpc", "postgres", "redis", "s3_access_key", "s3_secret_key", "wrapping_key",
-                    "target_load", "target_observer")}
+                    "target_load", "target_observer", "auth_session")}
     write("credentials.json", json.dumps(credentials, indent=2))
     write("target.json", json.dumps({"run_id": run_id, "load_token": credentials["target_load"],
                                      "observer_token": credentials["target_observer"]}, indent=2))

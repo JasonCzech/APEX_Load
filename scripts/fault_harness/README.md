@@ -1,9 +1,8 @@
 # Disposable node-fault driver
 
 This is the repository-owned safety/evidence foundation for the
-[node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It does not yet
-provision the application, provide its observation adapter, or qualify the complete
-fault matrix. Docker Desktop recovered after an authorized restart; target and
+[node-failure plan](../../docs/NODE_FAILURE_READINESS_PLAN.md). It renders a phased local HA stack but does not yet automatically
+provision it, provide its observation adapter, or qualify the complete fault matrix. Docker Desktop recovered after an authorized restart; target and
 PostgreSQL/Redis component checks now pass in a fresh three-node kind cluster.
 A ten-minute idle dependency outage also passed on two HA controllers; see the
 [review ledger](../../docs/qa/reviews/node-failure-readiness-2026-09-27.md) for scope and measurements.
@@ -684,3 +683,66 @@ evidence; a passing read alone does not prove that a replacement happened. The
 component trial passed signed put/get and retained reads after container replacement,
 plus separate TLS/plaintext/untrusted-CA and gRPC client-certificate checks. It does
 not qualify application archive publication, Kubernetes PVC retention or HA failover.
+
+
+## Phased local HA stack
+
+`render_stack.py` combines the target, PostgreSQL/Redis and S3 resources above with
+an application overlay of the repository's actual `onprem-ha` manifests. Supply
+`--inputs` and a new absolute `--output` plus six explicit repository digests:
+`--controller-image`, `--generator-image`, `--target-image`, `--postgres-image`,
+`--redis-image`, and `--s3-image`. It validates everything before creating output.
+Use inputs prepared with this version (including `auth_session` and S3 TLS).
+Application images must be built from recorded committed source, not a dirty
+checkout. Keep the repository checkout available: the generated application
+Kustomization references its production base using a relative directory path.
+
+The renderer makes no cluster changes. Deploy only after confirming the explicit
+kubeconfig/context, three-node kind topology and namespace ownership match
+`inputs/ownership.json`. There are two Kustomize directories and a SQL bootstrap:
+
+1. Apply `dependencies/` to the owned cluster and wait for PostgreSQL, Redis, S3
+   and the target. This phase owns the namespace and its restricted Pod Security
+   labels. Preload the recorded images on the nodes that will run them.
+2. Run `bootstrap-auth.sql` against the disposable PostgreSQL `apexload` database
+   with `psql -v ON_ERROR_STOP=1`. It transactionally initializes trusted-header
+   settings if absent, accepts an exact retry, and rejects incompatible existing
+   authentication without overwriting it. Do not use it against another database.
+3. Seed the S3 bucket/probe using the command above, through an explicit port-forward.
+4. Apply `application/`, then wait for both controllers and all generators to be
+   Ready and verify actual cross-node connectivity and discovery before a baseline.
+
+Controllers use PostgreSQL leases, Redis, shared S3, mTLS/token generator transport,
+and production trusted-header authentication. The proxy secret comes from the private
+`http` credential. Requests require `X-APEXLoad-Proxy-Secret` and the subject
+`fault-<run-id>` in `X-Auth-Request-User`. The production first-admin bootstrap is
+explicitly enabled and pinned to that subject; its first authenticated request
+persists and audits the administrator grant. The upstream role header does not
+bypass stored authorization. There is no external ingress; use loopback forwards.
+Health/readiness probes remain separate from authenticated application checks.
+
+Two controllers have required anti-affinity across the exact two worker nodes.
+Generators default to four replicas and 100 HTTP VUsers each; `--replicas` accepts
+2–12 and `--pod-capacity` 1–1000. Required worker placement and topology spread
+prevent a control-plane placement from accidentally satisfying a node-fault test.
+The profile preserves generator fencing/archive PVCs (1 Gi each, `standard` local
+storage), limits local scratch, and trusts the fresh CA for target HTTP. These small
+limits are test settings, not capacity claims or reserved recovery headroom.
+
+Controller import assets are ephemeral in this HTTP-only profile. It does not qualify
+import-dependent workloads, Java/browser runners, shared import storage, physical
+node/zone loss or data-service HA. Prometheus and KEDA installation/configuration
+are separate prerequisites; the initial replica count is static until those are
+installed. A rendered profile is not a full-stack or fault-matrix pass.
+
+The tested kindnet image was
+`docker.io/kindest/kindnetd:v20251212-v0.29.0-alpha-105-g20ccfc88`, whose embedded policy
+engine was active. Its policy cache retained old pod addresses during the first
+rollout with its default 100m CPU/50 Mi limits. Raising limits to one CPU/128 Mi and
+rolling that DaemonSet restored connectivity. `kindnet-resources-patch.json` records
+that optional strategic patch for the `kindnet-cni` container. Inspect the installed
+DaemonSet/image first, save its original configuration, and apply the patch only to
+`kube-system/daemonset/kindnet` in the explicitly owned cluster. It changes no policy
+rules. Do not assume every kind installation enforces policies or needs this tuning;
+verify allowed and denied flows for the actual CNI. Any CNI tuning/restart is setup
+work and requires a fresh application baseline afterward.
