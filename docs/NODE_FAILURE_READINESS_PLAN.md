@@ -376,3 +376,11 @@ including filesystem archives. Collection inherits leadership cancellation and
 checks durable run/publication/cleanup state before downloading or replacing merged
 sources. These are prerequisites for durable retries; they do not add the worker
 or partial-source cache by themselves.
+
+Terminal/releasing recovery reservations now follow a fresh, unique Kubernetes pod
+UID across transport-address changes. A verified new process on that same pod can
+release the old reservation; an unchanged process must acknowledge the exact claim
+at its current address. Reused IPs, conflicting identity observations, stale placement
+and active committed runs keep their reservations. Queue refresh preserves peak-pod
+capacity admission failures instead of reporting an apparently launchable run. These
+changes address findings from local attempt 7; deployed repetition remains pending.

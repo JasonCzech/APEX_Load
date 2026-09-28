@@ -3124,3 +3124,31 @@ the queue metadata refresh can overwrite the peak-capacity requeue explanation.
 That observability fix and another deployed repetition remain; no third worker pass
 is claimed. A retained releasing reservation for an older transport address was also
 observed and needs further investigation before assigning a cause to the timeout.
+
+## Capacity cleanup after a pod address change (2026-09-28)
+
+Attempt 7 exposed a retained releasing claim at an old transport address. Kubernetes
+showed the same frozen pod UID at a new address with a different generator process
+incarnation. Cleanup previously indexed only the old address. The new inventory
+index follows unique pod UID evidence and verifies namespace, workload, node, optional
+frozen name, readiness and observation freshness. A new incarnation permits fenced
+ledger cleanup only for a terminal/releasing claim; the same incarnation requires an
+acknowledged release RPC at the current address. Missing or ambiguous evidence keeps
+the claim. Legacy claims without placement proof retain exact-address matching.
+
+Review tightened both UID and address uniqueness, checked the observed workload's
+namespace, and kept the sweep linear in inventory plus claim count. Regressions cover
+address reuse, changed identity, stale/unready/terminating pods, duplicate/conflicting
+observations, unchanged-process acknowledgements, and active-run retention. Queue
+refresh also preserves peak-capacity admission failures; ordinary capacity reasons
+continue to refresh. The retained reservation is a verified defect, but its role in
+attempt 7's timeout has not yet been established by a deployed rerun.
+
+The final focused regressions passed (1.660 s), followed by three race repetitions
+including the existing release-acknowledgement matrix (31.206 s). The full Go suite
+passed all 108 test-bearing packages (API 379.226 s). All 189 fault-harness tests
+passed (7.287 s), and documentation checks passed for 69 active Markdown files.
+Final scoped re-review found no further issues. Before rollout, the current schema-20
+PostgreSQL backup was restored in an isolated disposable database and its state
+verified; both controller staging trees were preserved separately. Deployment and
+cold-spare fault qualification remain subsequent gates.

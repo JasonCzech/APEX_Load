@@ -874,7 +874,8 @@ func (tr *TestRunner) refreshPendingQueueMetadataWithTimeslotsLocked(now time.Ti
 // Java runner/capacity outage (and other correctable promotion failures) look
 // launchable even though the next promotion attempt will reject it again.
 func pendingPromotionReasonMustRemainVisible(reason string) bool {
-	return strings.HasPrefix(strings.TrimSpace(reason), "pending test promotion ")
+	reason = strings.TrimSpace(reason)
+	return strings.HasPrefix(reason, "pending test promotion ") || strings.HasPrefix(reason, "waiting for peak pod capacity:")
 }
 
 func buildCapacityShortfallStartError(id string, advisory *CapacityAdvisory, opts StartTestOptions) error {

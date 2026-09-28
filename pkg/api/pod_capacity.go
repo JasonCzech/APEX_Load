@@ -574,16 +574,13 @@ func (tr *TestRunner) reconcilePodCapacity(ctx context.Context, entries []Genera
 	if err != nil {
 		return
 	}
-	byTarget := map[string]GeneratorInventoryEntry{}
-	for _, e := range entries {
-		byTarget[e.Target] = e
-	}
+	index := newCapacityReleaseInventory(entries)
 	for _, r := range claims {
 		if ctx.Err() != nil {
 			return
 		}
-		e, ok := byTarget[r.Target]
-		if !ok || !generatorInventoryEntryReachable(e) || e.PodCapacity == nil {
+		e, ok := index.observation(r)
+		if !ok {
 			continue
 		}
 		record, err := tr.testStore.GetTest(r.TestID)
@@ -602,7 +599,7 @@ func (tr *TestRunner) reconcilePodCapacity(ctx context.Context, entries []Genera
 			continue
 		}
 		callCtx, cancel := context.WithTimeout(ctx, b.timeout)
-		client, err := b.dial(callCtx, r.Target)
+		client, err := b.dial(callCtx, e.Target)
 		if err == nil {
 			if capacity, ok := client.(podCapacityClient); ok {
 				request := podClaim(r, true)

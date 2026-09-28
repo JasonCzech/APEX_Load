@@ -26,13 +26,16 @@ func capacityAckForMode(mode string) *pb.PodCapacityAck {
 	return ack
 }
 
-func seedCapacityAckClaim(t *testing.T) (*TestRunner, *storage.SQLiteStore, storage.PodCapacityReservation, string, uint64) {
+func seedCapacityAckClaim(t *testing.T, proofs ...*storage.PodCapacityRecoveryPlacement) (*TestRunner, *storage.SQLiteStore, storage.PodCapacityReservation, string, uint64) {
 	t.Helper()
 	tr, store, leader := newAdoptionTestRunner(t)
 	owner, generation := leader.executionLeaseTerm()
 	budget := protocol.CapacityVector{CPUCores: 64, MemoryMB: 64000, NetworkMbps: 10000, VUsers: 1000, Protocols: map[string]float64{"http": 1000}}
 	demand := budget.Scale(.01)
 	claim := storage.PodCapacityReservation{ReservationID: "attempt", Revision: 1, Target: "gen", TestID: "run", Incarnation: "pod", Generation: generation, State: "committed", ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: demand, GroupPeaks: map[string]int32{"g": 10}, GroupDemands: map[string]protocol.CapacityVector{"g": demand}}
+	if len(proofs) > 0 {
+		claim.RecoveryPlacement = proofs[0]
+	}
 	if err := store.ReservePodCapacity([]storage.PodCapacityReservation{claim}, executionLeaseName, owner, generation); err != nil {
 		t.Fatal(err)
 	}
