@@ -2159,3 +2159,17 @@ resize, including a wrong identity during rollback. Focused tests passed in
 2.878 seconds and three race repetitions passed in 57.926 seconds. The empty-identity regression also passed three race repetitions (3.206 seconds).
 The full Go suite passed (`/tmp/apex-capacity-ack-full.log`). Final review found
 no further scoped issues. This does not implement standby admission or activation.
+
+### Redis/Valkey operation deadlines
+
+A real TCP regression reproduced stalled cache reads and writes outliving their
+caller deadlines on both Redis and Valkey configurations. The client was using
+its longer socket timeout because go-redis context deadline handling was not
+enabled. The backend now enables it; the regression first warms the connection,
+then withholds command replies and checks a 100 ms caller deadline against a
+five-second socket timeout. All four cases failed before the fix and passed
+after it. Focused cache checks passed in 1.792 seconds and three race repetitions
+passed in 4.777 seconds. The full Go suite passed (API 356.436 seconds,
+`/tmp/apex-cache-deadline-full.log`). Final review found no further scoped issues.
+This enables caller deadlines; it does not turn cache failure into successful
+cache writes, nor qualify Redis replication failover.

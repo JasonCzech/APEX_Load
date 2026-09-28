@@ -630,6 +630,9 @@ func newRedisCacheBackend(cfg cacheRuntimeConfig) (*redisCacheBackend, error) {
 	if cfg.WriteTimeout > 0 {
 		options.WriteTimeout = cfg.WriteTimeout
 	}
+	// Cache callers use short per-operation deadlines. Without this option,
+	// established connections can wait for the longer socket timeout instead.
+	options.ContextTimeoutEnabled = true
 	tlsEnabled := cfg.TLSEnabled || options.TLSConfig != nil
 	label := cacheBackendRedis
 	if strings.EqualFold(strings.TrimSpace(cfg.Backend), cacheBackendValkey) {
