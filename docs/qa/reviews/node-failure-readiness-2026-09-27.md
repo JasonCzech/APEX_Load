@@ -2206,3 +2206,23 @@ run's archive too early; trial 2 kept traffic flowing (minimum ten-second rate
 or restarts) but exceeded the completion-observation deadline. Redis was restored
 in both cases. Publication/terminal reporting and a fresh Redis repetition are
 still under investigation; these partial observations do not qualify that case.
+
+### Terminal visibility during archive publication
+
+The second Redis trial exposed a completed SQL row while the API continued to
+report an active run during object publication. Distributed completion now emits
+terminal API/WebSocket state after collection and durable terminal persistence,
+before potentially slow publication. The archive pointer remains absent until
+its own catalog transaction commits; existing completion guards prevent duplicate
+terminal side effects. A real SQLite regression gates that catalog commit and
+checks both phases, including the durable outbox and historical metrics label.
+It failed before the change, then passed focused checks (2.786 seconds), three
+race repetitions (20.992 seconds), and the full Go suite (API 348.055 seconds,
+`/tmp/apex-publication-visibility-full.log`). Review found no further issues in
+this slice. A separate HA catalog projection issue remains under repair.
+
+Redis trial 2 later returned `COMPLETE` with no archive link even though its
+catalog was published. An explicit manifest read repaired the cached link and
+the strict archive evidence check passed (`active-redis-2-followup`). The
+original trial remains failed because it missed its observation deadline; this
+follow-up is not a substitute for new repetitions against the reviewed fixes.

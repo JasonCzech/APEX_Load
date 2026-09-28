@@ -1860,6 +1860,12 @@ func (b *distributedExecutionBackend) completeDistributedTestRun(tr *TestRunner,
 			archiveRecord = nil
 			err = nil
 		}
+		if err == nil && archiveRecord != nil {
+			// The execution outcome is already durable and all generator data has
+			// been collected. Publish terminal API/WS state before potentially slow
+			// object publication; the catalog remains absent until its own commit.
+			err = tr.completeTestRunUnderArchiveFence(test, finalStatus, completedAt, finalError, nil)
+		}
 		if err == nil {
 			if archiveRecord != nil {
 				publishCtx, cancel := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
