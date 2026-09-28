@@ -1195,3 +1195,27 @@ HA, KEDA scaling or multi-host/zone resilience. An expiring project-scoped
 `results:read` service account was used for the evidence command; its key and all
 raw profile inputs remain private. The original Compose services and all prior
 PVCs were preserved.
+
+## Local monitoring and first deployed KEDA trial
+
+Added private Prometheus/KEDA inputs preserving all six shipped production queries,
+including fleet identity, expiry and reserved-ordinal protection. Render tests cover
+production/accelerated timing, sizing bounds, file permissions, authentication-free
+internal scrape scope and safe merge-patch configuration. The Prometheus configuration
+passed promtool validation. KEDA 2.21.0 was installed with pinned operator, metrics
+server and webhook images, restricted to the disposable application namespace.
+Prometheus 3.12.0 scraped both HA controllers successfully before the trial.
+
+Queued demand of 320 VUsers changed the StatefulSet from two to four Ready and
+API-discovered generators. Dispatch then failed: legacy auto placement assigned the
+single 320-VUser group to one pod capped at 100 VUsers. This is a failed end-to-end
+trial, not a scaling qualification pass. No passing target-rate or scale-down result
+is claimed for it. The run was stopped/terminal and demand returned to zero; no node
+fault was injected. Capacity placement needs correction and the full trial must be
+repeated. The render feature does not qualify production HPA timing or KEDA failover.
+
+An image-import startup failure was resolved before baseline: the ARM64 digest-only
+containerd import lacked its normalized repository alias. Restoring that alias for
+the verified manifest allowed Prometheus to start. This is preserved as setup evidence.
+At minimum two replicas, existing generator PVCs pin both low ordinals to one worker;
+at four replicas there are two per worker. No volumes were deleted to alter placement.

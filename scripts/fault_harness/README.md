@@ -746,3 +746,32 @@ DaemonSet/image first, save its original configuration, and apply the patch only
 rules. Do not assume every kind installation enforces policies or needs this tuning;
 verify allowed and denied flows for the actual CNI. Any CNI tuning/restart is setup
 work and requires a fresh application baseline afterward.
+
+## Local Prometheus and KEDA inputs
+
+`render_monitoring.py --inputs ABS_INPUTS --prometheus-image REPOSITORY@sha256:DIGEST
+--output NEW_ABS_DIRECTORY` renders a bounded, ephemeral Prometheus on the control
+plane and a KEDA overlay of the shipped on-prem ScaledObject. Apply `prometheus/`
+and `autoscaling/` only to the explicitly owned context and namespace after installing
+KEDA. The renderer does not install KEDA. Record its chart, image digests, version
+and Kubernetes compatibility separately. Apply `controller-autoscaling-merge-patch.json`
+as a **merge patch** to `apexload-config`, then roll controllers during setup; do not
+apply that file as a partial ConfigMap. It selects KEDA as the sole fleet autoscaler.
+
+Prometheus discovers both controller metrics endpoints through a headless service.
+The six production queries retain installation scoping, leader-evidence expiry,
+missing-metric errors and the reserved ordinal floor. Defaults are minimum two,
+maximum four and 100 VUsers per pod; override with `--minimum`, `--maximum` and
+`--pod-capacity` within the documented local bounds. `--accelerated` uses a zero
+scale-up window and 30-second scale-down window with bounded pod increments. With
+a positive minimum, HPA behavior governs replica timing; KEDA's cooldown is not
+an idle scale-down timer for this profile. Default output retains production timing.
+
+Require two healthy scrape targets and an idle, restart-free baseline before each
+trial. Record queued demand, desired/Ready replicas, discovered generators, explicit
+dispatch, independent target traffic and final scale-down separately. Legacy auto
+placement keeps each group on one generator: a larger fleet alone does not make one
+oversized group shardable. Use explicit group host selection, separate fitting groups,
+or configure and validate opt-in peak pod reservations for automatic partitioning.
+Existing retained local-path PVCs may pin low ordinals to the same worker; inspect
+actual placement after scale-down. Never infer worker redundancy from replica count.
