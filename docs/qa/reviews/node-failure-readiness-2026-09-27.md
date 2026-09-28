@@ -2372,3 +2372,35 @@ The documentation check exposed a missing retention-guide index entry, now repai
 23 existing links to absent ignored historical QA logs still prevent a global docs pass.
 Runtime volumes and evidence were preserved; cleanup receipt 30 records removal of
 4,411,058,718 bytes of positively identified, rebuildable worktree Go archives.
+
+## Aggregate archive reader admission (2026-09-28)
+
+Added a process-local active reader/download payload budget. Distinct cache entries
+reserve their complete configured per-archive allowance before any object-store
+access; shared readers reuse the same reservation. Cancellation, failure and the
+last release return the allowance. Existing caches must pass actual-size checks
+under that frozen bound. The disposable Docker profile now pairs a 256 MiB
+per-archive limit with 512 MiB active admission and a separate 256 MiB idle cap.
+This does not bound producer backlog, transfer spools or total filesystem use.
+
+Review found a hold-and-wait deadlock when comparisons and report enrichment pinned
+one archive while asking for another under a one-slot budget. Those paths now
+snapshot and release before cross-run work; audit integrity is verified while the
+files remain pinned. Adjunct refresh releases its reader after creating the private
+publication copy. A regression combines one-slot admission with immediate idle
+cache eviction and checks analysis, two-run/multi-run comparisons, release trends
+and audit JSON/HTML, including padded mixed-case audit profile names. Further scoped
+review found no additional actionable issues.
+
+Focused checks passed; the final full Go suite passed (API 371.909 s). Renderer
+unit tests passed (three tests). Private logs use `/tmp/apex-archive-admission-*`.
+The earlier full-suite run was deliberately stopped on the superseded snapshot
+when review found the deadlock; only `final-full.log` is the final passing run.
+The documentation checker still reports the same 23 pre-existing links to absent
+ignored historical QA logs. Runtime volumes and private evidence were preserved.
+
+Repeated race validation exposed a pre-existing protocol-registration collision in
+`TestArchiveQueryEndpoints` on its second in-process repetition. The fixture now
+uses a unique protocol name. The final repeated race run passed all three iterations;
+see `/tmp/apex-archive-admission-final-race-fixed.log`. This test-only repair followed
+the passing full suite. The first repeated run remains recorded as failed.

@@ -997,3 +997,11 @@ The signed S3 probe now uses a deterministic, incompressible 64 KiB object at
 when no object volume can accept an archive upload. Seed the new probe once, then
 use check mode after restarts; existing v1 probe objects are preserved. This detects
 an unavailable data-volume write path, not sufficient capacity for an entire trial.
+
+
+The local controller profile limits each materialized archive to 256 MiB and reserves
+a 512 MiB aggregate active-reader allowance per controller. Distinct cold archive reads
+wait before object-store access when that allowance is full; readers of the same cache
+share it. The separate idle-cache cap is 256 MiB. These payload limits do not include
+unconfirmed producer sources or transfer spools; preserve the existing disk-space guards
+and distinct data/tmp volume limits when running faults.

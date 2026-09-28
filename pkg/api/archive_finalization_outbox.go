@@ -282,6 +282,8 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 				materializationLease = lease
 				defer materializationLease.Release()
 				stagedRoot, stagedManifest, err := stageMaterializedArchiveForPublication(ctx, catalogRecord, job.IntentToken)
+				// The private copy owns its files; enrichment must not pin a reader slot.
+				materializationLease.Release()
 				if err != nil {
 					return fmt.Errorf("stage materialized archive for adjunct refresh: %w", err)
 				}

@@ -773,6 +773,11 @@ func acquireArchiveMaterialized(ctx context.Context, record *storage.RunArchiveR
 		}
 	}()
 
+	maximumBytes := configuredArchiveMaterializationMaxBytes()
+	if err := archiveMaterializations.admitActiveBytes(boundedCtx, entry, maximumBytes, configuredArchiveActiveReaderMaxBytes()); err != nil {
+		return nil, fmt.Errorf("admit archive %q reader: %w", record.TestID, err)
+	}
+
 	manifestPath := filepath.Join(localRoot, runArchiveManifestFileName)
 	// Manifest presence is the materialization commit marker, but archives
 	// produced by older controllers wrote it before their artifacts. Validate an
@@ -782,7 +787,7 @@ func acquireArchiveMaterialized(ctx context.Context, record *storage.RunArchiveR
 		cachedRecord := *record
 		cachedRecord.ArchivePath = localRoot
 		cachedRecord.ManifestPath = manifestPath
-		if err := validateMaterializedArchiveContext(boundedCtx, &cachedRecord, localRoot, manifestPath); err == nil {
+		if err := validateAdmittedArchiveCache(boundedCtx, &cachedRecord, localRoot, manifestPath, maximumBytes); err == nil {
 			setMaterializedArchiveRecordPaths(record, localRoot, manifestPath)
 			touchArchiveMaterializationCacheMarker(localRoot, archiveMaterializations.now().UTC())
 			lease := archiveMaterializations.promoteReservation(key, archiveMaterializationCacheScanRoot(backend.LocalRoot), localRoot, entry)
@@ -802,7 +807,7 @@ func acquireArchiveMaterialized(ctx context.Context, record *storage.RunArchiveR
 	if err != nil {
 		return nil, err
 	}
-	if err := materializeArchiveFromBucket(boundedCtx, bucket, backend, record); err != nil {
+	if err := materializeArchiveFromBucketWithLimit(boundedCtx, bucket, backend, record, maximumBytes); err != nil {
 		_ = bucket.Close()
 		return nil, err
 	}
@@ -1495,6 +1500,10 @@ func validateArchiveArtifactTargets(rootPath string, names ...string) error {
 }
 
 func materializeArchiveFromBucket(ctx context.Context, bucket *blob.Bucket, backend archiveBackendRuntime, record *storage.RunArchiveRecord) error {
+	return materializeArchiveFromBucketWithLimit(ctx, bucket, backend, record, configuredArchiveMaterializationMaxBytes())
+}
+
+func materializeArchiveFromBucketWithLimit(ctx context.Context, bucket *blob.Bucket, backend archiveBackendRuntime, record *storage.RunArchiveRecord, maxBytes int64) error {
 	if bucket == nil {
 		return fmt.Errorf("archive object bucket is required")
 	}
@@ -1537,7 +1546,6 @@ func materializeArchiveFromBucket(ctx context.Context, bucket *blob.Bucket, back
 		return err
 	}
 	totalBytes := int64(len(manifestData))
-	maxBytes := configuredArchiveMaterializationMaxBytes()
 	if totalBytes > maxBytes {
 		return fmt.Errorf("archive manifest exceeds materialization byte limit %d", maxBytes)
 	}

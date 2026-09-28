@@ -324,7 +324,7 @@ now enforces idle byte retention immediately; a separate refresh-retry digest bu
 was reproduced and fixed. The local profile has distinct 3 GiB data / 1 GiB spool
 limits inside a 5 GiB ephemeral budget and an explicit, default-off confirmed-source
 retention option. This still requires deployed qualification and does not solve
-concurrent-reader admission, unconfirmed-source disk bounds, or the crash window
+unconfirmed-source disk bounds or the crash window
 between initial adjunct mutation and durable preparation metadata.
 
 Object-backed archive catalog restoration no longer downloads historical
@@ -340,3 +340,11 @@ database-anchored manifest bytes; legacy jobs without that journal remain
 fail-closed. Refreshes preserve a pending source's journal when rebinding and clear
 it when starting from the catalog. This closes the implementation gap noted above;
 deployed restart/upgrade qualification remains separate from storage/API regressions.
+
+
+Active object-archive reads now have a separate per-controller admission budget.
+Distinct caches reserve their full per-archive allowance through the last reader;
+excess cold reads wait within the request deadline before object-store access.
+Legacy cache payload sizes are checked before a reader lease is granted. This closes
+the aggregate reader-admission implementation gap; unconfirmed producer-source bounds,
+combined recovery and durable collection retries remain local implementation work.

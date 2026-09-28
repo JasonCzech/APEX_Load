@@ -32,6 +32,8 @@ const (
 // protected until their lease is released.
 type archiveMaterializationCoordinator struct {
 	mu                     sync.Mutex
+	activeBytes            int64
+	budgetChanged          chan struct{}
 	entries                map[string]*archiveMaterializationEntry
 	evictionMu             sync.Mutex
 	now                    func() time.Time
@@ -44,11 +46,12 @@ type archiveMaterializationCoordinator struct {
 }
 
 type archiveMaterializationEntry struct {
-	key     string
-	gate    chan struct{}
-	changed chan struct{}
-	pending int
-	readers int
+	key         string
+	budgetBytes int64
+	gate        chan struct{}
+	changed     chan struct{}
+	pending     int
+	readers     int
 }
 
 type archiveMaterializationLease struct {
@@ -85,6 +88,7 @@ var archiveMaterializations = newArchiveMaterializationCoordinator()
 func newArchiveMaterializationCoordinator() *archiveMaterializationCoordinator {
 	return &archiveMaterializationCoordinator{
 		entries:                make(map[string]*archiveMaterializationEntry),
+		budgetChanged:          make(chan struct{}),
 		now:                    time.Now,
 		lastRetentionSweep:     make(map[string]time.Time),
 		retentionSweepInterval: archiveMaterializationRetentionSweepInterval,
@@ -218,6 +222,7 @@ func (m *archiveMaterializationCoordinator) forgetEntryIfIdle(entry *archiveMate
 	}
 	m.mu.Lock()
 	if m.entries[entry.key] == entry && entry.pending == 0 && entry.readers == 0 {
+		m.releaseActiveBytesLocked(entry)
 		delete(m.entries, entry.key)
 	}
 	m.mu.Unlock()

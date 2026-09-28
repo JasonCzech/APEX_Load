@@ -72,6 +72,7 @@ class StackResourcesTest(unittest.TestCase):
         self.assertEqual(pod['containers'][0]['resources']['requests']['ephemeral-storage'], '512Mi')
         self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES']['value'], str(256 * 1024**2))
         self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES']['value'], str(256 * 1024**2))
+        self.assertEqual(env['APEXLOAD_ARCHIVE_ACTIVE_READER_MAX_BYTES']['value'], str(512 * 1024**2))
         self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL']['value'], '15m')
         self.assertNotIn('APEXLOAD_ARCHIVE_SOURCE_RETENTION_TTL', env)
         self.assertEqual(env['APEXLOAD_DATABASE_URL']['valueFrom']['secretKeyRef']['name'], 'apexload-fault-data-client')

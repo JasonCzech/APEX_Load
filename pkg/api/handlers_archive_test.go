@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -132,7 +134,7 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 	defer store.Close()
 
 	server := NewServer(ServerConfig{Store: store})
-	protocolName := "archive-api-stub-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocolName := "archive-api-stub-" + uuid.NewString()
 	protocol.Register(protocolName, func() protocol.Protocol {
 		return &archiveQueryStubProtocol{}
 	})

@@ -50,8 +50,25 @@ The disposable local renderer/deployer can set this explicitly with
 `--source-retention-seconds 300`; zero omits the setting. For reader-cache growth,
 newly downloaded archives enforce the idle byte policy synchronously when their
 reader lease is released. Cache hits and idle TTL maintenance still use coalesced
-periodic sweeps. Concurrent active readers remain protected and can exceed the
-idle byte budget, so deployment sizing must allow their combined working set.
+periodic sweeps. Active readers remain protected from eviction. A separate
+`APEXLOAD_ARCHIVE_ACTIVE_READER_MAX_BYTES` budget bounds active reader/download
+payload admission per controller process (default 256 GiB). Each distinct cache
+holds its configured `APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES` allowance until
+its last reader or waiter releases it; simultaneous readers of that same cache share
+one allowance. The conservative full allowance also covers old manifests without
+reliable artifact sizes. Set the active budget at least as high as the per-archive
+limit; a smaller budget rejects that read instead of waiting forever.
+
+When the aggregate budget is full, another cache waits within the existing request
+and materialization deadline, before opening the object store. Cancellation and
+failed transfers release the reservation. Cached archives are checked against their
+actual manifest and artifact bytes, so a cache created under an older, larger limit
+cannot bypass admission. This is a payload working-set bound, not a total filesystem
+quota: idle caches, replacement copies, producer sources, transfer spools and filesystem
+metadata need additional space. The budget is process-local; separate controllers on
+a shared volume need independent sizing and platform qualification. The disposable
+Docker Desktop profile uses 256 MiB per archive, a 512 MiB active-reader budget and
+a separate 256 MiB idle-cache cap.
 
 SQLite and PostgreSQL finalization also keep a private prepared-manifest journal.
 After adjunct files are durably written, the next manifest bytes and SHA-256 are

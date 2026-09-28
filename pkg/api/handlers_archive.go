@@ -495,6 +495,12 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("profile")), "audit") {
+		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+	}
+	// The report is now a memory snapshot. Release before cross-run enrichment
+	// so a one-archive budget cannot deadlock on its own baseline/trend read.
+	lease.Release()
 	if !s.attachSelectedBaselineComparison(w, r, report, r.URL.Query().Get("comparison_id")) {
 		return
 	}
@@ -508,9 +514,6 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		s.attachReleaseTrendForProfile(report, profile.ID)
 		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profile.ID)
-		if profile.ID == "audit" {
-			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
-		}
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -546,9 +549,6 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		s.attachReleaseTrendForProfile(report, profileID)
 		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profileID)
-		if profileID == "audit" {
-			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
-		}
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profileID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
@@ -582,11 +582,6 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		s.attachReleaseTrendForProfile(report, profile.ID)
 		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profile.ID)
-		// The audit PDF carries the tamper-evidence banner, so re-verify the archive
-		// against its recorded artifact hashes before rendering it.
-		if profile.ID == "audit" {
-			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
-		}
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -628,9 +623,6 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		s.attachReleaseTrendForProfile(report, profile.ID)
 		s.attachIdentityNames(report)
 		s.attachDashboardPanelsForProfile(report, profile.ID)
-		if profile.ID == "audit" {
-			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
-		}
 		testID := r.PathValue("id")
 		annotations, err := resolveReportAnnotations(s.store, report, testID, profile.ID)
 		if err != nil {
@@ -663,9 +655,6 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		s.attachReleaseTrend(report)
 	}
 	s.attachDashboardPanels(report)
-	if r.URL.Query().Get("profile") == "audit" {
-		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
-	}
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("download")), "true") {
 		testID := sanitizeFilename(r.PathValue("id"))
 		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".json\"")
@@ -772,6 +761,7 @@ func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Requ
 		currentName = currentTest.Name
 	}
 	currentRun, err := archiveAnalysisRunFromRecord(currentID, currentName, currentRecord, filter, &page)
+	lease.Release()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to read archive transactions: "+err.Error())
 		return
@@ -824,7 +814,7 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 	}
 	action := strings.TrimSpace(r.URL.Query().Get("action"))
 	if comparisonIDs := strings.TrimSpace(r.URL.Query().Get("comparison_ids")); comparisonIDs != "" {
-		s.handleGetRunArchiveMultiComparison(w, r, currentRecord, breakdown, action, comparisonIDs)
+		s.handleGetRunArchiveMultiComparison(w, r, currentRecord, lease, breakdown, action, comparisonIDs)
 		return
 	}
 	baselineID := strings.TrimSpace(r.URL.Query().Get("baseline_id"))
@@ -840,6 +830,12 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusNotFound, "baseline test not found")
 		return
 	}
+	currentRun, err := s.archiveComparisonRunFromRecord(currentID, currentTest, currentRecord, action)
+	lease.Release()
+	if err != nil {
+		s.writeArchiveComparisonRunError(w, err)
+		return
+	}
 	baselineRecord, ok := archives.GetRunArchiveContext(r.Context(), baselineID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "baseline archive not found")
@@ -851,12 +847,8 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 		return
 	}
 	defer baselineLease.Release()
-	currentRun, err := s.archiveComparisonRunFromRecord(currentID, currentTest, currentRecord, action)
-	if err != nil {
-		s.writeArchiveComparisonRunError(w, err)
-		return
-	}
 	baselineRun, err := s.archiveComparisonRunFromRecord(baselineID, baselineTest, baselineRecord, action)
+	baselineLease.Release()
 	if err != nil {
 		s.writeArchiveComparisonRunError(w, err)
 		return
@@ -876,7 +868,7 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 	}
 }
 
-func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *http.Request, baselineRecord *storage.RunArchiveRecord, breakdown string, action string, rawComparisonIDs string) {
+func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *http.Request, baselineRecord *storage.RunArchiveRecord, baselineLease *archiveMaterializationLease, breakdown string, action string, rawComparisonIDs string) {
 	baselineID := r.PathValue("id")
 	ids, ok := parseArchiveComparisonIDs(rawComparisonIDs)
 	if !ok {
@@ -899,7 +891,7 @@ func (s *Server) handleGetRunArchiveMultiComparison(w http.ResponseWriter, r *ht
 		return
 	}
 
-	runs, err := s.archiveComparisonRunsFromRecords(r.Context(), baselineID, baselineRecord, ids, action)
+	runs, err := s.archiveComparisonRunsFromRecords(r.Context(), baselineID, baselineRecord, baselineLease, ids, action)
 	if err != nil {
 		s.writeArchiveComparisonRunError(w, err)
 		return
@@ -951,7 +943,7 @@ func parseArchiveComparisonIDs(raw string) ([]string, bool) {
 	return ids, true
 }
 
-func (s *Server) archiveComparisonRunsFromRecords(ctx context.Context, baselineID string, baselineRecord *storage.RunArchiveRecord, comparisonIDs []string, action string) ([]archiveComparisonRunWithStart, error) {
+func (s *Server) archiveComparisonRunsFromRecords(ctx context.Context, baselineID string, baselineRecord *storage.RunArchiveRecord, baselineLease *archiveMaterializationLease, comparisonIDs []string, action string) ([]archiveComparisonRunWithStart, error) {
 	archives := s.archiveDomainService()
 	baselineTest, ok := archives.GetTest(baselineID)
 	if !ok {
@@ -959,6 +951,7 @@ func (s *Server) archiveComparisonRunsFromRecords(ctx context.Context, baselineI
 	}
 	runs := make([]archiveComparisonRunWithStart, 0, len(comparisonIDs)+1)
 	baselineRun, err := s.archiveComparisonRunFromRecord(baselineID, baselineTest, baselineRecord, action)
+	baselineLease.Release()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build baseline archive report: %w", err)
 	}
@@ -1091,6 +1084,12 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "failed to build archive report: "+err.Error())
 		return
 	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("profile")), "audit") {
+		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+	}
+	// The report is now a memory snapshot. Release before cross-run enrichment
+	// so a one-archive budget cannot deadlock on its own baseline/trend read.
+	lease.Release()
 	if !s.attachSelectedBaselineComparison(w, r, report, r.URL.Query().Get("comparison_id")) {
 		return
 	}
@@ -1103,12 +1102,6 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	s.attachReleaseTrendForProfile(report, profile)
 	s.attachIdentityNames(report)
 	s.attachDashboardPanelsForProfile(report, profile)
-	// The audit profile renders a tamper-evidence banner, so re-verify the archive
-	// against its recorded artifact hashes here. Gated on the audit profile to keep
-	// the SHA-256 re-hash off the lighter engineer/executive render paths.
-	if profile == "audit" {
-		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
-	}
 	annotations, err := resolveReportAnnotations(s.store, report, r.PathValue("id"), profile)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())

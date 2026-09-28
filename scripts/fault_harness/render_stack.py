@@ -93,6 +93,7 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
                                 {'name': 'APEXLOAD_ALLOW_BOOTSTRAP_ADMIN', 'value': 'true'},
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES', 'value': str(256 * 1024**2)},
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES', 'value': str(256 * 1024**2)},
+                                {'name': 'APEXLOAD_ARCHIVE_ACTIVE_READER_MAX_BYTES', 'value': str(512 * 1024**2)},
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL', 'value': '15m'},
                                 {'name': 'APEXLOAD_BOOTSTRAP_SUBJECT', 'value': 'fault-' + run_id}]
             if source_retention_seconds:
