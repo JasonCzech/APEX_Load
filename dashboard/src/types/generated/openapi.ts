@@ -21460,6 +21460,14 @@ export interface operations {
                 "reason": string;
                 "recorded_at": string;
               }) | null;
+              "archive_recovery"?: ({
+                "expected_sources"?: (number) | null;
+                "recovery_attempts"?: (number) | null;
+                "retry_window_ends_at"?: (string) | null;
+                "state": string;
+                "updated_at"?: (string) | null;
+                "verified_sources"?: (number) | null;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -27200,6 +27208,14 @@ export interface operations {
             "archive_failure"?: ({
               "reason": string;
               "recorded_at": string;
+            }) | null;
+            "archive_recovery"?: ({
+              "expected_sources"?: (number) | null;
+              "recovery_attempts"?: (number) | null;
+              "retry_window_ends_at"?: (string) | null;
+              "state": string;
+              "updated_at"?: (string) | null;
+              "verified_sources"?: (number) | null;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
@@ -41916,6 +41932,14 @@ export interface operations {
                 "reason": string;
                 "recorded_at": string;
               }) | null;
+              "archive_recovery"?: ({
+                "expected_sources"?: (number) | null;
+                "recovery_attempts"?: (number) | null;
+                "retry_window_ends_at"?: (string) | null;
+                "state": string;
+                "updated_at"?: (string) | null;
+                "verified_sources"?: (number) | null;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -49505,6 +49529,14 @@ export interface operations {
             "archive_failure"?: ({
               "reason": string;
               "recorded_at": string;
+            }) | null;
+            "archive_recovery"?: ({
+              "expected_sources"?: (number) | null;
+              "recovery_attempts"?: (number) | null;
+              "retry_window_ends_at"?: (string) | null;
+              "state": string;
+              "updated_at"?: (string) | null;
+              "verified_sources"?: (number) | null;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
@@ -58337,6 +58369,7 @@ export interface operations {
                   "application_id"?: string;
                   "archive"?: (Record<string, unknown>) | null;
                   "archive_failure"?: (Record<string, unknown>) | null;
+                  "archive_recovery"?: (Record<string, unknown>) | null;
                   "assignment"?: (Record<string, unknown>) | null;
                   "baseline_pinned"?: boolean;
                   "baseline_pinned_at"?: (string) | null;
@@ -64248,6 +64281,14 @@ export interface operations {
             "archive_failure"?: ({
               "reason": string;
               "recorded_at": string;
+            }) | null;
+            "archive_recovery"?: ({
+              "expected_sources"?: (number) | null;
+              "recovery_attempts"?: (number) | null;
+              "retry_window_ends_at"?: (string) | null;
+              "state": string;
+              "updated_at"?: (string) | null;
+              "verified_sources"?: (number) | null;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;
@@ -74812,6 +74853,14 @@ export interface operations {
                 "reason": string;
                 "recorded_at": string;
               }) | null;
+              "archive_recovery"?: ({
+                "expected_sources"?: (number) | null;
+                "recovery_attempts"?: (number) | null;
+                "retry_window_ends_at"?: (string) | null;
+                "state": string;
+                "updated_at"?: (string) | null;
+                "verified_sources"?: (number) | null;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -76180,6 +76229,14 @@ export interface operations {
               "archive_failure"?: ({
                 "reason": string;
                 "recorded_at": string;
+              }) | null;
+              "archive_recovery"?: ({
+                "expected_sources"?: (number) | null;
+                "recovery_attempts"?: (number) | null;
+                "retry_window_ends_at"?: (string) | null;
+                "state": string;
+                "updated_at"?: (string) | null;
+                "verified_sources"?: (number) | null;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -77550,6 +77607,14 @@ export interface operations {
                 "reason": string;
                 "recorded_at": string;
               }) | null;
+              "archive_recovery"?: ({
+                "expected_sources"?: (number) | null;
+                "recovery_attempts"?: (number) | null;
+                "retry_window_ends_at"?: (string) | null;
+                "state": string;
+                "updated_at"?: (string) | null;
+                "verified_sources"?: (number) | null;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -78919,6 +78984,14 @@ export interface operations {
                 "reason": string;
                 "recorded_at": string;
               }) | null;
+              "archive_recovery"?: ({
+                "expected_sources"?: (number) | null;
+                "recovery_attempts"?: (number) | null;
+                "retry_window_ends_at"?: (string) | null;
+                "state": string;
+                "updated_at"?: (string) | null;
+                "verified_sources"?: (number) | null;
+              }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
                 "load_zone_weights"?: Record<string, number>;
@@ -80287,6 +80360,14 @@ export interface operations {
               "archive_failure"?: ({
                 "reason": string;
                 "recorded_at": string;
+              }) | null;
+              "archive_recovery"?: ({
+                "expected_sources"?: (number) | null;
+                "recovery_attempts"?: (number) | null;
+                "retry_window_ends_at"?: (string) | null;
+                "state": string;
+                "updated_at"?: (string) | null;
+                "verified_sources"?: (number) | null;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -98347,6 +98428,14 @@ export interface operations {
             "archive_failure"?: ({
               "reason": string;
               "recorded_at": string;
+            }) | null;
+            "archive_recovery"?: ({
+              "expected_sources"?: (number) | null;
+              "recovery_attempts"?: (number) | null;
+              "retry_window_ends_at"?: (string) | null;
+              "state": string;
+              "updated_at"?: (string) | null;
+              "verified_sources"?: (number) | null;
             }) | null;
             "assignment"?: ({
               "failover_policy"?: string;

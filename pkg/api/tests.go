@@ -23,6 +23,7 @@ func (tr *TestRunner) GetTest(id string) (*ManagedTest, bool) {
 	test, ok := tr.getTestSnapshot(id, true)
 	tr.attachTerminalArchiveCatalog(test)
 	tr.attachRunArchiveFailure(test)
+	tr.attachRunArchiveRecovery(test)
 	return test, ok
 }
 
@@ -30,6 +31,7 @@ func (tr *TestRunner) GetTestSummary(id string) (*ManagedTest, bool) {
 	test, ok := tr.getTestSnapshot(id, false)
 	tr.attachTerminalArchiveCatalog(test)
 	tr.attachRunArchiveFailure(test)
+	tr.attachRunArchiveRecovery(test)
 	return test, ok
 }
 
@@ -70,6 +72,7 @@ func (tr *TestRunner) GetTestMetricsWindow(id string, since *time.Time, limit in
 	}
 	tr.attachTerminalArchiveCatalog(test)
 	tr.attachRunArchiveFailure(test)
+	tr.attachRunArchiveRecovery(test)
 	return test, true
 }
 
@@ -1023,6 +1026,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.ComparisonBaseline = cloneRunComparisonBaseline(test.ComparisonBaseline)
 	cloned.Archive = cloneRunArchiveRecord(test.Archive)
 	cloned.ArchiveFailure = cloneRunArchiveFailure(test.ArchiveFailure)
+	cloned.ArchiveRecovery = cloneRunArchiveRecovery(test.ArchiveRecovery)
 	if cloned.Archive != nil {
 		cloned.ArchiveFailure = nil
 	}

@@ -285,6 +285,48 @@ describe('RunReportPage', () => {
     expect(container.textContent).toContain('Execution aborted')
   })
 
+  it.each([
+    ['collection_pending', 'Archive recovery queued'],
+    ['cache_recovery_pending', 'Partial evidence recovery queued'],
+    ['publication_pending', 'Archive publication pending'],
+    ['exhausted', 'Automatic archive recovery ended'],
+    ['unavailable', 'Saved archive unavailable'],
+  ])('shows durable recovery state %s separately from historical failure', async (state, heading) => {
+    mocks.polling.test = { ...buildTest('FAILED', false),
+      archive_recovery: { state, recovery_attempts: 2, expected_sources: 3, verified_sources: 1 },
+      archive_failure: { reason: 'archive_collection_unconfirmed', recorded_at: 'invalid' },
+    }
+    const render = () => <RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
+    await act(async () => root.render(render()))
+    const notice = container.querySelector('[aria-label="Evidence availability"]')!
+    expect(notice.querySelector('h2')?.textContent).toBe(heading)
+    expect(notice.textContent).toContain('Sources verified during collection: 1 of 3')
+    expect(notice.textContent).toContain('do not confirm that the files are still available')
+    expect(notice.textContent).toContain('Recovery attempts recorded: 2')
+    expect(notice.textContent).toContain('Earlier collection issue: Collection had not been confirmed')
+    expect(notice.textContent).not.toContain('may still be in progress')
+    expect(notice.textContent).toContain('does not restart collection')
+    await act(async () => { notice.querySelector('button')!.click() })
+    expect(mocks.polling.checkArchiveAgain).toHaveBeenCalledTimes(1)
+    mocks.polling.test = { ...mocks.polling.test!, archive: buildTest('FAILED').archive }
+    await act(async () => root.render(render()))
+    expect(container.querySelector('[aria-label="Evidence availability"]')).toBeNull()
+  })
+
+  it('keeps unknown recovery metadata private and omits unknown source counts', async () => {
+    const render = () => <RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
+    mocks.polling.test = { ...buildTest('FAILED', false), archive_recovery: { state: 'future_private_state' } }
+    await act(async () => root.render(render()))
+    expect(container.textContent).toContain('Archive publication progress is unknown')
+    expect(container.textContent).not.toContain('future_private_state')
+    mocks.polling.test = { ...mocks.polling.test!, archive_recovery: { state: 'publication_pending' } }
+    await act(async () => root.render(render()))
+    const notice = container.querySelector('[aria-label="Evidence availability"]')!
+    expect(notice.textContent).toContain('Archive publication pending')
+    expect(notice.textContent).not.toContain('Sources verified during collection')
+    expect(notice.textContent).not.toContain('Recovery attempts recorded')
+  })
+
   it('applies a dashboard transaction selection once without overriding later operator choices', async () => {
     mocks.archiveModel.archiveReport = { by_transaction: { Checkout: {transactions: 100, errors: 0, error_pct: 0, avg_response_ms: 10} } } as unknown as RunArchiveReport
     const render = () => <RunReportPage testId="run-1" initialPopulation="transaction" initialTransaction="Checkout" onOpenCommandCenter={vi.fn()} onNavigateReport={vi.fn()} />

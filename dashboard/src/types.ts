@@ -823,9 +823,20 @@ export interface TestSummary {
   goal_config?: GoalConfig
   archive?: RunArchiveRecord
   archive_failure?: RunArchiveFailure
+  archive_recovery?: RunArchiveRecovery
   // backwards compat
   script_id?: string
   script_name?: string
+}
+
+/** Durable recovery bookkeeping. Verified sources are historical collection receipts. */
+export interface RunArchiveRecovery {
+  state: string
+  recovery_attempts?: number
+  expected_sources?: number
+  verified_sources?: number
+  updated_at?: string
+  retry_window_ends_at?: string
 }
 
 /** Observed collection failure; this is separate from archive publication retries. */

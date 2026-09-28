@@ -304,6 +304,7 @@ test('run results distinguishes recorded archive failure and refreshes availabil
   await json(await request.post(`/api/v1/tests/${id}/abort`))
   let failureVisible = true
   let collectionReason = 'archive_collection_unconfirmed'
+  let recoveryState: string | undefined
   // Real scoped run and navigation; the archive failure projection is controlled
   // here. Storage and distributed completion are exercised by Go regressions.
   await page.route(`**/api/v1/tests/${id}`, async route => {
@@ -311,6 +312,7 @@ test('run results distinguishes recorded archive failure and refreshes availabil
     const response = await route.fetch()
     const payload = await response.json()
     await route.fulfill({ response, json: { ...payload, status: 'ABORTED', ended_at: '2026-09-27T12:01:00Z',
+      archive_recovery: recoveryState ? { state: recoveryState, recovery_attempts: 2, expected_sources: 3, verified_sources: 1 } : undefined,
       archive_failure: failureVisible ? { reason: collectionReason, recorded_at: '2026-09-27T12:01:02Z' } : undefined,
       live_metrics: { timestamp: '2026-09-27T12:00:00Z', observation_state: 'historical', active_vusers: 120,
         tps: 100, total_transactions: 5000, total_errors: 0, error_pct: 0, avg_response_ms: 10,
@@ -322,6 +324,32 @@ test('run results distinguishes recorded archive failure and refreshes availabil
   await expect(notice).toContainText('Archive collection unconfirmed')
   await expect(notice).toContainText('may still be in progress or may have been interrupted')
   await expect(notice).not.toContainText('Archive collection failed')
+  let mutations = 0
+  page.on('request', request => { if (request.url().includes(`/api/v1/tests/${id}`) && !['GET', 'HEAD'].includes(request.method())) mutations++ })
+  for (const [state, heading] of [
+    ['collection_pending', 'Archive recovery queued'],
+    ['cache_recovery_pending', 'Partial evidence recovery queued'],
+    ['publication_pending', 'Archive publication pending'],
+    ['exhausted', 'Automatic archive recovery ended'],
+    ['unavailable', 'Saved archive unavailable'],
+  ]) {
+    recoveryState = state
+    await notice.getByRole('button', { name: 'Check again', exact: true }).click()
+    await expect(notice.getByRole('heading', { level: 2 })).toHaveText(heading)
+    await expect(notice).toContainText('Sources verified during collection: 1 of 3')
+    await expect(notice).toContainText('do not confirm that the files are still available')
+    await expect(notice).toContainText('Earlier collection issue: Collection had not been confirmed')
+    await expect(notice).not.toContainText('may still be in progress')
+    if (state === 'publication_pending') {
+      await page.setViewportSize({ width: 850, height: 1000 })
+      await expect(notice.getByRole('button', { name: 'Check again', exact: true })).toBeEnabled()
+      await notice.evaluate(element => element.scrollIntoView({ block: 'center' }))
+      await page.screenshot({ path: testInfo.outputPath('archive-recovery-pending.png'), fullPage: true })
+      await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+    }
+  }
+  expect(mutations).toBe(0)
+  recoveryState = undefined
   collectionReason = 'remote_collection_unavailable'
   await notice.getByRole('button', { name: 'Check again', exact: true }).click()
   await expect(notice).toContainText('Archive collection failed')

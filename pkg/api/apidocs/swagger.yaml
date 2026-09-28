@@ -36886,6 +36886,11 @@ paths:
                                   type: object
                                   additionalProperties: true
                                   nullable: true
+                                archive_recovery:
+                                  type: object
+                                  description: 'Go type: RunArchiveRecovery'
+                                  additionalProperties: true
+                                  nullable: true
                                 assignment:
                                   type: object
                                   description: 'Go type: GeneratorAssignmentSettings'
@@ -50962,6 +50967,34 @@ paths:
                           - reason
                           - recorded_at
                         nullable: true
+                      archive_recovery:
+                        type: object
+                        properties:
+                          expected_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          recovery_attempts:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          retry_window_ends_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          state:
+                            type: string
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          verified_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                        required:
+                          - state
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -55109,6 +55142,34 @@ paths:
                           - reason
                           - recorded_at
                         nullable: true
+                      archive_recovery:
+                        type: object
+                        properties:
+                          expected_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          recovery_attempts:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          retry_window_ends_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          state:
+                            type: string
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          verified_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                        required:
+                          - state
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -59252,6 +59313,34 @@ paths:
                         required:
                           - reason
                           - recorded_at
+                        nullable: true
+                      archive_recovery:
+                        type: object
+                        properties:
+                          expected_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          recovery_attempts:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          retry_window_ends_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          state:
+                            type: string
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          verified_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                        required:
+                          - state
                         nullable: true
                       assignment:
                         type: object
@@ -63409,6 +63498,34 @@ paths:
                           - reason
                           - recorded_at
                         nullable: true
+                      archive_recovery:
+                        type: object
+                        properties:
+                          expected_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          recovery_attempts:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          retry_window_ends_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          state:
+                            type: string
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          verified_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                        required:
+                          - state
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -67564,6 +67681,34 @@ paths:
                         required:
                           - reason
                           - recorded_at
+                        nullable: true
+                      archive_recovery:
+                        type: object
+                        properties:
+                          expected_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          recovery_attempts:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          retry_window_ends_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          state:
+                            type: string
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          verified_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                        required:
+                          - state
                         nullable: true
                       assignment:
                         type: object
@@ -71721,6 +71866,34 @@ paths:
                           - reason
                           - recorded_at
                         nullable: true
+                      archive_recovery:
+                        type: object
+                        properties:
+                          expected_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          recovery_attempts:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          retry_window_ends_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          state:
+                            type: string
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          verified_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                        required:
+                          - state
+                        nullable: true
                       assignment:
                         type: object
                         properties:
@@ -75876,6 +76049,34 @@ paths:
                         required:
                           - reason
                           - recorded_at
+                        nullable: true
+                      archive_recovery:
+                        type: object
+                        properties:
+                          expected_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          recovery_attempts:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          retry_window_ends_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          state:
+                            type: string
+                          updated_at:
+                            type: string
+                            format: date-time
+                            nullable: true
+                          verified_sources:
+                            type: integer
+                            format: int64
+                            nullable: true
+                        required:
+                          - state
                         nullable: true
                       assignment:
                         type: object
@@ -229151,6 +229352,34 @@ paths:
                       - reason
                       - recorded_at
                     nullable: true
+                  archive_recovery:
+                    type: object
+                    properties:
+                      expected_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      recovery_attempts:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      retry_window_ends_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      state:
+                        type: string
+                      updated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      verified_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                    required:
+                      - state
+                    nullable: true
                   assignment:
                     type: object
                     properties:
@@ -235843,6 +236072,34 @@ paths:
                     required:
                       - reason
                       - recorded_at
+                    nullable: true
+                  archive_recovery:
+                    type: object
+                    properties:
+                      expected_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      recovery_attempts:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      retry_window_ends_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      state:
+                        type: string
+                      updated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      verified_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                    required:
+                      - state
                     nullable: true
                   assignment:
                     type: object
@@ -253977,6 +254234,34 @@ paths:
                       - reason
                       - recorded_at
                     nullable: true
+                  archive_recovery:
+                    type: object
+                    properties:
+                      expected_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      recovery_attempts:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      retry_window_ends_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      state:
+                        type: string
+                      updated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      verified_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                    required:
+                      - state
+                    nullable: true
                   assignment:
                     type: object
                     properties:
@@ -260613,6 +260898,34 @@ paths:
                     required:
                       - reason
                       - recorded_at
+                    nullable: true
+                  archive_recovery:
+                    type: object
+                    properties:
+                      expected_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      recovery_attempts:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      retry_window_ends_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      state:
+                        type: string
+                      updated_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      verified_sources:
+                        type: integer
+                        format: int64
+                        nullable: true
+                    required:
+                      - state
                     nullable: true
                   assignment:
                     type: object

@@ -2860,3 +2860,38 @@ repetitions (56.716 s). The final full Go suite passed all 108 test-bearing pack
 with no failures (API 352.390 s). Documentation checks passed for all 69 active
 Markdown files; final scoped re-review found no further publication-recovery issues.
 Latest-image Docker qualification and the other local work packages remain pending.
+
+## Durable recovery status in Results (2026-09-28)
+
+Terminal single-run reads now project recovery bookkeeping without reading source
+files, object storage or generators. Project/request/end/status identity is checked
+before and after metadata reads. Prepared publication identity must be SHA-bound;
+untrusted legacy preparation and database errors leave progress unknown. Lists add
+no collection queries. The public DTO contains no tokens, target addresses, private
+errors or source paths. Receipt counts are explicitly historical; attempt counts
+represent budget claims, including interrupted claims.
+
+Results show queued collection/cache recovery, pending publication, exhausted
+recovery or unavailable saved evidence. Earlier collection failures remain historical
+context, and Check again remains read-only. Review corrected resolved-intent handling
+so an existing but unreadable archive catalog is never described as retention loss.
+
+Focused API checks passed (8.105 s), Results component tests passed (31 tests), and
+typecheck/lint passed. The initial full dashboard run passed 4,553 tests and timed
+out in one unrelated 10,000-input SecretBindingReview test under concurrent compile
+load; a bounded-worker rerun is recorded below. Final browser, race and full Go
+results follow after review.
+
+The bounded dashboard rerun passed all 432 files / 4,554 tests (122.05 s), with
+no source or timeout change to the unrelated large-input test. Dashboard build
+passed. The three affected Results browser workflows passed under both dev-admin
+(5.0 s) and local-auth (25.2 s). Narrow-screen screenshots were inspected; a
+screenshot-scroll correction was rechecked in both profiles (3.1 s / 9.2 s),
+showing the full recovery notice and enabled read-only refresh control.
+Three API race repetitions passed (47.301 s); documentation checks passed all
+69 active Markdown files. Final full-suite completion follows.
+
+The final full Go suite passed all 108 test-bearing packages with no failures.
+Final scoped re-review found no additional recovery-status issues. Shared staging,
+producer/backlog disk admission, combined-loss recovery and deployed qualification
+remain local work.

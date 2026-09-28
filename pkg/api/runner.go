@@ -518,6 +518,7 @@ type ManagedTest struct {
 	Sparkline             []TestSparklinePoint                     `json:"sparkline,omitempty"`
 	ComparisonBaseline    *RunComparisonBaseline                   `json:"comparison_baseline,omitempty"`
 	ArchiveFailure        *storage.RunArchiveFailure               `json:"archive_failure,omitempty"`
+	ArchiveRecovery       *RunArchiveRecovery                      `json:"archive_recovery,omitempty"`
 	Archive               *storage.RunArchiveRecord                `json:"archive,omitempty"`
 	TelemetryHealth       *TelemetryRunHealth                      `json:"telemetry_health,omitempty"`
 	Error                 string                                   `json:"error,omitempty"`

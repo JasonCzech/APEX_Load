@@ -181,3 +181,12 @@ and telemetry evidence cannot be reconstructed from those receipts. Publication 
 queued through the transactional request-time/status/end-time/lease fence. Automatic
 collection does not recreate a lost source for an already-resolved publication outbox;
 per-pod emptyDir loss during pending publication remains a separate recovery item.
+
+Single-run terminal API reads expose a bounded `archive_recovery` projection of
+durable bookkeeping. Results distinguish queued collection, cache-only recovery,
+pending publication, exhausted recovery and resolved-but-unavailable archives.
+Verified-source counts are historical receipts, not proof that files survive.
+Attempt counts are durable budget claims and do not prove a network call occurred.
+Uncertain identity or storage reads omit the projection; they never probe generators
+or storage files to guess progress. Earlier collection failures remain historical
+context. **Check again** refreshes the read; it does not restart recovery.
