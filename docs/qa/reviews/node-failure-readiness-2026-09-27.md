@@ -1325,3 +1325,31 @@ Focused tests passed (5.235 s); targeted race checks, including execution leader
 passed (15.124 s). `go test ./...` passed (API 343.241 s), and
 `git diff --check` passed. Final review found no further issue in this slice.
 Deployed verification will use the reviewed image built from this commit.
+
+## Verified kind application image loader
+
+The reviewed controller image was built from commit `5d7bb3f3` with the normal
+Dockerfile and standard profile. Its ARM64 manifest is
+`sha256:e21631bd60ad1d1e09b2104cfd6a892f0b2174d46d157acfc37cfcd7792f134a`.
+The named-tag import again lacked the normalized repository/digest alias in kind's
+containerd. Restoring that alias after checking its manifest allowed both controllers
+to become Ready with zero restarts. The health API's full `revision` field matched
+the reviewed source; `commit` is intentionally abbreviated. Both setup checks were
+completed before taking any load baseline.
+
+Added `load_image.py` to make this import/verification procedure reusable. It checks
+both workers' ownership, immutable container IDs and architecture before any import;
+streams the verified local image; checks the imported manifest; creates the missing
+repository/digest reference; and rechecks it. It never deploys or removes resources.
+Review added exporter cleanup when the importer cannot start and full orchestration
+coverage for validating all workers before mutation and verifying both new aliases.
+The 130-test harness suite passed before the final orchestration case was added;
+all eight focused loader tests then passed. `git diff --check` passed. No further
+loader issue was found in the final review.
+
+On the new deployed controller image, the queued-demand/cleared-drain handoff check
+passed from leadership generation 10 to 11. Demand never exceeded 320 and recovered
+with one missing/zero sample. The successor retained all four generators as active,
+without reintroducing the startup drain snapshot. The queued run was stopped afterward.
+This is normal controller replacement evidence, not an independent-node fault or
+in-flight adoption result.

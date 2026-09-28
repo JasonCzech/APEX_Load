@@ -787,3 +787,24 @@ return false. Poll within a fixed deadline; do not weaken the gate to make a tri
 start. Callers must additionally check HPA/StatefulSet state, scrape freshness,
 controller restart baselines and the independent sustained-traffic gate. This helper
 does not reserve capacity or prove load delivery.
+
+### Load local application images by verified digest
+
+`load_image.py --inputs ABS_INPUTS --tag FULLY_QUALIFIED_TAG
+--reference REPOSITORY@sha256:DIGEST --output NEW_ABSOLUTE_DIRECTORY` loads an
+already-built, committed-source Linux image on the two workers owned by those inputs.
+It verifies the local manifest digest, both immutable worker container identities,
+kind ownership and matching architectures before streaming any image. The tag and
+pinned reference must use the same fully qualified repository.
+
+The loader verifies containerd's imported manifest and explicitly creates and checks
+the `repository@digest` alias used by digest-pinned Deployments. A successful named-tag
+import alone is insufficient: the observed kind/containerd runtime omitted that alias
+and attempted an unauthorized remote pull until it was restored. Existing conflicting
+aliases or a changed source manifest fail the loader. Both streaming processes are
+reaped on failure/interruption. Logs and the final verification record are private;
+a failed partial import does not create a successful result or deploy anything.
+
+This helper does not build images, change Deployments, initialize storage, remove
+images/volumes or run fault trials. Inspect host disk capacity before loading images:
+Docker's sparse virtual-disk free-space figure does not establish host free space.
