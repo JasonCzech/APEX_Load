@@ -3247,3 +3247,52 @@ The reviewed focused matrix passed (2.439 s), three race repetitions passed
 (3.891 s), and the full Go suite passed all 108 test-bearing packages (API 388.478 s).
 Documentation checks passed for 69 active Markdown files. Scoped re-review found
 no further issues. Deployment and new cold-spare fault repetitions remain pending.
+
+## Restored-generator generation recovery (2026-09-28)
+
+Controller `e0571f43` was built with only the owned idle kind nodes stopped to
+avoid Docker VM memory contention, then rolled after verified database and
+staging backups. Generators stayed on `1642d920`. The fresh healthy run
+`9eaf0f6d-40f1-4137-a8fa-8a50ab961cba` completed with a minimum 316.204 RPS over
+60.610 seconds, verified archive hashes, and zero controller restarts.
+
+Cold-spare worker-container trials 1 and 2 passed their traffic and restoration
+gates, recovering sustained load in 106.227 and 106.722 seconds. Each used a
+50-VUser source and a dedicated 80-VUser replacement budget on the surviving
+worker. The surviving controller retained zero restarts. Cleanup explicitly
+stopped each test to `ABORTED`. Both archives subsequently verified every
+artifact hash; both truthfully retain best-effort coverage with the lost source
+marked missing. Trial 1's original 180-second archive wait timed out and remains
+recorded; its separately recorded follow-up verified publication after the normal
+collection retries. These passes do not establish complete source coverage.
+
+Trial 3 (`5b3273bd-4e75-4c2c-b7a0-00197cfbcccc`) timed out in admission and was
+stopped without injecting a fault. The restored generators rejected generation
+58 as expired despite a running fleet epoch keeper: their durable supervision
+fence survived the node restart. Both initial generators had now participated in
+a faulted run. Three consecutive cold-spare passes have therefore **not** been
+achieved. Private evidence remains under `remaining-e7fgcem4`, including all
+three `worker-spare-e0571f43-cold-*` attempts and separate archive gate receipts.
+
+The recovery implementation keeps the generator's no-revival rule intact. A
+same-generation expired acknowledgement may trigger ordinary leadership turnover
+only when local test states are idle and a transaction against the exact durable
+lease confirms that no executable test exists. That transaction locks the lease
+before reading test states, matching start-commit lock order. A concurrent start
+wins first and blocks turnover, or loses the old term and cannot dispatch. Local
+`STARTING`, active/paused/stopping/shakeout and unknown states block the attempt;
+unstarted queued tests do not. Transport failures, higher generations, stale
+owners and acquisition reconciliation never trigger this recovery. Renewal is
+serialized with release, and an ambiguous commit closes local admission rather
+than continuing to use an uncertain term. The next acquisition issues a higher
+durable generation and runs the existing recovery callbacks.
+
+The reviewed focused matrix passed (API 6.077 s, storage 0.842 s), as did
+three isolated PostgreSQL repetitions (3.031 s) and three race repetitions
+(API 50.181 s, storage 4.277 s). Full-suite review exposed one test assertion
+that assumed synchronous propagation into an operation child context; the test
+now waits for the bounded cancellation callback. The tightened worker/cancellation
+cases passed three additional race repetitions (10.448 s). The final full Go suite
+passed all 108 test-bearing packages (API 388.76 s), and documentation
+checks passed for 69 active Markdown files. Scoped re-review found no further
+issues in this slice. Deployment and new cold-spare repetitions remain pending.

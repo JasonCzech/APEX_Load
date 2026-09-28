@@ -305,6 +305,9 @@ func (b *distributedExecutionBackend) maintainGeneratorExecutionTerm(ctx context
 
 		targets := b.generatorEpochKeeperTargets()
 		renewalErr := b.claimConfiguredGeneratorExecutionEpoch(ctx, clients, targets, generation, leaseOwnerID, leaseDeadline)
+		if renewalErr != nil && tr.recoverExpiredGeneratorEpoch(ctx, generation, leaseOwnerID, renewalErr) {
+			return
+		}
 		remaining := time.Until(leaseDeadline)
 		if remaining <= 0 {
 			return

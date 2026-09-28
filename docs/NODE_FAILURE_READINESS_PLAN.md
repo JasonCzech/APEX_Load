@@ -399,3 +399,11 @@ when KEDA adds pods. The change retains all ordinary admission checks and keeps
 read-only inventory requests free of launch side effects. Focused and repeated race
 checks and the full 108-package Go suite pass; fresh deployed cold-spare repetitions
 remain pending.
+
+Controller `e0571f43` passed a fresh healthy gate and two cold-spare worker trials;
+both resulting archives verified with explicit missing-source coverage. The third
+attempt failed admission before injection because restored generators retained a
+durable expired-generation fence. Idle-only leadership turnover is implemented and passes focused, repeated race,
+PostgreSQL and full Go-suite checks as the recovery path: it preserves generator fencing, gates on local and durable
+test state, and serializes the exact-term release against renewal and fenced start
+commits. Three consecutive deployed passes remain outstanding.
