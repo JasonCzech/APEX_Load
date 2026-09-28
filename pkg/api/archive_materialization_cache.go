@@ -39,6 +39,8 @@ type archiveMaterializationCoordinator struct {
 	retentionSweepInterval time.Duration
 	retentionOnce          sync.Once
 	retentionWake          chan string
+	retentionStop          chan struct{}
+	retentionDone          chan struct{}
 }
 
 type archiveMaterializationEntry struct {
@@ -86,6 +88,8 @@ func newArchiveMaterializationCoordinator() *archiveMaterializationCoordinator {
 		lastRetentionSweep:     make(map[string]time.Time),
 		retentionSweepInterval: archiveMaterializationRetentionSweepInterval,
 		retentionWake:          make(chan string, 16),
+		retentionStop:          make(chan struct{}),
+		retentionDone:          make(chan struct{}),
 	}
 }
 
@@ -602,20 +606,60 @@ func (m *archiveMaterializationCoordinator) enforceRetentionIfDue(scanRoot strin
 	m.lastRetentionSweep[scanRoot] = now
 	m.mu.Unlock()
 	m.retentionOnce.Do(func() {
-		go func() {
-			for root := range m.retentionWake {
-				m.enforceRetention(root)
-			}
-		}()
+		go m.runRetention()
 	})
 	select {
 	case m.retentionWake <- scanRoot:
 	default:
-		// The bounded queue is saturated. Permit a later lease release to retry
-		// instead of accumulating one goroutine per cache namespace.
+		// Keep the root known to periodic maintenance even if no later reader
+		// arrives. A zero timestamp makes it due on the next tick.
 		m.mu.Lock()
-		delete(m.lastRetentionSweep, scanRoot)
+		m.lastRetentionSweep[scanRoot] = time.Time{}
 		m.mu.Unlock()
+	}
+}
+
+// One worker per coordinator bounds scans and wakeups. Periodic maintenance is
+// required even without new reads: the first burst's scan may encounter pinned
+// readers, and the final release may occur inside the coalescing interval.
+func (m *archiveMaterializationCoordinator) runRetention() {
+	defer close(m.retentionDone)
+	interval := m.retentionSweepInterval
+	if interval <= 0 {
+		interval = archiveMaterializationRetentionSweepInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-m.retentionStop:
+			return
+		case root := <-m.retentionWake:
+			m.enforceRetention(root)
+		case <-ticker.C:
+			m.enforceDueRetention()
+		}
+	}
+}
+
+func (m *archiveMaterializationCoordinator) enforceDueRetention() {
+	now := m.now().UTC()
+	m.mu.Lock()
+	roots := make([]string, 0, len(m.lastRetentionSweep))
+	for root, last := range m.lastRetentionSweep {
+		if last.IsZero() || now.Sub(last) >= m.retentionSweepInterval {
+			m.lastRetentionSweep[root] = now
+			roots = append(roots, root)
+		}
+	}
+	m.mu.Unlock()
+	for _, root := range roots {
+		select {
+		case <-m.retentionStop:
+			return
+		default:
+			m.enforceRetention(root)
+		}
 	}
 }
 

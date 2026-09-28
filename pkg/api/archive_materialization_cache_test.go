@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ import (
 )
 
 func TestArchiveMaterializationCoordinatorDoesNotBlockUnrelatedArchives(t *testing.T) {
-	coordinator := newArchiveMaterializationCoordinator()
+	coordinator := newTestArchiveMaterializationCoordinator(t)
 	held, err := coordinator.reserve(context.Background(), "archive-a")
 	if err != nil {
 		t.Fatal(err)
@@ -47,7 +48,9 @@ func TestArchiveMaterializationCoordinatorDoesNotBlockUnrelatedArchives(t *testi
 }
 
 func TestArchiveMaterializationCoordinatorForgetsIdleEntries(t *testing.T) {
-	coordinator := newArchiveMaterializationCoordinator()
+	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+	coordinator := newTestArchiveMaterializationCoordinator(t)
+	coordinator.now = func() time.Time { return now }
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := coordinator.reserve(canceledCtx, "pre-canceled"); !errors.Is(err, context.Canceled) {
@@ -85,12 +88,10 @@ func TestArchiveMaterializationCoordinatorForgetsIdleEntries(t *testing.T) {
 		t.Fatalf("coordinator retained %d idle entries after failed reservation", entriesAfterFailure)
 	}
 
-	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	scanRoot := t.TempDir()
 	writeArchiveMaterializationCacheFixture(t, scanRoot, "evicted-cache", 8, now.Add(-2*time.Hour))
 	t.Setenv(envArchiveMaterializationCacheMaxBytes, strconv.FormatInt(1<<20, 10))
 	t.Setenv(envArchiveMaterializationCacheTTL, "1h")
-	coordinator.now = func() time.Time { return now }
 	coordinator.enforceRetention(scanRoot)
 	coordinator.mu.Lock()
 	entriesAfterEviction := len(coordinator.entries)
@@ -101,7 +102,7 @@ func TestArchiveMaterializationCoordinatorForgetsIdleEntries(t *testing.T) {
 }
 
 func TestArchiveMaterializationReplacementWaitsForActiveReader(t *testing.T) {
-	coordinator := newArchiveMaterializationCoordinator()
+	coordinator := newTestArchiveMaterializationCoordinator(t)
 	entry, err := coordinator.reserve(context.Background(), "shared-cache")
 	if err != nil {
 		t.Fatal(err)
@@ -350,7 +351,7 @@ func TestArchiveMaterializationCacheEnforcesAggregateByteCapAndPreservesProducer
 	}
 	t.Setenv(envArchiveMaterializationCacheMaxBytes, "10")
 	t.Setenv(envArchiveMaterializationCacheTTL, "8760h")
-	coordinator := newArchiveMaterializationCoordinator()
+	coordinator := newTestArchiveMaterializationCoordinator(t)
 	coordinator.now = func() time.Time { return now }
 	coordinator.enforceRetention(scanRoot)
 
@@ -403,7 +404,7 @@ func TestArchiveMaterializationCacheProtectsActiveAndPendingLeases(t *testing.T)
 	t.Setenv(envArchiveMaterializationCacheMaxBytes, strconv.FormatInt(1<<20, 10))
 	t.Setenv(envArchiveMaterializationCacheTTL, "1h")
 
-	coordinator := newArchiveMaterializationCoordinator()
+	coordinator := newTestArchiveMaterializationCoordinator(t)
 	coordinator.now = func() time.Time { return now }
 	activeKey, err := canonicalArchiveMaterializationKey(activeRoot)
 	if err != nil {
@@ -448,9 +449,11 @@ func TestArchiveMaterializationRetentionSweepsAreCoalesced(t *testing.T) {
 	firstRoot := writeArchiveMaterializationCacheFixture(t, scanRoot, "first-expired", 8, now.Add(-2*time.Hour))
 	t.Setenv(envArchiveMaterializationCacheMaxBytes, strconv.FormatInt(1<<20, 10))
 	t.Setenv(envArchiveMaterializationCacheTTL, "1h")
-	coordinator := newArchiveMaterializationCoordinator()
+	coordinator := newTestArchiveMaterializationCoordinator(t)
 	coordinator.retentionSweepInterval = time.Hour
-	coordinator.now = func() time.Time { return now }
+	var clock atomic.Int64
+	clock.Store(now.UnixNano())
+	coordinator.now = func() time.Time { return time.Unix(0, clock.Load()) }
 	coordinator.enforceRetentionIfDue(scanRoot)
 	waitForCondition(t, time.Second, func() bool { _, err := os.Stat(firstRoot); return os.IsNotExist(err) }, "initial async cache retention")
 
@@ -459,7 +462,7 @@ func TestArchiveMaterializationRetentionSweepsAreCoalesced(t *testing.T) {
 	if _, err := os.Stat(secondRoot); err != nil {
 		t.Fatalf("coalesced retention call unexpectedly ran another scan: %v", err)
 	}
-	now = now.Add(time.Hour)
+	clock.Store(now.Add(time.Hour).UnixNano())
 	coordinator.enforceRetentionIfDue(scanRoot)
 	waitForCondition(t, time.Second, func() bool { _, err := os.Stat(secondRoot); return os.IsNotExist(err) }, "subsequent async cache retention")
 }
@@ -477,4 +480,99 @@ func writeArchiveMaterializationCacheFixture(t *testing.T, parent, testID string
 		t.Fatal(err)
 	}
 	return root
+}
+
+func newTestArchiveMaterializationCoordinator(t *testing.T) *archiveMaterializationCoordinator {
+	t.Helper()
+	coordinator := newArchiveMaterializationCoordinator()
+	t.Cleanup(func() {
+		close(coordinator.retentionStop)
+		coordinator.retentionOnce.Do(func() { close(coordinator.retentionDone) })
+		<-coordinator.retentionDone
+	})
+	return coordinator
+}
+
+func TestArchiveMaterializationRetentionEventuallySweepsWithoutAnotherRead(t *testing.T) {
+	for _, reason := range []string{"byte-cap", "ttl"} {
+		t.Run(reason, func(t *testing.T) {
+			t.Setenv(envArchiveMaterializationCacheMaxBytes, "1")
+			t.Setenv(envArchiveMaterializationCacheTTL, "1h")
+			if reason == "ttl" {
+				t.Setenv(envArchiveMaterializationCacheMaxBytes, "1024")
+				t.Setenv(envArchiveMaterializationCacheTTL, "1ns")
+			}
+			scanRoot := t.TempDir()
+			root := writeArchiveMaterializationCacheFixture(t, scanRoot, "pinned", 8, time.Now().Add(-2*time.Hour))
+			coordinator := newTestArchiveMaterializationCoordinator(t)
+			coordinator.retentionSweepInterval = 25 * time.Millisecond
+			key, err := canonicalArchiveMaterializationKey(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, err := coordinator.reserve(context.Background(), key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease := coordinator.promoteReservation(key, scanRoot, root, entry)
+			defer lease.Release()
+			// Several maintenance sweeps must preserve an active reader.
+			coordinator.enforceRetentionIfDue(scanRoot)
+			time.Sleep(100 * time.Millisecond)
+			if _, err := os.Stat(root); err != nil {
+				t.Fatalf("pinned cache removed: %v", err)
+			}
+			// Force this final release into the coalescing window. There will
+			// be no subsequent request to wake retention.
+			coordinator.mu.Lock()
+			coordinator.lastRetentionSweep[scanRoot] = time.Now()
+			coordinator.mu.Unlock()
+			lease.Release()
+			waitForCondition(t, time.Second, func() bool { _, err := os.Stat(root); return os.IsNotExist(err) }, "idle cache eviction without another read")
+		})
+	}
+}
+
+func TestArchiveMaterializationRetentionRetriesSaturatedWakeQueue(t *testing.T) {
+	t.Setenv(envArchiveMaterializationCacheMaxBytes, "1")
+	scanRoot := t.TempDir()
+	root := writeArchiveMaterializationCacheFixture(t, scanRoot, "overflow", 8, time.Now())
+	coordinator := newTestArchiveMaterializationCoordinator(t)
+	// Hold worker startup so queue overflow is deterministic.
+	coordinator.retentionOnce.Do(func() {})
+	coordinator.retentionWake = make(chan string, 1)
+	coordinator.retentionWake <- t.TempDir()
+	coordinator.enforceRetentionIfDue(scanRoot)
+	coordinator.mu.Lock()
+	last, known := coordinator.lastRetentionSweep[scanRoot]
+	coordinator.mu.Unlock()
+	if !known || !last.IsZero() {
+		t.Fatalf("overflow root lost or not due: known=%v last=%v", known, last)
+	}
+	coordinator.retentionSweepInterval = 10 * time.Millisecond
+	go coordinator.runRetention()
+	waitForCondition(t, time.Second, func() bool { _, err := os.Stat(root); return os.IsNotExist(err) }, "overflow retry without another read")
+}
+
+func TestArchiveMaterializationPeriodicRetentionProtectsPendingReservation(t *testing.T) {
+	t.Setenv(envArchiveMaterializationCacheMaxBytes, "1")
+	scanRoot := t.TempDir()
+	root := writeArchiveMaterializationCacheFixture(t, scanRoot, "pending", 8, time.Now())
+	coordinator := newTestArchiveMaterializationCoordinator(t)
+	coordinator.retentionSweepInterval = 10 * time.Millisecond
+	key, err := canonicalArchiveMaterializationKey(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, err := coordinator.reserve(context.Background(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coordinator.enforceRetentionIfDue(scanRoot)
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("pending cache removed: %v", err)
+	}
+	coordinator.failReservation(entry)
+	waitForCondition(t, time.Second, func() bool { _, err := os.Stat(root); return os.IsNotExist(err) }, "periodic eviction after pending reservation ends")
 }
