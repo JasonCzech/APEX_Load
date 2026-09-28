@@ -70,6 +70,8 @@ class S3ResourcesTest(unittest.TestCase):
         self.assertTrue(container['securityContext']['readOnlyRootFilesystem'])
         for flag in ('-s3.port=8333', '-s3.port.https=0', '-ip.bind=127.0.0.1', '-s3.ip.bind=0.0.0.0'):
             self.assertIn(flag, container['args'])
+        self.assertIn('-volume.max=6', container['args'])
+        self.assertIn('-master.volumeSizeLimitMB=256', container['args'])
         service = next(x for x in manifest['items'] if x['kind'] == 'Service')
         self.assertEqual(service['spec']['clusterIP'], 'None')
         claim = next(x for x in manifest['items'] if x['kind'] == 'PersistentVolumeClaim')
@@ -96,6 +98,17 @@ class S3ResourcesTest(unittest.TestCase):
         with self.assertRaises(RenderError):
             render(self.inputs, 'seaweedfs:latest', output)
         self.assertFalse(output.exists())
+
+    def test_volume_slots_are_bounded_within_the_pvc(self):
+        for value in (0, 7, -1, True, '6', None, 1.5):
+            with self.subTest(value=value), self.assertRaises(RenderError):
+                resources(self.inputs, self.image, volume_count=value)
+        for value in (1, 4, 6):
+            _, manifest = resources(self.inputs, self.image, volume_count=value)
+            pod = next(x for x in manifest['items'] if x['kind'] == 'Deployment')['spec']['template']['spec']
+            self.assertIn('-volume.max=' + str(value), pod['containers'][0]['args'])
+            claim = next(x for x in manifest['items'] if x['kind'] == 'PersistentVolumeClaim')
+            self.assertEqual(claim['spec']['resources']['requests']['storage'], '2Gi')
 
     def test_render_is_private_exclusive_and_kustomize_compatible(self):
         output = self.root / 'rendered'

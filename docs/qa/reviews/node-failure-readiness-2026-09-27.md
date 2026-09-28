@@ -1785,3 +1785,21 @@ unbounded-package-parallelism run hit the default ten-minute API package timeout
 while host builds were running; no passing result is claimed for that attempt.
 Reduced package parallelism and the explicit budget passed. Final source review
 found no further actionable issue in this preview slice; `git diff --check` passed.
+
+
+## Object-volume exhaustion detection in the disposable S3 harness
+
+The automatic-dispatch trials exposed exhaustion of the S3 service's four configured
+256 MiB volume slots. Tiny retained probes could still succeed because the filer
+stored them inline; archive uploads requiring data-volume allocation failed.
+The probe now writes 64 KiB of deterministic incompressible data at a new v2 key,
+checks exact content, and retains the existing bucket-scope and credential-denial
+checks. Existing v1 objects are preserved. Renderer volume slots are configurable
+from one through six, defaulting to six within the same 2 GiB PVC request. This is
+bounded test storage, not an assertion that arbitrary archives fit.
+
+Review checked probe determinism, incompressibility, read-only check mode, actual
+volume-write failure, invalid slot counts and unchanged PVC/resource ownership.
+Three Go probe repetitions passed (0.494 s); all 184 Python harness tests passed
+(6.606 s). Final review found no further actionable issue in this harness slice.
+Live service resizing and a new v2 seed/retention check remain unqualified.

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"encoding/pem"
@@ -83,14 +85,14 @@ func TestProbeStages(t *testing.T) {
 	for _, tc := range []struct{ name, mode, failure, want string }{
 		{"seed", "seed", "", "complete"}, {"retention", "check", "", "complete"},
 		{"existing", "seed", "existing", "complete"}, {"create failed", "seed", "create", "create_bucket"},
-		{"put failed", "seed", "put", "put_probe"}, {"missing", "check", "get", "get_probe"},
+		{"put failed", "seed", "put", "put_probe"}, {"no data volume", "seed", "volume", "put_probe"}, {"missing", "check", "get", "get_probe"},
 		{"wrong contents", "check", "contents", "probe_contents"}, {"oversize", "check", "oversize", "probe_contents"},
 		{"scope accepted", "check", "scope", "bucket_scope"}, {"scope unavailable", "check", "scope transport", "bucket_scope"},
 		{"bad key accepted", "check", "badkey", "credential_rejection"}, {"bad key unavailable", "check", "badkey transport", "credential_rejection"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, in := fixture(t)
-			payload := "apexload-retained-" + in.run
+			payload := string(volumeProbePayload(in.run))
 			writes := 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				reject := func(code string) {
@@ -125,6 +127,13 @@ func TestProbeStages(t *testing.T) {
 							reject("AccessDenied")
 						} else if tc.failure == "existing" {
 							reject("BucketAlreadyExists")
+						}
+						return
+					}
+					if tc.failure == "volume" {
+						body, _ := io.ReadAll(io.LimitReader(r.Body, 128<<10))
+						if len(body) > 16<<10 {
+							w.WriteHeader(503)
 						}
 						return
 					}
@@ -213,5 +222,23 @@ func TestTLSRejectsWrongServiceIdentity(t *testing.T) {
 	_, err = client.GetObject(context.Background(), &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String("probe")})
 	if err == nil {
 		t.Fatal("accepted invalid DNS certificate")
+	}
+}
+
+func TestVolumeProbeIsBoundedRepeatableAndNotInlineSized(t *testing.T) {
+	payload := volumeProbePayload("run-one")
+	if len(payload) != 64<<10 || !bytes.Equal(payload, volumeProbePayload("run-one")) || bytes.Equal(payload, volumeProbePayload("run-two")) {
+		t.Fatal("invalid retained probe identity or size")
+	}
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	if _, err := writer.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if compressed.Len() < 60<<10 {
+		t.Fatalf("probe compresses to inline size: %d", compressed.Len())
 	}
 }

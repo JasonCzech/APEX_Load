@@ -630,9 +630,9 @@ or configure application controllers. Apply only to the explicitly owned
 `apexload-fault` namespace in the matching disposable cluster.
 
 The non-root, read-only-root container runs on the control-plane node and retains
-object volumes, master state and filer metadata on one 2 Gi RWO PVC. Four small
-volume slots and one-at-a-time volume growth leave space for internal metadata and
-the archive collection. This is a small local test store, with no replication,
+object volumes, master state and filer metadata on one 2 Gi RWO PVC. Six 256 MiB
+volume slots (configurable from one through six with `--volume-count`) and
+one-at-a-time volume growth leave at least 512 MiB for internal metadata. This is a small local test store, with no replication,
 capacity guarantee, production durability or primary failover claim. PVC capacity
 and disk free space still require monitoring; do not load production-sized archives.
 
@@ -977,3 +977,10 @@ application image loading, `deploy_stack.py`, `seed_scenario.py`, healthy contro
 and fault trials are subsequent steps. This bootstrap command has passed simulated
 lifecycle tests and a real pinned-chart render; fresh-cluster live qualification is
 still pending.
+
+
+The signed S3 probe now uses a deterministic, incompressible 64 KiB object at
+`fault/<run-id>/retention-probe-v2`. Tiny probes can succeed in filer metadata even
+when no object volume can accept an archive upload. Seed the new probe once, then
+use check mode after restarts; existing v1 probe objects are preserved. This detects
+an unavailable data-volume write path, not sufficient capacity for an entire trial.

@@ -9,7 +9,9 @@ from render_target import (RenderError, input_root, read_input, read_json, read_
                            validate_image, validate_tls, write_resources)
 
 
-def resources(inputs, image, storage_class="standard"):
+def resources(inputs, image, storage_class="standard", volume_count=6):
+    if type(volume_count) is not int or not 1 <= volume_count <= 6:
+        raise RenderError("volume count must be an integer from 1 through 6")
     root = input_root(inputs)
     run_id, cluster = read_ownership(root)
     validate_image(image)
@@ -65,7 +67,7 @@ def resources(inputs, image, storage_class="standard"):
             'terminationGracePeriodSeconds': 60,
             'containers': [{'name': 's3', 'image': image, 'imagePullPolicy': 'IfNotPresent',
                 'command': ['weed'], 'args': ['-logtostderr=true', '-config_dir=/etc/seaweedfs', 'server',
-                    '-dir=/data', '-ip=127.0.0.1', '-ip.bind=127.0.0.1', '-volume.max=4', '-master.volumeSizeLimitMB=256',
+                    '-dir=/data', '-ip=127.0.0.1', '-ip.bind=127.0.0.1', '-volume.max=' + str(volume_count), '-master.volumeSizeLimitMB=256',
                     '-s3', '-s3.ip.bind=0.0.0.0', '-s3.port=8333', '-s3.port.https=0', '-s3.port.iceberg=0',
                     '-s3.config=/run/apexfault/s3.json', '-s3.cert.file=/run/apexfault/tls.crt',
                     '-s3.key.file=/run/apexfault/tls.key', '-s3.domainName=' + hostname,
@@ -99,8 +101,8 @@ def resources(inputs, image, storage_class="standard"):
     return run_id, {'apiVersion': 'v1', 'kind': 'List', 'items': [secret, client, claim, deployment, service, policy]}
 
 
-def render(inputs, image, output, storage_class='standard'):
-    run_id, manifest = resources(inputs, image, storage_class)
+def render(inputs, image, output, storage_class='standard', volume_count=6):
+    run_id, manifest = resources(inputs, image, storage_class, volume_count)
     write_resources(output, manifest, 's3-resources.json')
     return run_id
 
@@ -111,9 +113,11 @@ def main():
     parser.add_argument('--image', required=True, help='SeaweedFS 4.17 repository manifest digest')
     parser.add_argument('--storage-class', default='standard')
     parser.add_argument('--output', required=True)
+    parser.add_argument('--volume-count', type=int, choices=range(1, 7), default=6,
+                        help='256 MiB object volume slots within the fixed 2 GiB PVC (default: 6)')
     args = parser.parse_args()
     try:
-        run_id = render(args.inputs, args.image, args.output, args.storage_class)
+        run_id = render(args.inputs, args.image, args.output, args.storage_class, args.volume_count)
     except RenderError as error:
         print(str(error), file=sys.stderr)
         return 1

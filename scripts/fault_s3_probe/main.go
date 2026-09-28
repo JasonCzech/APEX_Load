@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -164,10 +165,22 @@ func hasCode(err error, codes ...string) bool {
 	return false
 }
 
+// A tiny object can be stored inline in filer metadata even when no data volume
+// can accept writes. Use deterministic incompressible data above that threshold;
+// check mode reproduces it without modifying the retained object.
+func volumeProbePayload(run string) []byte {
+	data := make([]byte, 64<<10)
+	for offset := 0; offset < len(data); offset += sha256.Size {
+		block := sha256.Sum256([]byte("apexload-volume-probe-v2:" + run + ":" + strconv.Itoa(offset)))
+		copy(data[offset:], block[:])
+	}
+	return data
+}
+
 // check returns only fixed stage names; service errors may contain sensitive data.
 func check(ctx context.Context, in inputs, mode string, client, bad *s3.Client) string {
-	key := "fault/" + in.run + "/retention-probe"
-	payload := []byte("apexload-retained-" + in.run)
+	key := "fault/" + in.run + "/retention-probe-v2"
+	payload := volumeProbePayload(in.run)
 	if mode == "seed" {
 		_, err := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(bucket)})
 		if err != nil && !hasCode(err, "BucketAlreadyOwnedByYou", "BucketAlreadyExists") {
