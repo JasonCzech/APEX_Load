@@ -287,6 +287,12 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 				}
 				record.ArchivePath = stagedRoot
 				record.ManifestPath = stagedManifest
+				// Each refresh attempt starts from the verified catalog version.
+				// A prior failed attempt may have durably saved an adjunct digest
+				// for this private path; it does not describe the freshly copied
+				// catalog manifest. Preserve the new intent's URI, but use the
+				// source's trust anchor until adjunct generation refreshes it.
+				record.ManifestSHA256 = catalogRecord.ManifestSHA256
 			} else if catalogErr != nil && !errors.Is(catalogErr, sql.ErrNoRows) {
 				return fmt.Errorf("load archive catalog for adjunct refresh: %w", catalogErr)
 			}

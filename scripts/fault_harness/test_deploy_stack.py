@@ -83,6 +83,18 @@ class StackDeploymentTest(unittest.TestCase):
     def mutations(self):
         return [argv for argv, _, _ in self.calls if any(x in argv for x in ('create', 'apply', 'patch', 'exec'))]
 
+    def test_source_retention_passes_to_private_profile(self):
+        deployment = StackDeployment(self.inputs, self.images, self.output, execute=self.execute,
+                                     source_retention_seconds=300)
+        deployment.run()
+        profile = json.loads((self.output / 'stack/profile.json').read_text())
+        self.assertEqual(profile['source_retention_seconds'], 300)
+        overlay = json.loads((self.output / 'stack/application/kustomization.yaml').read_text())
+        patches = [json.loads(p['patch']) for p in overlay['patches'] if 'target' not in p]
+        pod = next(p for p in patches if p['kind'] == 'Deployment')['spec']['template']['spec']
+        env = {e['name']: e for e in pod['containers'][0]['env']}
+        self.assertEqual(env['APEXLOAD_ARCHIVE_SOURCE_RETENTION_TTL']['value'], '300s')
+
     def test_complete_order_and_readiness_are_not_qualification(self):
         self.deployment().run()
         stages = [e['phase'] for e in json.loads((self.output / 'events.json').read_text())]

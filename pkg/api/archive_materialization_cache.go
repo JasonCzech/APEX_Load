@@ -57,6 +57,7 @@ type archiveMaterializationLease struct {
 	scanRoot    string
 	cacheRoot   string
 	cacheID     os.FileInfo
+	downloaded  bool
 	once        sync.Once
 }
 
@@ -239,6 +240,12 @@ func (l *archiveMaterializationLease) Release() {
 		}
 		m.mu.Unlock()
 		m.forgetEntryIfIdle(entry)
+		// A new download grows disk usage even inside the periodic sweep's
+		// coalescing window. Bound a sequential startup/read burst before the
+		// next download can begin. Active readers remain protected by tryEvict.
+		if l.downloaded {
+			m.enforceRetention(l.scanRoot)
+		}
 		m.enforceRetentionIfDue(l.scanRoot)
 	})
 }

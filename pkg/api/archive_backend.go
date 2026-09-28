@@ -811,6 +811,7 @@ func acquireArchiveMaterialized(ctx context.Context, record *storage.RunArchiveR
 	}
 	setMaterializedArchiveRecordPaths(record, localRoot, manifestPath)
 	lease := archiveMaterializations.promoteReservation(key, archiveMaterializationCacheScanRoot(backend.LocalRoot), localRoot, entry)
+	lease.downloaded = true
 	reservationActive = false
 	return lease, nil
 }

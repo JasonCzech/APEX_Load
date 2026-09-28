@@ -317,3 +317,12 @@ rollback must not leave generators running without an authoritative owner.
 Completion means all P0 work and reporting gates pass for a named supported profile,
 known limits are documented, and the original fault cases pass without hidden manual
 intervention. Fixing only autoscaling or only controller election is insufficient.
+
+Cold-start qualification also exposed a reader-cache burst that exceeded the
+2 GiB local data volume before the periodic byte sweep. New-download lease release
+now enforces idle byte retention immediately; a separate refresh-retry digest bug
+was reproduced and fixed. The local profile has distinct 3 GiB data / 1 GiB spool
+limits inside a 5 GiB ephemeral budget and an explicit, default-off confirmed-source
+retention option. This still requires deployed qualification and does not solve
+concurrent-reader admission, unconfirmed-source disk bounds, or the crash window
+between initial adjunct mutation and durable preparation metadata.

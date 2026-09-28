@@ -67,12 +67,13 @@ class StackResourcesTest(unittest.TestCase):
         self.assertEqual(env['APEXLOAD_ALLOW_BOOTSTRAP_ADMIN']['value'], 'true')
         volumes = {v['name']: v for v in pod['volumes']}
         self.assertEqual(volumes['tmp']['emptyDir']['sizeLimit'], '1Gi')
-        self.assertEqual(volumes['data']['emptyDir']['sizeLimit'], '2Gi')
-        self.assertEqual(pod['containers'][0]['resources']['limits']['ephemeral-storage'], '4Gi')
+        self.assertEqual(volumes['data']['emptyDir']['sizeLimit'], '3Gi')
+        self.assertEqual(pod['containers'][0]['resources']['limits']['ephemeral-storage'], '5Gi')
         self.assertEqual(pod['containers'][0]['resources']['requests']['ephemeral-storage'], '512Mi')
         self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES']['value'], str(256 * 1024**2))
         self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES']['value'], str(256 * 1024**2))
         self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL']['value'], '15m')
+        self.assertNotIn('APEXLOAD_ARCHIVE_SOURCE_RETENTION_TTL', env)
         self.assertEqual(env['APEXLOAD_DATABASE_URL']['valueFrom']['secretKeyRef']['name'], 'apexload-fault-data-client')
         self.assertEqual(env['AWS_SECRET_ACCESS_KEY']['valueFrom']['secretKeyRef']['name'], 'apexload-s3-client')
         generator = next(p for p in patches if p['kind'] == 'StatefulSet')['spec']
@@ -101,6 +102,22 @@ class StackResourcesTest(unittest.TestCase):
             self.assertTrue('apexload-controller-active' in text, 'missing active endpoint')
             self.assertTrue(self.images['generator'] in text, 'missing pinned image')
             self.assertTrue('apexload.apexload.svc' not in text, 'unexpected base value in rendered profile')
+
+    def test_source_retention_is_explicit_and_bounded(self):
+        for seconds in (60, 300, 720 * 3600):
+            output = self.root / ('retention-' + str(seconds))
+            render(self.inputs, self.images, output, source_retention_seconds=seconds)
+            config = json.loads((output / 'application/kustomization.yaml').read_text())
+            patches = [json.loads(p['patch']) for p in config['patches'] if 'target' not in p]
+            pod = next(p for p in patches if p['kind'] == 'Deployment')['spec']['template']['spec']
+            env = {e['name']: e for e in pod['containers'][0]['env']}
+            self.assertEqual(env['APEXLOAD_ARCHIVE_SOURCE_RETENTION_TTL']['value'], str(seconds) + 's')
+            self.assertEqual(json.loads((output / 'profile.json').read_text())['source_retention_seconds'], seconds)
+        for index, seconds in enumerate((-1, 1, 59, 720 * 3600 + 1, True, 60.0, '60', None)):
+            output = self.root / ('bad-retention-' + str(index))
+            with self.subTest(seconds=seconds), self.assertRaises(RenderError):
+                render(self.inputs, self.images, output, source_retention_seconds=seconds)
+            self.assertFalse(output.exists())
 
     def test_validation_before_any_output(self):
         for replicas, capacity in ((1, 100), (13, 100), (True, 100), (4, 0), (4, 1001), (4, 1.5)):

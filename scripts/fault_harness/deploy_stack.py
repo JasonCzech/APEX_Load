@@ -28,7 +28,7 @@ def command(argv, data=None, timeout=20):
 
 class StackDeployment:
     def __init__(self, inputs, images, output, minimum=2, maximum=4, pod_capacity=100,
-                 accelerated=False, execute=command):
+                 accelerated=False, execute=command, source_retention_seconds=0):
         self.inputs = input_root(inputs)
         self.run_id, self.cluster = read_ownership(self.inputs)
         self.kubeconfig = read_input(self.inputs, 'kubeconfig')
@@ -41,7 +41,8 @@ class StackDeployment:
         self.output.mkdir(mode=0o700)
         # Renderers validate TLS, pins, capacity and private inputs. Only these
         # derived manifests may be applied; no arbitrary manifest path is accepted.
-        render_stack.render(self.inputs, images, self.output / 'stack', maximum, pod_capacity)
+        render_stack.render(self.inputs, images, self.output / 'stack', maximum, pod_capacity,
+                            source_retention_seconds)
         render_monitoring.render(self.inputs, images['prometheus'], self.output / 'monitoring',
                                  pod_capacity, minimum, maximum, accelerated)
         overlay = self.output / 'stack/application/kustomization.yaml'
@@ -187,6 +188,7 @@ def main():
     parser.add_argument('--maximum', type=int, default=4)
     parser.add_argument('--pod-capacity', type=int, default=100)
     parser.add_argument('--accelerated', action='store_true')
+    parser.add_argument('--source-retention-seconds', type=int, default=0)
     args = parser.parse_args()
     images = {role: getattr(args, role + '_image') for role in
               ('controller', 'generator', 'target', 'postgres', 'redis', 's3', 'prometheus')}
@@ -196,7 +198,8 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     try:
         StackDeployment(args.inputs, images, args.output, args.minimum, args.maximum,
-                        args.pod_capacity, args.accelerated).run()
+                        args.pod_capacity, args.accelerated,
+                        source_retention_seconds=args.source_retention_seconds).run()
     except (ValueError, OSError, RuntimeError, subprocess.SubprocessError, KeyboardInterrupt):
         parser.exit(1, 'Deployment failed; private evidence and cluster resources were preserved.\n')
     finally:

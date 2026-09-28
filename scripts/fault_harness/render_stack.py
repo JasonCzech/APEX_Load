@@ -14,7 +14,7 @@ from render_target import (RenderError, input_root, read_input, read_json, read_
                            validate_image, validate_tls, write_resources)
 
 
-def application(inputs, controller_image, generator_image, replicas=4, pod_capacity=100):
+def application(inputs, controller_image, generator_image, replicas=4, pod_capacity=100, source_retention_seconds=0):
     root = input_root(inputs)
     run_id, cluster = read_ownership(root)
     for image in (controller_image, generator_image):
@@ -22,6 +22,9 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
     for value, low, high in ((replicas, 2, 12), (pod_capacity, 1, 1000)):
         if type(value) is not int or not low <= value <= high:
             raise RenderError('invalid local replica count or pod capacity')
+    if (type(source_retention_seconds) is not int or
+            (source_retention_seconds != 0 and not 60 <= source_retention_seconds <= 720 * 3600)):
+        raise RenderError('source retention must be disabled (0) or between 60 and 2592000 seconds')
     credentials = read_json(root, 'credentials.json')
     for key in ('grpc', 'http', 'wrapping_key', 'auth_session'):
         if not isinstance(credentials.get(key), str) or not re.fullmatch(r'[A-Za-z0-9_-]{32,128}', credentials[key]):
@@ -75,12 +78,14 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
             # A 320-VUser/45s archive is about 190 MiB in the local trial.
             # Transfer spools must fit independently of materialization cache.
             container['resources']['requests']['ephemeral-storage'] = '512Mi'
-            container['resources']['limits']['ephemeral-storage'] = '4Gi'
+            # Keep the data-volume limit distinct from the whole-pod budget:
+            # cache downloads, unconfirmed sources and transfer spools coexist.
+            container['resources']['limits']['ephemeral-storage'] = '5Gi'
             next(v for v in pod['volumes'] if v['name'] == 'tmp')['emptyDir']['sizeLimit'] = '1Gi'
             pod['affinity']['podAntiAffinity'] = {'$patch': 'replace', 'requiredDuringSchedulingIgnoredDuringExecution': [
                 {'labelSelector': {'matchLabels': {'app.kubernetes.io/name': 'apexload-controller'}}, 'topologyKey': 'kubernetes.io/hostname'}]}
             pod['volumes'].extend([{'name': 'import-assets', 'persistentVolumeClaim': None, 'emptyDir': {'sizeLimit': '128Mi'}},
-                {'name': 'data', 'emptyDir': {'sizeLimit': '2Gi'}},
+                {'name': 'data', 'emptyDir': {'sizeLimit': '3Gi'}},
                 {'name': 'data-ca', 'secret': {'secretName': 'apexload-fault-data-client', 'defaultMode': 0o440,
                                              'items': [{'key': 'ca.crt', 'path': 'ca.crt'}]}}])
             container['volumeMounts'] = [{'name': 'data-ca', 'mountPath': '/run/apexfault-data', 'readOnly': True}]
@@ -90,6 +95,9 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES', 'value': str(256 * 1024**2)},
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL', 'value': '15m'},
                                 {'name': 'APEXLOAD_BOOTSTRAP_SUBJECT', 'value': 'fault-' + run_id}]
+            if source_retention_seconds:
+                container['env'].append({'name': 'APEXLOAD_ARCHIVE_SOURCE_RETENTION_TTL',
+                                         'value': str(source_retention_seconds) + 's'})
             for source, keys in (('apexload-fault-data-client', ('APEXLOAD_DATABASE_URL', 'APEXLOAD_REDIS_URL')),
                                  ('apexload-s3-client', ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'))):
                 container['env'].extend({'name': key, 'valueFrom': {'secretKeyRef': {'name': source, 'key': key}}} for key in keys)
@@ -116,10 +124,11 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
     return run_id, {'apiVersion': 'v1', 'kind': 'List', 'items': items}, kustomization
 
 
-def render(inputs, images, output, replicas=4, pod_capacity=100):
+def render(inputs, images, output, replicas=4, pod_capacity=100, source_retention_seconds=0):
     # Finish validation before creating any output. Components share the exact
     # private inputs and installation identity, not earlier deployment snapshots.
-    run_id, app, overlay = application(inputs, images['controller'], images['generator'], replicas, pod_capacity)
+    run_id, app, overlay = application(inputs, images['controller'], images['generator'], replicas, pod_capacity,
+                                      source_retention_seconds)
     _, target = render_target.resources(inputs, images['target'])
     _, dependencies = render_dependencies.resources(inputs, images['postgres'], images['redis'])
     _, s3 = render_s3.resources(inputs, images['s3'])
@@ -154,6 +163,7 @@ def render(inputs, images, output, replicas=4, pod_capacity=100):
                                       'limits': {'cpu': '1', 'memory': '128Mi'}}}]}}}}, indent=2)),
                               (root / 'profile.json', json.dumps({'run_id': run_id, 'images': images, 'replicas': replicas,
                                    'pod_capacity': pod_capacity, 'profile': 'disposable-http-ha-s3',
+                                   'source_retention_seconds': source_retention_seconds,
                                    'limitations': ['single-host', 'single-instance-data-services', 'local-path-generator-pvcs',
                                                     'ephemeral-import-assets', 'external-keda-prometheus-install-required']}, indent=2))):
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -172,11 +182,13 @@ def main():
         parser.add_argument('--' + role + '-image', required=True)
     parser.add_argument('--replicas', type=int, default=4)
     parser.add_argument('--pod-capacity', type=int, default=100)
+    parser.add_argument('--source-retention-seconds', type=int, default=0,
+                        help='opt in only after all staging writers support publication-source fencing')
     args = parser.parse_args()
     try:
         run_id = render(args.inputs, {role: getattr(args, role + '_image') for role in
                         ('controller', 'generator', 'target', 'postgres', 'redis', 's3')},
-                        args.output, args.replicas, args.pod_capacity)
+                        args.output, args.replicas, args.pod_capacity, args.source_retention_seconds)
     except RenderError as error:
         print(str(error), file=sys.stderr)
         return 1

@@ -45,3 +45,10 @@ volume for collection, concurrent publication, retry backlog and the TTL window;
 monitor free space and pending finalization jobs. The separate materialization
 cache byte cap applies only to downloaded reader caches. Neither setting makes a
 single-host Docker Desktop trial a production storage-availability qualification.
+
+The disposable local renderer/deployer can set this explicitly with
+`--source-retention-seconds 300`; zero omits the setting. For reader-cache growth,
+newly downloaded archives enforce the idle byte policy synchronously when their
+reader lease is released. Cache hits and idle TTL maintenance still use coalesced
+periodic sweeps. Concurrent active readers remain protected and can exceed the
+idle byte budget, so deployment sizing must allow their combined working set.

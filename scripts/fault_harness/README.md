@@ -816,13 +816,26 @@ This helper does not build images, change Deployments, initialize storage, remov
 images/volumes or run fault trials. Inspect host disk capacity before loading images:
 Docker's sparse virtual-disk free-space figure does not establish host free space.
 
-The local controller profile reserves 1 GiB of `/tmp` transfer workspace and 2 GiB
-of data workspace, within a 4-GiB ephemeral-storage limit (512-MiB request). It limits
+The local controller profile allows 1 GiB of `/tmp` transfer workspace and 3 GiB
+of data workspace, within a 5-GiB ephemeral-storage limit (512-MiB request). It limits
 an archive materialization and idle materialization cache to 256 MiB each, with a
 15-minute TTL. These values cover the observed roughly 190-MiB 320-VUser/45-second
 HTTP archive; larger trials must be sized explicitly. Active cache readers and
 publication staging consume additional space. The earlier 128-MiB `/tmp` profile
 caused a real controller eviction, invalidating the third repeated scaling trial.
+The later 2-GiB data-volume limit also caused eviction during a cold archive-cache
+startup burst. Use controllers with immediate byte retention after a downloaded
+archive reader releases its lease; the periodic TTL sweep alone can allow a burst
+to exceed the idle cache budget. This is not admission control for concurrent
+active readers, and confirmed-source retention remains a separate opt-in policy.
+For a fresh deployment whose controller images all implement publication-source
+fencing, `render_stack.py --source-retention-seconds 300` enables a five-minute
+TTL for confirmed local sources. `deploy_stack.py` accepts the same option.
+The default is disabled (`0`); enabled values
+must be from 60 through 2,592,000 seconds. The profile receipt records the value.
+Never enable this on shared staging while an older unfenced writer is still
+running. See [source retention](../../docs/ARCHIVE_SOURCE_RETENTION.md) for the
+confirmation checks and exclusions; unpublished sources are retained.
 
 ### Read the deployed local profile for healthy and node-fault trials
 
