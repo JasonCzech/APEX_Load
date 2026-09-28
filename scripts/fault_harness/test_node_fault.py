@@ -56,6 +56,9 @@ class HarnessTest(unittest.TestCase):
                 data["controller_restarts"] = 1
             if self.killed and self.fault_mode == "no-recovery":
                 data["observed_vusers"] = 0
+            if self.killed and self.fault_mode == "adapter-safety-once" and not self.bad_observation_sent:
+                data = {"safety_violation": "private diagnostic must not be exposed"}
+                self.bad_observation_sent = True
             if self.killed and self.fault_mode == "duplicate-once" and not self.bad_observation_sent:
                 data["assignments"] *= 2
                 self.bad_observation_sent = True
@@ -721,7 +724,7 @@ class HarnessTest(unittest.TestCase):
 
     def test_safety_failure_cannot_be_hidden_by_later_good_samples(self):
         for mode in ("duplicate-once", "terminal-after-recovery", "reset-after-outage",
-                     "target-restart-after-outage", "missing-target-identity", "stale-target-restart-once"):
+                     "target-restart-after-outage", "missing-target-identity", "stale-target-restart-once", "adapter-safety-once"):
             with self.subTest(mode=mode):
                 self.now, self.killed, self.started, self.fault_mode = 100.0, False, [], mode
                 self.bad_observation_sent = False
@@ -731,6 +734,10 @@ class HarnessTest(unittest.TestCase):
                 self.assertEqual(self.started, ["immutable-id"])
                 self.assertNotIn("traffic_gate_passed", [e["event"] for e in h.events])
                 self.assertIn("observation_safety_failed", [e["event"] for e in h.events])
+                if mode == "adapter-safety-once":
+                    reasons = [e["reason"] for e in h.events if e["event"] == "observation_safety_failed"]
+                    self.assertEqual(reasons, ["observation adapter reported a safety violation"])
+                    self.assertNotIn("private diagnostic", json.dumps(h.events))
 
     def test_target_instance_is_required_and_retained_in_safe_evidence(self):
         for value in (None, "", True, 123, "a" * 31, "a" * 33, "A" * 32, "secret-token", []):

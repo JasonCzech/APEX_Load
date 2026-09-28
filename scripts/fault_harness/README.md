@@ -816,3 +816,50 @@ an archive materialization and idle materialization cache to 256 MiB each, with 
 HTTP archive; larger trials must be sized explicitly. Active cache readers and
 publication staging consume additional space. The earlier 128-MiB `/tmp` profile
 caused a real controller eviction, invalidating the third repeated scaling trial.
+
+### Read the deployed local profile for healthy and node-fault trials
+
+`observe_run.py --config ABS_PRIVATE_CONFIG` is a read-only observation command for
+`healthy_control.py` and `node_fault.py`. Its JSON config contains:
+
+```json
+{
+  "inputs": "/absolute/private/inputs",
+  "namespace_uid": "actual-namespace-uid",
+  "test_id": "actual-test-id",
+  "project_id": "actual-project-id",
+  "created_at": "2026-09-28T00:00:00.123456Z",
+  "target_instance_id": "0123456789abcdef0123456789abcdef",
+  "surviving_controllers": [
+    {"uid": "actual-pod-uid", "node": "apexload-fault-RUNID-worker2", "restarts": 0}
+  ]
+}
+```
+
+Capture these values from the fresh baseline, not from an earlier installation.
+Use both controller baselines for healthy controls; for a worker fault, include the
+controllers expected to survive on other workers. `restarts` is the observed sum of
+container restart counts for that pod. Replacement of a designated survivor is also
+reported as a restart failure, so a new UID cannot hide a reset counter.
+
+The adapter verifies the owned namespace UID, reads the active EndpointSlice and pod
+inventory, opens bounded loopback pod forwards, and uses the private profile's existing
+trusted-header and observer credentials. It verifies the target's TLS certificate and
+never follows redirects or inherits proxies. The target pod listens on 8090; the Service
+port 443 is not a pod-forward port. Forward processes are killed/reaped on exit.
+The POSIX CLI has a four-second overall observation budget plus bounded cleanup, suitable
+for the healthy driver's five-second read allowance. Transport failures emit no snapshot.
+
+Fresh live metrics must match the currently armed execution generation. Shard targets
+must map unambiguously to owned worker pod addresses. The adapter binds the leader by
+name/address and observed pod UID, then rereads that pod and the endpoint before returning;
+the shipped EndpointSlice publisher does not populate `targetRef.uid`. Run creation time
+uses PostgreSQL's microsecond precision in this local profile. The independent counter,
+current fleet demand, controller restart deltas and declared assignments are the only
+output fields. Assignments are controller declarations, not independent proof of generator
+fencing or exclusive traffic ownership. This adapter does not reserve recovery capacity.
+
+Namespace/run/target incarnation changes and invalid safety evidence emit the fixed
+`{"safety_violation":true}` marker. The drivers latch that marker as failure rather than
+retrying it away as an ordinary outage; diagnostic text or credentials are never emitted.
+Terminal runs are returned with their terminal status so the driver rejects them immediately.

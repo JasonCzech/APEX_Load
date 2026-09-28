@@ -80,6 +80,8 @@ def validate_config(config):
 
 def validate_observation(observation, config, previous=None, now=None):
     now = time.time() if now is None else now
+    if isinstance(observation, dict) and "safety_violation" in observation:
+        raise ObservationSafetyError("observation adapter reported a safety violation")
     if not isinstance(observation, dict) or observation.get("run_id") != config["run_id"]:
         raise ObservationSafetyError("observation must belong to this run")
     instance = observation.get("target_instance_id")
@@ -276,6 +278,8 @@ class Harness:
             observation = json.loads(raw)
         except ValueError:
             raise ObservationSafetyError("observation adapter returned invalid JSON") from None
+        if isinstance(observation, dict) and "safety_violation" in observation:
+            raise ObservationSafetyError("observation adapter reported a safety violation")
         # Check process continuity before freshness: a stale replacement sample
         # must not be retried away and hidden by a later sample from the old target.
         if (self.last_observation is not None and isinstance(observation, dict)

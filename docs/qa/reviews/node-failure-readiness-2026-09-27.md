@@ -1379,3 +1379,28 @@ and publication staging still need headroom. No shared archives or PVCs were del
 Render/validation tests, including a real Kustomize build, and `git diff --check` passed.
 Final review found no further profile-sizing issue; repeated deployed replay remains
 required before claiming three clean cycles.
+
+## Deployed-run observation adapter
+
+Added a repository read-only adapter for the owned PostgreSQL/Redis/S3 local profile.
+It binds the namespace UID and run incarnation, resolves the current execution leader,
+checks fresh live metrics against its armed generation, maps shard targets to owned
+worker pods, reads expiring fleet demand, and reads the independent TLS target counter.
+It compares surviving controller UIDs and restart counts with the supplied baseline.
+All forwards are loopback-only and cleaned up within the CLI's bounded read window.
+
+Live review corrected two assumptions: the publisher omits `targetRef.uid`, so the
+adapter binds name/address to the observed pod UID and rereads that UID before returning;
+and the target's pod port is 8090, whereas 443 belongs to its Service. Tests cover these
+contracts, stale metrics, changed namespaces/runs/processes, duplicate assignments,
+replaced leaders/survivors, invalid ordinals and terminal observations. The fault driver
+now latches a fixed adapter safety marker, without exposing supplied diagnostic text.
+
+The full 144-test Python harness suite passed (6.617 s). Final marker-ordering review
+then passed all 45 fault-driver tests and the focused one-shot safety regression.
+`git diff --check` passed; final review found no further issue. A terminal live read
+completed in 0.635 s. Ten consecutive observations during a 320-VUser run all reported
+four assignments, current demand 320 and zero survivor restarts; the slowest took
+0.629 s. No node fault was injected for this adapter verification. The adapter reports
+controller-declared assignments; it does not independently prove generator fencing,
+reserve spares, or complete combined-loss recovery.
