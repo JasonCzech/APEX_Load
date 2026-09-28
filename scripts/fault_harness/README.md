@@ -664,8 +664,8 @@ go run ./scripts/fault_s3_probe --inputs /absolute/private/inputs \
   --address 127.0.0.1:18333 --mode check --output /absolute/new/private-s3-check
 ```
 
-`seed` creates the fixed bucket if needed, writes `fault/<run-id>/retention-probe`,
-and reads the exact expected bytes. `check` never rewrites that object. Both modes
+`seed` creates the fixed bucket if needed, writes the 64 KiB object at
+`fault/<run-id>/retention-probe-v2`, and reads the exact expected bytes. `check` never rewrites that object. Both modes
 also attempt a foreign-bucket creation and an invalid-credential read, requiring
 explicit access/signature rejection rather than accepting transport failure. An
 incorrectly permissive server can therefore create the fixed negative-test bucket;
