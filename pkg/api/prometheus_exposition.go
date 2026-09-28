@@ -21,12 +21,13 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 	availability := resolveCapacityAvailabilityWithLiveAt(settings, s.runner.liveAvailableGeneratorCount(r.Context()), time.Now())
 	tests := s.runner.listOperationalTestSnapshots()
 	regionStats := s.generatorRegionStats(r.Context())
-	scalingStats := scalingSignalStats(tests)
+	demandAt := time.Now()
+	scalingStats := scalingSignalStatsAt(tests, demandAt)
 	podReplicaFloor := 0
 	reservedResources := protocol.CapacityVector{}
 	queuedResources := protocol.CapacityVector{}
 	for _, test := range tests {
-		if test == nil || (test.Status != "PENDING" && test.Status != "QUEUED" && test.Status != "RESERVED") {
+		if !hasQueuedScalingDemand(test, demandAt) {
 			continue
 		}
 		if groups, err := podReservationGroups(test); err == nil {
@@ -375,7 +376,28 @@ type scalingSignals struct {
 	ActiveProtocolVUsers map[string]int
 }
 
+// hasQueuedScalingDemand includes due one-time schedules: the scheduler retries
+// their start gates, so withholding demand while capacity is short would keep
+// both the run and its autoscaler waiting forever. Future schedules stay dormant.
+func hasQueuedScalingDemand(test *ManagedTest, now time.Time) bool {
+	if test == nil {
+		return false
+	}
+	switch test.Status {
+	case "QUEUED", "PENDING", "RESERVED":
+		return true
+	case "SCHEDULED":
+		return test.ScheduledStartAt != nil && !test.ScheduledStartAt.IsZero() && !test.ScheduledStartAt.After(now)
+	default:
+		return false
+	}
+}
+
 func scalingSignalStats(tests []*ManagedTest) scalingSignals {
+	return scalingSignalStatsAt(tests, time.Now())
+}
+
+func scalingSignalStatsAt(tests []*ManagedTest, now time.Time) scalingSignals {
 	stats := scalingSignals{
 		QueuedProtocolVUsers: make(map[string]int),
 		ActiveProtocolVUsers: make(map[string]int),
@@ -384,8 +406,12 @@ func scalingSignalStats(tests []*ManagedTest) scalingSignals {
 		if test == nil {
 			continue
 		}
-		switch test.Status {
-		case "QUEUED", "PENDING", "RESERVED":
+		state := test.Status
+		if hasQueuedScalingDemand(test, now) {
+			state = "QUEUED"
+		}
+		switch state {
+		case "QUEUED":
 			stats.QueuedTests++
 			groups := test.Groups
 			if peak, err := podReservationGroups(test); err == nil {

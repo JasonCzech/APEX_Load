@@ -1683,3 +1683,27 @@ cluster/bootstrap/deployment qualification remains pending and is not represente
 as a pass. Host space was recovered only from rebuildable Go archives containing
 this worktree's path; no source, test evidence or runtime volume was removed.
 Final source review found no further actionable issue in this bootstrap-command slice.
+
+
+## Due one-time schedules can request generator capacity
+
+One-time scheduled runs stay `SCHEDULED` while the scheduler retries an unmet
+placement gate. Their exclusion from fleet demand prevented KEDA from supplying
+the capacity that would let the retry succeed. Due schedules now contribute their
+frozen peak VUser/protocol/resource demand, using one observation clock for both
+fleet and resource metrics. Future, missing-date, zero-date and terminal schedules
+remain excluded. Admission, hard capacity checks, explicit manual Start semantics,
+and scheduler authorization are unchanged.
+
+Tests cover the exact due-time boundary, future/invalid schedules, peak rather than
+initial load, fleet/resource agreement, and demand removal after cancellation.
+Focused tests passed (1.435 s); three race-test repetitions covering these paths,
+fleet ownership and automatic one-time scheduling passed (2.843 s). Full-suite
+validation and deployed automatic-dispatch evidence are recorded separately below.
+The live automatic-dispatch helper will issue no Start request; an explicit-start
+run cannot satisfy that qualification.
+
+The full `go test ./...` suite passed for the scheduled-demand change (API
+351.098 s). Final source review found no further actionable issue in this slice.
+Deployed automatic dispatch is still unqualified until the reviewed image is
+rolled out after the existing production-timing trials finish.

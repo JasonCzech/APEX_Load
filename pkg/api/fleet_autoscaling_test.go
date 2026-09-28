@@ -122,3 +122,54 @@ func TestPrometheusQueuedDemandIncludesAdmissionPeak(t *testing.T) {
 		})
 	}
 }
+
+func TestDueScheduledWorkEmitsPeakAutoscalingDemand(t *testing.T) {
+	now := time.Now().UTC()
+	for _, tc := range []struct {
+		name   string
+		status string
+		at     *time.Time
+		want   int
+	}{
+		{"future", "SCHEDULED", scheduledDemandTime(now.Add(time.Second)), 0},
+		{"boundary", "SCHEDULED", scheduledDemandTime(now), 100},
+		{"blocked due schedule", "SCHEDULED", scheduledDemandTime(now.Add(-time.Minute)), 100},
+		{"missing schedule", "SCHEDULED", nil, 0},
+		{"invalid zero schedule", "SCHEDULED", scheduledDemandTime(time.Time{}), 0},
+		{"stopped schedule", "ABORTED", scheduledDemandTime(now.Add(-time.Minute)), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			test := &ManagedTest{Status: tc.status, ScheduledStartAt: tc.at, TotalVUsers: 10, Groups: []TestGroup{{Name: "browser", Protocol: "browser", VUsers: 10, Stages: []storage.LoadStage{{TargetVUsers: 100}}}}}
+			stats := scalingSignalStatsAt([]*ManagedTest{test}, now)
+			if stats.QueuedVUsers != tc.want || stats.QueuedProtocolVUsers["browser"] != tc.want || stats.ActiveVUsers != 0 {
+				t.Fatalf("wrong due demand: %+v", stats)
+			}
+			if hasQueuedScalingDemand(test, now) != (tc.want > 0) {
+				t.Fatal("resource and VUser demand disagree")
+			}
+		})
+	}
+}
+
+func TestPrometheusDueSchedulePublishesFleetAndResourceDemand(t *testing.T) {
+	t.Setenv("APEXLOAD_FLEET_ID", "due-schedule")
+	server := NewServer(ServerConfig{MaxConcurrent: 2})
+	past, future := time.Now().Add(-time.Minute), time.Now().Add(time.Hour)
+	server.runner.tests["due"] = &ManagedTest{ID: "due", Status: "SCHEDULED", ScheduledStartAt: &past, TotalVUsers: 10, Groups: []TestGroup{{Name: "load", Protocol: "http", VUsers: 10, Stages: []storage.LoadStage{{TargetVUsers: 320}}}}}
+	server.runner.tests["future"] = &ManagedTest{ID: "future", Status: "SCHEDULED", ScheduledStartAt: &future, TotalVUsers: 1000, Groups: []TestGroup{{Name: "later", Protocol: "http", VUsers: 1000}}}
+	response := httptest.NewRecorder()
+	server.handlePrometheusMetrics(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	for _, want := range []string{`signal="total_vusers"} 320`, `apexload_scaling_tests{state="queued"} 1`, `apexload_pod_capacity_demand{state="queued",resource="vusers"} 320`} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("missing %s", want)
+		}
+	}
+	server.runner.tests["due"].Status = "ABORTED"
+	response = httptest.NewRecorder()
+	server.handlePrometheusMetrics(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(response.Body.String(), `signal="total_vusers"} 0`) {
+		t.Fatal("cancelled schedule retained demand")
+	}
+}
+
+func scheduledDemandTime(t time.Time) *time.Time { return &t }
