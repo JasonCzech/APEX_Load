@@ -43,6 +43,7 @@ func TestPostgresRunArchiveCollectionDurability(t *testing.T) {
 	}
 	defer store.Close()
 	checkArchiveFinalizationTerminalIdentity(t, store.SQLiteStore)
+	checkArchiveRecoveredPublicationRefreshIsAtomic(t, store.SQLiteStore)
 	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore, false)
 	checkPostgresArchiveCompletionLeaseExpiryWhileWaiting(t, store.SQLiteStore, true)
 	checkArchiveOrphanIncarnationFence(t, store.SQLiteStore)

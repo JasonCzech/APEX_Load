@@ -2815,3 +2815,48 @@ The final full Go suite passed all 108 test-bearing packages with no failures.
 The controller identity, timestamp and pending-source cleanup slice is ready to
 commit. Uploaded-marker recovery, recovery-state UI, durable staging, combined-loss
 recovery and latest-image Docker qualification remain separate local work items.
+
+## Recover already-uploaded archives after controller staging loss (2026-09-28)
+
+Pending object publications can now recover their catalog after local staging loss
+by reading only the exact opaque-token-bound immutable manifest. The bounded read
+must match the durable SHA-256 and terminal project/request/end/status identity in
+the original endpoint/account namespace. Missing or changed markers preserve the
+pending job. Existing unsafe local sources stay on the normal validation path;
+unknown leftover files are never deleted. Fresh refresh jobs still pointing at a
+previous catalog version continue through normal materialization.
+
+Recovery skips payload downloads, trend recomputation, snapshot capture and uploads.
+Catalog commit atomically retains or creates one dirty adjunct-refresh intent, so a
+crash before snapshot-backfill bookkeeping cannot silently lose that work. Existing
+newer refresh tokens are preserved. The follow-up refresh writes a new immutable
+version through the ordinary pipeline. This cannot reconstruct bytes lost before
+upload, and does not replace durable staging or generator evidence replication.
+
+Review added an in-transaction comparison against the pending manifest checksum and
+object pointer, because an opaque token can remain unchanged while a retry prepares
+new bytes. A proof read before that update must not commit the older catalog record.
+Real HTTP S3-adapter regressions inject upload/catalog interruption, then remove only
+the fixture's local source and require a single manifest GET with no payload GET/PUT.
+Negative cases include source/account mismatch, missing/changed marker, terminal
+identity changes, lease loss, concurrent token/checksum replacement, cancellation
+and unsafe local files. Changing the configured default bucket remains compatible
+with a verified persisted old-bucket pointer; changing its endpoint identity fails.
+
+Initial expanded focused checks passed (API 3.607 s, storage 1.002 s), and the first
+PostgreSQL matrix passed three repetitions (16.242 s). Final checksum-race, repeated
+race and full-suite results follow after the review correction.
+
+The checksum/pointer correction passed focused checks (API 3.436 s, storage 0.854 s)
+and three PostgreSQL repetitions (16.623 s). The repeated race matrix passed API
+42.839 s and storage 7.056 s; the full suite passed all 108 packages (API 359.569 s).
+Follow-up review added the same terminal-incarnation guard to the in-memory archive
+attachment, including producer retries of an already completed catalog. An old
+completion must not attach to a replacement live run loaded while publication was
+finishing. Focused/repeated-race and full validation of this final guard follows.
+
+The final attachment guard passed focused checks (3.706 s) and three API race
+repetitions (56.716 s). The final full Go suite passed all 108 test-bearing packages
+with no failures (API 352.390 s). Documentation checks passed for all 69 active
+Markdown files; final scoped re-review found no further publication-recovery issues.
+Latest-image Docker qualification and the other local work packages remain pending.

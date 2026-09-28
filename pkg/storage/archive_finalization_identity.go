@@ -14,6 +14,9 @@ type ArchiveFinalizationRunIdentity struct {
 	Status     string
 	LeaseName  string
 	LeaseOwner string
+	// RequireAdjunctRefresh conservatively reconciles skipped enrichment after
+	// recovering an already uploaded immutable version with no local source.
+	RequireAdjunctRefresh bool
 }
 
 func (s *SQLiteStore) CompleteArchiveFinalizationForRun(testID, intentToken, refreshToken string, record *RunArchiveRecord, identity ArchiveFinalizationRunIdentity) (bool, error) {

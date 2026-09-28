@@ -70,6 +70,16 @@ func (tr *TestRunner) inspectArchiveFinalizationIdentity(ctx context.Context, jo
 	if err != nil {
 		return nil, fmt.Errorf("read finalization identity: %w", err)
 	}
+	return tr.validateArchiveFinalizationIdentity(job, record, durable, data)
+}
+
+func (tr *TestRunner) validateArchiveFinalizationIdentity(job *storage.ArchiveFinalizationJob, record *storage.RunArchiveRecord, durable *storage.TestRecord, data []byte) (*storage.ArchiveFinalizationRunIdentity, error) {
+	if durable == nil || durable.EndTime == nil || !isTerminalTestStatus(durable.Status) {
+		return nil, errors.New("archive finalization requires a terminal run identity")
+	}
+	if job.TestID != durable.ID || record.TestID != job.TestID {
+		return nil, errors.New("archive finalization record does not match the durable test ID")
+	}
 	if record.ManifestSHA256 != "" && !strings.EqualFold(sha256BytesHex(data), record.ManifestSHA256) {
 		return nil, errors.New("finalization manifest differs from durable trust anchor")
 	}
@@ -98,4 +108,42 @@ func readFinalizationLocalManifest(ctx context.Context, record *storage.RunArchi
 	defer root.Close()
 	data, _, err := readArchiveFileAtRootLimitedContext(ctx, root, runArchiveManifestFileName, maxArchiveManifestDownloadBytes)
 	return data, err
+}
+
+func (tr *TestRunner) bindArchiveFinalizationLease(identity *storage.ArchiveFinalizationRunIdentity) error {
+	if identity != nil && tr.durableExecutionFence {
+		_, owner, _, err := tr.generatorExecutionClaim()
+		if err != nil || owner == "" {
+			return errNotExecutionLeader
+		}
+		identity.LeaseName, identity.LeaseOwner = executionLeaseName, owner
+	}
+	return nil
+}
+
+// A false result may mean lease loss with this same intent still current. Only
+// an actually superseded token is eligible for version cleanup; never attach it.
+func (tr *TestRunner) commitArchiveFinalization(job *storage.ArchiveFinalizationJob, identity *storage.ArchiveFinalizationRunIdentity) (bool, error) {
+	outbox := tr.archiveFinalizationOutbox()
+	var committed bool
+	var err error
+	if identity != nil {
+		committed, err = tr.archiveStore.(incarnationArchiveFinalizationStore).CompleteArchiveFinalizationForRun(job.TestID, job.IntentToken, job.RefreshToken, &job.ArchiveRecord, *identity)
+	} else {
+		committed, err = outbox.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, &job.ArchiveRecord)
+	}
+	if err != nil {
+		return false, fmt.Errorf("commit archive finalization: %w", err)
+	}
+	if !committed {
+		current, err := outbox.GetArchiveFinalizationJob(job.TestID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+		if current != nil && current.IntentToken == job.IntentToken {
+			return false, errors.New("archive completion was fenced; current publication preserved")
+		}
+		return false, tr.enqueueArchiveVersionCleanup(job.ProjectID, &job.ArchiveRecord)
+	}
+	return true, nil
 }

@@ -14,7 +14,7 @@ func TestArchiveFinalizationTerminalIdentity(t *testing.T) {
 }
 func checkArchiveFinalizationTerminalIdentity(t *testing.T, s *SQLiteStore) {
 	t.Helper()
-	for _, mode := range []string{"valid", "offset roundtrip", "new refresh", "start changed", "end changed", "status changed", "active", "project mismatch", "job project mismatch", "stale owner", "released lease", "expired lease", "deleted", "new token", "cleanup"} {
+	for _, mode := range []string{"valid", "offset roundtrip", "new refresh", "start changed", "end changed", "status changed", "active", "project mismatch", "job project mismatch", "stale owner", "released lease", "expired lease", "deleted", "new token", "new checksum", "new pointer", "cleanup"} {
 		t.Run("completion "+mode, func(t *testing.T) {
 			id := fmt.Sprintf("completion-%d", time.Now().UnixNano())
 			now := time.Now().UTC()
@@ -94,6 +94,16 @@ func checkArchiveFinalizationTerminalIdentity(t *testing.T, s *SQLiteStore) {
 			case "new token":
 				if err := s.SaveArchiveFinalizationJob(job); err != nil {
 					t.Fatal(err)
+				}
+			case "new checksum", "new pointer":
+				updated := record
+				if mode == "new checksum" {
+					updated.ManifestSHA256 = "new-digest"
+				} else {
+					updated.ArchiveURI = "s3://archives/new/" + id
+				}
+				if ok, err := s.UpdateArchiveFinalizationRecordIfToken(id, job.IntentToken, &updated); err != nil || !ok {
+					t.Fatal("replace publication metadata", ok, err)
 				}
 			case "cleanup":
 				if err := s.SaveArchiveCleanupJob(&ArchiveCleanupJob{TestID: id, ProjectID: row.ProjectID, ArchiveRecord: record}); err != nil {

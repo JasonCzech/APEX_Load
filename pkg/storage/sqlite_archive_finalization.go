@@ -528,7 +528,7 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 		}
 	}
 	testQuery := `SELECT COALESCE(project_id, ''), start_time, end_time, status FROM tests WHERE id = ?`
-	jobQuery := `SELECT COALESCE(intent_token, ''), COALESCE(project_id, '') FROM archive_finalization_jobs WHERE test_id = ?`
+	jobQuery := `SELECT COALESCE(intent_token, ''), COALESCE(project_id, ''), archive_record_json FROM archive_finalization_jobs WHERE test_id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		testQuery += ` FOR UPDATE`
 		jobQuery += ` FOR UPDATE`
@@ -547,14 +547,26 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 		!archiveIdentityTimestampEqual(s.db.dialect, durableEnd.Time, identity.EndTime)) {
 		return false, nil
 	}
-	var currentToken, jobProject string
-	if err := tx.QueryRow(jobQuery, testID).Scan(&currentToken, &jobProject); errors.Is(err, sql.ErrNoRows) {
+	var currentToken, jobProject, currentRecordJSON string
+	if err := tx.QueryRow(jobQuery, testID).Scan(&currentToken, &jobProject, &currentRecordJSON); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, err
 	}
 	if currentToken != intentToken || (identity != nil && normalizeProjectID(jobProject) != identity.ProjectID) {
 		return false, nil
+	}
+	if identity != nil {
+		var currentRecord RunArchiveRecord
+		if err := json.Unmarshal([]byte(currentRecordJSON), &currentRecord); err != nil {
+			return false, err
+		}
+		// The inspected proof must still be the one owned by this token. A
+		// retry can prepare new bytes without changing its opaque intent token.
+		if !strings.EqualFold(strings.TrimSpace(currentRecord.ManifestSHA256), strings.TrimSpace(record.ManifestSHA256)) ||
+			archivePublicationPointer(&currentRecord) != archivePublicationPointer(record) || currentRecord.ManifestURI != record.ManifestURI {
+			return false, nil
+		}
 	}
 	var cleanupExists int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM archive_cleanup_jobs WHERE test_id = ?`, testID).Scan(&cleanupExists); err != nil {
@@ -624,7 +636,17 @@ func (s *SQLiteStore) completeArchiveFinalization(testID string, intentToken str
 	if _, err := tx.Exec(`DELETE FROM run_archive_failures WHERE test_id = ?`, testID); err != nil {
 		return false, err
 	}
-	if refreshToken = strings.TrimSpace(refreshToken); refreshToken != "" {
+	if identity != nil && identity.RequireAdjunctRefresh {
+		// Catalog completion and recovery reconciliation are one transaction.
+		// Preserve a newer dirty token, including one queued before the crash.
+		now := time.Now().UTC()
+		if _, err := tx.Exec(`INSERT INTO archive_refresh_jobs
+			(test_id, project_id, generation, intent_token, created_at, updated_at)
+			VALUES (?, ?, 1, ?, ?, ?) ON CONFLICT(test_id) DO NOTHING`,
+			testID, durableProjectID, uuid.NewString(), now, now); err != nil {
+			return false, err
+		}
+	} else if refreshToken = strings.TrimSpace(refreshToken); refreshToken != "" {
 		if _, err := tx.Exec(`DELETE FROM archive_refresh_jobs WHERE test_id = ? AND intent_token = ?`, testID, refreshToken); err != nil {
 			return false, err
 		}

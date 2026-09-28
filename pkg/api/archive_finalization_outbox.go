@@ -114,7 +114,13 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 		}
 		if completed {
 			*record = job.ArchiveRecord
-			tr.attachFinalizedRunArchive(job.TestID, record)
+			tr.mu.RLock()
+			identity := storage.ArchiveFinalizationRunIdentity{ProjectID: test.ProjectID, StartTime: test.CreatedAt, Status: test.Status}
+			if test.EndedAt != nil {
+				identity.EndTime = *test.EndedAt
+			}
+			tr.mu.RUnlock()
+			tr.attachFinalizedRunArchive(job.TestID, record, &identity)
 			return nil
 		}
 	}
@@ -235,6 +241,10 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		return fmt.Errorf("test %s is unavailable for archive finalization", job.TestID)
 	}
 
+	if recovered, err := tr.recoverUploadedArchiveWithoutSource(ctx, job, durableTest); recovered || err != nil {
+		return err
+	}
+
 	var finalizationIdentity *storage.ArchiveFinalizationRunIdentity
 	if _, fenced := tr.archiveStore.(incarnationArchiveFinalizationStore); fenced && outbox != nil && durableTest != nil {
 		var err error
@@ -242,12 +252,8 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		if err != nil {
 			return err
 		}
-		if tr.durableExecutionFence {
-			_, owner, _, err := tr.generatorExecutionClaim()
-			if err != nil || owner == "" {
-				return errNotExecutionLeader
-			}
-			finalizationIdentity.LeaseName, finalizationIdentity.LeaseOwner = executionLeaseName, owner
+		if err := tr.bindArchiveFinalizationLease(finalizationIdentity); err != nil {
+			return err
 		}
 	}
 	snapshotRetryNeeded := false
@@ -361,27 +367,9 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 		}
 	}
 	if outbox != nil {
-		var committed bool
-		var err error
-		if finalizationIdentity != nil {
-			committed, err = tr.archiveStore.(incarnationArchiveFinalizationStore).CompleteArchiveFinalizationForRun(job.TestID, job.IntentToken, job.RefreshToken, record, *finalizationIdentity)
-		} else {
-			committed, err = outbox.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, record)
-		}
-		if err != nil {
-			return fmt.Errorf("commit archive finalization: %w", err)
-		}
-		if !committed {
-			// A lost lease or changed terminal row does not retire this opaque token.
-			// Another leader may still need its source and immutable object version.
-			current, err := outbox.GetArchiveFinalizationJob(job.TestID)
-			if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				return err
-			}
-			if current != nil && current.IntentToken == job.IntentToken {
-				return errors.New("archive completion was fenced; current publication preserved")
-			}
-			return tr.enqueueArchiveVersionCleanup(job.ProjectID, record)
+		committed, err := tr.commitArchiveFinalization(job, finalizationIdentity)
+		if err != nil || !committed {
+			return err
 		}
 	} else {
 		if err := tr.saveRunArchiveRecord(record); err != nil {
@@ -397,7 +385,7 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderSourceFence(ctx context.
 	if err := markPublishedArchiveSource(record); err != nil {
 		slog.Warn("confirmed archive source retained without cleanup receipt", "test_id", job.TestID, "error", err)
 	}
-	tr.attachFinalizedRunArchive(job.TestID, record)
+	tr.attachFinalizedRunArchive(job.TestID, record, finalizationIdentity)
 	return nil
 }
 
@@ -548,8 +536,8 @@ func (tr *TestRunner) markArchiveFinalizationFailed(testID string, intentToken s
 	}
 }
 
-func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.RunArchiveRecord) {
-	if tr == nil || record == nil {
+func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.RunArchiveRecord, identity *storage.ArchiveFinalizationRunIdentity) {
+	if tr == nil || record == nil || record.TestID != testID {
 		return
 	}
 	archived := *record
@@ -557,6 +545,14 @@ func (tr *TestRunner) attachFinalizedRunArchive(testID string, record *storage.R
 	defer tr.mu.Unlock()
 	current := tr.tests[testID]
 	if current == nil {
+		return
+	}
+	// A shared-store refresh may have loaded a replacement while I/O or the
+	// catalog transaction completed. Never attach the old proof to that run.
+	if identity != nil && (normalizeProjectID(current.ProjectID) != normalizeProjectID(identity.ProjectID) ||
+		!isTerminalTestStatus(current.Status) || current.Status != identity.Status || current.EndedAt == nil ||
+		!archiveRunTimestampMatches(current.CreatedAt, identity.StartTime, tr.testStore) ||
+		!archiveRunTimestampMatches(*current.EndedAt, identity.EndTime, tr.testStore)) {
 		return
 	}
 	tr.archives[testID] = &archived
