@@ -3202,3 +3202,22 @@ the original claim. The first copy matched file checksums, but the wrapper stopp
 on mount-root metadata warnings and restored the original service. Its retry must
 refresh and re-verify the destination before switching writers; a copied filesystem
 alone does not establish signed object availability or a healthy archive gate.
+
+The storage retry refreshed the exclusively owned destination copy after stopping
+the original writer again, then verified all 85 source files before cutover. The
+original 2 GiB claim remains intact; the service now uses the new 4 GiB claim with
+12 bounded volume slots. Signed reads initially timed out while the 512 MiB S3
+container showed sustained cgroup memory-limit pressure and CPU reclaim. The
+renderer now exposes an explicit 512–2048 MiB memory allowance (default unchanged),
+validated by all 191 harness tests (6.997 s), documentation checks and scoped review
+before commit `34379192`. This fixture was rolled to a 1024 MiB limit / 256 MiB request.
+
+With that allowance, retained-probe reads, signed writes/reads and invalid-credential
+rejection passed. The pending healthy archive recovered automatically with required
+source coverage; every artifact hash verified. Previously published worker-attempt
+4 and 6 archives also verified after migration, retaining their explicit best-effort
+coverage. The temporary missing archive projection resolved when object identity
+reads recovered; inspection found the existing identity-verification gate, not a
+newly established catalog-attachment defect. The original failed healthy-run gate
+and both failed signed-read attempts remain recorded. A new healthy execution is
+being qualified before cold-spare worker trials resume.
