@@ -3,15 +3,24 @@ package api
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedExecutionBackend, testID, source string, next map[string][]GeneratorShardSummary, clients map[string]generatorClient, dryRun bool) ([]storage.PodCapacityReservation, error) {
+func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedExecutionBackend, testID, source string, next map[string][]GeneratorShardSummary, clients map[string]generatorClient, dryRun bool, standbys map[string]storage.PodCapacityReservation) ([]storage.PodCapacityReservation, error) {
+	// Bound the complete heartbeat/activation attempt while topology and capacity
+	// mutation locks are held; a missing acknowledgment retains pending claims.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	store, ok := tr.testStore.(podCapacityStore)
 	if !ok {
+		if len(standbys) > 0 {
+			return nil, fmt.Errorf("capacity ledger unavailable for standby activation")
+		}
 		return nil, nil
 	}
 	rows, err := store.ListPodCapacityReservations()
@@ -19,6 +28,7 @@ func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedEx
 		return nil, err
 	}
 	var original *storage.PodCapacityReservation
+	var expected []storage.PodCapacityReservation
 	for i := range rows {
 		if rows[i].TestID == testID && rows[i].Target == source {
 			original = &rows[i]
@@ -26,6 +36,9 @@ func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedEx
 		}
 	}
 	if original == nil {
+		if len(standbys) > 0 {
+			return nil, fmt.Errorf("source peak reservation unavailable for standby activation")
+		}
 		return nil, nil
 	}
 	settings := tr.GetSystemSettings()
@@ -43,7 +56,8 @@ func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedEx
 			alreadyPresent := false
 			for _, r := range rows {
 				if r.TestID == testID && r.Target == shard.Target {
-					alreadyPresent = true
+					standby, reserved := standbys[shard.Target]
+					alreadyPresent = !reserved || !reflect.DeepEqual(r, standby)
 					break
 				}
 			}
@@ -63,12 +77,31 @@ func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedEx
 			}
 			load := b.probeGeneratorLoad(ctx, destination, client)
 			capacity := configurePodCapacity(settings, load)
-			if capacity == nil || capacity.State != "ready" || capacity.Dedicated {
+			standby, reserved := standbys[destination]
+			if reserved {
+				fresh := standbyEvacuationLoad(load, standby, testID, original.Generation)
+				if fresh.AvailableCapacity <= 0 {
+					return nil, fmt.Errorf("replacement standby capacity is no longer confirmed")
+				}
+			}
+			if capacity == nil || capacity.State != "ready" || (capacity.Dedicated && !reserved) {
 				return nil, fmt.Errorf("replacement peak capacity unavailable")
 			}
 			r = &storage.PodCapacityReservation{ReservationID: original.ReservationID, Target: destination, TestID: testID, Incarnation: capacity.Incarnation, Generation: original.Generation, State: "pending", ModelVersion: original.ModelVersion, HeadroomPct: capacity.HeadroomPct, Budget: capacity.Schedulable, Dedicated: original.Dedicated, Revision: 1, GroupPeaks: map[string]int32{}, GroupDemands: map[string]protocol.CapacityVector{}}
 			byTarget[destination] = r
 			occupied[destination] = capacity.Reserved
+			if reserved {
+				copy := standby
+				copy.State = "pending"
+				copy.Revision++
+				copy.GroupPeaks = map[string]int32{}
+				copy.GroupDemands = map[string]protocol.CapacityVector{}
+				copy.Demand = protocol.CapacityVector{}
+				r = &copy
+				byTarget[destination] = r
+				occupied[destination] = protocol.CapacityVector{}
+				expected = append(expected, standby)
+			}
 		}
 		demand, ok := original.GroupDemands[group]
 		if !ok {
@@ -99,7 +132,7 @@ func (tr *TestRunner) reservePodEvacuation(ctx context.Context, b *distributedEx
 	if err != nil {
 		return nil, err
 	}
-	if err := tr.reservePodLedger(store, claims, executionLeaseName, owner, generation); err != nil {
+	if err := tr.reserveEvacuationPodLedger(store, claims, expected, owner, generation); err != nil {
 		return nil, err
 	}
 	for _, r := range claims {

@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type GeneratorEvacuationImpact struct {
@@ -208,7 +209,11 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	if claimErr != nil || currentGeneration != executionGeneration {
 		return nil, fmt.Errorf("execution leadership changed before generator evacuation")
 	}
-	dialedClients := b.connectEvacuationCandidates(executionCtx, test, target, clientsByTarget, states, executionGeneration, executionLeaseOwnerID, claimDeadline)
+	standbys, standbyErr := tr.standbyEvacuationReservations(testID, executionGeneration)
+	if standbyErr != nil {
+		return nil, fmt.Errorf("read standby capacity before evacuation: %w", standbyErr)
+	}
+	dialedClients := b.connectEvacuationCandidates(executionCtx, test, target, clientsByTarget, states, executionGeneration, executionLeaseOwnerID, claimDeadline, standbys)
 	closeDialedClients := func() {
 		for candidate, client := range dialedClients {
 			if stream := streamsByTarget[candidate]; stream != nil {
@@ -325,7 +330,7 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 			if _, alreadyParticipates := runParticipantTargets[candidate]; alreadyParticipates {
 				continue
 			}
-			snapshot := loadByTarget[candidate]
+			snapshot := standbyEvacuationLoad(loadByTarget[candidate], standbys[candidate], testID, executionGeneration)
 			if !snapshot.HeartbeatOK || snapshot.AvailableCapacity < int32(evacuated) {
 				continue
 			}
@@ -365,11 +370,13 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		closeDialedClients()
 		return nil, nil
 	}
-	podClaims, podErr := tr.reservePodEvacuation(executionCtx, b, testID, target, nextByGroup, clientsByTarget, dryRun)
+	podClaims, podErr := tr.reservePodEvacuation(executionCtx, b, testID, target, nextByGroup, clientsByTarget, dryRun, standbys)
 	podCommitted := false
 	defer func() {
 		if !podCommitted && len(podClaims) > 0 {
-			tr.releasePodClaimsWithDial(b, podClaims)
+			if err := tr.rollbackEvacuationPodClaims(b, podClaims, standbys); err != nil {
+				slog.Warn("evacuation capacity rollback remains reserved", "test_id", testID, "error", err)
+			}
 		}
 	}()
 	if podErr != nil {
@@ -978,7 +985,7 @@ func distributedEvacuationTiming(test *ManagedTest, now time.Time) (remaining, s
 	return remaining, steadyElapsed, preBaselineRemaining
 }
 
-func (b *distributedExecutionBackend) connectEvacuationCandidates(parent context.Context, test *ManagedTest, evacuatedTarget string, clients map[string]generatorClient, states map[string]string, executionGeneration uint64, executionLeaseOwnerID string, claimDeadline time.Time) map[string]generatorClient {
+func (b *distributedExecutionBackend) connectEvacuationCandidates(parent context.Context, test *ManagedTest, evacuatedTarget string, clients map[string]generatorClient, states map[string]string, executionGeneration uint64, executionLeaseOwnerID string, claimDeadline time.Time, standbys map[string]storage.PodCapacityReservation) map[string]generatorClient {
 	candidates := b.configuredTargets()
 	if allowed, err := b.allowedTargetsForTest(test); err == nil {
 		candidates = allowed
@@ -1005,6 +1012,7 @@ func (b *distributedExecutionBackend) connectEvacuationCandidates(parent context
 			continue
 		}
 		snapshot := b.probeGeneratorLoad(ctx, candidate, client)
+		snapshot = standbyEvacuationLoad(snapshot, standbys[candidate], test.ID, executionGeneration)
 		cancel()
 		if !generatorSupportsEvacuationAssignmentState(snapshot) || snapshot.AvailableCapacity <= 0 {
 			_ = client.Close()

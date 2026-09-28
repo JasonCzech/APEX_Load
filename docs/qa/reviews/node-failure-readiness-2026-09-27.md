@@ -2282,3 +2282,29 @@ passed in 13.924 seconds. The shared checks passed three times against an isolat
 PostgreSQL instance. The full Go suite passed (API 350.792 seconds,
 `/tmp/apex-capacity-compare-full.log`). Final scoped review found no further issues.
 This storage primitive alone does not enable standby admission or activation.
+
+### Evacuation into an owned idle standby
+
+Evacuation can now use a committed idle standby owned by the same run and execution
+generation. Fresh heartbeat evidence must confirm the exact pod incarnation, full
+frozen dedicated budget, feature capabilities and sole reservation owner. Ordinary
+admission still sees that budget as occupied. The existing participant exclusion
+and source-fencing sequence remain in force. Activation atomically replaces the
+expected ledger row before its generator RPC; mixed ordinary and standby placements
+are one capacity transaction.
+
+A failed evacuation restores the standby to a new idle revision rather than releasing
+its budget. Lost activation responses are reconfirmed first. An uncertain RPC, changed
+ledger or leadership transition retains the reservation for reconciliation. Review
+fixed an existing-row selection exclusion, added a ten-second remote attempt bound,
+and made missing-ledger activation fail closed. SQLite and real protobuf heartbeat
+tests cover these paths, stale or mismatched evidence, dry runs, frozen peak capacity,
+rollback rejection and changed ownership. Focused checks passed (2.060 seconds);
+three broad capacity/evacuation race repetitions passed (109.649 seconds). Final
+validation is recorded below. This does not create or promise reserved spares at
+admission, and it does not yet recover combined leader/generator loss.
+
+Final standby-focused race checks passed three repetitions (30.939 seconds),
+including the timeout and missing-ledger guards. The full Go suite passed
+(`/tmp/apex-standby-evacuation-full.log`), including a wire-level deadline assertion.
+Final scoped review found no further actionable issues.
