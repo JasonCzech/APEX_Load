@@ -16,6 +16,8 @@ lease loss cancels pending downloads and prevents a new source from being commit
 Before collecting or replacing a source, the controller checks the durable run
 identity, cleanup state and existing publication. An existing outbox or catalog
 record is reused; a resolved archive removed by retention is not collected again.
+An existing merged directory without a publication owner is preserved for recovery;
+a later collection cannot overwrite it, even if that directory is incomplete.
 
 The publisher
 creates a local cleanup receipt only after object upload and the durable archive

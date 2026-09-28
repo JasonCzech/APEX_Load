@@ -43,6 +43,8 @@ const (
 	remoteArchiveSummaryMaxClockSkew = remoteArchiveSummaryCadence / 2
 )
 
+var errUnconfirmedArchiveCollectionSource = errors.New("unconfirmed merged archive source requires publication recovery")
+
 type archiveArtifactClient interface {
 	GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error)
 }
@@ -176,6 +178,15 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext
 		return existing, err
 	}
 	if err := sourceCtx.Err(); err != nil {
+		return nil, err
+	}
+	// A previous collector may have committed this directory but crashed before
+	// recording its publication job. The process-local commit fence does not
+	// survive that crash; preserving the unconfirmed source closes that handoff
+	// gap. Recovery must validate and publish it before another collection.
+	if _, err := os.Lstat(archiveDir); err == nil {
+		return nil, errUnconfirmedArchiveCollectionSource
+	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
 	if err := atomicReplaceArchiveDirectory(workingDir, archiveDir); err != nil {

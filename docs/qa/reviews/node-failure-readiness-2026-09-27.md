@@ -2596,3 +2596,30 @@ The full Go suite passed all 108 test-bearing packages (API 466.261 s), with no
 failures. Final cache review found no further actionable findings in this slice.
 Focused, repeated race, PostgreSQL, full-suite, and documentation gates passed.
 The collection-to-publication handoff safeguard remains the next review/fix slice.
+
+## Preserve the collection/publication handoff source (2026-09-28)
+
+A collector now refuses to replace an existing merged directory when no durable
+publication owns it. The per-run source fence covers the existence check and new
+commit. Valid and incomplete unconfirmed sources both remain untouched; a later
+collector cannot erase the source left by a crash between merge and outbox writes.
+Existing outbox/catalog reuse remains unchanged. This protects evidence; hardened
+orphan reconciliation and automatic collection retries remain separate work.
+
+The focused regression passed (4.470 s). Review added a two-controller concurrent
+collection test: one collector wins, the other refuses replacement, and the winning
+manifest retains its recorded digest. Broader archive race validation is running
+in `/tmp/apex-collection-handoff-reviewed-race.log`.
+
+After all observed Go tests finished, the user's authorized shared-cache cleanup
+removed 26 old large build entries (9,778,405,794 bytes). Available space rose from
+7,357,419,520 to 17,186,082,816 bytes. The private receipt is
+`/tmp/apex-node-recovery-shared-go-cache-cleanup-36.json`; recent build entries,
+module downloads, source, Docker volumes and test evidence were preserved.
+
+The broader archive race run passed (214.362 s), including collection cache,
+source fencing, concurrent collectors, finalization, metadata retry and fail-closed
+evacuation archive paths. Documentation checks passed for all 69 active Markdown
+files. Final scoped review found no further handoff-replacement findings. The full
+108-package Go suite passed on the immediately preceding cache commit; this small
+API-only safeguard was validated with focused and broader archive race checks.
