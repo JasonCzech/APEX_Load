@@ -73,8 +73,8 @@ func TestGeneratorPlacementClearedOnUnavailableInventory(t *testing.T) {
 }
 
 func TestRemoteKubePodRefPreservesPlacement(t *testing.T) {
-	got := kubePodRefFrom(kubeops.PodRef{UID: "uid", Name: "pod", Namespace: "remote", NodeName: "remote-worker"})
-	if got.UID != "uid" || got.NodeName != "remote-worker" || got.Namespace != "remote" {
+	got := kubePodRefFrom(kubeops.PodRef{StatefulSetUID: "owner", StatefulSetName: "gen", UID: "uid", Name: "pod", Namespace: "remote", NodeName: "remote-worker"})
+	if got.StatefulSetUID != "owner" || got.StatefulSetName != "gen" || got.UID != "uid" || got.NodeName != "remote-worker" || got.Namespace != "remote" {
 		t.Fatalf("lost remote placement: %+v", got)
 	}
 }

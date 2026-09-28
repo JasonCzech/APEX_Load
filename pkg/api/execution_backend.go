@@ -75,14 +75,16 @@ type identityDrainableExecutionBackend interface {
 }
 
 type KubePodRef struct {
-	UID         string `json:"uid,omitempty"`
-	NodeName    string `json:"node_name,omitempty"`
-	Name        string `json:"name"`
-	Namespace   string `json:"namespace"`
-	IP          string `json:"ip,omitempty"`
-	Phase       string `json:"phase,omitempty"`
-	Ready       bool   `json:"ready"`
-	Terminating bool   `json:"terminating"`
+	StatefulSetUID  string `json:"-"`
+	StatefulSetName string `json:"-"`
+	UID             string `json:"uid,omitempty"`
+	NodeName        string `json:"node_name,omitempty"`
+	Name            string `json:"name"`
+	Namespace       string `json:"namespace"`
+	IP              string `json:"ip,omitempty"`
+	Phase           string `json:"phase,omitempty"`
+	Ready           bool   `json:"ready"`
+	Terminating     bool   `json:"terminating"`
 }
 
 type KubeRestarter interface {

@@ -232,6 +232,8 @@ type Server struct {
 	discoveryCancel                   context.CancelFunc
 	k8sRestart                        K8sRestartSettings
 	kubeRestarter                     KubeRestarter
+	kubeScaleLimitMu                  sync.Mutex
+	kubeScaleLimitCache               generatorScaleLimitCache
 	kubePodsCacheMu                   sync.Mutex
 	kubePodsCache                     generatorPodInventoryCache
 	metadataReadinessMu               sync.Mutex

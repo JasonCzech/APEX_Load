@@ -45,10 +45,12 @@ func TestRestartControlsGrantOnlyScopedRBAC(t *testing.T) {
 				got[key] = verbs
 			}
 			want := map[string][]string{
-				"/pods":             {"delete", "get", "list"},
-				"/resourcequotas":   {"get", "list"},
-				"apps/deployments":  {"get", "patch"},
-				"apps/statefulsets": {"get", "patch"},
+				"/pods":                                {"delete", "get", "list"},
+				"/resourcequotas":                      {"get", "list"},
+				"keda.sh/scaledobjects":                {"list"},
+				"autoscaling/horizontalpodautoscalers": {"list"},
+				"apps/deployments":                     {"get", "patch"},
+				"apps/statefulsets":                    {"get", "patch"},
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("Role rules = %#v, want %#v", got, want)
@@ -675,10 +677,12 @@ func assertRenderedRestartRBAC(t *testing.T, docs []workloadManifest, serviceAcc
 		got[key] = verbs
 	}
 	want := map[string][]string{
-		"/pods":             {"delete", "get", "list"},
-		"/resourcequotas":   {"get", "list"},
-		"apps/deployments":  {"get", "patch"},
-		"apps/statefulsets": {"get", "patch"},
+		"/pods":                                {"delete", "get", "list"},
+		"/resourcequotas":                      {"get", "list"},
+		"keda.sh/scaledobjects":                {"list"},
+		"autoscaling/horizontalpodautoscalers": {"list"},
+		"apps/deployments":                     {"get", "patch"},
+		"apps/statefulsets":                    {"get", "patch"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rendered restart-control Role rules = %#v, want %#v", got, want)

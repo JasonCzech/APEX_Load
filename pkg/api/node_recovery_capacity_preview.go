@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/kubeops"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -67,6 +68,7 @@ func (tr *TestRunner) nodeRecoveryCapacityWarningLocked(test *ManagedTest, place
 	participants := make([]recoveryCapacityParticipant, 0, len(placements))
 	participating := map[string]bool{}
 	namespace := ""
+	var limit kubeops.StatefulSetAutoscalingLimit
 	for _, placement := range placements {
 		e := index[placement.Target]
 		pod := e.PodPlacement
@@ -77,6 +79,10 @@ func (tr *TestRunner) nodeRecoveryCapacityWarningLocked(test *ManagedTest, place
 			return warning("A single observed Kubernetes namespace is required for this capacity estimate.")
 		}
 		namespace = pod.Namespace
+		if !recoveryScaleLimitFresh(pod.scaleLimit) || (limit.WorkloadUID != "" && limit != pod.scaleLimit) {
+			return warning("A fresh common Kubernetes workload identity and KEDA/HPA replica limit are required.")
+		}
+		limit = pod.scaleLimit
 		participants = append(participants, recoveryCapacityParticipant{Target: e.Target, PodUID: pod.UID, Incarnation: placement.Before.Incarnation, Node: pod.NodeName, Demand: placement.Proposed})
 		participating[e.Target] = true
 	}
@@ -84,7 +90,7 @@ func (tr *TestRunner) nodeRecoveryCapacityWarningLocked(test *ManagedTest, place
 	for _, e := range entries {
 		pod := e.PodPlacement
 		capacity := loads[e.Target].PodCapacity
-		if participating[e.Target] || !allowedSet[e.Target] || !generatorInventoryEntryReachable(e) || e.Cordoned || e.DrainState != "active" || b.generatorDrainState(e.Target) != "active" || e.CompatibilityState != "compatible" || e.ActiveVUsers != 0 || e.AvailableCapacity <= 0 || e.MaxVUsers <= 0 || pod == nil || pod.Namespace != namespace || !pod.Ready || pod.Terminating || capacity == nil || capacity.State != "ready" || capacity.Dedicated || len(capacity.ReportedTestIDs) > 0 || !capacityVectorEmpty(capacity.Reserved) || !stringSliceContainsEqualFold(e.CompatibleFeatures, generatorrpc.FeaturePodCapacityStandbyV1) {
+		if participating[e.Target] || !allowedSet[e.Target] || !generatorInventoryEntryReachable(e) || e.Cordoned || e.DrainState != "active" || b.generatorDrainState(e.Target) != "active" || e.CompatibilityState != "compatible" || e.ActiveVUsers != 0 || e.AvailableCapacity <= 0 || e.MaxVUsers <= 0 || pod == nil || pod.Namespace != namespace || pod.scaleLimit != limit || !pod.Ready || pod.Terminating || capacity == nil || capacity.State != "ready" || capacity.Dedicated || len(capacity.ReportedTestIDs) > 0 || !capacityVectorEmpty(capacity.Reserved) || !stringSliceContainsEqualFold(e.CompatibleFeatures, generatorrpc.FeaturePodCapacityStandbyV1) {
 			continue
 		}
 		// Requiring compatibility with every group is conservative when individual
@@ -111,7 +117,7 @@ func (tr *TestRunner) nodeRecoveryCapacityWarningLocked(test *ManagedTest, place
 		}
 		spares = append(spares, spare)
 	}
-	plan, err := planNodeRecoveryCapacity(participants, spares, len(entries))
+	plan, err := planNodeRecoveryCapacity(participants, spares, limit.MaximumReplicas)
 	if err != nil {
 		return warning("The observed placement lacks a verified distinct compatible spare for each generator lost with one worker.")
 	}
@@ -128,4 +134,8 @@ func capacityVectorEmpty(v protocol.CapacityVector) bool {
 		}
 	}
 	return true
+}
+
+func recoveryScaleLimitFresh(limit kubeops.StatefulSetAutoscalingLimit) bool {
+	return limit.WorkloadUID != "" && limit.HPAUID != "" && limit.ScaledObjectUID != "" && limit.MaximumReplicas > 0 && limit.MaximumReplicas <= maxRecoveryCapacityPlanPods && !limit.ObservedAt.IsZero() && !limit.ObservedAt.After(time.Now()) && time.Since(limit.ObservedAt) <= defaultGeneratorSnapshotTTL
 }

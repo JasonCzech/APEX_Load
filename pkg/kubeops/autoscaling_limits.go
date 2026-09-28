@@ -13,6 +13,7 @@ import (
 // proof that nodes, quotas, or compatible spare pods can supply that capacity.
 // Callers must revalidate placement and reserve capacity before making a promise.
 type StatefulSetAutoscalingLimit struct {
+	WorkloadUID, WorkloadVersion         string
 	Namespace, Workload                  string
 	ScaledObjectUID, ScaledObjectVersion string
 	HPAUID, HPAVersion                   string
@@ -31,6 +32,7 @@ type autoscalingObject struct {
 		}
 	}
 	Spec struct {
+		Ordinals                                                   struct{ Start int }
 		ScaleTargetRef                                             struct{ APIVersion, Kind, Name string }
 		MinReplicaCount, MaxReplicaCount, MinReplicas, MaxReplicas *int
 	}
@@ -55,6 +57,8 @@ func (c *Client) StatefulSetAutoscalingLimit(ctx context.Context, namespace, wor
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	// Age the observation from its oldest read, not completion of the last one.
+	observedAt := time.Now().UTC()
 	read := func(path string) ([]autoscalingObject, error) {
 		payload, err := c.do(ctx, http.MethodGet, path+"?limit=256", "", nil)
 		if err != nil {
@@ -68,6 +72,18 @@ func (c *Client) StatefulSetAutoscalingLimit(ctx context.Context, namespace, wor
 			return nil, fmt.Errorf("autoscaling inventory exceeds bounded snapshot")
 		}
 		return list.Items, nil
+	}
+	payload, err := c.do(ctx, http.MethodGet, "/apis/apps/v1/namespaces/"+pathEscape(namespace)+"/statefulsets/"+pathEscape(workload), "", nil)
+	if err != nil {
+		return unknown, err
+	}
+	var workloadObject autoscalingObject
+	if err := json.Unmarshal(payload, &workloadObject); err != nil {
+		return unknown, fmt.Errorf("decode autoscaling workload: %w", err)
+	}
+	m := workloadObject.Metadata
+	if m.Namespace != namespace || m.Name != workload || m.UID == "" || m.ResourceVersion == "" || m.DeletionTimestamp != nil || workloadObject.Spec.Ordinals.Start != 0 {
+		return unknown, fmt.Errorf("a live identified StatefulSet with zero-based ordinals is required")
 	}
 	objects, err := read("/apis/keda.sh/v1alpha1/namespaces/" + pathEscape(namespace) + "/scaledobjects")
 	if err != nil {
@@ -135,5 +151,5 @@ func (c *Client) StatefulSetAutoscalingLimit(ctx context.Context, namespace, wor
 	}
 	// During reconciliation either object can still carry the lower maximum.
 	// Never promise capacity based on only the newer/higher half of that pair.
-	return StatefulSetAutoscalingLimit{Namespace: namespace, Workload: workload, ScaledObjectUID: scaled.Metadata.UID, ScaledObjectVersion: scaled.Metadata.ResourceVersion, HPAUID: hpa.Metadata.UID, HPAVersion: hpa.Metadata.ResourceVersion, MaximumReplicas: min(*scaled.Spec.MaxReplicaCount, *hpa.Spec.MaxReplicas), ObservedAt: time.Now().UTC()}, nil
+	return StatefulSetAutoscalingLimit{WorkloadUID: m.UID, WorkloadVersion: m.ResourceVersion, Namespace: namespace, Workload: workload, ScaledObjectUID: scaled.Metadata.UID, ScaledObjectVersion: scaled.Metadata.ResourceVersion, HPAUID: hpa.Metadata.UID, HPAVersion: hpa.Metadata.ResourceVersion, MaximumReplicas: min(*scaled.Spec.MaxReplicaCount, *hpa.Spec.MaxReplicas), ObservedAt: observedAt}, nil
 }

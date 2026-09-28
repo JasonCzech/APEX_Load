@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/kubeops"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -43,6 +44,7 @@ type GeneratorSafetyExitEvidence struct {
 // fencing evidence. UID and node are assigned only for an unambiguous namespace,
 // IP and generator-name match; a reused StatefulSet name alone is insufficient.
 type GeneratorPodPlacement struct {
+	scaleLimit  kubeops.StatefulSetAutoscalingLimit
 	UID         string `json:"uid"`
 	Namespace   string `json:"namespace"`
 	Name        string `json:"name"`
@@ -239,8 +241,10 @@ func (s *Server) enrichGeneratorRestartability(ctx context.Context, entries []Ge
 		}
 		return
 	}
+	limit := s.cachedGeneratorScaleLimit(ctx)
 	for i := range entries {
 		entries[i].PodPlacement = observedGeneratorPodPlacement(entries[i], pods, s.k8sRestart.Namespace)
+		attachGeneratorScaleLimit(entries[i].PodPlacement, pods, limit)
 		pod := resolveGeneratorPodFromList(entries[i], pods, s.k8sRestart.GeneratorStatefulSet)
 		if pod.Name != "" {
 			entries[i].PodName = pod.Name

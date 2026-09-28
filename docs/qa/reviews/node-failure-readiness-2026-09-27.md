@@ -2040,7 +2040,7 @@ deadlines are unchanged. Review found no further issue in this test adjustment.
 
 ### Bounded deployed autoscaling-limit observation
 
-The Kubernetes client can now read the KEDA ScaledObject and its owning HPA for
+The Kubernetes client can now read the KEDA ScaledObject and its HPA for
 an explicitly named StatefulSet in one five-second attempt. It checks namespace,
 UID/resource-version evidence, HPA ownership, explicit replica bounds, pause
 annotations, duplicate controllers, and complete inventories of at most 256
@@ -2115,3 +2115,29 @@ The incarnation-bound archive evidence check passed again after source retiremen
 availability after local source cleanup; it does not claim a cold object cache.
 Both manually recovered legacy archives 22/23 also passed API verification after
 the deadline fix, but their original failed trials remain failed.
+
+### Workload-bound replica limits in recovery preview
+
+The recovery preview now consumes the deployed bound rather than the number of
+discovered generators. Kubernetes observations bind each candidate to the current
+StatefulSet UID, require a canonical zero-based ordinal below the lower KEDA/HPA
+maximum, and exclude mismatched or stale observations. Missing permissions,
+non-KEDA deployments, unsupported ordinal offsets, and ambiguous ownership leave
+the preview unproven. This remains advisory and reserves no capacity.
+
+Concurrent inventory requests share a bounded cached read, including short-lived
+unknown results. Readiness and pod-termination detection do not make these extra
+reads. Local, on-premises, AKS, EKS and Helm restart-control roles add only
+namespace-scoped list access to ScaledObjects and HPAs. StatefulSet reads already
+use their existing get permission. Private workload-bound observations are not
+accepted from generator self-reports or serialized inventory inputs.
+
+Focused client, manifest/render, controller and API checks passed. Three race
+repetitions passed (kubeops 2.306 seconds, API 4.242 seconds). Review added a
+conservative timestamp from the first Kubernetes read; the full kubeops package
+then passed three further race repetitions (3.406 seconds). Both full Go runs
+passed; the final API run took 354.727 seconds in
+`/tmp/apex-observed-limits-full-final.log`. A read-only deployed check also matched
+the real StatefulSet UID and four-replica bound (`observed-autoscaling-limit-3`).
+No further scoped findings remain. Atomic spare admission, quotas, activation and
+combined-loss recovery are still outstanding.

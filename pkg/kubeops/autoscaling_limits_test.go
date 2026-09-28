@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -77,9 +78,11 @@ func TestStatefulSetAutoscalingLimit(t *testing.T) {
 				hpa.Items[1].Spec.ScaleTargetRef.APIVersion = "apps/v1beta1"
 			}
 			calls := 0
+			var firstRequestAt atomic.Int64
 			client := newResourceTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 				calls++
-				if r.Method != http.MethodGet || r.URL.Query().Get("limit") != "256" || r.Header.Get("Authorization") != "Bearer token" {
+				firstRequestAt.CompareAndSwap(0, time.Now().UnixNano())
+				if r.Method != http.MethodGet || (strings.HasSuffix(r.URL.Path, "autoscalers") || strings.HasSuffix(r.URL.Path, "scaledobjects")) && r.URL.Query().Get("limit") != "256" || r.Header.Get("Authorization") != "Bearer token" {
 					t.Errorf("unexpected request %s %s", r.Method, r.URL)
 				}
 				if mode == "forbidden" {
@@ -90,7 +93,9 @@ func TestStatefulSetAutoscalingLimit(t *testing.T) {
 					_, _ = w.Write([]byte(`{`))
 					return
 				}
-				if r.URL.Path == "/apis/keda.sh/v1alpha1/namespaces/apex/scaledobjects" {
+				if r.URL.Path == "/apis/apps/v1/namespaces/apex/statefulsets/gen" {
+					_, _ = w.Write([]byte(`{"metadata":{"name":"gen","namespace":"apex","uid":"workload-uid","resourceVersion":"9"}}`))
+				} else if r.URL.Path == "/apis/keda.sh/v1alpha1/namespaces/apex/scaledobjects" {
 					_ = json.NewEncoder(w).Encode(so)
 				} else if r.URL.Path == "/apis/autoscaling/v2/namespaces/apex/horizontalpodautoscalers" {
 					_ = json.NewEncoder(w).Encode(hpa)
@@ -102,7 +107,7 @@ func TestStatefulSetAutoscalingLimit(t *testing.T) {
 			before := time.Now()
 			got, err := client.StatefulSetAutoscalingLimit(context.Background(), "apex", "gen")
 			if good {
-				if err != nil || got.MaximumReplicas != 4 || got.ScaledObjectUID != "scale-uid" || got.HPAUID != "hpa-uid" || got.ObservedAt.Before(before) || calls != 2 {
+				if err != nil || got.MaximumReplicas != 4 || got.WorkloadUID != "workload-uid" || got.ScaledObjectUID != "scale-uid" || got.HPAUID != "hpa-uid" || got.ObservedAt.Before(before) || got.ObservedAt.UnixNano() > firstRequestAt.Load() || calls != 3 {
 					t.Fatalf("limit=%+v err=%v calls=%d", got, err, calls)
 				}
 			} else if err == nil || got.MaximumReplicas != 0 {
@@ -128,5 +133,69 @@ func TestStatefulSetAutoscalingLimitCancellationAndInput(t *testing.T) {
 	var empty *Client
 	if _, err := empty.StatefulSetAutoscalingLimit(context.Background(), "apex", "gen"); err == nil || !strings.Contains(err.Error(), "required") {
 		t.Fatal(err)
+	}
+}
+
+func TestStatefulSetAutoscalingLimitRequiresWorkloadIdentity(t *testing.T) {
+	for _, mode := range []string{"uid", "version", "name", "namespace", "terminating", "nonzero ordinal", "negative ordinal"} {
+		t.Run(mode, func(t *testing.T) {
+			item := map[string]any{"metadata": map[string]any{"name": "gen", "namespace": "apex", "uid": "workload", "resourceVersion": "1"}}
+			metadata := item["metadata"].(map[string]any)
+			switch mode {
+			case "uid":
+				delete(metadata, "uid")
+			case "version":
+				delete(metadata, "resourceVersion")
+			case "name":
+				metadata["name"] = "other"
+			case "namespace":
+				metadata["namespace"] = "other"
+			case "terminating":
+				metadata["deletionTimestamp"] = "now"
+			case "nonzero ordinal":
+				item["spec"] = map[string]any{"ordinals": map[string]int{"start": 1}}
+			case "negative ordinal":
+				item["spec"] = map[string]any{"ordinals": map[string]int{"start": -1}}
+			}
+			calls := 0
+			client := newResourceTestClient(t, func(w http.ResponseWriter, r *http.Request) { calls++; _ = json.NewEncoder(w).Encode(item) })
+			if got, err := client.StatefulSetAutoscalingLimit(context.Background(), "apex", "gen"); err == nil || got.MaximumReplicas != 0 || calls != 1 {
+				t.Fatalf("accepted workload: %+v %v calls=%d", got, err, calls)
+			}
+		})
+	}
+}
+
+func TestListPodsPreservesOnlyUniqueStatefulSetController(t *testing.T) {
+	for _, mode := range []string{"valid", "other kind", "other version", "not controller", "duplicate"} {
+		t.Run(mode, func(t *testing.T) {
+			owner := map[string]any{"apiVersion": "apps/v1", "kind": "StatefulSet", "name": "gen", "uid": "workload", "controller": true}
+			switch mode {
+			case "other kind":
+				owner["kind"] = "ReplicaSet"
+			case "other version":
+				owner["apiVersion"] = "apps/v1beta1"
+			case "not controller":
+				owner["controller"] = false
+			}
+			owners := []any{owner}
+			if mode == "duplicate" {
+				owners = append(owners, owner)
+			}
+			client := newResourceTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"items": []any{map[string]any{"metadata": map[string]any{"name": "gen-0", "namespace": "apex", "uid": "pod", "ownerReferences": owners}}}})
+			})
+			pods, err := client.ListPods(context.Background(), "apex", "")
+			if err != nil || len(pods) != 1 {
+				t.Fatalf("pods: %+v %v", pods, err)
+			}
+			if mode == "valid" {
+				if pods[0].StatefulSetUID != "workload" || pods[0].StatefulSetName != "gen" {
+					t.Fatal("owner lost")
+				}
+			} else if pods[0].StatefulSetUID != "" || pods[0].StatefulSetName != "" {
+				t.Fatal("ambiguous owner accepted")
+			}
+		})
 	}
 }

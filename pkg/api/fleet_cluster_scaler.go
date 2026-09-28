@@ -210,6 +210,7 @@ func (k kubeopsRestarter) ListPods(ctx context.Context, namespace, selector stri
 
 func kubePodRefFrom(pod kubeops.PodRef) KubePodRef {
 	return KubePodRef{
+		StatefulSetUID: pod.StatefulSetUID, StatefulSetName: pod.StatefulSetName,
 		UID:         pod.UID,
 		NodeName:    pod.NodeName,
 		Name:        pod.Name,
@@ -228,4 +229,8 @@ func (s *Server) scalerForPool(ctx context.Context, pool *storage.FleetPool) (fl
 		return s.fleetScaler, nil
 	}
 	return s.clusterScalers.ScalerForPool(ctx, pool)
+}
+
+func (k kubeopsRestarter) StatefulSetAutoscalingLimit(ctx context.Context, namespace, workload string) (kubeops.StatefulSetAutoscalingLimit, error) {
+	return k.client.StatefulSetAutoscalingLimit(ctx, namespace, workload)
 }

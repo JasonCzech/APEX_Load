@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/kubeops"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -14,6 +15,7 @@ func nodeRecoveryPreviewFixture() (*TestRunner, *ManagedTest, []PodCapacityPrevi
 	sources, _ := recoveryPlanFixture()
 	var entries []GeneratorInventoryEntry
 	var placements []PodCapacityPreview
+	limit := kubeops.StatefulSetAutoscalingLimit{Namespace: "apex", Workload: "gen", WorkloadUID: "workload", HPAUID: "hpa", ScaledObjectUID: "scale", MaximumReplicas: 4, ObservedAt: time.Now()}
 	for i, target := range []string{"a", "b", "c", "d"} {
 		budget := sources[0].Demand
 		snapshot := protocol.NewCapacitySnapshot(budget, protocol.CapacityVector{}, 20)
@@ -22,7 +24,7 @@ func nodeRecoveryPreviewFixture() (*TestRunner, *ManagedTest, []PodCapacityPrevi
 		if i >= 2 {
 			node = "worker-2"
 		}
-		entries = append(entries, GeneratorInventoryEntry{Target: target, GeneratorID: target, Status: "connected", CompatibilityState: "compatible", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 100, SupportedProtocols: []string{"http"}, CompatibleFeatures: []string{generatorrpc.FeaturePodCapacityV1, generatorrpc.FeaturePodCapacityStandbyV1, "http"}, PodCapacity: &snapshot, PodPlacement: &GeneratorPodPlacement{UID: "pod-" + target, Name: target, Namespace: "apex", NodeName: node, Ready: true}})
+		entries = append(entries, GeneratorInventoryEntry{Target: target, GeneratorID: target, Status: "connected", CompatibilityState: "compatible", DrainState: "active", AvailableCapacity: 100, MaxVUsers: 100, SupportedProtocols: []string{"http"}, CompatibleFeatures: []string{generatorrpc.FeaturePodCapacityV1, generatorrpc.FeaturePodCapacityStandbyV1, "http"}, PodCapacity: &snapshot, PodPlacement: &GeneratorPodPlacement{scaleLimit: limit, UID: "pod-" + target, Name: target, Namespace: "apex", NodeName: node, Ready: true}})
 		if i < 2 {
 			placements = append(placements, PodCapacityPreview{Target: target, Before: snapshot, Proposed: budget})
 		}
@@ -57,6 +59,22 @@ func TestNodeRecoveryCapacityPreviewExcludesUnprovenSpares(t *testing.T) {
 		name   string
 		change func(*TestRunner, *ManagedTest, []PodCapacityPreview)
 	}{
+		{"missing scale limit", func(tr *TestRunner, test *ManagedTest, p []PodCapacityPreview) {
+			tr.liveInventory[0].PodPlacement.scaleLimit = kubeops.StatefulSetAutoscalingLimit{}
+		}},
+		{"stale scale limit", func(tr *TestRunner, test *ManagedTest, p []PodCapacityPreview) {
+			for i := range tr.liveInventory {
+				tr.liveInventory[i].PodPlacement.scaleLimit.ObservedAt = time.Now().Add(-time.Hour)
+			}
+		}},
+		{"deployed replica cap", func(tr *TestRunner, test *ManagedTest, p []PodCapacityPreview) {
+			for i := range tr.liveInventory {
+				tr.liveInventory[i].PodPlacement.scaleLimit.MaximumReplicas = 3
+			}
+		}},
+		{"different workload", func(tr *TestRunner, test *ManagedTest, p []PodCapacityPreview) {
+			tr.liveInventory[2].PodPlacement.scaleLimit.WorkloadUID = "other"
+		}},
 		{"future observation", func(tr *TestRunner, test *ManagedTest, p []PodCapacityPreview) {
 			tr.liveInventoryAt = time.Now().Add(time.Hour)
 		}},

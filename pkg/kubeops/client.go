@@ -93,14 +93,16 @@ type Config struct {
 }
 
 type PodRef struct {
-	UID         string
-	NodeName    string
-	Name        string
-	Namespace   string
-	IP          string
-	Phase       string
-	Ready       bool
-	Terminating bool
+	StatefulSetUID  string
+	StatefulSetName string
+	UID             string
+	NodeName        string
+	Name            string
+	Namespace       string
+	IP              string
+	Phase           string
+	Ready           bool
+	Terminating     bool
 }
 
 type Client struct {
@@ -315,7 +317,22 @@ func (c *Client) ListPods(ctx context.Context, namespace, selector string) ([]Po
 	}
 	out := make([]PodRef, 0, len(list.Items))
 	for _, item := range list.Items {
+		ownerUID, ownerName := "", ""
+		controllers := 0
+		for _, owner := range item.Metadata.OwnerReferences {
+			if !owner.Controller {
+				continue
+			}
+			controllers++
+			if owner.APIVersion == "apps/v1" && owner.Kind == "StatefulSet" {
+				ownerUID, ownerName = owner.UID, owner.Name
+			}
+		}
+		if controllers != 1 {
+			ownerUID, ownerName = "", ""
+		}
 		out = append(out, PodRef{
+			StatefulSetUID: ownerUID, StatefulSetName: ownerName,
 			UID:         strings.TrimSpace(item.Metadata.UID),
 			NodeName:    strings.TrimSpace(item.Spec.NodeName),
 			Name:        strings.TrimSpace(item.Metadata.Name),
@@ -539,6 +556,10 @@ type podList struct {
 			Name              string `json:"name"`
 			Namespace         string `json:"namespace"`
 			DeletionTimestamp string `json:"deletionTimestamp"`
+			OwnerReferences   []struct {
+				APIVersion, Kind, Name, UID string
+				Controller                  bool
+			} `json:"ownerReferences"`
 		} `json:"metadata"`
 		Spec struct {
 			NodeName string `json:"nodeName"`
