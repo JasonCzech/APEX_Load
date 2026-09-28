@@ -72,15 +72,23 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
         spec = {'replicas': 2 if role == 'controller' else replicas,
                 'template': {'metadata': {'labels': labels}, 'spec': pod}}
         if role == 'controller':
+            # A 320-VUser/45s archive is about 190 MiB in the local trial.
+            # Transfer spools must fit independently of materialization cache.
+            container['resources']['requests']['ephemeral-storage'] = '512Mi'
+            container['resources']['limits']['ephemeral-storage'] = '4Gi'
+            next(v for v in pod['volumes'] if v['name'] == 'tmp')['emptyDir']['sizeLimit'] = '1Gi'
             pod['affinity']['podAntiAffinity'] = {'$patch': 'replace', 'requiredDuringSchedulingIgnoredDuringExecution': [
                 {'labelSelector': {'matchLabels': {'app.kubernetes.io/name': 'apexload-controller'}}, 'topologyKey': 'kubernetes.io/hostname'}]}
             pod['volumes'].extend([{'name': 'import-assets', 'persistentVolumeClaim': None, 'emptyDir': {'sizeLimit': '128Mi'}},
-                {'name': 'data', 'emptyDir': {'sizeLimit': '1Gi'}},
+                {'name': 'data', 'emptyDir': {'sizeLimit': '2Gi'}},
                 {'name': 'data-ca', 'secret': {'secretName': 'apexload-fault-data-client', 'defaultMode': 0o440,
                                              'items': [{'key': 'ca.crt', 'path': 'ca.crt'}]}}])
             container['volumeMounts'] = [{'name': 'data-ca', 'mountPath': '/run/apexfault-data', 'readOnly': True}]
             container['env'] = [{'name': 'APEXLOAD_PUBLIC_URL', 'value': 'https://localhost'},
                                 {'name': 'APEXLOAD_ALLOW_BOOTSTRAP_ADMIN', 'value': 'true'},
+                                {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES', 'value': str(256 * 1024**2)},
+                                {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES', 'value': str(256 * 1024**2)},
+                                {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL', 'value': '15m'},
                                 {'name': 'APEXLOAD_BOOTSTRAP_SUBJECT', 'value': 'fault-' + run_id}]
             for source, keys in (('apexload-fault-data-client', ('APEXLOAD_DATABASE_URL', 'APEXLOAD_REDIS_URL')),
                                  ('apexload-s3-client', ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION'))):

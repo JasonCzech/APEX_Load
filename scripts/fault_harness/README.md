@@ -808,3 +808,11 @@ a failed partial import does not create a successful result or deploy anything.
 This helper does not build images, change Deployments, initialize storage, remove
 images/volumes or run fault trials. Inspect host disk capacity before loading images:
 Docker's sparse virtual-disk free-space figure does not establish host free space.
+
+The local controller profile reserves 1 GiB of `/tmp` transfer workspace and 2 GiB
+of data workspace, within a 4-GiB ephemeral-storage limit (512-MiB request). It limits
+an archive materialization and idle materialization cache to 256 MiB each, with a
+15-minute TTL. These values cover the observed roughly 190-MiB 320-VUser/45-second
+HTTP archive; larger trials must be sized explicitly. Active cache readers and
+publication staging consume additional space. The earlier 128-MiB `/tmp` profile
+caused a real controller eviction, invalidating the third repeated scaling trial.

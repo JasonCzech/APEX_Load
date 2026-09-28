@@ -1353,3 +1353,29 @@ with one missing/zero sample. The successor retained all four generators as acti
 without reintroducing the startup drain snapshot. The queued run was stopped afterward.
 This is normal controller replacement evidence, not an independent-node fault or
 in-flight adoption result.
+
+## Archive workspace sizing found by repeated scaling
+
+Two consecutive reviewed-image cycles passed without manual drain repair: 320 active
+HTTP VUsers, four 80-VUser groups, COMPLETE, independent loaded target rates 3,112.2
+and 3,108.0 requests/s, then scale-down to two. The third attempt is a failed clean
+control: Kubernetes evicted the leader with `Usage of EmptyDir volume "tmp" exceeds
+the limit "128Mi"`. The controller container exited normally after eviction; a zero
+restart count did not make the replacement a clean baseline. The private observer
+correctly lost its original pod forward and did not publish a pass.
+
+The successor reached generation 12 and marked the run COMPLETE, recording four
+already-completed generators, zero running generators adopted, and a 16.188-second
+observation gap. This does not establish uninterrupted traffic or an injected-node
+recovery pass. The independent target's one historical restart preceded these trials
+and was not a new target restart during this failure.
+
+The local renderer had reduced controller scratch space below the observed roughly
+190-MiB archive size. It now provides 1 GiB for transfer scratch, 2 GiB for local data,
+a 4-GiB aggregate ephemeral-storage limit and 512-MiB request. Materialization is capped
+at 256 MiB per archive and 256 MiB of idle cache, with a 15-minute TTL, rather than the
+large production defaults. These are explicit small-trial limits; pinned active readers
+and publication staging still need headroom. No shared archives or PVCs were deleted.
+Render/validation tests, including a real Kustomize build, and `git diff --check` passed.
+Final review found no further profile-sizing issue; repeated deployed replay remains
+required before claiming three clean cycles.

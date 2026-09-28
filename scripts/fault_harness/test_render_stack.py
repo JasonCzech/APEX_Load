@@ -65,6 +65,14 @@ class StackResourcesTest(unittest.TestCase):
         env = {e['name']: e for e in pod['containers'][0]['env']}
         self.assertEqual(env['APEXLOAD_BOOTSTRAP_SUBJECT']['value'], 'fault-' + self.run_id)
         self.assertEqual(env['APEXLOAD_ALLOW_BOOTSTRAP_ADMIN']['value'], 'true')
+        volumes = {v['name']: v for v in pod['volumes']}
+        self.assertEqual(volumes['tmp']['emptyDir']['sizeLimit'], '1Gi')
+        self.assertEqual(volumes['data']['emptyDir']['sizeLimit'], '2Gi')
+        self.assertEqual(pod['containers'][0]['resources']['limits']['ephemeral-storage'], '4Gi')
+        self.assertEqual(pod['containers'][0]['resources']['requests']['ephemeral-storage'], '512Mi')
+        self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES']['value'], str(256 * 1024**2))
+        self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES']['value'], str(256 * 1024**2))
+        self.assertEqual(env['APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL']['value'], '15m')
         self.assertEqual(env['APEXLOAD_DATABASE_URL']['valueFrom']['secretKeyRef']['name'], 'apexload-fault-data-client')
         self.assertEqual(env['AWS_SECRET_ACCESS_KEY']['valueFrom']['secretKeyRef']['name'], 'apexload-s3-client')
         generator = next(p for p in patches if p['kind'] == 'StatefulSet')['spec']
