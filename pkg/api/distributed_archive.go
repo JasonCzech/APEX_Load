@@ -52,6 +52,20 @@ func (b *distributedExecutionBackend) stageRemoteArchive(tr *TestRunner, test *M
 }
 
 func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *TestRunner, test *ManagedTest, finalStatus, finalError string, completedAt time.Time, requireAll bool, targetHistory []remoteArchiveTargetSnapshot) (*storage.RunArchiveRecord, error) {
+	return b.stageRemoteArchiveWithTargetHistoryContext(context.Background(), tr, test, finalStatus, finalError, completedAt, requireAll, targetHistory)
+}
+
+// One attempt budget covers source-lock acquisition and every queued download.
+// Local merge stages check cancellation before replacing the recoverable source.
+func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistoryContext(ctx context.Context, tr *TestRunner, test *ManagedTest, finalStatus, finalError string, completedAt time.Time, requireAll bool, targetHistory []remoteArchiveTargetSnapshot) (*storage.RunArchiveRecord, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	sourceCtx, cancelSource := context.WithTimeout(ctx, archiveFinalizationAttemptTimeout)
+	defer cancelSource()
+	if err := sourceCtx.Err(); err != nil {
+		return nil, err
+	}
 	if test == nil {
 		return nil, fmt.Errorf("test is required")
 	}
@@ -62,8 +76,6 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	if err != nil {
 		return nil, fmt.Errorf("prepare distributed archive root: %w", err)
 	}
-	sourceCtx, cancelSource := context.WithTimeout(context.Background(), archiveFinalizationAttemptTimeout)
-	defer cancelSource()
 	releaseSource, err := lockArchivePublicationSource(sourceCtx, test.ID)
 	if err != nil {
 		return nil, err
@@ -82,11 +94,14 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 		return nil, statErr
 	}
 
-	bundles, coverage, err := b.fetchRemoteArchiveBundlesWithCoverage(context.Background(), tr, test, requireAll)
+	bundles, coverage, err := b.fetchRemoteArchiveBundlesWithCoverage(sourceCtx, tr, test, requireAll)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanupRemoteArchiveBundles(bundles)
+	if err := sourceCtx.Err(); err != nil {
+		return nil, err
+	}
 	if len(bundles) == 0 {
 		if requireAll {
 			return nil, fmt.Errorf("no remote archive bundles were available")
@@ -133,6 +148,9 @@ func (b *distributedExecutionBackend) stageRemoteArchiveWithTargetHistory(tr *Te
 	}
 	workingManifestPath := filepath.Join(workingDir, runArchiveManifestFileName)
 	if err := writeSyncedArchiveFile(workingManifestPath, manifestContent); err != nil {
+		return nil, err
+	}
+	if err := sourceCtx.Err(); err != nil {
 		return nil, err
 	}
 	if err := atomicReplaceArchiveDirectory(workingDir, archiveDir); err != nil {
@@ -475,6 +493,9 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx 
 	if firstErr != nil {
 		return nil, nil, firstErr
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	bundles := make([]remoteArchiveBundle, 0, len(targets))
 	missingTargets := make([]string, 0)
 	coverage := &RunArchiveSourceCoverage{Mode: "best_effort", Sources: make([]RunArchiveSource, 0, len(targets))}
@@ -506,6 +527,9 @@ func (b *distributedExecutionBackend) fetchRemoteArchiveBundlesWithCoverage(ctx 
 }
 
 func (b *distributedExecutionBackend) fetchRemoteArchiveBundleTarget(ctx context.Context, client generatorClient, testID, target string, index int, transferStageRoot string, requireAll bool, budget *remoteArchiveTransferBudget) (remoteArchiveBundle, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return remoteArchiveBundle{}, false, err
+	}
 	if client == nil {
 		return remoteArchiveBundle{}, true, nil
 	}

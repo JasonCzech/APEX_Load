@@ -2057,3 +2057,23 @@ setup before any bound was read. This is a client prerequisite: automatic
 controller admission integration, its scoped read RBAC, quotas and atomic spare
 reservation still remain. No deployment permissions or autoscaling settings were
 changed by this check.
+
+### Shared archive collection deadline
+
+Review found that generator downloads discarded the source-lock acquisition
+context. With queued targets, collection could hold the source fence through
+successive full per-generator timeouts. The same 30-minute attempt ceiling now
+covers source-lock acquisition and every queued download. An earlier caller
+deadline/cancellation is retained. Cancellation cannot be converted into a
+successful best-effort partial archive, and canceled attempts do not replace the
+recoverable source. Local merge/file operations check cancellation at stage
+boundaries; this is not an interruption guarantee for an individual filesystem
+operation.
+
+Focused collection checks passed (1.954 seconds), three race repetitions passed
+(4.203 seconds), and the full Go suite passed in
+`/tmp/apex-collection-deadline-full.log`. Tests cover cancellation before I/O,
+more targets than download slots, inherited deadlines, source-fence release,
+and cleanup without publishing a canceled attempt. Review found no further
+scoped collection-deadline issue. Durable collection intent and restart retry
+remain separate work.
