@@ -2077,3 +2077,41 @@ more targets than download slots, inherited deadlines, source-fence release,
 and cleanup without publishing a canceled attempt. Review found no further
 scoped collection-deadline issue. Durable collection intent and restart retry
 remain separate work.
+
+### Reviewed scheduled scaling, capacity and missing-metric repetitions
+
+The owned Docker Desktop kind cluster completed the nine-trial accelerated matrix
+on controller `37370c708e92e882ff343930473580b5e963dc52` with the existing
+`6be3855` generator image. This does not qualify subsequently committed standby
+or replica-limit changes. The two controller UIDs stayed unchanged with zero
+restarts. PostgreSQL, Redis, TLS S3 and the independent target remained in the
+scenario. Private receipts are under `journal-reviewed-matrix` in the owned
+`remaining-e7fgcem4` trial root.
+
+| Scheduled trial | Requested VUsers | Generator replicas | Clean steady samples | Target RPS in those samples | Terminal error count | Archive evidence |
+|---|---:|---|---:|---:|---:|---|
+| 24 | 320 | 2 → 4 → 2 | 27 | 3177.77 | 13 | 9 artifacts verified; 4 sources; none missing |
+| 25 | 320 | 2 → 4 → 2 | 27 | 3179.42 | 22 | 9 artifacts verified; 4 sources; none missing |
+| 26 | 320 | 2 → 4 → 2 | 27 | 3180.02 | 60 | 9 artifacts verified; 4 sources; none missing |
+
+Each 60-second workload dispatched automatically from due scheduled demand;
+no explicit start request was sent. These are successful sustained-load,
+automatic-dispatch, archive and scale-down checks, not error-free whole-run
+claims. The terminal errors above remain part of the evidence.
+
+Three 640-VUser capacity trials stopped at the four-replica maximum, rejected
+start with structured HTTP 409, emitted no target traffic, and returned to two
+replicas after cancellation. Three missing-metric trials held four replicas
+for 75 seconds with one valid-but-empty Prometheus query and
+`ignoreNullValues=false`; HPA metric errors were observed, no traffic ran, and
+restoring the original query resumed scale-down to two replicas. Original
+queries were restored through UID-checked patches.
+
+Trial 24's confirmed local source was first observed absent 336.601 seconds
+after confirmation, beyond its 300-second retention TTL. Both controller UIDs,
+restart counts and the catalog stayed unchanged; no publication job remained.
+The incarnation-bound archive evidence check passed again after source retirement
+(`scheduled-24-after-source-retirement`). This verifies retained API/integrity
+availability after local source cleanup; it does not claim a cold object cache.
+Both manually recovered legacy archives 22/23 also passed API verification after
+the deadline fix, but their original failed trials remain failed.
