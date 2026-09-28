@@ -9,9 +9,12 @@ from render_target import (RenderError, input_root, read_input, read_json, read_
                            validate_image, validate_tls, write_resources)
 
 
-def resources(inputs, image, storage_class="standard", volume_count=6):
-    if type(volume_count) is not int or not 1 <= volume_count <= 6:
-        raise RenderError("volume count must be an integer from 1 through 6")
+def resources(inputs, image, storage_class="standard", volume_count=6, storage_gib=2):
+    if type(storage_gib) is not int or not 2 <= storage_gib <= 16:
+        raise RenderError("S3 storage must be an integer from 2 through 16 GiB")
+    # Keep at least one quarter of the claim for metadata and filesystem overhead.
+    if type(volume_count) is not int or not 1 <= volume_count <= storage_gib * 3:
+        raise RenderError("256 MiB volume slots must fit within three quarters of the S3 claim")
     root = input_root(inputs)
     run_id, cluster = read_ownership(root)
     validate_image(image)
@@ -53,7 +56,7 @@ def resources(inputs, image, storage_class="standard", volume_count=6):
         'APEXLOAD_ARCHIVE_REGION': 'us-east-1', 'APEXLOAD_ARCHIVE_PREFIX': 'fault/' + run_id})
     claim = obj('PersistentVolumeClaim', '-data')
     claim['spec'] = {'accessModes': ['ReadWriteOnce'], 'storageClassName': storage_class,
-                     'resources': {'requests': {'storage': '2Gi'}}}
+                     'resources': {'requests': {'storage': str(storage_gib) + 'Gi'}}}
     deployment = obj('Deployment', api='apps/v1')
     deployment['spec'] = {'replicas': 1, 'strategy': {'type': 'Recreate'}, 'selector': {'matchLabels': labels},
         'template': {'metadata': {'labels': labels}, 'spec': {
@@ -101,8 +104,8 @@ def resources(inputs, image, storage_class="standard", volume_count=6):
     return run_id, {'apiVersion': 'v1', 'kind': 'List', 'items': [secret, client, claim, deployment, service, policy]}
 
 
-def render(inputs, image, output, storage_class='standard', volume_count=6):
-    run_id, manifest = resources(inputs, image, storage_class, volume_count)
+def render(inputs, image, output, storage_class='standard', volume_count=6, storage_gib=2):
+    run_id, manifest = resources(inputs, image, storage_class, volume_count, storage_gib)
     write_resources(output, manifest, 's3-resources.json')
     return run_id
 
@@ -113,11 +116,13 @@ def main():
     parser.add_argument('--image', required=True, help='SeaweedFS 4.17 repository manifest digest')
     parser.add_argument('--storage-class', default='standard')
     parser.add_argument('--output', required=True)
-    parser.add_argument('--volume-count', type=int, choices=range(1, 7), default=6,
-                        help='256 MiB object volume slots within the fixed 2 GiB PVC (default: 6)')
+    parser.add_argument('--volume-count', type=int, choices=range(1, 49), default=6,
+                        help='256 MiB object slots; at most three per storage GiB (default: 6)')
+    parser.add_argument('--storage-gib', type=int, choices=range(2, 17), default=2,
+                        help='new S3 PVC size; existing local-path claims require migration (default: 2)')
     args = parser.parse_args()
     try:
-        run_id = render(args.inputs, args.image, args.output, args.storage_class, args.volume_count)
+        run_id = render(args.inputs, args.image, args.output, args.storage_class, args.volume_count, args.storage_gib)
     except RenderError as error:
         print(str(error), file=sys.stderr)
         return 1

@@ -110,6 +110,26 @@ class S3ResourcesTest(unittest.TestCase):
             claim = next(x for x in manifest['items'] if x['kind'] == 'PersistentVolumeClaim')
             self.assertEqual(claim['spec']['resources']['requests']['storage'], '2Gi')
 
+    def test_larger_claim_keeps_volume_slots_and_metadata_headroom_bounded(self):
+        for size, count in ((4, 12), (8, 24), (16, 48)):
+            with self.subTest(size=size, count=count):
+                _, manifest = resources(self.inputs, self.image, storage_gib=size, volume_count=count)
+                claim = next(x for x in manifest['items'] if x['kind'] == 'PersistentVolumeClaim')
+                self.assertEqual(claim['spec']['resources']['requests']['storage'], str(size) + 'Gi')
+                pod = next(x for x in manifest['items'] if x['kind'] == 'Deployment')['spec']['template']['spec']
+                self.assertIn('-volume.max=' + str(count), pod['containers'][0]['args'])
+        for size in (0, 1, 17, True, '4', None, 4.0):
+            with self.subTest(size=size), self.assertRaises(RenderError):
+                resources(self.inputs, self.image, storage_gib=size)
+        for size, count in ((4, 13), (8, 25), (16, 49)):
+            with self.subTest(size=size, count=count), self.assertRaises(RenderError):
+                resources(self.inputs, self.image, storage_gib=size, volume_count=count)
+        output = self.root / 'larger-s3'
+        render(self.inputs, self.image, output, storage_gib=4, volume_count=12)
+        rendered = json.loads((output / 's3-resources.json').read_text())
+        claim = next(x for x in rendered['items'] if x['kind'] == 'PersistentVolumeClaim')
+        self.assertEqual(claim['spec']['resources']['requests']['storage'], '4Gi')
+
     def test_render_is_private_exclusive_and_kustomize_compatible(self):
         output = self.root / 'rendered'
         render(self.inputs, self.image, output)

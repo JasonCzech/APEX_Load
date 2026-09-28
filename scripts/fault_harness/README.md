@@ -630,11 +630,17 @@ or configure application controllers. Apply only to the explicitly owned
 `apexload-fault` namespace in the matching disposable cluster.
 
 The non-root, read-only-root container runs on the control-plane node and retains
-object volumes, master state and filer metadata on one 2 Gi RWO PVC. Six 256 MiB
-volume slots (configurable from one through six with `--volume-count`) and
-one-at-a-time volume growth leave at least 512 MiB for internal metadata. This is a small local test store, with no replication,
-capacity guarantee, production durability or primary failover claim. PVC capacity
-and disk free space still require monitoring; do not load production-sized archives.
+object volumes, master state and filer metadata on one RWO PVC. The default 2 Gi
+claim has six 256 MiB volume slots. New fixtures can use `--storage-gib` (2–16)
+and `--volume-count` (at most three slots per GiB); for example, `--storage-gib 4
+--volume-count 12` allocates a 4 Gi claim with 3 Gi of object slots. One-at-a-time
+volume growth and the slot ceiling reserve at least one quarter of the claim for
+internal metadata. Existing local-path claims require an offline, checksum-verified
+migration to a new claim; applying a larger request is not an in-place migration.
+Keep the original claim until the copied service's object reads and writes have
+been verified. This remains a single-pod local fixture without replication or a
+production durability/primary-failover claim. Monitor both free disk space and
+writable volume slots during repeated trials.
 
 The headless service and stable pod hostname provide the application's virtual-hosted
 bucket address, `apexload-archives.apexload-s3.apexload-fault.svc`. The fresh certificate
