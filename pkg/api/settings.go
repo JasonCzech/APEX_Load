@@ -1882,6 +1882,7 @@ func (tr *TestRunner) refreshSystemSettingsFromStoreContextMode(ctx context.Cont
 		}
 
 		installed := false
+		reservationsDisabled := false
 		tr.settingsRefreshMu.Lock()
 		if err == nil && tr.settingsRevision == revision {
 			locked := true
@@ -1905,6 +1906,7 @@ func (tr *TestRunner) refreshSystemSettingsFromStoreContextMode(ctx context.Cont
 				// loaded is exclusively owned by this refresh. Assigning it is O(1)
 				// under mu and avoids cloning unbounded settings slices while writers
 				// are excluded.
+				reservationsDisabled = tr.settings.CapacityPlanning.PodReservationsEnabled && !loaded.CapacityPlanning.PodReservationsEnabled
 				tr.settings = loaded
 				tr.maxTests = loaded.General.MaxConcurrentTests
 				tr.invalidateCapacityAdvisoryCacheLocked()
@@ -1931,6 +1933,9 @@ func (tr *TestRunner) refreshSystemSettingsFromStoreContextMode(ctx context.Cont
 		tr.settingsRefreshMu.Unlock()
 		if installed {
 			tr.setNotificationSettings(loaded.Notifications)
+			if reservationsDisabled {
+				go tr.promotePendingTests()
+			}
 		}
 		return err
 	}
@@ -2155,6 +2160,11 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	tr.settingsAuthRefreshAt = time.Now()
 	tr.setNotificationSettings(normalized.Notifications)
 	tr.settingsRefreshMu.Unlock()
+	if currentFallback.CapacityPlanning.PodReservationsEnabled && !normalized.CapacityPlanning.PodReservationsEnabled {
+		// Disabling reservations invalidates queued recovery-spare admission.
+		// Wake the leader even if no capacity completion would otherwise retry it.
+		go tr.promotePendingTests()
+	}
 
 	return normalized, nil
 }

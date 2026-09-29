@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -12,6 +13,15 @@ import (
 	"github.com/jasonczech/apexload/pkg/kubeops"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+var errRecoverySpareRequiresPodReservations = errors.New("enable peak pod reservations before starting a test with recovery spares")
+
+func recoverySpareSettingsError(test *ManagedTest, settings SystemSettings) error {
+	if recoverySpareVUsers(test) > 0 && !settings.CapacityPlanning.PodReservationsEnabled {
+		return errRecoverySpareRequiresPodReservations
+	}
+	return nil
+}
 
 func recoverySpareVUsers(test *ManagedTest) int {
 	if test == nil || test.Assignment == nil {

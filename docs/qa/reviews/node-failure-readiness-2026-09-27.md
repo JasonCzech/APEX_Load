@@ -3779,3 +3779,30 @@ node failure or multi-host storage. The fail-closed interrupted path remains
 covered by the local fault-injection tests; deployed interruption qualification
 and resumable recovery remain open. Private receipts are under
 `artifacts/scalability/2026-09-28/backlog-74178e07/guard-f51780f4`.
+
+## Recovery-spare start configuration gate (2026-09-29)
+
+The deployed trial exposed a start that stayed PENDING while peak pod reservations
+were disabled. The existing capacity preview correctly warned that no reservation
+could be made, but admission treated the warning as transient quota pressure;
+the KEDA fleet metric then withheld incomplete recovery-spare demand. Start now
+returns an explicit non-overridable HTTP 409 configuration conflict before the
+queue transition. If an already-queued run sees reservations disabled before
+promotion, installing that setting on the leader wakes queue reconciliation,
+and selection surfaces it for a terminal FAILED transition with a clear reason
+instead of waiting indefinitely. The final terminal transition
+rechecks the setting under the runner lock so a concurrent correction does not
+fail the run. The shared gate also covers scheduled starts. Tests cover both
+override choices, unchanged durable state on rejection, audit details,
+subsequent admission after enabling the setting, durable failure of an affected
+queued run after both a local update and a shared-store refresh, and the
+corrected-setting race. This addresses the configuration
+deadlock, not deployed KEDA behavior under all future settings changes.
+
+During the full Go gate, an unrelated coordinated-start test intermittently
+failed while removing its temporary generator archive directory. Review found
+that its two committed services were still emitting and finalizing work when
+the test returned. Both coordinated barrier tests now stop and wait for each
+service before their HTTP server and archive directory close. Twelve repeated
+runs of the two affected tests passed after the cleanup fix; the full suite
+passed after the final configuration-wakeup and cleanup changes.

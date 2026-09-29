@@ -292,6 +292,7 @@ func TestCommitWorkUsesCommonFutureStartBarrier(t *testing.T) {
 
 	serviceA := NewService("coordinated-a", 10, WithExecution())
 	serviceB := NewService("coordinated-b", 10, WithExecution())
+	defer stopCoordinatedTestServices(t, serviceA, "test-a", serviceB, "test-b")
 	stageCoordinatedHTTPWork(t, serviceA, "test-a", "script-a", sut.URL, "/a")
 	stageCoordinatedHTTPWork(t, serviceB, "test-b", "script-b", sut.URL, "/b")
 	startAt := time.Now().Add(400 * time.Millisecond)
@@ -347,6 +348,7 @@ func TestCommitWorkClockEstimateKeepsCommonBarrierAcrossAsymmetricFanout(t *test
 
 	serviceA := NewService("asymmetric-a", 10, WithExecution())
 	serviceB := NewService("asymmetric-b", 10, WithExecution())
+	defer stopCoordinatedTestServices(t, serviceA, "asymmetric-a", serviceB, "asymmetric-b")
 	stageCoordinatedHTTPWork(t, serviceA, "asymmetric-a", "script-a", sut.URL, "/a")
 	stageCoordinatedHTTPWork(t, serviceB, "asymmetric-b", "script-b", sut.URL, "/b")
 	controllerSentAt := time.Now()
@@ -396,6 +398,21 @@ func TestCommitWorkClockEstimateKeepsCommonBarrierAcrossAsymmetricFanout(t *test
 	}
 	if delta > 100*time.Millisecond {
 		t.Fatalf("asymmetric 10ms/800ms fanout moved coordinated starts by %s", delta)
+	}
+}
+
+func stopCoordinatedTestServices(t *testing.T, first *Service, firstID string, second *Service, secondID string) {
+	t.Helper()
+	for _, run := range []struct {
+		service *Service
+		id      string
+	}{{first, firstID}, {second, secondID}} {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ack, err := run.service.StopTest(ctx, &pb.StopRequest{TestId: run.id})
+		cancel()
+		if err != nil || ack == nil || !ack.GetAcknowledged() {
+			t.Errorf("cleanup StopTest(%s) = (%#v, %v)", run.id, ack, err)
+		}
 	}
 }
 

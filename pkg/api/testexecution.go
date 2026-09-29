@@ -1390,6 +1390,12 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 }
 
 func (tr *TestRunner) evaluateStartGatesLockedWithEvidence(id string, test *ManagedTest, opts StartTestOptions, expectedTerm *executionLeaseTerm, now time.Time, evidence startLaunchEvidence) (bool, error) {
+	// A recovery spare cannot be admitted without pod reservations. Treat this
+	// as a configuration conflict before quota checks can queue the run: that
+	// queue would have no KEDA demand and could wait indefinitely.
+	if err := recoverySpareSettingsError(test, tr.settings); err != nil {
+		return false, err
+	}
 	for index, group := range test.groupSpecs {
 		if issues := launchReviewGateIssues(group.Script); len(issues) > 0 {
 			return false, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
@@ -6193,6 +6199,15 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			tr.mu.Unlock()
 			return errNotExecutionLeader
 		}
+		if err := recoverySpareSettingsError(pending, tr.settings); err != nil {
+			tr.mu.Unlock()
+			if terminalErr := tr.failPendingPromotionGateIfWithTerm(pendingID, "pending test promotion configuration is no longer valid: "+err.Error(), leaseTerm, func(test *ManagedTest) bool {
+				return recoverySpareSettingsError(test, tr.settings) != nil
+			}); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
 		tr.refreshCapacityAdvisoryLocked(pending)
 		effectiveOpts := startOptionsWithAuthorization(pending, StartTestOptions{})
 		if err := buildStartGovernanceError(pending.ID, pending.CapacityAdvisory, effectiveOpts); err != nil {
@@ -6345,12 +6360,18 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 // remains PENDING; launch-window and timeslot violations must not sit in the fair-
 // share queue until a later day and then execute a stale scheduled occurrence.
 func (tr *TestRunner) failPendingPromotionGateWithTerm(id, message string, leaseTerm executionLeaseTerm) error {
+	return tr.failPendingPromotionGateIfWithTerm(id, message, leaseTerm, nil)
+}
+
+// An optional condition is rechecked under tr.mu before claiming the terminal
+// transition. A setting can be corrected between queue selection and this write.
+func (tr *TestRunner) failPendingPromotionGateIfWithTerm(id, message string, leaseTerm executionLeaseTerm, stillInvalid func(*ManagedTest) bool) error {
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
 		return errNotExecutionLeader
 	}
 	tr.mu.Lock()
 	test := tr.tests[id]
-	if test == nil || test.Status != "PENDING" {
+	if test == nil || test.Status != "PENDING" || (stillInvalid != nil && !stillInvalid(test)) {
 		tr.mu.Unlock()
 		return nil
 	}
@@ -6443,6 +6464,11 @@ func (tr *TestRunner) nextPromotablePendingTestExcludingWithTimeslotsLocked(excl
 	for _, test := range pending {
 		if tr.projectDeletionErrorLocked(test.ProjectID) != nil {
 			continue
+		}
+		// Configuration conflicts must reach the terminal promotion gate even
+		// when ordinary capacity selection would otherwise skip the run forever.
+		if recoverySpareSettingsError(test, tr.settings) != nil {
+			return test
 		}
 		tr.refreshCapacityAdvisoryLocked(test)
 		projectQuota, quotaOK := projectQuotas[test].quotaFor(test)

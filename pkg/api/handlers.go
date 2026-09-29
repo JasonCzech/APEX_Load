@@ -243,6 +243,16 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	req.actor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 	req.traceContext = telemetry.Detach(r.Context())
 	if err := s.runner.StartTestWithOptions(id, req); err != nil {
+		if errors.Is(err, errRecoverySpareRequiresPodReservations) {
+			if test, ok := s.runner.GetTest(id); ok {
+				s.recordAuditEvent(r, "capacity.placement.reject", "blocked", "test", id, test.ProjectID, map[string]any{"reason": "recovery_spare_requires_pod_reservations"})
+			}
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": err.Error(), "code": "recovery_spare_requires_pod_reservations",
+				"test_id": id, "override_available": false,
+			})
+			return
+		}
 		var windowErr *LaunchWindowConflictError
 		if errors.As(err, &windowErr) {
 			if test, ok := s.runner.GetTest(id); ok {
