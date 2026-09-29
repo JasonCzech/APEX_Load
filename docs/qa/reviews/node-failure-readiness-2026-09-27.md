@@ -4152,3 +4152,46 @@ attempt exhausted host disk. The disposable Redis AOF then needed repair of a
 12,274-byte corrupt tail before this trial; the original data was preserved
 privately, the repair was made on a copy, and all trial pods were Ready before
 the fault. This episode is not evidence of seamless Redis failover.
+
+## Source worker down through terminal archive (2026-09-29)
+
+The first attempt to test terminalization had a private fault-watcher mistake:
+it read an older PostgreSQL audit row without a run-specific sequence bound
+and stopped the disposable source worker before the new run's replacement
+commit. The worker was promptly restored. The run reached a `staged` guard,
+then failed closed because it could not positively fence the source; it did
+not promote the replacement. Its terminal status was FAILED. Recovery
+reported one of two sources verified, then published a partial S3 archive
+after bounded retries. The archive verified 9/9 published artifacts, while
+its manifest marked the lost source uncollected, the surviving replacement
+collected, and the export incomplete. The corrected watcher was bounded to
+audit rows after the new run was created. This first attempt is evidence of
+fail-closed staged-phase behavior and partial-result reporting, not evidence
+of staged-phase continuation.
+
+In the corrected trial, PostgreSQL recorded `prepared` → `staged` →
+`source_fenced` → `replacement_committed` with source capacity
+`releasing` and replacement capacity `committed`. The watcher stopped the
+source kind worker about 300 ms after the last checkpoint. The active
+controller was on the surviving worker; the source worker became NotReady.
+After the deliberately tagged two-minute hold expired, the controller
+completed the topology and the 50-VUser run remained RUNNING and
+continuity-armed on the replacement. The independent target instance was
+unchanged and counted 113,833 to 170,833 requests in two observations made
+while the source worker was stopped. The operator stopped the run before
+restoring that worker. Its terminal status was ABORTED, with one of two
+generator sources verified during collection. S3 verification matched all
+nine published artifacts; the manifest marked the replacement collected,
+the stopped source uncollected, and complete export unverified. Restoring the
+worker afterward did not alter the immutable published archive.
+
+Private receipts for the first and corrected trials are under
+`artifacts/scalability/2026-09-29/source-down-through-stop-fe71b4d7/`
+and
+`artifacts/scalability/2026-09-29/source-down-through-stop-corrected-fe71b4d7/`.
+The review found no application defect in these observed fail-closed and
+partial-archive outcomes. Integrity verification of nine published
+artifacts does not mean all generator measurements were collected. These
+same-host kind outages do not qualify physical node independence, CSI/RWX
+reattachment, permanent worker loss, earlier-phase recovery, or a missing
+replacement.

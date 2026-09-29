@@ -564,3 +564,13 @@ worker was restored, the operator-stopped run verified 9/9 S3 artifacts and
 both generator sources. This is a temporary simulated worker outage inside
 Docker Desktop, not physical host independence, permanent node removal, or
 recovery of an uncommitted/missing replacement.
+
+A further same-host kind trial held the fenced source worker down through
+operator stop after replacement commit. Traffic continued on the replacement;
+the run ended ABORTED as requested, and its S3 archive verified all nine
+published artifacts. The manifest explicitly marked the unreachable source
+uncollected and the export incomplete. A separately observed staged-phase
+worker interruption failed closed and later published a verified partial
+archive with that source missing. These outcomes qualify truthful local
+partial-result reporting, not recovery of source measurements that never
+reached durable storage. See the [review ledger](qa/reviews/node-failure-readiness-2026-09-27.md).
