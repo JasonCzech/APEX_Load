@@ -210,6 +210,7 @@ func (b *distributedExecutionBackend) openMetricsStreamWithSetupTimeout(ctx cont
 }
 
 type generatorLoadSnapshot struct {
+	JavaHost                       *JavaHostCapabilitySummary
 	podPlacementOwned              bool
 	PodCapacity                    *protocol.CapacitySnapshot
 	Target                         string
@@ -1272,7 +1273,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			return
 		}
 		shards := initialGroupShardsForRun(group, peakShards, initialLoadByTarget)
-		if groupCurrentVUsers(group) > 0 && len(shards) == 0 {
+		if (groupCurrentVUsers(group) > 0 || javaHostSettings(group) != nil) && len(shards) == 0 {
 			failStartup(fmt.Sprintf("prepare distributed group %q: insufficient runtime capacity for initial VUsers", group.Name))
 			return
 		}
@@ -1344,6 +1345,16 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		rampUp, rampDown, initStrategy := distributedGroupRuntimeConfig(test, group)
 
+		for _, shard := range shards {
+			if javaHostSettings(group) != nil && (shard.JavaHost == nil || sourcePlan != nil) {
+				failStartup("java_host_frozen_selection_missing_or_source_plan_unsupported")
+				return
+			}
+			if err := validateJavaHostRun(test, group, shard.JavaHost); err != nil {
+				failStartup(err.Error())
+				return
+			}
+		}
 		plans, planErr := planDistributedGroupTargetAssignments(shards, clientsByTarget, distributedScripts, group.ScriptID)
 		if planErr != nil {
 			failStartup(planErr.Error())
@@ -1432,6 +1443,13 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			}
 			snapshot := loadByTarget[plan.target]
 			for shardIndex, shard := range plan.shards {
+				if placement := outcomes[index].results[shardIndex].JavaHost; placement != nil {
+					for i := range activeGroupShards[group.Name] {
+						if activeGroupShards[group.Name][i].ShardOrdinal == shard.ShardOrdinal && activeGroupShards[group.Name][i].JavaHost != nil {
+							activeGroupShards[group.Name][i].JavaHost.ReservationID = placement.ReservationId
+						}
+					}
+				}
 				snapshot.AvailableCapacity = outcomes[index].results[shardIndex].AvailableCapacity
 				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
 			}
@@ -1654,6 +1672,7 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			}
 			assignment := template
 			assignment.ArchiveSourceTarget = plan.archiveSourceTarget
+			assignment.JavaHost = shard.JavaHost.selection()
 			assignment.Region = b.regionForTarget(plan.target)
 			assignment.VUserCount = int32(shard.VUsers)
 			assignment.ShardOrdinal = shard.ShardOrdinal
@@ -1665,7 +1684,20 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			}
 			assignment.ParameterOffset = allocationOffsets[shard.ShardOrdinal]
 			assignment.RedactionRules = cloneRedactionRules(template.RedactionRules)
-			rpcCtx, rpcCancel := context.WithTimeout(ctx, b.timeout)
+			assignmentTimeout := b.timeout
+			if shard.JavaHost != nil {
+				// Refresh negotiation on this same client before sending the frozen
+				// selection. A drift never selects a different runtime.
+				probeCtx, probeCancel := context.WithTimeout(ctx, b.timeout)
+				observed := b.probeGeneratorLoad(probeCtx, plan.target, plan.client)
+				probeCancel()
+				if !javaHostPlacementStillAdvertised(shard.JavaHost, observed) {
+					outcome.err = fmt.Errorf("java_host_profile_changed on %q", plan.target)
+					return
+				}
+				assignmentTimeout = time.Duration(shard.JavaHost.PreparationMS) * time.Millisecond
+			}
+			rpcCtx, rpcCancel := context.WithTimeout(ctx, assignmentTimeout)
 			result, assignErr := plan.client.AssignWork(rpcCtx, assignment)
 			rpcCancel()
 			if assignErr != nil {
@@ -1674,6 +1706,10 @@ func (b *distributedExecutionBackend) assignDistributedGroupTargets(ctx context.
 			}
 			if !result.Accepted {
 				outcome.err = fmt.Errorf("generator rejected group %q on %q: %s", template.GroupName, plan.target, result.ErrorMessage)
+				return
+			}
+			if shard.JavaHost != nil && !javaHostPlacementAcknowledged(shard.JavaHost, result.JavaHost) {
+				outcome.err = fmt.Errorf("java_host_reservation_acknowledgement_invalid on %q", plan.target)
 				return
 			}
 			outcome.results[shardIndex] = result
@@ -2066,6 +2102,9 @@ func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr
 }
 
 func initialGroupShardsForRun(group TestGroup, peakShards []GeneratorShardSummary, loadByTarget map[string]generatorLoadSnapshot) []GeneratorShardSummary {
+	if javaHostSettings(group) != nil {
+		return initialJavaHostShards(group, peakShards)
+	}
 	peakTotal := 0
 	for _, shard := range peakShards {
 		peakTotal += shard.VUsers
@@ -2130,6 +2169,9 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	}
 	clientsByTarget, single, remoteTarget := cloneClientMap(test.remoteClientsByTarget), test.remoteClient, test.remoteTarget
 	tr.mu.RUnlock()
+	if javaHostSettings(scaleGroup) != nil {
+		return b.scaleJavaHostGroup(tr, test, scaleGroup, shards, clientsByTarget, executionCtx, executionGeneration, controlGeneration, runSupervisionToken, targetVUsers)
+	}
 	if previousGroupVUsers < 0 || previousGroupVUsers > maxManagedTestVUsers {
 		return fmt.Errorf("stored group VUser count must be between 0 and %d", maxManagedTestVUsers)
 	}
@@ -2372,6 +2414,12 @@ func preserveShardCoordinatesByTarget(next []GeneratorShardSummary, previous []G
 
 func (b *distributedExecutionBackend) AdjustDuration(tr *TestRunner, test *ManagedTest, newDuration time.Duration) error {
 	tr.mu.RLock()
+	for _, g := range test.Groups {
+		if javaHostSettings(g) != nil {
+			tr.mu.RUnlock()
+			return fmt.Errorf("java_host_fixed_run_lifetime")
+		}
+	}
 	previousDuration := test.durationAdjustmentPrevious
 	if previousDuration <= 0 {
 		previousDuration = test.Duration

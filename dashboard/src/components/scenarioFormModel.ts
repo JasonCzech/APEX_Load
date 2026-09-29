@@ -15,6 +15,7 @@ export function cloneAssignment(
   if (!assignment) return undefined
   return {
     ...assignment,
+    java_host: assignment.java_host ? { ...assignment.java_host } : undefined,
     selected_targets: assignment.selected_targets ? [...assignment.selected_targets] : undefined,
     region_weights: assignment.region_weights ? { ...assignment.region_weights } : undefined,
     load_zone_weights: assignment.load_zone_weights ? { ...assignment.load_zone_weights } : undefined,

@@ -13,6 +13,8 @@ import (
 )
 
 type MetricsCollector struct {
+	timingObserver                       func(ResultTiming)
+	initializationObserver               func(int)
 	ch                                   chan *protocol.Result
 	snapshots                            []MetricsSnapshot
 	snapshotSizes                        []int
@@ -34,6 +36,16 @@ type MetricsCollector struct {
 	transactionResponseTimeSLAThresholds map[string]float64
 	transactionResponseTimeSLACumulative map[string]*TransactionResponseTimeSLACompliance
 	groupRunTotals                       sync.Map // map[string]*groupRunCounters; lock-free hot-path attribution
+}
+
+// ResultTiming excludes request, response, parameter, and credential values.
+// Observations are serialized by the metrics consumer and finish before Stop
+// returns. Like other metrics they can be incomplete if the result queue drops.
+type ResultTiming struct {
+	StartTime           time.Time
+	Duration            time.Duration
+	Success             bool
+	BusinessTransaction bool
 }
 
 const throughputGapAlertThresholdPct = 5.0
@@ -571,6 +583,12 @@ func (mc *MetricsCollector) aggregate(interval time.Duration) {
 }
 
 func (mc *MetricsCollector) publishSnapshot(batch []*protocol.Result, window time.Duration) {
+	if mc.timingObserver != nil {
+		for _, result := range batch {
+			mc.timingObserver(ResultTiming{StartTime: result.StartTime, Duration: result.Duration,
+				Success: result.Success, BusinessTransaction: result.BusinessTransaction})
+		}
+	}
 	snap := mc.computeSnapshot(batch, window)
 	if mc.resCollector != nil {
 		snap.Resources = mc.resCollector.Collect()

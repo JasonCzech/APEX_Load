@@ -68,10 +68,21 @@ func (tr *TestRunner) poolMemberTargets(poolID string) []string {
 }
 
 func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
+	if in != nil && in.JavaHost != nil {
+		return nil, fmt.Errorf("assignment.java_host is group-scoped")
+	}
+	if in != nil && strings.TrimSpace(in.Mode) == generatorAssignmentModeInherit {
+		return nil, fmt.Errorf("assignment.mode inherit is group-scoped")
+	}
+	return normalizeGeneratorAssignmentSettingsBase(in)
+}
+
+func normalizeGeneratorAssignmentSettingsBase(in *GeneratorAssignmentSettings) (*GeneratorAssignmentSettings, error) {
 	if in == nil {
 		return nil, nil
 	}
 	out := &GeneratorAssignmentSettings{
+		JavaHost:              cloneJavaHostAssignmentSettings(in.JavaHost),
 		SourceAffinity:        strings.TrimSpace(in.SourceAffinity),
 		SharingMode:           strings.TrimSpace(in.SharingMode),
 		Mode:                  strings.TrimSpace(in.Mode),
@@ -86,6 +97,9 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	}
 	if out.RecoverySpareVUsers > 0 && (!out.TolerateGeneratorLoss || !simpleRecoveryAssignment(out)) {
 		return nil, fmt.Errorf("reserved recovery capacity requires generator-loss tolerance and automatic or explicit-host placement")
+	}
+	if err := validateJavaHostAssignmentSettings(out.JavaHost); err != nil {
+		return nil, err
 	}
 	switch out.FailoverPolicy {
 	case "", failoverPolicyFail, failoverPolicyContinue:
@@ -105,6 +119,17 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 		return nil, fmt.Errorf("assignment.sharing_mode must be shared or dedicated")
 	}
 	switch out.Mode {
+	case generatorAssignmentModeInherit:
+		// A Java host profile selects execution mechanics without replacing the
+		// scenario's generator placement. Inherit is only valid for this group
+		// overlay and cannot carry another placement directive of its own.
+		if out.JavaHost == nil || out.SourceAffinity != "" || out.SharingMode != "" || out.PoolID != "" ||
+			len(in.SelectedTargets) != 0 || len(in.RequiredLabels) != 0 || len(in.RegionWeights) != 0 ||
+			len(in.LoadZoneWeights) != 0 || in.ShardStrategy != "" || out.TolerateGeneratorLoss ||
+			out.RecoverySpareVUsers != 0 || out.FailoverPolicy != "" {
+			return nil, fmt.Errorf("inherit group assignment may only select a Java host profile")
+		}
+		return out, nil
 	case generatorAssignmentModeAuto:
 		out.SelectedTargets = nil
 		out.RegionWeights = nil
@@ -249,7 +274,7 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 	if strings.TrimSpace(in.FailoverPolicy) != "" {
 		return nil, fmt.Errorf("assignment.failover_policy is test-scoped; set it on the test-level assignment")
 	}
-	out, err := normalizeGeneratorAssignmentSettings(in)
+	out, err := normalizeGeneratorAssignmentSettingsBase(in)
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +282,8 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 		return nil, nil
 	}
 	switch out.Mode {
+	case generatorAssignmentModeInherit:
+		return out, nil
 	case generatorAssignmentModeAuto:
 		return out, nil
 	case generatorAssignmentModeSpecificHosts:
@@ -273,7 +300,7 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 		out.ShardStrategy = strategy
 		return out, nil
 	default:
-		return nil, fmt.Errorf("group assignment.mode must be auto or specific_hosts")
+		return nil, fmt.Errorf("group assignment.mode must be inherit, auto, or specific_hosts")
 	}
 }
 
@@ -282,6 +309,7 @@ func cloneGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) *Generato
 		return nil
 	}
 	out := *in
+	out.JavaHost = cloneJavaHostAssignmentSettings(in.JavaHost)
 	out.SelectedTargets = append([]string(nil), in.SelectedTargets...)
 	if len(in.RegionWeights) > 0 {
 		out.RegionWeights = make(map[string]int, len(in.RegionWeights))
@@ -310,5 +338,8 @@ func cloneGeneratorShardSummaries(in []GeneratorShardSummary) []GeneratorShardSu
 	}
 	out := make([]GeneratorShardSummary, len(in))
 	copy(out, in)
+	for i := range out {
+		out[i].JavaHost = cloneJavaHostPlacementSummary(in[i].JavaHost)
+	}
 	return out
 }

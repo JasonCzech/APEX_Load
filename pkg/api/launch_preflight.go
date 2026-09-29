@@ -636,6 +636,11 @@ func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTes
 	}
 	backend, ok := tr.execution.(*distributedExecutionBackend)
 	if !ok {
+		for _, g := range test.Groups {
+			if javaHostSettings(g) != nil {
+				return []groupPlacementConflict{{Group: g.Name, Message: "java_host_requires_distributed_backend"}}
+			}
+		}
 		return nil
 	}
 	rootAssignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
@@ -672,6 +677,7 @@ func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTes
 			snapshot.MemoryLimitBytes = entry.MemoryLimitBytes
 			snapshot.MaxVUsers = entry.MaxVUsers
 			snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(entry.RuntimeCapacities)
+			snapshot.JavaHost = cloneJavaHostCapabilitySummary(entry.JavaHost)
 			activeTargets[entry.Target] = snapshot
 		}
 	}
@@ -708,6 +714,10 @@ func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTes
 			continue
 		}
 		for _, shard := range shards {
+			if err := validateJavaHostRun(test, group, shard.JavaHost); err != nil {
+				conflicts = append(conflicts, groupPlacementConflict{Group: group.Name, Message: err.Error()})
+				continue
+			}
 			if shard.Target == "" {
 				continue
 			}

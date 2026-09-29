@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPayloads, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { buildGroupAssignmentPayload, buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPayloads, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
 import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
@@ -1509,4 +1509,17 @@ describe('scenarioPayloadUtils', () => {
     expect(buildCreateTestPayload(common).dynatrace_capture).toBeUndefined()
     expect(buildCreateTestPayload({ ...common, dynatraceConnectionId: 'dt-a' }).dynatrace_capture).toEqual({ connection_id: 'dt-a' })
   })
+})
+
+it('retains an explicit Java profile through group payload serialization without aliasing', () => {
+  const java_host = { profile_id: 'approved', preparation_ms: 120000, run_lifetime_ms: 3600000 }
+  for (const assignment of [{ java_host }, { mode: 'inherit' as const, java_host }, { mode: 'auto' as const, java_host }, { mode: 'specific_hosts' as const, selected_targets: ['gen-a'], java_host }]) {
+    const payload = buildGroupAssignmentPayload(assignment)
+    expect(payload?.java_host).toEqual(java_host)
+    if (assignment.mode === 'inherit') expect(payload?.mode).toBe('inherit')
+    if (!('mode' in assignment)) expect(payload?.mode).toBe('auto')
+    payload!.java_host!.profile_id = 'changed'
+    expect(java_host.profile_id).toBe('approved')
+  }
+  expect(buildGroupAssignmentPayload({ mode: 'inherit' })).toBeUndefined()
 })

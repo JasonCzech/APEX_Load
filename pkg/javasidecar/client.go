@@ -339,6 +339,8 @@ func responseContract(response any) (string, error) {
 		return value.Contract, nil
 	case *ValidateResponse:
 		return value.Contract, nil
+	case *RenewOwnerResponse:
+		return value.Contract, nil
 	case *ClaimOwnerResponse:
 		return value.Contract, nil
 	case *ClaimRuntimeLeaseResponse:
@@ -352,6 +354,8 @@ func responseContract(response any) (string, error) {
 	case *CancelResponse:
 		return value.Contract, nil
 	case *CloseSessionResponse:
+		return value.Contract, nil
+	case *PooledControlResponse:
 		return value.Contract, nil
 	default:
 		return "", fmt.Errorf("unsupported response type")

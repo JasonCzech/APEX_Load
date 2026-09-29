@@ -177,14 +177,25 @@ func main() {
 		os.Exit(1)
 	}
 	engine.EnableStrictProtocolTeardown()
-	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers,
+	javaHostOption, closeJavaHosts, err := configureJavaHostRuntime(os.Getenv("APEXLOAD_JAVA_HOST_CONFIG"))
+	if err != nil {
+		slog.Error("invalid dedicated Java host configuration", "err", err)
+		os.Exit(1)
+	}
+	defer closeJavaHosts()
+	serviceOptions := []generatorrpc.ServiceOption{
 		generatorrpc.WithExecution(),
 		generatorrpc.WithRunSupervisionRequired(supervisionConfig.TTL, supervisionConfig.Drain),
 		generatorrpc.WithMaxAdoptionGrace(supervisionConfig.MaxAdoptionGrace),
 		generatorrpc.WithRuntimeContainmentFailureSignal(java_vuser.LocalProcessContainmentFailure()),
-	)
+	}
+	if javaHostOption != nil {
+		serviceOptions = append(serviceOptions, javaHostOption)
+	}
+	controlService := generatorrpc.NewService(generatorID, cfg.MaxVUsers, serviceOptions...)
 	if err := controlService.ReadinessError(); err != nil {
 		slog.Error("refusing to start without durable generator execution fencing", "generator_id", generatorID, "err", err)
+		_ = closeJavaHosts()
 		os.Exit(1)
 	}
 	safetyTriggered := startGeneratorSafetyWatchdog(controlService.SelfTerminationRequested(), 2*time.Second, os.Exit)
@@ -208,6 +219,7 @@ func main() {
 		}
 		if err := connector.validate(); err != nil {
 			slog.Error("invalid reverse generator configuration", "err", err)
+			_ = closeJavaHosts()
 			os.Exit(1)
 		}
 		go func() { errCh <- grpcServer.Serve(reverseListener) }()
@@ -242,6 +254,10 @@ func main() {
 	// durable terminal evidence needed by the replacement controller. Do not
 	// wait for a natural drain when one listener is already unavailable.
 	shutdownGeneratorRuntime(controlService, healthServer, grpcServer, healthGRPCServer, waitForNaturalDrain)
+	if err := closeJavaHosts(); err != nil {
+		slog.Error("Java host cleanup request failed")
+		serverFailed = true
+	}
 	select {
 	case <-safetyTriggered:
 		safetyExit = true

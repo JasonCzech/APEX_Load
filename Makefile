@@ -96,6 +96,16 @@ java-vuser-runner-legacy:
 	@echo "Built bin/java_vuser/apexload-java-vuser-runner-java8.jar (Java 8 bytecode)."
 	@echo "Point APEXLOAD_JAVA_VUSER_HARNESS_JAR at it and set APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA=true."
 
+# Experimental slot artifacts are separate from the dedicated harness. Building
+# these does not advertise pooled execution or change the default runner path.
+.PHONY: java-vuser-slot-runtime
+java-vuser-slot-runtime:
+	mkdir -p bin/java_vuser/slot-api bin/java_vuser/slot-shim
+	javac --release 8 -d bin/java_vuser/slot-api runners/java_vuser/apexload/bridge/SlotRuntime.java runners/java_vuser/apexload/host/SlotLoader.java runners/java_vuser/apexload/host/SlotWorker.java runners/java_vuser/apexload/host/PooledHost.java runners/java_vuser/apexload/host/PooledWire.java runners/java_vuser/apexload/host/PooledMain.java runners/java_vuser/apexload/host/GCPauses.java
+	javac --release 8 -cp bin/java_vuser/slot-api -d bin/java_vuser/slot-shim runners/java_vuser/lrapi/lr.java runners/java_vuser/lrapi/SlotBridge.java
+	jar --create --file bin/java_vuser/apexload-slot-api.jar -C bin/java_vuser/slot-api .
+	jar --create --file bin/java_vuser/apexload-slot-shim.jar -C bin/java_vuser/slot-shim .
+
 test:
 	go test -race -count=1 ./...
 
@@ -245,3 +255,20 @@ k8s-kind-delete:
 
 k8s-smoke-test:
 	./deployments/k8s/smoke-test.sh
+
+# Experimental dedicated execution-pod supervisor; production construction is
+# restricted to Linux PID 1. Local builds do not qualify container containment.
+.PHONY: java-host-supervisor
+java-host-supervisor:
+	mkdir -p bin
+	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-java-host-supervisor ./cmd/apexload-java-host-supervisor
+
+.PHONY: java-host-broker
+java-host-broker:
+	mkdir -p bin
+	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-java-host-broker ./cmd/apexload-java-host-broker
+
+.PHONY: java-host-facade
+java-host-facade:
+	@mkdir -p bin
+	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-java-host-facade ./cmd/apexload-java-host-facade

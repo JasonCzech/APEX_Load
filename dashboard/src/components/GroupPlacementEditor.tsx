@@ -4,6 +4,7 @@ import { normalizeRequiredLabels } from './assignmentLabels'
 import { isPositiveSafeInteger } from './generatorAssignmentValidation'
 import './GroupPlacementEditor.css'
 import PodCapacityMeter from './PodCapacityMeter'
+import JavaHostPlacementEditor from './JavaHostPlacementEditor'
 
 type PlacementMode = 'inherit' | 'auto' | 'specific_hosts' | 'required_labels' | 'region_weighted' | 'load_zone_weighted'
 
@@ -26,6 +27,7 @@ function assignmentMode(assignment?: GeneratorAssignmentSettings): PlacementMode
   if (assignment?.mode === 'load_zone_weighted') return 'load_zone_weighted'
   if (normalizeRequiredLabels(assignment?.required_labels)) return 'required_labels'
   if (assignment?.mode === 'auto') return 'auto'
+  if (assignment?.java_host && !assignment.mode) return 'auto' // Legacy profile-only drafts used automatic placement.
   return 'inherit'
 }
 
@@ -58,7 +60,24 @@ function protocolRuntimeAvailableVUsers(generator: SystemInventoryGenerator, pro
   }, Number.POSITIVE_INFINITY)
 }
 
-function generatorCapacityForProtocol(generator: SystemInventoryGenerator, protocol?: string): number | null {
+function javaHostCeiling(generator: SystemInventoryGenerator, profile?: string): number {
+  const caps = generator.java_host
+  const matches = caps?.profiles.filter(item => item.profile_id === profile) || []
+  if (!caps || caps.mode !== 'dedicated' || caps.containment !== 'execution_pod' || !matches.length) return 0
+  const limits = [caps.max_hosts, caps.max_vusers, generator.available_capacity, ...matches.map(item => item.memory_bytes > 0 ? Math.floor(caps.max_memory_bytes / item.memory_bytes) : 0)]
+  const pod = generator.pod_capacity
+  if (pod) {
+    if (pod.state !== 'ready' || pod.dedicated) return 0
+    for (const item of matches) {
+      if (!item.facade_resources_sha256 || !(item.facade_cpu_millicores! > 0) || !(item.facade_memory_bytes! > 0) || !(item.facade_network_kbps! > 0)) return 0
+      limits.push(pod.remaining.cpu_cores * 1000 / item.facade_cpu_millicores!, pod.remaining.memory_mb * 1024 * 1024 / item.facade_memory_bytes!, pod.remaining.network_mbps * 1000 / item.facade_network_kbps!, pod.remaining.vusers, pod.remaining.protocols?.java_host_facade ?? 0)
+    }
+  }
+  return Math.max(0, Math.floor(Math.min(...limits) + 1e-9))
+}
+
+function generatorCapacityForProtocol(generator: SystemInventoryGenerator, protocol?: string, javaProfile?: string): number | null {
+  if (javaProfile) return javaHostCeiling(generator, javaProfile)
   // Configured fallback rows are target names without a live inventory sample.
   // Zero would falsely claim exhaustion, so keep their capacity explicitly unknown.
   if (generator.status === 'configured') return null
@@ -68,12 +87,14 @@ function generatorCapacityForProtocol(generator: SystemInventoryGenerator, proto
   return Math.min(overall, runtimeAvailable)
 }
 
-function generatorCapacityLabel(generator: SystemInventoryGenerator, protocol?: string): string {
+function generatorCapacityLabel(generator: SystemInventoryGenerator, protocol?: string, javaProfile?: string): string {
+  if (javaProfile) return `${javaHostCeiling(generator, javaProfile)} host ceiling · reservation required`
   const capacity = generatorCapacityForProtocol(generator, protocol)
   return capacity === null ? 'capacity unknown' : `${capacity} capacity`
 }
 
-function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string) {
+function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string, javaProfile?: string) {
+  if (javaProfile) return (!generator.drain_state || generator.drain_state === 'active') && (!generator.compatibility_state || ['compatible', 'unknown'].includes(generator.compatibility_state)) && ['connected', 'healthy', 'ready'].includes(generator.status) && javaHostCeiling(generator, javaProfile) > 0
   if (generator.pod_capacity && (generator.pod_capacity.state !== 'ready' || generator.pod_capacity.remaining_pct <= 0 || generator.pod_capacity.dedicated)) return false
   const drainActive = !generator.drain_state || generator.drain_state === 'active'
   const compatible = !generator.compatibility_state || generator.compatibility_state === 'compatible' || generator.compatibility_state === 'unknown'
@@ -94,7 +115,8 @@ function generatorCanRun(generator: SystemInventoryGenerator, protocol?: string)
   return drainActive && connected && compatible && protocolSupported && capacityAvailable
 }
 
-function generatorDisabledReason(generator: SystemInventoryGenerator, protocol?: string) {
+function generatorDisabledReason(generator: SystemInventoryGenerator, protocol?: string, javaProfile?: string) {
+  if (javaProfile) return generatorCanRun(generator, protocol, javaProfile) ? '' : 'Dedicated Java profile unavailable or incompatible with generator placement settings'
   if (generator.drain_state && generator.drain_state !== 'active') return `Host is ${generator.drain_state}`
   if (generator.compatibility_state && generator.compatibility_state !== 'compatible' && generator.compatibility_state !== 'unknown') return generator.compatibility_issues?.[0] || `Compatibility is ${generator.compatibility_state}`
   const protocols = generator.supported_protocols || []
@@ -200,17 +222,18 @@ export default function GroupPlacementEditor({
 
   const rows = targetRows(availableTargets, generatorInventory, selectedTargets)
   const labelKeys = Object.keys(availableLabels || {}).sort()
-  const matchingLabelHosts = generatorInventory?.filter(generator => generatorCanRun(generator, protocol) && labelsMatch(generator, requiredLabels)).length ?? 0
+  const matchingLabelHosts = generatorInventory?.filter(generator => generatorCanRun(generator, protocol, assignment?.java_host?.profile_id) && labelsMatch(generator, requiredLabels)).length ?? 0
   const selectedTargetSet = new Set(selectedTargets)
   const selectedRows = rows.filter(generator => selectedTargetSet.has(generator.target))
-  const selectedCapacity = selectedRows.reduce((total, generator) => total + (generatorCapacityForProtocol(generator, protocol) ?? 0), 0)
-  const selectedUnknownCapacityCount = selectedRows.filter(generator => generatorCapacityForProtocol(generator, protocol) === null).length
-  const selectedCapacitySummary = selectedUnknownCapacityCount === 0
+  const selectedCapacity = selectedRows.reduce((total, generator) => total + (generatorCapacityForProtocol(generator, protocol, assignment?.java_host?.profile_id) ?? 0), 0)
+  const selectedUnknownCapacityCount = selectedRows.filter(generator => generatorCapacityForProtocol(generator, protocol, assignment?.java_host?.profile_id) === null).length
+  const selectedCapacitySummary = assignment?.java_host ? 'Eligible generators share the group; the broker confirms each reservation.' : selectedUnknownCapacityCount === 0
     ? `${selectedCapacity} selected VUser capacity`
     : selectedCapacity > 0
       ? `${selectedCapacity} known selected VUser capacity · ${selectedUnknownCapacityCount} host${selectedUnknownCapacityCount === 1 ? '' : 's'} unknown`
       : 'Selected VUser capacity unknown'
   const lossTolerance = {
+    ...(scope === 'group' && assignment?.java_host ? { java_host: assignment.java_host } : {}),
     ...(scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}),
     ...(scope === 'scenario' && assignment?.sharing_mode ? { sharing_mode: assignment.sharing_mode } : {}),
     ...(scope === 'scenario' && assignment?.failover_policy === 'continue' ? { failover_policy: 'continue' as const } : {}),
@@ -227,7 +250,7 @@ export default function GroupPlacementEditor({
   const setMode = (nextMode: PlacementMode) => {
     setLocalMode(nextMode)
     if (nextMode === 'inherit') {
-      onChange(undefined)
+      onChange(assignment?.java_host ? { mode: 'inherit', java_host: assignment.java_host } : undefined)
       return
     }
     if (nextMode === 'auto') {
@@ -342,7 +365,7 @@ export default function GroupPlacementEditor({
 
   const useAutomaticGroupPlacement = () => {
     setLocalMode('auto')
-    onChange({ mode: 'auto' })
+    onChange({ mode: 'auto', ...lossTolerance })
   }
 
   const activeWeights = mode === 'region_weighted' ? assignment?.region_weights : assignment?.load_zone_weights
@@ -357,6 +380,7 @@ export default function GroupPlacementEditor({
 
   return (
     <div className={`group-placement-editor ${compact ? 'compact' : ''}`}>
+      {scope === 'group' && protocol === 'java_vuser' && <JavaHostPlacementEditor assignment={assignment} inventory={generatorInventory} onChange={onChange} />}
       {scope === 'scenario' && <label className="scenario-field">
         <span>Generator sharing</span>
         <select aria-label="Generator sharing" value={assignment?.sharing_mode || 'shared'} onChange={event => onChange({ ...assignment, mode: assignment?.mode || 'auto', sharing_mode: event.target.value as 'shared' | 'dedicated' })}>
@@ -449,8 +473,8 @@ export default function GroupPlacementEditor({
             <div className="new-test-empty compact">No load generators are available.</div>
           ) : rows.map(generator => {
             const selected = selectedTargets.includes(generator.target)
-            const eligible = generatorCanRun(generator, protocol)
-            const disabledReason = generatorDisabledReason(generator, protocol)
+            const eligible = generatorCanRun(generator, protocol, assignment?.java_host?.profile_id)
+            const disabledReason = generatorDisabledReason(generator, protocol, assignment?.java_host?.profile_id)
             const recommended = recommendedTargets.includes(generator.target)
             return (
               <label key={generator.target} className={`new-test-generator-option ${selected ? 'selected' : ''} ${!eligible ? 'disabled' : ''}`}>
@@ -463,13 +487,13 @@ export default function GroupPlacementEditor({
                 <span>
                   <strong>{generator.target}</strong>
                   <PodCapacityMeter capacity={generator.pod_capacity} />
-                  <em>{generator.region || generator.pool_name || 'default'} · {generatorCapacityLabel(generator, protocol)} · {generator.status}{recommended ? ' · recommended' : ''}</em>
+                  <em>{generator.region || generator.pool_name || 'default'} · {generatorCapacityLabel(generator, protocol, assignment?.java_host?.profile_id)} · {generator.status}{recommended ? ' · recommended' : ''}</em>
                   {disabledReason && <em className="warning">{disabledReason}</em>}
                 </span>
               </label>
             )
           })}
-          {selectedTargets.some(target => !rows.some(row => row.target === target && generatorCanRun(row, protocol))) && (
+          {selectedTargets.some(target => !rows.some(row => row.target === target && generatorCanRun(row, protocol, assignment?.java_host?.profile_id))) && (
             <p className="scenario-assignment-copy secondary">One or more selected hosts are absent or ineligible and will block preflight or launch.</p>
           )}
           <div className="new-test-placement-summary">

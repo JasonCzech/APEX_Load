@@ -1,0 +1,101 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: apexload-java-broker
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: apexload-java-execution
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: broker-control
+  namespace: apexload-java-broker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-java-broker
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: apexload
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-generator
+      ports:
+        - protocol: TCP
+          port: 9444
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: apexload-java-execution
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-java-execution
+      ports:
+        - protocol: TCP
+          port: 9443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Add reviewed, target-cluster rules for the API server and attestor.
+    # Neither is broadly opened by this scaffold.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: execution-control
+  namespace: apexload-java-execution
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-java-execution
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: apexload-java-broker
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apexload-java-broker
+      ports:
+        - protocol: TCP
+          port: 9443
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Add only qualified workload target/proxy endpoints. Keep Kubernetes API,
+    # node/metadata services and broker credentials inaccessible to user code.

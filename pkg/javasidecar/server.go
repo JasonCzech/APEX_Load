@@ -50,6 +50,11 @@ type ServerOptions struct {
 	Operator        config.JavaVuserOperatorConfig
 	ProbeTimeout    time.Duration
 	CredentialCheck func() error
+	// Optional programmatic pilot wiring. All participating dedicated sessions
+	// and pooled ledgers must share one authority and explicit memory profiles.
+	// Nil preserves the existing dedicated-only process limit.
+	HostAdmission         *javarunner.DedicatedHostAdmission
+	PooledControlProfiles *PooledControlProfiles
 
 	// These unexported hooks let package tests exercise persistent lifecycle
 	// semantics on hosts such as Darwin that deliberately fail production
@@ -65,12 +70,20 @@ type ServerOptions struct {
 // Server owns the operator configuration and the process-wide concurrency
 // semaphore. It is safe for concurrent use by net/http.
 type Server struct {
-	operator        config.JavaVuserOperatorConfig
-	authToken       string
-	probeTimeout    time.Duration
-	credentialCheck func() error
-	slots           chan struct{}
-	probeSlots      chan struct{}
+	// Set only by the PID1-guarded pod adapter before starting its sole JVM.
+	persistentReadyNonce  string
+	persistentKill        func(*exec.Cmd) error
+	operator              config.JavaVuserOperatorConfig
+	authToken             string
+	probeTimeout          time.Duration
+	credentialCheck       func() error
+	slots                 chan struct{}
+	probeSlots            chan struct{}
+	hostAdmission         *javarunner.DedicatedHostAdmission
+	pooledMu              sync.Mutex
+	pooledRuns            map[pooledRunKey]*PooledRun
+	pooledControlProfiles *PooledControlProfiles
+	pooledControlMu       sync.Mutex
 
 	supportsStrongProcessContainment func() bool
 	startStrongProcessTree           func(*exec.Cmd) error
@@ -173,6 +186,9 @@ func NewServer(options ServerOptions) *Server {
 		credentialCheck:                  credentialCheck,
 		slots:                            make(chan struct{}, limit),
 		probeSlots:                       make(chan struct{}, 1),
+		hostAdmission:                    options.HostAdmission,
+		pooledRuns:                       make(map[pooledRunKey]*PooledRun),
+		pooledControlProfiles:            options.PooledControlProfiles,
 		supportsStrongProcessContainment: supportsStrongProcessContainment,
 		startStrongProcessTree:           startStrongProcessTree,
 		resolveJDK:                       resolveJDK,
@@ -330,6 +346,10 @@ func (s *Server) expireOwnerGenerationLocked(generation *ownerGeneration) bool {
 	}
 	s.runtimeLeaseMu.Unlock()
 	if !hasLiveRuntime {
+		hasLiveRuntime = s.hasPooledRuns(generation)
+	}
+	if !hasLiveRuntime {
+		s.forgetPooledRuns(generation)
 		if s.owner == generation {
 			s.owner = nil
 		}
@@ -397,6 +417,7 @@ func (s *Server) startShutdown() {
 		for _, cancel := range operationCancels {
 			cancel()
 		}
+		s.startPooledRunCleanup(nil)
 		go s.finishShutdown()
 	})
 }
@@ -421,7 +442,7 @@ func (s *Server) finishShutdown() {
 	if generation != nil {
 		generation.operations.Wait()
 	}
-	s.shutdownErr = s.closeTrackedSessions(context.Background())
+	s.shutdownErr = errors.Join(s.waitPooledRunCleanup(nil), s.closeTrackedSessions(context.Background()))
 	// A strong-start containment failure can return before the direct root is
 	// reaped so the action remains bounded. No process operation can register a
 	// new failed-start reaper after operationWG above reached zero.
@@ -516,6 +537,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.URL.Path == "/v1/pooled-control":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handlePooledControl(w, r)
 	case r.URL.Path == "/v1/capabilities":
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, http.MethodGet)
@@ -528,6 +555,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleValidate(w, r)
+	case r.URL.Path == "/v1/owner/renew":
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.handleRenewOwner(w, r)
 	case r.URL.Path == "/v1/owner/claim":
 		if r.Method != http.MethodPost {
 			methodNotAllowed(w, http.MethodPost)
@@ -630,6 +663,28 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	} else {
 		response.Healthy = true
 		response.JavaMajor = jdk.Major
+		if s.pooledControlEnabled() {
+			response.Features = append(response.Features, FeaturePooledReservationsV1)
+			for _, profile := range s.pooledControlProfiles.profiles {
+				if profile.AllowPreparation {
+					response.Features = append(response.Features, FeaturePooledPreparationV1)
+					response.Features = append(response.Features, FeaturePooledDiagnosticsV1)
+					break
+				}
+			}
+			for _, profile := range s.pooledControlProfiles.profiles {
+				if profile.AllowCommit {
+					response.Features = append(response.Features, FeaturePooledCommitV1)
+					break
+				}
+			}
+			for _, profile := range s.pooledControlProfiles.profiles {
+				if profile.AllowInvocation {
+					response.Features = append(response.Features, FeaturePooledInvocationV1)
+					break
+				}
+			}
+		}
 	}
 	writeJSON(w, status, response)
 }
@@ -891,6 +946,11 @@ func (s *Server) handleClaimOwner(w http.ResponseWriter, r *http.Request) {
 	if s.owner != next {
 		s.ownerMu.Unlock()
 		writeError(w, http.StatusConflict, "owner_fenced")
+		return
+	}
+	if s.draining.Load() || s.containmentUnavailable() {
+		s.ownerMu.Unlock()
+		writeError(w, http.StatusServiceUnavailable, "owner_claim_failed")
 		return
 	}
 	next.ready = true
@@ -1244,6 +1304,8 @@ func (s *Server) reapGeneration(generation *ownerGeneration) error {
 	if generation == nil {
 		return nil
 	}
+	// Fence pooled work before waiting for any invocation or dedicated cleanup.
+	s.startPooledRunCleanup(generation)
 	if s.containmentUnavailable() {
 		return fmt.Errorf("Java Vuser process containment is unavailable")
 	}
@@ -1260,6 +1322,9 @@ func (s *Server) reapGeneration(generation *ownerGeneration) error {
 	s.runtimeLeaseMu.Unlock()
 	for _, lease := range ownedLeases {
 		s.startRuntimeLeaseCleanup(lease)
+	}
+	if err := s.waitPooledRunCleanup(generation); err != nil {
+		return err
 	}
 	for _, lease := range ownedLeases {
 		select {
@@ -2241,6 +2306,7 @@ func (s *Server) runHarness(ctx context.Context, prepared preparedRuntime, comma
 		return processOutcome{errorCode: "target_method_invalid"}
 	}
 	plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
+		OperatorCDSManifest: s.operator.CDSManifest, ResolvedJDK: &prepared.jdk,
 		VMParameters:         prepared.vmParameters,
 		JavaMajor:            prepared.jdk.Major,
 		VMFamily:             prepared.jdk.VMFamily,
@@ -2468,8 +2534,29 @@ func (s *Server) acquireProcessSlot(ctx context.Context) (func(), *safeFailure) 
 	}
 	select {
 	case s.slots <- struct{}{}:
+		var sharedRelease func()
+		if s.hostAdmission != nil {
+			var err error
+			sharedRelease, err = s.hostAdmission.Acquire(ctx)
+			if err != nil {
+				<-s.slots
+				if ctx.Err() != nil {
+					return nil, &safeFailure{code: contextErrorCode(ctx)}
+				}
+				return nil, &safeFailure{code: "process_containment_unavailable"}
+			}
+		}
+		var releaseOnce sync.Once
+		release := func() {
+			releaseOnce.Do(func() {
+				if sharedRelease != nil {
+					sharedRelease()
+				}
+				<-s.slots
+			})
+		}
 		if err := ctx.Err(); err != nil || s.draining.Load() || s.containmentUnavailable() {
-			<-s.slots
+			release()
 			if err != nil {
 				return nil, &safeFailure{code: contextErrorCode(ctx)}
 			}
@@ -2478,7 +2565,9 @@ func (s *Server) acquireProcessSlot(ctx context.Context) (func(), *safeFailure) 
 			}
 			return nil, &safeFailure{code: "session_unusable"}
 		}
-		return func() { <-s.slots }, nil
+		return release, nil
+	case <-s.hostAdmission.Done():
+		return nil, &safeFailure{code: "process_containment_unavailable"}
 	case <-s.containmentFailedDone:
 		return nil, &safeFailure{code: "process_containment_unavailable"}
 	case <-ctx.Done():
@@ -2509,6 +2598,8 @@ func (s *Server) acquireProbeSlot(ctx context.Context) (func(), *safeFailure) {
 			return nil, &safeFailure{code: "server_draining"}
 		}
 		return func() { <-s.probeSlots }, nil
+	case <-s.hostAdmission.Done():
+		return nil, &safeFailure{code: "process_containment_unavailable"}
 	case <-s.containmentFailedDone:
 		return nil, &safeFailure{code: "process_containment_unavailable"}
 	case <-ctx.Done():
@@ -2521,6 +2612,7 @@ func (s *Server) finishProcessCapacity(release func(), containmentErr error) {
 		// The token is the quarantine lease. Releasing it would let a stream of
 		// failed cleanup attempts create more descendants than MaxProcesses.
 		s.containmentFailed.Store(true)
+		s.hostAdmission.CloseAdmission()
 		s.containmentFailedOnce.Do(func() {
 			close(s.containmentFailedDone)
 		})
@@ -2532,6 +2624,11 @@ func (s *Server) finishProcessCapacity(release func(), containmentErr error) {
 }
 
 func (s *Server) containmentUnavailable() bool {
+	select {
+	case <-s.hostAdmission.Done():
+		s.finishProcessCapacity(nil, javarunner.ErrProcessContainmentFailed)
+	default:
+	}
 	if javarunner.ProcessContainmentFailed() {
 		s.finishProcessCapacity(nil, javarunner.ErrProcessContainmentFailed)
 	}

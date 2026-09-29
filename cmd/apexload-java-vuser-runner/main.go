@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -17,8 +18,9 @@ import (
 )
 
 const (
-	runnerAddressEnvironment = "APEXLOAD_JAVA_VUSER_RUNNER_ADDR"
-	defaultRunnerAddress     = "127.0.0.1:8098"
+	runnerAddressEnvironment       = "APEXLOAD_JAVA_VUSER_RUNNER_ADDR"
+	runnerPilotManifestEnvironment = "APEXLOAD_JAVA_VUSER_PILOT_MANIFEST"
+	defaultRunnerAddress           = "127.0.0.1:8098"
 )
 
 func main() {
@@ -26,11 +28,17 @@ func main() {
 	if address == "" {
 		address = defaultRunnerAddress
 	}
+	operator := config.LoadJavaVuserOperatorConfig()
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	options, err := runnerServerOptions(startupCtx, operator, strings.TrimSpace(os.Getenv(runnerPilotManifestEnvironment)))
+	startupCancel()
+	if err != nil {
+		log.Fatalf("Java Vuser runner sidecar refused pilot configuration: %v", err)
+	}
 	listener, err := javasidecar.ListenLoopback(address)
 	if err != nil {
 		log.Fatalf("Java Vuser runner sidecar refused its listener: %v", err)
 	}
-	operator := config.LoadJavaVuserOperatorConfig()
 	if operator.ClasspathUploadEnabled && strings.TrimSpace(operator.ClasspathAssetDir) != "" {
 		// Allow the sidecar to read uploaded classpath JAR bytes from the
 		// controller's import asset store (same-host coupling). If this fails,
@@ -40,7 +48,7 @@ func main() {
 			log.Printf("Java Vuser runner sidecar could not register classpath asset dir %q: %v", operator.ClasspathAssetDir, err)
 		}
 	}
-	runner := javasidecar.NewServer(javasidecar.ServerOptions{Operator: operator})
+	runner := javasidecar.NewServer(options)
 	server := &http.Server{
 		Handler:           runner,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -76,4 +84,21 @@ func main() {
 	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Java Vuser runner sidecar stopped: %v", err)
 	}
+}
+
+// Pilot configuration is supplied solely by the operator environment, never DSL.
+func runnerServerOptions(ctx context.Context, operator config.JavaVuserOperatorConfig, manifest string) (javasidecar.ServerOptions, error) {
+	options := javasidecar.ServerOptions{Operator: operator}
+	if manifest == "" {
+		return options, nil
+	}
+	if runtime.GOOS != "linux" || !operator.Enabled || operator.AuthToken == "" {
+		return options, javasidecar.ErrPooledPilotManifest
+	}
+	pilot, err := javasidecar.LoadPooledPilotManifest(ctx, manifest, operator.MaxProcesses)
+	if err != nil {
+		return options, err
+	}
+	options.PooledControlProfiles, options.HostAdmission = pilot.Profiles, pilot.Admission
+	return options, nil
 }

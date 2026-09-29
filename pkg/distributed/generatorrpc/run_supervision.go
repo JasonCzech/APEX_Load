@@ -478,7 +478,7 @@ func (s *Service) retainRunSupervisionDrainLocked(testID string, assignment assi
 		}
 		lease.state = pb.RunSupervisionState_RUN_SUPERVISION_STATE_STOPPING
 	}
-	s.runSupervisionDrainingVUsers += int64(assignment.vuserCount)
+	s.runSupervisionDrainingVUsers += int64(reservedAssignmentVUsers(assignment))
 }
 
 func (s *Service) releaseRunSupervisionDrain(stop detachedFencedTest) {

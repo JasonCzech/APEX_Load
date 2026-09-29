@@ -1,0 +1,58 @@
+# Explicit one-time initialization of a genuinely new, empty authority.
+# Not included in kustomization.yaml. Never replace missing quarantine this way.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: java-broker-initialize
+  namespace: apexload-java-broker
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 60
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apexload-java-broker-bootstrap
+    spec:
+      restartPolicy: Never
+      serviceAccountName: java-broker
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: initialize
+          image: example.invalid/apexload-java-host-broker@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          args: [--config, /config/broker.json, --initialize-store-only]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: config
+              mountPath: /config
+              readOnly: true
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: java-broker-state
+        - name: config
+          secret:
+            secretName: java-broker-config
+            defaultMode: 0440

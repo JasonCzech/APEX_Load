@@ -68,15 +68,17 @@ func teardownContext() (context.Context, context.CancelFunc) {
 // place.
 func runProtocolTeardown(p interface {
 	Teardown(context.Context) error
-}, providers ...func() *RedactionConfig) {
+}, providers ...func() *RedactionConfig) error {
 	if p == nil {
-		return
+		return nil
 	}
 	ctx, cancel := teardownContext()
 	defer cancel()
-	if err := callProtocolTeardown(ctx, p, currentRedactionConfig(providers...)); err != nil {
+	err := callProtocolTeardown(ctx, p, currentRedactionConfig(providers...))
+	if err != nil {
 		slog.Warn("protocol teardown failed", "error", err)
 	}
+	return err
 }
 
 func callProtocolTeardown(ctx context.Context, p interface {

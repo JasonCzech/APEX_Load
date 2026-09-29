@@ -540,6 +540,7 @@ func (tr *TestRunner) distributedJavaVuserGroupRunnerAvailableLocked(backend *di
 			CompatibleFeatures: append([]string(nil), entry.CompatibleFeatures...),
 			AvailableCapacity:  entry.AvailableCapacity,
 			RuntimeCapacities:  cloneProtocolRuntimeCapacities(entry.RuntimeCapacities),
+			JavaHost:           cloneJavaHostCapabilitySummary(entry.JavaHost),
 		}
 	}
 	if len(liveTargets) == 0 {
@@ -613,6 +614,7 @@ func generatorInventoryHasJavaVuserPersistentLifecycle(entry GeneratorInventoryE
 	snapshot := generatorLoadSnapshot{
 		CompatibleFeatures: append([]string(nil), entry.CompatibleFeatures...),
 		RuntimeCapacities:  cloneProtocolRuntimeCapacities(entry.RuntimeCapacities),
+		JavaHost:           cloneJavaHostCapabilitySummary(entry.JavaHost),
 	}
 	available, capacityAdvertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser")
 	occupied, occupancyAdvertised := protocolRuntimeOccupancyMode(snapshot, "java_vuser")

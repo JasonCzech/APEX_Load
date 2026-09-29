@@ -894,15 +894,16 @@ func TestMetricsCollector_BySOAPOperationAggregatesLiveMetrics(t *testing.T) {
 
 func TestMetricsCollector_PercentilesViaTDigest(t *testing.T) {
 	mc := NewMetricsCollector(100)
-	mc.Start(50 * time.Millisecond)
-	defer mc.Stop()
 
 	// Feed 100 business transactions with durations 1ms..100ms
 	for i := 1; i <= 100; i++ {
 		mc.RecordTransaction("test", time.Duration(i)*time.Millisecond, true, "")
 	}
 
-	time.Sleep(150 * time.Millisecond)
+	// Publish the complete sample as one window and wait for aggregation to
+	// finish; a fixed sleep can observe no snapshot on a busy host.
+	mc.Start(time.Hour)
+	mc.Stop()
 
 	snap, ok := mc.LatestSnapshot()
 	if !ok {

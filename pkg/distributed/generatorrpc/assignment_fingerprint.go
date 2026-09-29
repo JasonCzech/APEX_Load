@@ -26,6 +26,19 @@ func workAssignmentFingerprint(assignment *pb.WorkAssignment) [sha256.Size]byte 
 		return fingerprintDigest(h)
 	}
 	fingerprintWriteBool(h, true)
+	placement := assignment.GetJavaHost()
+	fingerprintWriteBool(h, placement != nil)
+	if placement != nil {
+		fingerprintWriteString(h, placement.Contract)
+		fingerprintWriteString(h, placement.ScriptSha256)
+		fingerprintWriteString(h, placement.ProfileId)
+		fingerprintWriteString(h, placement.ConfigurationSha256)
+		fingerprintWriteString(h, placement.PolicySha256)
+		fingerprintWriteString(h, placement.FacadeResourcesSha256)
+		fingerprintWriteUint64(h, uint64(placement.PreparedVusers))
+		fingerprintWriteUint64(h, uint64(placement.PreparationMs))
+		fingerprintWriteUint64(h, uint64(placement.RunLifetimeMs))
+	}
 	fingerprintWriteString(h, SourcePlanDigest(assignment.GetSourcePlan()))
 	fingerprintWriteString(h, assignment.GetTestId())
 	fingerprintWriteString(h, assignment.GetTerminationMode())

@@ -59,18 +59,23 @@ const (
 // contention. Call MetricsSnapshot() periodically (e.g., every second) to
 // extract aggregated metrics during or after a run.
 type Engine struct {
-	script          *dsl.Script
-	vusers          int
-	duration        time.Duration
-	terminationMode string
-	rampUp          time.Duration
-	metrics         *MetricsCollector
-	data            *DataProvider
-	mu              sync.Mutex // guards cancel
-	cancel          context.CancelFunc
-	softStop        context.CancelFunc
-	secrets         SecretResolver
-	redaction       *RedactionConfig
+	pooledPilot        *javaPooledPilot
+	brokerExecution    *javaBrokerExecution
+	evidenceSchedule   []VUserLifetime
+	evidenceStarted    func(time.Time)
+	completionObserver func(int, bool)
+	script             *dsl.Script
+	vusers             int
+	duration           time.Duration
+	terminationMode    string
+	rampUp             time.Duration
+	metrics            *MetricsCollector
+	data               *DataProvider
+	mu                 sync.Mutex // guards cancel
+	cancel             context.CancelFunc
+	softStop           context.CancelFunc
+	secrets            SecretResolver
+	redaction          *RedactionConfig
 	// importedCredentials is the run's single retained-credential locator walk.
 	// Every VUser this engine creates is handed it; see
 	// runtimeSecretValuesForScript.
@@ -84,20 +89,36 @@ type Engine struct {
 
 // Config contains configuration for Engine creation.
 type Config struct {
-	TerminationMode string
-	Script          *dsl.Script   // Test script (required)
-	VUsers          int           // Number of virtual users (required, > 0)
-	Duration        time.Duration // Total test duration (required, > 0)
-	RampUp          time.Duration // Ramp-up period (can be 0 for immediate start)
-	SecretResolver  SecretResolver
+	// EvidenceSchedule is trusted benchmark wiring, never DSL/API configuration.
+	EvidenceSchedule []VUserLifetime
+	// EvidenceStarted receives the schedule's clock origin; callbacks must return promptly.
+	EvidenceStarted func(time.Time)
+	// CompletionObserver runs after protocol cleanup, once per started VUser.
+	CompletionObserver func(int, bool)
+	TerminationMode    string
+	Script             *dsl.Script   // Test script (required)
+	VUsers             int           // Number of virtual users (required, > 0)
+	Duration           time.Duration // Total test duration (required, > 0)
+	RampUp             time.Duration // Ramp-up period (can be 0 for immediate start)
+	SecretResolver     SecretResolver
+	// TimingObserver receives value-free result timings from the metrics consumer.
+	// It must return promptly. It is intended for controlled evidence collection,
+	// is never exposed through script configuration, and is nil in normal runs.
+	TimingObserver func(ResultTiming)
+	// InitializationObserver runs after a VUser completes its init phase. Calls
+	// may be concurrent; the observer must return promptly. Benchmark use only.
+	InitializationObserver func(int)
 }
 
 // RunResult contains final test results after execution completes.
 type RunResult struct {
-	Duration          time.Duration   // Actual test duration
-	TotalTransactions int64           // Total completed transactions across all VUsers
-	TotalErrors       int64           // Total failed transactions
-	FinalSnapshot     MetricsSnapshot // Aggregated metrics at end of run
+	CompletedIterations int64
+	TeardownErrors      int64           // Protocol cleanup failures; never inferred from log output.
+	DroppedResults      int64           // Evidence is incomplete when this is nonzero.
+	Duration            time.Duration   // Actual test duration
+	TotalTransactions   int64           // Total completed transactions across all VUsers
+	TotalErrors         int64           // Total failed transactions
+	FinalSnapshot       MetricsSnapshot // Aggregated metrics at end of run
 }
 
 // New creates a new Engine with the given config.
@@ -131,6 +152,9 @@ func New(cfg Config) (*Engine, error) {
 		return nil, fmt.Errorf("vusers must not exceed %d", MaxEngineVUsers)
 	}
 	if err := dsl.ValidateTermination(cfg.TerminationMode, cfg.Duration, cfg.Script); err != nil {
+		return nil, err
+	}
+	if err := validateEvidenceSchedule(cfg); err != nil {
 		return nil, err
 	}
 	dataProvider, err := NewDataProvider(cfg.Script.DataSources)
@@ -169,13 +193,18 @@ func New(cfg Config) (*Engine, error) {
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("script", cfg.Script.Name)
 	}
+	metrics := NewMetricsCollector(10000)
+	metrics.timingObserver = cfg.TimingObserver
+	metrics.initializationObserver = cfg.InitializationObserver
 	return &Engine{
+		evidenceSchedule: append([]VUserLifetime(nil), cfg.EvidenceSchedule...),
+		evidenceStarted:  cfg.EvidenceStarted, completionObserver: cfg.CompletionObserver,
 		script:              cfg.Script,
 		vusers:              cfg.VUsers,
 		duration:            cfg.Duration,
 		terminationMode:     cfg.TerminationMode,
 		rampUp:              cfg.RampUp,
-		metrics:             NewMetricsCollector(10000),
+		metrics:             metrics,
 		data:                dataProvider,
 		secrets:             secretResolver,
 		redaction:           redactionConfig,
@@ -184,6 +213,14 @@ func New(cfg Config) (*Engine, error) {
 }
 
 func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
+	// Reject reuse before touching shared state or installing cleanup for a run
+	// that may already be active. Pilot slots are permanently bound and single-use.
+	if e.pooledPilot != nil && !e.pooledPilot.used.CompareAndSwap(false, true) {
+		return nil, errors.New("pooled_pilot_already_used")
+	}
+	if e.brokerExecution != nil && !e.brokerExecution.used.CompareAndSwap(false, true) {
+		return nil, errors.New("java_broker_already_used")
+	}
 	// Re-check durable import gates at the actual execution boundary. Engine
 	// construction and execution are intentionally separate, and callers retain
 	// the Script pointer, so a draft can acquire a blocker after New returns.
@@ -205,6 +242,30 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		return nil, sourceErr
 	}
 	defer func() { runErr = errors.Join(runErr, e.sourceSamplers.close()) }()
+	if e.pooledPilot != nil {
+		lifetime, stopLifetime := context.WithCancel(ctx)
+		defer stopLifetime()
+		e.mu.Lock()
+		e.cancel = stopLifetime
+		e.mu.Unlock()
+		defer func() { runErr = errors.Join(runErr, e.pooledPilot.finish()) }()
+		if err := e.pooledPilot.stage(lifetime, stopLifetime, e); err != nil {
+			return nil, err
+		}
+		ctx = lifetime
+	}
+	if e.brokerExecution != nil {
+		lifetime, stop := context.WithCancel(ctx)
+		defer stop()
+		e.mu.Lock()
+		e.cancel = stop
+		e.mu.Unlock()
+		defer func() { runErr = errors.Join(runErr, e.brokerExecution.finish()) }()
+		if err := e.brokerExecution.stage(lifetime, stop, e); err != nil {
+			return nil, err
+		}
+		ctx = lifetime
+	}
 	var cancel context.CancelFunc
 	if e.terminationMode == dsl.TerminationIterations {
 		ctx, cancel = context.WithCancel(ctx)
@@ -216,7 +277,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	e.mu.Unlock()
 	defer cancel()
 
-	proto, err := protocol.Get(e.script.Protocol)
+	proto, err := e.vuserProtocol(0)
 	if err != nil {
 		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
 	}
@@ -226,12 +287,12 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	javaCapacityPlan := NewJavaVuserCapacityPlan(e.script)
 	var javaCapacityReservation *javaVuserCapacityReservation
 	var javaLegacyReservation *javaVuserLegacyRunReservation
-	if javaCapacityPlan.RequiresPersistentLifecycle() {
+	if e.pooledPilot == nil && e.brokerExecution == nil && javaCapacityPlan.RequiresPersistentLifecycle() {
 		javaCapacityReservation, err = reserveJavaVuserCapacity(javaCapacityPlan.Demand(e.vusers), e.javaVuserCapacityLimit)
 		if err != nil {
 			return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
 		}
-	} else if javaVuserScriptUsesLegacyOneShot(e.script) {
+	} else if e.pooledPilot == nil && e.brokerExecution == nil && javaVuserScriptUsesLegacyOneShot(e.script) {
 		javaLegacyReservation, err = reserveLegacyJavaVuserRun()
 		if err != nil {
 			return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
@@ -334,6 +395,10 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	}()
 
 	start := time.Now()
+	if e.evidenceStarted != nil {
+		e.evidenceStarted(start)
+	}
+	var teardownErrors atomic.Int64
 	var wg sync.WaitGroup
 	var activeVUsers atomic.Int64
 	rendezvous := NewRendezvousCoordinator()
@@ -346,14 +411,24 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			break
 		}
 
-		if i > 0 && rampDelay > 0 && !sleepContext(loopCtx, rampDelay) {
+		delay := rampDelay
+		if len(e.evidenceSchedule) > 0 {
+			delay = time.Until(start.Add(e.evidenceSchedule[i].StartAfter))
+		} else if i == 0 {
+			delay = 0
+		}
+		if delay > 0 && !sleepContext(loopCtx, delay) {
+			break
+		}
+		if len(e.evidenceSchedule) > 0 && !time.Now().Before(start.Add(e.evidenceSchedule[i].StopAfter)) {
+			startupErr = errors.New("evidence VUser admission missed its lifetime")
 			break
 		}
 
 		wg.Add(1)
 		vuserID := i
 
-		vuProto, err := protocol.Get(e.script.Protocol)
+		vuProto, err := e.vuserProtocol(vuserID)
 		if err != nil {
 			safeErr := scrubSensitiveError(err, e.redaction)
 			slog.Error("failed to create protocol for vuser", "vuser", vuserID, "err", safeErr)
@@ -395,7 +470,24 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 			}
 			defer recoverVUserGoroutine(vuserID, redaction)
 			defer wg.Done()
-			defer runProtocolTeardown(vuProto, redaction)
+			defer func() {
+				err := runProtocolTeardown(vuProto, redaction)
+				if err != nil {
+					teardownErrors.Add(1)
+				}
+				if e.completionObserver != nil {
+					e.completionObserver(vuserID, err == nil)
+				}
+			}()
+			userLoop, userBoundary := loopCtx, boundaryCtx
+			if len(e.evidenceSchedule) > 0 {
+				var stopLoop, stopBoundary context.CancelFunc
+				deadline := start.Add(e.evidenceSchedule[vuserID].StopAfter)
+				userLoop, stopLoop = context.WithDeadline(loopCtx, deadline)
+				userBoundary, stopBoundary = context.WithDeadline(boundaryCtx, deadline)
+				defer stopLoop()
+				defer stopBoundary()
+			}
 			defer func() { e.metrics.SetActiveVUsers(activeVUsers.Add(-1)) }()
 
 			vu = &VUser{
@@ -414,10 +506,10 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 				Rendezvous:                   rendezvous,
 				ExecutionGoals:               executionGoals,
 				HardStopCtx:                  ctx,
-				ActionBoundaryCtx:            boundaryCtx,
+				ActionBoundaryCtx:            userBoundary,
 				DataProvider:                 e.data,
 			}
-			vu.Run(loopCtx)
+			vu.Run(userLoop)
 		}()
 	}
 	if startupErr != nil {
@@ -431,9 +523,12 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 	e.metrics.Stop()
 
 	result := &RunResult{
-		Duration:          elapsed,
-		TotalTransactions: e.metrics.TotalTransactions(),
-		TotalErrors:       e.metrics.TotalErrors(),
+		CompletedIterations: e.metrics.CompletedIterations(),
+		TeardownErrors:      teardownErrors.Load(),
+		DroppedResults:      e.metrics.current.droppedResults.Load(),
+		Duration:            elapsed,
+		TotalTransactions:   e.metrics.TotalTransactions(),
+		TotalErrors:         e.metrics.TotalErrors(),
 	}
 	if snap, ok := e.metrics.LatestSnapshot(); ok {
 		result.FinalSnapshot = snap
@@ -451,7 +546,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 // lifecycle scripts pin one JVM per live VUser, so direct launches must reserve
 // the advertised persistent-runner capacity before any VUser starts.
 func (e *Engine) validateJavaVuserRuntime(ctx context.Context, instance protocol.Protocol) error {
-	if e == nil || e.script == nil || !strings.EqualFold(strings.TrimSpace(e.script.Protocol), "java_vuser") {
+	if e == nil || e.pooledPilot != nil || e.brokerExecution != nil || e.script == nil || !strings.EqualFold(strings.TrimSpace(e.script.Protocol), "java_vuser") {
 		return nil
 	}
 	plan := NewJavaVuserCapacityPlan(e.script)

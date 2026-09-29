@@ -24,6 +24,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/javasidecar"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc"
@@ -65,6 +66,8 @@ type assignedTest struct {
 	groupAssignments                map[string][sha256.Size]byte
 	groupSecretBundleIDs            map[string]string
 	groupScripts                    map[string]string
+	groupJavaHosts                  map[string]string
+	groupJavaHostPrepared           map[string]int32
 	terminalError                   string
 }
 
@@ -85,6 +88,7 @@ const (
 type ServiceOption func(*Service)
 
 type groupExecution struct {
+	javaHost            bool
 	owner               *sourcePlanExecution
 	stagedConfig        *engine.MultiGroupConfig
 	groupName           string
@@ -145,6 +149,9 @@ func validateGeneratorFieldBytes(value string, field string, limit int) error {
 }
 
 func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
+	if err := validateJavaHostSelection(assignment); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
 	if err := validateGeneratorFieldBytes(assignment.GetGroupName(), "group_name", maxGeneratorGroupNameBytes); err != nil {
 		return err
 	}
@@ -634,6 +641,8 @@ func (b *transactionBuffer) drainWindow(advanceEmpty bool) ([]TransactionMetric,
 }
 
 type Service struct {
+	javaHostRuntime   *javasidecar.BrokerRuntime
+	javaHostApprovals map[string]JavaHostApproval
 	pb.UnimplementedGeneratorControlServer
 
 	mu          sync.RWMutex
@@ -1058,6 +1067,10 @@ func stopGroupExecution(execution *groupExecution) {
 		return
 	}
 	execution.stopOnce.Do(func() {
+		if execution.javaHost && execution.engine != nil {
+			execution.engine.Stop()
+		}
+
 		if execution.cancel != nil {
 			execution.cancel()
 			return
@@ -1065,6 +1078,17 @@ func stopGroupExecution(execution *groupExecution) {
 		// A staged execution has no goroutines that could close done. Closing it at
 		// detach time preserves the reuse/fencing barrier without ever starting the
 		// engine merely to tear it down.
+		if execution.javaHost && execution.engine != nil {
+			go func() {
+				_ = execution.engine.ClosePreparedRuntime()
+				execution.stagedDoneOnce.Do(func() {
+					if execution.done != nil {
+						close(execution.done)
+					}
+				})
+			}()
+			return
+		}
 		execution.stagedDoneOnce.Do(func() {
 			if execution.done != nil {
 				close(execution.done)
@@ -1361,10 +1385,15 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		)
 		activeTestIDs := s.activeTestIDs()
 		compatibleFeatures = append(compatibleFeatures, FeaturePodCapacityV1, FeaturePodCapacityStandbyV1, FeatureIterationTerminationV1, FeatureSourcePlanV1)
+		javaHosts := s.javaHostCapabilities()
+		if javaHosts != nil {
+			compatibleFeatures = append(compatibleFeatures, FeatureJavaHostBrokerV1, FeatureJavaHostPreparedPopulationV1)
+		}
 		lastSafetyExit, safetyExits := s.safetyExitEvidenceProto()
 		generatorNow := time.Now()
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:                    s.generatorID,
+			JavaHost:                       javaHosts,
 			PodCapacity:                    podCapacity,
 			TimestampUnixMs:                generatorNow.UnixMilli(),
 			TimestampUnixNano:              generatorNow.UnixNano(),
@@ -1647,7 +1676,7 @@ func (s *Service) availableCapacityLocked() int32 {
 	if s.lifecycleCoordinator != nil {
 		reserved = s.lifecycleCoordinator.pendingVUsersLocked()
 	}
-	available := int64(s.maxVUsers) - s.activeVUsers64Locked() - reserved
+	available := int64(s.maxVUsers) - s.capacityVUsers64Locked() - reserved
 	if available <= 0 {
 		return 0
 	}

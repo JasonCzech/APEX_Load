@@ -34,3 +34,11 @@ describe('validateGeneratorAssignment', () => {
   })
 
 })
+
+it('validates Java profile scope and bounded deadlines', () => {
+  const java_host = { profile_id: 'approved', preparation_ms: 120000, run_lifetime_ms: 3600000 }
+  expect(validateGeneratorAssignment({ java_host }, 'group', 'Java')).toBeUndefined()
+  expect(validateGeneratorAssignment({ java_host }, 'scenario', 'Java')).toContain('per group')
+  expect(validateGeneratorAssignment({ java_host: { ...java_host, preparation_ms: 0 } }, 'group', 'Java')).toContain('positive')
+  expect(validateGeneratorAssignment({ java_host: { ...java_host, run_lifetime_ms: 86400001 } }, 'group', 'Java')).toContain('24 hours')
+})

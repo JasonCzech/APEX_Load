@@ -6,6 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Base64;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Deque;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,6 +15,29 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class lr {
+	private static volatile Map<String, String> slotContext = Collections.emptyMap();
+	private static volatile boolean slotBound;
+
+	// Only the pooled host calls this, before loading any user class. Dedicated
+	// execution retains the existing process environment/property behavior.
+	public static synchronized void __apexload_bind_slot(Map<String, String> context) {
+		if (slotBound || context == null) throw new IllegalStateException("slot context already bound or missing");
+		Map<String, String> values = new HashMap<String, String>();
+		for (Map.Entry<String, String> entry : context.entrySet()) {
+			String name = entry.getKey();
+			if (!("APEXLOAD_VUSER_ID".equals(name) || "APEXLOAD_GROUP_NAME".equals(name)
+				|| "APEXLOAD_SCENARIO_ID".equals(name) || "APEXLOAD_IGNORE_THINK_TIME".equals(name)
+				|| "APEXLOAD_THINK_TIME_LIMIT_MS".equals(name) || "APEXLOAD_JAVA_VUSER_EVENT_FILE".equals(name))
+				|| entry.getValue() == null) throw new IllegalArgumentException("unsupported slot setting");
+			values.put(name, entry.getValue());
+		}
+		slotContext = Collections.unmodifiableMap(values);
+		slotBound = true;
+	}
+
+	private static String setting(String name) {
+		return slotBound ? slotContext.get(name) : System.getenv(name);
+	}
     public static final int PASS = 0;
     public static final int FAIL = 1;
     public static final int AUTO = 2;
@@ -49,8 +74,13 @@ public final class lr {
     // transaction timestamps within that exact representable range.
     private static final long MAX_TRANSACTION_DURATION_MS = Long.MAX_VALUE / 1_000_000L;
     private static volatile String currentRequestId = "";
+    private static volatile Thread slotInvocationThread;
+    private static volatile boolean slotInvocationActive;
+    private static volatile boolean slotAttributionFailed;
     private static volatile boolean eventFallbackUsed;
     private static volatile boolean eventCaptureTruncated;
+
+    public static String __apexload_event_attribution_contract() { return "slot_thread_v1"; }
 
     private lr() {
     }
@@ -69,6 +99,11 @@ public final class lr {
     // LR_AUTO error state are invocation-local and must not leak to the next
     // iteration.
     public static void __apexload_begin_invocation(String requestId, Map<String, String> values) {
+        if (slotBound) {
+            if (slotAttributionFailed) throw new IllegalStateException("pooled_event_attribution_failed");
+            slotInvocationThread = Thread.currentThread();
+            slotInvocationActive = true;
+        }
         timers.clear();
         openTransactions.clear();
         errorCount.set(0L);
@@ -84,19 +119,24 @@ public final class lr {
     // an explicit failed terminal event prevents an incomplete Java action from
     // being reported as a successful business transaction.
     public static void __apexload_end_invocation() {
-        TransactionState transaction;
-        while ((transaction = openTransactions.poll()) != null) {
-            long endedAt = System.currentTimeMillis();
-            emitTransactionAt(
-                    endedAt,
-                    "transaction_unmatched",
-                    transaction.name,
-                    Integer.toString(FAIL),
-                    transaction.id,
-                    transaction.parentId,
-                    transactionRawDurationMillis(transaction, endedAt),
-                    transaction.thinkTimeMillis,
-                    transaction.wastedTimeMillis);
+        try {
+            TransactionState transaction;
+            while ((transaction = openTransactions.poll()) != null) {
+                long endedAt = System.currentTimeMillis();
+                emitTransactionAt(
+                        endedAt,
+                        "transaction_unmatched",
+                        transaction.name,
+                        Integer.toString(FAIL),
+                        transaction.id,
+                        transaction.parentId,
+                        transactionRawDurationMillis(transaction, endedAt),
+                        transaction.thinkTimeMillis,
+                        transaction.wastedTimeMillis);
+            }
+            if (slotBound && slotAttributionFailed) throw new IllegalStateException("pooled_event_attribution_failed");
+        } finally {
+            if (slotBound) slotInvocationActive = false;
         }
     }
 
@@ -359,7 +399,7 @@ public final class lr {
     }
 
     public static String get_group_name(Object... args) {
-        return defaultString(System.getenv("APEXLOAD_GROUP_NAME"), "java_vuser");
+        return defaultString(setting("APEXLOAD_GROUP_NAME"), "java_vuser");
     }
 
     public static String get_host_name(Object... args) {
@@ -375,7 +415,7 @@ public final class lr {
     }
 
     public static String get_scenario_id(Object... args) {
-        return defaultString(System.getenv("APEXLOAD_SCENARIO_ID"), "scenario");
+        return defaultString(setting("APEXLOAD_SCENARIO_ID"), "scenario");
     }
 
     public static double get_transaction_duration(Object... args) {
@@ -949,7 +989,7 @@ public final class lr {
     }
 
     private static boolean boolFromEnv(String name) {
-        String raw = System.getenv(name);
+        String raw = setting(name);
         if (raw == null) {
             return false;
         }
@@ -974,7 +1014,7 @@ public final class lr {
 
     private static int intFromEnv(String name, int fallback) {
         try {
-            return Integer.parseInt(defaultString(System.getenv(name), Integer.toString(fallback)).trim());
+            return Integer.parseInt(defaultString(setting(name), Integer.toString(fallback)).trim());
         } catch (NumberFormatException ex) {
             return fallback;
         }
@@ -1047,12 +1087,14 @@ public final class lr {
                                     String transactionId, String parentTransactionId,
                                     long durationMs, long rawDurationMs,
                                     long thinkTimeMs, long wastedTimeMs) {
+        boolean attributed = !slotBound || (slotInvocationActive && Thread.currentThread() == slotInvocationThread);
+        if (!attributed) slotAttributionFailed = true;
         long sequence = eventSequence.incrementAndGet();
         type = boundedEventField(type, MAX_EVENT_TYPE_CHARS);
         name = boundedEventField(name, MAX_EVENT_NAME_CHARS);
         message = boundedEventField(message, MAX_EVENT_MESSAGE_CHARS);
         String json = "{\"contract\":\"" + EVENT_CONTRACT
-                + "\",\"request_id\":\"" + escape(currentRequestId)
+                + "\",\"request_id\":\"" + escape(attributed ? currentRequestId : "")
                 + "\",\"timestamp_ms\":" + timestampMs
                 + ",\"sequence\":" + sequence
                 + ",\"type\":\"" + escape(type)
@@ -1067,6 +1109,12 @@ public final class lr {
                 + (thinkTimeMs < 0L ? "" : ",\"think_time_ms\":" + thinkTimeMs)
                 + (wastedTimeMs < 0L ? "" : ",\"wasted_time_ms\":" + wastedTimeMs)
                 + "}";
+        if (!attributed) {
+            // Shared executors, child threads, and late work are host diagnostics.
+            // Never credit them to the slot's current invocation.
+            System.err.println(json);
+            return;
+        }
         String eventFile = eventFilePath();
         if (!eventFile.isEmpty()) {
             try {
@@ -1099,6 +1147,8 @@ public final class lr {
     }
 
     private static String eventFilePath() {
+		String slotValue = slotContext.get("APEXLOAD_JAVA_VUSER_EVENT_FILE");
+		if (slotBound) return slotValue == null ? "" : slotValue.trim();
         String value = System.getProperty("apexload.java_vuser.event_file");
         if (value == null || value.trim().isEmpty()) {
             value = System.getenv("APEXLOAD_JAVA_VUSER_EVENT_FILE");

@@ -41,9 +41,12 @@ type persistentEnvelope struct {
 }
 
 type persistentSession struct {
-	invokeMu sync.Mutex
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
+	readyNonce string
+	readyDone  chan struct{}
+	readyOnce  sync.Once
+	invokeMu   sync.Mutex
+	cmd        *exec.Cmd
+	stdin      io.WriteCloser
 
 	responses  chan persistentEnvelope
 	waitDone   chan struct{}
@@ -130,6 +133,7 @@ func (s *Server) startPersistentSession(
 		return nil, &safeFailure{code: "target_method_invalid"}
 	}
 	plan, err := javarunner.BuildCommand(javarunner.CommandSpec{
+		OperatorCDSManifest: s.operator.CDSManifest, ResolvedJDK: &prepared.jdk,
 		VMParameters: prepared.vmParameters, JavaMajor: prepared.jdk.Major, VMFamily: prepared.jdk.VMFamily, HarnessJar: prepared.harnessJar,
 		ScriptClasspath: prepared.scriptClasspath, SharedClasspath: prepared.sharedClasspath,
 		DedicatedClassLoader: prepared.dedicatedLoader, HarnessMain: defaultHarnessMain,
@@ -137,6 +141,9 @@ func (s *Server) startPersistentSession(
 	})
 	if err != nil {
 		return nil, &safeFailure{code: "harness_configuration_invalid"}
+	}
+	if s.persistentReadyNonce != "" {
+		plan.Args = append(plan.Args, "--host-ready-nonce", s.persistentReadyNonce)
 	}
 	sessionSecret, secretErr := newPersistentSessionSecret()
 	if secretErr != nil {
@@ -160,6 +167,7 @@ func (s *Server) startPersistentSession(
 		return nil, failure
 	}
 	session := &persistentSession{
+		readyNonce: s.persistentReadyNonce, readyDone: make(chan struct{}), killFunc: s.persistentKill,
 		responses: make(chan persistentEnvelope, 8), waitDone: make(chan struct{}),
 		stdoutDone: make(chan struct{}), stderrDone: make(chan struct{}),
 		sessionSecret: sessionSecret,
@@ -290,6 +298,10 @@ func (s *persistentSession) readStdout(stdout io.Reader) {
 	scanner.Buffer(make([]byte, 64<<10), maxPersistentFrameBytes)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if s.readyNonce != "" && line == "APEXLOAD_JAVA_HOST_READY_V1 "+s.readyNonce {
+			s.readyOnce.Do(func() { close(s.readyDone) })
+			continue
+		}
 		if !strings.HasPrefix(line, harnessSessionPrefix) {
 			_, _ = s.stdoutNoise.Write(append([]byte(line), '\n'))
 			continue

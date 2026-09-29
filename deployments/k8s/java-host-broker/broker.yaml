@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-host-broker
+  namespace: apexload-java-broker
+spec:
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apexload-java-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: apexload-java-broker
+    spec:
+      serviceAccountName: java-broker
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/os: linux
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: broker
+          # Replace with the built, reviewed broker image's immutable digest.
+          image: example.invalid/apexload-java-host-broker@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          args: [--config, /config/broker.json]
+          ports:
+            - name: control
+              containerPort: 9444
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: state
+              mountPath: /state
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: server-tls
+              mountPath: /server
+              readOnly: true
+            - name: control-tls
+              mountPath: /control
+              readOnly: true
+            - name: issuer
+              mountPath: /issuer
+              readOnly: true
+            - name: attestor-ca
+              mountPath: /attestor
+              readOnly: true
+            - name: kubernetes
+              mountPath: /kubernetes
+              readOnly: true
+      volumes:
+        # Existing, initialized authority. No emptyDir or automatic replacement.
+        - name: state
+          persistentVolumeClaim:
+            claimName: java-broker-state
+        - name: config
+          secret:
+            secretName: java-broker-config
+            defaultMode: 0440
+        - name: server-tls
+          secret:
+            secretName: java-broker-server-tls
+            defaultMode: 0440
+        - name: control-tls
+          secret:
+            secretName: java-broker-control-tls
+            defaultMode: 0440
+        - name: issuer
+          secret:
+            secretName: java-broker-host-issuer
+            defaultMode: 0440
+        - name: attestor-ca
+          secret:
+            secretName: java-broker-attestor-ca
+            defaultMode: 0440
+        - name: kubernetes
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-host-broker
+  namespace: apexload-java-broker
+spec:
+  selector:
+    app.kubernetes.io/name: apexload-java-broker
+  ports:
+    - name: control
+      port: 9444
+      targetPort: control

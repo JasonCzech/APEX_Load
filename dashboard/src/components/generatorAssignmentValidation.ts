@@ -31,6 +31,18 @@ export function validateGeneratorAssignment(
     return `${label}: recovery spare reservations require generator-loss tolerance with automatic or specific-host placement at scenario scope.`
   }
 
+  if (assignment.java_host) {
+    const profile = assignment.java_host
+    if (scope !== 'group') return `${label}: Java execution profiles are selected per group.`
+    if (!profile.profile_id.trim() || profile.profile_id !== profile.profile_id.trim() || profile.profile_id.length > 128) return `${label}: select an operator-approved Java profile.`
+    if (!isPositiveSafeInteger(profile.preparation_ms) || profile.preparation_ms > 3600000
+      || !isPositiveSafeInteger(profile.run_lifetime_ms) || profile.run_lifetime_ms > 86400000) return `${label}: Java preparation and lifetime limits must be positive and within one hour and 24 hours respectively.`
+  }
+
+  if (assignment.mode === 'inherit' && (scope !== 'group' || !assignment.java_host)) {
+    return `${label}: inherited placement requires a group Java execution profile.`
+  }
+
   if (scope === 'group') {
     if (assignment.mode === 'region_weighted' || assignment.mode === 'load_zone_weighted') {
       return `${label}: weighted placement is supported only at scenario scope. Choose inherit, automatic, specific hosts, or required capabilities.`

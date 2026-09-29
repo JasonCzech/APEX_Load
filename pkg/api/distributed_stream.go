@@ -2042,6 +2042,7 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	snapshot.SupportedProtocols = normalizedProtocolList(response.SupportedProtocols)
 	snapshot.CompatibleFeatures = normalizedProtocolList(response.CompatibleFeatures)
 	snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(response.RuntimeCapacities)
+	snapshot.JavaHost = javaHostCapabilitySummary(response.JavaHost, response.CompatibleFeatures)
 	snapshot.RunSupervisionExpirationsTotal = response.RunSupervisionExpirationsTotal
 	snapshot.RunSupervisionEscalationsTotal = response.RunSupervisionEscalationsTotal
 	snapshot.LastSafetyExit = cloneRemoteGeneratorSafetyExitEvidence(response.LastSafetyExit)

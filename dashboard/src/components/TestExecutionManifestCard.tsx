@@ -121,6 +121,17 @@ function shardSummary(shards?: GeneratorShardSummary[]): string {
   return `${shards.length} shard${shards.length === 1 ? '' : 's'} / ${vusers} VUsers`
 }
 
+function renderJavaHostPlacement(shard: GeneratorShardSummary) {
+  const host = shard.java_host
+  if (!host) return null
+  return renderDefinitions([
+    ['Java execution', `${host.mode} · ${host.containment} · ${host.profile.profile_id}`],
+    ['Host / VUser ceilings', `${host.max_hosts} / ${host.max_vusers}`],
+    ['Reservation', host.reservation_id || 'Pending'],
+    ...(host.prepared_vusers ? [['Prepared / admitted sessions', `${host.prepared_vusers} / ${host.admitted_vusers || 0}`] as DefinitionEntry] : []),
+  ])
+}
+
 export default function TestExecutionManifestCard({ manifest, error, loading, onReload, compact = false }: Props) {
   const [copyStatus, setCopyStatus] = useState('')
   const [downloadError, setDownloadError] = useState('')
@@ -226,6 +237,13 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
       </div>
 
       {compact ? <>
+        {(manifest.load_generators.generator_shards || []).some(shard => shard.java_host) && <section className="manifest-section" aria-label="Java host reservations">
+          <h4>Java host reservations</h4>
+          {(manifest.load_generators.generator_shards || []).filter(shard => shard.java_host).map(shard => <div key={`${shard.group}-${shard.target}`}>
+            <strong>{shard.group} · {shard.target}</strong>
+            {renderJavaHostPlacement(shard)}
+          </div>)}
+        </section>}
         <div className="manifest-section">
           <h4>Initial versus current configuration</h4>
           {configurationChanges.length > 0 ? renderDefinitions(configurationChanges.map(([label, initial, current]) => [label, `${formatValue(initial)} → ${formatValue(current)}`])) : <p className="empty-hint">No runtime configuration changes have been recorded.</p>}
@@ -344,7 +362,7 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
               {(manifest.load_generators.generator_shards || []).map((shard, index) => (
                 <tr key={`${shard.group}-${shard.target}-${index}`}>
                   <td>{shard.group}</td>
-                  <td>{shard.target}</td>
+                  <td>{shard.target}{renderJavaHostPlacement(shard)}</td>
                   <td>{shard.vusers}</td>
                   <td>{shard.shard_strategy || 'Not set'}</td>
                 </tr>

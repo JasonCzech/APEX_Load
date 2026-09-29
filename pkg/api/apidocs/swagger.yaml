@@ -6947,6 +6947,18 @@ paths:
                       properties:
                         failover_policy:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            profile_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -7139,6 +7151,11 @@ paths:
                             properties:
                               failover_policy:
                                 type: string
+                              java_host:
+                                type: object
+                                description: 'Go type: JavaHostAssignmentSettings'
+                                additionalProperties: true
+                                nullable: true
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -33328,6 +33345,10 @@ paths:
                             properties:
                               group:
                                 type: string
+                              java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               shard_count:
                                 type: integer
                                 format: int64
@@ -48676,6 +48697,18 @@ paths:
                   properties:
                     failover_policy:
                       type: string
+                    java_host:
+                      type: object
+                      properties:
+                        preparation_ms:
+                          type: integer
+                          format: int64
+                        profile_id:
+                          type: string
+                        run_lifetime_ms:
+                          type: integer
+                          format: int64
+                      nullable: true
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -48887,6 +48920,11 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            description: 'Go type: JavaHostAssignmentSettings'
+                            additionalProperties: true
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -49583,6 +49621,18 @@ paths:
                       properties:
                         failover_policy:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            profile_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -49794,6 +49844,11 @@ paths:
                             properties:
                               failover_policy:
                                 type: string
+                              java_host:
+                                type: object
+                                description: 'Go type: JavaHostAssignmentSettings'
+                                additionalProperties: true
+                                nullable: true
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -51000,6 +51055,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -51579,6 +51650,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -51780,6 +51894,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -55175,6 +55294,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -55754,6 +55889,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -55955,6 +56133,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -59347,6 +59530,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -59926,6 +60125,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -60127,6 +60369,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -63531,6 +63778,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -64110,6 +64373,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -64311,6 +64617,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -67715,6 +68026,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -68294,6 +68621,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -68495,6 +68865,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -71899,6 +72274,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -72478,6 +72869,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -72679,6 +73113,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -76083,6 +76522,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -76662,6 +77117,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -76863,6 +77361,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -88597,6 +89100,18 @@ paths:
                   properties:
                     failover_policy:
                       type: string
+                    java_host:
+                      type: object
+                      properties:
+                        preparation_ms:
+                          type: integer
+                          format: int64
+                        profile_id:
+                          type: string
+                        run_lifetime_ms:
+                          type: integer
+                          format: int64
+                      nullable: true
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -88819,6 +89334,18 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -90363,6 +90890,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -91629,6 +92172,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -92641,6 +93200,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -93907,6 +94482,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -94862,6 +95453,18 @@ paths:
                   properties:
                     failover_policy:
                       type: string
+                    java_host:
+                      type: object
+                      properties:
+                        preparation_ms:
+                          type: integer
+                          format: int64
+                        profile_id:
+                          type: string
+                        run_lifetime_ms:
+                          type: integer
+                          format: int64
+                      nullable: true
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -95084,6 +95687,18 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -96628,6 +97243,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -97894,6 +98525,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -99552,6 +100199,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -100508,6 +101171,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -102867,6 +103535,18 @@ paths:
                       properties:
                         failover_policy:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            profile_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -103059,6 +103739,11 @@ paths:
                             properties:
                               failover_policy:
                                 type: string
+                              java_host:
+                                type: object
+                                description: 'Go type: JavaHostAssignmentSettings'
+                                additionalProperties: true
+                                nullable: true
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -104592,6 +105277,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -104799,6 +105500,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -106545,6 +107251,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -106752,6 +107474,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -108130,6 +108857,18 @@ paths:
                       properties:
                         failover_policy:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            profile_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          nullable: true
                         load_zone_weights:
                           type: object
                           additionalProperties:
@@ -108322,6 +109061,11 @@ paths:
                             properties:
                               failover_policy:
                                 type: string
+                              java_host:
+                                type: object
+                                description: 'Go type: JavaHostAssignmentSettings'
+                                additionalProperties: true
+                                nullable: true
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -109855,6 +110599,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -110062,6 +110822,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -111337,6 +112102,18 @@ paths:
                   properties:
                     failover_policy:
                       type: string
+                    java_host:
+                      type: object
+                      properties:
+                        preparation_ms:
+                          type: integer
+                          format: int64
+                        profile_id:
+                          type: string
+                        run_lifetime_ms:
+                          type: integer
+                          format: int64
+                      nullable: true
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -111559,6 +112336,18 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -224146,6 +224935,40 @@ paths:
                         heap_in_use_mb:
                           type: number
                           format: double
+                        java_host:
+                          type: object
+                          properties:
+                            containment:
+                              type: string
+                            contract:
+                              type: string
+                            max_hosts:
+                              type: integer
+                              format: int64
+                            max_memory_bytes:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            prepared_population:
+                              type: boolean
+                            profiles:
+                              type: array
+                              items:
+                                type: object
+                                additionalProperties: true
+                          required:
+                            - containment
+                            - contract
+                            - max_hosts
+                            - max_memory_bytes
+                            - max_vusers
+                            - mode
+                            - profiles
+                          nullable: true
                         labels:
                           type: object
                           additionalProperties:
@@ -227492,6 +228315,18 @@ paths:
                   properties:
                     failover_policy:
                       type: string
+                    java_host:
+                      type: object
+                      properties:
+                        preparation_ms:
+                          type: integer
+                          format: int64
+                        profile_id:
+                          type: string
+                        run_lifetime_ms:
+                          type: integer
+                          format: int64
+                      nullable: true
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -227733,6 +228568,18 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -229385,6 +230232,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -230238,6 +231101,88 @@ paths:
                       properties:
                         group:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            admitted_vusers:
+                              type: integer
+                              format: int64
+                            containment:
+                              type: string
+                            contract:
+                              type: string
+                            max_hosts:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            prepared_vusers:
+                              type: integer
+                              format: int64
+                            profile:
+                              type: object
+                              properties:
+                                configuration_sha256:
+                                  type: string
+                                facade_cpu_millicores:
+                                  type: integer
+                                  format: int64
+                                facade_memory_bytes:
+                                  type: integer
+                                  format: int64
+                                facade_network_kbps:
+                                  type: integer
+                                  format: int64
+                                facade_resources_sha256:
+                                  type: string
+                                invocation_ms:
+                                  type: integer
+                                  format: int64
+                                max_run_ms:
+                                  type: integer
+                                  format: int64
+                                memory_bytes:
+                                  type: integer
+                                  format: int64
+                                policy_sha256:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                script_sha256:
+                                  type: string
+                              required:
+                                - configuration_sha256
+                                - invocation_ms
+                                - max_run_ms
+                                - memory_bytes
+                                - policy_sha256
+                                - preparation_ms
+                                - profile_id
+                                - script_sha256
+                            reservation_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - containment
+                            - contract
+                            - max_hosts
+                            - max_vusers
+                            - mode
+                            - preparation_ms
+                            - profile
+                            - run_lifetime_ms
+                          nullable: true
                         shard_count:
                           type: integer
                           format: int64
@@ -230475,6 +231420,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -236106,6 +237067,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -236959,6 +237936,88 @@ paths:
                       properties:
                         group:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            admitted_vusers:
+                              type: integer
+                              format: int64
+                            containment:
+                              type: string
+                            contract:
+                              type: string
+                            max_hosts:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            prepared_vusers:
+                              type: integer
+                              format: int64
+                            profile:
+                              type: object
+                              properties:
+                                configuration_sha256:
+                                  type: string
+                                facade_cpu_millicores:
+                                  type: integer
+                                  format: int64
+                                facade_memory_bytes:
+                                  type: integer
+                                  format: int64
+                                facade_network_kbps:
+                                  type: integer
+                                  format: int64
+                                facade_resources_sha256:
+                                  type: string
+                                invocation_ms:
+                                  type: integer
+                                  format: int64
+                                max_run_ms:
+                                  type: integer
+                                  format: int64
+                                memory_bytes:
+                                  type: integer
+                                  format: int64
+                                policy_sha256:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                script_sha256:
+                                  type: string
+                              required:
+                                - configuration_sha256
+                                - invocation_ms
+                                - max_run_ms
+                                - memory_bytes
+                                - policy_sha256
+                                - preparation_ms
+                                - profile_id
+                                - script_sha256
+                            reservation_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - containment
+                            - contract
+                            - max_hosts
+                            - max_vusers
+                            - mode
+                            - preparation_ms
+                            - profile
+                            - run_lifetime_ms
+                          nullable: true
                         shard_count:
                           type: integer
                           format: int64
@@ -237196,6 +238255,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -243634,6 +244709,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -243948,6 +245039,41 @@ paths:
                             heap_in_use_mb:
                               type: number
                               format: double
+                            java_host:
+                              type: object
+                              properties:
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_memory_bytes:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                prepared_population:
+                                  type: boolean
+                                profiles:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: JavaHostProfileSummary'
+                                    additionalProperties: true
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_memory_bytes
+                                - max_vusers
+                                - mode
+                                - profiles
+                              nullable: true
                             labels:
                               type: object
                               additionalProperties:
@@ -244128,6 +245254,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -244400,6 +245569,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -245440,6 +246614,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -245754,6 +246944,41 @@ paths:
                             heap_in_use_mb:
                               type: number
                               format: double
+                            java_host:
+                              type: object
+                              properties:
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_memory_bytes:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                prepared_population:
+                                  type: boolean
+                                profiles:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: JavaHostProfileSummary'
+                                    additionalProperties: true
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_memory_bytes
+                                - max_vusers
+                                - mode
+                                - profiles
+                              nullable: true
                             labels:
                               type: object
                               additionalProperties:
@@ -245934,6 +247159,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -246206,6 +247474,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -249012,6 +250285,10 @@ paths:
                             properties:
                               failover_policy:
                                 type: string
+                              java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -249224,6 +250501,11 @@ paths:
                                 heap_in_use_mb:
                                   type: number
                                   format: double
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostCapabilitySummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 labels:
                                   type: object
                                   additionalProperties:
@@ -249366,6 +250648,11 @@ paths:
                               properties:
                                 group:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostPlacementSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 shard_count:
                                   type: integer
                                   format: int64
@@ -249827,6 +251114,10 @@ paths:
                             properties:
                               failover_policy:
                                 type: string
+                              java_host:
+                                type: object
+                                additionalProperties: true
+                                nullable: true
                               load_zone_weights:
                                 type: object
                                 additionalProperties:
@@ -250039,6 +251330,11 @@ paths:
                                 heap_in_use_mb:
                                   type: number
                                   format: double
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostCapabilitySummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 labels:
                                   type: object
                                   additionalProperties:
@@ -250181,6 +251477,11 @@ paths:
                               properties:
                                 group:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostPlacementSummary'
+                                  additionalProperties: true
+                                  nullable: true
                                 shard_count:
                                   type: integer
                                   format: int64
@@ -254267,6 +255568,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -255120,6 +256437,88 @@ paths:
                       properties:
                         group:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            admitted_vusers:
+                              type: integer
+                              format: int64
+                            containment:
+                              type: string
+                            contract:
+                              type: string
+                            max_hosts:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            prepared_vusers:
+                              type: integer
+                              format: int64
+                            profile:
+                              type: object
+                              properties:
+                                configuration_sha256:
+                                  type: string
+                                facade_cpu_millicores:
+                                  type: integer
+                                  format: int64
+                                facade_memory_bytes:
+                                  type: integer
+                                  format: int64
+                                facade_network_kbps:
+                                  type: integer
+                                  format: int64
+                                facade_resources_sha256:
+                                  type: string
+                                invocation_ms:
+                                  type: integer
+                                  format: int64
+                                max_run_ms:
+                                  type: integer
+                                  format: int64
+                                memory_bytes:
+                                  type: integer
+                                  format: int64
+                                policy_sha256:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                script_sha256:
+                                  type: string
+                              required:
+                                - configuration_sha256
+                                - invocation_ms
+                                - max_run_ms
+                                - memory_bytes
+                                - policy_sha256
+                                - preparation_ms
+                                - profile_id
+                                - script_sha256
+                            reservation_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - containment
+                            - contract
+                            - max_hosts
+                            - max_vusers
+                            - mode
+                            - preparation_ms
+                            - profile
+                            - run_lifetime_ms
+                          nullable: true
                         shard_count:
                           type: integer
                           format: int64
@@ -255357,6 +256756,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -260932,6 +262347,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -261785,6 +263216,88 @@ paths:
                       properties:
                         group:
                           type: string
+                        java_host:
+                          type: object
+                          properties:
+                            admitted_vusers:
+                              type: integer
+                              format: int64
+                            containment:
+                              type: string
+                            contract:
+                              type: string
+                            max_hosts:
+                              type: integer
+                              format: int64
+                            max_vusers:
+                              type: integer
+                              format: int64
+                            mode:
+                              type: string
+                            preparation_ms:
+                              type: integer
+                              format: int64
+                            prepared_vusers:
+                              type: integer
+                              format: int64
+                            profile:
+                              type: object
+                              properties:
+                                configuration_sha256:
+                                  type: string
+                                facade_cpu_millicores:
+                                  type: integer
+                                  format: int64
+                                facade_memory_bytes:
+                                  type: integer
+                                  format: int64
+                                facade_network_kbps:
+                                  type: integer
+                                  format: int64
+                                facade_resources_sha256:
+                                  type: string
+                                invocation_ms:
+                                  type: integer
+                                  format: int64
+                                max_run_ms:
+                                  type: integer
+                                  format: int64
+                                memory_bytes:
+                                  type: integer
+                                  format: int64
+                                policy_sha256:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                script_sha256:
+                                  type: string
+                              required:
+                                - configuration_sha256
+                                - invocation_ms
+                                - max_run_ms
+                                - memory_bytes
+                                - policy_sha256
+                                - preparation_ms
+                                - profile_id
+                                - script_sha256
+                            reservation_id:
+                              type: string
+                            run_lifetime_ms:
+                              type: integer
+                              format: int64
+                          required:
+                            - containment
+                            - contract
+                            - max_hosts
+                            - max_vusers
+                            - mode
+                            - preparation_ms
+                            - profile
+                            - run_lifetime_ms
+                          nullable: true
                         shard_count:
                           type: integer
                           format: int64
@@ -262022,6 +263535,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -272747,6 +274276,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -272820,6 +274365,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -273005,6 +274593,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -274065,6 +275658,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -274138,6 +275747,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -274323,6 +275975,11 @@ paths:
                               properties:
                                 failover_policy:
                                   type: string
+                                java_host:
+                                  type: object
+                                  description: 'Go type: JavaHostAssignmentSettings'
+                                  additionalProperties: true
+                                  nullable: true
                                 load_zone_weights:
                                   type: object
                                   additionalProperties:
@@ -275346,6 +277003,22 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            required:
+                              - preparation_ms
+                              - profile_id
+                              - run_lifetime_ms
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -275576,6 +277249,41 @@ paths:
                             heap_in_use_mb:
                               type: number
                               format: double
+                            java_host:
+                              type: object
+                              properties:
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_memory_bytes:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                prepared_population:
+                                  type: boolean
+                                profiles:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: JavaHostProfileSummary'
+                                    additionalProperties: true
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_memory_bytes
+                                - max_vusers
+                                - mode
+                                - profiles
+                              nullable: true
                             labels:
                               type: object
                               additionalProperties:
@@ -275756,6 +277464,49 @@ paths:
                           properties:
                             group:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                admitted_vusers:
+                                  type: integer
+                                  format: int64
+                                containment:
+                                  type: string
+                                contract:
+                                  type: string
+                                max_hosts:
+                                  type: integer
+                                  format: int64
+                                max_vusers:
+                                  type: integer
+                                  format: int64
+                                mode:
+                                  type: string
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                prepared_vusers:
+                                  type: integer
+                                  format: int64
+                                profile:
+                                  type: object
+                                  description: 'Go type: JavaHostProfileSummary'
+                                  additionalProperties: true
+                                reservation_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - containment
+                                - contract
+                                - max_hosts
+                                - max_vusers
+                                - mode
+                                - preparation_ms
+                                - profile
+                                - run_lifetime_ms
+                              nullable: true
                             shard_count:
                               type: integer
                               format: int64
@@ -275822,6 +277573,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -278525,6 +280292,18 @@ paths:
                   properties:
                     failover_policy:
                       type: string
+                    java_host:
+                      type: object
+                      properties:
+                        preparation_ms:
+                          type: integer
+                          format: int64
+                        profile_id:
+                          type: string
+                        run_lifetime_ms:
+                          type: integer
+                          format: int64
+                      nullable: true
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -278766,6 +280545,18 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            properties:
+                              preparation_ms:
+                                type: integer
+                                format: int64
+                              profile_id:
+                                type: string
+                              run_lifetime_ms:
+                                type: integer
+                                format: int64
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:
@@ -280327,6 +282118,22 @@ paths:
                     properties:
                       failover_policy:
                         type: string
+                      java_host:
+                        type: object
+                        properties:
+                          preparation_ms:
+                            type: integer
+                            format: int64
+                          profile_id:
+                            type: string
+                          run_lifetime_ms:
+                            type: integer
+                            format: int64
+                        required:
+                          - preparation_ms
+                          - profile_id
+                          - run_lifetime_ms
+                        nullable: true
                       load_zone_weights:
                         type: object
                         additionalProperties:
@@ -280657,6 +282464,22 @@ paths:
                           properties:
                             failover_policy:
                               type: string
+                            java_host:
+                              type: object
+                              properties:
+                                preparation_ms:
+                                  type: integer
+                                  format: int64
+                                profile_id:
+                                  type: string
+                                run_lifetime_ms:
+                                  type: integer
+                                  format: int64
+                              required:
+                                - preparation_ms
+                                - profile_id
+                                - run_lifetime_ms
+                              nullable: true
                             load_zone_weights:
                               type: object
                               additionalProperties:
@@ -281488,6 +283311,18 @@ paths:
                   properties:
                     failover_policy:
                       type: string
+                    java_host:
+                      type: object
+                      properties:
+                        preparation_ms:
+                          type: integer
+                          format: int64
+                        profile_id:
+                          type: string
+                        run_lifetime_ms:
+                          type: integer
+                          format: int64
+                      nullable: true
                     load_zone_weights:
                       type: object
                       additionalProperties:
@@ -281699,6 +283534,11 @@ paths:
                         properties:
                           failover_policy:
                             type: string
+                          java_host:
+                            type: object
+                            description: 'Go type: JavaHostAssignmentSettings'
+                            additionalProperties: true
+                            nullable: true
                           load_zone_weights:
                             type: object
                             additionalProperties:

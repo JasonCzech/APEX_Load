@@ -5361,6 +5361,12 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	// clears. It takes no locks itself, so calling it here cannot deadlock.
 	tr.mu.Lock()
 	boundsErr := validateManagedTestWorkloadBounds(test)
+	for _, g := range test.Groups {
+		if javaHostSettings(g) != nil {
+			boundsErr = fmt.Errorf("java_host_requires_distributed_backend")
+			break
+		}
+	}
 	alreadyTerminal := isTerminalTestStatus(test.Status)
 	status := test.Status
 	specs := test.groupSpecs

@@ -168,7 +168,7 @@ func filterLoadSnapshots(source map[string]generatorLoadSnapshot, allowed map[st
 }
 
 func groupInheritsAssignment(group TestGroup) bool {
-	return group.Assignment == nil || strings.TrimSpace(group.Assignment.Mode) == ""
+	return group.Assignment == nil || strings.TrimSpace(group.Assignment.Mode) == "" || group.Assignment.Mode == generatorAssignmentModeInherit
 }
 
 func groupUsesWeightedDefault(group TestGroup, assignment *GeneratorAssignmentSettings) bool {
@@ -179,7 +179,7 @@ func groupUsesWeightedDefault(group TestGroup, assignment *GeneratorAssignmentSe
 }
 
 func effectiveGroupRequiredLabels(group TestGroup, inherited *GeneratorAssignmentSettings) map[string]string {
-	if group.Assignment != nil {
+	if group.Assignment != nil && !groupInheritsAssignment(group) {
 		return group.Assignment.RequiredLabels
 	}
 	if inherited != nil {
@@ -205,6 +205,9 @@ func formatRequiredLabels(labels map[string]string) string {
 }
 
 func chooseGeneratorShardsForGroup(group TestGroup, allLoadByTarget map[string]generatorLoadSnapshot, defaultLoadByTarget map[string]generatorLoadSnapshot, preferredAll []string, preferredDefault []string, inherited *GeneratorAssignmentSettings, regionState *regionPlacementState, compatibility *generatorCompatibilityIndex) []GeneratorShardSummary {
+	if javaHostSettings(group) != nil {
+		return chooseJavaHostShards(group, allLoadByTarget, defaultLoadByTarget, preferredAll, preferredDefault, inherited, compatibility)
+	}
 	for _, load := range allLoadByTarget {
 		if load.PodCapacity != nil {
 			loads, targets, effective, region := defaultLoadByTarget, preferredDefault, inherited, regionState
@@ -549,6 +552,10 @@ func runtimeCapacityAllowsGroup(group TestGroup, snapshot generatorLoadSnapshot,
 }
 
 func consumeGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGroup, vusers int) {
+	if javaHostSettings(group) != nil {
+		consumeJavaHostCapacity(snapshot, group, vusers)
+		return
+	}
 	if snapshot == nil {
 		return
 	}

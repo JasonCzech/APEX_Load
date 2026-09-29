@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -131,6 +132,38 @@ func TestJavaHTTPExecuteDecodesRequestAndEncodesResponse(t *testing.T) {
 	}
 	if result.Extractions["java_http_helper_mode"] != "embedded" {
 		t.Fatalf("java_http_helper_mode = %q, want embedded", result.Extractions["java_http_helper_mode"])
+	}
+}
+
+func TestJavaHTTPTimingDistinguishesCompletedAndSkippedOperations(t *testing.T) {
+	// Force the clock-resolution edge case without relying on scheduler timing.
+	if got, want := measuredOperationDuration(0), time.Nanosecond; got != want {
+		t.Fatalf("measuredOperationDuration(0) = %v, want %v", got, want)
+	}
+	if got := durationToMilliseconds(measuredOperationDuration(0)); got <= 0 {
+		t.Fatalf("completed operation timing = %v ms, want > 0", got)
+	}
+	if got, want := measuredOperationDuration(2*time.Millisecond), 2*time.Millisecond; got != want {
+		t.Fatalf("measuredOperationDuration(2ms) = %v, want %v", got, want)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("response"))
+	}))
+	defer ts.Close()
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{"base_url": ts.URL}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := p.Execute(context.Background(), &protocol.Action{Name: "get", Method: "GET", Target: "/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || !result.Success || result.ServerTelemetry == nil {
+		t.Fatalf("result = %#v, want successful result with telemetry", result)
+	}
+	if result.ServerTelemetry.SerializationMs != 0 || result.ServerTelemetry.DeserializationMs != 0 {
+		t.Fatalf("skipped operation timing = (%v, %v) ms, want (0, 0)", result.ServerTelemetry.SerializationMs, result.ServerTelemetry.DeserializationMs)
 	}
 }
 
