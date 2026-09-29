@@ -1,4 +1,5 @@
 import { type ScriptDefinition } from '../types/scripts'
+import { useState } from 'react'
 import { RuntimeSectionIcon } from './RuntimeSectionIcon'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import {
@@ -650,6 +651,7 @@ export interface ImportedSourceRuntimeSectionProps {
   importedRuntimeFiles: Record<string, ImportedRuntimeFileSections>
   importedRuntimeDispositions: ImportedRuntimeDispositions
   importedDispositionSummary: { mapped: number; compatibility: number; nonApplicable: number; unclassified: number; total: number }
+  runLogic?: ScriptDefinition['config']['run_logic']
 }
 
 export function ImportedSourceRuntimeSection({
@@ -659,9 +661,26 @@ export function ImportedSourceRuntimeSection({
   importedRuntimeFiles,
   importedRuntimeDispositions,
   importedDispositionSummary,
+  runLogic,
 }: ImportedSourceRuntimeSectionProps) {
   const runtimeSectionIsActive = sectionIsActive
   const selectRuntimeSettingsSection = onSelectSection
+  const [hiddenGroups, setHiddenGroups] = useState<Set<string>>(() => new Set())
+  const groupCounts = new Map<string, number>()
+  for (const sections of Object.values(importedRuntimeFiles)) {
+    for (const [sectionName, keys] of Object.entries(sections)) {
+      const count = Object.keys(keys).length
+      if (count > 0) groupCounts.set(sectionName, (groupCounts.get(sectionName) || 0) + count)
+    }
+  }
+  const groupNames = [...groupCounts.keys()].sort((left, right) => left.localeCompare(right))
+  const selectedGroupCount = groupNames.filter(name => !hiddenGroups.has(name)).length
+  const toggleGroup = (name: string) => setHiddenGroups(previous => {
+    const next = new Set(previous)
+    if (next.has(name)) next.delete(name)
+    else next.add(name)
+    return next
+  })
 
   return (
     <div className={`settings-section ${runtimeSectionIsActive('imported_source') ? 'open' : ''}`}>
@@ -677,25 +696,38 @@ export function ImportedSourceRuntimeSection({
       </button>
       {runtimeSectionIsActive('imported_source') && (
         <div className="section-body">
-          <p className="new-test-inline-note">
+          {groupNames.length > 0 && <p className="new-test-inline-note">
             Every runtime setting found in the imported LoadRunner archive, exactly as the source declared it, with the
             disposition APEX Load applied. Mapped settings are editable in the sections on the left; compatibility-only and
             not-applicable rows are preserved read-only so nothing from the source is silently dropped.
-          </p>
+          </p>}
+          <section className="imported-runtime-run-order" aria-label="Preserved run order">
+            <h4>Preserved run order</h4>
+            <p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
+            <dl><dt>Block Scheduling</dt><dd>{runLogic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{runLogic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
+            <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action List.</p>
+          </section>
+          {groupNames.length > 0 && <div className="imported-runtime-groups" role="group" aria-label="Imported runtime setting groups">
+            <div className="imported-runtime-groups-heading"><strong>Show groups</strong><span>{selectedGroupCount} of {groupNames.length} selected</span></div>
+            <div className="imported-runtime-group-actions"><button type="button" className="btn btn-sm btn-ghost" onClick={() => setHiddenGroups(new Set())} disabled={selectedGroupCount === groupNames.length}>All</button><button type="button" className="btn btn-sm btn-ghost" onClick={() => setHiddenGroups(new Set(groupNames))} disabled={selectedGroupCount === 0}>None</button></div>
+            <div className="imported-runtime-group-pills">{groupNames.map(name => <button type="button" key={name} className={`imported-runtime-group-pill ${hiddenGroups.has(name) ? '' : 'selected'}`} aria-pressed={!hiddenGroups.has(name)} onClick={() => toggleGroup(name)}>[{name}] <span>{groupCounts.get(name)}</span></button>)}</div>
+          </div>}
+          {groupNames.length > 0 && selectedGroupCount === 0 && <p className="imported-runtime-empty-groups" role="status">No groups selected. Choose a group or select All to show its settings.</p>}
           <div className="parameter-sidebar-list">
             {importedRuntimeFileNames.map(fileName => {
               const sections = importedRuntimeFiles[fileName] || {}
               const fileDispositions = importedRuntimeDispositions[fileName]
               const selectedProfile = Boolean(fileDispositions)
-              const sectionNames = Object.keys(sections).sort((left, right) => left.localeCompare(right))
+              const sectionNames = Object.keys(sections).filter(name => !hiddenGroups.has(name) && Object.keys(sections[name] || {}).length > 0).sort((left, right) => left.localeCompare(right))
+              if (sectionNames.length === 0) return null
               return (
-                <details key={`imported-runtime-file-${fileName}`} className="settings-section imported-runtime-file" open={selectedProfile}>
-                <summary className="section-toggle">
+                <section key={`imported-runtime-file-${fileName}`} className="imported-runtime-file">
+                <div className="imported-runtime-file-header">
                   <strong>{fileName}</strong>
                   <span className="repository-status-pill imported-runtime-file-tag">
                     {selectedProfile ? 'Selected runtime profile' : 'Not selected at import — preserved only'}
                   </span>
-                </summary>
+                </div>
                 {sectionNames.map(sectionName => {
                   const keys = sections[sectionName] || {}
                   const keyNames = Object.keys(keys).sort((left, right) => left.localeCompare(right))
@@ -704,7 +736,7 @@ export function ImportedSourceRuntimeSection({
                     <div key={`imported-runtime-${fileName}-${sectionName}`} className="section-body imported-runtime-section">
                       <h5 className="panel-title cell-mono imported-runtime-section-title">[{sectionName}]</h5>
                       <div className="script-parameter-table-wrap imported-runtime-table-wrap">
-                        <table className="script-parameter-table imported-runtime-table">
+                        <table className="script-parameter-table imported-runtime-table" data-table-pagination="off">
                           <colgroup>
                             <col className="imported-runtime-col-key" />
                             <col className="imported-runtime-col-value" />
@@ -750,7 +782,7 @@ export function ImportedSourceRuntimeSection({
                     </div>
                   )
                 })}
-                </details>
+                </section>
               )
             })}
           </div>

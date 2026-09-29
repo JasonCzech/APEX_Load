@@ -1,6 +1,99 @@
 import { test, expect, idOf, mutation, json, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
+test('runtime evidence uses the imported source treatment and keeps checkbox controls left aligned', async ({ page }, testInfo) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: {
+    project_id: workspace.projectId,
+    script: {
+      name: 'Runtime_evidence_layout', version: '1.0', protocol: 'http',
+      config: { base_url: 'https://example.invalid', http: { keep_alive: false, cache_enabled: true } },
+      actions: [{ name: 'Fixture', type: 'request', method: 'GET', target: '/' }],
+      metadata: { import: { source: 'loadrunner', preserved: {
+        runtime_files: { 'default.cfg': { WEB: { KeepAlive: '0' }, ModemSpeed: { EnableModemSpeed: '0' } } },
+        runtime_setting_dispositions: { 'default.cfg': { WEB: { KeepAlive: { status: 'mapped', fields: ['config.http.keep_alive'] } }, ModemSpeed: { EnableModemSpeed: { status: 'non_applicable' } } } },
+      } } },
+    },
+  } })))
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  await page.getByRole('tab', { name: 'Runtime Settings', exact: true }).click()
+  const runtime = page.getByRole('region', { name: 'Runtime Settings', exact: true })
+  const navigation = runtime.getByRole('navigation', { name: 'Runtime setting categories' })
+  await navigation.getByRole('tab', { name: 'Imported Source Runtime Settings', exact: true }).click()
+  await expect(runtime.locator('.imported-runtime-table').filter({ hasText: 'KeepAlive' })).toContainText('KeepAlive')
+  await expect(navigation.getByRole('tab', { name: 'Preserved run order', exact: true })).toHaveCount(0)
+  await expect(runtime.getByRole('region', { name: 'Preserved run order' })).toBeVisible()
+  const groups = runtime.getByRole('group', { name: 'Imported runtime setting groups' })
+  const webGroup = groups.getByRole('button', { name: /\[WEB\]/ })
+  await expect(webGroup).toHaveAttribute('aria-pressed', 'true')
+  await expect(runtime.locator('.imported-runtime-table')).toHaveCount(2)
+  await expect(runtime.locator('.imported-runtime-table[data-table-pagination="off"]')).toHaveCount(2)
+  await expect(runtime.locator('.parameter-sidebar-list > .imported-runtime-file summary')).toHaveCount(0)
+  await expect(runtime.locator('.table-pagination-toolbar')).toHaveCount(0)
+  await webGroup.click()
+  await expect(runtime.locator('.imported-runtime-table')).toHaveCount(1)
+  await groups.getByRole('button', { name: 'None', exact: true }).click()
+  await expect(runtime.locator('.imported-runtime-table')).toHaveCount(0)
+  await groups.getByRole('button', { name: 'All', exact: true }).click()
+  await expect(runtime.locator('.imported-runtime-table')).toHaveCount(2)
+  await runtime.locator('.imported-runtime-table').first().scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('imported-source-runtime-reference.png') })
+  await page.setViewportSize({ width: 900, height: 850 })
+  await expect(groups.getByRole('button', { name: /\[ModemSpeed\]/ })).toBeVisible()
+  await expect(runtime.locator('.imported-runtime-file-header')).toBeVisible()
+  await groups.scrollIntoViewIfNeeded()
+  const importedTableFits = await runtime.locator('.imported-runtime-table').first().evaluate(table => {
+    const wrapper = table.closest('.imported-runtime-table-wrap')!
+    const dispositionHeading = table.querySelector('thead th:last-child')!
+    return dispositionHeading.getBoundingClientRect().right <= wrapper.getBoundingClientRect().right + 1
+  })
+  expect(importedTableFits).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('imported-source-runtime-narrow.png') })
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await navigation.getByRole('tab', { name: 'HTTP Transport', exact: true }).click()
+  await runtime.getByRole('tab', { name: /^Session & Cache/ }).click()
+  const evidence = runtime.locator('.runtime-field-evidence')
+  await evidence.locator(':scope > summary').click()
+  await expect(evidence.locator('.runtime-evidence-table').first()).toContainText('Keep connections alive')
+  await expect(evidence.locator('.runtime-evidence-setting-path').filter({ hasText: 'http.keep_alive' }).first()).toBeVisible()
+  await expect(evidence.locator('.runtime-evidence-support.healthy').first()).toBeVisible()
+  await expect(evidence.locator('.runtime-evidence-row-details').first()).toBeVisible()
+  await expect(evidence.locator('.runtime-evidence-row-details details')).toHaveCount(0)
+  await expect(evidence).not.toContainText('Check protocol applicability')
+  const cookieToggle = runtime.locator('.scenario-option-card').filter({ hasText: 'Enable cookie jar' })
+  const checkAlignment = async () => {
+    const metrics = await cookieToggle.evaluate(label => {
+      const checkbox = label.querySelector('input[type="checkbox"]')!
+      const title = label.querySelector('strong')!
+      const description = label.querySelector('span')!
+      return { display: getComputedStyle(label).display, inset: checkbox.getBoundingClientRect().left - label.getBoundingClientRect().left, width: checkbox.getBoundingClientRect().width, titleBottom: title.getBoundingClientRect().bottom, descriptionTop: description.getBoundingClientRect().top }
+    })
+    expect(metrics.display).toBe('grid')
+    expect(metrics.inset).toBeLessThan(24)
+    expect(metrics.width).toBeLessThan(30)
+    expect(metrics.descriptionTop).toBeGreaterThanOrEqual(metrics.titleBottom)
+  }
+  await checkAlignment()
+  await evidence.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('runtime-evidence-wide.png') })
+  await page.setViewportSize({ width: 900, height: 850 })
+  await checkAlignment()
+  const tableFits = await evidence.locator('.runtime-evidence-table').first().evaluate(table => {
+    const wrapper = table.closest('.runtime-evidence-table-wrap')!
+    const lastHeading = table.querySelector('thead th:last-child')!
+    return lastHeading.getBoundingClientRect().right <= wrapper.getBoundingClientRect().right + 1
+  })
+  expect(tableFits).toBe(true)
+  await cookieToggle.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('runtime-checkbox-narrow.png') })
+  await evidence.locator(':scope > summary').scrollIntoViewIfNeeded()
+  await page.screenshot({ path: testInfo.outputPath('runtime-evidence-narrow.png') })
+})
+
 // Exercises the real app shell's pagination observer and persisted controller DSL.
 test('parameter workspace preserves 4000 rows, references, masked values and runtime settings', async ({ page }) => {
   test.setTimeout(120_000)
@@ -79,7 +172,7 @@ test('parameter workspace preserves 4000 rows, references, masked values and run
   await expect(runtime.locator('fieldset input').first()).toBeDisabled()
   await runtime.getByRole('checkbox', { name: 'Enable think time' }).check()
   await expect(runtime.locator('fieldset input').first()).toBeEnabled()
-  await navigation.getByRole('tab', { name: 'Preserved run order', exact: true }).click()
+  await navigation.getByRole('tab', { name: 'Imported Source Runtime Settings', exact: true }).click()
   await expect(runtime.getByRole('region', { name: 'Preserved run order' })).toContainText('does not affect execution')
   await expect(runtime.getByRole('combobox', { name: 'Block Scheduling' })).toHaveCount(0)
   await navigation.getByRole('tab', { name: 'Run Logic', exact: true }).click()

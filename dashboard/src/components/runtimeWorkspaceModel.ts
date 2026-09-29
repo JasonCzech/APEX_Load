@@ -20,7 +20,6 @@ export const RUNTIME_WORKSPACE_CATEGORIES: { group: string; id: RuntimeSettingsS
   { group: 'Protocol settings', id: 'database', label: 'Database Runtime', fields: ['database'] },
   { group: 'Protocol settings', id: 'network', label: 'Network Runtime', fields: ['network'] },
   { group: 'Imported compatibility', id: 'web_runtime', label: 'Web HTTP/HTML Compatibility', fields: ['web_runtime'] },
-  { group: 'Imported compatibility', id: 'compatibility', label: 'Preserved run order', fields: ['run_logic'] },
   { group: 'Imported compatibility', id: 'imported_source', label: 'Imported Source Runtime Settings', fields: [] },
 ]
 
@@ -61,5 +60,5 @@ export const RUNTIME_SEARCH_TERMS: Partial<Record<RuntimeSettingsSectionId, stri
   errors: 'continue fail retry backoff handling',
   log: 'diagnostic capture verbosity level',
   browser_emulation: 'user agent language device browser cache session identity',
-  compatibility: 'block scheduling action sequence order',
+  imported_source: 'block scheduling action sequence order preserved source',
 }

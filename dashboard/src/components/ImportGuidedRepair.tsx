@@ -1,6 +1,7 @@
 import ImportIssueRuntimeEditor from './ImportIssueRuntimeEditor'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
+import SourceCodeViewer from './SourceCodeViewer'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useImportSettings } from './ImportSettingsContext'
 import { request } from '../hooks/apiClient'
@@ -33,6 +34,7 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const [allocationPreview, setAllocationPreview] = useState<RepairResult | null>(null)
   const [allocationUser, setAllocationUser] = useState(1)
   const [preview, setPreview] = useState<RepairResult | null>(null)
+  const [showComparison, setShowComparison] = useState(false)
   const [selection, setSelection] = useState('')
   const [occurrence, setOccurrence] = useState('')
   const [kind, setKind] = useState('')
@@ -90,13 +92,13 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const canRepair = candidate.startsWith('protected:') && !!review && !selectedResolved && !finding?.code.startsWith('diagnostic:')
   const preceding = entries.slice(0, entries.findIndex(e => e.path === finding?.action_path)).filter(e => !!e.action.target && e.action.type !== 'http_sequence')
   const requestPayload = (operation: Operation, target = finding) => ({ candidate_id: candidate, revision: candidate, project_id: projectId, finding: target?.code || '', action_path: target?.action_path || '', operation })
-  function resetPreview() { previewVersion.current++; setPreview(null); setPending(null) }
+  function resetPreview() { previewVersion.current++; setPreview(null); setPending(null); setShowComparison(false) }
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30000)
     return () => clearInterval(timer)
   }, [])
   useEffect(() => {
-    setAllocationPreview(null); setReview(null); setPreview(null); setValue(''); setError(''); setPending(null); setBusy(false)
+    setAllocationPreview(null); setReview(null); setPreview(null); setShowComparison(false); setValue(''); setError(''); setPending(null); setBusy(false)
     setLoading(false)
     if (!candidate.startsWith('protected:')) return
     let active = true
@@ -161,14 +163,19 @@ export function ImportGuidedRepair({ script, projectId, disabled, disabledReason
   const runtimeDiagnostic = selected?.category === 'runtime' && !!finding?.code.startsWith('diagnostic:')
   const issueImpact = selected?.category === 'values' ? finding?.code.startsWith('conditional_') ? 'A possible producer exists, but its order or execution path needs review. It must run before the selected request.' : 'This value has no reachable producer. Bind an existing value, add test data, or extract it from a preceding response.' : selected?.category === 'bodies' ? 'The original payload could not be restored. Supply the body below; previews keep its contents protected.' : finding?.code === 'legacy_tls_replacement' ? 'The source uses legacy TLS behavior. Choose a supported replacement and preview the migration.' : narrowerAssertion ? 'The converted check can miss text outside the main response body. Verify the intended assertion before replay.' : runtimeDiagnostic ? 'Some imported settings need an explicit choice or have no editable equivalent. Review their source values and replay consequences below.' : finding?.detail || 'Inspect the evidence and choose an available resolution below.'
   const previewCounts = preview ? groupImportFindings(preview.findings, preview.script) : []
+  const previewBlockers = previewCounts.filter(issue => issue.blocking).length
+  const changedPaths = preview ? changedRepairPaths(preview.before, preview.script) : []
   const previewContent = preview && <section className="lr-repair-preview" aria-label="Redacted repair preview">
-    <h4>Review this change</h4>
-    <p>{previewCounts.filter(i => i.blocking).length} grouped issues block replay after this change. {preview.readiness.replay_ready ? 'Static replay checks passed; target replay is not verified.' : 'Execution remains blocked.'}</p>
-    <h5>Fields changed</h5><ul>{changedRepairPaths(preview.before, preview.script).map(path => <li key={path}><code>{path}</code></li>)}</ul><p>Only field paths are summarized here; protected values remain hidden. Up to 100 changed fields are listed.</p>
-    {!!preview.readiness.unresolved_bindings && <p>{preview.readiness.unresolved_bindings} unresolved credential requirements remain.</p>}
+    <header className="lr-repair-preview-heading"><div><span className="script-create-kicker">Repair preview</span><h4>Review this change</h4><p>Check the outcome and changed fields before applying this repair.</p></div><span className="repository-status-pill imported-runtime-file-tag">Preview only</span></header>
+    <div className="lr-repair-preview-outcome" role="group" aria-label="Repair outcome">
+      <div><span>Replay checks</span><strong className={preview.readiness.replay_ready ? 'healthy' : 'danger'}>{preview.readiness.replay_ready ? 'Passed' : 'Blocked'}</strong><small>{preview.readiness.replay_ready ? 'Target replay is not verified' : 'Execution remains blocked'}</small></div>
+      <div><span>Blocking issues</span><strong>{previewBlockers}</strong><small>grouped issues after this change</small></div>
+      <div><span>Credential requirements</span><strong>{preview.readiness.unresolved_bindings || 0}</strong><small>unresolved after this change</small></div>
+    </div>
+    <div className="lr-repair-preview-fields"><div className="lr-repair-preview-section-heading"><h5>Fields changed</h5><span>{changedPaths.length} shown</span></div>{changedPaths.length ? <ul>{changedPaths.map(path => <li key={path}><code>{path}</code></li>)}</ul> : <p>No field paths changed in this preview.</p>}<p>Only field paths are summarized here. Protected values stay hidden; up to 100 fields are listed.</p></div>
     {preview.allocation && <div className="lr-issue-table"><table><thead><tr><th>Parameter</th><th>Usable rows</th><th>Block per VUser</th><th>VUsers</th></tr></thead><tbody>{preview.allocation.map(p => <tr key={p.name}><td>{p.name}</td><td>{p.rows}</td><td>{p.block_size}</td><td>{p.population}</td></tr>)}</tbody></table></div>}
-    <details><summary>Redacted before / after</summary><pre>{JSON.stringify({ before: preview.before, after: preview.script }, null, 2)}</pre></details>
-    {pending && pending.operation.type !== 'preview_allocation' && <div className="lr-issue-action-row"><button className="btn btn-primary" type="button" disabled={locked} onClick={() => run(pending.operation, true)}>Apply reviewed repair</button></div>}
+    <details className="lr-repair-preview-comparison" onToggle={event => setShowComparison(event.currentTarget.open)}><summary>Redacted before / after</summary>{showComparison && <div className="lr-repair-preview-code-grid"><div><h6>Before repair</h6><SourceCodeViewer ariaLabel="Before repair JSON" sourcePath="before.json" value={JSON.stringify(preview.before, null, 2)} /></div><div><h6>After repair</h6><SourceCodeViewer ariaLabel="After repair JSON" sourcePath="after.json" value={JSON.stringify(preview.script, null, 2)} /></div></div>}</details>
+    {pending && pending.operation.type !== 'preview_allocation' && <div className="lr-repair-preview-footer"><p>Preview only. Nothing changes until you apply.</p><button className="btn btn-primary" type="button" disabled={locked} onClick={() => run(pending.operation, true)}>Apply reviewed repair</button></div>}
   </section>
   return <section className="lr-issue-workspace" aria-label={view === 'data' ? 'Preview unique data allocation' : 'Guided import repair'} hidden={view === 'hidden' || (view === 'data' && (!hasUniqueParameters || (!!settings && settings.dataView !== 'allocation')))}>
     <p className="lr-repair-announcement" role="status">{announcement || (loading ? 'Checking current repair requirements…' : '')}</p>

@@ -22,6 +22,9 @@ it('requires a redacted preview before applying and retains the reviewed operati
     const preview = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview repair')!
     await act(async () => preview.click())
     expect(container.textContent).toContain('Redacted before / after')
+    expect(container.querySelector('[aria-label="Repair outcome"]')?.textContent).toContain('Blocked')
+    expect(container.querySelector('.lr-repair-preview-fields')?.textContent).toContain('No field paths changed')
+    expect(container.querySelector('[aria-label="Before repair JSON"]')).toBeNull()
     const apply = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Apply reviewed repair')!
     mock.request.mockResolvedValueOnce({ ...result, candidate_id: 'protected:two', revision: 'protected:two' })
     await act(async () => apply.click())

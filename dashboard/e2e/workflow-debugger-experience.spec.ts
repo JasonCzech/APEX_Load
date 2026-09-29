@@ -28,6 +28,18 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await mode.getByRole('button', { name: 'Debug', exact: true }).click()
   await page.getByRole('button', { name: 'Debug options (0)', exact: true }).click()
   const options = page.getByRole('region', { name: 'Session Overrides' })
+  const checkOptionAlignment = async () => {
+    const alignments = await options.locator('label.replay-checkbox').evaluateAll(labels => labels.map(label => {
+      const checkbox = label.querySelector('input[type="checkbox"]')!
+      return { direction: getComputedStyle(label).flexDirection, inset: checkbox.getBoundingClientRect().left - label.getBoundingClientRect().left, width: checkbox.getBoundingClientRect().width }
+    }))
+    expect(alignments).toHaveLength(3)
+    expect(alignments.every(item => item.direction === 'row' && item.inset < 24 && item.width < 30)).toBe(true)
+  }
+  await checkOptionAlignment()
+  await page.setViewportSize({ width: 900, height: 850 })
+  await checkOptionAlignment()
+  await page.setViewportSize({ width: 1800, height: 1100 })
   await options.getByRole('checkbox', { name: 'Step through (start paused)' }).check()
   await options.getByRole('checkbox', { name: 'Break on failure', exact: true }).check()
   await options.getByLabel('Profile name', { exact: true }).fill('Step and inspect')

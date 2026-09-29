@@ -829,6 +829,38 @@ describe('ScriptRuntimeSettingsView imported source runtime settings', () => {
     // Non-selected profiles stay visible as preserved-only evidence.
     expect(container.textContent).toContain('Not selected at import — preserved only')
     expect(container.textContent).toContain('Preserved (profile not selected)')
+    expect(container.querySelector('.parameter-sidebar-list > .imported-runtime-file summary')).toBeNull()
+    expect(container.querySelectorAll('.imported-runtime-file-header')).toHaveLength(2)
+    expect(container.querySelectorAll('.imported-runtime-table[data-table-pagination="off"]')).toHaveLength(3)
+    expect(container.querySelector('.runtime-settings-tab[aria-selected="true"]')?.textContent).toContain('Imported Source Runtime Settings')
+    expect(Array.from(container.querySelectorAll('.runtime-settings-tab')).some(tab => tab.textContent?.includes('Preserved run order'))).toBe(false)
+  })
+
+  it('filters source setting groups with pills and keeps preserved run order in the same view', () => {
+    const script = importedScript()
+    script.config.run_logic = { block_scheduling: 'random', action_sequence: ['teardown', 'action', 'init'] }
+    act(() => root.render(
+      <ScriptRuntimeSettingsView activeHTTPTransportTab="timeouts" activeSection="imported_source" canEditProtocol={false}
+        onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={vi.fn()}
+        onUpdateProtocol={vi.fn()} saveDisabled={false} saving={false} script={script} />,
+    ))
+    const groups = container.querySelector('[aria-label="Imported runtime setting groups"]')!
+    const pills = Array.from(groups.querySelectorAll<HTMLButtonElement>('.imported-runtime-group-pill'))
+    const web = pills.find(pill => pill.textContent?.includes('[WEB]'))!
+    const modem = pills.find(pill => pill.textContent?.includes('[ModemSpeed]'))!
+    expect(pills).toHaveLength(2)
+    expect(web.getAttribute('aria-pressed')).toBe('true')
+    expect(modem.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelector('[aria-label="Preserved run order"]')?.textContent).toContain('teardown, action, init')
+    act(() => web.click())
+    expect(container.querySelectorAll('.imported-runtime-table')).toHaveLength(1)
+    expect(container.textContent).not.toContain('HttpErrorsAsWarnings')
+    act(() => (Array.from(groups.querySelectorAll('button')).find(button => button.textContent === 'None') as HTMLButtonElement).click())
+    expect(container.querySelectorAll('.imported-runtime-table')).toHaveLength(0)
+    expect(container.textContent).toContain('No groups selected')
+    act(() => (Array.from(groups.querySelectorAll('button')).find(button => button.textContent === 'All') as HTMLButtonElement).click())
+    expect(container.querySelectorAll('.imported-runtime-table')).toHaveLength(3)
+    expect(web.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('hides the section entirely when the script was not imported', () => {

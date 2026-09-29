@@ -7128,7 +7128,7 @@ describe('ScriptEditor', () => {
     await clickRuntimeCategory('Run Logic')
 
     expect(activeRuntimeBodyText()).not.toContain('Block Scheduling')
-    expect(activeRuntimeBodyText()).toContain('Preserved run order')
+    expect(activeRuntimeBodyText()).toContain('Imported Source Runtime Settings')
     expect(activeRuntimeBodyText()).toContain('Global Iterations')
     expect(activeRuntimeBodyText()).toContain('Max Transactions')
     expect(activeRuntimeBodyText()).toContain('Workload Model')

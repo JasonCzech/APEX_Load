@@ -7979,10 +7979,60 @@ button.debugger-problem-row:hover {
 .parameter-value-preview input { max-width: 110px; }
 .parameter-value-preview output { display: inline-block; padding: 12px 0; font-family: monospace; overflow-wrap: anywhere; }
 .runtime-active-heading { margin: 18px 20px 10px; }
-.runtime-field-evidence { margin: 0 20px 16px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
-.runtime-field-evidence table { width: 100%; font-size: 12px; table-layout: fixed; }
-.runtime-field-evidence th, .runtime-field-evidence td { padding: 8px; vertical-align: top; text-align: left; overflow-wrap: anywhere; }
-.runtime-field-evidence summary { cursor: pointer; }
+.runtime-settings-detail .runtime-field-evidence { margin: 20px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); overflow: hidden; }
+.runtime-field-evidence > summary { cursor: pointer; padding: 12px 14px; text-align: left; }
+.runtime-field-evidence > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.runtime-evidence-heading { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; vertical-align: middle; }
+.runtime-evidence-heading .runtime-section-icon { flex: 0 0 auto; width: 24px; height: 24px; color: var(--accent); }
+.runtime-evidence-heading strong { color: var(--text-primary); font-size: 13px; }
+.runtime-evidence-body { padding: 0 14px 14px; }
+.runtime-evidence-body > p[role="status"] { color: var(--text-secondary); font-size: 12px; }
+.runtime-evidence-context { margin: 12px 0; }
+.runtime-evidence-body .imported-runtime-section-title { margin: 14px 0 8px; }
+.runtime-evidence-table-wrap { max-width: 100%; }
+.runtime-evidence-table { min-width: 0; table-layout: fixed; }
+.runtime-evidence-table :is(th, td) { overflow-wrap: anywhere; }
+.runtime-evidence-table tbody th { background: var(--bg-secondary); color: var(--text-primary); font-weight: 400; }
+.runtime-evidence-table thead th:first-child { width: 29%; }
+.runtime-evidence-table thead th:nth-child(2) { width: 23%; }
+.runtime-evidence-table thead th:nth-child(3) { width: 17%; }
+.runtime-evidence-setting-name { display: block; color: var(--text-primary); font-weight: 600; }
+.runtime-evidence-setting-path { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+.runtime-evidence-origin, .runtime-evidence-support { max-width: 100%; white-space: normal; line-height: 1.3; }
+.runtime-evidence-origin { font-size: 10px; letter-spacing: 0; overflow-wrap: normal; }
+.runtime-evidence-row-details { margin-top: 6px; color: var(--text-secondary); font-size: 12px; font-weight: 400; }
+.runtime-evidence-row-details:first-child { margin-top: 0; }
+.runtime-evidence-row-details p { margin: 0 0 5px; }
+.runtime-evidence-row-details p:last-child { margin-bottom: 0; }
+.runtime-evidence-no-details { color: var(--text-muted); }
+.runtime-evidence-other { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.runtime-evidence-other > summary { cursor: pointer; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.runtime-evidence-other > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.runtime-evidence-other > p { color: var(--text-secondary); font-size: 12px; }
+.imported-runtime-run-order { padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); }
+.imported-runtime-run-order h4 { margin: 0 0 8px; color: var(--text-primary); font-size: 13px; }
+.imported-runtime-run-order p { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
+.imported-runtime-run-order dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 12px 0; font-size: 12px; }
+.imported-runtime-run-order dt { color: var(--text-secondary); font-weight: 600; }
+.imported-runtime-run-order dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.imported-runtime-groups { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 16px 0 12px; }
+.imported-runtime-groups-heading { display: flex; align-items: baseline; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.imported-runtime-groups-heading strong { color: var(--text-primary); }
+.imported-runtime-group-actions { display: flex; gap: 4px; }
+.imported-runtime-group-pills { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 6px; }
+.imported-runtime-group-pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-secondary); color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 12px; overflow-wrap: anywhere; text-align: left; }
+.imported-runtime-group-pill.selected { border-color: var(--accent-border); background: var(--accent-soft); color: var(--text-primary); }
+.imported-runtime-group-pill:hover { border-color: var(--accent); }
+.imported-runtime-group-pill:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.imported-runtime-group-pill span { color: var(--text-muted); font-size: 11px; }
+.imported-runtime-empty-groups { color: var(--text-secondary); font-size: 12px; }
+.imported-runtime-file { margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); overflow: hidden; }
+.imported-runtime-file-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--text-primary); font-size: 13px; }
+.imported-runtime-file-header strong { overflow-wrap: anywhere; }
+.imported-runtime-file > .imported-runtime-section { padding: 12px 14px; }
+.imported-runtime-file > .imported-runtime-section + .imported-runtime-section { border-top: 1px solid var(--border); }
+.imported-runtime-file .imported-runtime-table { min-width: 0; }
+.imported-runtime-file .imported-runtime-disposition { max-width: 100%; overflow-wrap: anywhere; white-space: normal; line-height: 1.3; }
 
 .parameter-grid .mapped-column { background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary)); border-inline: 1px solid var(--accent); }
 .parameter-raw-editor textarea { min-height: 320px; width: 100%; }
@@ -8000,7 +8050,38 @@ button.debugger-problem-row:hover {
 .runtime-context-details { margin-top: 8px; font-size: 12px; }
 .runtime-context-details > summary { cursor: pointer; color: var(--text-secondary); }
 .runtime-settings-detail .runtime-active-heading { margin: 0 0 12px; }
-.runtime-settings-detail > .runtime-field-evidence { margin: 20px 0 0; }
+
+/* Keep checkbox controls at the leading edge of their own labels and cells in
+   the script runtime editor and debugger, including grid and popover layouts. */
+.center-document-runtime label:has(input[type="checkbox"]):not(.scenario-option-card),
+.script-ide-debugger label:has(input[type="checkbox"]) {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: flex-start;
+  justify-self: start;
+  gap: 8px;
+  width: auto;
+  text-align: left;
+}
+.center-document-runtime input[type="checkbox"],
+.script-ide-debugger input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+.script-ide-debugger .replay-options-grid label.replay-checkbox > span { font-size: 13px; font-weight: 500; line-height: 1.3; letter-spacing: 0; text-transform: none; }
+.center-document-runtime .scenario-option-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); grid-column: 1 / -1; gap: 10px; }
+.center-document-runtime .scenario-option-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; justify-self: stretch; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); }
+.center-document-runtime .scenario-option-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+.center-document-runtime .scenario-option-card > div { min-width: 0; }
+.center-document-runtime .scenario-option-card strong,
+.center-document-runtime .scenario-option-card span { display: block; }
+.center-document-runtime .scenario-option-card strong { color: var(--text-primary); font-size: 13px; }
+.center-document-runtime .scenario-option-card span { margin-top: 3px; color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 
 /* Match the surrounding editor controls and retain usable targets at narrow widths. */
 .parameter-workspace-actions label, .runtime-effective-summary > label { display: grid; gap: 6px; font-size: 13px; }

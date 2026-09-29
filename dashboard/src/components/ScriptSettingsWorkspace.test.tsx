@@ -76,14 +76,66 @@ describe('settings workspace review regressions', () => {
   })
   it('reads backend support and defaults while preserving explicit false and zero', async () => {
     vi.mocked(request).mockImplementation(async path => path === '/runtime-settings/support-matrix'
-      ? { support_matrix: [{ id: 'http', protocols: ['http'], fields: ['config.http.keep_alive', 'config.http.max_redirects', 'config.http.request_timeout_ms'], status: 'executed' }] }
+      ? { support_matrix: [{ id: 'http', protocols: ['http'], fields: ['config.http.keep_alive', 'config.http.max_redirects', 'config.http.request_timeout_ms'], status: 'executed', concept: 'HTTP replay defaults', execution_scope: 'Script HTTP transport' }] }
       : { config: { http: { keep_alive: true, max_redirects: 10, request_timeout_ms: 30000 } } })
-    await act(async () => { root.render(<RuntimeFieldEvidence script={script} baseline={script.config} fields={['http']} />) })
+    await act(async () => { root.render(<RuntimeFieldEvidence script={script} baseline={script.config} fields={['http']} sectionId="http" sectionLabel="HTTP Transport" />) })
     const rows = container.querySelectorAll('tbody tr')
-    expect(rows[0].textContent).toContain('OffScript valueexecuted')
-    expect(rows[1].textContent).toContain('0Script valueexecuted')
-    expect(rows[2].textContent).toContain('30000Engine defaultexecuted')
+    expect(container.querySelector('.runtime-evidence-heading')?.textContent).toContain('HTTP Transport')
+    expect(container.querySelector('[data-runtime-section-icon="http"]')).toBeTruthy()
+    expect(rows[0].querySelector('.runtime-evidence-setting-name')?.textContent).toBe('Keep connections alive')
+    expect(rows[0].querySelector('.runtime-evidence-setting-path')?.textContent).toBe('http.keep_alive')
+    expect(rows[0].querySelectorAll('td')[0].textContent).toBe('Off')
+    expect(rows[0].querySelector('.runtime-evidence-origin')?.textContent).toBe('Script value')
+    expect(rows[1].querySelectorAll('td')[0].textContent).toBe('0')
+    expect(rows[2].querySelectorAll('td')[0].textContent).toBe('30000')
+    expect(rows[2].querySelector('.runtime-evidence-origin')?.textContent).toBe('Engine default')
+    expect(rows[0].querySelector('.runtime-evidence-support')?.textContent).toBe('Executed')
+    expect(rows[0].querySelector('.runtime-evidence-support')?.classList.contains('healthy')).toBe(true)
+    expect(rows[0].querySelector('.runtime-evidence-row-details')?.textContent).toContain('Script HTTP transport')
+    expect(rows[0].querySelector('.runtime-evidence-row-details strong')?.textContent).toBe('Execution scope:')
+    expect(rows[0].querySelector('.runtime-evidence-row-details details')).toBeNull()
     expect(formatRuntimeEvidenceValue('secret value', 'config.http.proxy_password')).toBe('Protected value')
+  })
+  it('distinguishes edited and imported origins, protects values, and uses a readable fallback label', async () => {
+    vi.mocked(request).mockImplementation(async path => path === '/runtime-settings/support-matrix'
+      ? { support_matrix: [{ id: 'http', protocols: ['http'], fields: ['config.http.keep_alive', 'config.http.max_redirects', 'config.http.proxy.password', 'config.http.unlisted_policy'], status: 'partial' }] }
+      : { config: { http: {} } })
+    const importedScript: ScriptDefinition = {
+      ...script,
+      config: { ...script.config, http: { ...script.config.http, proxy: { password: 'never-display' } } },
+      metadata: { import: { preserved: { runtime_setting_dispositions: { 'default.cfg': { WEB: { Redirects: { status: 'mapped', fields: ['config.http.max_redirects'] } } } } } } },
+    }
+    await act(async () => { root.render(<RuntimeFieldEvidence script={importedScript} baseline={{ ...script.config, http: { ...script.config.http, keep_alive: true } }} fields={['http']} />) })
+    const rows = Array.from(container.querySelectorAll('tbody tr'))
+    const byPath = (path: string) => rows.find(row => row.querySelector('.runtime-evidence-setting-path')?.textContent === path)!
+    expect(byPath('http.keep_alive').querySelector('.runtime-evidence-origin')?.textContent).toBe('Edited')
+    expect(byPath('http.max_redirects').querySelector('.runtime-evidence-origin')?.textContent).toBe('Imported')
+    expect(byPath('http.proxy.password').textContent).toContain('Protected value')
+    expect(container.textContent).not.toContain('never-display')
+    expect(byPath('http.unlisted_policy').querySelector('.runtime-evidence-setting-name')?.textContent).toBe('Unlisted Policy')
+    expect(byPath('http.keep_alive').querySelector('.runtime-evidence-support')?.textContent).toBe('Partial')
+    expect(byPath('http.keep_alive').querySelector('.runtime-evidence-support')?.classList.contains('warning')).toBe(true)
+  })
+  it('keeps protocol applicability distinct from support status', async () => {
+    vi.mocked(request).mockImplementation(async path => path === '/runtime-settings/support-matrix'
+      ? { support_matrix: [{ id: 'unsupported-http', protocols: ['browser'], fields: ['config.http.keep_alive'], status: 'executed', concept: 'Browser session reuse', notes: 'Only supported during browser replay.' }] }
+      : { config: { http: {} } })
+    await act(async () => { root.render(<RuntimeFieldEvidence script={script} fields={['http']} />) })
+    expect(container.querySelector('.runtime-evidence-other > summary')?.textContent).toBe('Other protocol contexts (1)')
+    expect(container.querySelector('.runtime-evidence-other')?.hasAttribute('open')).toBe(false)
+    expect(container.querySelector('.runtime-evidence-support')).toBeNull()
+    expect(container.querySelector('.runtime-evidence-row-details')?.textContent).toContain('Only supported during browser replay.')
+    expect(container.textContent).not.toContain('Check protocol applicability')
+  })
+  it('shows loading and request failures without inventing support status', async () => {
+    let reject!: (error: Error) => void
+    vi.mocked(request).mockImplementation(() => new Promise((_resolve, fail) => { reject = fail }) as ReturnType<typeof request>)
+    act(() => root.render(<RuntimeFieldEvidence script={script} fields={['http']} />))
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Loading engine defaults and support')
+    expect(container.querySelector('.runtime-evidence-support')).toBeNull()
+    await act(async () => { reject(new Error('offline')); await Promise.resolve() })
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Execution support is unavailable')
+    expect(container.querySelector('.runtime-evidence-support')).toBeNull()
   })
   it('shows the global percentage policy on recorded action waits', () => {
     const percentageScript = { ...script, config: { ...script.config, think_time: { type: 'random_percentage', min_percent: 25, max_percent: 75 } }, actions: [{ name: 'wait', type: 'source_runtime', target: '', think_time_after: true, think_time: { type: 'fixed', mean_ms: 4000 } }] }

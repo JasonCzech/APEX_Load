@@ -60,7 +60,6 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
   'web_runtime',
   'log',
   'imported_source',
-  'compatibility',
 ] as const
 
 export type RuntimeSettingsSectionId = typeof RUNTIME_SETTINGS_SECTION_IDS[number]

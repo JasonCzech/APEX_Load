@@ -263,6 +263,7 @@ export function ScriptRuntimeSettingsView({
     if (leftSelected !== rightSelected) return leftSelected - rightSelected
     return left.localeCompare(right)
   })
+  const hasPreservedRunOrder = script.config.run_logic?.block_scheduling !== undefined || Boolean(script.config.run_logic?.action_sequence?.length)
   const hasImportedRuntimeFiles = importedRuntimeFileNames.length > 0
   const importedDispositionSummary = summarizeImportedRuntimeDispositions(importedRuntimeDispositions)
 
@@ -298,12 +299,12 @@ export function ScriptRuntimeSettingsView({
     }
   }
 
-  const categoryModified = (category: typeof RUNTIME_WORKSPACE_CATEGORIES[number]) => category.id === 'compatibility'
+  const categoryModified = (category: typeof RUNTIME_WORKSPACE_CATEGORIES[number]) => category.id === 'imported_source'
     ? ['block_scheduling', 'action_sequence'].some(field => JSON.stringify(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) !== JSON.stringify(baselineConfig?.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]))
     : category.fields.some(field => JSON.stringify(script.config[field]) !== JSON.stringify(baselineConfig?.[field]))
   const visibleCategories = RUNTIME_WORKSPACE_CATEGORIES.filter(category => {
     const terms = `${category.label} ${category.group} ${category.fields.join(' ')} ${RUNTIME_SEARCH_TERMS[category.id] || ''}`.toLowerCase()
-    return runtimeSettingsSectionIsAvailable(category.id, script.protocol) && (category.id !== 'imported_source' || hasImportedRuntimeFiles) && search.toLowerCase().trim().split(/\s+/).every(term => terms.includes(term)) && (!modifiedOnly || categoryModified(category))
+    return runtimeSettingsSectionIsAvailable(category.id, script.protocol) && (category.id !== 'imported_source' || hasImportedRuntimeFiles || hasPreservedRunOrder) && search.toLowerCase().trim().split(/\s+/).every(term => terms.includes(term)) && (!modifiedOnly || categoryModified(category))
   })
   const activeSectionIsVisible = visibleCategories.some(category => category.id === activeSection)
 
@@ -328,7 +329,7 @@ export function ScriptRuntimeSettingsView({
       {visibleCategories.map(category => {
         const changed = categoryModified(category)
         const summary = category.id === 'imported_source'
-          ? `${importedDispositionSummary.total} settings dispositioned`
+          ? hasImportedRuntimeFiles ? `${importedDispositionSummary.total} settings dispositioned` : 'Preserved run order'
           : changed ? (baselineConfig ? 'Modified' : 'Configured') : 'Saved / default'
         return <button type="button" role="tab" key={category.id} id={`runtime-settings-tab-${category.id}`} aria-controls="runtime-settings-tab-panel" aria-selected={runtimeSectionIsActive(category.id)} tabIndex={runtimeSectionIsActive(category.id) ? 0 : -1} className={`scenario-run-settings-tab runtime-settings-tab ${runtimeSectionIsActive(category.id) ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection(category.id)}>
           <RuntimeSectionIcon section={category.id} />
@@ -340,11 +341,6 @@ export function ScriptRuntimeSettingsView({
   </nav>
   <div className="runtime-settings-detail" role="tabpanel" id="runtime-settings-tab-panel" aria-labelledby={activeSectionIsVisible ? `runtime-settings-tab-${activeSection}` : 'runtime-settings-active-heading'}>
   <h3 id="runtime-settings-active-heading" className="runtime-active-heading">{RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.label}</h3>
-  {activeSection === 'compatibility' && <section className="section-body" aria-label="Preserved run order">
-    <h3>Preserved run order</h3><p><strong>Preserved only — does not affect execution.</strong> The engine runs init, the authored action list, and teardown in that order. These imported values are migration evidence.</p>
-    <dl><dt>Block Scheduling</dt><dd>{script.config.run_logic?.block_scheduling || 'Not specified'}</dd><dt>Action Sequence</dt><dd>{script.config.run_logic?.action_sequence?.join(', ') || 'Not specified'}</dd></dl>
-    <p>Implement branching or repetition in executable control-flow actions. Change action order in the Action List.</p>
-  </section>}
   {/* Script Configuration */}
   <div className={`settings-section ${runtimeSectionIsActive('script_config') ? 'open' : ''}`}>
     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('script_config')}>
@@ -670,7 +666,7 @@ export function ScriptRuntimeSettingsView({
               <option value="per_iteration">Per Iteration</option>
             </select>
           </label>
-          <p className="full-width">Lifecycle: init → authored actions → teardown. Imported scheduling and order values are read-only under Preserved run order.</p>
+          <p className="full-width">Lifecycle: init → authored actions → teardown. Imported scheduling and order values are read-only under Imported Source Runtime Settings.</p>
 
         </div>
       </div>
@@ -1780,17 +1776,19 @@ export function ScriptRuntimeSettingsView({
     )}
   </div>
   {/* Imported Source Runtime Settings (read-only) */}
-  {hasImportedRuntimeFiles && (
+  {(hasImportedRuntimeFiles || hasPreservedRunOrder) && (
     <ImportedSourceRuntimeSection
+      key={script.id || script.name}
       sectionIsActive={runtimeSectionIsActive}
       onSelectSection={selectRuntimeSettingsSection}
       importedRuntimeFileNames={importedRuntimeFileNames}
       importedRuntimeFiles={importedRuntimeFiles}
       importedRuntimeDispositions={importedRuntimeDispositions}
       importedDispositionSummary={importedDispositionSummary}
+      runLogic={script.config.run_logic}
     />
   )}
-  <RuntimeFieldEvidence script={script} baseline={baselineConfig} fields={RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.fields || []} />
+  <RuntimeFieldEvidence script={script} baseline={baselineConfig} fields={RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.fields || []} sectionId={activeSection} sectionLabel={RUNTIME_WORKSPACE_CATEGORIES.find(category => category.id === activeSection)?.label} />
   </div>
 </div>
 </section>

@@ -94,7 +94,9 @@ it('hides empty statuses and places details after current draft values', () => {
   expect([...section.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Setting', 'Imported value', 'Current draft value', 'Details'])
   const row = section.querySelector('tbody tr:not(.import-category)')!
   expect(row.querySelector('th details')).toBeNull()
-  expect(row.children[3].querySelector('details > summary')?.textContent).toBe('Details')
+  expect(row.children[3].querySelector('details')).toBeNull()
+  expect(row.children[3].querySelector('.import-runtime-inline-details')?.textContent).toBeTruthy()
+  expect(row.querySelector('.import-runtime-setting-path')?.textContent).toMatch(/^[a-z]/)
   expect(section.querySelector('.import-category th')?.getAttribute('colspan')).toBe('4')
   expect(container.querySelectorAll('.import-runtime-summary > label')).toHaveLength(1)
   expect(container.textContent).toContain('3000')
@@ -115,22 +117,16 @@ it('shows source values and preserved settings without duplicating mapped destin
  expect(groups['Preserved only'][0].imported).toContain('keep')
  expect(Object.values(groups).flat().filter(r => r.path === 'config.http.request_timeout_ms')).toHaveLength(1)
 })
-it('collapses category explanations independently from visible rows and edit actions', async () => {
+it('shows category explanations alongside visible rows and edit actions', async () => {
  const container = document.createElement('div'); const root = createRoot(container)
  try {
   await act(async () => root.render(<ImportSettingsProvider script={script()} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportRuntimeSettingsTable script={script()} /></ImportSettingsProvider>))
-  const toggle = container.querySelector<HTMLButtonElement>('[aria-label="HTTP details"]')!
-  const explanation = container.querySelector<HTMLElement>(`[id="${toggle.getAttribute('aria-controls')}"]`)!
-  expect(toggle.getAttribute('aria-expanded')).toBe('false')
-  expect(explanation.hidden).toBe(true)
+  expect(container.querySelector('[aria-label="HTTP details"]')).toBeNull()
+  expect(container.querySelector('.import-category small')?.textContent).toContain('Draft settings without a reported source mapping')
   const edit = [...container.querySelectorAll('button')].find(b => b.textContent === 'Edit HTTP')!
   expect(edit.closest('[hidden]')).toBeNull()
-  await act(async () => toggle.click())
-  expect(explanation.hidden).toBe(false)
   await act(async () => edit.click())
   const input = container.querySelector('[aria-label="HTTP: Request timeout (ms)"]')!
-  await act(async () => toggle.click())
-  expect(explanation.hidden).toBe(true)
   expect(input.closest('[hidden]')).toBeNull()
  } finally { await act(async () => root.unmount()) }
 })
