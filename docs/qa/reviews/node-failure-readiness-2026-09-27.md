@@ -4121,3 +4121,34 @@ attempted full `go test -p 1 -ldflags='-s -w' ./...` run could not compile the
 API package because the host ran out of disk while building tests; earlier
 command and deployment packages had passed. This is a local validation limit,
 not a passing full-suite result. The full suite remains a CI merge gate.
+
+## Combined controller and source-worker loss after replacement commit (2026-09-29)
+
+The same reviewed `fe71b4d7` fault-probe image ran a second 50-VUser
+evacuation in the disposable three-node Docker Desktop kind cluster. An
+identity-checked watcher stopped the kind worker holding both the active
+controller and the already fenced source generator about 300 ms after
+PostgreSQL recorded the version-2 `replacement_committed` checkpoint. Its
+audit showed source capacity `releasing` and replacement capacity
+`committed` at that boundary. Kubernetes marked the stopped worker NotReady.
+The other controller promoted the checkpoint and adopted the replacement on
+the surviving worker, moving execution generation 30 to 31 about 34 seconds
+after the checkpoint. The run remained RUNNING and continuity-armed while the
+worker was down. The same independent target instance counted 46,100 to
+51,147 requests across subsequent observations.
+
+After restoring the source worker, the source pod became Ready; the operator
+stopped the still-running test. S3 archive verification matched all nine
+artifacts, collected both generator sources, and reported recovery available.
+Receipts are under
+`artifacts/scalability/2026-09-29/combined-postcommit-fe71b4d7/` outside
+the repository. This qualifies a temporary simulated worker outage after
+replacement commit on a single Docker host. It does not qualify permanent
+physical node or zone loss, CSI/RWX storage, an earlier checkpoint phase,
+or a missing replacement.
+
+The local Docker Desktop backend required a restart after the prior full-suite
+attempt exhausted host disk. The disposable Redis AOF then needed repair of a
+12,274-byte corrupt tail before this trial; the original data was preserved
+privately, the repair was made on a copy, and all trial pods were Ready before
+the fault. This episode is not evidence of seamless Redis failover.

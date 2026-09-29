@@ -555,3 +555,12 @@ continued on the same target instance; the operator-stopped run's S3 archive
 verified all nine artifacts and both source generators. This qualifies only
 the post-commit interruption on one Docker host. Earlier journal phases,
 replacement loss, permanent node/zone loss, and CSI/RWX behavior remain open.
+The same corrected image also passed a combined post-commit kind worker loss:
+the stopped worker held both the active controller and the already fenced
+source generator. Kubernetes marked it NotReady while the other controller
+adopted the committed replacement at generation 31; the run stayed RUNNING
+and independently counted traffic on the surviving worker. After the source
+worker was restored, the operator-stopped run verified 9/9 S3 artifacts and
+both generator sources. This is a temporary simulated worker outage inside
+Docker Desktop, not physical host independence, permanent node removal, or
+recovery of an uncommitted/missing replacement.
