@@ -12,6 +12,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -171,6 +172,79 @@ func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) 
 	if _, committed := committedRunEvacuationCheckpoint(guard, test.ID); !committed {
 		t.Fatal("original committed guard lost its proof")
 	}
+}
+
+func TestRunEvacuationCommitWaitsForReplacementCapacity(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	budget := protocol.CapacityVector{CPUCores: 1, MemoryMB: 100, NetworkMbps: 100, VUsers: 10}
+	claims := []storage.PodCapacityReservation{
+		{ReservationID: "attempt", Revision: 1, Target: "gen-a", TestID: test.ID, Incarnation: "source-pod", Generation: generation, ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget, GroupPeaks: map[string]int32{"ga": 5}},
+		{ReservationID: "attempt", Revision: 1, Target: "gen-b", TestID: test.ID, Incarnation: "replacement-pod", Generation: generation, ModelVersion: protocol.CapacityReservationModel, Budget: budget, Demand: budget, GroupPeaks: map[string]int32{"ga": 5}},
+	}
+	if err := store.ReservePodCapacity(claims, executionLeaseName, owner, generation); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.TransitionPodCapacity("gen-a", test.ID, "source-pod", "attempt", "releasing", executionLeaseName, owner, generation); err != nil {
+		t.Fatal(err)
+	}
+	tr.armRunContinuity(nil, test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner); err == nil || !strings.Contains(err.Error(), "no committed capacity reservation") {
+		t.Fatalf("pending replacement became adoptable: %v", err)
+	}
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.ContinuityCheckpoint != guard {
+		t.Fatalf("rejected commit changed checkpoint: %v", err)
+	}
+	if err := store.TransitionPodCapacity("gen-b", test.ID, "replacement-pod", "attempt", "committed", executionLeaseName, owner, generation); err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+		t.Fatal(err)
+	}
+	successor := newExecutionLeadership(store, "capacity-evacuation-successor")
+	successor.tick()
+	newOwner, newGeneration := successor.executionLeaseTerm()
+	tr.leadership = successor
+	client := &capacityAdoptionClient{adoptionFakeClient: &adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED}}
+	client.confirm = func(*pb.PodCapacityClaim) (*pb.PodCapacityAck, error) {
+		return &pb.PodCapacityAck{Accepted: true, Snapshot: &pb.PodCapacitySnapshot{Incarnation: "replacement-pod"}}, nil
+	}
+	tr.execution = newDistributedExecutionBackend([]string{"gen-b"}, time.Second, func(context.Context, string) (generatorClient, error) { return client, nil })
+	if err := tr.reconcileStoredActiveTest(test); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	if test.adoptedResume == nil || test.adoptedResume.finishStatus != "" {
+		t.Fatalf("committed replacement capacity was not adopted: %+v", test.adoptedResume)
+	}
+	rows, err := store.ListPodCapacityReservations()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.Target == "gen-b" && row.Generation == newGeneration && row.State == "committed" {
+			return
+		}
+	}
+	t.Fatalf("replacement capacity was not transferred to %s: %+v", newOwner, rows)
 }
 
 func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T) {

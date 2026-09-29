@@ -92,6 +92,7 @@ func TestReconcileLeavesAdoptionCandidatesRunning(t *testing.T) {
 func TestUnadoptableRunFailsWithAdoptionReason(t *testing.T) {
 	runner, store, _ := newAdoptionTestRunner(t)
 	test := storedContinueRun(t, runner, store, "orphan", "continue")
+	test.Assignment.TolerateGeneratorLoss = true
 	runner.mu.Lock()
 	runner.tests[test.ID] = test
 	runner.mu.Unlock()
@@ -115,6 +116,9 @@ func TestUnadoptableRunFailsWithAdoptionReason(t *testing.T) {
 	}
 	if !strings.Contains(message, "could not be adopted") || !strings.Contains(message, "gen-a:9091") {
 		t.Fatalf("failure reason %q does not explain the adoption failure", message)
+	}
+	if !strings.Contains(message, "generator lost while no controller was leading") {
+		t.Fatalf("unreachable generator omitted loss-tolerance limitation: %q", message)
 	}
 	record, err := store.GetTest(test.ID)
 	if err != nil || record.Status != "FAILED" {

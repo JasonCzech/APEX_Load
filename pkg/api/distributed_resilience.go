@@ -730,6 +730,24 @@ sourceFenced:
 		closeUntouchedDialedClients(touchedTargets)
 		return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 	}
+	// The successor transfers every live replacement reservation while adopting
+	// this checkpoint. Publish the commit proof only after its capacity claim is
+	// durably committed; a crash between these writes remains fail-closed.
+	if store, ok := tr.testStore.(podCapacityStore); ok {
+		for _, claim := range podClaims {
+			if err := tr.transitionPodLedger(store, claim.Target, claim.TestID, claim.Incarnation, claim.ReservationID, "committed", executionLeaseName, executionLeaseOwnerID, executionGeneration); err != nil {
+				closeUntouchedDialedClients(touchedTargets)
+				return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+					testID:             testID,
+					participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+					touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+					unreachableTargets: unreachableTargets,
+					err:                fmt.Errorf("commit replacement capacity before evacuation checkpoint: %w", err),
+				}, streamsByTarget, openedStreams, releaseTopology)
+			}
+		}
+	}
+	podCommitted = true
 	if evacuationGuard != "" {
 		committedGuard, commitErr := tr.markRunEvacuationReplacementCommitted(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
 		if commitErr != nil {
@@ -881,12 +899,6 @@ sourceFenced:
 
 	if stream := streamsByTarget[target]; stream != nil {
 		_ = stream.CloseSend()
-	}
-	podCommitted = true
-	if store, ok := tr.testStore.(podCapacityStore); ok {
-		for _, r := range podClaims {
-			_ = tr.transitionPodLedger(store, r.Target, r.TestID, r.Incarnation, r.ReservationID, "committed", executionLeaseName, executionLeaseOwnerID, executionGeneration)
-		}
 	}
 	return impacts, nil
 }

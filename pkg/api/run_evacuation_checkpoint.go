@@ -229,8 +229,8 @@ func (tr *TestRunner) markRunEvacuationSourceFenced(ctx context.Context, test *M
 }
 
 // markRunEvacuationReplacementCommitted records acknowledged CommitWork only
-// after the positive source fence. A successor still fails closed on this
-// in-flight phase until replay can verify generator state and epoch fencing.
+// after the positive source fence and durable replacement capacity commit.
+// A successor can then adopt the existing replacement without replaying work.
 func (tr *TestRunner) markRunEvacuationReplacementCommitted(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner string) (string, error) {
 	return tr.advanceRunEvacuationCheckpoint(ctx, test, raw, generation, owner, runEvacuationPhaseSourceFenced, func(guard *runEvacuationCheckpoint) error {
 		if guard.StagedAt.IsZero() || len(guard.StagedTargets) == 0 || guard.SourceFencedAt.IsZero() || !guard.ReplacementCommittedAt.IsZero() {
@@ -239,6 +239,31 @@ func (tr *TestRunner) markRunEvacuationReplacementCommitted(ctx context.Context,
 		expected, err := runEvacuationReplacementTargets(*guard)
 		if err != nil || !slices.Equal(guard.StagedTargets, expected) {
 			return errors.New("evacuation replacement commit has mismatched staged targets")
+		}
+		if store, ok := tr.testStore.(podCapacityStore); ok {
+			rows, err := store.ListPodCapacityReservations()
+			if err != nil {
+				return fmt.Errorf("verify committed replacement capacity: %w", err)
+			}
+			byTarget := make(map[string]storage.PodCapacityReservation)
+			capacityPresent := false
+			for _, row := range rows {
+				if row.TestID != test.ID {
+					continue
+				}
+				if row.Target == guard.Source || slices.Contains(expected, row.Target) {
+					capacityPresent = true
+					byTarget[row.Target] = row
+				}
+			}
+			if capacityPresent {
+				for _, target := range expected {
+					claim, present := byTarget[target]
+					if !present || claim.State != "committed" || claim.Generation != generation {
+						return fmt.Errorf("replacement %s has no committed capacity reservation", target)
+					}
+				}
+			}
 		}
 		guard.Phase = runEvacuationPhaseReplacementCommitted
 		guard.ReplacementCommittedAt = time.Now().UTC()

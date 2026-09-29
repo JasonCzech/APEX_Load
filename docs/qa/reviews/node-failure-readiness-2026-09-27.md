@@ -4072,4 +4072,52 @@ adoption, corrupt guards, stale lease and replay. A bounded build-tagged
 post-commit hold makes a deployed interruption reproducible. Focused API
 and tagged probe tests, the full `go test -p 2 -ldflags='-s -w' ./...` suite,
 focused tagged race check, documentation check, and diff review pass.
-Deployed interruption qualification remains pending.
+Deployed interruption qualification was pending at this review boundary.
+
+## Committed evacuation capacity ordering and deployed takeover (2026-09-29)
+
+An initial force-delete of the leader pod did not isolate the post-commit
+boundary: graceful shutdown marked the run STOPPING while the successor
+promoted the checkpoint. A retry used an identity-checked, direct SIGKILL of
+the active controller container about 250 ms after PostgreSQL recorded
+`replacement_committed`. The successor promoted the checkpoint but failed the
+run because the replacement pod reservation remained `pending`. The existing
+evacuation method committed that reservation only after publishing the
+takeover checkpoint. Its capacity transition error was also ignored.
+
+The reviewed fix commits each replacement reservation before publishing
+`replacement_committed` and sends transition failures through the bounded
+fail-closed evacuation path. The checkpoint writer refuses to publish while
+an observed replacement reservation remains pending or belongs to another
+generation. Review also found that capacity-transfer failures were incorrectly
+described as generator loss; that suffix now applies only when a generator is
+unreachable. Tests cover the pending-capacity refusal, successful successor
+capacity transfer, the two failure descriptions, and existing committed
+evacuation cases.
+
+The corrected, digest-pinned controller ran in the disposable three-node kind
+cluster with PostgreSQL, Redis, KEDA and S3. A PostgreSQL audit observed
+`prepared` → `staged` → `source_fenced` → `replacement_committed` for a
+50-VUser run. At the last write, source capacity was `releasing` and the
+replacement was `committed`; the direct controller SIGKILL landed about
+300 ms later. The next execution generation promoted the completed topology,
+transferred the replacement reservation to generation 29, and kept the run
+RUNNING and continuity-armed on the other kind worker. The independent target
+instance stayed the same and its counter rose from 119,449 to 132,651 across
+two subsequent observations. The operator then stopped the run; its S3 archive
+verified 9/9 artifacts with both the retired source and replacement collected.
+Sanitized evidence is under
+`artifacts/scalability/2026-09-29/committed-takeover-capacity-fix/` outside
+the repository; the failed SIGKILL retry is preserved under
+`artifacts/scalability/2026-09-29/committed-takeover-retry-a3430756/`.
+This trial establishes process-interruption recovery of an already committed
+replacement on one Docker host. It does not establish physical node
+independence, recovery of a missing replacement, CSI/RWX behavior, or zero
+measurement loss during the leadership gap.
+Focused API regression tests passed with `-vet=off` after the final diagnostic
+change. The capacity-ordering regressions also passed with Go's default vet
+pass before that diagnostic change. Documentation and whitespace checks passed. The
+attempted full `go test -p 1 -ldflags='-s -w' ./...` run could not compile the
+API package because the host ran out of disk while building tests; earlier
+command and deployment packages had passed. This is a local validation limit,
+not a passing full-suite result. The full suite remains a CI merge gate.

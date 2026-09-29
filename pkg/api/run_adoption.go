@@ -228,6 +228,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		completed := make(map[string]generatorClient)
 		reachable := make(map[string]generatorClient)
 		problems := make([]string, 0)
+		unreachableGenerator := false
 		for _, target := range candidate.targets {
 			if slices.Contains(candidate.checkpoint.CompletedTargets, target) {
 				client, dialErr := b.retainRunAdoptionTarget(ctx, results, target)
@@ -240,6 +241,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 			}
 			result := results[target]
 			if result.err != nil {
+				unreachableGenerator = true
 				problems = append(problems, fmt.Sprintf("%s: %v", target, result.err))
 				continue
 			}
@@ -310,7 +312,7 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 				tr.mu.RLock()
 				lossTolerant := assignmentToleratesGeneratorLoss(candidate.test.Assignment)
 				tr.mu.RUnlock()
-				if lossTolerant {
+				if lossTolerant && unreachableGenerator {
 					// Decision: evacuation needs a leader that watched the loss;
 					// a generator lost while none was leading fails the run.
 					message += " (generator-loss tolerance does not evacuate a generator lost while no controller was leading)"

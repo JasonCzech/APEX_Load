@@ -73,6 +73,7 @@ func TestPhaseATransfersCapacityOrFailsClosed(t *testing.T) {
 			}
 			runner.execution = newDistributedExecutionBackend([]string{claim.Target}, time.Second, func(context.Context, string) (generatorClient, error) { return client, nil })
 			test := storedContinueRun(t, runner, store, claim.TestID, "continue")
+			test.Assignment.TolerateGeneratorLoss = true
 			runner.tests[test.ID] = test
 			if err := runner.adoptOrphanedRuns(); err != nil {
 				t.Fatal(err)
@@ -96,7 +97,7 @@ func TestPhaseATransfersCapacityOrFailsClosed(t *testing.T) {
 					t.Fatalf("completed claim was transferred: %+v %+v", resume, rows)
 				}
 			} else {
-				if resume == nil || resume.finishStatus != "FAILED" || !strings.Contains(resume.finishMessage, "capacity ownership transfer") || rows[0].Generation != oldGeneration {
+				if resume == nil || resume.finishStatus != "FAILED" || !strings.Contains(resume.finishMessage, "capacity ownership transfer") || strings.Contains(resume.finishMessage, "generator lost while no controller was leading") || rows[0].Generation != oldGeneration {
 					t.Fatalf("failure did not retain capacity and stop run: %+v %+v", resume, rows)
 				}
 			}
