@@ -4238,3 +4238,14 @@ restarts without an old-generation assignment. A safe terminal transition
 there needs an authoritative fence or no-work proof for the old process,
 including external runners, before treating a rejected stop as complete.
 That proof and permanent physical-node/CSI qualification remain open.
+
+After the trials, the temporary PostgreSQL audit trigger, function, and table
+were removed. The fresh kind deployment was returned to its prior controller
+image without the fault hold, KEDA minimum two, and uncordoned generators;
+all three nodes were Ready before its containers were stopped with volumes
+preserved. The original kind cluster was restarted with all three nodes
+Ready. Its pre-existing pod DNS timeout to the PostgreSQL service persisted:
+both controllers remained in CrashLoopBackOff. Restarting kube-proxy and
+CoreDNS did not clear that timeout, so application readiness in the original
+cluster is not claimed. The separate Docker Compose PostgreSQL and Redis
+containers remained healthy.
