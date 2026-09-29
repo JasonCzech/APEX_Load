@@ -414,6 +414,23 @@ func (s *Store) ConfirmTerminated(ctx context.Context, epoch, id, podUID, contai
 	})
 }
 
+// ConfirmNeverStarted accepts only a separately attested creation fence and a
+// complete negative runtime history for this immutable pod request. The
+// attestor must prove that a delayed create cannot start it in the future.
+// Kubernetes NotFound, a rejected create response and deletion are insufficient.
+func (s *Store) ConfirmNeverStarted(ctx context.Context, epoch, id, podUID, podPolicySHA256 string) error {
+	if podUID != "" && !name.MatchString(podUID) || !validPolicyDigest(podPolicySHA256) {
+		return ErrCleanup
+	}
+	return s.change(ctx, epoch, id, func(r *Record) error {
+		if r.State != javarunner.HostQuarantined || r.PodPolicySHA256 != podPolicySHA256 || r.PodUID != podUID || r.ContainerID != "" {
+			return ErrCleanup
+		}
+		r.State, r.VUserOccupied = javarunner.HostReaped, false
+		return nil
+	})
+}
+
 // Snapshot also durably applies timeouts. The future broker monitor must call
 // it independently of Java invocation and execute all draining/quarantine work.
 func (s *Store) Snapshot(ctx context.Context, epoch string) ([]Record, javarunner.HostUsage, error) {

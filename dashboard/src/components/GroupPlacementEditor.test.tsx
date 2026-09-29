@@ -490,9 +490,36 @@ it('preserves an explicit Java profile across placement edits and removes it onl
   expect(value().java_host.profile_id).toBe('approved')
   expect(container.textContent).toContain('host ceiling')
   const inherit = Array.from(container.querySelectorAll('label')).find(label => label.textContent === 'Inherit scenario default')!.querySelector<HTMLInputElement>('input')!
-  expect(inherit.disabled).toBe(true)
+  expect(inherit.disabled).toBe(false)
+  act(() => inherit.click())
+  expect(value().mode).toBe('inherit')
+  expect(value().java_host.profile_id).toBe('approved')
   act(() => { select.value = ''; select.dispatchEvent(new Event('change', { bubbles: true })) })
   expect(value().java_host).toBeUndefined()
+})
+
+it('selects a Java profile without overriding inherited placement', () => {
+  const generator = runtimeCapacityGenerator([])
+  generator.java_host = { contract: 'apexload.java-placement/v1', mode: 'dedicated', containment: 'execution_pod', max_hosts: 25, max_vusers: 25, max_memory_bytes: 1 << 30, profiles: [{ script_sha256: 'a'.repeat(64), profile_id: 'approved', configuration_sha256: 'b'.repeat(64), policy_sha256: 'c'.repeat(64), memory_bytes: 1 << 28, preparation_ms: 120000, max_run_ms: 600000, invocation_ms: 30000 }] }
+  act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'inherit' }} generatorInventory={[generator]} protocol="java_vuser" />))
+  const select = container.querySelector<HTMLSelectElement>('[aria-label="Java execution profile"]')!
+  act(() => { select.value = 'approved'; select.dispatchEvent(new Event('change', { bubbles: true })) })
+  const assignment = JSON.parse(container.querySelector('output')!.textContent || '{}')
+  expect(assignment.mode).toBe('inherit')
+  expect(assignment.java_host.profile_id).toBe('approved')
+  expect(radio('Inherit scenario default').checked).toBe(true)
+})
+
+it('keeps legacy profile-only drafts on automatic placement', () => {
+  const java_host = { profile_id: 'approved', preparation_ms: 120000, run_lifetime_ms: 600000 }
+  act(() => root.render(<AssignmentHarness initialAssignment={{ java_host }} protocol="java_vuser" />))
+  expect(radio('Automatic placement').checked).toBe(true)
+  const deadline = container.querySelector<HTMLInputElement>('[aria-label="Java preparation deadline (seconds)"]')!
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  act(() => { setValue.call(deadline, '60'); deadline.dispatchEvent(new Event('input', { bubbles: true })) })
+  const assignment = JSON.parse(container.querySelector('output')!.textContent || '{}')
+  expect(assignment.mode).toBe('auto')
+  expect(assignment.java_host.preparation_ms).toBe(60000)
 })
 
 it('keeps an unavailable restored Java profile visible without silently defaulting', () => {

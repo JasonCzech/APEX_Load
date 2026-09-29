@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,10 +18,16 @@ import (
 type testAttestor struct {
 	calls  atomic.Int32
 	proven bool
+	intent UnstartedPod
 }
 
 func (a *testAttestor) BoundaryTerminated(_ context.Context, p PodReceipt) (bool, error) {
 	a.calls.Add(1)
+	return a.proven, nil
+}
+func (a *testAttestor) NeverStarted(_ context.Context, intent UnstartedPod) (bool, error) {
+	a.calls.Add(1)
+	a.intent = intent
 	return a.proven, nil
 }
 func podConfig() ExecutionPodConfig {
@@ -139,18 +146,71 @@ func TestKubernetesAmbiguousCreateRetainsReservation(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+func TestRejectedCreateNeedsExternalNoStartFenceAcrossRestart(t *testing.T) {
+	s, old, path := newStore(t)
+	host := reserve(t, s, old)
+	a := &testAttestor{}
+	var creates atomic.Int32
+	k := kubeFixture(t, func(w http.ResponseWriter, req *http.Request) {
+		switch req.Method {
+		case http.MethodPost:
+			creates.Add(1)
+			w.WriteHeader(http.StatusForbidden)
+		case http.MethodGet:
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			t.Error("unexpected request", req.Method)
+		}
+	}, a)
+	if _, e := k.Provision(t.Context(), s, old, host.ID, podConfig()); !errors.Is(e, ErrCleanup) {
+		t.Fatal(e)
+	}
+	prepared := record(t, s, old, host.ID)
+	if prepared.State != javarunner.HostQuarantined || prepared.PodUID != "" || !validPolicyDigest(prepared.PodPolicySHA256) || creates.Load() != 1 {
+		t.Fatal("create failure lost the durable intent", prepared, creates.Load())
+	}
+	restarted, e := Open(t.Context(), path, testConfig, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { _ = restarted.Close() })
+	epoch, e := restarted.StartEpoch(t.Context())
+	if e != nil {
+		t.Fatal(e)
+	}
+	r, e := NewReconciler(restarted, epoch, k, time.Second)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = r.Step(t.Context()); !errors.Is(e, ErrCleanup) || record(t, restarted, epoch, host.ID).State != javarunner.HostQuarantined {
+		t.Fatal("HTTP rejection or NotFound released capacity", e)
+	}
+	if a.intent.UID != "" || a.intent.Name != host.PodName || a.intent.HostID != host.ID || a.intent.BrokerEpoch != old || a.intent.PodPolicySHA256 != prepared.PodPolicySHA256 {
+		t.Fatal("attestation lost immutable creation intent", a.intent)
+	}
+	a.proven = true
+	if e = r.Step(t.Context()); e != nil || record(t, restarted, epoch, host.ID).State != javarunner.HostReaped || creates.Load() != 1 {
+		t.Fatal("positive no-start proof failed or create replayed", e, creates.Load())
+	}
+}
 func TestKubernetesDeleteUIDAndIndependentAttestation(t *testing.T) {
 	a := &testAttestor{}
+	var deletes, gets atomic.Int32
 	k := kubeFixture(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "DELETE" {
-			t.Error("unexpected method")
-		}
-		var options struct {
-			Preconditions      struct{ UID string }
-			GracePeriodSeconds int64
-		}
-		if json.NewDecoder(r.Body).Decode(&options) != nil || options.Preconditions.UID != "exact-uid" || options.GracePeriodSeconds != 0 {
-			t.Error("missing exact deletion fence")
+		switch r.Method {
+		case http.MethodDelete:
+			deletes.Add(1)
+			var options struct {
+				Preconditions      struct{ UID string }
+				GracePeriodSeconds int64
+			}
+			if json.NewDecoder(r.Body).Decode(&options) != nil || options.Preconditions.UID != "exact-uid" || options.GracePeriodSeconds != 0 {
+				t.Error("missing exact deletion fence")
+			}
+		case http.MethodGet:
+			gets.Add(1)
+		default:
+			t.Error("unexpected method", r.Method)
 		}
 		w.WriteHeader(404)
 	}, a)
@@ -158,12 +218,67 @@ func TestKubernetesDeleteUIDAndIndependentAttestation(t *testing.T) {
 	if err := k.Delete(t.Context(), pod); err != nil {
 		t.Fatal(err)
 	}
+	if deletes.Load() != 1 || gets.Load() != 1 {
+		t.Fatal("deletion did not confirm object absence", deletes.Load(), gets.Load())
+	}
 	if ok, err := k.BoundaryTerminated(t.Context(), pod); err != nil || ok || a.calls.Load() != 1 {
 		t.Fatal("NotFound incorrectly proved termination", ok, err)
 	}
 	pod.Namespace = "other"
 	if err := k.Delete(t.Context(), pod); err == nil {
 		t.Fatal("cross-namespace deletion admitted")
+	}
+}
+
+func TestKubernetesDeleteWaitsForAuthoritativePodAbsence(t *testing.T) {
+	for _, deleteStatus := range []int{http.StatusOK, http.StatusAccepted, http.StatusNotFound} {
+		t.Run(http.StatusText(deleteStatus), func(t *testing.T) {
+			var present atomic.Bool
+			present.Store(true)
+			var deletes, gets atomic.Int32
+			k := kubeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.Method {
+				case http.MethodDelete:
+					deletes.Add(1)
+					var options struct{ Preconditions struct{ UID string } }
+					if e := json.NewDecoder(r.Body).Decode(&options); e != nil || options.Preconditions.UID != "exact-uid" {
+						t.Error("missing exact UID precondition", e, options.Preconditions.UID)
+					}
+					w.WriteHeader(deleteStatus)
+				case http.MethodGet:
+					gets.Add(1)
+					if present.Load() {
+						w.WriteHeader(http.StatusOK)
+						_, _ = w.Write([]byte(`{"metadata":{"uid":"exact-uid"}}`))
+					} else {
+						w.WriteHeader(http.StatusNotFound)
+					}
+				default:
+					t.Error("unexpected request", r.Method)
+				}
+			}, &testAttestor{})
+			pod := PodReceipt{Namespace: testConfig.Namespace, Name: "pod", UID: "exact-uid"}
+			if e := k.Delete(t.Context(), pod); !errors.Is(e, ErrCleanup) || deletes.Load() != 1 || gets.Load() != 1 {
+				t.Fatal("delete acknowledgment released present pod", e, deletes.Load(), gets.Load())
+			}
+			present.Store(false)
+			if e := k.Delete(t.Context(), pod); e != nil || deletes.Load() != 2 || gets.Load() != 2 {
+				t.Fatal("absent pod did not complete cleanup", e, deletes.Load(), gets.Load())
+			}
+		})
+	}
+}
+
+func TestKubernetesDeleteRetainsCleanupOnFailedAbsenceRead(t *testing.T) {
+	k := kubeFixture(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusAccepted)
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}, &testAttestor{})
+	if e := k.Delete(t.Context(), PodReceipt{Namespace: testConfig.Namespace, Name: "pod", UID: "exact-uid"}); !errors.Is(e, ErrCleanup) {
+		t.Fatal("failed verification released pod", e)
 	}
 }
 func TestKubernetesRejectsRedirectAndUntrustedEndpoint(t *testing.T) {

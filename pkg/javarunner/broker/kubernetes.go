@@ -19,11 +19,12 @@ import (
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
 
-// TerminationAttestor must independently prove this exact container boundary
-// stopped, including descendants, on the qualified cluster runtime. Kubernetes
-// object deletion/status alone is deliberately not an implementation.
+// TerminationAttestor must independently prove exact-container termination or
+// that a durable creation intent never started and can no longer start.
+// Kubernetes object deletion/status alone is deliberately not an implementation.
 type TerminationAttestor interface {
 	BoundaryTerminated(context.Context, PodReceipt) (bool, error)
+	NeverStarted(context.Context, UnstartedPod) (bool, error)
 }
 
 type KubernetesBackend struct {
@@ -141,6 +142,14 @@ func (k *KubernetesBackend) Delete(ctx context.Context, pod PodReceipt) error {
 	if err != nil || status != http.StatusOK && status != http.StatusAccepted && status != http.StatusNotFound {
 		return ErrCleanup
 	}
+	// A successful DELETE only starts asynchronous Kubernetes cleanup. Observe
+	// the name absent through a direct API GET before releasing pod capacity.
+	// A still-present object (including a replacement) or failed read leaves
+	// quarantine charged for the next reconciliation tick.
+	_, status, err = k.request(ctx, http.MethodGet, pod.Name, nil)
+	if err != nil || status != http.StatusNotFound {
+		return ErrCleanup
+	}
 	return nil
 }
 func (k *KubernetesBackend) BoundaryTerminated(ctx context.Context, pod PodReceipt) (bool, error) {
@@ -148,6 +157,13 @@ func (k *KubernetesBackend) BoundaryTerminated(ctx context.Context, pod PodRecei
 		return false, ErrState
 	}
 	return k.attestor.BoundaryTerminated(ctx, pod)
+}
+
+func (k *KubernetesBackend) NeverStarted(ctx context.Context, intent UnstartedPod) (bool, error) {
+	if intent.Namespace != k.namespace || !validUnstartedPod(intent) {
+		return false, ErrState
+	}
+	return k.attestor.NeverStarted(ctx, intent)
 }
 
 // ExecutionPodConfig is operator-owned and contains no generator credentials.

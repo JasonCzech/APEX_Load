@@ -237,6 +237,13 @@ func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName s
 // instead of an empty/misleading reason.
 func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string]generatorLoadSnapshot, specs []generatorTargetSpec, inherited *GeneratorAssignmentSettings) string {
 	if javaHostSettings(group) != nil {
+		if groupInheritsAssignment(group) && inherited != nil &&
+			(inherited.Mode == generatorAssignmentModeRegionWeighted || inherited.Mode == generatorAssignmentModeLoadZoneWeighted) {
+			return fmt.Sprintf("java_host_inherited_weighted_placement_unsupported for group %q", group.Name)
+		}
+		if inherited != nil && inherited.PoolID != "" && inherited.Mode != generatorAssignmentModeSpecificHosts {
+			return fmt.Sprintf("java_host_pool_membership_unresolved for group %q", group.Name)
+		}
 		admissions, err := javaHostScheduleAdmissions(group)
 		if err != nil {
 			return err.Error()

@@ -168,7 +168,7 @@ func filterLoadSnapshots(source map[string]generatorLoadSnapshot, allowed map[st
 }
 
 func groupInheritsAssignment(group TestGroup) bool {
-	return group.Assignment == nil || strings.TrimSpace(group.Assignment.Mode) == ""
+	return group.Assignment == nil || strings.TrimSpace(group.Assignment.Mode) == "" || group.Assignment.Mode == generatorAssignmentModeInherit
 }
 
 func groupUsesWeightedDefault(group TestGroup, assignment *GeneratorAssignmentSettings) bool {
@@ -179,7 +179,7 @@ func groupUsesWeightedDefault(group TestGroup, assignment *GeneratorAssignmentSe
 }
 
 func effectiveGroupRequiredLabels(group TestGroup, inherited *GeneratorAssignmentSettings) map[string]string {
-	if group.Assignment != nil {
+	if group.Assignment != nil && !groupInheritsAssignment(group) {
 		return group.Assignment.RequiredLabels
 	}
 	if inherited != nil {

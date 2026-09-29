@@ -4,8 +4,11 @@ import java.io.*;
 import java.net.URL;
 import java.net.Socket;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /** Internal experimental runner entry point. An external owner MUST enforce the
  * run lease and reap strong containment, including after this JVM exits. */
@@ -139,13 +142,20 @@ public final class PooledMain {
 
     private static URL local(String path) throws Exception { return new File(path).toURI().toURL(); }
 
+    private static byte[] hostProof(String generation, byte[] secret) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret, "HmacSHA256"));
+        return mac.doFinal(("apexload.java_vuser.ipc.v3.host_auth:" + generation).getBytes(StandardCharsets.UTF_8));
+    }
+
     public static void main(String[] args) throws Exception {
-        // Bootstrap contains no user code. Preserve control input and replace
-        // script-visible streams before creating any slot or loading artifacts.
-        final DataInputStream control = new DataInputStream(System.in);
+        // Bootstrap contains no user code. Stdin carries only the host secret;
+        // the owner closes fd 0 before any slot can run. Subsequent requests
+        // and replies share one authenticated duplex socket.
+        final DataInputStream bootstrap = new DataInputStream(System.in);
         // Raw/native stdout and stderr remain supervisor-owned diagnostic streams.
-        // Protocol replies use a separate socket so FileDescriptor/native writes
-        // cannot spoof framing or starve the control lane.
+        // Protocol traffic uses a socket so FileDescriptor/native stream access
+        // cannot consume or spoof framing.
         final Diagnostics diagnostics = new Diagnostics();
         System.setIn(new ByteArrayInputStream(new byte[0]));
         System.setOut(new PrintStream(diagnostics, true, "UTF-8"));
@@ -159,8 +169,8 @@ public final class PooledMain {
             String target = args[pos++];
             String cleanup = args[pos++];
             if (!"true".equals(cleanup) && !"false".equals(cleanup)) throw new IllegalArgumentException();
-            int responsePort = Integer.parseInt(args[pos++]);
-            if (responsePort < 1 || responsePort > 65535) throw new IllegalArgumentException();
+            int controlPort = Integer.parseInt(args[pos++]);
+            if (controlPort < 1 || controlPort > 65535) throw new IllegalArgumentException();
             int scriptCount = Integer.parseInt(args[pos++]);
             if (scriptCount < 1 || scriptCount > 256 || args.length < pos + scriptCount + 1)
                 throw new IllegalArgumentException();
@@ -172,11 +182,15 @@ public final class PooledMain {
             URL[] dependencies = new URL[dependencyCount];
             for (int i = 0; i < dependencyCount; i++) dependencies[i] = local(args[pos++]);
 
-            Socket responseSocket = new Socket();
-            responseSocket.connect(new InetSocketAddress("127.0.0.1", responsePort), 5000);
-            final OutputStream output = responseSocket.getOutputStream();
             byte[] secret = new byte[32];
-            control.readFully(secret);
+            bootstrap.readFully(secret);
+            byte[] proof = hostProof(generation, secret);
+            Socket controlSocket = new Socket();
+            controlSocket.connect(new InetSocketAddress("127.0.0.1", controlPort), 5000);
+            final OutputStream output = controlSocket.getOutputStream();
+            output.write(proof);
+            output.flush();
+            final DataInputStream control = new DataInputStream(controlSocket.getInputStream());
             PooledMain main = new PooledMain(new PooledHost(generation, capacity, shim, scripts, dependencies, target),
                 generation, Boolean.parseBoolean(cleanup), secret, diagnostics);
             Thread writer = new Thread(() -> {

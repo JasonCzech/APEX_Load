@@ -155,10 +155,15 @@ or general pooled integration are enabled by this command.
 
 Independent reconciliation requires the configured
 [external attestor](JAVA_BOUNDARY_ATTESTOR_CONTRACT.md). API errors, absent pod
-objects, deletion acknowledgments and node loss retain charged quarantine.
-Attestation lookups never initiate infrastructure fencing. No cluster or attestor
-is contacted merely to qualify itself during startup; successful startup is not
-evidence that containment is safe.
+objects, deletion acknowledgments and node loss alone retain charged
+quarantine. Even after positive runtime proof, a DELETE acknowledgment does not
+release capacity until a fresh API read confirms that the pod object is gone.
+Known-container lookups never initiate infrastructure fencing. A missing
+container identity requires a separately qualified admission fence and complete
+never-started proof plus authoritative pod-object removal for the exact durable
+creation intent; until then its reservation stays charged. No cluster or
+attestor is contacted merely to qualify itself during startup; successful
+startup is not evidence that containment is safe.
 
 ## Deployment scaffold
 

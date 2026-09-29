@@ -71,6 +71,9 @@ func normalizeGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) (*Gen
 	if in != nil && in.JavaHost != nil {
 		return nil, fmt.Errorf("assignment.java_host is group-scoped")
 	}
+	if in != nil && strings.TrimSpace(in.Mode) == generatorAssignmentModeInherit {
+		return nil, fmt.Errorf("assignment.mode inherit is group-scoped")
+	}
 	return normalizeGeneratorAssignmentSettingsBase(in)
 }
 
@@ -116,6 +119,17 @@ func normalizeGeneratorAssignmentSettingsBase(in *GeneratorAssignmentSettings) (
 		return nil, fmt.Errorf("assignment.sharing_mode must be shared or dedicated")
 	}
 	switch out.Mode {
+	case generatorAssignmentModeInherit:
+		// A Java host profile selects execution mechanics without replacing the
+		// scenario's generator placement. Inherit is only valid for this group
+		// overlay and cannot carry another placement directive of its own.
+		if out.JavaHost == nil || out.SourceAffinity != "" || out.SharingMode != "" || out.PoolID != "" ||
+			len(in.SelectedTargets) != 0 || len(in.RequiredLabels) != 0 || len(in.RegionWeights) != 0 ||
+			len(in.LoadZoneWeights) != 0 || in.ShardStrategy != "" || out.TolerateGeneratorLoss ||
+			out.RecoverySpareVUsers != 0 || out.FailoverPolicy != "" {
+			return nil, fmt.Errorf("inherit group assignment may only select a Java host profile")
+		}
+		return out, nil
 	case generatorAssignmentModeAuto:
 		out.SelectedTargets = nil
 		out.RegionWeights = nil
@@ -268,6 +282,8 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 		return nil, nil
 	}
 	switch out.Mode {
+	case generatorAssignmentModeInherit:
+		return out, nil
 	case generatorAssignmentModeAuto:
 		return out, nil
 	case generatorAssignmentModeSpecificHosts:
@@ -284,7 +300,7 @@ func normalizeGroupGeneratorAssignmentSettings(in *GeneratorAssignmentSettings) 
 		out.ShardStrategy = strategy
 		return out, nil
 	default:
-		return nil, fmt.Errorf("group assignment.mode must be auto or specific_hosts")
+		return nil, fmt.Errorf("group assignment.mode must be inherit, auto, or specific_hosts")
 	}
 }
 

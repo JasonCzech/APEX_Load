@@ -200,6 +200,9 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
 export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings | undefined {
 	if (!assignment?.mode && !assignment?.required_labels && !assignment?.tolerate_generator_loss && !assignment?.java_host) return undefined
 	const requiredLabels = normalizeRequiredLabels(assignment.required_labels)
+	if (assignment.mode === 'inherit') {
+		return assignment.java_host ? { mode: 'inherit', java_host: { ...assignment.java_host } } : undefined
+	}
 	const lossTolerance = { ...(assignment.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}), ...(assignment.java_host ? { java_host: { ...assignment.java_host } } : {}) }
 	if (assignment.mode === 'specific_hosts') {
 		const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)

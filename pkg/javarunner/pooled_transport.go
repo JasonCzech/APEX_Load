@@ -39,10 +39,10 @@ type pooledReply struct {
 	err   error
 }
 
-// NewPooledTransport owns the response socket and saved stdin pipe and sends
-// the secret before the first frame. The launcher must bind its response listener
-// to IPv4 loopback and bound accept/startup separately. Raw process stdout/stderr
-// belong to independently drained, bounded supervisor diagnostics.
+// NewPooledTransport owns the authenticated duplex socket. The launcher must
+// deliver the secret over a separate bootstrap pipe, authenticate the socket
+// before calling this function, and bound acceptance/startup separately. Raw
+// process stdout/stderr belong to independently drained, bounded diagnostics.
 // The caller must bound readiness with Call(ctx, "", "ready", nil) and must call
 // Close on lease loss/shutdown, even if the JVM has already exited.
 func NewPooledTransport(input io.ReadCloser, output io.WriteCloser, generation string, secret []byte, onFailure func(error)) (*PooledTransport, error) {
@@ -50,7 +50,6 @@ func NewPooledTransport(input io.ReadCloser, output io.WriteCloser, generation s
 		return nil, ErrPooledFrame
 	}
 	t := &PooledTransport{generation: generation, secret: append([]byte(nil), secret...), input: input, output: output, writes: make(chan []byte, 64), done: make(chan struct{}), pending: make(map[uint64]pooledPending), onFailure: onFailure}
-	t.writes <- append([]byte(nil), secret...)
 	go t.writeLoop()
 	go t.readLoop()
 	return t, nil

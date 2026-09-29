@@ -40,9 +40,6 @@ func TestPooledTransportRejectsMismatchedResponse(t *testing.T) {
 			go func() {
 				defer close(done)
 				secret := make([]byte, 32)
-				if _, e := io.ReadFull(serverRead, secret); e != nil {
-					return
-				}
 				f, e := ReadPooledFrame(serverRead, secret, false)
 				if e != nil {
 					return

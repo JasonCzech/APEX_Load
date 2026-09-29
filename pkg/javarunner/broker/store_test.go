@@ -213,6 +213,50 @@ func TestUnknownCreationOutcomeNeverReleases(t *testing.T) {
 	}
 }
 
+func TestConfirmNeverStartedRequiresExactUnstartedCreationIntent(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		uid           string
+		containerID   string
+		confirmUID    string
+		confirmPolicy string
+		wantRelease   bool
+	}{
+		{"no_uid", "", "", "", strings.Repeat("a", 64), true},
+		{"pending_uid", "pending-uid", "", "pending-uid", strings.Repeat("a", 64), true},
+		{"wrong_uid", "pending-uid", "", "replacement", strings.Repeat("a", 64), false},
+		{"wrong_policy", "", "", "", strings.Repeat("b", 64), false},
+		{"started_container", "pending-uid", "containerd://started", "pending-uid", strings.Repeat("a", 64), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, epoch, _ := newStore(t)
+			r := reserve(t, s, epoch)
+			policy := strings.Repeat("a", 64)
+			if e := s.BeginPreparePod(t.Context(), epoch, r.ID, policy); e != nil {
+				t.Fatal(e)
+			}
+			if tc.uid != "" {
+				if e := s.BindPod(t.Context(), epoch, r.ID, tc.uid, tc.containerID); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if e := s.ConfirmNeverStarted(t.Context(), epoch, r.ID, tc.confirmUID, tc.confirmPolicy); !errors.Is(e, ErrCleanup) {
+				t.Fatal("live preparation released", e)
+			}
+			if e := s.Abort(t.Context(), epoch, r.ID, "cancelled"); e != nil {
+				t.Fatal(e)
+			}
+			e := s.ConfirmNeverStarted(t.Context(), epoch, r.ID, tc.confirmUID, tc.confirmPolicy)
+			if tc.wantRelease && e != nil || !tc.wantRelease && !errors.Is(e, ErrCleanup) {
+				t.Fatal(e)
+			}
+			if (record(t, s, epoch, r.ID).State == javarunner.HostReaped) != tc.wantRelease {
+				t.Fatal("capacity release mismatch")
+			}
+		})
+	}
+}
+
 func TestExpiredPreparationAndLeaseCannotRevive(t *testing.T) {
 	for _, stage := range []string{"reserved", "preparing", "ready", "committed"} {
 		t.Run(stage, func(t *testing.T) {

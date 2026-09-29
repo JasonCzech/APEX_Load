@@ -39,6 +39,10 @@ export function validateGeneratorAssignment(
       || !isPositiveSafeInteger(profile.run_lifetime_ms) || profile.run_lifetime_ms > 86400000) return `${label}: Java preparation and lifetime limits must be positive and within one hour and 24 hours respectively.`
   }
 
+  if (assignment.mode === 'inherit' && (scope !== 'group' || !assignment.java_host)) {
+    return `${label}: inherited placement requires a group Java execution profile.`
+  }
+
   if (scope === 'group') {
     if (assignment.mode === 'region_weighted' || assignment.mode === 'load_zone_weighted') {
       return `${label}: weighted placement is supported only at scenario scope. Choose inherit, automatic, specific hosts, or required capabilities.`

@@ -2,7 +2,9 @@ package javarunner
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -231,14 +233,27 @@ func (h *localManagedHost) Done() <-chan struct{} { return h.done }
 func (h *localManagedHost) signal()               { h.signalOnce.Do(func() { close(h.done) }) }
 
 func (h *localManagedHost) Ready(ctx context.Context, contexts map[string]map[string]string) error {
-	stop := context.AfterFunc(ctx, func() { _ = h.listener.Close() })
-	defer stop()
-	connection, err := h.listener.AcceptTCP()
-	_ = h.listener.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Stdin is only a bootstrap secret channel. Close it before any slot can
+	// execute so FileDescriptor.in and native fd 0 reads cannot eat controls.
+	n, err := h.stdin.Write(h.secret)
+	closeErr := h.stdin.Close()
+	if err == nil && n != len(h.secret) {
+		err = io.ErrShortWrite
+	}
+	if err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return errors.New("pooled_host_transport_lost")
 	}
-	transport, err := NewPooledTransport(connection, h.stdin, h.generation, h.secret, func(error) { h.signal() })
+	connection, err := acceptAuthenticatedPooledHost(ctx, h.listener, h.generation, h.secret)
+	if err != nil {
+		return errors.New("pooled_host_transport_lost")
+	}
+	transport, err := NewPooledTransport(connection, connection, h.generation, h.secret, func(error) { h.signal() })
 	if err != nil {
 		_ = connection.Close()
 		return err
@@ -265,6 +280,51 @@ func (h *localManagedHost) Ready(ctx context.Context, contexts map[string]map[st
 		}
 	}
 	return nil
+}
+
+// A loopback peer must prove possession of the per-host bootstrap secret
+// before it can claim the only control socket. The proof has its own domain,
+// separate from frame MACs, and never exposes the secret on the socket.
+func pooledHostProof(generation string, secret []byte) []byte {
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte("apexload.java_vuser.ipc.v3.host_auth:" + generation))
+	return mac.Sum(nil)
+}
+
+func acceptAuthenticatedPooledHost(ctx context.Context, listener *net.TCPListener, generation string, secret []byte) (*net.TCPConn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stop := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer stop()
+	defer listener.Close()
+	expected := pooledHostProof(generation, secret)
+	for {
+		connection, err := listener.AcceptTCP()
+		if err != nil {
+			return nil, err
+		}
+		// A silent or forged preconnection cannot strand a later real JVM. Each
+		// candidate has a short deadline; the whole loop obeys the owner context.
+		deadline := time.Now().Add(time.Second)
+		if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+			deadline = ctxDeadline
+		}
+		_ = connection.SetReadDeadline(deadline)
+		proof := make([]byte, sha256.Size)
+		cancelRead := context.AfterFunc(ctx, func() { _ = connection.Close() })
+		_, err = io.ReadFull(connection, proof)
+		cancelRead()
+		if err == nil && ctx.Err() == nil && hmac.Equal(proof, expected) {
+			if err = connection.SetReadDeadline(time.Time{}); err == nil {
+				return connection, nil
+			}
+		}
+		_ = connection.Close()
+		if err = ctx.Err(); err != nil {
+			return nil, err
+		}
+	}
 }
 func (h *localManagedHost) client() (*PooledTransport, error) {
 	h.mu.Lock()

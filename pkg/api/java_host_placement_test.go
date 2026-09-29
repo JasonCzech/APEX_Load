@@ -52,6 +52,83 @@ func TestJavaHostGroupSettingsRoundTripAndScope(t *testing.T) {
 	}
 }
 
+func TestJavaHostProfileCanInheritScenarioPlacement(t *testing.T) {
+	g, a := javaHostPlacementFixture(t)
+	g.Assignment.Mode = generatorAssignmentModeInherit
+	approved, err := normalizeGroupGeneratorAssignmentSettings(g.Assignment)
+	if err != nil || approved.Mode != generatorAssignmentModeInherit {
+		t.Fatalf("inherit profile rejected: assignment=%+v err=%v", approved, err)
+	}
+	implicit := *g.Assignment
+	implicit.Mode = ""
+	if got, err := normalizeGroupGeneratorAssignmentSettings(&implicit); err != nil || got.Mode != generatorAssignmentModeAuto {
+		t.Fatalf("legacy profile-only placement changed: assignment=%+v err=%v", got, err)
+	}
+	stored := decodeStoredGeneratorAssignment(generatorAssignmentForStorage(approved))
+	if stored == nil || stored.Mode != generatorAssignmentModeInherit || stored.JavaHost == nil {
+		t.Fatalf("stored group lost inheritance: %+v", stored)
+	}
+	if _, err := normalizeGeneratorAssignmentSettings(approved); err == nil {
+		t.Fatal("test-level inherit accepted")
+	}
+	invalid := *approved
+	invalid.RequiredLabels = map[string]string{"zone": "other"}
+	if _, err := normalizeGroupGeneratorAssignmentSettings(&invalid); err == nil {
+		t.Fatal("inherit profile accepted a competing group label constraint")
+	}
+
+	b := a
+	b.Target = "gen-b"
+	loads := map[string]generatorLoadSnapshot{"gen-a": a, "gen-b": b}
+	root := &GeneratorAssignmentSettings{Mode: generatorAssignmentModeSpecificHosts, PoolID: "pool-a", SelectedTargets: []string{"gen-a"}, RequiredLabels: map[string]string{"zone": "a"}}
+	specs := []generatorTargetSpec{{Address: "gen-a", Labels: map[string]string{"zone": "a"}}, {Address: "gen-b", Labels: map[string]string{"zone": "b"}}}
+	compatibility := newGeneratorCompatibilityIndex(specs, loads)
+	if !groupInheritsAssignment(g) || effectiveGroupRequiredLabels(g, root)["zone"] != "a" {
+		t.Fatal("group profile erased scenario placement")
+	}
+	for _, mode := range []string{generatorAssignmentModeInherit, generatorAssignmentModeAuto, generatorAssignmentModeSpecificHosts} {
+		g.Assignment.Mode = mode
+		g.Assignment.SelectedTargets = nil
+		if mode == generatorAssignmentModeSpecificHosts {
+			g.Assignment.SelectedTargets = []string{"gen-b"}
+		}
+		shards := chooseJavaHostShards(g, loads, loads, []string{"gen-b", "gen-a"}, []string{"gen-a"}, root, compatibility)
+		if mode == generatorAssignmentModeSpecificHosts {
+			if len(shards) != 0 {
+				t.Fatalf("group pin escaped pool: %+v", shards)
+			}
+			continue
+		}
+		if len(shards) != 1 || shards[0].Target != "gen-a" {
+			t.Fatalf("mode %q escaped scenario pool: %+v", mode, shards)
+		}
+	}
+	// Pool membership alone does not erase inherited labels.
+	g.Assignment.Mode = generatorAssignmentModeInherit
+	noLabels := newGeneratorCompatibilityIndex([]generatorTargetSpec{{Address: "gen-a", Labels: map[string]string{"zone": "b"}}}, loads)
+	if shards := chooseJavaHostShards(g, loads, loads, []string{"gen-a", "gen-b"}, []string{"gen-a"}, root, noLabels); len(shards) != 0 {
+		t.Fatalf("incompatible pool member admitted: %+v", shards)
+	}
+	root.Mode = generatorAssignmentModeAuto // Dynamic pool has no resolved members.
+	root.SelectedTargets = nil
+	if shards := chooseJavaHostShards(g, loads, loads, []string{"gen-a", "gen-b"}, []string{"gen-a", "gen-b"}, root, nil); len(shards) != 0 {
+		t.Fatalf("unresolved pool widened Java placement: %+v", shards)
+	}
+	if message := generatorPlacementRejectionMessage(g, loads, nil, root); !strings.Contains(message, "java_host_pool_membership_unresolved") {
+		t.Fatal(message)
+	}
+	root.PoolID = ""
+	for _, mode := range []string{generatorAssignmentModeRegionWeighted, generatorAssignmentModeLoadZoneWeighted} {
+		root.Mode = mode
+		if shards := chooseJavaHostShards(g, loads, loads, []string{"gen-a", "gen-b"}, []string{"gen-a", "gen-b"}, root, nil); len(shards) != 0 {
+			t.Fatalf("inherited %s weight was ignored: %+v", mode, shards)
+		}
+		if message := generatorPlacementRejectionMessage(g, loads, nil, root); !strings.Contains(message, "java_host_inherited_weighted_placement_unsupported") {
+			t.Fatal(message)
+		}
+	}
+}
+
 func TestJavaHostPlacementFrozenAndIndependentOfLocalJVMCapacity(t *testing.T) {
 	g, load := javaHostPlacementFixture(t)
 	load.RuntimeCapacities = []generatorrpc.ProtocolRuntimeCapacity{{Protocol: "java_vuser", AvailableVUsers: 0}}

@@ -27,6 +27,7 @@ function assignmentMode(assignment?: GeneratorAssignmentSettings): PlacementMode
   if (assignment?.mode === 'load_zone_weighted') return 'load_zone_weighted'
   if (normalizeRequiredLabels(assignment?.required_labels)) return 'required_labels'
   if (assignment?.mode === 'auto') return 'auto'
+  if (assignment?.java_host && !assignment.mode) return 'auto' // Legacy profile-only drafts used automatic placement.
   return 'inherit'
 }
 
@@ -249,7 +250,7 @@ export default function GroupPlacementEditor({
   const setMode = (nextMode: PlacementMode) => {
     setLocalMode(nextMode)
     if (nextMode === 'inherit') {
-      onChange(undefined)
+      onChange(assignment?.java_host ? { mode: 'inherit', java_host: assignment.java_host } : undefined)
       return
     }
     if (nextMode === 'auto') {
@@ -390,7 +391,7 @@ export default function GroupPlacementEditor({
       <div className="new-test-placement-toggle" role="radiogroup" aria-label={`${scope === 'scenario' ? 'Scenario' : 'Group'} generator placement`}>
         {allowInherit && (
           <label className={mode === 'inherit' ? 'selected' : ''}>
-            <input type="radio" disabled={Boolean(assignment?.java_host)} checked={mode === 'inherit'} onChange={() => setMode('inherit')} />
+            <input type="radio" checked={mode === 'inherit'} onChange={() => setMode('inherit')} />
             <span>Inherit scenario default</span>
           </label>
         )}

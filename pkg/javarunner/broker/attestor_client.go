@@ -15,6 +15,7 @@ import (
 )
 
 const AttestorContract = "apexload.java-boundary-attestor/v1"
+const NoStartAttestorContract = "apexload.java-no-start-attestor/v1"
 
 var ErrAttestation = errors.New("java_boundary_attestation_unproven")
 
@@ -47,6 +48,9 @@ type BoundaryProof struct {
 	MachineID  string `json:"machine_id,omitempty"`
 	MachineUID string `json:"machine_uid,omitempty"`
 	FenceID    string `json:"fence_id,omitempty"`
+	// CreationFenceID identifies the attestor's durable barrier against any
+	// delayed admission for an unstarted creation intent.
+	CreationFenceID string `json:"creation_fence_id,omitempty"`
 }
 
 type AttestationResponse struct {
@@ -55,6 +59,22 @@ type AttestationResponse struct {
 	QualificationSHA256 string         `json:"qualification_sha256"`
 	Boundary            PodReceipt     `json:"boundary"`
 	Result              string         `json:"result"` // terminated | unproven
+	Proof               *BoundaryProof `json:"proof,omitempty"`
+}
+
+type NoStartAttestationRequest struct {
+	Contract            string       `json:"contract"`
+	RequestID           string       `json:"request_id"`
+	QualificationSHA256 string       `json:"qualification_sha256"`
+	Intent              UnstartedPod `json:"intent"`
+}
+
+type NoStartAttestationResponse struct {
+	Contract            string         `json:"contract"`
+	RequestID           string         `json:"request_id"`
+	QualificationSHA256 string         `json:"qualification_sha256"`
+	Intent              UnstartedPod   `json:"intent"`
+	Result              string         `json:"result"` // never_started | unproven
 	Proof               *BoundaryProof `json:"proof,omitempty"`
 }
 
@@ -132,6 +152,9 @@ func (a *ExternalAttestor) Close() { a.http.CloseIdleConnections() }
 func validBoundary(p PodReceipt) bool {
 	return namespaceName.MatchString(p.Namespace) && namespaceName.MatchString(p.Name) && name.MatchString(p.UID) && validContainer(p.ContainerID) && name.MatchString(p.HostID) && name.MatchString(p.BrokerEpoch)
 }
+func validUnstartedPod(p UnstartedPod) bool {
+	return namespaceName.MatchString(p.Namespace) && namespaceName.MatchString(p.Name) && (p.UID == "" || name.MatchString(p.UID)) && name.MatchString(p.HostID) && name.MatchString(p.BrokerEpoch) && validPolicyDigest(p.PodPolicySHA256)
+}
 func (a *ExternalAttestor) BoundaryTerminated(ctx context.Context, p PodReceipt) (bool, error) {
 	if !validBoundary(p) {
 		return false, ErrAttestation
@@ -142,24 +165,9 @@ func (a *ExternalAttestor) BoundaryTerminated(ctx context.Context, p PodReceipt)
 	}
 	q := AttestationRequest{Contract: AttestorContract, RequestID: id, QualificationSHA256: a.config.QualificationSHA256, Boundary: p}
 	data, _ := json.Marshal(q)
-	ctx, cancel := context.WithTimeout(ctx, a.config.Timeout)
-	defer cancel()
-	req, e := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.config.Endpoint, "/")+"/v1/java-boundary/attest", bytes.NewReader(data))
+	data, e = a.request(ctx, "/v1/java-boundary/attest", data)
 	if e != nil {
-		return false, ErrAttestation
-	}
-	req.Header.Set("Content-Type", "application/json")
-	response, e := a.http.Do(req)
-	if e != nil {
-		return false, ErrAttestation
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return false, ErrAttestation
-	}
-	data, e = io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
-	if e != nil || len(data) > 64<<10 {
-		return false, ErrAttestation
+		return false, e
 	}
 	var out AttestationResponse
 	dec := json.NewDecoder(bytes.NewReader(data))
@@ -175,8 +183,68 @@ func (a *ExternalAttestor) BoundaryTerminated(ctx context.Context, p PodReceipt)
 	}
 	return true, nil
 }
+
+// NeverStarted is a distinct proof operation. It requires the attestor to
+// close admission for the immutable creation intent, establish from complete
+// runtime history that no container or descendant ever started, and prove the
+// exact pod object has been removed. No UID means the attestor must discover
+// and clean up any object before returning positive proof.
+func (a *ExternalAttestor) NeverStarted(ctx context.Context, intent UnstartedPod) (bool, error) {
+	if !validUnstartedPod(intent) {
+		return false, ErrAttestation
+	}
+	id, e := randomID()
+	if e != nil {
+		return false, ErrAttestation
+	}
+	q := NoStartAttestationRequest{Contract: NoStartAttestorContract, RequestID: id, QualificationSHA256: a.config.QualificationSHA256, Intent: intent}
+	data, _ := json.Marshal(q)
+	data, e = a.request(ctx, "/v1/java-boundary/attest-never-started", data)
+	if e != nil {
+		return false, e
+	}
+	var out NoStartAttestationResponse
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if dec.Decode(&out) != nil || dec.Decode(new(any)) != io.EOF || out.Contract != q.Contract || out.RequestID != q.RequestID || out.QualificationSHA256 != q.QualificationSHA256 || out.Intent != q.Intent {
+		return false, ErrAttestation
+	}
+	if out.Result == "unproven" && out.Proof == nil {
+		return false, nil
+	}
+	if out.Result != "never_started" || !validNoStartProof(out.Proof, a.now()) || ctx.Err() != nil {
+		return false, ErrAttestation
+	}
+	return true, nil
+}
+
+func (a *ExternalAttestor) request(ctx context.Context, path string, data []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, a.config.Timeout)
+	defer cancel()
+	req, e := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(a.config.Endpoint, "/")+path, bytes.NewReader(data))
+	if e != nil {
+		return nil, ErrAttestation
+	}
+	req.Header.Set("Content-Type", "application/json")
+	response, e := a.http.Do(req)
+	if e != nil {
+		return nil, ErrAttestation
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, ErrAttestation
+	}
+	data, e = io.ReadAll(io.LimitReader(response.Body, (64<<10)+1))
+	if e != nil || len(data) > 64<<10 {
+		return nil, ErrAttestation
+	}
+	if ctx.Err() != nil {
+		return nil, ErrAttestation
+	}
+	return data, nil
+}
 func validBoundaryProof(p *BoundaryProof, now time.Time) bool {
-	if p == nil || p.Scope != "pod_container_descendants" || !validPolicyDigest(p.EvidenceSHA256) || p.ObservedAt.IsZero() || p.ObservedAt.After(now.Add(2*time.Second)) || p.ObservedAt.Before(now.Add(-30*time.Second)) || !p.ExpiresAt.After(now) || p.ExpiresAt.After(p.ObservedAt.Add(30*time.Second)) || !p.ExpiresAt.After(p.ObservedAt) {
+	if !validFreshProof(p, now) || p.Scope != "pod_container_descendants" || p.CreationFenceID != "" {
 		return false
 	}
 	switch p.Kind {
@@ -196,4 +264,12 @@ func validBoundaryProof(p *BoundaryProof, now time.Time) bool {
 		return !strings.ContainsAny(p.MachineID, "?#@")
 	}
 	return false
+}
+
+func validNoStartProof(p *BoundaryProof, now time.Time) bool {
+	return validFreshProof(p, now) && p.Kind == "creation_fence" && p.Scope == "pod_never_started_object_removed" && name.MatchString(p.CreationFenceID) && p.NodeUID == "" && p.MachineID == "" && p.MachineUID == "" && p.FenceID == ""
+}
+
+func validFreshProof(p *BoundaryProof, now time.Time) bool {
+	return p != nil && validPolicyDigest(p.EvidenceSHA256) && !p.ObservedAt.IsZero() && !p.ObservedAt.After(now.Add(2*time.Second)) && !p.ObservedAt.Before(now.Add(-30*time.Second)) && p.ExpiresAt.After(now) && !p.ExpiresAt.After(p.ObservedAt.Add(30*time.Second)) && p.ExpiresAt.After(p.ObservedAt)
 }

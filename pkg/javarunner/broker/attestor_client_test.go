@@ -39,6 +39,79 @@ func proofResponse(q AttestationRequest) AttestationResponse {
 	now := time.Now()
 	return AttestationResponse{Contract: q.Contract, RequestID: q.RequestID, QualificationSHA256: q.QualificationSHA256, Boundary: q.Boundary, Result: "terminated", Proof: &BoundaryProof{Kind: "runtime_boundary", Scope: "pod_container_descendants", EvidenceSHA256: strings.Repeat("b", 64), ObservedAt: now, ExpiresAt: now.Add(10 * time.Second)}}
 }
+func noStartIntent() UnstartedPod {
+	return UnstartedPod{Namespace: "execution", Name: "java-host", HostID: "host", BrokerEpoch: "epoch", PodPolicySHA256: strings.Repeat("d", 64)}
+}
+func noStartResponse(q NoStartAttestationRequest) NoStartAttestationResponse {
+	now := time.Now()
+	return NoStartAttestationResponse{Contract: q.Contract, RequestID: q.RequestID, QualificationSHA256: q.QualificationSHA256, Intent: q.Intent, Result: "never_started", Proof: &BoundaryProof{Kind: "creation_fence", Scope: "pod_never_started_object_removed", EvidenceSHA256: strings.Repeat("b", 64), ObservedAt: now, ExpiresAt: now.Add(10 * time.Second), CreationFenceID: "fenced-intent"}}
+}
+func TestExternalAttestorNeverStartedRequiresFreshExactCreationFence(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		mutate         func(*NoStartAttestationResponse)
+		want, unproven bool
+	}{
+		{"positive", nil, true, false},
+		{"unproven", func(r *NoStartAttestationResponse) { r.Result = "unproven"; r.Proof = nil }, false, true},
+		{"wrong_result", func(r *NoStartAttestationResponse) { r.Result = "terminated" }, false, false},
+		{"wrong_kind", func(r *NoStartAttestationResponse) { r.Proof.Kind = "runtime_boundary" }, false, false},
+		{"wrong_scope", func(r *NoStartAttestationResponse) { r.Proof.Scope = "pod_container_descendants" }, false, false},
+		{"old_no_object_scope", func(r *NoStartAttestationResponse) { r.Proof.Scope = "pod_never_started" }, false, false},
+		{"missing_fence", func(r *NoStartAttestationResponse) { r.Proof.CreationFenceID = "" }, false, false},
+		{"machine_fence", func(r *NoStartAttestationResponse) { r.Proof.NodeUID = "node" }, false, false},
+		{"wrong_policy", func(r *NoStartAttestationResponse) { r.Intent.PodPolicySHA256 = strings.Repeat("e", 64) }, false, false},
+		{"wrong_uid", func(r *NoStartAttestationResponse) { r.Intent.UID = "other" }, false, false},
+		{"wrong_epoch", func(r *NoStartAttestationResponse) { r.Intent.BrokerEpoch = "other" }, false, false},
+		{"wrong_challenge", func(r *NoStartAttestationResponse) { r.RequestID = "old" }, false, false},
+		{"expired", func(r *NoStartAttestationResponse) { r.Proof.ExpiresAt = time.Now().Add(-time.Second) }, false, false},
+		{"old", func(r *NoStartAttestationResponse) { r.Proof.ObservedAt = time.Now().Add(-time.Minute) }, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _ := externalAttestorFixture(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req.URL.Path != "/v1/java-boundary/attest-never-started" || req.Method != http.MethodPost || req.Header.Get("Authorization") != "" {
+					t.Error("unexpected no-start transport", req.URL.Path)
+				}
+				var q NoStartAttestationRequest
+				if e := json.NewDecoder(req.Body).Decode(&q); e != nil || q.Contract != NoStartAttestorContract || q.Intent != noStartIntent() {
+					t.Error("wrong creation-intent request", q, e)
+				}
+				out := noStartResponse(q)
+				if tc.mutate != nil {
+					tc.mutate(&out)
+				}
+				_ = json.NewEncoder(w).Encode(out)
+			}))
+			proven, e := client.NeverStarted(t.Context(), noStartIntent())
+			if proven != tc.want || tc.want && e != nil || tc.unproven && e != nil || !tc.want && !tc.unproven && !errors.Is(e, ErrAttestation) {
+				t.Fatal(proven, e)
+			}
+		})
+	}
+}
+func TestExternalAttestorNeverStartedRejectsReplayAndInvalidIntent(t *testing.T) {
+	var saved *NoStartAttestationResponse
+	client, _ := externalAttestorFixture(t, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var q NoStartAttestationRequest
+		_ = json.NewDecoder(req.Body).Decode(&q)
+		if saved == nil {
+			out := noStartResponse(q)
+			saved = &out
+		}
+		_ = json.NewEncoder(w).Encode(saved)
+	}))
+	if ok, e := client.NeverStarted(t.Context(), noStartIntent()); !ok || e != nil {
+		t.Fatal(ok, e)
+	}
+	if ok, e := client.NeverStarted(t.Context(), noStartIntent()); ok || !errors.Is(e, ErrAttestation) {
+		t.Fatal("replayed creation fence accepted", ok, e)
+	}
+	bad := noStartIntent()
+	bad.PodPolicySHA256 = ""
+	if ok, e := client.NeverStarted(t.Context(), bad); ok || !errors.Is(e, ErrAttestation) {
+		t.Fatal("unbound creation intent accepted", ok, e)
+	}
+}
 func TestExternalAttestorRequiresExactFreshWholeBoundaryProof(t *testing.T) {
 	for _, kind := range []string{"runtime_boundary", "infrastructure_fence", "unproven", "wrong_pod", "wrong_container", "wrong_epoch", "wrong_request", "wrong_profile", "only_jvm", "expired", "future", "old", "invalid_digest", "no_fence_id", "no_machine", "no_machine_uid", "node_name_only", "missing_proof", "unknown_kind", "redirect", "oversize", "trailing"} {
 		t.Run(kind, func(t *testing.T) {

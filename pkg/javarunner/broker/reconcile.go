@@ -22,17 +22,32 @@ type PodReceipt struct {
 	BrokerEpoch string `json:"broker_epoch"`
 }
 
+// UnstartedPod identifies the one durable creation intent. An empty UID means
+// the create response supplied no identity; it does not mean no pod existed.
+// PodPolicySHA256 binds the attestor to the exact request made by this broker.
+type UnstartedPod struct {
+	Namespace       string `json:"namespace"`
+	Name            string `json:"name"`
+	UID             string `json:"uid"`
+	HostID          string `json:"host_id"`
+	BrokerEpoch     string `json:"broker_epoch"`
+	PodPolicySHA256 string `json:"pod_policy_sha256"`
+}
+
 // CleanupBackend separates discovery/deletion from positive runtime evidence.
 // A production implementation must independently qualify its termination
 // attestor. Neither Kubernetes NotFound nor deletion success proves termination.
 // All methods MUST honor context deadlines. Delete must use a UID precondition;
 // it must never delete a replacement pod merely because its name matches.
-// Delete may acknowledge an already absent object. BoundaryTerminated must be
-// independent of object existence and validate the entire exact boundary.
+// Delete returns nil only after UID-preconditioned deletion and an authoritative
+// observation that the pod object is gone; DELETE 200/202 alone is insufficient.
+// BoundaryTerminated must be independent of object existence and validate the
+// entire exact boundary.
 type CleanupBackend interface {
 	Find(context.Context, string, string) (PodReceipt, error)
 	Delete(context.Context, PodReceipt) error
 	BoundaryTerminated(context.Context, PodReceipt) (bool, error)
+	NeverStarted(context.Context, UnstartedPod) (bool, error)
 }
 
 // Reconciler acts only on sealed hosts, including prior epochs. Run it outside
@@ -99,10 +114,15 @@ func (r *Reconciler) Step(ctx context.Context) error {
 }
 
 func (r *Reconciler) cleanup(ctx context.Context, record Record) error {
-	pod, err := r.backend.Find(ctx, r.store.config.Namespace, record.PodName)
+	// Discovery is best effort; a Kubernetes API partition must not consume the
+	// whole cleanup deadline before the independent attestor can inspect a
+	// durable known boundary or fence an unknown creation outcome.
+	findCtx, stopFind := context.WithTimeout(ctx, min(time.Second, r.timeout/6))
+	pod, err := r.backend.Find(findCtx, r.store.config.Namespace, record.PodName)
+	stopFind()
 	if err != nil {
 		if record.PodUID == "" {
-			return ErrCleanup
+			return r.confirmNeverStarted(ctx, record, "")
 		}
 		// A missing pod record cannot erase durable identity. A qualified
 		// runtime attestor may still prove that exact container stopped; an
@@ -113,7 +133,17 @@ func (r *Reconciler) cleanup(ctx context.Context, record Record) error {
 		// Mutated labels/annotations cannot veto deletion of the exact durable
 		// UID. They still cannot supply container provenance or release proof.
 		if record.PodUID != "" && record.PodUID == pod.UID && pod.Namespace == r.store.config.Namespace && pod.Name == record.PodName {
-			_ = r.backend.Delete(ctx, PodReceipt{Namespace: r.store.config.Namespace, Name: record.PodName, UID: record.PodUID, ContainerID: record.ContainerID, HostID: record.ID, BrokerEpoch: record.BrokerEpoch})
+			durable := PodReceipt{Namespace: r.store.config.Namespace, Name: record.PodName, UID: record.PodUID, ContainerID: record.ContainerID, HostID: record.ID, BrokerEpoch: record.BrokerEpoch}
+			if record.ContainerID == "" && pod.ContainerID == "" {
+				return r.cleanupUnstarted(ctx, record, durable)
+			}
+			_ = r.backend.Delete(ctx, durable)
+		}
+		if record.PodUID == "" && record.ContainerID == "" && pod.ContainerID == "" && pod.Namespace == r.store.config.Namespace && pod.Name == record.PodName {
+			// The observed annotations and UID are not trusted. Ask the attestor
+			// about the original durable intent with its still-unknown UID;
+			// only its independent fence, cleanup and no-start proof can release.
+			return r.confirmNeverStarted(ctx, record, "")
 		}
 		return ErrCleanup
 	}
@@ -140,8 +170,35 @@ func (r *Reconciler) cleanup(ctx context.Context, record Record) error {
 		// Attestation failure must not prevent attempting termination. It
 		// still cannot turn a successful deletion request into release proof.
 	}
+	if pod.ContainerID == "" {
+		return r.cleanupUnstarted(ctx, record, pod)
+	}
 	if err := r.backend.Delete(ctx, pod); err != nil {
 		return ErrCleanup
 	}
 	return ErrCleanup
+}
+
+func (r *Reconciler) cleanupUnstarted(ctx context.Context, record Record, pod PodReceipt) error {
+	// The no-start attestor may be the only authority able to discover and
+	// remove a pending object after a broker DELETE or GET failure. Its
+	// positive proof includes exact object removal; a local delete error
+	// alone must not prevent that independent cleanup path. Bound the
+	// best-effort delete so a stalled Kubernetes API leaves time for it.
+	deleteCtx, cancel := context.WithTimeout(ctx, min(time.Second, r.timeout/6))
+	_ = r.backend.Delete(deleteCtx, pod)
+	cancel()
+	return r.confirmNeverStarted(ctx, record, pod.UID)
+}
+
+func (r *Reconciler) confirmNeverStarted(ctx context.Context, record Record, podUID string) error {
+	if record.State != javarunner.HostQuarantined || !validPolicyDigest(record.PodPolicySHA256) || record.ContainerID != "" || record.PodUID != "" && record.PodUID != podUID {
+		return ErrCleanup
+	}
+	intent := UnstartedPod{Namespace: r.store.config.Namespace, Name: record.PodName, UID: podUID, HostID: record.ID, BrokerEpoch: record.BrokerEpoch, PodPolicySHA256: record.PodPolicySHA256}
+	proven, err := r.backend.NeverStarted(ctx, intent)
+	if err != nil || !proven {
+		return ErrCleanup
+	}
+	return r.store.ConfirmNeverStarted(ctx, r.epoch, record.ID, podUID, record.PodPolicySHA256)
 }

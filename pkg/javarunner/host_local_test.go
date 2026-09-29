@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,68 @@ import (
 	"testing"
 	"time"
 )
+
+func TestPooledHostRejectsPreconnectionBeforeSelectingControlSocket(t *testing.T) {
+	for _, mode := range []string{"wrong_proof", "silent"} {
+		t.Run(mode, func(t *testing.T) {
+			listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			secret := make([]byte, 32)
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			defer cancel()
+			bogus, err := net.DialTCP("tcp4", nil, listener.Addr().(*net.TCPAddr))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer bogus.Close()
+			if mode == "wrong_proof" {
+				if _, err = bogus.Write(make([]byte, 32)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			type result struct {
+				connection *net.TCPConn
+				err        error
+			}
+			resultCh := make(chan result, 1)
+			go func() {
+				connection, err := acceptAuthenticatedPooledHost(ctx, listener, "generation", secret)
+				resultCh <- result{connection, err}
+			}()
+			if err = bogus.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			var b [1]byte
+			_, err = bogus.Read(b[:])
+			if err == nil {
+				t.Fatal("unauthenticated connection received data")
+			}
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				t.Fatalf("unauthenticated connection stayed open: %v", err)
+			}
+			legitimate, err := net.DialTCP("tcp4", nil, listener.Addr().(*net.TCPAddr))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer legitimate.Close()
+			if _, err = legitimate.Write(pooledHostProof("generation", secret)); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case selected := <-resultCh:
+				if selected.err != nil || selected.connection == nil {
+					t.Fatalf("valid JVM connection rejected: %v", selected.err)
+				}
+				_ = selected.connection.Close()
+			case <-ctx.Done():
+				t.Fatal("valid JVM connection stranded by preconnection")
+			}
+		})
+	}
+}
 
 func TestLocalHostBackendFailsClosedWithoutContainment(t *testing.T) {
 	var called atomic.Bool
@@ -166,6 +229,9 @@ func TestLocalHostBackendRealJVMComponents(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+		if _, err := s.Invoke(ctx, "epoch", a[0].ID, a[0].SlotIDs[0], "action", map[string]string{"mode": "rawstdin"}); err != nil {
+			t.Fatal("raw fd 0 consumed host control data:", err)
+		}
 		diagnostics, err := s.Diagnostics(ctx, "epoch", a[0].ID)
 		if err != nil || !strings.Contains(string(diagnostics.Java.Bytes), "initialized") {
 			t.Fatalf("Java diagnostics unavailable: %+v %v", diagnostics, err)
@@ -303,6 +369,7 @@ public final class SupervisedActions {
  public int init(){return 0;}
  public int action() throws Exception {
   String mode=lr.eval_string("{mode}");
+  if(mode.equals("rawstdin")){if(new java.io.FileInputStream(java.io.FileDescriptor.in).read()!=-1)throw new AssertionError("control on fd 0");return 0;}
   if(mode.equals("output")){byte[] bytes=new byte[400000];new java.io.FileOutputStream(java.io.FileDescriptor.out).write(bytes);return 0;}
   java.nio.file.Files.write(java.nio.file.Paths.get(lr.eval_string("{marker}")),new byte[]{1});
   if(mode.equals("block"))Thread.sleep(30000);

@@ -321,15 +321,19 @@ still needs measurement; archive acceptance is not evidence of a memory benefit.
 slot API artifact. This is an internal transport component, not a new runner
 configuration or production admission path. It is not launched by the sidecar.
 
-The owner delivers a fresh 32-byte secret through the saved stdin pipe before
-any frame. It must never put that secret in arguments, environment, or script
-context. Requests use that pipe; replies use a separate owner-bound IPv4 loopback
-socket. The owner must bound socket acceptance/startup, independently enforce the
-run lease, and drain raw stdout/stderr into bounded host diagnostics. Java-visible
-stdin is empty. Java stdout/stderr are captured into a shared 32 KiB diagnostic
-buffer with a dropped-byte count; they are not attributed to a slot. Direct file
-descriptor/native writes stay on the supervisor's diagnostic streams and cannot
-corrupt response framing. This protocol does not isolate hostile code within a JVM.
+The owner delivers a fresh 32-byte secret through a bootstrap stdin pipe, then
+closes that pipe before user code runs. It must never put the secret in arguments,
+environment, or script context. The JVM proves possession with a 32-byte
+HMAC-SHA256 of `apexload.java_vuser.ipc.v3.host_auth:` plus the generation before
+the owner accepts its IPv4 loopback socket. Unauthenticated preconnections are
+rejected; the listener remains open for the JVM. Requests and replies then use
+that duplex socket. The owner must bound socket acceptance/startup, independently
+enforce the run lease, and drain raw stdout/stderr into bounded host diagnostics.
+Java-visible stdin is empty, and direct reads of file descriptor 0 see EOF.
+Java stdout/stderr are captured into a shared 32 KiB diagnostic buffer with a
+dropped-byte count; they are not attributed to a slot. Direct file descriptor or
+native writes stay on the supervisor's diagnostic streams and cannot corrupt
+control framing. This protocol does not isolate hostile code within a JVM.
 
 The binary envelope is a big-endian unsigned 32-bit length (at most 1 MiB), then
 payload and a 32-byte HMAC-SHA256. Its MAC covers a direction byte (0=request,
@@ -1109,12 +1113,17 @@ The commit barrier includes every pending host of the same immutable group.
 
 The reconciler uses bounded concurrency so one stalled node cannot serialize all
 cleanup. It discovers exact host/epoch provenance and deletes only with the
-recorded pod UID. A trusted runtime attestor must separately establish whole
-container termination for that exact UID and container ID. Deletion acceptance,
+recorded pod UID. The Kubernetes backend confirms pod-object absence after the
+UID-preconditioned delete before releasing quota. A trusted runtime attestor
+must separately establish whole container termination for that exact UID and
+container ID. Deletion acceptance,
 missing pod objects, unreachable nodes, and JVM exit alone never release capacity.
 Persisted boundary identities can still be checked by that independent attestor
 when the pod object is missing; absence alone is never sufficient. Pending or
-unknown creation outcomes remain durably quarantined. The first
+unknown creation outcomes require a separate externally attested creation fence
+plus complete never-started runtime history and authoritative pod-object removal
+before release; otherwise they remain
+durably quarantined. The first
 failure is retained. A qualified runtime attestor, infrastructure fencing, PID 1 supervisor,
 TLS facade/broker service, deployment
 manifests, and assignment staging integration are still required. The store has
@@ -1500,6 +1509,11 @@ Controller placement and dashboard profile selection/reporting are now wired for
 explicit dedicated groups, including bounded staged schedules. The controller freezes the approved
 script/configuration/policy identities, refreshes negotiation before reservation,
 uses the preparation deadline, and retains the reservation in execution manifests.
+Selecting a Java profile for a new group preserves the scenario's placement and
+required labels through explicit group inheritance. A group can still choose
+automatic or pinned hosts, but it cannot escape a scenario fleet pool. Java
+placement fails closed when dynamic pool membership is unresolved or an
+inherited weighted placement cannot be honored by the host allocator.
 Scale-down uncertainty stops the run without recreating closed sessions. The API
 supports bounded sharding across generators with separate frozen reservations.
 Partial scale-down failure stops the run; closed sessions are never recreated by

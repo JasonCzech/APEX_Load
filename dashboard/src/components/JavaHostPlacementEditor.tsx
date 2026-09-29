@@ -3,7 +3,7 @@ import type { GeneratorAssignmentSettings, SystemInventoryGenerator } from '../t
 interface Props {
   assignment?: GeneratorAssignmentSettings
   inventory?: SystemInventoryGenerator[]
-  onChange: (assignment: GeneratorAssignmentSettings) => void
+  onChange: (assignment: GeneratorAssignmentSettings | undefined) => void
 }
 
 export default function JavaHostPlacementEditor({ assignment, inventory = [], onChange }: Props) {
@@ -12,9 +12,14 @@ export default function JavaHostPlacementEditor({ assignment, inventory = [], on
     && host.java_host?.mode === 'dedicated' && host.java_host.containment === 'execution_pod')
     .flatMap(host => host.java_host?.profiles || [])
   const ids = Array.from(new Set(profiles.map(profile => profile.profile_id))).sort()
+  const mode = assignment?.mode || (assignment?.java_host ? 'auto' : 'inherit')
   const updateProfile = (id: string) => {
-    const next = { ...assignment, mode: assignment?.mode || 'auto' as const }
+    const next = { ...assignment, mode }
     if (!id) {
+      if (next.mode === 'inherit') {
+        onChange(undefined)
+        return
+      }
       delete next.java_host
       onChange(next)
       return
@@ -32,7 +37,7 @@ export default function JavaHostPlacementEditor({ assignment, inventory = [], on
     if (!selected) return
     const milliseconds = Number(raw) * 1000
     if (!Number.isSafeInteger(milliseconds) || milliseconds < 1 || milliseconds > (field === 'preparation_ms' ? 3600000 : 86400000)) return
-    onChange({ ...assignment, mode: assignment?.mode || 'auto', java_host: { ...selected, [field]: milliseconds } })
+    onChange({ ...assignment, mode, java_host: { ...selected, [field]: milliseconds } })
   }
   return <div className="new-test-generator-picker">
     <label className="scenario-field">

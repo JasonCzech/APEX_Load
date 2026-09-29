@@ -137,6 +137,13 @@ func javaHostPlacementAcknowledged(p *JavaHostPlacementSummary, ack *pb.JavaHost
 }
 
 func chooseJavaHostShards(group TestGroup, all, defaults map[string]generatorLoadSnapshot, preferredAll, preferredDefault []string, inherited *GeneratorAssignmentSettings, compatibility *generatorCompatibilityIndex) []GeneratorShardSummary {
+	if groupInheritsAssignment(group) && inherited != nil &&
+		(inherited.Mode == generatorAssignmentModeRegionWeighted || inherited.Mode == generatorAssignmentModeLoadZoneWeighted) {
+		// The host allocator has hard per-generator ceilings but no regional
+		// quota input. Do not silently replace an inherited weighted placement
+		// policy with capacity weighting.
+		return nil
+	}
 	admissions, err := javaHostScheduleAdmissions(group)
 	if err != nil {
 		return nil
@@ -150,6 +157,27 @@ func chooseJavaHostShards(group TestGroup, all, defaults map[string]generatorLoa
 		case generatorAssignmentModeSpecificHosts:
 			loads, targets = all, group.Assignment.SelectedTargets
 		}
+	}
+	// A fleet pool is a run-wide boundary, including for a group that explicitly
+	// requests automatic placement. The group may narrow it, never expand it.
+	if inherited != nil && inherited.PoolID != "" {
+		// A dynamic pool without concrete members cannot yet prove that an
+		// advertised Java host belongs to it. Do not widen that unresolved
+		// boundary to every configured generator.
+		if inherited.Mode != generatorAssignmentModeSpecificHosts {
+			return nil
+		}
+		poolTargets := make(map[string]struct{}, len(inherited.SelectedTargets))
+		for _, target := range inherited.SelectedTargets {
+			poolTargets[target] = struct{}{}
+		}
+		bounded := make([]string, 0, len(targets))
+		for _, target := range targets {
+			if _, ok := poolTargets[target]; ok {
+				bounded = append(bounded, target)
+			}
+		}
+		targets = bounded
 	}
 	// Validate each candidate independently, then freeze its exact approved
 	// profile. Host and memory ceilings are hard bounds; the broker remains the

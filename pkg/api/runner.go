@@ -1308,6 +1308,7 @@ type ScenarioScriptRef struct {
 }
 
 const (
+	generatorAssignmentModeInherit          = "inherit"
 	generatorAssignmentModeAuto             = "auto"
 	generatorAssignmentModeSpecificHosts    = "specific_hosts"
 	generatorAssignmentModeRegionWeighted   = "region_weighted"

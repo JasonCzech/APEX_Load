@@ -3,6 +3,8 @@ package java_vuser_test
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -16,6 +18,23 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/javarunner"
 )
+
+func testPooledHostProof(t *testing.T, connection net.Conn, generation string, secret []byte) {
+	t.Helper()
+	if err := connection.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	defer connection.SetReadDeadline(time.Time{})
+	proof := make([]byte, sha256.Size)
+	if _, err := io.ReadFull(connection, proof); err != nil {
+		t.Fatal(err)
+	}
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte("apexload.java_vuser.ipc.v3.host_auth:" + generation))
+	if !hmac.Equal(proof, mac.Sum(nil)) {
+		t.Fatal("JVM did not authenticate its control socket")
+	}
+}
 
 // These are real-JVM wire/component tests, not delegated containment evidence.
 func TestPooledIPCRealJVM(t *testing.T) {
@@ -72,6 +91,13 @@ func TestPooledIPCRealJVM(t *testing.T) {
 			if e = cmd.Start(); e != nil {
 				t.Fatal(e)
 			}
+			secret := make([]byte, 32)
+			if _, e = output.Write(secret); e != nil {
+				t.Fatal(e)
+			}
+			if e = output.Close(); e != nil {
+				t.Fatal(e)
+			}
 			input, e := listener.AcceptTCP()
 			if e != nil {
 				_ = cmd.Process.Kill()
@@ -79,7 +105,7 @@ func TestPooledIPCRealJVM(t *testing.T) {
 				t.Fatal(e)
 			}
 			defer input.Close()
-			secret := make([]byte, 32)
+			testPooledHostProof(t, input, "gen-1", secret)
 			frame := javarunner.PooledFrame{Generation: "gen-1", Request: "1", Operation: "ready", Sequence: 1}
 			if fault == "generation" {
 				frame.Generation = "old"
@@ -95,21 +121,20 @@ func TestPooledIPCRealJVM(t *testing.T) {
 				wire = make([]byte, 4)
 				binary.BigEndian.PutUint32(wire, 1048577)
 			}
-			if _, e = io.Copy(output, bytes.NewReader(append(secret, wire...))); e != nil {
+			if _, e = io.Copy(input, bytes.NewReader(wire)); e != nil {
 				t.Fatal(e)
 			}
 			if fault == "replay" {
 				if _, e = javarunner.ReadPooledFrame(input, secret, true); e != nil {
 					t.Fatal(e)
 				}
-				if _, e = output.Write(wire); e != nil {
+				if _, e = input.Write(wire); e != nil {
 					t.Fatal(e)
 				}
 			}
 			if _, e = javarunner.ReadPooledFrame(input, secret, true); e == nil {
 				t.Fatal("Java accepted invalid frame")
 			}
-			_ = output.Close()
 			if e = cmd.Wait(); e == nil {
 				t.Fatal("invalid frame did not terminate JVM")
 			}
@@ -135,13 +160,21 @@ func TestPooledIPCRealJVM(t *testing.T) {
 		if e = cmd.Start(); e != nil {
 			t.Fatal(e)
 		}
+		secret := make([]byte, 32)
+		if _, e = output.Write(secret); e != nil {
+			t.Fatal(e)
+		}
+		if e = output.Close(); e != nil {
+			t.Fatal(e)
+		}
 		input, e := listener.AcceptTCP()
 		if e != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
 			t.Fatal(e)
 		}
-		transport, e := javarunner.NewPooledTransport(input, output, "gen-1", make([]byte, 32), func(error) { _ = cmd.Process.Kill() })
+		testPooledHostProof(t, input, "gen-1", secret)
+		transport, e := javarunner.NewPooledTransport(input, input, "gen-1", secret, func(error) { _ = cmd.Process.Kill() })
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -209,6 +242,8 @@ func TestPooledIPCRealJVM(t *testing.T) {
 		for _, slot := range []string{"a", "b"} {
 			invoke(t, tr, slot, "action", map[string]string{"mode": "verify"})
 		}
+		invoke(t, tr, "a", "action", map[string]string{"mode": "rawstdin"})
+		invoke(t, tr, "b", "action", map[string]string{"mode": "verify"})
 		f := invoke(t, tr, "a", "action", map[string]string{"mode": "exit"})
 		if f.Fields["exit_option"] != "1" || f.Fields["exit_status"] != "-17" {
 			t.Fatal(f.Fields)
@@ -333,6 +368,7 @@ public class WireActions {
     String mode=lr.eval_string("{mode}");
     if(mode.equals("exit"))lr.exit(1,-17);
     if(mode.equals("fail"))throw new IllegalStateException("private failure details");
+    if(mode.equals("rawstdin")&&new java.io.FileInputStream(java.io.FileDescriptor.in).read()!=-1)throw new AssertionError("control leaked to raw stdin");
     if(mode.equals("output")){byte[] b=new byte[100000];System.out.write(b);System.err.write(b);new java.io.FileOutputStream(java.io.FileDescriptor.out).write(b);new java.io.FileOutputStream(java.io.FileDescriptor.err).write(b);}
     if(mode.equals("block")||mode.equals("ignore")){
       java.nio.file.Files.write(java.nio.file.Paths.get(lr.eval_string("{marker}")),new byte[]{1});

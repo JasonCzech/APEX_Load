@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,18 +16,39 @@ type cleanupBackend struct {
 	terminated                   bool
 	deleted                      []PodReceipt
 	proofCalls                   int
+	noStartCalls                 int
+	noStartProven                bool
+	noStartErr                   error
+	noStartIntent                UnstartedPod
+	deleteBlock                  bool
+	findBlock                    bool
 }
 
-func (b *cleanupBackend) Find(context.Context, string, string) (PodReceipt, error) {
+func (b *cleanupBackend) Find(ctx context.Context, _, _ string) (PodReceipt, error) {
+	if b.findBlock {
+		<-ctx.Done()
+		return PodReceipt{}, ctx.Err()
+	}
 	return b.pod, b.findErr
 }
-func (b *cleanupBackend) Delete(_ context.Context, p PodReceipt) error {
+func (b *cleanupBackend) Delete(ctx context.Context, p PodReceipt) error {
+	// A nil result models both UID-preconditioned deletion and a subsequent
+	// authoritative observation that the object is absent.
 	b.deleted = append(b.deleted, p)
+	if b.deleteBlock {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	return b.deleteErr
 }
 func (b *cleanupBackend) BoundaryTerminated(context.Context, PodReceipt) (bool, error) {
 	b.proofCalls++
 	return b.terminated, b.proofErr
+}
+func (b *cleanupBackend) NeverStarted(_ context.Context, intent UnstartedPod) (bool, error) {
+	b.noStartCalls++
+	b.noStartIntent = intent
+	return b.noStartProven, b.noStartErr
 }
 
 func TestReconcileRequiresPositiveExactBoundaryEvidence(t *testing.T) {
@@ -39,7 +61,7 @@ func TestReconcileRequiresPositiveExactBoundaryEvidence(t *testing.T) {
 		{"absent", func(b *cleanupBackend) { b.findErr = errors.New("not found") }, 1, 1, false},
 		{"absent_with_independent_proof", func(b *cleanupBackend) { b.findErr = errors.New("not found"); b.terminated = true }, 1, 1, true},
 		{"node_unreachable", func(b *cleanupBackend) { b.proofErr = context.DeadlineExceeded }, 1, 1, false},
-		{"delete_accepted", func(*cleanupBackend) {}, 1, 1, false},
+		{"object_removed_without_boundary_proof", func(*cleanupBackend) {}, 1, 1, false},
 		{"delete_failed", func(b *cleanupBackend) { b.deleteErr = errors.New("partition") }, 1, 1, false},
 		{"replacement_uid", func(b *cleanupBackend) { b.pod.UID = "replacement" }, 0, 0, false},
 		{"replacement_container", func(b *cleanupBackend) { b.pod.ContainerID = "containerd://replacement" }, 0, 0, false},
@@ -160,9 +182,14 @@ func (b *parallelCleanupBackend) Find(ctx context.Context, _ string, name string
 	}
 	return b.pods[name], nil
 }
+
+// This mock completes deletion and observes object absence immediately.
 func (b *parallelCleanupBackend) Delete(context.Context, PodReceipt) error { return nil }
 func (b *parallelCleanupBackend) BoundaryTerminated(context.Context, PodReceipt) (bool, error) {
 	return true, nil
+}
+func (b *parallelCleanupBackend) NeverStarted(context.Context, UnstartedPod) (bool, error) {
+	return false, nil
 }
 
 func TestReconcileStalledNodeDoesNotBlockOtherCleanup(t *testing.T) {
@@ -225,5 +252,153 @@ func TestReconcileDeletesKnownUIDEvenWithoutContainerOrDiscovery(t *testing.T) {
 	}
 	if got := record(t, s, epoch, r.ID); got.State != javarunner.HostQuarantined {
 		t.Fatal("unproved reservation released", got)
+	}
+}
+
+func TestReconcilePendingPodNeedsDeletionAndIndependentNoStartProofAfterRestart(t *testing.T) {
+	s, old, path := newStore(t)
+	host := reserve(t, s, old)
+	policy := strings.Repeat("a", 64)
+	if e := s.BeginPreparePod(t.Context(), old, host.ID, policy); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.BindPod(t.Context(), old, host.ID, "pending-uid", ""); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.Abort(t.Context(), old, host.ID, "preparation_expired"); e != nil {
+		t.Fatal(e)
+	}
+	restarted, e := Open(t.Context(), path, testConfig, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { _ = restarted.Close() })
+	epoch, e := restarted.StartEpoch(t.Context())
+	if e != nil {
+		t.Fatal(e)
+	}
+	b := &cleanupBackend{pod: PodReceipt{Namespace: testConfig.Namespace, Name: host.PodName, UID: "pending-uid", HostID: host.ID, BrokerEpoch: old}}
+	r, e := NewReconciler(restarted, epoch, b, time.Second)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = r.Step(t.Context()); !errors.Is(e, ErrCleanup) || b.noStartCalls != 1 || len(b.deleted) != 1 || b.deleted[0].UID != "pending-uid" {
+		t.Fatal("deletion acknowledgement counted as proof", e, b)
+	}
+	if b.noStartIntent.PodPolicySHA256 != policy || b.noStartIntent.UID != "pending-uid" || b.noStartIntent.BrokerEpoch != old || record(t, restarted, epoch, host.ID).State != javarunner.HostQuarantined {
+		t.Fatal("lost immutable creation identity", b.noStartIntent)
+	}
+	b.deleteErr = errors.New("partition")
+	if e = r.Step(t.Context()); !errors.Is(e, ErrCleanup) || b.noStartCalls != 2 || record(t, restarted, epoch, host.ID).State != javarunner.HostQuarantined {
+		t.Fatal("failed deletion skipped attestation or released without proof", e, b)
+	}
+	b.noStartProven = true
+	b.findErr = errors.New("not found after deletion")
+	b.deleteBlock = true
+	if e = r.Step(t.Context()); e != nil || b.noStartCalls != 3 || record(t, restarted, epoch, host.ID).State != javarunner.HostReaped {
+		t.Fatal("independent attestor proof did not release after local delete failure", e)
+	}
+}
+
+func TestReconcileUnknownUIDStillAttestsAfterKubernetesFindTimeout(t *testing.T) {
+	s, epoch, _ := newStore(t)
+	host := reserve(t, s, epoch)
+	policy := strings.Repeat("a", 64)
+	if e := s.BeginPreparePod(t.Context(), epoch, host.ID, policy); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.Abort(t.Context(), epoch, host.ID, "create_uncertain"); e != nil {
+		t.Fatal(e)
+	}
+	b := &cleanupBackend{findBlock: true}
+	r, e := NewReconciler(s, epoch, b, 240*time.Millisecond)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = r.Step(t.Context()); !errors.Is(e, ErrCleanup) || b.noStartCalls != 1 || record(t, s, epoch, host.ID).State != javarunner.HostQuarantined {
+		t.Fatal("blocked discovery skipped no-start attestation or released without proof", e, b.noStartCalls)
+	}
+	if b.noStartIntent.UID != "" || b.noStartIntent.PodPolicySHA256 != policy {
+		t.Fatal("attestation lost durable intent", b.noStartIntent)
+	}
+	b.noStartProven = true
+	if e = r.Step(t.Context()); e != nil || b.noStartCalls != 2 || record(t, s, epoch, host.ID).State != javarunner.HostReaped {
+		t.Fatal("positive proof could not release during API partition", e, b.noStartCalls)
+	}
+}
+
+func TestReconcileInvalidPendingProvenanceUsesOnlyDurableIntent(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		bindUID      string
+		mutate       func(*PodReceipt)
+		wantProof    bool
+		wantDeletion bool
+	}{
+		{"known_uid_wrong_host", "pending-uid", func(p *PodReceipt) { p.HostID = "other" }, true, true},
+		{"known_uid_wrong_epoch", "pending-uid", func(p *PodReceipt) { p.BrokerEpoch = "other" }, true, true},
+		{"unknown_uid_wrong_host", "", func(p *PodReceipt) { p.HostID = "other" }, true, false},
+		{"unknown_uid_wrong_epoch", "", func(p *PodReceipt) { p.BrokerEpoch = "other" }, true, false},
+		{"known_uid_mismatch", "pending-uid", func(p *PodReceipt) { p.UID = "replacement" }, false, false},
+		{"known_uid_bad_container", "pending-uid", func(p *PodReceipt) { p.ContainerID = "invalid" }, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, epoch, _ := newStore(t)
+			host := reserve(t, s, epoch)
+			policy := strings.Repeat("a", 64)
+			if e := s.BeginPreparePod(t.Context(), epoch, host.ID, policy); e != nil {
+				t.Fatal(e)
+			}
+			if tc.bindUID != "" {
+				if e := s.BindPod(t.Context(), epoch, host.ID, tc.bindUID, ""); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if e := s.Abort(t.Context(), epoch, host.ID, "create_uncertain"); e != nil {
+				t.Fatal(e)
+			}
+			b := &cleanupBackend{pod: PodReceipt{Namespace: testConfig.Namespace, Name: host.PodName, UID: "pending-uid", HostID: host.ID, BrokerEpoch: epoch}, noStartProven: true}
+			tc.mutate(&b.pod)
+			r, e := NewReconciler(s, epoch, b, time.Second)
+			if e != nil {
+				t.Fatal(e)
+			}
+			e = r.Step(t.Context())
+			if tc.wantProof && e != nil || !tc.wantProof && !errors.Is(e, ErrCleanup) {
+				t.Fatal(e)
+			}
+			if (b.noStartCalls == 1) != tc.wantProof || (len(b.deleted) == 1) != tc.wantDeletion {
+				t.Fatal("wrong cleanup path", b.noStartCalls, b.deleted)
+			}
+			if tc.wantProof && (b.noStartIntent.UID != tc.bindUID || b.noStartIntent.PodPolicySHA256 != policy) {
+				t.Fatal("untrusted observation entered proof request", b.noStartIntent)
+			}
+			if (record(t, s, epoch, host.ID).State == javarunner.HostReaped) != tc.wantProof {
+				t.Fatal("capacity release mismatch")
+			}
+		})
+	}
+}
+
+func TestReconcileObservedContainerCannotUseNoStartProof(t *testing.T) {
+	s, epoch, _ := newStore(t)
+	host := reserve(t, s, epoch)
+	if e := s.BeginPreparePod(t.Context(), epoch, host.ID, strings.Repeat("a", 64)); e != nil {
+		t.Fatal(e)
+	}
+	if e := s.Abort(t.Context(), epoch, host.ID, "create_uncertain"); e != nil {
+		t.Fatal(e)
+	}
+	b := &cleanupBackend{pod: PodReceipt{Namespace: testConfig.Namespace, Name: host.PodName, UID: "late-uid", ContainerID: "containerd://late", HostID: host.ID, BrokerEpoch: epoch}, noStartProven: true}
+	r, e := NewReconciler(s, epoch, b, time.Second)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = r.Step(t.Context()); !errors.Is(e, ErrCleanup) || b.noStartCalls != 0 || b.proofCalls != 1 || record(t, s, epoch, host.ID).State != javarunner.HostQuarantined {
+		t.Fatal("started container accepted no-start proof", e, b)
+	}
+	b.terminated = true
+	if e = r.Step(t.Context()); e != nil || record(t, s, epoch, host.ID).State != javarunner.HostReaped {
+		t.Fatal("exact container proof did not release", e)
 	}
 }
