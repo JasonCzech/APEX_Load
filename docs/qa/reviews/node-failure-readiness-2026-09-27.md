@@ -3486,3 +3486,20 @@ found no further issues. Compressed logs and SHA-256 receipts are retained under
 `remaining-e7fgcem4/local-archive-failure-validation`; browser traces/screenshots
 are in `output/playwright/local-archive-20260928*`. This slice is locally verified;
 the running Docker controller remains revision `4e4d235c`.
+
+
+## Finalization metadata admission (2026-09-28 local time)
+
+The initial three regressions reproduced missing byte, free-space and configuration
+admission for adjunct publication. One frozen allowance now covers prepared-manifest
+restoration, test notes, execution metadata and the final manifest. Atomic temporary
+writes preserve the previous destination on rejection; the publication outbox and
+prepared-manifest recovery keep failures retryable without changing execution state.
+The first focused run passed (3.181 seconds). Expanded boundary, cancellation,
+source-preservation and retry checks passed (3.403 seconds), followed by three
+race repetitions (56.188 seconds), all 108 Go test-bearing packages and documentation
+checks for 69 active Markdown files. Scoped re-review found no further issues.
+Compressed logs with SHA-256 receipts are retained under
+`remaining-e7fgcem4/archive-adjunct-validation`. Docker deployment verification
+remains pending; the running controller is still `4e4d235c`.
+This change does not claim to bound serialization memory or aggregate retained data.

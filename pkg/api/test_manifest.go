@@ -785,12 +785,19 @@ func safeManifestAuditDetails(details map[string]any) map[string]any {
 }
 
 func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *storage.RunArchiveRecord) error {
-	return tr.persistTestManifestArtifactWithPreparation(test, record, nil)
+	return tr.persistTestManifestArtifactWithPreparation(test, record, nil, nil)
 }
 
-func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTest, record *storage.RunArchiveRecord, prepare func([]byte) error) error {
+func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTest, record *storage.RunArchiveRecord, prepare func([]byte) error, budget *archiveOutputBudget) error {
 	if test == nil || record == nil || strings.TrimSpace(record.ArchivePath) == "" || strings.TrimSpace(record.ManifestPath) == "" {
 		return nil
+	}
+	if budget == nil {
+		var err error
+		budget, err = newArchiveAdjunctBudget(context.Background(), resolveArchiveRoot())
+		if err != nil {
+			return err
+		}
 	}
 	archiveManifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
@@ -816,7 +823,7 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 		}
 		notes = loaded
 	}
-	testNotesFile, err := writeTestNotesArtifact(record.ArchivePath, test.ID, notes)
+	testNotesFile, err := writeTestNotesArtifact(record.ArchivePath, test.ID, notes, budget)
 	if err != nil {
 		return err
 	}
@@ -824,7 +831,7 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 		manifest.Archive.TestManifestFile = testRunManifestFileName
 		manifest.Archive.TestNotesFile = testNotesFile
 	}
-	if err := writeArchiveJSONArtifactDurable(record.ArchivePath, testRunManifestFileName, manifest); err != nil {
+	if err := writeArchiveJSONArtifactDurable(record.ArchivePath, testRunManifestFileName, manifest, budget); err != nil {
 		return err
 	}
 	archiveManifest.TestManifestFile = testRunManifestFileName
@@ -848,7 +855,7 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 			return err
 		}
 	}
-	if err := writeArchiveArtifactDurable(record.ArchivePath, runArchiveManifestFileName, manifestData, 0o644); err != nil {
+	if err := writeArchiveArtifactDurableWithBudget(record.ArchivePath, runArchiveManifestFileName, manifestData, 0o644, budget); err != nil {
 		return err
 	}
 	if err := refreshRunArchiveManifestTrust(record); err != nil {
@@ -857,12 +864,12 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 	return nil
 }
 
-func writeArchiveJSONArtifactDurable(rootPath string, name string, value any) error {
+func writeArchiveJSONArtifactDurable(rootPath string, name string, value any, budget *archiveOutputBudget) error {
 	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
-	return writeArchiveArtifactDurable(rootPath, name, data, 0o644)
+	return writeArchiveArtifactDurableWithBudget(rootPath, name, data, 0o644, budget)
 }
 
 // validateImmutableArchiveArtifactIntegrity prevents an adjunct refresh from

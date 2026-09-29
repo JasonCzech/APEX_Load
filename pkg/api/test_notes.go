@@ -23,7 +23,7 @@ func newTestNoteID() string {
 	return uuid.New().String()
 }
 
-func writeTestNotesArtifact(archivePath string, testID string, notes []*storage.TestNote) (string, error) {
+func writeTestNotesArtifact(archivePath string, testID string, notes []*storage.TestNote, budget *archiveOutputBudget) (string, error) {
 	if strings.TrimSpace(archivePath) == "" {
 		return "", fmt.Errorf("archive path is required")
 	}
@@ -33,7 +33,7 @@ func writeTestNotesArtifact(archivePath string, testID string, notes []*storage.
 	if err := writeArchiveJSONArtifactDurable(archivePath, testNotesArchiveFileName, testNotesArchiveArtifact{
 		TestID: strings.TrimSpace(testID),
 		Notes:  notes,
-	}); err != nil {
+	}, budget); err != nil {
 		return "", err
 	}
 	return testNotesArchiveFileName, nil

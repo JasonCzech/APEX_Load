@@ -427,6 +427,31 @@ are synced. The run, token and publication directory entries are synced before
 successful return. Failed or canceled copies retain their original source and do
 not advertise a complete new copy; the existing finalization job remains retryable.
 
-This bounds the copy into publication staging. It does not bound later report or
-adjunct generation, outgoing object-store bytes, concurrent copies or total retained
-backlog. Those remain separate admission work. No source is deleted to make space.
+This bounds the copy into publication staging. Finalization metadata uses the
+separate allowance below. Report generation, outgoing object-store bytes, concurrent
+copies and total retained backlog remain outside this copy allowance. No source
+is deleted to make space.
+
+
+## Finalization metadata limits
+
+`APEXLOAD_ARCHIVE_ADJUNCT_MAX_BYTES` defaults to 64 MiB and accepts positive
+integer bytes up to 1 GiB. `APEXLOAD_ARCHIVE_ADJUNCT_MIN_FREE_BYTES` defaults to
+64 MiB and accepts positive integer bytes up to 1 PiB. Each finalization attempt
+freezes these settings before prepared-manifest recovery. Restored manifest bytes,
+`test_notes.json`, `test_manifest.json` and the replacement `manifest.json` share
+one allowance. A direct metadata refresh uses the same admission rules.
+
+Physical writes use the shared archive capacity fence and check descriptor-based
+free space. Replacement data is written to a temporary file, synced, then renamed;
+rejection or cancellation preserves that file's previous version. Earlier metadata
+writes in the attempt may already have committed, but the archive manifest cannot
+advance past its durable preparation and successful write. The existing prepared
+manifest journal and publication outbox support retry without changing execution
+outcomes. A retry receives a new allowance; removed or replaced bytes are not
+refunded within an attempt, and recovery itself consumes that attempt's allowance.
+No source data is deleted to make space.
+
+This bounds metadata output on disk. It does not bound JSON serialization memory,
+streamed PDF/CSV/DOCX exports, aggregate concurrent writers or retained backlog.
+It also does not replace a filesystem or Kubernetes ephemeral-storage quota.

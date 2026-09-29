@@ -838,6 +838,10 @@ func writeArchiveManifestDurable(path string, data []byte) error {
 // writers use this boundary so publication cannot be redirected by persisted
 // or locally planted paths.
 func writeArchiveArtifactDurable(rootPath, name string, data []byte, perm os.FileMode) error {
+	return writeArchiveArtifactDurableWithBudget(rootPath, name, data, perm, nil)
+}
+
+func writeArchiveArtifactDurableWithBudget(rootPath, name string, data []byte, perm os.FileMode, budget *archiveOutputBudget) error {
 	normalized, err := normalizeArchiveArtifactName(name)
 	if err != nil {
 		return err
@@ -869,9 +873,15 @@ func writeArchiveArtifactDurable(rootPath, name string, data []byte, perm os.Fil
 			_ = root.Remove(tempName)
 		}
 	}()
-	if _, err := tmp.Write(data); err != nil {
+	var writeErr error
+	if budget == nil {
+		_, writeErr = tmp.Write(data)
+	} else {
+		_, writeErr = (&archiveOutputFile{file: tmp, budget: budget}).Write(data)
+	}
+	if writeErr != nil {
 		_ = tmp.Close()
-		return err
+		return writeErr
 	}
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
@@ -879,6 +889,11 @@ func writeArchiveArtifactDurable(rootPath, name string, data []byte, perm os.Fil
 	}
 	if err := tmp.Close(); err != nil {
 		return err
+	}
+	if budget != nil && budget.ctx != nil {
+		if err := budget.ctx.Err(); err != nil {
+			return err
+		}
 	}
 	// Re-check the target immediately before rename. Rename replaces a regular
 	// file or a link itself and never follows the destination, but rejecting a

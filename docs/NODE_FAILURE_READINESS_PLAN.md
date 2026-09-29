@@ -450,3 +450,11 @@ both browser auth profiles pass; scoped re-review found no further issues. The o
 retains COMPLETE/FAILED/ABORTED, and survives the existing completion retry. Source
 bytes are preserved and publication/catalog state takes precedence. Aggregate
 backlog and combined-loss recovery remain separate implementation work.
+
+
+Finalization metadata admission is implemented and passes focused, repeated race,
+full Go-suite and documentation checks: prepared-manifest restoration,
+test notes, execution metadata and the final manifest share a frozen byte/free-space
+allowance and preserve prior files on rejected atomic replacement. The durable
+publication retry remains authoritative. This is per-attempt disk-output admission;
+aggregate retained backlog and combined-loss recovery remain open.

@@ -13,11 +13,15 @@ type archiveManifestPreparationStore interface {
 }
 
 func (tr *TestRunner) persistArchiveFinalizationArtifacts(ctx context.Context, job *storage.ArchiveFinalizationJob, test *ManagedTest) error {
+	budget, err := newArchiveAdjunctBudget(ctx, resolveArchiveRoot())
+	if err != nil {
+		return err
+	}
 	preparer, ok := tr.archiveStore.(archiveManifestPreparationStore)
 	if !ok || tr.archiveFinalizationOutbox() == nil {
-		return tr.persistTestManifestArtifact(test, &job.ArchiveRecord)
+		return tr.persistTestManifestArtifactWithPreparation(test, &job.ArchiveRecord, nil, budget)
 	}
-	if err := restorePreparedArchiveManifest(ctx, job); err != nil {
+	if err := restorePreparedArchiveManifest(ctx, job, budget); err != nil {
 		return err
 	}
 	return tr.persistTestManifestArtifactWithPreparation(test, &job.ArchiveRecord, func(data []byte) error {
@@ -36,14 +40,14 @@ func (tr *TestRunner) persistArchiveFinalizationArtifacts(ctx context.Context, j
 		job.ArchiveRecord = prepared
 		job.PreparedManifestJSON = string(data)
 		return ctx.Err()
-	})
+	}, budget)
 }
 
 // An interrupted atomic manifest replacement can leave the prior local manifest
 // with the next digest already durable. Recovery uses only bytes committed in
 // that same database transaction, and checks every declared artifact before
 // writing. Legacy jobs without a preparation marker remain fail-closed.
-func restorePreparedArchiveManifest(ctx context.Context, job *storage.ArchiveFinalizationJob) error {
+func restorePreparedArchiveManifest(ctx context.Context, job *storage.ArchiveFinalizationJob, budget *archiveOutputBudget) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -85,5 +89,5 @@ func restorePreparedArchiveManifest(ctx context.Context, job *storage.ArchiveFin
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return writeArchiveArtifactDurable(record.ArchivePath, runArchiveManifestFileName, data, 0o644)
+	return writeArchiveArtifactDurableWithBudget(record.ArchivePath, runArchiveManifestFileName, data, 0o644, budget)
 }
