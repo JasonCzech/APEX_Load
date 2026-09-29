@@ -427,6 +427,25 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		closeDialedClients()
 		return impacts, err
 	}
+	if evacuationGuard != "" {
+		stagedTargets := make([]string, 0, len(newlyAssigned))
+		for replacementTarget := range newlyAssigned {
+			stagedTargets = append(stagedTargets, replacementTarget)
+		}
+		slices.Sort(stagedTargets)
+		stagedGuard, stageErr := tr.markRunEvacuationStaged(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID, stagedTargets)
+		if stageErr != nil {
+			closeUntouchedDialedClients(touchedTargets)
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                fmt.Errorf("persist staged evacuation targets: %w", stageErr),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+		evacuationGuard = stagedGuard
+	}
 	replacementClients := make(map[string]generatorClient, len(newlyAssigned))
 	for replacementTarget := range newlyAssigned {
 		if client := clientsByTarget[replacementTarget]; client != nil {

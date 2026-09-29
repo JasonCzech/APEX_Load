@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -18,6 +20,7 @@ const runEvacuationCheckpointVersion = 2
 
 const (
 	runEvacuationPhasePrepared     = "prepared"
+	runEvacuationPhaseStaged       = "staged"
 	runEvacuationPhaseSourceFenced = "source_fenced"
 )
 
@@ -29,6 +32,8 @@ type runEvacuationCheckpoint struct {
 	OwnerID        string                             `json:"owner_id"`
 	PreparedAt     time.Time                          `json:"prepared_at"`
 	Phase          string                             `json:"phase"`
+	StagedAt       time.Time                          `json:"staged_at,omitempty"`
+	StagedTargets  []string                           `json:"staged_targets,omitempty"`
 	SourceFencedAt time.Time                          `json:"source_fenced_at,omitempty"`
 	BeforeShards   map[string][]GeneratorShardSummary `json:"before_shards"`
 	Prior          runContinuityCheckpoint            `json:"prior"`
@@ -128,12 +133,102 @@ func (tr *TestRunner) beginRunEvacuationCheckpoint(ctx context.Context, test *Ma
 	return string(encoded), nil
 }
 
+// markRunEvacuationStaged records the exact replacement targets after staging
+// returns successfully, before the source is stopped. An incomplete or
+// ambiguous stage cannot be promoted into a source-fence checkpoint.
+func (tr *TestRunner) markRunEvacuationStaged(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner string, targets []string) (string, error) {
+	return tr.advanceRunEvacuationCheckpoint(ctx, test, raw, generation, owner, runEvacuationPhasePrepared, func(guard *runEvacuationCheckpoint) error {
+		if !guard.StagedAt.IsZero() || len(guard.StagedTargets) != 0 || !guard.SourceFencedAt.IsZero() {
+			return errors.New("evacuation staging progress already exists")
+		}
+		actual := append([]string(nil), targets...)
+		slices.Sort(actual)
+		if len(actual) == 0 {
+			return errors.New("evacuation staged no replacement targets")
+		}
+		for _, target := range actual {
+			if target == "" || strings.TrimSpace(target) != target {
+				return errors.New("evacuation staged an invalid replacement target")
+			}
+		}
+		for i := 1; i < len(actual); i++ {
+			if actual[i] == actual[i-1] {
+				return errors.New("evacuation staged duplicate replacement targets")
+			}
+		}
+		expected, err := runEvacuationReplacementTargets(*guard)
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(actual, expected) {
+			return errors.New("staged replacement targets do not match the durable topology")
+		}
+		guard.Phase = runEvacuationPhaseStaged
+		guard.StagedAt = time.Now().UTC()
+		guard.StagedTargets = actual
+		return nil
+	})
+}
+
+func runEvacuationReplacementTargets(guard runEvacuationCheckpoint) ([]string, error) {
+	before := make(map[string]struct{})
+	for _, shards := range guard.BeforeShards {
+		for _, shard := range shards {
+			if shard.Target == "" || strings.TrimSpace(shard.Target) != shard.Target {
+				return nil, errors.New("evacuation prior topology has an invalid target")
+			}
+			before[shard.Target] = struct{}{}
+		}
+	}
+	if _, present := before[guard.Source]; !present {
+		return nil, errors.New("evacuation source is absent from the prior topology")
+	}
+	expected := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, shards := range guard.NextShards {
+		for _, shard := range shards {
+			if shard.Target == "" || strings.TrimSpace(shard.Target) != shard.Target {
+				return nil, errors.New("evacuation next topology has an invalid target")
+			}
+			if shard.Target == guard.Source {
+				return nil, errors.New("evacuation source remains in the next topology")
+			}
+			if _, previous := before[shard.Target]; !previous {
+				if _, duplicate := seen[shard.Target]; !duplicate {
+					seen[shard.Target] = struct{}{}
+					expected = append(expected, shard.Target)
+				}
+			}
+		}
+	}
+	slices.Sort(expected)
+	if len(expected) == 0 {
+		return nil, errors.New("evacuation topology has no new replacement target")
+	}
+	return expected, nil
+}
+
 // markRunEvacuationSourceFenced records the positive source fence before any
 // replacement commit. A failed write leaves the guard unresolved and the
 // caller must stop the staged replacement through the uncertain path.
 func (tr *TestRunner) markRunEvacuationSourceFenced(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner string) (string, error) {
+	return tr.advanceRunEvacuationCheckpoint(ctx, test, raw, generation, owner, runEvacuationPhaseStaged, func(guard *runEvacuationCheckpoint) error {
+		if guard.StagedAt.IsZero() || len(guard.StagedTargets) == 0 || !guard.SourceFencedAt.IsZero() {
+			return errors.New("evacuation source fence lacks durable staging proof")
+		}
+		expected, err := runEvacuationReplacementTargets(*guard)
+		if err != nil || !slices.Equal(guard.StagedTargets, expected) {
+			return errors.New("evacuation source fence has mismatched staged targets")
+		}
+		guard.Phase = runEvacuationPhaseSourceFenced
+		guard.SourceFencedAt = time.Now().UTC()
+		return nil
+	})
+}
+
+func (tr *TestRunner) advanceRunEvacuationCheckpoint(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner, phase string, update func(*runEvacuationCheckpoint) error) (string, error) {
 	if tr == nil || test == nil {
-		return "", errors.New("evacuation source fence requires a managed run")
+		return "", errors.New("evacuation progress requires a managed run")
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -147,17 +242,18 @@ func (tr *TestRunner) markRunEvacuationSourceFenced(ctx context.Context, test *M
 	if err := json.Unmarshal([]byte(raw), &guard); err != nil {
 		return "", fmt.Errorf("decode evacuation checkpoint: %w", err)
 	}
-	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhasePrepared || !guard.SourceFencedAt.IsZero() {
-		return "", errors.New("evacuation source fence does not match durable intent")
+	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != phase {
+		return "", errors.New("evacuation progress does not match durable intent")
 	}
 	tr.mu.RLock()
 	current := test.continuityCheckpoint
 	tr.mu.RUnlock()
 	if current != raw {
-		return "", errors.New("evacuation checkpoint changed before source fence")
+		return "", errors.New("evacuation checkpoint changed before progress write")
 	}
-	guard.Phase = runEvacuationPhaseSourceFenced
-	guard.SourceFencedAt = time.Now().UTC()
+	if err := update(&guard); err != nil {
+		return "", err
+	}
 	encoded, err := json.Marshal(guard)
 	if err != nil {
 		return "", err
@@ -181,12 +277,12 @@ func (tr *TestRunner) markRunEvacuationSourceFenced(ctx context.Context, test *M
 		return "", err
 	}
 	if result != storage.TestStatusTransitionUpdated {
-		return "", fmt.Errorf("evacuation source fence write not applied: %s", result)
+		return "", fmt.Errorf("evacuation progress write not applied: %s", result)
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if test.continuityCheckpoint != raw {
-		return "", errors.New("evacuation checkpoint changed while recording source fence")
+		return "", errors.New("evacuation checkpoint changed while recording progress")
 	}
 	setContinuityCheckpointLocked(test, string(encoded))
 	return string(encoded), nil
@@ -197,8 +293,12 @@ func validateRunEvacuationCompletion(raw, testID string, generation uint64, owne
 	if err := json.Unmarshal([]byte(raw), &guard); err != nil {
 		return fmt.Errorf("decode evacuation checkpoint: %w", err)
 	}
-	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != testID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhaseSourceFenced || guard.SourceFencedAt.IsZero() || !reflect.DeepEqual(guard.NextShards, shards) {
+	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != testID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhaseSourceFenced || guard.StagedAt.IsZero() || len(guard.StagedTargets) == 0 || guard.SourceFencedAt.IsZero() || !reflect.DeepEqual(guard.NextShards, shards) {
 		return errors.New("evacuation completion does not match durable intent")
+	}
+	expected, err := runEvacuationReplacementTargets(guard)
+	if err != nil || !slices.Equal(guard.StagedTargets, expected) {
+		return errors.New("evacuation completion lacks exact staged replacement targets")
 	}
 	return nil
 }

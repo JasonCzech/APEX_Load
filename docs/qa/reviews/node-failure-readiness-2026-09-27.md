@@ -3974,3 +3974,23 @@ sanitized receipts are under
 This qualifies the normal source-fence checkpoint sequence on one Docker
 Desktop host. It does not qualify a crash during the source-fence write,
 successor replay, independent physical nodes, or CSI/RWX storage.
+
+## Durable evacuation staging boundary (2026-09-29)
+
+The package-5 checkpoint now records an intermediate `staged` phase with the
+exact sorted replacement target set after staging succeeds and before the
+source is stopped. The target set must equal the new targets in the proposed
+topology; the source must exist in the old topology and be absent from the new
+one. A lease-fenced compare-and-swap advances `prepared` to `staged`, and the
+positive source-fence write now requires that phase. Completion requires both
+durable marks and revalidates the staged target set against the topology.
+If the staging write fails after assignment, the controller takes the
+uncertain-evacuation stop path without committing replacement traffic.
+The checkpoint remains unadoptable to a successor in every in-flight phase.
+Focused tests cover topology validation, stale/lease-rejected writes, stage
+failure after assignment, a stored `staged` phase before source StopTest, and
+both marks before CommitWork. The full `go test -p 2 -ldflags='-s -w' ./...`
+suite, focused race check with the same linker flags, documentation check and
+diff review passed. Stripped test binaries kept the host below its disk limit;
+the first unstripped focused build failed during linking with ENOSPC before
+running tests. Deployed staging-transition qualification remains pending.

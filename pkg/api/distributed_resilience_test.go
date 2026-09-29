@@ -1289,7 +1289,7 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 }
 
 func TestDistributedEvacuationCheckpointWriteFailures(t *testing.T) {
-	for _, phase := range []string{"prepare", "source-fenced", "complete"} {
+	for _, phase := range []string{"prepare", "staged", "source-fenced", "complete"} {
 		t.Run(phase, func(t *testing.T) { runEvacuationProvisionScenarioWithFault(t, true, phase) })
 	}
 }
@@ -1315,11 +1315,26 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	t.Cleanup(sut.Close)
 	failedClient := newEvacuationFakeGeneratorClient("gen-a")
 	sourceStopped := make(chan int64, 1)
+	sourceStopCheckpointPhase := make(chan string, 1)
+	var store *storage.SQLiteStore
 	failedClient.stopHook = func() {
 		// Record the first fence; cleanup may idempotently stop the source again.
 		select {
 		case sourceStopped <- replacementRequests.Load():
 		default:
+		}
+		if store != nil {
+			phase := "unavailable"
+			if record, err := store.GetTest("run-provision-survivor"); err == nil {
+				var guard runEvacuationCheckpoint
+				if json.Unmarshal([]byte(record.ContinuityCheckpoint), &guard) == nil {
+					phase = guard.Phase
+				}
+			}
+			select {
+			case sourceStopCheckpointPhase <- phase:
+			default:
+			}
 		}
 	}
 	var replacementClient *setupRecordingEvacuationClient
@@ -1390,7 +1405,6 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	configureEvacuationExecutionLease(runner, test, 81, "operator-evacuation/81", 10*time.Second)
 	generation := uint64(81)
 	var token []byte
-	var store *storage.SQLiteStore
 	sourceClient := generatorClient(failedClient)
 	if continuity {
 		var leadership *executionLeadership
@@ -1438,7 +1452,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			if err := json.Unmarshal([]byte(record.ContinuityCheckpoint), &guard); err != nil {
 				return err
 			}
-			if guard.Phase != runEvacuationPhaseSourceFenced || guard.SourceFencedAt.IsZero() {
+			if guard.Phase != runEvacuationPhaseSourceFenced || guard.StagedAt.IsZero() || len(guard.StagedTargets) != 1 || guard.StagedTargets[0] != "gen-b" || guard.SourceFencedAt.IsZero() {
 				return errors.New("replacement commit preceded durable positive source fence")
 			}
 			return nil
@@ -1452,6 +1466,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 				return checkpointFailure == "complete"
 			}
 			return (checkpointFailure == "prepare" && guard.Phase == runEvacuationPhasePrepared) ||
+				(checkpointFailure == "staged" && guard.Phase == runEvacuationPhaseStaged) ||
 				(checkpointFailure == "source-fenced" && guard.Phase == runEvacuationPhaseSourceFenced)
 		}}
 	}
@@ -1467,8 +1482,8 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		if got := replacementRequests.Load(); got != 0 {
 			t.Fatalf("paused replacement emitted %d requests", got)
 		}
-		if checkpointFailure == "source-fenced" && replacementClient == nil {
-			t.Fatal("source-fence fault never reached a staged replacement")
+		if (checkpointFailure == "staged" || checkpointFailure == "source-fenced") && replacementClient == nil {
+			t.Fatal("checkpoint fault never reached a staged replacement")
 		}
 		if checkpointFailure != "complete" && replacementClient != nil && replacementClient.commitCalls.Load() != 0 {
 			t.Fatal("replacement commit was called before the source-fence write succeeded")
@@ -1504,6 +1519,16 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		}
 	default:
 		t.Fatal("source was not fenced before evacuation completed")
+	}
+	if continuity {
+		select {
+		case phase := <-sourceStopCheckpointPhase:
+			if phase != runEvacuationPhaseStaged {
+				t.Fatalf("source stop observed checkpoint phase %q, want staged", phase)
+			}
+		default:
+			t.Fatal("source stop did not observe durable staging progress")
+		}
 	}
 	// The controller is evacuating a logically paused run onto a generator that
 	// has never seen this test. Wait beyond the coordinated release barrier to

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +73,16 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
 				t.Fatal("prepared guard completed before a durable source fence")
 			}
+			if _, err := tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner); err == nil {
+				t.Fatal("source fence accepted a guard without staging proof")
+			}
+			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
+				t.Fatal("staged guard completed before a durable source fence")
+			}
 			guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 			if err != nil {
 				t.Fatal(err)
@@ -90,6 +101,112 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			}
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
 				t.Fatal("replayed completion overwrote newer checkpoint")
+			}
+		})
+	}
+}
+
+func TestRunEvacuationStagingRejectsInvalidProgress(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		targets []string
+	}{
+		{"empty", nil},
+		{"duplicate", []string{"gen-b", "gen-b"}},
+		{"source", []string{"gen-a"}},
+		{"unknown", []string{"gen-c"}},
+		{"mixed", []string{"gen-b", "gen-c"}},
+		{"whitespace", []string{" gen-b "}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+			guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tr.markRunEvacuationStaged(nil, test, guard, generation, owner, tc.targets); err == nil {
+				t.Fatal("invalid staged target set accepted")
+			}
+			record, err := store.GetTest(test.ID)
+			if err != nil || record.ContinuityCheckpoint != guard {
+				t.Fatalf("invalid staging changed durable guard: %v", err)
+			}
+		})
+	}
+	for _, fault := range []string{"wrong-owner", "wrong-generation", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
+		t.Run(fault, func(t *testing.T) {
+			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+			guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			switch fault {
+			case "wrong-owner":
+				owner = "other-owner"
+			case "wrong-generation":
+				generation++
+			case "stale-store":
+				if _, err := store.UpdateTestContinuityCheckpointIfLeaseHeld(test.ID, `{"version":99}`, executionLeaseName, owner); err != nil {
+					t.Fatal(err)
+				}
+			case "lost-lease":
+				if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+					t.Fatal(err)
+				}
+			case "write-failure":
+				tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, reject: true}
+			case "canceled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "replay":
+				if _, err := tr.markRunEvacuationStaged(ctx, test, guard, generation, owner, []string{"gen-b"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := tr.markRunEvacuationStaged(ctx, test, guard, generation, owner, []string{"gen-b"}); err == nil {
+				t.Fatal("stale staged progress accepted")
+			}
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fault != "stale-store" && fault != "replay" && record.ContinuityCheckpoint != guard {
+				t.Fatal("rejected staging changed durable checkpoint")
+			}
+		})
+	}
+}
+
+func TestRunEvacuationReplacementTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		before string
+		next   []string
+		want   []string
+	}{
+		{"one replacement", "gen-a", []string{"gen-b"}, []string{"gen-b"}},
+		{"deduplicated replacements", "gen-a", []string{"gen-c", "gen-b", "gen-b"}, []string{"gen-b", "gen-c"}},
+		{"source absent", "gen-x", []string{"gen-b"}, nil},
+		{"source retained", "gen-a", []string{"gen-a", "gen-b"}, nil},
+		{"no replacement", "gen-a", nil, nil},
+		{"invalid target", "gen-a", []string{" gen-b "}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			guard := runEvacuationCheckpoint{Source: "gen-a", BeforeShards: map[string][]GeneratorShardSummary{
+				"a": {{Target: tc.before}},
+			}, NextShards: map[string][]GeneratorShardSummary{"a": {}}}
+			for _, target := range tc.next {
+				guard.NextShards["a"] = append(guard.NextShards["a"], GeneratorShardSummary{Target: target})
+			}
+			got, err := runEvacuationReplacementTargets(guard)
+			if tc.want == nil {
+				if err == nil {
+					t.Fatalf("invalid topology returned targets %v", got)
+				}
+			} else if err != nil || !slices.Equal(got, tc.want) {
+				t.Fatalf("targets = %v, %v; want %v", got, err, tc.want)
 			}
 		})
 	}
@@ -164,6 +281,10 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
@@ -206,10 +327,14 @@ func TestRunEvacuationSourceFenceRejectsStaleOrUnownedProgress(t *testing.T) {
 	if _, err := (*TestRunner)(nil).markRunEvacuationSourceFenced(nil, nil, "", 0, ""); err == nil {
 		t.Fatal("nil runner and test accepted")
 	}
-	for _, fault := range []string{"wrong-owner", "wrong-generation", "stale-memory", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
+	for _, fault := range []string{"wrong-owner", "wrong-generation", "stage-mismatch", "stale-memory", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
 		t.Run(fault, func(t *testing.T) {
 			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
 			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			guard, err = tr.markRunEvacuationStaged(context.Background(), test, guard, generation, owner, []string{"gen-b"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -219,6 +344,21 @@ func TestRunEvacuationSourceFenceRejectsStaleOrUnownedProgress(t *testing.T) {
 				owner = "other-owner"
 			case "wrong-generation":
 				generation++
+			case "stage-mismatch":
+				var changed runEvacuationCheckpoint
+				if err := json.Unmarshal([]byte(guard), &changed); err != nil {
+					t.Fatal(err)
+				}
+				changed.StagedTargets = []string{"gen-c"}
+				raw, err := json.Marshal(changed)
+				if err != nil {
+					t.Fatal(err)
+				}
+				guard = string(raw)
+				if _, err := store.UpdateTestContinuityCheckpointIfLeaseHeld(test.ID, guard, executionLeaseName, owner); err != nil {
+					t.Fatal(err)
+				}
+				setContinuityCheckpointLocked(test, guard)
 			case "stale-memory":
 				setContinuityCheckpointLocked(test, `{"version":99}`)
 			case "stale-store":
@@ -350,6 +490,10 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
 	if err != nil {
 		t.Fatal(err)
@@ -359,7 +503,7 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 	if len(restored.continuityFailovers) != 1 || runContinuityStatusLocked(restored).Armed {
 		t.Fatal("interruption lost historical failover or became armed")
 	}
-	for _, field := range []string{"version", "test", "generation", "owner", "source", "time", "phase", "fenced-time", "topology"} {
+	for _, field := range []string{"version", "test", "generation", "owner", "source", "time", "phase", "staged-time", "staged-targets", "staged-mismatch", "fenced-time", "topology"} {
 		t.Run(field, func(t *testing.T) {
 			var changed runEvacuationCheckpoint
 			if err := json.Unmarshal([]byte(guard), &changed); err != nil {
@@ -380,6 +524,12 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 				changed.PreparedAt = time.Time{}
 			case "phase":
 				changed.Phase = runEvacuationPhasePrepared
+			case "staged-time":
+				changed.StagedAt = time.Time{}
+			case "staged-targets":
+				changed.StagedTargets = nil
+			case "staged-mismatch":
+				changed.StagedTargets = []string{"gen-c"}
 			case "fenced-time":
 				changed.SourceFencedAt = time.Time{}
 			case "topology":

@@ -513,3 +513,8 @@ evacuation: PostgreSQL recorded `prepared` → `source_fenced` → completed
 topology, traffic continued on a different worker, and the two-source archive
 verified after operator stop. This does not qualify interrupted replay or
 physical multi-host recovery; see the [review ledger](qa/reviews/node-failure-readiness-2026-09-27.md).
+
+The next journal boundary persists the exact staged replacement targets before
+source StopTest. `source_fenced` requires that stage record, and completed
+topology revalidates it. An unrecorded stage fails closed after assignment;
+successor adoption remains disabled until replay and fencing are implemented.
