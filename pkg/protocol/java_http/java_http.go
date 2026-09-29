@@ -143,7 +143,7 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 			}, nil
 		}
 		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(action.Body)))
-		base64DecodeDuration = time.Since(startedAt)
+		base64DecodeDuration = measuredOperationDuration(time.Since(startedAt))
 		if err != nil {
 			return &protocol.Result{
 				ActionName:      action.Name,
@@ -170,7 +170,7 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (*proto
 	if result != nil && j.preserveBinaryResult {
 		startedAt := time.Now()
 		result.ResponseBody = base64.StdEncoding.EncodeToString([]byte(result.ResponseBody))
-		deserializationDuration = time.Since(startedAt)
+		deserializationDuration = measuredOperationDuration(time.Since(startedAt))
 	}
 	if result != nil {
 		result.DependencyType = "java_http"
@@ -378,6 +378,15 @@ func durationToMilliseconds(duration time.Duration) float64 {
 		return 0
 	}
 	return float64(duration) / float64(time.Millisecond)
+}
+
+// A completed operation may take less than the clock's resolution. Keep its
+// telemetry present while leaving the zero duration for skipped work intact.
+func measuredOperationDuration(duration time.Duration) time.Duration {
+	if duration <= 0 {
+		return time.Nanosecond
+	}
+	return duration
 }
 
 // BeginIteration delegates cache aging to the shared HTTP runtime.
