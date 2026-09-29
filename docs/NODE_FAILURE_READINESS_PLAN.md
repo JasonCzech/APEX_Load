@@ -535,3 +535,11 @@ PostgreSQL recording `prepared` → `staged` → `source_fenced` →
 worker and all nine S3 artifacts eventually verified after a disposable
 SeaweedFS restart. The trial does not qualify interrupted successor replay,
 physical node independence, or seamless archive availability.
+
+Successor reconciliation now has a narrow completed-replacement path: it
+validates the predecessor's armed lineage and exact topology, promotes only a
+durable `replacement_committed` guard with the successor's lease, then uses
+the existing generator adoption protocol. The retired source is retained as
+an archive target. Earlier guard phases still fail closed, and a missing
+replacement cannot be reconstructed from this checkpoint. A deliberately
+tagged, bounded post-commit fault hold supports interruption qualification.

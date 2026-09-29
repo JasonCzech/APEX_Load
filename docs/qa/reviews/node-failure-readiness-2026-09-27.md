@@ -4057,3 +4057,19 @@ The reviewed trial controller was rolled back and the original cluster
 restarted with three Ready nodes and nine current application pods Ready.
 Its earlier pod-originated DNS lookup failure persisted, so restoration of
 that original cluster remains unqualified.
+
+## Committed evacuation successor promotion (2026-09-29)
+
+The successor now recognizes only a version-2 `replacement_committed`
+checkpoint whose prior version-1 lineage was armed and exactly matches the
+recorded source topology. It verifies staged targets, positive source fence,
+commit mark, and old execution term before a lease-fenced compare-and-swap
+promotes the recorded replacement topology into the version-1 adoption path.
+The retired source remains an archive target. No AssignWork or CommitWork is
+replayed. Earlier phases and malformed lineage stay fail-closed; a missing
+replacement still fails ordinary adoption. Tests cover real successor-term
+adoption, corrupt guards, stale lease and replay. A bounded build-tagged
+post-commit hold makes a deployed interruption reproducible. Focused API
+and tagged probe tests, the full `go test -p 2 -ldflags='-s -w' ./...` suite,
+focused tagged race check, documentation check, and diff review pass.
+Deployed interruption qualification remains pending.

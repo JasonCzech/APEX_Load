@@ -14,8 +14,8 @@ import (
 )
 
 // Version 2 is deliberately not adoptable by the version-1 reader, including
-// older controllers. It is a durable interruption guard, not a replay protocol:
-// until replacement progress can be reconciled, a successor must fail closed.
+// older controllers. A successor may promote only an acknowledged replacement
+// commit; earlier phases remain fail-closed and never replay generator work.
 const runEvacuationCheckpointVersion = 2
 
 const (
@@ -321,6 +321,82 @@ func validateRunEvacuationCompletion(raw, testID string, generation uint64, owne
 		return errors.New("evacuation completion lacks exact staged replacement targets")
 	}
 	return nil
+}
+
+// committedRunEvacuationCheckpoint accepts only a complete positive-fence and
+// replacement-commit journal whose prior placement matches its sealed lineage.
+// It is safe to adopt the existing replacement, but never to replay its work.
+func committedRunEvacuationCheckpoint(raw, testID string) (runEvacuationCheckpoint, bool) {
+	var guard runEvacuationCheckpoint
+	if json.Unmarshal([]byte(raw), &guard) != nil || guard.TestID != testID || guard.Generation == 0 || guard.OwnerID == "" || guard.Prior.Version != runContinuityCheckpointVersion || guard.Prior.ExecutionGeneration != guard.Generation || guard.Prior.ExecutionLeaseOwnerID != guard.OwnerID || guard.Prior.ArmedAt.IsZero() || !reflect.DeepEqual(guard.Prior.Shards, guard.BeforeShards) || slices.Contains(guard.Prior.CompletedTargets, guard.Source) {
+		return runEvacuationCheckpoint{}, false
+	}
+	if validateRunEvacuationCompletion(raw, testID, guard.Generation, guard.OwnerID, guard.NextShards) != nil {
+		return runEvacuationCheckpoint{}, false
+	}
+	return guard, true
+}
+
+// promoteCommittedRunEvacuationCheckpoint converts an acknowledged replacement
+// into the ordinary adoption checkpoint under the successor's execution lease.
+// A second successor sees either the original guard or the completed topology.
+func (tr *TestRunner) promoteCommittedRunEvacuationCheckpoint(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner string) (string, error) {
+	if tr == nil || test == nil || generation == 0 || owner == "" {
+		return "", errors.New("evacuation promotion requires a successor lease")
+	}
+	guard, ok := committedRunEvacuationCheckpoint(raw, test.ID)
+	if !ok || guard.Generation >= generation {
+		return "", errors.New("evacuation promotion lacks committed predecessor proof")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	tr.mu.RLock()
+	current := test.continuityCheckpoint
+	tr.mu.RUnlock()
+	if current != raw {
+		return "", errors.New("evacuation checkpoint changed before promotion")
+	}
+	prior := guard.Prior
+	prior.Shards = cloneGroupShardMap(guard.NextShards)
+	prior.CompletedTargets = append([]string(nil), prior.CompletedTargets...)
+	prior.ArchiveTargets = append([]string(nil), prior.ArchiveTargets...)
+	if !slices.Contains(prior.ArchiveTargets, guard.Source) {
+		prior.ArchiveTargets = append(prior.ArchiveTargets, guard.Source)
+		slices.Sort(prior.ArchiveTargets)
+	}
+	prior.ArmedAt = time.Now().UTC()
+	encoded, err := json.Marshal(prior)
+	if err != nil {
+		return "", err
+	}
+	store, ok := tr.testStore.(interface {
+		CompareAndSwapTestContinuityCheckpointIfLeaseHeld(string, string, string, string, string) (storage.TestStatusTransitionResult, error)
+	})
+	if !ok {
+		return "", errors.New("test store cannot promote evacuation checkpoint")
+	}
+	var result storage.TestStatusTransitionResult
+	if err := tr.trackDurableWrite(func() error {
+		var writeErr error
+		result, writeErr = store.CompareAndSwapTestContinuityCheckpointIfLeaseHeld(test.ID, raw, string(encoded), executionLeaseName, owner)
+		return writeErr
+	}); err != nil {
+		return "", err
+	}
+	if result != storage.TestStatusTransitionUpdated {
+		return "", fmt.Errorf("evacuation promotion write not applied: %s", result)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if test.continuityCheckpoint != raw {
+		return "", errors.New("evacuation checkpoint changed while promoting")
+	}
+	setContinuityCheckpointLocked(test, string(encoded))
+	return string(encoded), nil
 }
 
 func interruptedRunEvacuation(raw string) bool {

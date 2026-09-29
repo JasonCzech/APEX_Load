@@ -86,7 +86,11 @@ func (tr *TestRunner) isRunAdoptionCandidate(test *ManagedTest) bool {
 		return false
 	}
 	checkpoint, present, err := decodeRunContinuityCheckpoint(test.continuityCheckpoint)
-	return err == nil && present && len(checkpoint.Shards) > 0
+	if err == nil && present && len(checkpoint.Shards) > 0 {
+		return true
+	}
+	_, committed := committedRunEvacuationCheckpoint(test.continuityCheckpoint, test.ID)
+	return committed
 }
 
 // awaitRunAdoptionReconcile holds the generator epoch keeper until acquisition
@@ -166,6 +170,13 @@ func (tr *TestRunner) adoptOrphanedRuns() error {
 		raw := test.continuityCheckpoint
 		stopping := test.Status == "STOPPING"
 		tr.mu.RUnlock()
+		if _, committed := committedRunEvacuationCheckpoint(raw, test.ID); committed {
+			promoted, promoteErr := tr.promoteCommittedRunEvacuationCheckpoint(ctx, test, raw, generation, ownerID)
+			if promoteErr != nil {
+				return fmt.Errorf("promote committed evacuation for %s: %w", test.ID, promoteErr)
+			}
+			raw = promoted
+		}
 		checkpoint, _, decodeErr := decodeRunContinuityCheckpoint(raw)
 		if decodeErr == nil && checkpoint.ExecutionGeneration >= generation {
 			decodeErr = fmt.Errorf("checkpoint generation %d is not older than %d", checkpoint.ExecutionGeneration, generation)

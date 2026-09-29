@@ -743,6 +743,7 @@ sourceFenced:
 			}, streamsByTarget, openedStreams, releaseTopology)
 		}
 		evacuationGuard = committedGuard
+		waitAfterEvacuationReplacementCommit(executionCtx)
 	}
 	if refreshedRemaining < remainingDuration {
 		// Duration control is intentionally after CommitWork: generators reject

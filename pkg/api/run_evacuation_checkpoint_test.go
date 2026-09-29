@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -80,6 +81,9 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if tr.isRunAdoptionCandidate(test) {
+				t.Fatal("staged replacement was prematurely adoptable")
+			}
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
 				t.Fatal("staged guard completed before a durable source fence")
 			}
@@ -91,12 +95,18 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			if err != nil || record.ContinuityCheckpoint != guard {
 				t.Fatalf("source fence not durable: %v", err)
 			}
+			if tr.isRunAdoptionCandidate(test) {
+				t.Fatal("source-fenced replacement was prematurely adoptable")
+			}
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
 				t.Fatal("source-fenced guard completed before replacement commit was recorded")
 			}
 			guard, err = tr.markRunEvacuationReplacementCommitted(context.Background(), test, guard, generation, owner)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tr.isRunAdoptionCandidate(test) != initial {
+				t.Fatalf("committed candidate = %v, want %v", tr.isRunAdoptionCandidate(test), initial)
 			}
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err != nil {
 				t.Fatal(err)
@@ -108,6 +118,157 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			}
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
 				t.Fatal("replayed completion overwrote newer checkpoint")
+			}
+		})
+	}
+}
+
+func TestRunEvacuationCommittedSuccessorAdoptsExistingReplacement(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	tr.armRunContinuity(nil, test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+		t.Fatal(err)
+	}
+	successor := newExecutionLeadership(store, "evacuation-successor")
+	successor.tick()
+	tr.leadership = successor
+	tr.execution = newDistributedExecutionBackend([]string{"gen-b"}, time.Second, func(context.Context, string) (generatorClient, error) {
+		return &adoptionFakeClient{outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED}, nil
+	})
+	if err := tr.reconcileStoredActiveTest(test); err != nil || test.Status != "RUNNING" {
+		t.Fatalf("committed guard reconciled to %s: %v", test.Status, err)
+	}
+	if err := tr.adoptOrphanedRuns(); err != nil {
+		t.Fatal(err)
+	}
+	if test.Status != "RUNNING" || test.adoptedResume == nil || len(test.adoptedResume.adopted) != 1 || test.adoptedResume.adopted["gen-b"] == nil {
+		t.Fatalf("replacement not adopted: status=%s resume=%+v", test.Status, test.adoptedResume)
+	}
+	record, err := store.GetTest(test.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, present, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint)
+	if err != nil || !present || checkpoint.Shards["ga"][0].Target != "gen-b" || !slices.Contains(checkpoint.ArchiveTargets, "gen-a") || checkpoint.ExecutionGeneration <= generation {
+		t.Fatalf("successor checkpoint omitted replacement or retired source: %+v, %v", checkpoint, err)
+	}
+	if _, committed := committedRunEvacuationCheckpoint(guard, test.ID); !committed {
+		t.Fatal("original committed guard lost its proof")
+	}
+}
+
+func TestRunEvacuationCommittedPromotionRejectsStaleLeaseAndReplay(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	tr.armRunContinuity(nil, test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, generation, owner); err == nil {
+		t.Fatal("original generation promoted its own guard")
+	}
+	if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+		t.Fatal(err)
+	}
+	successor := newExecutionLeadership(store, "promotion-successor")
+	successor.tick()
+	newOwner, newGeneration := successor.executionLeaseTerm()
+	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, newGeneration, "wrong-owner"); err == nil {
+		t.Fatal("wrong owner promoted checkpoint")
+	}
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.ContinuityCheckpoint != guard {
+		t.Fatalf("rejected promotion changed durable guard: %v", err)
+	}
+	promoted, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, newGeneration, newOwner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tr.promoteCommittedRunEvacuationCheckpoint(nil, test, guard, newGeneration, newOwner); err == nil {
+		t.Fatal("replayed promotion overwrote completed topology")
+	}
+	record, err = store.GetTest(test.ID)
+	if err != nil || record.ContinuityCheckpoint != promoted {
+		t.Fatalf("replayed promotion changed durable topology: %v", err)
+	}
+	if !tr.isRunAdoptionCandidate(test) {
+		t.Fatal("promoted checkpoint is not adoptable by a second successor")
+	}
+}
+
+func TestRunEvacuationCommittedProofRejectsCorruption(t *testing.T) {
+	tr, _, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	tr.armRunContinuity(nil, test, generation, owner, token, previous)
+	guard, err := tr.beginRunEvacuationCheckpoint(nil, test, generation, owner, "gen-a", token, previous, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationStaged(nil, test, guard, generation, owner, []string{"gen-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guard, err = tr.markRunEvacuationReplacementCommitted(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fault := range []string{"prior-topology", "prior-term", "unarmed", "source-completed", "stage-mismatch", "not-committed"} {
+		t.Run(fault, func(t *testing.T) {
+			var changed runEvacuationCheckpoint
+			if err := json.Unmarshal([]byte(guard), &changed); err != nil {
+				t.Fatal(err)
+			}
+			switch fault {
+			case "prior-topology":
+				changed.Prior.Shards["ga"][0].Target = "gen-c"
+			case "prior-term":
+				changed.Prior.ExecutionGeneration++
+			case "unarmed":
+				changed.Prior.ArmedAt = time.Time{}
+			case "source-completed":
+				changed.Prior.CompletedTargets = []string{"gen-a"}
+			case "stage-mismatch":
+				changed.StagedTargets = []string{"gen-c"}
+			case "not-committed":
+				changed.Phase = runEvacuationPhaseSourceFenced
+			}
+			raw, err := json.Marshal(changed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, accepted := committedRunEvacuationCheckpoint(string(raw), test.ID); accepted {
+				t.Fatal("corrupt committed evacuation became adoptable")
 			}
 		})
 	}

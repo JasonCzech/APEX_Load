@@ -45,3 +45,26 @@ func TestFaultProbeReleasesOnCancellation(t *testing.T) {
 		t.Fatalf("canceled fault hold blocked for %s", elapsed)
 	}
 }
+
+func TestReplacementCommitFaultProbeIsBoundedAndCancelable(t *testing.T) {
+	t.Setenv(evacuationReplacementCommitProbeEnv, "40ms")
+	started := time.Now()
+	waitAfterEvacuationReplacementCommit(context.Background())
+	if elapsed := time.Since(started); elapsed < 30*time.Millisecond {
+		t.Fatalf("replacement hold ended early: %s", elapsed)
+	}
+	t.Setenv(evacuationReplacementCommitProbeEnv, "121s")
+	started = time.Now()
+	waitAfterEvacuationReplacementCommit(context.Background())
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("overlong replacement hold blocked: %s", elapsed)
+	}
+	t.Setenv(evacuationReplacementCommitProbeEnv, "2m")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	started = time.Now()
+	waitAfterEvacuationReplacementCommit(ctx)
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("canceled replacement hold blocked: %s", elapsed)
+	}
+}

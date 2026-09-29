@@ -552,9 +552,14 @@ For an adoption-enabled continue-policy run, evacuation persists a lease-fenced,
 compare-and-swap intent before staging replacement work. It records the old and
 proposed shard maps, source target, execution term and wrapped prior lineage. The
 version-2 guard deliberately cannot be adopted by the version-1 checkpoint reader.
-A successor fails an interrupted evacuation with an explicit reason; it never
-interprets the old placement as a completed replacement. Historical failovers remain
-available, while `continuity.armed` is false.
+A successor fails an interrupted evacuation before an acknowledged replacement
+commit with an explicit reason; it never interprets the old placement as a
+completed replacement. Historical failovers remain available, while
+`continuity.armed` is false. Once the exact staged targets, positive source
+fence and acknowledged replacement commit are all durable, a successor may
+lease-fence a promotion to the ordinary adoption checkpoint. It adopts only
+the existing replacement; it does not replay AssignWork or CommitWork. A
+missing or unadoptable replacement still fails the run.
 
 Successful evacuation clears that exact guard only when the committed topology is
 persisted. A failed intent write prevents staging. A failed completion write invokes
