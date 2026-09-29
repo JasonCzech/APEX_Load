@@ -3993,4 +3993,28 @@ both marks before CommitWork. The full `go test -p 2 -ldflags='-s -w' ./...`
 suite, focused race check with the same linker flags, documentation check and
 diff review passed. Stripped test binaries kept the host below its disk limit;
 the first unstripped focused build failed during linking with ENOSPC before
-running tests. Deployed staging-transition qualification remains pending.
+running tests.
+
+The reviewed `7add0a51` image (`sha256:8313e75a82844fd6a185f419944438dc84f8790772c9a7c8add2c1c914f4dbdf`)
+passed the normal deployed transition on the disposable three-node Docker
+Desktop kind cluster with PostgreSQL, Redis, S3, and KEDA. The prior trial had
+left ordinal 2 cordoned; it was explicitly uncordoned before the queued run
+started. A PostgreSQL trigger restricted to run
+`747b7942-7179-4280-a918-bea90c7ed184` recorded version-2 `prepared` →
+`staged` (exact target `10.244.2.2:9090`) → `source_fenced` → version-1
+completed topology. The run moved from `10.244.1.6:9090` on worker 1 to
+`10.244.2.2:9090` on worker 2 and remained RUNNING with continuity armed;
+the independent target counter rose by 150 during the evacuation. Operator
+stop produced ABORTED, and S3 archive verification matched all 9 artifacts
+with both source targets collected. The temporary audit table, trigger, and
+function were removed. Sanitized receipts are under
+`artifacts/scalability/2026-09-29/staged-7add0a51/` outside the repository.
+This qualifies the normal staged boundary on one host, not a crash during a
+write, successor replay, independent physical nodes, or CSI/RWX storage.
+After the trial, the controller image was rolled back and the preserved
+original cluster restarted with three Ready nodes and all nine current
+application pods Ready. A fresh DNS lookup from its PostgreSQL pod to the
+controller Service still timed out after node, CoreDNS, and kube-proxy
+restarts, despite the controllers reporting Ready. The original cluster's
+pod-originated DNS/network probe therefore remains unresolved; do not use
+this trial as restoration or independent-node fault qualification.

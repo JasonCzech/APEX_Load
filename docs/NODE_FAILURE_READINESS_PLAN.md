@@ -518,3 +518,8 @@ The next journal boundary persists the exact staged replacement targets before
 source StopTest. `source_fenced` requires that stage record, and completed
 topology revalidates it. An unrecorded stage fails closed after assignment;
 successor adoption remains disabled until replay and fencing are implemented.
+The reviewed `7add0a51` image passed a normal deployed evacuation on the
+three-node Docker Desktop kind trial: PostgreSQL recorded `prepared` →
+`staged` → `source_fenced` → completed topology with the exact staged target,
+traffic continued on another worker, and the two-source archive verified.
+Interrupted successor replay and physical multi-host storage remain unqualified.
