@@ -4033,4 +4033,27 @@ injected write failure after CommitWork. The focused API tests, focused race
 check, full `go test -p 2 -ldflags='-s -w' ./...` suite, documentation check,
 and diff review pass. The first focused build ran out of disk during linking
 before tests ran; an authorized Go build-cache cleanup allowed the successful
-rerun. Deployed commit-transition qualification remains pending.
+rerun.
+
+The reviewed `8de8851d` image (`sha256:8391170352246b1386820a90956adf974c387ab261eb33dc6a05e9bc81104d27`)
+passed a normal deployed evacuation on the disposable three-node Docker
+Desktop kind cluster. PostgreSQL recorded version-2 `prepared` → `staged` →
+`source_fenced` → `replacement_committed` → version-1 completed topology;
+the commit mark named the same exact replacement `10.244.2.2:9090`. The
+50-VUser run moved from worker 1 (`10.244.1.5:9090`) to worker 2, stayed
+RUNNING with continuity armed, and the independent target counter gained
+199 requests during the evacuation. Operator stop produced ABORTED. S3
+archive verification initially timed out while the disposable SeaweedFS
+filer reported internal connection failures; after restarting that S3
+deployment without resetting data, verification matched 9/9 artifacts and
+both source targets were collected. The temporary PostgreSQL audit objects
+were removed. KEDA's minimum was briefly raised to three to uncordon the
+downscaled source, then restored to two. Sanitized receipts are under
+`artifacts/scalability/2026-09-29/replacement-commit-8de8851d/` outside
+the repository. This is evidence for the normal journal transition and
+eventual archive recovery on one Docker host, not seamless S3 availability,
+crash replay, independent nodes, or CSI/RWX storage.
+The reviewed trial controller was rolled back and the original cluster
+restarted with three Ready nodes and nine current application pods Ready.
+Its earlier pod-originated DNS lookup failure persisted, so restoration of
+that original cluster remains unqualified.

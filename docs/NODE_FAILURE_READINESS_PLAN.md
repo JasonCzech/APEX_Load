@@ -529,3 +529,9 @@ the same lease-fenced journal before publishing the completed topology. A
 failed mark stops the exact-generation fleet through the uncertain path.
 Completion requires the commit mark in addition to stage and source-fence
 proof. This is durable progress evidence, not yet a successor replay protocol.
+The reviewed `8de8851d` image passed a deployed normal evacuation with
+PostgreSQL recording `prepared` → `staged` → `source_fenced` →
+`replacement_committed` → completed topology. Traffic continued on the other
+worker and all nine S3 artifacts eventually verified after a disposable
+SeaweedFS restart. The trial does not qualify interrupted successor replay,
+physical node independence, or seamless archive availability.
