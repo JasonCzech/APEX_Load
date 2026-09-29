@@ -402,6 +402,12 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		return impacts, fmt.Errorf("generator evacuation refused: %s", strings.Join(refused, "; "))
 	}
 
+	evacuationGuard, guardErr := tr.beginRunEvacuationCheckpoint(executionCtx, test, executionGeneration, executionLeaseOwnerID, target, runSupervisionToken, shardsByGroup, nextByGroup)
+	if guardErr != nil {
+		closeDialedClients()
+		return impacts, fmt.Errorf("persist evacuation intent before replacement staging: %w", guardErr)
+	}
+
 	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target, runSupervisionToken)
 	if err != nil {
 		var uncertain *distributedEvacuationUncertainError
@@ -793,7 +799,20 @@ sourceFenced:
 	runCtx := remoteLifecycleCtx
 	shardsSnapshot := cloneGroupShardMap(test.remoteGroupShards)
 	tr.mu.Unlock()
-	tr.armRunContinuity(executionCtx, test, executionGeneration, executionLeaseOwnerID, runSupervisionToken, shardsSnapshot)
+	if evacuationGuard != "" {
+		if err := tr.writeRunContinuity(executionCtx, test, executionGeneration, executionLeaseOwnerID, runSupervisionToken, shardsSnapshot, evacuationGuard); err != nil {
+			closeUntouchedDialedClients(touchedTargets)
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                fmt.Errorf("persist committed evacuation topology: %w", err),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+	} else {
+		tr.armRunContinuity(executionCtx, test, executionGeneration, executionLeaseOwnerID, runSupervisionToken, shardsSnapshot)
+	}
 	// Client.Close may block in transport shutdown. Never hold runner state,
 	// topology, and evacuation locks while closing placement-only candidates.
 	for _, client := range unusedDialedClients {

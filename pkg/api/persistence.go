@@ -797,7 +797,9 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 	test.QueuePosition = 0
 	test.EndedAt = &now
 	if test.Error == "" {
-		if previousStatus == "SHAKEOUT" {
+		if interruptedRunEvacuation(test.continuityCheckpoint) {
+			test.Error = "controller execution ownership was interrupted during generator evacuation; replacement progress is unconfirmed, so the run was not resumed"
+		} else if previousStatus == "SHAKEOUT" {
 			test.Error = "controller execution ownership was interrupted after script shakeout began; its outcome is ambiguous, so external shakeout actions were not replayed"
 		} else {
 			test.Error = "controller execution ownership was interrupted before the run completed; this run could not be resumed"

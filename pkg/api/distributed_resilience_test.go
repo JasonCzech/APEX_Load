@@ -63,12 +63,16 @@ type stagedEvacuationFaultClient struct {
 type setupRecordingEvacuationClient struct {
 	*generatorrpc.Client
 	assignment          generatorrpc.Assignment
+	beforeAssign        func()
 	setupTimeout        atomic.Int64
 	durationMu          sync.Mutex
 	durationAdjustments []generatorrpc.DurationAdjustment
 }
 
 func (c *setupRecordingEvacuationClient) AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error) {
+	if c.beforeAssign != nil {
+		c.beforeAssign()
+	}
 	c.assignment = assignment
 	return c.Client.AssignWork(ctx, assignment)
 }
@@ -1268,6 +1272,16 @@ func TestDistributedEvacuationPreservesRunContinuity(t *testing.T) {
 }
 
 func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
+	runEvacuationProvisionScenarioWithFault(t, continuity, "")
+}
+
+func TestDistributedEvacuationCheckpointWriteFailures(t *testing.T) {
+	for _, phase := range []string{"prepare", "complete"} {
+		t.Run(phase, func(t *testing.T) { runEvacuationProvisionScenarioWithFault(t, true, phase) })
+	}
+}
+
+func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, checkpointFailure string) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	t.Setenv("APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES", "1")
 	const bufSize = 1024 * 1024
@@ -1288,8 +1302,15 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 	t.Cleanup(sut.Close)
 	failedClient := newEvacuationFakeGeneratorClient("gen-a")
 	sourceStopped := make(chan int64, 1)
-	failedClient.stopHook = func() { sourceStopped <- replacementRequests.Load() }
+	failedClient.stopHook = func() {
+		// Record the first fence; cleanup may idempotently stop the source again.
+		select {
+		case sourceStopped <- replacementRequests.Load():
+		default:
+		}
+	}
 	var replacementClient *setupRecordingEvacuationClient
+	var beforeAssign func()
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 400*time.Millisecond, func(ctx context.Context, target string) (generatorClient, error) {
 		if target != "gen-b" {
 			return nil, errors.New("failed generator is unavailable")
@@ -1304,7 +1325,11 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 		if err != nil {
 			return nil, err
 		}
-		replacementClient = &setupRecordingEvacuationClient{Client: client}
+		replacementClient = &setupRecordingEvacuationClient{Client: client, beforeAssign: func() {
+			if beforeAssign != nil {
+				beforeAssign()
+			}
+		}}
 		return replacementClient, nil
 	})
 	script := &dsl.Script{
@@ -1356,6 +1381,9 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 		runner.tests[test.ID] = test
 		_, generation = leadership.executionLeaseTerm()
 		test.executionGeneration = generation
+		if err := runner.claimTestExecutionFence(test); err != nil {
+			t.Fatal(err)
+		}
 		test.Assignment.FailoverPolicy = "continue"
 		for i := range test.remoteRunSupervisionToken {
 			test.remoteRunSupervisionToken[i] = 7
@@ -1369,7 +1397,56 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 		}
 	}
 
+	if continuity {
+		beforeAssign = func() {
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if record.ContinuityCheckpoint == "" {
+				t.Fatal("replacement staged without durable evacuation guard")
+			}
+			if _, _, err := decodeRunContinuityCheckpoint(record.ContinuityCheckpoint); err == nil {
+				t.Fatal("in-flight evacuation remained adoptable")
+			}
+		}
+	}
+
+	if checkpointFailure != "" {
+		runner.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, rejectWrite: func(next string) bool {
+			return (checkpointFailure == "prepare") == interruptedRunEvacuation(next)
+		}}
+	}
+
 	impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", false, "node maintenance window")
+	if checkpointFailure != "" {
+		if err == nil || !strings.Contains(err.Error(), "injected checkpoint write failure") {
+			t.Fatalf("evacuation did not reject checkpoint failure: %v", err)
+		}
+		if got := service.ActiveVUsers(); got != 0 {
+			t.Fatalf("failed checkpoint left %d replacement VUsers", got)
+		}
+		if got := replacementRequests.Load(); got != 0 {
+			t.Fatalf("paused replacement emitted %d requests", got)
+		}
+		runner.mu.RLock()
+		finalStatus := test.Status
+		armed := runContinuityStatusLocked(test).Armed
+		runner.mu.RUnlock()
+		if armed {
+			t.Fatal("failed evacuation checkpoint left adoption armed")
+		}
+		if checkpointFailure == "prepare" {
+			if replacementClient.assignment.TestID != "" || failedClient.stopCount() != 0 || finalStatus != "PAUSED" {
+				t.Fatal("failed intent write changed execution")
+			}
+		} else if finalStatus != "FAILED" {
+			t.Fatalf("failed completion status=%s, want FAILED; error=%v", finalStatus, err)
+		}
+		cancel()
+		backend.closeRemoteResources(runner, test)
+		return
+	}
 	if err != nil {
 		t.Fatalf("EvacuateGenerator: %v", err)
 	}

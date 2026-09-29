@@ -3675,3 +3675,48 @@ This qualifies logical namespace admission and retry on a single Docker host. Ea
 pressure run used one generator; both generator pods happened to be on the same worker.
 It does not establish physical disk exhaustion, CSI behavior, independent-host loss,
 managed database/cache failover, or combined controller/generator recovery.
+
+## Evacuation interruption checkpoint guard (2026-09-29 UTC)
+
+Review of combined-loss prerequisites found that evacuation could stage/commit a
+replacement before updating the adoption checkpoint. A frozen baseline regression
+reproduced staging without a durable guard. Adoption-enabled continue-policy runs now
+persist a lease-fenced compare-and-swap intent before staging. The intent retains
+wrapped lineage, execution ownership, old/proposed shard maps and failover history.
+Its version deliberately fails the ordinary adoption decoder, including on older
+controllers. A successor reports interrupted evacuation explicitly instead of using
+stale placement. Successful completion must replace that exact guard with the committed
+topology; a rejected completion write enters the existing fenced stop/cleanup path.
+Ordinary re-arming also uses compare-and-swap and cannot erase an unresolved intent.
+
+Review added protection for newer in-memory failover history after an earlier failed
+checkpoint write, and rejects a changed continuity policy during completion. Checks
+cover unarmed/armed inputs, failed or canceled writes, stale snapshots, lost ownership,
+invalid completion identity/topology, concurrent refresh, restart reconciliation,
+wrapped token recovery and real-generator staging/commit boundaries. Test-fixture
+repairs made repeated stop acknowledgements nonblocking and bound the terminal write
+to the fixture's execution lease. Failed builds and diagnostic stacks are preserved.
+
+The first full-suite run found two verification issues. The generated QA dashboard
+still counted 45 browser specs after the earlier Results workflow added the 46th;
+it was regenerated. Several existing queue/lifecycle fixtures returned before their
+real engine finished, allowing archive writes to race a subsequent test's temporary
+root. Queue tests now assert dispatch through the existing controlled backend. The
+real execution/archive tests retain the real backend and join its completion and
+terminal-retry shutdown before inspecting persisted transitions or cleaning up.
+Three repetitions of the combined regression set passed in 23.205 seconds.
+
+The clean full Go-suite rerun passed all 109 test-bearing packages (API 444.420
+seconds). Three race-enabled repetitions of adoption, evacuation, continuity and
+repaired lifecycle checks passed in 256.210 seconds. Documentation checks passed for
+69 active Markdown files, and generated-dashboard freshness passed. Scoped re-review
+found no further issues. Logs, diagnostic failures, source hashes and compressed
+verification helpers are retained under `backlog-74178e07/evacuation-checkpoint-validation`.
+The original Docker environment is restored, idle and ready; the fresh qualification
+cluster is preserved stopped with its volumes. The first restoration wait incorrectly
+included historical failed pods; readiness was then verified against all desired
+Deployments/StatefulSets, three stable node snapshots, DNS resolution and idle SQL state.
+
+Resumable combined-loss recovery, shared-staging replay and deployed interruption
+qualification remain separate work. This guard deliberately fails closed rather than
+replaying unconfirmed replacement progress.

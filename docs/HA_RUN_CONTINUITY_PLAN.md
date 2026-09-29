@@ -544,3 +544,26 @@ stale writes, same-term replay, a later controller takeover, partially rotated
 assignments, wrong proofs, retained terminal outcomes and unchanged execution identity.
 This closes the token-loss crash window, not the separate combined missing-shard
 replacement or deployed multi-node qualification work.
+
+
+### Interrupted generator evacuation guard
+
+For an adoption-enabled continue-policy run, evacuation persists a lease-fenced,
+compare-and-swap intent before staging replacement work. It records the old and
+proposed shard maps, source target, execution term and wrapped prior lineage. The
+version-2 guard deliberately cannot be adopted by the version-1 checkpoint reader.
+A successor fails an interrupted evacuation with an explicit reason; it never
+interprets the old placement as a completed replacement. Historical failovers remain
+available, while `continuity.armed` is false.
+
+Successful evacuation clears that exact guard only when the committed topology is
+persisted. A failed intent write prevents staging. A failed completion write invokes
+the existing uncertain-evacuation stop path. Ordinary re-arming uses compare-and-swap
+and cannot overwrite an unresolved guard. An evacuation that fails after preparation
+keeps the guard even if its staging rollback succeeds; automatic adoption remains
+disabled until a supported recovery path is available.
+
+This closes a stale-placement crash window. It does not implement resumable missing-
+shard recovery: phase-by-phase reconciliation, positive fencing, exact replacement
+identity and repeated-controller-loss replay are still required before that path can
+be enabled. Ordinary controller-only adoption and fail-policy execution remain unchanged.

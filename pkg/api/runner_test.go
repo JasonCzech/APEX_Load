@@ -69,6 +69,46 @@ type testStatusUpdate struct {
 
 type provenanceInventoryBackend struct{}
 
+// joinedLocalExecutionBackend keeps the real engine/archive path but exposes
+// completion so a test cannot remove its archive root while finalization writes.
+type joinedLocalExecutionBackend struct {
+	localExecutionBackend
+	done chan struct{}
+}
+
+func (b *joinedLocalExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
+	defer close(b.done)
+	b.localExecutionBackend.Run(tr, test)
+}
+
+func (b *joinedLocalExecutionBackend) wait(t *testing.T) {
+	t.Helper()
+	select {
+	case <-b.done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("local execution did not finish before fixture cleanup")
+	}
+}
+
+func (b *joinedLocalExecutionBackend) finish(t *testing.T, tr *TestRunner) {
+	t.Helper()
+	b.wait(t)
+	tr.beginShutdown()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		tr.terminalRetryMu.Lock()
+		pending := len(tr.terminalRetrying)
+		tr.terminalRetryMu.Unlock()
+		if pending == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("archive retries did not finish before fixture cleanup")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 type scheduleExecutionBackend struct {
 	started chan string
 }
@@ -4812,7 +4852,8 @@ func TestStartTestPersistsRunningTransition(t *testing.T) {
 
 	hub := NewHub()
 	store := &metricsStoreSpy{}
-	runner := NewTestRunner(1, hub, store)
+	backend := &joinedLocalExecutionBackend{done: make(chan struct{})}
+	runner := NewTestRunner(1, hub, store, WithExecutionBackend(backend))
 	runner.StoreScript(&dsl.Script{
 		ID:       "script-running-transition",
 		Name:     "Running Transition Script",
@@ -4834,11 +4875,14 @@ func TestStartTestPersistsRunningTransition(t *testing.T) {
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 
+	defer backend.finish(t, runner)
+
 	started := waitForStatusAny(t, runner, testRun.ID, 5*time.Second, "RUNNING", "COMPLETE", "FAILED")
 	if started.Status == "FAILED" {
 		t.Fatalf("test failed before proving RUNNING transition: %s", started.Error)
 	}
 
+	backend.finish(t, runner)
 	var sawInitializing, sawRunning bool
 	for _, saved := range store.savedTests {
 		if saved.ID != testRun.ID {
@@ -6121,7 +6165,8 @@ func TestPromotePendingTestsWritesSystemAuditEvent(t *testing.T) {
 		"project-promotion": {ID: "project-promotion", Name: "Promotion"},
 	}
 	hub := NewHub()
-	runner := NewTestRunner(10, hub, store)
+	dispatched := make(chan string, 1)
+	runner := NewTestRunner(10, hub, store, WithExecutionBackend(&scheduleExecutionBackend{started: dispatched}))
 	runner.StoreScript(&dsl.Script{
 		ID:        "script-promotion-audit",
 		Name:      "Promotion Audit Script",
@@ -6155,6 +6200,17 @@ func TestPromotePendingTestsWritesSystemAuditEvent(t *testing.T) {
 	if events[0].Details["reason"] != "fair_share_capacity_available" {
 		t.Fatalf("audit details = %#v, want promotion reason", events[0].Details)
 	}
+	// Queue admission ends at dispatch; do not leave an unrelated engine run
+	// writing archives after this test's environment has been restored.
+	select {
+	case id := <-dispatched:
+		if id != testRun.ID {
+			t.Fatalf("dispatched %q, want %q", id, testRun.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("promoted run was not dispatched")
+	}
+
 }
 
 func TestNextPromotablePendingTestBalancesActiveProjectLoad(t *testing.T) {
@@ -6212,7 +6268,8 @@ func TestNextPromotablePendingTestBalancesActiveProjectLoad(t *testing.T) {
 
 func TestReconcilePendingTestsPromotesQueuedWork(t *testing.T) {
 	hub := NewHub()
-	runner := NewTestRunner(10, hub, nil)
+	dispatched := make(chan string, 1)
+	runner := NewTestRunner(10, hub, nil, WithExecutionBackend(&scheduleExecutionBackend{started: dispatched}))
 	runner.StoreScript(&dsl.Script{
 		ID:       "script-reconcile-pending",
 		Name:     "Reconcile Pending Script",
@@ -6249,6 +6306,17 @@ func TestReconcilePendingTestsPromotesQueuedWork(t *testing.T) {
 	if promoted.Status == "PENDING" {
 		t.Fatalf("expected reconcile to promote pending test, got %s", promoted.Status)
 	}
+	// Queue admission ends at dispatch; do not leave an unrelated engine run
+	// writing archives after this test's environment has been restored.
+	select {
+	case id := <-dispatched:
+		if id != pending.ID {
+			t.Fatalf("dispatched %q, want %q", id, pending.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("promoted run was not dispatched")
+	}
+
 }
 
 func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
@@ -6262,7 +6330,8 @@ func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
 		},
 	}}
 	hub := NewHub()
-	runner := NewTestRunner(10, hub, store)
+	dispatched := make(chan string, 1)
+	runner := NewTestRunner(10, hub, store, WithExecutionBackend(&scheduleExecutionBackend{started: dispatched}))
 	runner.StoreScript(&dsl.Script{
 		ID:        "script-project-promotion",
 		Name:      "Project Promotion Script",
@@ -6301,6 +6370,17 @@ func TestCompleteTestRunPromotesPendingTests(t *testing.T) {
 	if promoted.Status == "PENDING" || promoted.Status == "QUEUED" {
 		t.Fatalf("expected pending test to be promoted, got %s", promoted.Status)
 	}
+	// Queue admission ends at dispatch; do not leave an unrelated engine run
+	// writing archives after this test's environment has been restored.
+	select {
+	case id := <-dispatched:
+		if id != second.ID {
+			t.Fatalf("dispatched %q, want %q", id, second.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("promoted run was not dispatched")
+	}
+
 }
 
 func TestGetTestRefreshesCapacityAdvisoryUsingCachedLiveAvailability(t *testing.T) {
@@ -6378,7 +6458,8 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	})
 
 	hub := NewHub()
-	runner := NewTestRunner(1, hub, store)
+	backend := &joinedLocalExecutionBackend{done: make(chan struct{})}
+	runner := NewTestRunner(1, hub, store, WithExecutionBackend(backend))
 	settings := runner.GetSystemSettings()
 	settings.General.MetricsIntervalSeconds = 1
 	maxErrorPct := 2.5
@@ -6409,6 +6490,8 @@ func TestRunTestCreatesArchiveBundle(t *testing.T) {
 	if err := runner.StartTest(test.ID); err != nil {
 		t.Fatalf("StartTest returned error: %v", err)
 	}
+
+	defer backend.finish(t, runner)
 
 	completed := waitForTestStatusWithin(t, runner, test.ID, 20*time.Second, "COMPLETE")
 	if completed.Archive == nil {

@@ -107,6 +107,10 @@ func setContinuityCheckpointLocked(test *ManagedTest, raw string) {
 	test.continuityArmedGeneration = 0
 	checkpoint, present, err := decodeRunContinuityCheckpoint(raw)
 	if err != nil || !present {
+		var guard runEvacuationCheckpoint
+		if json.Unmarshal([]byte(raw), &guard) == nil && guard.Version == runEvacuationCheckpointVersion && len(guard.Prior.Failovers) >= len(test.continuityFailovers) {
+			test.continuityFailovers = append([]RunFailover(nil), guard.Prior.Failovers...)
+		}
 		return
 	}
 	test.continuityArmedGeneration = checkpoint.ExecutionGeneration
@@ -219,8 +223,14 @@ func (tr *TestRunner) runContinuityLaunchWarning(test *ManagedTest) *LaunchConfl
 // never fails the run: an unarmable run simply keeps today's fail-on-failover
 // behaviour, which is logged.
 func (tr *TestRunner) armRunContinuity(ctx context.Context, test *ManagedTest, generation uint64, leaseOwnerID string, token []byte, shards map[string][]GeneratorShardSummary) {
+	if err := tr.writeRunContinuity(ctx, test, generation, leaseOwnerID, token, shards, ""); err != nil {
+		slog.Warn("run continuity not armed", "test_id", test.ID, "error", err)
+	}
+}
+
+func (tr *TestRunner) writeRunContinuity(ctx context.Context, test *ManagedTest, generation uint64, leaseOwnerID string, token []byte, shards map[string][]GeneratorShardSummary, evacuationGuard string) error {
 	if tr == nil || test == nil {
-		return
+		return nil
 	}
 	if ctx == nil {
 		ctx = context.Background()
@@ -232,6 +242,7 @@ func (tr *TestRunner) armRunContinuity(ctx context.Context, test *ManagedTest, g
 	tr.mu.RLock()
 	policy := effectiveFailoverPolicy(test.Assignment)
 	testID := test.ID
+	expected := test.continuityCheckpoint
 	failovers := append([]RunFailover(nil), test.continuityFailovers...)
 	var completedTargets, archiveTargets []string
 	for target, state := range test.remoteTargetStates {
@@ -244,27 +255,36 @@ func (tr *TestRunner) armRunContinuity(ctx context.Context, test *ManagedTest, g
 	}
 	tr.mu.RUnlock()
 	if policy != failoverPolicyContinue {
-		return
+		if evacuationGuard != "" {
+			return errors.New("continuity policy changed during evacuation")
+		}
+		return nil
+	}
+	if evacuationGuard != "" {
+		if expected != evacuationGuard {
+			return errors.New("evacuation checkpoint changed before completion")
+		}
+		if err := validateRunEvacuationCompletion(evacuationGuard, testID, generation, leaseOwnerID, shards); err != nil {
+			return err
+		}
+	} else if _, _, err := decodeRunContinuityCheckpoint(expected); err != nil {
+		return fmt.Errorf("cannot overwrite unresolved continuity checkpoint: %w", err)
 	}
 	if !tr.durableExecutionFence || tr.leadership == nil || tr.continuityKeyWrapper == nil {
-		slog.Warn("run continuity not armed", "test_id", testID, "reasons", tr.runContinuityUnavailableReasons(true))
-		return
+		return fmt.Errorf("run continuity unavailable: %s", strings.Join(tr.runContinuityUnavailableReasons(true), "; "))
 	}
 	if len(token) == 0 {
-		slog.Warn("run continuity not armed: generator run supervision is disabled", "test_id", testID)
-		return
+		return errors.New("generator run supervision is disabled")
 	}
 	store, ok := tr.testStore.(interface {
-		UpdateTestContinuityCheckpointIfLeaseHeld(string, string, string, string) (storage.TestStatusTransitionResult, error)
+		CompareAndSwapTestContinuityCheckpointIfLeaseHeld(string, string, string, string, string) (storage.TestStatusTransitionResult, error)
 	})
 	if !ok {
-		slog.Warn("run continuity not armed: test store cannot persist checkpoints", "test_id", testID)
-		return
+		return errors.New("test store cannot persist checkpoints")
 	}
 	sealed, err := sealRunSupervisionToken(ctx, tr.continuityKeyWrapper, testID, generation, token)
 	if err != nil {
-		slog.Warn("run continuity not armed: seal run supervision token", "test_id", testID, "error", err)
-		return
+		return fmt.Errorf("seal run supervision token: %w", err)
 	}
 	checkpoint := runContinuityCheckpoint{
 		Version:               runContinuityCheckpointVersion,
@@ -282,26 +302,31 @@ func (tr *TestRunner) armRunContinuity(ctx context.Context, test *ManagedTest, g
 	}
 	encoded, err := json.Marshal(checkpoint)
 	if err != nil {
-		slog.Warn("run continuity not armed: encode checkpoint", "test_id", testID, "error", err)
-		return
+		return fmt.Errorf("encode checkpoint: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	var result storage.TestStatusTransitionResult
 	if err := tr.trackDurableWrite(func() error {
 		var writeErr error
-		result, writeErr = store.UpdateTestContinuityCheckpointIfLeaseHeld(testID, string(encoded), executionLeaseName, leaseOwnerID)
+		result, writeErr = store.CompareAndSwapTestContinuityCheckpointIfLeaseHeld(testID, expected, string(encoded), executionLeaseName, leaseOwnerID)
 		return writeErr
 	}); err != nil {
-		slog.Warn("run continuity not armed: persist checkpoint", "test_id", testID, "error", err)
-		return
+		return fmt.Errorf("persist checkpoint: %w", err)
 	}
 	if result != storage.TestStatusTransitionUpdated {
-		slog.Warn("run continuity not armed: checkpoint write was not applied", "test_id", testID, "result", result)
-		return
+		return fmt.Errorf("checkpoint write was not applied: %s", result)
 	}
 	tr.mu.Lock()
+	if test.continuityCheckpoint != expected {
+		tr.mu.Unlock()
+		return errors.New("checkpoint changed during persistence")
+	}
 	setContinuityCheckpointLocked(test, string(encoded))
 	tr.mu.Unlock()
 	slog.Info("run continuity armed", "test_id", testID, "execution_generation", generation, "adoption_implemented", runAdoptionImplemented)
+	return nil
 }
 
 // archivedRunContinuity is the continuity record written into a finished
