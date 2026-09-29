@@ -16,16 +16,23 @@ import (
 // until replacement progress can be reconciled, a successor must fail closed.
 const runEvacuationCheckpointVersion = 2
 
+const (
+	runEvacuationPhasePrepared     = "prepared"
+	runEvacuationPhaseSourceFenced = "source_fenced"
+)
+
 type runEvacuationCheckpoint struct {
-	Version      int                                `json:"version"`
-	TestID       string                             `json:"test_id"`
-	Source       string                             `json:"source"`
-	Generation   uint64                             `json:"generation"`
-	OwnerID      string                             `json:"owner_id"`
-	PreparedAt   time.Time                          `json:"prepared_at"`
-	BeforeShards map[string][]GeneratorShardSummary `json:"before_shards"`
-	Prior        runContinuityCheckpoint            `json:"prior"`
-	NextShards   map[string][]GeneratorShardSummary `json:"next_shards"`
+	Version        int                                `json:"version"`
+	TestID         string                             `json:"test_id"`
+	Source         string                             `json:"source"`
+	Generation     uint64                             `json:"generation"`
+	OwnerID        string                             `json:"owner_id"`
+	PreparedAt     time.Time                          `json:"prepared_at"`
+	Phase          string                             `json:"phase"`
+	SourceFencedAt time.Time                          `json:"source_fenced_at,omitempty"`
+	BeforeShards   map[string][]GeneratorShardSummary `json:"before_shards"`
+	Prior          runContinuityCheckpoint            `json:"prior"`
+	NextShards     map[string][]GeneratorShardSummary `json:"next_shards"`
 }
 
 // beginRunEvacuationCheckpoint runs before AssignWork can stage a replacement.
@@ -82,6 +89,7 @@ func (tr *TestRunner) beginRunEvacuationCheckpoint(ctx context.Context, test *Ma
 		Generation:   generation,
 		OwnerID:      owner,
 		PreparedAt:   time.Now().UTC(),
+		Phase:        runEvacuationPhasePrepared,
 		Prior:        prior,
 		BeforeShards: cloneGroupShardMap(previous),
 		NextShards:   cloneGroupShardMap(next),
@@ -120,12 +128,76 @@ func (tr *TestRunner) beginRunEvacuationCheckpoint(ctx context.Context, test *Ma
 	return string(encoded), nil
 }
 
+// markRunEvacuationSourceFenced records the positive source fence before any
+// replacement commit. A failed write leaves the guard unresolved and the
+// caller must stop the staged replacement through the uncertain path.
+func (tr *TestRunner) markRunEvacuationSourceFenced(ctx context.Context, test *ManagedTest, raw string, generation uint64, owner string) (string, error) {
+	if tr == nil || test == nil {
+		return "", errors.New("evacuation source fence requires a managed run")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, runContinuityArmTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	var guard runEvacuationCheckpoint
+	if err := json.Unmarshal([]byte(raw), &guard); err != nil {
+		return "", fmt.Errorf("decode evacuation checkpoint: %w", err)
+	}
+	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != test.ID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhasePrepared || !guard.SourceFencedAt.IsZero() {
+		return "", errors.New("evacuation source fence does not match durable intent")
+	}
+	tr.mu.RLock()
+	current := test.continuityCheckpoint
+	tr.mu.RUnlock()
+	if current != raw {
+		return "", errors.New("evacuation checkpoint changed before source fence")
+	}
+	guard.Phase = runEvacuationPhaseSourceFenced
+	guard.SourceFencedAt = time.Now().UTC()
+	encoded, err := json.Marshal(guard)
+	if err != nil {
+		return "", err
+	}
+	store, ok := tr.testStore.(interface {
+		CompareAndSwapTestContinuityCheckpointIfLeaseHeld(string, string, string, string, string) (storage.TestStatusTransitionResult, error)
+	})
+	if !ok {
+		return "", errors.New("test store cannot persist evacuation checkpoint")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	var result storage.TestStatusTransitionResult
+	err = tr.trackDurableWrite(func() error {
+		var e error
+		result, e = store.CompareAndSwapTestContinuityCheckpointIfLeaseHeld(test.ID, raw, string(encoded), executionLeaseName, owner)
+		return e
+	})
+	if err != nil {
+		return "", err
+	}
+	if result != storage.TestStatusTransitionUpdated {
+		return "", fmt.Errorf("evacuation source fence write not applied: %s", result)
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	if test.continuityCheckpoint != raw {
+		return "", errors.New("evacuation checkpoint changed while recording source fence")
+	}
+	setContinuityCheckpointLocked(test, string(encoded))
+	return string(encoded), nil
+}
+
 func validateRunEvacuationCompletion(raw, testID string, generation uint64, owner string, shards map[string][]GeneratorShardSummary) error {
 	var guard runEvacuationCheckpoint
 	if err := json.Unmarshal([]byte(raw), &guard); err != nil {
 		return fmt.Errorf("decode evacuation checkpoint: %w", err)
 	}
-	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != testID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || !reflect.DeepEqual(guard.NextShards, shards) {
+	if guard.Version != runEvacuationCheckpointVersion || guard.TestID != testID || guard.Generation != generation || guard.OwnerID != owner || guard.Source == "" || guard.PreparedAt.IsZero() || guard.Phase != runEvacuationPhaseSourceFenced || guard.SourceFencedAt.IsZero() || !reflect.DeepEqual(guard.NextShards, shards) {
 		return errors.New("evacuation completion does not match durable intent")
 	}
 	return nil

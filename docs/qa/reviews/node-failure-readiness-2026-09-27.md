@@ -3935,3 +3935,21 @@ pause is counted as fault evidence. The private trial receipt and snapshots
 are under `artifacts/scalability/2026-09-29/archive-floor-da9d50f5`.
 This establishes a same-host KEDA source-retention behavior, not physical
 multi-host node-loss or CSI/RWX qualification.
+
+## Durable evacuation source-fence boundary (2026-09-29)
+
+Review of the package-5 recovery journal found that the version-2 evacuation
+checkpoint identified the proposed topology before replacement staging, but
+did not record the positive source fence as a separate durable boundary. The
+controller now advances the exact checkpoint from `prepared` to
+`source_fenced` with a lease-fenced compare-and-swap after StopTest acknowledges
+or the full safe source-fence wait succeeds, and before replacement commit.
+Completion refuses a checkpoint without that durable source-fence mark. A
+failed, stale or lease-rejected write follows the existing uncertain-evacuation
+stop path rather than allowing replacement traffic. The checkpoint remains
+unadoptable to a successor in either phase; this is a journal prerequisite,
+not resumable combined-loss recovery. Focused tests cover successful progress,
+interrupted, stale and rejected writes, and a commit-RPC assertion that the
+durable fence precedes replacement release. The full `go test -p 2 ./...`
+suite, focused race check, documentation check and final diff review passed.
+The deployed behavior still needs qualification on this revision.

@@ -69,6 +69,17 @@ func TestRunEvacuationCheckpointInterruptionAndCompletion(t *testing.T) {
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, previous, guard); err == nil {
 				t.Fatal("wrong replacement topology completed guard")
 			}
+			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
+				t.Fatal("prepared guard completed before a durable source fence")
+			}
+			guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			record, err = store.GetTest(test.ID)
+			if err != nil || record.ContinuityCheckpoint != guard {
+				t.Fatalf("source fence not durable: %v", err)
+			}
 			if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err != nil {
 				t.Fatal(err)
 			}
@@ -153,6 +164,10 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	guard, err = tr.markRunEvacuationSourceFenced(context.Background(), test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
 	test.Assignment.FailoverPolicy = "fail"
 	if err := tr.writeRunContinuity(context.Background(), test, generation, owner, token, next, guard); err == nil {
 		t.Fatal("changed policy falsely acknowledged completion")
@@ -184,6 +199,58 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 	tr.attachRunArchiveFailure(restored)
 	if restored.ArchiveFailure == nil || restored.ArchiveFailure.Reason != storage.RunArchiveFailureRemoteCollection {
 		t.Fatalf("single-run archive failure projection = %+v", restored.ArchiveFailure)
+	}
+}
+
+func TestRunEvacuationSourceFenceRejectsStaleOrUnownedProgress(t *testing.T) {
+	if _, err := (*TestRunner)(nil).markRunEvacuationSourceFenced(nil, nil, "", 0, ""); err == nil {
+		t.Fatal("nil runner and test accepted")
+	}
+	for _, fault := range []string{"wrong-owner", "wrong-generation", "stale-memory", "stale-store", "lost-lease", "write-failure", "canceled", "replay"} {
+		t.Run(fault, func(t *testing.T) {
+			tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+			guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			switch fault {
+			case "wrong-owner":
+				owner = "other-owner"
+			case "wrong-generation":
+				generation++
+			case "stale-memory":
+				setContinuityCheckpointLocked(test, `{"version":99}`)
+			case "stale-store":
+				if _, err := store.UpdateTestContinuityCheckpointIfLeaseHeld(test.ID, `{"version":99}`, executionLeaseName, owner); err != nil {
+					t.Fatal(err)
+				}
+			case "lost-lease":
+				if err := store.ReleaseSchedulerLease(executionLeaseName, owner); err != nil {
+					t.Fatal(err)
+				}
+			case "write-failure":
+				tr.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, reject: true}
+			case "canceled":
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				cancel()
+			case "replay":
+				if _, err := tr.markRunEvacuationSourceFenced(ctx, test, guard, generation, owner); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := tr.markRunEvacuationSourceFenced(ctx, test, guard, generation, owner); err == nil {
+				t.Fatal("invalid source-fence progress accepted")
+			}
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fault != "stale-store" && fault != "replay" && record.ContinuityCheckpoint != guard {
+				t.Fatal("failed progress changed durable checkpoint")
+			}
+		})
 	}
 }
 
@@ -283,12 +350,16 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	guard, err = tr.markRunEvacuationSourceFenced(nil, test, guard, generation, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
 	restored := &ManagedTest{Assignment: test.Assignment}
 	setContinuityCheckpointLocked(restored, guard)
 	if len(restored.continuityFailovers) != 1 || runContinuityStatusLocked(restored).Armed {
 		t.Fatal("interruption lost historical failover or became armed")
 	}
-	for _, field := range []string{"version", "test", "generation", "owner", "source", "time", "topology"} {
+	for _, field := range []string{"version", "test", "generation", "owner", "source", "time", "phase", "fenced-time", "topology"} {
 		t.Run(field, func(t *testing.T) {
 			var changed runEvacuationCheckpoint
 			if err := json.Unmarshal([]byte(guard), &changed); err != nil {
@@ -307,6 +378,10 @@ func TestRunEvacuationCheckpointPreservesHistoryAndRejectsInvalidCompletion(t *t
 				changed.Source = ""
 			case "time":
 				changed.PreparedAt = time.Time{}
+			case "phase":
+				changed.Phase = runEvacuationPhasePrepared
+			case "fenced-time":
+				changed.SourceFencedAt = time.Time{}
 			case "topology":
 				changed.NextShards["ga"][0].VUsers++
 			}

@@ -584,6 +584,20 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 	}
 
 sourceFenced:
+	if evacuationGuard != "" {
+		fencedGuard, fenceErr := tr.markRunEvacuationSourceFenced(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
+		if fenceErr != nil {
+			closeUntouchedDialedClients(touchedTargets)
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                fmt.Errorf("persist positively fenced evacuation source: %w", fenceErr),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+		evacuationGuard = fencedGuard
+	}
 	if len(podClaims) > 0 {
 		if store, ok := tr.testStore.(podCapacityStore); ok {
 			if rows, err := store.ListPodCapacityReservations(); err == nil {

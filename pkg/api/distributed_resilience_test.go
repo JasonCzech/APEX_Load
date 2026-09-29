@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -64,9 +65,21 @@ type setupRecordingEvacuationClient struct {
 	*generatorrpc.Client
 	assignment          generatorrpc.Assignment
 	beforeAssign        func()
+	beforeCommit        func() error
+	commitCalls         atomic.Int32
 	setupTimeout        atomic.Int64
 	durationMu          sync.Mutex
 	durationAdjustments []generatorrpc.DurationAdjustment
+}
+
+func (c *setupRecordingEvacuationClient) CommitWorkSupervisedAt(ctx context.Context, testID string, generation uint64, startAt time.Time, token []byte) (generatorrpc.WorkCommitResult, error) {
+	c.commitCalls.Add(1)
+	if c.beforeCommit != nil {
+		if err := c.beforeCommit(); err != nil {
+			return generatorrpc.WorkCommitResult{}, err
+		}
+	}
+	return c.Client.CommitWorkSupervisedAt(ctx, testID, generation, startAt, token)
 }
 
 func (c *setupRecordingEvacuationClient) AssignWork(ctx context.Context, assignment generatorrpc.Assignment) (generatorrpc.AssignmentResult, error) {
@@ -1276,7 +1289,7 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 }
 
 func TestDistributedEvacuationCheckpointWriteFailures(t *testing.T) {
-	for _, phase := range []string{"prepare", "complete"} {
+	for _, phase := range []string{"prepare", "source-fenced", "complete"} {
 		t.Run(phase, func(t *testing.T) { runEvacuationProvisionScenarioWithFault(t, true, phase) })
 	}
 }
@@ -1311,6 +1324,7 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 	}
 	var replacementClient *setupRecordingEvacuationClient
 	var beforeAssign func()
+	var beforeCommit func() error
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, 400*time.Millisecond, func(ctx context.Context, target string) (generatorClient, error) {
 		if target != "gen-b" {
 			return nil, errors.New("failed generator is unavailable")
@@ -1329,6 +1343,11 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			if beforeAssign != nil {
 				beforeAssign()
 			}
+		}, beforeCommit: func() error {
+			if beforeCommit != nil {
+				return beforeCommit()
+			}
+			return nil
 		}}
 		return replacementClient, nil
 	})
@@ -1410,11 +1429,30 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 				t.Fatal("in-flight evacuation remained adoptable")
 			}
 		}
+		beforeCommit = func() error {
+			record, err := store.GetTest(test.ID)
+			if err != nil {
+				return err
+			}
+			var guard runEvacuationCheckpoint
+			if err := json.Unmarshal([]byte(record.ContinuityCheckpoint), &guard); err != nil {
+				return err
+			}
+			if guard.Phase != runEvacuationPhaseSourceFenced || guard.SourceFencedAt.IsZero() {
+				return errors.New("replacement commit preceded durable positive source fence")
+			}
+			return nil
+		}
 	}
 
 	if checkpointFailure != "" {
 		runner.testStore = &evacuationCheckpointFaultStore{SQLiteStore: store, rejectWrite: func(next string) bool {
-			return (checkpointFailure == "prepare") == interruptedRunEvacuation(next)
+			var guard runEvacuationCheckpoint
+			if json.Unmarshal([]byte(next), &guard) != nil || guard.Version != runEvacuationCheckpointVersion {
+				return checkpointFailure == "complete"
+			}
+			return (checkpointFailure == "prepare" && guard.Phase == runEvacuationPhasePrepared) ||
+				(checkpointFailure == "source-fenced" && guard.Phase == runEvacuationPhaseSourceFenced)
 		}}
 	}
 
@@ -1428,6 +1466,12 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		}
 		if got := replacementRequests.Load(); got != 0 {
 			t.Fatalf("paused replacement emitted %d requests", got)
+		}
+		if checkpointFailure == "source-fenced" && replacementClient == nil {
+			t.Fatal("source-fence fault never reached a staged replacement")
+		}
+		if checkpointFailure != "complete" && replacementClient != nil && replacementClient.commitCalls.Load() != 0 {
+			t.Fatal("replacement commit was called before the source-fence write succeeded")
 		}
 		runner.mu.RLock()
 		finalStatus := test.Status

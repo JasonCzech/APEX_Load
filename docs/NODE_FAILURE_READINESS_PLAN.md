@@ -502,3 +502,9 @@ trial on reviewed controller `da9d50f5` held a paused ordinal-2 source through
 two terminal observations with KEDA minimum two and HPA desired three; after
 collection resolved and the archive verified, HPA downscaled to two. The trial
 and limits are recorded in the [review ledger](qa/reviews/node-failure-readiness-2026-09-27.md).
+
+The next package-5 journal slice records the exact positive source-fence
+boundary in the durable evacuation checkpoint before replacement commit.
+Completion requires that mark; a rejected mark fails closed. Both prepared
+and source-fenced checkpoints still reject successor adoption until the
+remaining replacement-progress replay protocol is implemented and qualified.
