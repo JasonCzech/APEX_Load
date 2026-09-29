@@ -4259,3 +4259,15 @@ nodes were Ready, the controller Deployment was 2/2 Available, and the
 generator, PostgreSQL, Redis, and S3 workloads were Ready. Both controllers
 returned HTTP 200 from their readiness probes. The prior DNS timeout had
 cleared by this observation; its cause and clearing event were not established.
+
+## Distributed-start stop outcome review (2026-09-29)
+
+Review of the successor's STOPPING classification found two further producer
+paths: failure to persist the coordinated start barrier and failure to commit
+distributed work both persist a specific start error before attempting remote
+teardown. A leader change during that teardown previously classified either
+path as an operator abort and cleared the error. The successor now preserves
+these explicit start failures as FAILED. The table-driven adoption test covers
+both a generator that still needs a stop and one already stopped. The focused
+regression and full `go test -p 2 -ldflags='-s -w' ./...` suite passed.
+No new deployed fault trial is claimed for the new classification.

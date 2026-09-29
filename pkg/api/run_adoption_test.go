@@ -467,6 +467,8 @@ func TestStoppingRunKeepsItsOutcomeAfterFailover(t *testing.T) {
 		{name: "scale failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "remote VUser state is uncertain: compensation failed", wantStatus: "FAILED", wantError: "remote VUser state is uncertain: compensation failed"},
 		{name: "duration failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "remote duration state is uncertain: compensation failed", wantStatus: "FAILED", wantError: "remote duration state is uncertain: compensation failed"},
 		{name: "pause failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "remote pause/resume state is uncertain: compensation failed", wantStatus: "FAILED", wantError: "remote pause/resume state is uncertain: compensation failed"},
+		{name: "start persistence failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ADOPTED, wantStop: true, reason: "persist coordinated distributed start: database unavailable", wantStatus: "FAILED", wantError: "persist coordinated distributed start: database unavailable"},
+		{name: "distributed commit failure", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, reason: "commit distributed work: generator rejected commit", wantStatus: "FAILED", wantError: "commit distributed work: generator rejected commit"},
 		{name: "CI abort", outcome: pb.RunAdoptionOutcome_RUN_ADOPTION_OUTCOME_ALREADY_STOPPED, reason: "ci abort reason: timed_out", wantStatus: "ABORTED", wantError: "ci abort reason: timed_out"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

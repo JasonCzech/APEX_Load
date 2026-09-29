@@ -622,6 +622,8 @@ func stoppingRunAdoptionOutcome(reason string) (status, message string) {
 		"remote VUser state is uncertain:",
 		"remote duration state is uncertain:",
 		"remote pause/resume state is uncertain:",
+		"persist coordinated distributed start:",
+		"commit distributed work:",
 	} {
 		if strings.HasPrefix(reason, prefix) {
 			return "FAILED", reason
