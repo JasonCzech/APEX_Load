@@ -45,6 +45,31 @@ func checkRunArchiveCollectionDurability(t *testing.T, s *SQLiteStore) {
 	if jobs, err := s.ListRunArchiveCollections(10, time.Now()); err != nil || len(jobs) != 0 {
 		t.Fatal("active source became runnable")
 	}
+	const fleet, namespace, workload = "fleet-a", "apexload", "statefulset-uid"
+	if retained, err := s.HoldRunArchiveReplicaFloor(row.ID, first.IntentToken, fleet, namespace, workload, 3, lease, "stale"); err != nil || retained {
+		t.Fatalf("stale archive hold = %v, %v", retained, err)
+	}
+	if retained, err := s.HoldRunArchiveReplicaFloor(row.ID, "wrong-token", fleet, namespace, workload, 3, lease, owner); err != nil || retained {
+		t.Fatalf("wrong-token archive hold = %v, %v", retained, err)
+	}
+	for _, floor := range []int{3, 2, 4} {
+		if retained, err := s.HoldRunArchiveReplicaFloor(row.ID, first.IntentToken, fleet, namespace, workload, floor, lease, owner); err != nil || !retained {
+			t.Fatalf("archive hold %d = %v, %v", floor, retained, err)
+		}
+	}
+	for _, tc := range []struct {
+		fleet, namespace, workload string
+		want                       int
+	}{
+		{fleet, namespace, workload, 4}, {"other-fleet", namespace, workload, 0}, {fleet, "other-ns", workload, 0}, {fleet, namespace, "new-workload", 0},
+	} {
+		if floor, err := s.GetRunArchiveReplicaFloor(tc.fleet, tc.namespace, tc.workload); err != nil || floor != tc.want {
+			t.Fatalf("archive floor %+v = %d, %v", tc, floor, err)
+		}
+	}
+	if pending, err := s.HasPendingRunArchiveReplicaHolds(fleet); err != nil || !pending {
+		t.Fatalf("active archive hold = %v, %v", pending, err)
+	}
 	if held, err := s.ClaimRunArchiveCollectionAttempt(row.ID, first.IntentToken, 0, lease, owner); err != nil || held {
 		t.Fatal("active attempt claimed")
 	}
@@ -54,6 +79,9 @@ func checkRunArchiveCollectionDurability(t *testing.T, s *SQLiteStore) {
 	}
 	if failure, err := s.GetRunArchiveFailure(row.ID); err != nil || failure.Reason != RunArchiveFailureUnconfirmed {
 		t.Fatalf("pending collection marker = %+v, %v", failure, err)
+	}
+	if floor, err := s.GetRunArchiveReplicaFloor(fleet, namespace, workload); err != nil || floor != 4 {
+		t.Fatalf("terminal pending archive floor = %d, %v", floor, err)
 	}
 	if _, ok, err := prepare(map[string]string{"c:9091": identity}, owner); err != nil || ok {
 		t.Fatal("terminal source mutated")
@@ -108,6 +136,12 @@ func checkRunArchiveCollectionDurability(t *testing.T, s *SQLiteStore) {
 	}
 	if ok, err := s.ExhaustRunArchiveCollection(row.ID, first.IntentToken, 1, lease, owner); err != nil || !ok {
 		t.Fatalf("exhaust=%v %v", ok, err)
+	}
+	if floor, err := s.GetRunArchiveReplicaFloor(fleet, namespace, workload); err != nil || floor != 0 {
+		t.Fatalf("exhausted archive floor = %d, %v", floor, err)
+	}
+	if pending, err := s.HasPendingRunArchiveReplicaHolds(fleet); err != nil || pending {
+		t.Fatalf("exhausted archive hold = %v, %v", pending, err)
 	}
 	if failure, err := s.GetRunArchiveFailure(row.ID); err != nil || failure.Reason != RunArchiveFailureRemoteCollection {
 		t.Fatalf("exhausted collection marker = %+v, %v", failure, err)

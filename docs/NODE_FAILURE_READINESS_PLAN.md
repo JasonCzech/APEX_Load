@@ -491,3 +491,11 @@ ordinary checkpoint refresh cannot erase it, and rejected completion invokes fen
 cleanup. Interrupted adoption fails explicitly and preserves prior failover history.
 This is a prerequisite for the package-5 recovery journal, not resumable combined-loss
 recovery. Its source validation is recorded in the review ledger.
+
+The source-pod scale-down found during the interrupted evacuation trial is
+addressed for KEDA-owned fleets by an incarnation-bound archive replica hold.
+Pending collection retains the highest source ordinal in the existing
+fleet-scoped KEDA floor after terminal capacity reservations release; resolution,
+exhaustion or publication removes it. Fresh workload identity is required before
+dispatch and while exporting the pending floor. A deployed KEDA downscale trial
+on the reviewed image is still required; the earlier trial ran before this fix.

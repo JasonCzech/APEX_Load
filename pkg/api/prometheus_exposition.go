@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -62,6 +63,42 @@ func (s *Server) handlePrometheusMetrics(w http.ResponseWriter, r *http.Request)
 		podReplicaFloor = floor
 	} else {
 		observationComplete = false
+	}
+	if store, ok := s.runner.testStore.(interface {
+		GetRunArchiveReplicaFloor(string, string, string) (int, error)
+		HasPendingRunArchiveReplicaHolds(string) (bool, error)
+	}); ok {
+		fleet := strings.TrimSpace(os.Getenv("APEXLOAD_FLEET_ID"))
+		if autoscalingFleetIDPattern.MatchString(fleet) {
+			pending, err := store.HasPendingRunArchiveReplicaHolds(fleet)
+			if err != nil {
+				observationComplete = false
+			} else if pending {
+				entries, _ := s.runner.cachedGeneratorInventorySnapshot()
+				var namespace, workloadUID string
+				for _, entry := range entries {
+					p := entry.PodPlacement
+					if p == nil || p.scaleLimit.WorkloadUID == "" || p.Namespace != p.scaleLimit.Namespace {
+						continue
+					}
+					if workloadUID != "" && (workloadUID != p.scaleLimit.WorkloadUID || namespace != p.Namespace) {
+						observationComplete = false
+						break
+					}
+					namespace, workloadUID = p.Namespace, p.scaleLimit.WorkloadUID
+				}
+				if workloadUID == "" {
+					observationComplete = false
+				} else if observationComplete {
+					floor, err := store.GetRunArchiveReplicaFloor(fleet, namespace, workloadUID)
+					if err != nil {
+						observationComplete = false
+					} else {
+						podReplicaFloor = max(podReplicaFloor, floor)
+					}
+				}
+			}
+		}
 	}
 	statusCounts := make(map[string]int)
 	for _, test := range tests {

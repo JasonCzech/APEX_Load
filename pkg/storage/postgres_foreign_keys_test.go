@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 99; got != want {
+	if got, want := len(specs), 101; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -35,6 +35,8 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
+		"run_archive_replica_holds.test_id":                     "tests.id",
+		"run_archive_replica_holds.project_id":                  "projects.id",
 		"run_archive_collection_intents.test_id":                "tests.id",
 		"run_archive_collection_intents.project_id":             "projects.id",
 		"run_archive_failures.test_id":                          "tests.id",
@@ -103,7 +105,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if got := byColumn["user_role_bindings.user_id"].onDelete; got != "CASCADE" {
 		t.Errorf("user role binding ON DELETE = %q, want CASCADE", got)
 	}
-	for _, key := range []string{"local_auth_credentials.user_id", "local_auth_sessions.user_id", "run_archive_collection_intents.test_id", "run_archive_collection_intents.project_id"} {
+	for _, key := range []string{"local_auth_credentials.user_id", "local_auth_sessions.user_id", "run_archive_collection_intents.test_id", "run_archive_collection_intents.project_id", "run_archive_replica_holds.test_id", "run_archive_replica_holds.project_id"} {
 		if got := byColumn[key].onDelete; got != "CASCADE" {
 			t.Errorf("%s ON DELETE = %q, want CASCADE", key, got)
 		}

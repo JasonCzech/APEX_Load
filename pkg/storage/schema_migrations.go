@@ -45,6 +45,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 18, Name: "durable-archive-manifest-preparation", Fingerprint: "5dae09fe85185355f15b1206033dc147f87842b1e005d81fbbe87ec09d78196d"},
 	{Version: 19, Name: "durable-archive-collection-sources", Fingerprint: "876b8e155f956851ead8d8a726f3603e4111ac06e3b822a62fe692af02bc8ddf"},
 	{Version: 20, Name: "bounded-archive-collection-cache", Fingerprint: "da3695e71768ed2528b0402fb4dedf2dd72bb4463c4351cbfbe1170259906bfd"},
+	{Version: 21, Name: "pending-archive-source-replica-holds", Fingerprint: "9d57e08247d40080f7d5b168e81036bfbef2021a22bb0fa8ed36836f43bc6302"},
 }
 
 type SchemaMigrationRecord struct {

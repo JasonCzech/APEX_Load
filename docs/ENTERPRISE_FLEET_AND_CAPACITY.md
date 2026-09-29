@@ -489,6 +489,14 @@ be mapped to a replacement is refused rather than losing its capacity guarantee.
 
 The KEDA `apexload_pod_reserved_replica_floor` metric protects reserved StatefulSet
 ordinals from scale-down; active VUser scaling demand also includes held peaks.
+For KEDA-owned generator fleets, each supervised archive source also records a
+durable floor for its StatefulSet ordinal before dispatch. The leader includes
+the highest pending source floor in the same fleet-scoped KEDA signal after
+execution becomes terminal, until collection resolves or exhausts. The hold is
+bound to the collection intent and StatefulSet UID, so a replacement workload
+cannot inherit an old floor. KEDA-owned starts require fresh, identified pod
+inventory and a valid fleet ID; while a hold is pending, unavailable workload
+inventory suppresses the demand signal rather than publishing a zero floor.
 `apexload_pod_capacity_demand` reports reserved and queued resource vectors for
 capacity monitoring (CPU cores, memory MiB, network Mbps, and VUser counts).
 Non-ordinal targets use the configured fleet size as a conservative floor.

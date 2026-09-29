@@ -3897,3 +3897,26 @@ review passed after the durable-write accounting guard caught and drove a fix
 to the repair call site. The source pod's KEDA downscale remains a separate gap:
 future archive source identities need a retained replica floor until their
 collection intent resolves or exhausts.
+
+## KEDA archive-source replica hold (2026-09-29)
+
+Review of the downscaled generator-2 archive source identified a gap between
+terminal release of pod-capacity reservations and exhaustion of the durable
+archive collection intent. The controller now persists an exact-intent,
+fleet- and StatefulSet-UID-scoped ordinal floor before source dispatch. A
+leader's existing KEDA floor metric includes pending archive holds after the
+test becomes terminal; exhausted, resolved or published collection does not
+contribute. The source proof uses fresh, unambiguous Kubernetes placement.
+KEDA-owned starts refuse missing fleet identity or placement, and a pending
+hold suppresses the scaling signal when current workload inventory disappears.
+The change does not restore files from a pod already removed by an external
+actor; the deployed pre-fix trial remains evidence of that limitation.
+
+Focused SQLite/API tests cover active and terminal holds, monotonic ordinal
+growth, stale lease and token rejection, workload/fleet isolation, exhaustion,
+KEDA admission failure and the metrics path. An isolated PostgreSQL 16
+integration test passed. A post-fix deployed KEDA source downscale trial
+remains to qualify the behavior end to end. The full `go test -p 2 ./...` suite,
+schema fingerprint/deletion checks and documentation validation passed after
+the project/test cascade review fixes; no further source finding remained in
+this cycle.

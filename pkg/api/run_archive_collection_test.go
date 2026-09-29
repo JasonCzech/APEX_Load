@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/kubeops"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -34,6 +37,76 @@ func collectionIntentFixture(t *testing.T) (*TestRunner, *storage.SQLiteStore, *
 	run := managedTestFromRecord(row)
 	tr.tests[run.ID] = run
 	return tr, store, run
+}
+
+func TestArchiveCollectionRetainsAutoscaledSourceOrdinalAfterTerminal(t *testing.T) {
+	t.Setenv("APEXLOAD_FLEET_ID", "archive-fleet")
+	tr, store, run := collectionIntentFixture(t)
+	limit := kubeops.StatefulSetAutoscalingLimit{Namespace: "apex", Workload: "generator", WorkloadUID: "workload-1", MaximumReplicas: 5, ObservedAt: time.Now()}
+	tr.liveInventoryMu.Lock()
+	tr.liveInventory = []GeneratorInventoryEntry{
+		{Target: "10.0.0.1:9091", PodPlacement: &GeneratorPodPlacement{UID: "pod-0", Namespace: "apex", Name: "generator-0", Ready: true, scaleLimit: limit}},
+		{Target: "10.0.0.2:9091", PodPlacement: &GeneratorPodPlacement{UID: "pod-2", Namespace: "apex", Name: "generator-2", Ready: true, scaleLimit: limit}},
+	}
+	tr.liveInventoryAt = time.Now()
+	tr.liveInventoryMu.Unlock()
+	token := bytes.Repeat([]byte{1}, generatorrpc.RunSupervisionTokenSize)
+	if err := tr.prepareRunArchiveSources(run, []string{"10.0.0.2:9091"}, 0, token); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.prepareRunArchiveSources(run, []string{"10.0.0.1:9091"}, 0, token); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.prepareRunArchiveSources(run, []string{"unidentified:9091"}, 0, token); err == nil {
+		t.Fatal("unproven autoscaled source was accepted")
+	}
+	end := time.Now().UTC()
+	if _, err := store.UpdateTestStatusIfActive(run.ID, "FAILED", &end, ""); err != nil {
+		t.Fatal(err)
+	}
+	if floor, err := store.GetRunArchiveReplicaFloor("archive-fleet", "apex", "workload-1"); err != nil || floor != 3 {
+		t.Fatalf("terminal pending floor = %d, %v", floor, err)
+	}
+	server, _, kube, _ := newRestartServer(t, []GeneratorInventoryEntry{
+		{Target: "10.0.0.1:9091", GeneratorID: "generator-0", Status: "connected"},
+		{Target: "10.0.0.2:9091", GeneratorID: "generator-2", Status: "connected"},
+	})
+	kube.setPods([]KubePodRef{
+		{Name: "generator-0", Namespace: "apex", UID: "pod-0", IP: "10.0.0.1", NodeName: "worker-1", Phase: "Running", Ready: true, StatefulSetName: "generator", StatefulSetUID: "workload-1"},
+		{Name: "generator-2", Namespace: "apex", UID: "pod-2", IP: "10.0.0.2", NodeName: "worker-2", Phase: "Running", Ready: true, StatefulSetName: "generator", StatefulSetUID: "workload-1"},
+	})
+	server.k8sRestart.GeneratorStatefulSet = "generator"
+	server.kubeRestarter = &scaleLimitReaderFake{KubeRestarter: kube, read: func(context.Context) (kubeops.StatefulSetAutoscalingLimit, error) { return limit, nil }}
+	server.runner.testStore = store
+	resp := httptest.NewRecorder()
+	server.handlePrometheusMetrics(resp, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(resp.Body.String(), `apexload_fleet_autoscaling{fleet="archive-fleet",signal="reserved_replica_floor"} 3`) {
+		t.Fatalf("pending source ordinal missing from autoscaling metric: %s", resp.Body.String())
+	}
+	server.kubeRestarter = nil
+	resp = httptest.NewRecorder()
+	server.handlePrometheusMetrics(resp, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if strings.Contains(resp.Body.String(), `apexload_fleet_autoscaling{`) {
+		t.Fatal("pending archive hold exported without current workload inventory")
+	}
+}
+
+func TestKEDAArchiveCollectionRejectsUnprovenSource(t *testing.T) {
+	t.Setenv(generatorAutoscalingOwnerEnvVar, "keda")
+	tr, _, run := collectionIntentFixture(t)
+	token := bytes.Repeat([]byte{1}, generatorrpc.RunSupervisionTokenSize)
+	if err := tr.prepareRunArchiveSources(run, []string{"generator-2:9091"}, 0, nil); err == nil || !strings.Contains(err.Error(), "supervised assignment") {
+		t.Fatalf("unsupervised KEDA archive source error = %v", err)
+	}
+	for _, tc := range []struct{ fleet, want string }{
+		{"", "fleet identity"},
+		{"archive-fleet", "fresh generator inventory"},
+	} {
+		t.Setenv("APEXLOAD_FLEET_ID", tc.fleet)
+		if err := tr.prepareRunArchiveSources(run, []string{"generator-2:9091"}, 0, token); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("fleet %q unproven source error = %v", tc.fleet, err)
+		}
+	}
 }
 
 func TestArchiveCollectionIntentSurvivesControllerAndTokenRotation(t *testing.T) {

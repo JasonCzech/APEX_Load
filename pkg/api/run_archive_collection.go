@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
@@ -16,6 +19,75 @@ type runArchiveCollectionStore interface {
 	ListRunArchiveCollections(int, time.Time) ([]*storage.RunArchiveCollectionIntent, error)
 	ClaimRunArchiveCollectionAttempt(string, string, int, string, string) (bool, error)
 	ExhaustRunArchiveCollection(string, string, int, string, string) (bool, error)
+}
+
+type runArchiveReplicaHoldStore interface {
+	HoldRunArchiveReplicaFloor(string, string, string, string, string, int, string, string) (bool, error)
+}
+
+type archiveReplicaHold struct {
+	fleet, namespace, workloadUID string
+	floor                         int
+}
+
+func archiveReplicaHoldRequired() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv(generatorAutoscalingOwnerEnvVar)), "keda")
+}
+
+func (tr *TestRunner) archiveReplicaHoldForTargets(targets []string) (*archiveReplicaHold, error) {
+	fleet := strings.TrimSpace(os.Getenv("APEXLOAD_FLEET_ID"))
+	if !autoscalingFleetIDPattern.MatchString(fleet) || strings.Contains(strings.ToLower(fleet), "change-me") {
+		if archiveReplicaHoldRequired() {
+			return nil, errors.New("KEDA archive source hold requires a valid fleet identity")
+		}
+		return nil, nil
+	}
+	entries, at := tr.cachedGeneratorInventorySnapshot()
+	if at.IsZero() || len(entries) == 0 {
+		if archiveReplicaHoldRequired() {
+			return nil, errors.New("KEDA archive source hold requires fresh generator inventory")
+		}
+		return nil, nil
+	}
+	byTarget := make(map[string]GeneratorInventoryEntry, len(entries))
+	autoscaled := false
+	for _, entry := range entries {
+		if _, exists := byTarget[entry.Target]; exists {
+			return nil, errors.New("archive replica hold requires unambiguous generator inventory")
+		}
+		byTarget[entry.Target] = entry
+		if p := entry.PodPlacement; p != nil && p.scaleLimit.WorkloadUID != "" {
+			autoscaled = true
+		}
+	}
+	if !autoscaled {
+		if archiveReplicaHoldRequired() {
+			return nil, errors.New("KEDA archive source hold requires identified autoscaling workload")
+		}
+		return nil, nil
+	}
+	var hold archiveReplicaHold
+	hold.fleet = fleet
+	for _, target := range targets {
+		p := byTarget[target].PodPlacement
+		if p == nil || !p.Ready || p.Terminating || p.UID == "" || p.Name == "" {
+			return nil, fmt.Errorf("archive source %q lacks current Kubernetes placement", target)
+		}
+		limit := p.scaleLimit
+		if limit.WorkloadUID == "" || limit.Namespace != p.Namespace || limit.MaximumReplicas <= 0 || limit.ObservedAt.IsZero() || limit.ObservedAt.After(time.Now()) || time.Since(limit.ObservedAt) > defaultGeneratorSnapshotTTL {
+			return nil, fmt.Errorf("archive source %q lacks current autoscaling workload proof", target)
+		}
+		ordinal, err := strconv.Atoi(strings.TrimPrefix(p.Name, limit.Workload+"-"))
+		if err != nil || ordinal < 0 || ordinal >= limit.MaximumReplicas || p.Name != limit.Workload+"-"+strconv.Itoa(ordinal) {
+			return nil, fmt.Errorf("archive source %q has invalid StatefulSet ordinal", target)
+		}
+		if hold.workloadUID != "" && (hold.workloadUID != limit.WorkloadUID || hold.namespace != limit.Namespace) {
+			return nil, errors.New("archive sources span autoscaling workloads")
+		}
+		hold.namespace, hold.workloadUID = limit.Namespace, limit.WorkloadUID
+		hold.floor = max(hold.floor, ordinal+1)
+	}
+	return &hold, nil
 }
 
 func (tr *TestRunner) archiveCollectionStore() runArchiveCollectionStore {
@@ -52,6 +124,9 @@ func (tr *TestRunner) runArchiveCollectionIntent(test *ManagedTest) (*storage.Ru
 func (tr *TestRunner) prepareRunArchiveSources(test *ManagedTest, targets []string, generation uint64, token []byte) error {
 	store := tr.archiveCollectionStore()
 	if store == nil || len(token) == 0 {
+		if archiveReplicaHoldRequired() {
+			return errors.New("KEDA archive source hold requires durable collection and supervised assignment")
+		}
 		return nil
 	}
 	if test == nil {
@@ -77,6 +152,17 @@ func (tr *TestRunner) prepareRunArchiveSources(test *ManagedTest, targets []stri
 	if len(sources) == 0 {
 		return nil
 	}
+	holdStore, canHold := tr.testStore.(runArchiveReplicaHoldStore)
+	if !canHold && archiveReplicaHoldRequired() {
+		return errors.New("KEDA archive source hold requires durable storage support")
+	}
+	var hold *archiveReplicaHold
+	if canHold {
+		hold, err = tr.archiveReplicaHoldForTargets(targets)
+		if err != nil {
+			return err
+		}
+	}
 	lease, owner := "", ""
 	if tr.durableExecutionFence {
 		current, holder, _, err := tr.generatorExecutionClaim()
@@ -86,9 +172,10 @@ func (tr *TestRunner) prepareRunArchiveSources(test *ManagedTest, targets []stri
 		lease, owner = executionLeaseName, holder
 	}
 	var saved bool
+	var savedIntent *storage.RunArchiveCollectionIntent
 	err = tr.trackDurableWrite(func() error {
 		var err error
-		_, saved, err = store.PrepareRunArchiveCollection(id, project, created, sources, lease, owner)
+		savedIntent, saved, err = store.PrepareRunArchiveCollection(id, project, created, sources, lease, owner)
 		return err
 	})
 	if err != nil {
@@ -96,6 +183,23 @@ func (tr *TestRunner) prepareRunArchiveSources(test *ManagedTest, targets []stri
 	}
 	if !saved {
 		return errors.New("archive collection intent was fenced or the run is no longer active")
+	}
+	if hold != nil {
+		if savedIntent == nil || savedIntent.IntentToken == "" {
+			return errors.New("archive collection did not return its durable intent token")
+		}
+		var retained bool
+		err = tr.trackDurableWrite(func() error {
+			var err error
+			retained, err = holdStore.HoldRunArchiveReplicaFloor(id, savedIntent.IntentToken, hold.fleet, hold.namespace, hold.workloadUID, hold.floor, lease, owner)
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("persist archive replica hold: %w", err)
+		}
+		if !retained {
+			return errors.New("archive replica hold was fenced or its collection intent closed")
+		}
 	}
 	return nil
 }
