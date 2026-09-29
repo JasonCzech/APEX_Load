@@ -3741,3 +3741,41 @@ isolated, disposable PostgreSQL and S3 containers; their private evidence is und
 `artifacts/scalability/2026-09-29/shared-staging-pg-s3-c725ec9930`.
 This is same-host cross-process replay, not a deployed multi-node RWX/CSI or
 physical-node failure qualification. Those release gates remain open.
+
+## Deployed evacuation checkpoint transition (2026-09-29)
+
+Built controller `f51780f4` from its committed tree and deployed its verified
+image digest to the preserved fresh Docker Desktop kind cluster. The original
+three-node cluster was stopped intact during this bounded trial. Before rollout,
+a PostgreSQL custom-format backup was restored into an isolated check database,
+and both controller staging trees were snapshotted. The new controller passed a
+40-VUser healthy control with independently observed sustained target traffic
+and a hash-verified S3 archive.
+
+The restored namespace initially had pod reservations disabled, so a queued
+recovery-spare run could not produce a complete KEDA fleet metric and was
+cancelled before start. Enabling the existing opt-in setting restored ready
+per-pod capacity reports and KEDA scaling. A second trial successfully moved
+the work, but the private evidence query omitted `test_id` and stopped that run
+before its traffic gate. The corrected trial was repeated twice. In both passing
+runs, PostgreSQL recorded a committed version-2 evacuation guard followed by a
+version-1 completed topology (25 ms and 22 ms apart). The API moved all 50 HTTP
+VUsers from one worker's generator to a different worker's reserved spare.
+The independent target counted 800 additional requests after each move, with
+zero restarts of the new controller pods. The tests were then operator-stopped,
+so their terminal status is ABORTED; both resulting S3 archives passed integrity
+verification. The temporary audit trigger/table was removed, generators were
+uncordoned, and there were no active tests or pending publication jobs. The
+original cluster was restored to three stable desired-workload, node, DNS and
+idle-database snapshots; the fresh cluster and its volumes are preserved stopped.
+A controller pod changed between the first restoration snapshot and DNS probe,
+so the verifier retried against current desired pods before switching the active
+environment pointer.
+
+This qualifies the normal deployed guard-to-completion path on Docker Desktop.
+It does not test interruption inside the roughly 20–25 ms guard window, a
+second controller takeover there, combined controller/generator loss, physical
+node failure or multi-host storage. The fail-closed interrupted path remains
+covered by the local fault-injection tests; deployed interruption qualification
+and resumable recovery remain open. Private receipts are under
+`artifacts/scalability/2026-09-28/backlog-74178e07/guard-f51780f4`.
