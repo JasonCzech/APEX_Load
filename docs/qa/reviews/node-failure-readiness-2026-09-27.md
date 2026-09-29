@@ -3426,3 +3426,27 @@ are durable, then syncs the publication path's new directory entries. It does no
 claim to bound later report generation or aggregate source backlog. The full Go suite passed all 108 test-bearing packages
 (API 388.943 seconds), and documentation checks passed for 69 active Markdown
 files. Scoped re-review found no further issues.
+
+
+## Merge/publication limits: Docker verification (2026-09-28 local time)
+
+Controller `4e4d235c4da400bf4dddbfd59aac76cebacb71f8`, including merge commit
+`24c47097`, was built from exact committed source and deployed as
+`docker.io/library/apexload-controller@sha256:a76c64cabf3832516d9059f7f2135b6d4e425f2825ad8db92a92d633608bf66f`.
+The database backup restored with matching schema/row counts, both controller
+staging trees were preserved, and the build helper restored all owned kind nodes.
+Generator image/revision stayed unchanged. The schema-20 PostgreSQL/Redis/S3
+healthy gate passed on run `f8e783ce-007e-4f6c-88bd-aa0e8789f6a4`: minimum
+280.767 independent-target requests/second over 60.911 seconds, `COMPLETE`, verified
+archive hashes and zero controller restarts. This is a bounded smoke gate, not a
+maximum-throughput benchmark.
+
+A note added to that disposable run exercised the private materialized-archive
+copy and durable refresh outbox. The catalog committed a new versioned S3 URI
+and a `_publication` staging path, with no pending refresh/finalization job left.
+The refreshed archive verified; all five available workload-data artifact hashes
+and sizes matched the original manifest, the note persisted, the execution remained
+`COMPLETE`, and neither controller restarted. Evidence is under the existing
+`remaining-e7fgcem4` root in `controller-refresh-4e4d235c`,
+`reviewed-controller-smoke-4e4d235c-cold-gate` and `publication-refresh-4e4d235c`.
+No physical multi-host or combined-loss qualification is implied.

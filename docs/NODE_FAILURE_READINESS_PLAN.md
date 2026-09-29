@@ -434,3 +434,10 @@ archive hashes verified, with missing stopped-source coverage declared explicitl
 Trials 2 and 3 directly observed the archive-pending generation guard and subsequent
 idle turnover. This closes the repeated Docker worker-spare gate on that revision;
 combined-loss and physical multi-host/storage qualification remain separate.
+
+
+The merged output/publication limits deployed on controller `4e4d235c` passed a
+fresh PostgreSQL/Redis/S3 healthy-load and archive-integrity gate. A note-triggered
+refresh then committed a new immutable publication version with all available
+workload-data hashes unchanged and no controller restart. Aggregate backlog,
+local finalization-failure reporting and combined-loss recovery remain local work.
