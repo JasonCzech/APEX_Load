@@ -1289,7 +1289,7 @@ func runEvacuationProvisionScenario(t *testing.T, continuity bool) {
 }
 
 func TestDistributedEvacuationCheckpointWriteFailures(t *testing.T) {
-	for _, phase := range []string{"prepare", "staged", "source-fenced", "complete"} {
+	for _, phase := range []string{"prepare", "staged", "source-fenced", "replacement-committed", "complete"} {
 		t.Run(phase, func(t *testing.T) { runEvacuationProvisionScenarioWithFault(t, true, phase) })
 	}
 }
@@ -1467,7 +1467,8 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 			}
 			return (checkpointFailure == "prepare" && guard.Phase == runEvacuationPhasePrepared) ||
 				(checkpointFailure == "staged" && guard.Phase == runEvacuationPhaseStaged) ||
-				(checkpointFailure == "source-fenced" && guard.Phase == runEvacuationPhaseSourceFenced)
+				(checkpointFailure == "source-fenced" && guard.Phase == runEvacuationPhaseSourceFenced) ||
+				(checkpointFailure == "replacement-committed" && guard.Phase == runEvacuationPhaseReplacementCommitted)
 		}}
 	}
 
@@ -1485,8 +1486,11 @@ func runEvacuationProvisionScenarioWithFault(t *testing.T, continuity bool, chec
 		if (checkpointFailure == "staged" || checkpointFailure == "source-fenced") && replacementClient == nil {
 			t.Fatal("checkpoint fault never reached a staged replacement")
 		}
-		if checkpointFailure != "complete" && replacementClient != nil && replacementClient.commitCalls.Load() != 0 {
+		if checkpointFailure != "complete" && checkpointFailure != "replacement-committed" && replacementClient != nil && replacementClient.commitCalls.Load() != 0 {
 			t.Fatal("replacement commit was called before the source-fence write succeeded")
+		}
+		if checkpointFailure == "replacement-committed" && (replacementClient == nil || replacementClient.commitCalls.Load() == 0) {
+			t.Fatal("replacement-commit fault did not occur after CommitWork")
 		}
 		runner.mu.RLock()
 		finalStatus := test.Status

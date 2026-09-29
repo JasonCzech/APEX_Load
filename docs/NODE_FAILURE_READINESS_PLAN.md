@@ -523,3 +523,9 @@ three-node Docker Desktop kind trial: PostgreSQL recorded `prepared` →
 `staged` → `source_fenced` → completed topology with the exact staged target,
 traffic continued on another worker, and the two-source archive verified.
 Interrupted successor replay and physical multi-host storage remain unqualified.
+
+The next package-5 boundary records acknowledged replacement `CommitWork` in
+the same lease-fenced journal before publishing the completed topology. A
+failed mark stops the exact-generation fleet through the uncertain path.
+Completion requires the commit mark in addition to stage and source-fence
+proof. This is durable progress evidence, not yet a successor replay protocol.

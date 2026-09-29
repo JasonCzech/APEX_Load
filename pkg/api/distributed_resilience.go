@@ -730,6 +730,20 @@ sourceFenced:
 		closeUntouchedDialedClients(touchedTargets)
 		return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, uncertain, streamsByTarget, openedStreams, releaseTopology)
 	}
+	if evacuationGuard != "" {
+		committedGuard, commitErr := tr.markRunEvacuationReplacementCommitted(executionCtx, test, evacuationGuard, executionGeneration, executionLeaseOwnerID)
+		if commitErr != nil {
+			closeUntouchedDialedClients(touchedTargets)
+			return impacts, b.failClosedUncertainEvacuationWithTopologyRelease(tr, test, &distributedEvacuationUncertainError{
+				testID:             testID,
+				participantClients: evacuationParticipantClients(runClientsByTarget, dialedClients, touchedTargets),
+				touchedTargets:     orderedTargetList(touchedTargets, b.configuredTargets()),
+				unreachableTargets: unreachableTargets,
+				err:                fmt.Errorf("persist acknowledged replacement commit: %w", commitErr),
+			}, streamsByTarget, openedStreams, releaseTopology)
+		}
+		evacuationGuard = committedGuard
+	}
 	if refreshedRemaining < remainingDuration {
 		// Duration control is intentionally after CommitWork: generators reject
 		// ordinary runtime controls while an assignment is still staged. The

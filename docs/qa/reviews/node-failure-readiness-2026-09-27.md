@@ -4018,3 +4018,19 @@ controller Service still timed out after node, CoreDNS, and kube-proxy
 restarts, despite the controllers reporting Ready. The original cluster's
 pod-originated DNS/network probe therefore remains unresolved; do not use
 this trial as restoration or independent-node fault qualification.
+
+## Durable replacement-commit boundary (2026-09-29)
+
+The package-5 checkpoint now records a `replacement_committed` phase with a
+timestamp after replacement generators acknowledge CommitWork and before
+the controller publishes the new topology. The lease-fenced compare-and-swap
+requires the exact staged target set and positive source-fence mark. A failed
+write after CommitWork enters exact-generation fail-closed cleanup; completion
+requires all three durable boundaries. The in-flight phase is still
+unadoptable to a successor, because this marker alone cannot prove generator
+state after a crash. Focused tests cover stale/lease-rejected progress and an
+injected write failure after CommitWork. The focused API tests, focused race
+check, full `go test -p 2 -ldflags='-s -w' ./...` suite, documentation check,
+and diff review pass. The first focused build ran out of disk during linking
+before tests ran; an authorized Go build-cache cleanup allowed the successful
+rerun. Deployed commit-transition qualification remains pending.
