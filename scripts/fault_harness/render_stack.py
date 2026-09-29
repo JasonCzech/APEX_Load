@@ -94,8 +94,29 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES', 'value': str(256 * 1024**2)},
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES', 'value': str(256 * 1024**2)},
                                 {'name': 'APEXLOAD_ARCHIVE_ACTIVE_READER_MAX_BYTES', 'value': str(512 * 1024**2)},
+                                {'name': 'APEXLOAD_ARCHIVE_READER_CACHE_DIR', 'value': '/var/lib/apexload/archive-read-cache'},
+                                {'name': 'APEXLOAD_ARCHIVE_TRANSFER_DIR', 'value': '/tmp/apexload-archive-transfers'},
+                                {'name': 'APEXLOAD_ARCHIVE_DOWNLOAD_STAGING_DIR', 'value': '/tmp/apexload-archive-downloads'},
                                 {'name': 'APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_TTL', 'value': '15m'},
                                 {'name': 'APEXLOAD_BOOTSTRAP_SUBJECT', 'value': 'fault-' + run_id}]
+            # Independent payload budgets leave 768 MiB in data and 256 MiB
+            # in tmp for metadata, reservations and unrelated small files.
+            mib = 1024 ** 2
+            archive_limits = {
+                'APEXLOAD_ARCHIVE_BACKLOG_MAX_BYTES': 1024 * mib,
+                'APEXLOAD_ARCHIVE_COLLECTION_MAX_BYTES': 256 * mib,
+                'APEXLOAD_ARCHIVE_COLLECTION_CACHE_MAX_BYTES': 512 * mib,
+                'APEXLOAD_ARCHIVE_TRANSFER_MAX_BYTES': 512 * mib,
+                'APEXLOAD_ARCHIVE_TRANSFER_MIN_FREE_BYTES': 64 * mib,
+                'APEXLOAD_ARCHIVE_DOWNLOAD_MAX_BYTES': 256 * mib,
+                'APEXLOAD_ARCHIVE_DOWNLOAD_MAX_CONCURRENT': 1,
+                'APEXLOAD_ARCHIVE_DOWNLOAD_MIN_FREE_BYTES': 64 * mib,
+            }
+            for phase, maximum_mib in (('CAPTURE', 256), ('MERGE', 512), ('CONVERSION', 256),
+                                       ('PUBLICATION', 512), ('ADJUNCT', 8)):
+                archive_limits['APEXLOAD_ARCHIVE_' + phase + '_MAX_BYTES'] = maximum_mib * mib
+                archive_limits['APEXLOAD_ARCHIVE_' + phase + '_MIN_FREE_BYTES'] = 64 * mib
+            container['env'].extend({'name': name, 'value': str(value)} for name, value in archive_limits.items())
             if source_retention_seconds:
                 container['env'].append({'name': 'APEXLOAD_ARCHIVE_SOURCE_RETENTION_TTL',
                                          'value': str(source_retention_seconds) + 's'})
@@ -106,6 +127,9 @@ def application(inputs, controller_image, generator_image, replicas=4, pod_capac
                                          'timeoutSeconds': 3, 'periodSeconds': 2, 'failureThreshold': 60}
         else:
             container['env'] = [{'name': 'APEXLOAD_GENERATOR_MAX_VUSERS', 'value': str(pod_capacity)},
+                                {'name': 'APEXLOAD_GENERATOR_ARCHIVE_BACKLOG_MAX_BYTES', 'value': str(768 * 1024**2)},
+                                {'name': 'APEXLOAD_GENERATOR_ARCHIVE_MAX_BYTES', 'value': str(256 * 1024**2)},
+                                {'name': 'APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES', 'value': str(64 * 1024**2)},
                                 {'name': 'SSL_CERT_FILE', 'value': '/etc/apexload/grpc-tls/ca.crt'}]
             pod['topologySpreadConstraints'] = [{'maxSkew': 1, 'topologyKey': 'kubernetes.io/hostname',
                 'whenUnsatisfiable': 'DoNotSchedule', 'labelSelector': {'matchLabels': {'app.kubernetes.io/name': 'apexload-generator'}}}]

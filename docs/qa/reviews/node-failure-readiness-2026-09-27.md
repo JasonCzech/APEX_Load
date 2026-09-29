@@ -3558,3 +3558,22 @@ repetitions (108.535 seconds). All 109 Go test-bearing packages passed, includin
 Scoped re-review found no further issues. Compressed logs with SHA-256 receipts are
 retained under `remaining-e7fgcem4/controller-backlog-validation`. No new Docker
 qualification is claimed; controller `4e4d235c` and generator `1642d920` remain deployed.
+
+## Fresh Docker archive-capacity profile (2026-09-28 local time)
+
+The new renderer regression reproduced the absence of explicit workload-backlog
+admission. Fresh profiles now fit workload, collection, reader and scratch allowances
+within their data/tmp allocations, reserving overhead. Review added an explicit private
+reader-cache directory and changed download staging to one 256-MiB slot so the supported
+materialization size fits. Tests check independent budgets, whole-pod allocation,
+positive concurrency, nested allowances, write floors and Kustomize rendering.
+All 192 fault-harness tests and documentation checks passed; scoped re-review found
+no further issues. Private logs and SHA-256 receipts are in
+`remaining-e7fgcem4/local-storage-profile-validation`.
+
+Read-only inventory found 973,828 KiB and 1,382,928 KiB in the two running generator
+state directories despite nominal 1-GiB local-path PVC requests. The new 768-MiB
+archive quota must therefore be qualified on fresh data or deliberately migrated
+state; lowering it does not delete retained archives or establish free capacity.
+The existing cluster and volumes were preserved. This is rendered-profile validation,
+not a new live storage-pressure or physical CSI qualification.

@@ -36,6 +36,54 @@ class StackResourcesTest(unittest.TestCase):
         finally:
             p.write_bytes(original)
 
+    def test_archive_admission_fits_volume_allocations(self):
+        _, _, overlay = application(self.inputs, self.images['controller'], self.images['generator'])
+        patches = [json.loads(p['patch']) for p in overlay['patches'] if 'target' not in p]
+        controller = next(p for p in patches if p['kind'] == 'Deployment')['spec']['template']['spec']
+        generator = next(p for p in patches if p['kind'] == 'StatefulSet')['spec']
+        def numeric_env(pod):
+            return {e['name']: int(e['value']) for e in pod['containers'][0]['env']
+                    if e.get('value', '').isdigit()}
+        def quantity(value):
+            self.assertTrue(value.endswith(('Mi', 'Gi')))
+            return int(value[:-2]) * 1024 ** (2 if value.endswith('Mi') else 3)
+        mib = 1024 ** 2
+        env = numeric_env(controller)
+        paths = {e['name']: e.get('value') for e in controller['containers'][0]['env']}
+        self.assertEqual(paths['APEXLOAD_ARCHIVE_READER_CACHE_DIR'], '/var/lib/apexload/archive-read-cache')
+        self.assertEqual(paths['APEXLOAD_ARCHIVE_TRANSFER_DIR'], '/tmp/apexload-archive-transfers')
+        self.assertEqual(paths['APEXLOAD_ARCHIVE_DOWNLOAD_STAGING_DIR'], '/tmp/apexload-archive-downloads')
+        self.assertGreaterEqual(env['APEXLOAD_ARCHIVE_DOWNLOAD_MAX_BYTES'], env['APEXLOAD_ARCHIVE_MATERIALIZATION_MAX_BYTES'])
+        volumes = {v['name']: quantity(v['emptyDir']['sizeLimit']) for v in controller['volumes'] if 'emptyDir' in v}
+        backlog = env['APEXLOAD_ARCHIVE_BACKLOG_MAX_BYTES']
+        self.assertGreater(backlog, 0)
+        # Pinned readers may outlive cache eviction; count both allowances.
+        data = (backlog + env['APEXLOAD_ARCHIVE_COLLECTION_CACHE_MAX_BYTES'] +
+                env['APEXLOAD_ARCHIVE_ACTIVE_READER_MAX_BYTES'] +
+                env['APEXLOAD_ARCHIVE_MATERIALIZATION_CACHE_MAX_BYTES'])
+        self.assertLessEqual(data + 512 * mib, volumes['data'])
+        self.assertLessEqual(sum(volumes.values()) + 512 * mib,
+                             quantity(controller['containers'][0]['resources']['limits']['ephemeral-storage']))
+        self.assertGreater(env['APEXLOAD_ARCHIVE_DOWNLOAD_MAX_CONCURRENT'], 0)
+        transfers = env['APEXLOAD_ARCHIVE_TRANSFER_MAX_BYTES']
+        downloads = env['APEXLOAD_ARCHIVE_DOWNLOAD_MAX_BYTES'] * env['APEXLOAD_ARCHIVE_DOWNLOAD_MAX_CONCURRENT']
+        self.assertLessEqual(transfers + downloads + 128 * mib, volumes['tmp'])
+        self.assertGreater(env['APEXLOAD_ARCHIVE_COLLECTION_MAX_BYTES'], 0)
+        self.assertLessEqual(env['APEXLOAD_ARCHIVE_COLLECTION_MAX_BYTES'], transfers)
+        self.assertLessEqual(env['APEXLOAD_ARCHIVE_COLLECTION_MAX_BYTES'], env['APEXLOAD_ARCHIVE_COLLECTION_CACHE_MAX_BYTES'])
+        for phase in ('CAPTURE', 'MERGE', 'CONVERSION', 'PUBLICATION', 'ADJUNCT'):
+            self.assertGreater(env['APEXLOAD_ARCHIVE_' + phase + '_MAX_BYTES'], 0)
+            self.assertLessEqual(env['APEXLOAD_ARCHIVE_' + phase + '_MAX_BYTES'], backlog)
+            self.assertGreaterEqual(env['APEXLOAD_ARCHIVE_' + phase + '_MIN_FREE_BYTES'], 64 * mib)
+        self.assertGreaterEqual(env['APEXLOAD_ARCHIVE_TRANSFER_MIN_FREE_BYTES'], 64 * mib)
+        self.assertGreaterEqual(env['APEXLOAD_ARCHIVE_DOWNLOAD_MIN_FREE_BYTES'], 64 * mib)
+        gen = numeric_env(generator['template']['spec'])
+        storage = quantity(generator['volumeClaimTemplates'][0]['spec']['resources']['requests']['storage'])
+        self.assertLessEqual(gen['APEXLOAD_GENERATOR_ARCHIVE_BACKLOG_MAX_BYTES'] + 128 * mib, storage)
+        self.assertGreater(gen['APEXLOAD_GENERATOR_ARCHIVE_MAX_BYTES'], 0)
+        self.assertLessEqual(gen['APEXLOAD_GENERATOR_ARCHIVE_MAX_BYTES'], gen['APEXLOAD_GENERATOR_ARCHIVE_BACKLOG_MAX_BYTES'])
+        self.assertGreaterEqual(gen['APEXLOAD_GENERATOR_ARCHIVE_MIN_FREE_BYTES'], 64 * mib)
+
     def test_phased_private_output_and_base_overlay_render(self):
         output = self.root / 'stack'
         render(self.inputs, self.images, output)

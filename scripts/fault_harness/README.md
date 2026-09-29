@@ -1012,6 +1012,42 @@ an unavailable data-volume write path, not sufficient capacity for an entire tri
 The local controller profile limits each materialized archive to 256 MiB and reserves
 a 512 MiB aggregate active-reader allowance per controller. Distinct cold archive reads
 wait before object-store access when that allowance is full; readers of the same cache
-share it. The separate idle-cache cap is 256 MiB. These payload limits do not include
-unconfirmed producer sources or transfer spools; preserve the existing disk-space guards
-and distinct data/tmp volume limits when running faults.
+share it. The separate idle-cache cap is 256 MiB. Those reader allowances are separate from the producer-source and transfer-spool
+limits in the local admission profile below; preserve the disk-space guards and
+distinct data/tmp volume limits when running faults.
+
+## Local archive admission profile
+
+Fresh profiles rendered by `render_stack.py` now set explicit payload limits for
+reservation-aware controller and generator images. The following allocations assume
+one object-backend source namespace per controller and one generator namespace per
+pod. They supplement the physical free-space checks and Kubernetes volume settings.
+
+| Workspace | Independently admitted payload | Space left in the configured volume |
+| --- | --- | --- |
+| Controller data, 3 GiB | 1 GiB workload backlog + 512 MiB collection cache + 512 MiB active readers + 256 MiB idle reader cache | 768 MiB |
+| Controller `/tmp`, 1 GiB | 512 MiB transfer spools + one 256 MiB staged download | 256 MiB |
+| Generator state, nominal 1 GiB PVC | 768 MiB archive backlog | 256 MiB for script cache, fencing state and overhead |
+
+A controller collection attempt is limited to 256 MiB. Capture and conversion each
+have a 256-MiB per-attempt allowance; merge and private publication each have 512 MiB;
+finalization adjuncts have 8 MiB. Generator archives have a 256-MiB per-run allowance.
+Physical write guards leave at least 64 MiB free on the containing filesystem.
+These nested per-attempt allowances do not add to the aggregate backlog allocation.
+Download staging queues additional requests behind its single active slot.
+
+The private reader cache is `/var/lib/apexload/archive-read-cache`, separate from
+source staging under `/var/lib/apexload/archives`. Transfer and download scratch use
+separate directories under `/tmp`. The profile changes no retention or deletion
+policy; the existing source-retention option remains explicit. Retained namespaces
+from other backend configurations and other volume users need additional sizing.
+The limits bound payload rather than filesystem allocation or physical-host failure.
+
+Apply this profile to fresh disposable qualification environments, or first inventory
+and preserve existing data before adapting its limits. A local-path PVC request is
+not necessarily a hard capacity limit: the retained development cluster was observed
+with about 1.3 GiB in one nominal 1-GiB generator claim. Lowering a quota beneath that
+backlog correctly rejects growth; it does not remove archives or create free capacity.
+Use the [source-retention guide](../../docs/ARCHIVE_SOURCE_RETENTION.md) for reservation,
+crash-reconciliation and mixed-version constraints. Render and unit validation do not
+constitute a new live storage-pressure qualification.
