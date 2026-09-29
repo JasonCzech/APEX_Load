@@ -138,3 +138,59 @@ class ImageLoadTest(unittest.TestCase):
             self.assertTrue(all(w['digest_alias_created'] for w in report['workers']))
             self.assertEqual(json.loads((root / 'evidence/result.json').read_text()), report)
             self.assertEqual((root / 'evidence/result.json').stat().st_mode & 0o777, 0o600)
+
+    def test_control_plane_requires_explicit_owned_role(self):
+        from load_image import validate_node
+        control = copy.deepcopy(self.worker)
+        node = self.cluster + '-control-plane'
+        control[0]['Name'] = '/' + node
+        control[0]['Config']['Labels']['io.x-k8s.kind.role'] = 'control-plane'
+        self.assertEqual(validate_node(control, self.cluster, node, 'control-plane'), 'b' * 64)
+        with self.assertRaises(ImageError):
+            validate_worker(control, self.cluster, node)
+        for role, name, cluster in [('worker', node, self.cluster), ('control-plane', self.node, self.cluster),
+                                    ('control-plane', node, 'other'), ('all', node, self.cluster)]:
+            with self.subTest(role=role, name=name, cluster=cluster), self.assertRaises(ImageError):
+                validate_node(control, cluster, name, role)
+        for field, value in [('Id', ''), ('Name', '/docker-desktop'), ('State', {'Running': False}), ('Config', {'Labels': {}})]:
+            invalid = copy.deepcopy(control)
+            invalid[0][field] = value
+            with self.subTest(field=field), self.assertRaises(ImageError):
+                validate_node(invalid, self.cluster, node, 'control-plane')
+
+    def test_invalid_placement_does_not_inspect_or_import(self):
+        from load_image import load
+        with patch('load_image.command') as command, patch('load_image.stream_import') as importing:
+            with self.assertRaises(ImageError):
+                load('/unused', self.tag, self.reference, '/unused/output', 'all')
+            command.assert_not_called()
+            importing.assert_not_called()
+
+    def test_explicit_control_plane_import_only_touches_owned_container(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from load_image import load
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = 'a' * 16
+            (root / 'ownership.json').write_text(json.dumps({'run_id': run, 'cluster': self.cluster,
+                'namespace': 'apexload-fault', 'namespace_label': 'apexload.io/fault-run=' + run}))
+            control = copy.deepcopy(self.worker)
+            node = self.cluster + '-control-plane'
+            control[0]['Name'] = '/' + node
+            control[0]['Config']['Labels']['io.x-k8s.kind.role'] = 'control-plane'
+            row = self.tag + ' manifest ' + self.digest + '\n'
+            alias = self.reference + ' manifest ' + self.digest + '\n'
+            responses = [json.dumps(self.image), json.dumps(control), 'aarch64', row, self.reference, row + alias]
+            with patch('load_image.command', side_effect=responses) as command, patch('load_image.stream_import') as importing:
+                report = load(root, self.tag, self.reference, root / 'evidence', 'control-plane')
+            importing.assert_called_once()
+            self.assertEqual(importing.call_args.args[:3], (self.tag, 'arm64', 'b' * 64))
+            self.assertEqual(report['placement'], 'control-plane')
+            self.assertEqual(report['workers'], [])
+            self.assertEqual(report['nodes'][0]['node'], node)
+            self.assertEqual(json.loads((root / 'evidence/result.json').read_text()), report)
+            self.assertEqual(command.call_args_list[1].args[0], ['docker', 'inspect', node])
+            for call in command.call_args_list[2:]:
+                self.assertEqual(call.args[0][:3], ['docker', 'exec', 'b' * 64])

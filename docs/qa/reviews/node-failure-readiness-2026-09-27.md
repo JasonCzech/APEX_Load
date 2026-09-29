@@ -3577,3 +3577,20 @@ archive quota must therefore be qualified on fresh data or deliberately migrated
 state; lowering it does not delete retained archives or establish free capacity.
 The existing cluster and volumes were preserved. This is rendered-profile validation,
 not a new live storage-pressure or physical CSI qualification.
+
+## Explicit fault-target image placement (2026-09-28 local time)
+
+Fresh deployment exposed a loader mismatch: the independent traffic target is pinned
+on the owned control-plane node, while local image loading only supported workers.
+The loader now accepts explicit `--placement control-plane`; workers remain the
+unchanged default. Both paths check the exact kind role/name, ownership, immutable
+container ID, architecture and pinned image digest before importing. Results identify
+the selected placement and nodes, preserving the legacy worker-only evidence list.
+No arbitrary host or node selection is added.
+
+Review checked wrong-role/unowned/stopped containers, invalid placement, worker
+prevalidation and container-ID-bound imports. All 11 loader tests and all 195 harness
+tests passed (7.344 seconds for the full harness); documentation checks passed for
+69 active Markdown files. Scoped re-review found no further issues. This corrects
+image placement tooling; the fresh cluster's earlier manually verified target import
+is preserved as separate evidence and is not presented as a run of this new command.

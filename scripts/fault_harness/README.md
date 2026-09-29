@@ -810,8 +810,12 @@ does not reserve capacity or prove load delivery.
 `load_image.py --inputs ABS_INPUTS --tag FULLY_QUALIFIED_TAG
 --reference REPOSITORY@sha256:DIGEST --output NEW_ABSOLUTE_DIRECTORY` loads an
 already-built, committed-source Linux image on the two workers owned by those inputs.
-It verifies the local manifest digest, both immutable worker container identities,
-kind ownership and matching architectures before streaming any image. The tag and
+Use `--placement control-plane` for the independent fault target, which runs on the
+owned disposable control-plane node; the default remains `--placement workers` for
+controllers and generators. It verifies the local manifest digest, every selected
+immutable container identity, kind role/ownership and matching architectures before
+streaming any image. The verification record lists `placement` and `nodes`; its
+legacy `workers` list contains only worker imports. The tag and
 pinned reference must use the same fully qualified repository.
 
 The loader verifies containerd's imported manifest and explicitly creates and checks

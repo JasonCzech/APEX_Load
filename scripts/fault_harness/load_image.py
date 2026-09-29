@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Load a verified local application image onto the owned kind workers by digest."""
+"""Load a verified local application image onto explicitly selected owned kind nodes by digest."""
 import argparse
 import json
 import os
@@ -33,17 +33,25 @@ def validate_source(tag, reference, inspected):
 
 
 def validate_worker(inspected, cluster, node):
-    if not isinstance(inspected, list) or len(inspected) != 1:
-        raise ImageError('expected one owned kind worker')
+    return validate_node(inspected, cluster, node, "worker")
+
+
+def validate_node(inspected, cluster, node, role):
+    if role not in ('worker', 'control-plane'):
+        raise ImageError('unsupported kind node role')
+    if (not isinstance(inspected, list) or len(inspected) != 1
+            or not isinstance(inspected[0], dict)):
+        raise ImageError('expected one owned kind node')
     info = inspected[0]
     labels = info.get('Config', {}).get('Labels', {})
-    if (node not in (cluster + '-worker', cluster + '-worker2')
+    expected = (cluster + '-worker', cluster + '-worker2') if role == 'worker' else (cluster + '-control-plane',)
+    if (node not in expected
             or info.get('Name') != '/' + node
             or labels.get('io.x-k8s.kind.cluster') != cluster
-            or labels.get('io.x-k8s.kind.role') != 'worker'
+            or labels.get('io.x-k8s.kind.role') != role
             or info.get('State', {}).get('Running') is not True
             or not re.fullmatch(r'[a-f0-9]{64}', info.get('Id', ''))):
-        raise ImageError('container is not the expected running disposable worker')
+        raise ImageError('container is not the expected running disposable node')
     return info['Id']
 
 
@@ -96,26 +104,31 @@ def stream_import(tag, architecture, container_id, log):
                 process.wait(timeout=5)
 
 
-def load(inputs, tag, reference, output):
+def load(inputs, tag, reference, output, placement="workers"):
+    if placement not in ("workers", "control-plane"):
+        raise ImageError("unsupported image placement")
     run_id, cluster = read_ownership(input_root(inputs))
     validate_image(reference)
     architecture = validate_source(tag, reference, json.loads(command(['docker', 'image', 'inspect', tag])))
-    # Validate all targets before importing anything; never import on the host
-    # control plane or on an unrelated Compose/user container.
-    workers = []
-    for suffix in ('-worker', '-worker2'):
+    # Validate all targets before importing anything; never import on another
+    # Kubernetes cluster or on an unrelated Compose/user container. The owned
+    # disposable control plane requires explicit selection for its fault target.
+    nodes = []
+    role = "worker" if placement == "workers" else "control-plane"
+    suffixes = ("-worker", "-worker2") if placement == "workers" else ("-control-plane",)
+    for suffix in suffixes:
         node = cluster + suffix
-        container_id = validate_worker(json.loads(command(['docker', 'inspect', node])), cluster, node)
+        container_id = validate_node(json.loads(command(['docker', 'inspect', node])), cluster, node, role)
         actual = command(['docker', 'exec', container_id, 'uname', '-m']).strip()
         if actual != {'arm64': 'aarch64', 'amd64': 'x86_64'}[architecture]:
-            raise ImageError('image and worker architectures differ')
-        workers.append((node, container_id))
+            raise ImageError('image and node architectures differ')
+        nodes.append((node, container_id))
     root = Path(output)
     if not root.is_absolute():
         raise ImageError('output must be a new absolute directory')
     root.mkdir(mode=0o700, exist_ok=False)
-    evidence = {'run_id': run_id, 'reference': reference, 'tag': tag, 'architecture': architecture, 'workers': []}
-    for node, container_id in workers:
+    evidence = {'run_id': run_id, 'reference': reference, 'tag': tag, 'architecture': architecture, 'placement': placement, 'nodes': [], 'workers': []}
+    for node, container_id in nodes:
         fd = os.open(root / (node + '.log'), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'wb') as log:
             stream_import(tag, architecture, container_id, log)
@@ -126,7 +139,10 @@ def load(inputs, tag, reference, output):
             command(prefix + ['tag', tag, reference])
         if digest_alias_needed(command(prefix + ['list']), tag, reference):
             raise ImageError('digest alias is not present after import')
-        evidence['workers'].append({'node': node, 'container_id': container_id, 'digest_alias_created': created})
+        record = {'node': node, 'container_id': container_id, 'digest_alias_created': created}
+        evidence['nodes'].append(record)
+        if role == 'worker':
+            evidence['workers'].append(record)
     fd = os.open(root / 'result.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, 'w') as stream:
         json.dump(evidence, stream, indent=2)
@@ -138,15 +154,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('inputs', 'tag', 'reference', 'output'):
         parser.add_argument('--' + name, required=True)
+    parser.add_argument("--placement", choices=("workers", "control-plane"), default="workers")
     args = parser.parse_args()
     def interrupted(_signum, _frame):
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, interrupted)
     try:
-        load(args.inputs, args.tag, args.reference, args.output)
+        load(args.inputs, args.tag, args.reference, args.output, args.placement)
     except (Exception, KeyboardInterrupt):
         raise SystemExit('Image load failed; inspect private evidence') from None
-    print('Verified pinned image and digest aliases on both owned workers')
+    print('Verified pinned image and digest aliases on owned ' + args.placement)
 
 
 if __name__ == '__main__':
