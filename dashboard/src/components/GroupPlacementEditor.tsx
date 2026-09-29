@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { GeneratorAssignmentSettings, SystemInventoryGenerator } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { isPositiveSafeInteger } from './generatorAssignmentValidation'
@@ -195,6 +195,7 @@ export default function GroupPlacementEditor({
   allowInherit = true,
   scope = 'group',
 }: Props) {
+  const placementId = useId()
   const rawMode = assignmentMode(assignment)
   const derivedMode: PlacementMode = !allowInherit && rawMode === 'inherit' ? 'auto' : rawMode
   const unsupportedGroupWeighted = scope === 'group' && (rawMode === 'region_weighted' || rawMode === 'load_zone_weighted')
@@ -240,12 +241,14 @@ export default function GroupPlacementEditor({
     ...(scope === 'scenario' && assignment?.recovery_spare_vusers !== undefined ? { recovery_spare_vusers: assignment?.recovery_spare_vusers } : {}),
   }
   const regionKeys = Array.from(new Set((generatorInventory || []).map(generator => generator.region?.trim()).filter((value): value is string => Boolean(value)))).sort()
-  const loadZoneKeys = Array.from(new Set((generatorInventory || []).map(generator => (
-    generator.labels?.load_zone
-    || generator.labels?.['topology.kubernetes.io/zone']
-    || generator.region
-    || ''
-  ).trim()).filter(Boolean))).sort()
+  // The controller resolves both weighting modes against target-spec regions
+  // (newRegionPlacementState). Inventory labels are capability metadata and do
+  // not define independently schedulable load zones.
+  const loadZoneKeys = regionKeys
+  // Topology is a configuration requirement; temporary utilization or health
+  // changes should not remove placement choices from an authored scenario.
+  const regionWeightingAvailable = regionKeys.length >= 2
+  const loadZoneWeightingAvailable = loadZoneKeys.length >= 2
 
   const setMode = (nextMode: PlacementMode) => {
     setLocalMode(nextMode)
@@ -405,13 +408,13 @@ export default function GroupPlacementEditor({
         </label>
         {scope === 'scenario' && (
           <>
-            <label className={mode === 'region_weighted' ? 'selected' : ''}>
-              <input type="radio" checked={mode === 'region_weighted'} onChange={() => setMode('region_weighted')} />
-              <span>Region-weighted placement</span>
+            <label className={`${mode === 'region_weighted' ? 'selected' : ''} ${!regionWeightingAvailable ? 'disabled' : ''}`}>
+              <input type="radio" aria-label="Region-weighted placement" aria-describedby={!regionWeightingAvailable ? `${placementId}-region-unavailable` : undefined} disabled={!regionWeightingAvailable} checked={mode === 'region_weighted'} onChange={() => setMode('region_weighted')} />
+              <span>Region-weighted placement{!regionWeightingAvailable && <small id={`${placementId}-region-unavailable`}>Requires generators in at least two configured regions.</small>}</span>
             </label>
-            <label className={mode === 'load_zone_weighted' ? 'selected' : ''}>
-              <input type="radio" checked={mode === 'load_zone_weighted'} onChange={() => setMode('load_zone_weighted')} />
-              <span>Load-zone-weighted placement</span>
+            <label className={`${mode === 'load_zone_weighted' ? 'selected' : ''} ${!loadZoneWeightingAvailable ? 'disabled' : ''}`}>
+              <input type="radio" aria-label="Load-zone-weighted placement" aria-describedby={!loadZoneWeightingAvailable ? `${placementId}-zone-unavailable` : undefined} disabled={!loadZoneWeightingAvailable} checked={mode === 'load_zone_weighted'} onChange={() => setMode('load_zone_weighted')} />
+              <span>Load-zone-weighted placement{!loadZoneWeightingAvailable && <small id={`${placementId}-zone-unavailable`}>Requires generators in at least two configured load zones.</small>}</span>
             </label>
           </>
         )}

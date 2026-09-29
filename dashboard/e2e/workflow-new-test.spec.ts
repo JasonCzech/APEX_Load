@@ -1,6 +1,62 @@
 import { test, expect, seedScript, seedScenario, login } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
+for (const topology of ['missing', 'single-region', 'multi-zone', 'multi-region'] as const) {
+  test(`Scenario builder gates weighted placement for ${topology} infrastructure`, async ({ page }, testInfo) => {
+    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+    const workspace = await createWorkspace(page.context().request)
+    await seedScript(page.context().request, workspace, 'Placement_HTTP')
+    await page.route('**/api/v1/system/inventory*', async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.generators = topology === 'missing' ? [] : ['a', 'b'].map(suffix => ({
+        target: `gen-${suffix}:9090`, generator_id: `gen-${suffix}`, status: 'connected',
+        region: topology === 'multi-region' ? `region-${suffix}` : 'east',
+        labels: { load_zone: topology === 'single-region' ? 'zone-a' : `zone-${suffix}` },
+        available_capacity: 100, active_vusers: 0, cpu_percent: 0, memory_bytes: 0,
+        goroutine_count: 0, cpu_limit_cores: 2, memory_limit_bytes: 1073741824, max_vusers: 100,
+      }))
+      await route.fulfill({ response, json: body })
+    })
+    await page.goto(`/#/tests?view=builder&${scopeQuery(workspace)}`)
+    await page.reload()
+    await page.getByPlaceholder('Scenario name').fill('Topology placement draft')
+    await page.getByRole('button', { name: 'Choose script for Group 1' }).click()
+    await page.getByRole('row').filter({ hasText: 'Placement_HTTP' }).getByRole('button', { name: 'Use for Group 1' }).click()
+    await page.getByLabel('Scenario builder steps').getByRole('button', { name: /^Run Settings/ }).click()
+    await page.getByRole('tab', { name: 'Controller/Generator', exact: true }).click()
+    const placement = page.locator('.scenario-root-placement-editor')
+    await expect(placement.getByRole('combobox', { name: 'Generator sharing' })).toHaveValue('shared')
+    const region = placement.getByRole('radio', { name: 'Region-weighted placement', exact: true })
+    const zone = placement.getByRole('radio', { name: 'Load-zone-weighted placement', exact: true })
+    if (topology === 'multi-region') {
+      await expect(region).toBeEnabled()
+      await region.check()
+      await expect(placement.getByLabel('Region region-a weight')).toHaveValue('1')
+      await expect(placement.getByLabel('Region region-b weight')).toHaveValue('1')
+    } else {
+      await expect(region).toBeDisabled()
+      await expect(region).toHaveAccessibleDescription('Requires generators in at least two configured regions.')
+    }
+    if (topology === 'multi-region') {
+      await expect(zone).toBeEnabled()
+      await zone.check()
+      await expect(placement.getByLabel('Load zone region-a weight')).toHaveValue('1')
+      await expect(placement.getByLabel('Load zone region-b weight')).toHaveValue('1')
+    } else {
+      await expect(zone).toBeDisabled()
+      await expect(zone).toHaveAccessibleDescription('Requires generators in at least two configured load zones.')
+      // Bypass Playwright's enabled check to verify native disabled controls
+      // remain unchanged even when their labels receive a pointer click.
+      await region.locator('..').click({ force: true })
+      await zone.locator('..').click({ force: true })
+      await expect(placement.getByRole('radio', { name: 'Automatic placement', exact: true })).toBeChecked()
+    }
+    await page.setViewportSize({ width: 850, height: 1000 })
+    await placement.screenshot({ path: testInfo.outputPath(`weighted-placement-${topology}.png`) })
+  })
+}
+
 test('Scenario builder preserves controller continuity and the recovery spare budget', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const request = page.context().request

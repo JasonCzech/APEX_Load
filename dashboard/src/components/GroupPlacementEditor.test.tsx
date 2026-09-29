@@ -284,6 +284,7 @@ describe('GroupPlacementEditor', () => {
     act(() => root.render(<AssignmentHarness initialAssignment={assignment} scope="scenario" />))
 
     expect(radio(label).checked).toBe(true)
+    expect(radio(label).disabled).toBe(true)
     expect(container.textContent).toContain(summary)
     expect(radio('Automatic placement').checked).toBe(false)
 
@@ -358,8 +359,57 @@ describe('GroupPlacementEditor', () => {
     expect(serialized).toMatchObject({ mode: 'region_weighted', region_weights: { east: 70, west: 1 }, tolerate_generator_loss: true })
   })
 
-  it('authors a load-zone weight without inventory', () => {
-    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} scope="scenario" />))
+  it.each<[string, Partial<SystemInventoryGenerator>[] | undefined, boolean, boolean]>([
+    ['missing inventory', undefined, false, false],
+    ['empty inventory', [], false, false],
+    ['unlabeled generators', [{}, {}], false, false],
+    ['blank topology', [{ region: ' ', labels: { load_zone: ' ' } }, { region: '' }], false, false],
+    ['one region and zone', [{ region: 'east', labels: { load_zone: 'blue' } }], false, false],
+    ['duplicate topology', [{ region: 'east', labels: { load_zone: 'blue' } }, { region: ' east ', labels: { load_zone: ' blue ' } }], false, false],
+    ['two regions with region fallback zones', [{ region: 'east' }, { region: 'west' }], true, true],
+    ['two schedulable regions sharing a metadata label', [{ region: 'east', labels: { load_zone: 'blue' } }, { region: 'west', labels: { load_zone: 'blue' } }], true, true],
+    ['two explicit load zones in one region', [{ region: 'east', labels: { load_zone: 'blue' } }, { region: 'east', labels: { load_zone: 'green' } }], false, false],
+    ['Kubernetes zones', [{ labels: { 'topology.kubernetes.io/zone': 'a' } }, { labels: { load_zone: ' ', 'topology.kubernetes.io/zone': 'b' } }], false, false],
+    ['busy or offline configured infrastructure', [{ region: 'east', available_capacity: 0 }, { region: 'west', status: 'unreachable' }], true, true],
+  ])('gates weighted options for %s', (_name, topology, regionsAvailable, zonesAvailable) => {
+    const inventory = topology?.map((fields, index) => ({ ...runtimeCapacityGenerator([]), target: `gen-${index}`, ...fields }))
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} availableTargets={['gen-a', 'gen-b']} generatorInventory={inventory} scope="scenario" />))
+    for (const [label, available] of [['Region-weighted placement', regionsAvailable], ['Load-zone-weighted placement', zonesAvailable]] as const) {
+      const option = radio(label)
+      expect(option.disabled).toBe(!available)
+      if (!available) {
+        expect(document.getElementById(option.getAttribute('aria-describedby') || '')?.textContent).toContain('Requires generators in at least two configured')
+        act(() => option.click())
+        expect(radio('Automatic placement').checked).toBe(true)
+        expect(container.querySelector('[data-testid="assignment-json"]')?.textContent).toBe('{"mode":"auto"}')
+      }
+    }
+    expect(radio('Automatic placement').disabled).toBe(false)
+    expect(radio('Pin to host(s)').disabled).toBe(false)
+  })
+
+  it('updates availability with inventory without clearing saved weights', () => {
+    const initialAssignment: GeneratorAssignmentSettings = { mode: 'region_weighted', region_weights: { east: 70, west: 30 } }
+    const render = (generatorInventory?: SystemInventoryGenerator[]) => act(() => root.render(
+      <AssignmentHarness initialAssignment={initialAssignment} generatorInventory={generatorInventory} scope="scenario" />,
+    ))
+    render()
+    expect(radio('Region-weighted placement').disabled).toBe(true)
+    render(['east', 'west'].map(region => ({ ...runtimeCapacityGenerator([]), target: region, region })))
+    expect(radio('Region-weighted placement').disabled).toBe(false)
+    expect(radio('Load-zone-weighted placement').disabled).toBe(false)
+    render([])
+    expect(radio('Region-weighted placement').disabled).toBe(true)
+    expect(radio('Load-zone-weighted placement').disabled).toBe(true)
+    expect(radio('Region-weighted placement').checked).toBe(true)
+    expect(JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')).toEqual(initialAssignment)
+    act(() => radio('Automatic placement').click())
+    expect(radio('Automatic placement').checked).toBe(true)
+  })
+
+  it('authors load-zone weights when the infrastructure is configured', () => {
+    const inventory = ['zone-a', 'zone-b'].map(zone => ({ ...runtimeCapacityGenerator([]), target: zone, region: zone, labels: { load_zone: 'metadata-only' } }))
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} generatorInventory={inventory} scope="scenario" />))
     act(() => radio('Load-zone-weighted placement').click())
 
     const name = container.querySelector<HTMLInputElement>('[aria-label="New placement weight name"]')
@@ -378,7 +428,7 @@ describe('GroupPlacementEditor', () => {
     act(() => add?.click())
 
     const serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
-    expect(serialized).toMatchObject({ mode: 'load_zone_weighted', load_zone_weights: { 'zone-a': 100 } })
+    expect(serialized).toMatchObject({ mode: 'load_zone_weighted', load_zone_weights: { 'zone-a': 100, 'zone-b': 1 } })
   })
 
   it('restricts weighted placement and generator-loss tolerance to scenario scope', () => {

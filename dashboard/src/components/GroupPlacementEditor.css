@@ -37,8 +37,20 @@
   margin-top: 12px;
 }
 
-.group-placement-editor .new-test-generator-option.disabled {
+.group-placement-editor .new-test-generator-option.disabled,
+.group-placement-editor .new-test-placement-toggle label.disabled {
   opacity: 0.62;
+}
+
+.group-placement-editor .new-test-placement-toggle label.disabled {
+  cursor: not-allowed;
+}
+
+.group-placement-editor .new-test-placement-toggle small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .group-placement-editor .new-test-generator-option span {
