@@ -3450,3 +3450,39 @@ and sizes matched the original manifest, the note persisted, the execution remai
 `remaining-e7fgcem4` root in `controller-refresh-4e4d235c`,
 `reviewed-controller-smoke-4e4d235c-cold-gate` and `publication-refresh-4e4d235c`.
 No physical multi-host or combined-loss qualification is implied.
+
+
+## Local archive finalization availability (2026-09-28 local time)
+
+Local recorder errors already preserved execution outcomes, but their durable
+availability record remained the generic unconfirmed marker and Results used
+remote-collection wording. The new specific reason `local_archive_failed` uses
+the existing identity/lease/publication fences. A process-local pending observation
+bridges recorder completion to durable terminalization and its existing retry;
+it is cleared after confirmed failure recording to avoid duplicate notifications.
+Already-durable aborts are recorded immediately. No execution error is rewritten,
+source removed, unbounded retry introduced or schema migration required. If the
+specific write fails, the durable unconfirmed marker remains the safe fallback.
+
+The initial backend fixture incorrectly introduced RUNNING rows before runner
+startup, triggering correct orphan reconciliation; the corrected fixture starts
+the runner first. Its four regressions then reproduced the missing specific reason
+with COMPLETE and ABORTED intact. The expanded fixed matrix adds FAILED, accepted
+raw-file preservation, restart readback, publication precedence, failed terminal
+writes and single-notification behavior; API/storage focused checks passed
+(2.098 / 0.989 seconds). UI regression reproduced the old wording; all 32 relevant
+Results unit tests pass. Type checking, lint and the embedded dashboard build pass
+on repository-pinned Node 22.22.0. Three race repetitions passed (API 26.170 /
+storage 32.096 seconds). The browser fixture initially used an unauthenticated
+workspace client, then retained stale project state after authenticated API
+seeding. Signing in before seeding and fully reloading the page fixed those
+fixture failures; both failed traces are preserved. Both auth profiles now pass
+the new Results workflow, including check-again and reload without execution
+restart; the existing three dev-admin execution-results workflows also pass.
+Screenshot capture disables the entrance animation for legible evidence. The full
+Go suite passed all 108 test-bearing packages (API test time 396.872 seconds),
+documentation checks passed for 69 active Markdown files, and scoped re-review
+found no further issues. Compressed logs and SHA-256 receipts are retained under
+`remaining-e7fgcem4/local-archive-failure-validation`; browser traces/screenshots
+are in `output/playwright/local-archive-20260928*`. This slice is locally verified;
+the running Docker controller remains revision `4e4d235c`.

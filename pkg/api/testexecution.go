@@ -5644,6 +5644,7 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	case "COMPLETE", "FAILED", "ABORTED":
 		releasePassiveOperationTokenLocked(test)
 		tr.mu.Unlock()
+		tr.recordLocalArchiveFailure(test)
 		return nil
 	}
 	if err := tr.persistStoredTestStatus(test.ID, test.executionFence, finalStatus, &endTime, finalError); err != nil {
@@ -5681,6 +5682,7 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	compactTerminalManagedTestLocked(test)
 	tr.mu.Unlock()
+	tr.recordLocalArchiveFailure(test)
 	if finalStatus == "FAILED" {
 		if err := tr.syncScenarioScheduleLifecycleForTest(test.ID); err != nil {
 			slog.Warn("terminal test transition could not refresh scenario occurrence cache", "test_id", test.ID, "error", err)

@@ -440,4 +440,13 @@ The merged output/publication limits deployed on controller `4e4d235c` passed a
 fresh PostgreSQL/Redis/S3 healthy-load and archive-integrity gate. A note-triggered
 refresh then committed a new immutable publication version with all available
 workload-data hashes unchanged and no controller restart. Aggregate backlog,
-local finalization-failure reporting and combined-loss recovery remain local work.
+and combined-loss recovery remain local work. Local finalization-failure reporting
+is implemented and verified below.
+
+
+Local capture/conversion finalization failures now have a specific durable reason
+and Results notice. Focused checks, three race repetitions, the full Go suite and
+both browser auth profiles pass; scoped re-review found no further issues. The observation follows terminal persistence,
+retains COMPLETE/FAILED/ABORTED, and survives the existing completion retry. Source
+bytes are preserved and publication/catalog state takes precedence. Aggregate
+backlog and combined-loss recovery remain separate implementation work.

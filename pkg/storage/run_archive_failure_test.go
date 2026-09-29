@@ -304,3 +304,33 @@ func TestRunArchiveFailureCompletionClearsPreviouslyCoexistingRecord(t *testing.
 		t.Fatalf("completion left old failure: %v", err)
 	}
 }
+
+func TestRunArchiveFailureLocalFinalizationReasons(t *testing.T) {
+	for _, status := range []string{"COMPLETE", "FAILED", "ABORTED"} {
+		t.Run(status, func(t *testing.T) {
+			s := newHAFencingStore(t)
+			f := seedArchiveFailureRun(t, s)
+			f.Status = status
+			f.Reason = RunArchiveFailureLocalFinalization
+			if err := s.UpdateTestStatus(f.TestID, status, &f.EndTime, ""); err != nil {
+				t.Fatal(err)
+			}
+			if saved, err := s.SaveRunArchiveFailure(f, "", ""); err != nil || !saved {
+				t.Fatal(saved, err)
+			}
+			got, err := s.GetRunArchiveFailure(f.TestID)
+			if err != nil || got.Reason != f.Reason || got.Status != status {
+				t.Fatal(got, err)
+			}
+			if err := s.SaveArchiveFinalizationJob(&ArchiveFinalizationJob{TestID: f.TestID, ProjectID: f.ProjectID, ArchiveRecord: RunArchiveRecord{TestID: f.TestID, CreatedAt: f.StartTime, CompletedAt: f.EndTime}}); err != nil {
+				t.Fatal(err)
+			}
+			if saved, err := s.SaveRunArchiveFailure(f, "", ""); err != nil || saved {
+				t.Fatal("local failure superseded pending publication", saved, err)
+			}
+			if _, err := s.GetRunArchiveFailure(f.TestID); !errors.Is(err, sql.ErrNoRows) {
+				t.Fatal("pending publication did not take precedence", err)
+			}
+		})
+	}
+}

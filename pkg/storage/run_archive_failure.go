@@ -11,6 +11,8 @@ import (
 // or publication. It makes a crash in that interval visible after restart.
 const RunArchiveFailureUnconfirmed = "archive_collection_unconfirmed"
 
+const RunArchiveFailureLocalFinalization = "local_archive_failed"
+
 const RunArchiveFailureRemoteCollection = "remote_collection_failed"
 const RunArchiveFailureRemoteUnavailable = "remote_collection_unavailable"
 
@@ -32,7 +34,7 @@ type RunArchiveFailure struct {
 func (s *SQLiteStore) SaveRunArchiveFailure(failure *RunArchiveFailure, leaseName, leaseOwner string) (bool, error) {
 	if failure == nil || strings.TrimSpace(failure.TestID) == "" || failure.StartTime.IsZero() || failure.EndTime.IsZero() ||
 		(failure.Status != "FAILED" && failure.Status != "ABORTED" && failure.Status != "COMPLETE") ||
-		(failure.Reason != RunArchiveFailureRemoteCollection && failure.Reason != RunArchiveFailureRemoteUnavailable) {
+		(failure.Reason != RunArchiveFailureRemoteCollection && failure.Reason != RunArchiveFailureRemoteUnavailable && failure.Reason != RunArchiveFailureLocalFinalization) {
 		return false, errors.New("invalid archive collection failure")
 	}
 	if (leaseName == "") != (leaseOwner == "") {

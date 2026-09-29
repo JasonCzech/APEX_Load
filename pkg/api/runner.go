@@ -454,6 +454,9 @@ func (tr *TestRunner) lockArchiveCommitFence(testID string) func() {
 }
 
 type ManagedTest struct {
+	// Protected by tr.mu; retained through terminal persistence retries.
+	localArchiveFinalizationFailed bool
+
 	TerminationMode       string `json:"termination_mode,omitempty"`
 	podCapacityEnabled    bool
 	ID                    string                            `json:"id"`

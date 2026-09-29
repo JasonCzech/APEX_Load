@@ -358,7 +358,15 @@ and footers. Conversions coordinate the free-space check with raw capture under 
 same archive root. The first write failure stops further output through that shared
 budget. Removed incomplete output stays charged for the attempt. Conversion does not
 modify source JSONL files. A failed conversion cannot publish a complete manifest.
-Local conversion failures preserve the execution outcome. Distributed merge/conversion
+Local conversion failures preserve the execution outcome. If local capture or
+conversion prevents finalization, the controller records `local_archive_failed`
+after the exact terminal run is durable. Results identifies this as a local
+finalization failure; it does not imply that a generator failed or that automatic
+reconstruction is running. Accepted raw files remain available when their writes
+succeeded. Terminal-write retries retain the pending observation on the same run.
+If the specific failure record cannot be saved after bounded retries, the existing
+durable unconfirmed marker remains the safe fallback. A pending publication or
+catalog record takes precedence. Distributed merge/conversion
 byte-limit and free-space rejection also preserve that outcome and record a durable
 archive-failure marker; missing or invalid required sources keep the existing strict
 failure behavior. Local raw capture remains on disk; distributed collection retains its existing source-cache

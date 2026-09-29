@@ -18,17 +18,39 @@ func (tr *TestRunner) archiveFailureStore() runArchiveFailureStore {
 	return store
 }
 
+func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason string) {
+	tr.recordRunArchiveFailure(test, reason)
+}
+
+// Called under the archive fence after local finalization, and again after a
+// successful terminal commit. A failed terminal write keeps the pending signal
+// on the same run for the existing completion retry; the durable unconfirmed
+// marker remains the safe fallback if recording the specific reason fails.
+func (tr *TestRunner) recordLocalArchiveFailure(test *ManagedTest) {
+	tr.mu.RLock()
+	pending := test != nil && tr.tests[test.ID] == test && test.localArchiveFinalizationFailed
+	tr.mu.RUnlock()
+	if !pending || !tr.recordRunArchiveFailure(test, storage.RunArchiveFailureLocalFinalization) {
+		return
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test {
+		test.localArchiveFinalizationFailed = false
+	}
+	tr.mu.Unlock()
+}
+
 // The caller holds the run's archive commit fence. Recording a collection failure
 // never rewrites the already durable execution outcome or creates a publication job.
-func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason string) {
+func (tr *TestRunner) recordRunArchiveFailure(test *ManagedTest, reason string) bool {
 	store := tr.archiveFailureStore()
 	if store == nil {
-		return
+		return false
 	}
 	tr.mu.RLock()
 	if test == nil || tr.tests[test.ID] != test || !isTerminalTestStatus(test.Status) || test.EndedAt == nil || test.Archive != nil {
 		tr.mu.RUnlock()
-		return
+		return false
 	}
 	failure := &storage.RunArchiveFailure{TestID: test.ID, ProjectID: test.ProjectID, StartTime: test.CreatedAt,
 		EndTime: *test.EndedAt, Status: test.Status, Reason: reason}
@@ -37,7 +59,7 @@ func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason strin
 	leaseName := ""
 	if tr.durableExecutionFence {
 		if leaseOwner == "" {
-			return
+			return false
 		}
 		leaseName = executionLeaseName
 	} else {
@@ -50,22 +72,22 @@ func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason strin
 		return err
 	})
 	if err != nil {
-		slog.Error("failed to persist remote archive collection failure", "test_id", failure.TestID, "error", err)
-		return
+		slog.Error("failed to persist archive finalization failure", "test_id", failure.TestID, "error", err)
+		return false
 	}
 	if !saved {
-		return
+		return false
 	}
 	stored, err := store.GetRunArchiveFailure(failure.TestID)
 	if err != nil || stored == nil || normalizeProjectID(stored.ProjectID) != normalizeProjectID(failure.ProjectID) || stored.Status != failure.Status ||
 		!archiveRunTimestampMatches(stored.StartTime, failure.StartTime, tr.testStore) || !archiveRunTimestampMatches(stored.EndTime, failure.EndTime, tr.testStore) {
-		return
+		return false
 	}
 	tr.mu.Lock()
 	if tr.tests[test.ID] != test || test.Archive != nil || test.EndedAt == nil || test.Status != failure.Status ||
 		normalizeProjectID(test.ProjectID) != normalizeProjectID(failure.ProjectID) || !test.CreatedAt.Equal(failure.StartTime) || !test.EndedAt.Equal(failure.EndTime) {
 		tr.mu.Unlock()
-		return
+		return false
 	}
 	event := cloneManagedTestLifecycleEvent(test)
 	tr.mu.Unlock()
@@ -75,6 +97,7 @@ func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason strin
 			"status": event.Status, "archive_failure": stored,
 		})
 	}
+	return true
 }
 
 // Hydrate only single-run terminal reads. Lists do not add an N+1 database scan.

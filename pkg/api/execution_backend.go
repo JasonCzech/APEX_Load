@@ -922,6 +922,16 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 			archiveRecord = nil
 		}
 	}
+	if archiveErr != nil && archiveRecord == nil && a.runner != nil && test != nil {
+		a.runner.mu.Lock()
+		if a.runner.tests[test.ID] == test {
+			test.localArchiveFinalizationFailed = true
+		}
+		a.runner.mu.Unlock()
+		// An operator abort may already be durable. Otherwise completion below
+		// records this reason only after its terminal row commits successfully.
+		a.runner.recordLocalArchiveFailure(test)
+	}
 	return archiveRecord, finalStatus, finalError
 }
 

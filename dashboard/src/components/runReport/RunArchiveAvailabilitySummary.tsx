@@ -4,6 +4,7 @@ import { executionDate } from './executionPresentation'
 function failureDescription(reason: string, historical = false): string {
   if (reason === 'archive_collection_unconfirmed' && historical) return 'Collection had not been confirmed when the run ended.'
   if (reason === 'archive_collection_unconfirmed') return 'The run ended before archive collection was confirmed. Collection may still be in progress or may have been interrupted.'
+  if (reason === 'local_archive_failed') return 'The controller could not finalize the local archive. Captured files may still be available for recovery.'
   if (reason === 'remote_collection_unavailable') return 'No generator archive was available when collection finished.'
   return 'The controller could not collect the generator archive.'
 }
@@ -29,7 +30,7 @@ export default function RunArchiveAvailabilitySummary({ failure, recovery }: { f
     <p>Retained controller records are available below and may be incomplete. Checking again refreshes archive availability; it does not restart collection.</p>
   </>
   if (failure) return <>
-    <h2>{failure.reason === 'archive_collection_unconfirmed' ? 'Archive collection unconfirmed' : 'Archive collection failed'}</h2>
+    <h2>{failure.reason === 'archive_collection_unconfirmed' ? 'Archive collection unconfirmed' : failure.reason === 'local_archive_failed' ? 'Local archive finalization failed' : 'Archive collection failed'}</h2>
     <p>{failureDescription(failure.reason)}</p><p>Recorded: {executionDate(failure.recorded_at)}</p>
     <p>Retained controller records are available below and may be incomplete. Checking again refreshes archive availability; it does not restart collection.</p>
   </>
