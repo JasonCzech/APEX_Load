@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path"
 	"sort"
 	"strings"
@@ -214,18 +216,33 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "failed to parse multipart form (max 100MB): "+err.Error())
 			return nil, false
 		}
-		file, _, err := r.FormFile("file")
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "missing 'file' field in multipart form: "+err.Error())
-			return nil, false
+		defer r.MultipartForm.RemoveAll()
+		if _, hasArchive := r.MultipartForm.File["file"]; hasArchive {
+			for field := range r.MultipartForm.File {
+				if strings.HasPrefix(field, "file:") {
+					writeError(w, http.StatusBadRequest, "upload either a ZIP archive or a VuGen folder, not both")
+					return nil, false
+				}
+			}
+			file, _, err := r.FormFile("file")
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "failed to read 'file' field: "+err.Error())
+				return nil, false
+			}
+			defer file.Close()
+			data, err = io.ReadAll(file)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
+				return nil, false
+			}
+		} else {
+			var err error
+			data, err = zipEnterpriseFolderUpload(r.MultipartForm.File)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid VuGen folder: "+err.Error())
+				return nil, false
+			}
 		}
-		defer file.Close()
-		body, err := io.ReadAll(file)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to read uploaded file: "+err.Error())
-			return nil, false
-		}
-		data = body
 		if harFile, _, err := r.FormFile("har_file"); err == nil {
 			defer harFile.Close()
 			harBody, readErr := io.ReadAll(harFile)
@@ -327,6 +344,88 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		},
 		ReadinessPolicy: enterprisearchive.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true
+}
+
+// zipEnterpriseFolderUpload turns browser directory selection into the same
+// bounded archive consumed by the existing converter. Logical paths travel in
+// multipart field names because multipart filenames discard directory paths.
+func zipEnterpriseFolderUpload(fields map[string][]*multipart.FileHeader) ([]byte, error) {
+	var names []string
+	headers := make(map[string]*multipart.FileHeader)
+	for field, files := range fields {
+		if !strings.HasPrefix(field, "file:") {
+			continue
+		}
+		if len(files) != 1 || files[0] == nil {
+			return nil, fmt.Errorf("each folder path must contain exactly one file")
+		}
+		name, err := url.PathUnescape(strings.TrimPrefix(field, "file:"))
+		if err != nil {
+			return nil, fmt.Errorf("invalid encoded folder path: %w", err)
+		}
+		names = append(names, name)
+		headers[name] = files[0]
+	}
+	if len(names) == 0 {
+		return nil, fmt.Errorf("select a VuGen folder containing a .usr project file")
+	}
+	if len(names) > enterprisearchive.MaxArchiveEntries {
+		return nil, fmt.Errorf("folder has %d files; limit is %d", len(names), enterprisearchive.MaxArchiveEntries)
+	}
+	sort.Strings(names)
+	validated, err := archiveingest.ValidateFilePaths(names, 33)
+	if err != nil {
+		return nil, fmt.Errorf("unsafe or duplicate folder path: %w", err)
+	}
+	root := strings.SplitN(validated[0], "/", 2)[0]
+	for _, name := range validated {
+		if !strings.HasPrefix(name, root+"/") {
+			return nil, fmt.Errorf("folder files must share one root directory")
+		}
+	}
+	var out bytes.Buffer
+	writer := zip.NewWriter(&out)
+	var total int64
+	var projectFiles int
+	for index, name := range validated {
+		if strings.HasSuffix(strings.ToLower(name), ".usr") {
+			projectFiles++
+		}
+		header := headers[names[index]]
+		if header.Size > enterprisearchive.MaxArchiveEntryBytes {
+			return nil, fmt.Errorf("%q exceeds the per-file size limit", name)
+		}
+		file, openErr := header.Open()
+		if openErr != nil {
+			return nil, fmt.Errorf("open %q: %w", name, openErr)
+		}
+		// Multipart bytes are already bounded. Store them without recompression
+		// so repetitive parameter data cannot trip the ZIP bomb ratio guard.
+		entry, createErr := writer.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store})
+		if createErr != nil {
+			_ = file.Close()
+			return nil, createErr
+		}
+		n, copyErr := io.Copy(entry, io.LimitReader(file, int64(enterprisearchive.MaxArchiveEntryBytes)+1))
+		_ = file.Close()
+		if copyErr != nil {
+			return nil, fmt.Errorf("read %q: %w", name, copyErr)
+		}
+		if n > enterprisearchive.MaxArchiveEntryBytes {
+			return nil, fmt.Errorf("%q exceeds the per-file size limit", name)
+		}
+		total += n
+		if total > enterprisearchive.MaxArchiveTotalBytes {
+			return nil, fmt.Errorf("folder exceeds the total size limit")
+		}
+	}
+	if projectFiles != 1 {
+		return nil, fmt.Errorf("expected one .usr project file, found %d", projectFiles)
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 // mergeEnterpriseArchiveZipWithSupplementalFiles rewrites the uploaded archive
@@ -445,7 +544,7 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 	}
 
 	totalBytes := 0
-	writeEntry := func(name string, body []byte) error {
+	writeEntry := func(name string, body []byte, method uint16) error {
 		if len(body) > enterprisearchive.MaxArchiveEntryBytes {
 			return fmt.Errorf("archive entry %q is %d bytes, limit is %d", name, len(body), enterprisearchive.MaxArchiveEntryBytes)
 		}
@@ -453,7 +552,7 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 		if totalBytes > enterprisearchive.MaxArchiveTotalBytes {
 			return fmt.Errorf("archive exceeds the %d uncompressed byte limit", enterprisearchive.MaxArchiveTotalBytes)
 		}
-		dst, createErr := writer.Create(name)
+		dst, createErr := writer.CreateHeader(&zip.FileHeader{Name: name, Method: method})
 		if createErr != nil {
 			return createErr
 		}
@@ -488,7 +587,7 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 			}
 			body = readBody
 		}
-		if err := writeEntry(fileName, body); err != nil {
+		if err := writeEntry(fileName, body, file.Method); err != nil {
 			return fail(err)
 		}
 	}
@@ -500,7 +599,7 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 	}
 	sort.Strings(remaining)
 	for _, name := range remaining {
-		if err := writeEntry(name, overrides[name]); err != nil {
+		if err := writeEntry(name, overrides[name], zip.Deflate); err != nil {
 			return fail(err)
 		}
 	}

@@ -236,6 +236,7 @@ type EnterpriseArchiveImportOptions = {
   project_id?: string
   har_file?: File
   supplemental_files?: File[]
+  folder_files?: File[]
   salesforce_native?: boolean
   expire_draft?: boolean
 }
@@ -687,7 +688,11 @@ export function useScriptApi() {
       const formData = new FormData()
       // The server authorizes scope before accepting archive bytes.
       if (options?.project_id) formData.append('project_id', options.project_id)
-      formData.append('file', file)
+      if (options?.folder_files?.length) {
+        options.folder_files.forEach(folderFile => {
+          formData.append(`file:${encodeURIComponent(importFileLogicalPath(folderFile))}`, folderFile, folderFile.name)
+        })
+      } else formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
       if (options?.supplemental_files?.length) {
         options.supplemental_files.forEach((supplementalFile) => {
@@ -719,7 +724,11 @@ export function useScriptApi() {
       const formData = new FormData()
       // The server authorizes scope before accepting archive bytes.
       if (options?.project_id) formData.append('project_id', options.project_id)
-      formData.append('file', file)
+      if (options?.folder_files?.length) {
+        options.folder_files.forEach(folderFile => {
+          formData.append(`file:${encodeURIComponent(importFileLogicalPath(folderFile))}`, folderFile, folderFile.name)
+        })
+      } else formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
       if (options?.supplemental_files?.length) {
         options.supplemental_files.forEach((supplementalFile) => {

@@ -71,6 +71,20 @@ describe('useScriptApi import wrappers', () => {
     },
   )
 
+  it.each(['importEnterpriseArchive', 'validateEnterpriseArchiveImport'] as const)(
+    '%s preserves VuGen folder paths without a ZIP upload', async method => {
+      const source = new File(['source'], 'Action.c')
+      const project = new File(['project'], 'Demo.usr')
+      Object.defineProperty(source, 'webkitRelativePath', { value: 'Demo/Action.c' })
+      Object.defineProperty(project, 'webkitRelativePath', { value: 'Demo/Demo.usr' })
+      await api[method](new File([], 'Demo'), { project_id: 'project-1', folder_files: [source, project] })
+      const body = (apiFetch as Mock).mock.calls[0][1].body as FormData
+      expect(Array.from(body.keys())).toEqual(['project_id', 'file:Demo%2FAction.c', 'file:Demo%2FDemo.usr'])
+      expect(body.has('file')).toBe(false)
+      expect((body.get('file:Demo%2FAction.c') as File).name).toBe(source.name)
+    },
+  )
+
   it.each(['importJMeter', 'validateJMeterImport'] as const)('%s authorizes the project before streaming file bytes', async method => {
     const file = new File(['<jmeterTestPlan/>'], 'plan.jmx')
     await api[method](file, { project_id: 'project-1', name: 'Orders' })

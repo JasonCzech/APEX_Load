@@ -483,10 +483,11 @@ function importOptionsIdentity(options: ImportOptions): string {
   return JSON.stringify(options)
 }
 
-function buildEnterpriseArchiveImportQueueItem(file: File, id: string): EnterpriseArchiveImportQueueItem {
+function buildEnterpriseArchiveImportQueueItem(file: File, id: string, folderFiles?: File[]): EnterpriseArchiveImportQueueItem {
   return {
     id,
     file,
+    folderFiles,
     harFile: null,
     supplementalFiles: [],
     lastRequiredFileCandidates: [],
@@ -561,6 +562,7 @@ type EnterpriseArchiveImportQueueStatus = 'queued' | 'validating' | 'validated' 
 interface EnterpriseArchiveImportQueueItem {
   id: string
   file: File
+  folderFiles?: File[]
   harFile: File | null
   supplementalFiles: File[]
   lastRequiredFileCandidates: RequiredFileCandidate[]
@@ -904,6 +906,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
   const apiRef = useRef(api)
   apiRef.current = api
   const fileRef = useRef<HTMLInputElement>(null)
+  const folderRef = useRef<HTMLInputElement>(null)
   const harFileRef = useRef<HTMLInputElement>(null)
   const supplementalFileRef = useRef<HTMLInputElement>(null)
   const dropzoneRef = useRef<HTMLDivElement>(null)
@@ -2170,6 +2173,34 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
     return zipFiles.length
   }, [invalidateOperationScopes])
 
+  const addFolderToQueue = useCallback((fileList?: FileList | null) => {
+    if (sourceMutationLockedRef.current) return
+    const files = Array.from(fileList || [])
+    if (files.length === 0) return
+    const roots = new Set(files.map(file => (file.webkitRelativePath || '').split('/')[0]))
+    if (roots.size !== 1 || files.some(file => !file.webkitRelativePath) ||
+        files.filter(file => file.name.toLowerCase().endsWith('.usr')).length !== 1) {
+      setError('Choose one VuGen script folder containing exactly one .usr project file.')
+      return
+    }
+    const retainedItemIds = retainedAtomicSaveRef.current?.entries.map(entry => entry.itemId) || []
+    if (retainedItemIds.length > 0) invalidateOperationScopes(retainedItemIds)
+    itemCounterRef.current += 1
+    const folderName = Array.from(roots)[0]
+    const displayFile = new File([], folderName, { type: 'application/x-directory' })
+    const id = `lr-import-${createReplaySessionId() || `${Date.now()}-${itemCounterRef.current}`}`
+    const item = buildEnterpriseArchiveImportQueueItem(displayFile, id, files)
+    setImportItems(items => [...items, item])
+    setSelectedItemId(id)
+    setError('')
+    setNotice('')
+  }, [invalidateOperationScopes])
+
+  useEffect(() => {
+    folderRef.current?.setAttribute('webkitdirectory', '')
+    folderRef.current?.setAttribute('directory', '')
+  }, [])
+
   useEffect(() => {
     if (initialFiles && initialFiles.length > 0) {
       addFilesToQueue(initialFiles)
@@ -2505,6 +2536,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           migration_block_statuses: buildMigrationBlockStatuses(reviewOptions),
           ...(reviewOptions.expire_draft ? { expire_draft: true } : {}),
           ...(item.harFile ? { har_file: item.harFile } : {}),
+          ...(item.folderFiles ? { folder_files: item.folderFiles } : {}),
           ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
         })
@@ -2681,6 +2713,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
           migration_block_statuses: buildMigrationBlockStatuses(options),
           ...(options.expire_draft ? { expire_draft: true } : {}),
           ...(item.harFile ? { har_file: item.harFile } : {}),
+          ...(item.folderFiles ? { folder_files: item.folderFiles } : {}),
           ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(options.salesforce_native ? { salesforce_native: true } : {}),
         })
@@ -3863,7 +3896,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
       <div className="lr-import-header">
         <div>
           <h2>Import Loadrunner Script Archive</h2>
-          <p className="lr-subtitle">Upload LoadRunner ZIP archives including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
+          <p className="lr-subtitle">Choose an uncompressed VuGen script folder or a LoadRunner ZIP archive, including source, runtime settings, parameter files, and dependencies. We detect the protocol and show what can be saved, what needs repair, and whether a runner is required. Import checks do not execute your script.</p>
         </div>
         {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
           invalidateOperationScopes()
@@ -3897,13 +3930,14 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         }}>
         <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
         <input ref={fileRef} type="file" accept=".zip" multiple disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
+        <input ref={folderRef} type="file" disabled={sourceMutationLocked} onClick={event => event.stopPropagation()} onChange={event => { addFolderToQueue(event.target.files); event.target.value = '' }} hidden />
         {queuedFileCount > 0 ? (
           <div className="lr-file-queue">
             <div className="lr-file-info">
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               <div>
-                <span className="lr-filename">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</span>
-                <span className="lr-filesize">Select an archive to review its result.</span>
+                <span className="lr-filename">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} ZIP file${queuedFileCount === 1 ? '' : 's'}`} queued</span>
+                <span className="lr-filesize">Select a source to review its result.</span>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={sourceMutationLocked} onClick={event => { event.stopPropagation(); handleBrowseArchives() }}>Add archives</button>
               </div>
               <button className="btn btn-sm btn-ghost" disabled={sourceMutationLocked} onClick={e => { e.stopPropagation(); clearQueuedFiles() }}>Clear All</button>
@@ -3962,7 +3996,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
                     <span className="lr-file-row-main">
                       <strong>{item.file.name}</strong>
                       <small className="lr-file-row-meta">
-                        {formatEnterpriseArchiveFileSize(item.file)} ·{' '}
+                        {item.folderFiles ? `${item.folderFiles.length} files` : formatEnterpriseArchiveFileSize(item.file)} ·{' '}
                         {reviewOutcome === 'Blocker'
                           ? <ImportIssueSeverityTag severity="blocker" />
                           : <span className={`lr-file-status-pill ${item.status}`}>
@@ -3998,6 +4032,10 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
             <span className="lr-drop-hint">or click to browse</span>
           </div>
         )}
+      </div>
+
+      <div className="lr-import-actions" style={actionWrapStyle}>
+        <button type="button" className="btn btn-secondary" disabled={sourceMutationLocked} onClick={() => folderRef.current?.click()}>Choose VuGen folder</button>
       </div>
 
       {queuedFileCount > 0 && (
@@ -4111,7 +4149,7 @@ export default function EnterpriseArchiveImport({ destinationControl, initialFil
         <div className="lr-import-actions-card">
           <div>
             <h3 className="lr-section-title">Validation / Conversion</h3>
-            <p className="lr-subtitle">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</p>
+            <p className="lr-subtitle">{importItems.some(item => item.folderFiles) ? `${queuedFileCount} source${queuedFileCount === 1 ? '' : 's'}` : `${queuedFileCount} ZIP file${queuedFileCount === 1 ? '' : 's'}`} queued</p>
           </div>
           <input ref={harFileRef} type="file" accept=".har,.json,application/json" disabled={sourceMutationLocked} onChange={handleHARFileSelect} hidden />
           <input ref={supplementalFileRef} type="file" accept=".java,.zip,.jar,.json,.txt" multiple disabled={sourceMutationLocked} onChange={handleSupplementalFileSelect} hidden />

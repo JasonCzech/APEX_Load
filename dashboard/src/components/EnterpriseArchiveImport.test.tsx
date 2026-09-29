@@ -4615,7 +4615,7 @@ describe('EnterpriseArchiveImport', () => {
 
     const fileInputs = Array.from(container.querySelectorAll('input[type="file"]')) as HTMLInputElement[]
     const zipInput = fileInputs[0]
-    const harInput = fileInputs[1]
+    const harInput = container.querySelector('input[accept=".har,.json,application/json"]') as HTMLInputElement | null
     expect(zipInput).toBeDefined()
     expect(harInput).toBeDefined()
     if (!zipInput || !harInput) {
