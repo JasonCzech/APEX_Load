@@ -340,8 +340,8 @@ be treated as a complete archive. No capacity failure deletes earlier evidence.
 This is a per-run raw-byte bound. It does not reserve the entire allowance on disk,
 limit aggregate concurrent capture or retained unpublished sources, or cover derived
 Parquet/CSV files, merge copies or publication backlog. Conversion and merge have
-separate per-attempt limits below; publication and aggregate admission remain separate
-work. Include filesystem overhead and other writers when sizing the volume; free-space
+separate per-attempt limits below, as does the private publication copy. Aggregate
+admission remains separate work. Include filesystem overhead and other writers when sizing the volume; free-space
 checks cannot enforce an `emptyDir.sizeLimit` smaller than its backing filesystem.
 
 ## Parquet and CSV conversion limits
@@ -366,8 +366,9 @@ and temporary-file lifecycle. CSV metadata records incomplete
 exports when their writes fail.
 
 This allowance covers format conversion only. Distributed merge uses its own
-allowance below. Report and publication copies, aggregate concurrent producer
-retention, and retained unpublished backlogs still require separate admission. A per-attempt conversion limit is not a
+allowance below. The private publication copy also has its own allowance. Report
+generation, aggregate concurrent producer retention, and retained unpublished
+backlogs still require separate admission. A per-attempt conversion limit is not a
 total archive-root quota.
 
 
@@ -395,5 +396,29 @@ manifest and final directory rename; Parquet writers sync their writable descrip
 
 This limits one merge attempt, not aggregate retained or concurrently produced archives.
 Physical free-space checks cannot enforce a smaller Kubernetes `emptyDir.sizeLimit`.
-Publication copies, aggregate producer/source backlog and report output remain separate
-admission work; no pressure-based deletion of unconfirmed evidence is introduced.
+Private publication copies have the separate allowance below. Aggregate producer/source
+backlog and report output remain separate admission work; no pressure-based deletion
+of unconfirmed evidence is introduced.
+
+
+## Private publication copy limits
+
+A refresh copies the immutable materialized archive into token-private staging
+before adding report artifacts. That copy freezes
+`APEXLOAD_ARCHIVE_PUBLICATION_MAX_BYTES` (default 64 GiB, maximum 128 GiB) and
+`APEXLOAD_ARCHIVE_PUBLICATION_MIN_FREE_BYTES` (default 64 MiB, maximum 1 PiB),
+both positive decimal integer byte counts. All declared artifacts and the manifest
+share the allowance. Physical writes use the same capacity fence as raw capture,
+merge and conversion, with bounded 64 KiB copy buffers and cancellation checks.
+
+The source is never modified. A source directory that aliases the destination is
+rejected before removing any files. On retry, the old destination manifest is removed
+and that removal synced before artifact replacement. The new manifest is copied to
+a temporary file and becomes visible only after artifact data and directory entries
+are synced. The run, token and publication directory entries are synced before
+successful return. Failed or canceled copies retain their original source and do
+not advertise a complete new copy; the existing finalization job remains retryable.
+
+This bounds the copy into publication staging. It does not bound later report or
+adjunct generation, outgoing object-store bytes, concurrent copies or total retained
+backlog. Those remain separate admission work. No source is deleted to make space.

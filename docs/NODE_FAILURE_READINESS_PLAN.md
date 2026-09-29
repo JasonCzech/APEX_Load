@@ -392,8 +392,10 @@ a complete manifest without changing the execution outcome. Distributed merge no
 has a shared output-byte allowance and a durability barrier. Focused tests, three
 race repetitions and the full 108-package Go suite pass. Output-capacity rejection
 preserves the completed execution outcome and records unavailable archive evidence.
-Publication copies and aggregate producer/backlog admission remain separate local
-implementation work.
+Private publication-copy admission now shares a frozen byte/free-space allowance
+across its data and manifest, preserves its source and commits the manifest last.
+Focused, repeated race and full-suite checks pass. Report generation and
+aggregate producer/backlog admission remain separate local implementation work.
 
 The first cold-spare attempt on controller `0870b95f` created the cross-worker pod
 but remained pending without injecting a fault. Inventory refresh now wakes the

@@ -608,8 +608,15 @@ func archivePublicationArtifactNames(ctx context.Context, record *storage.RunArc
 	if err != nil {
 		return nil, fmt.Errorf("validate archive publication manifest: %w", err)
 	}
-	names = append(names, runArchiveManifestFileName)
-	return names, nil
+	// Materialization includes the manifest in its artifact set. Publication
+	// must copy it exactly once, after all data artifacts.
+	dataNames := names[:0]
+	for _, name := range names {
+		if name != runArchiveManifestFileName {
+			dataNames = append(dataNames, name)
+		}
+	}
+	return append(dataNames, runArchiveManifestFileName), nil
 }
 
 // stageMaterializedArchiveForPublication makes a token-private writable copy of
@@ -620,9 +627,20 @@ func stageMaterializedArchiveForPublication(ctx context.Context, source *storage
 	if source == nil {
 		return "", "", fmt.Errorf("source archive record is required")
 	}
+	if err := validateArchiveRunID(source.TestID); err != nil {
+		return "", "", err
+	}
 	if err := validateArchiveIntentToken(intentToken); err != nil {
 		return "", "", err
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	outputBudget, err := newArchivePublicationBudget(resolveArchiveRoot())
+	if err != nil {
+		return "", "", err
+	}
+	outputBudget.ctx = ctx
 	names, err := archivePublicationArtifactNames(ctx, source)
 	if err != nil {
 		return "", "", err
@@ -636,13 +654,36 @@ func stageMaterializedArchiveForPublication(ctx context.Context, source *storage
 	if err != nil {
 		return "", "", err
 	}
+	sourceHandle, err := openArchiveDirectoryNoSymlink(source.ArchivePath)
+	if err != nil {
+		_ = targetHandle.Close()
+		return "", "", err
+	}
+	sourceInfo, sourceErr := sourceHandle.Stat(".")
+	targetInfo, targetErr := targetHandle.Stat(".")
+	closeSourceErr := sourceHandle.Close()
+	if err := errors.Join(sourceErr, targetErr, closeSourceErr); err != nil {
+		_ = targetHandle.Close()
+		return "", "", err
+	}
+	if os.SameFile(sourceInfo, targetInfo) {
+		_ = targetHandle.Close()
+		return "", "", errors.New("publication copy cannot replace its source")
+	}
 	if err := targetHandle.Remove(runArchiveManifestFileName); err != nil && !os.IsNotExist(err) {
 		_ = targetHandle.Close()
 		return "", "", fmt.Errorf("clear prior publication commit marker: %w", err)
 	}
-	if err := targetHandle.Close(); err != nil {
+	defer targetHandle.Close()
+	// Persist removal before overwriting artifacts from an earlier attempt.
+	if err := syncArchiveMergeDirectory(targetRoot); err != nil {
 		return "", "", err
 	}
+	manifestTemp, err := archiveTemporaryName(".", runArchiveManifestFileName)
+	if err != nil {
+		return "", "", err
+	}
+	defer targetHandle.Remove(manifestTemp)
 
 	for _, name := range names {
 		if err := ctx.Err(); err != nil {
@@ -652,12 +693,22 @@ func stageMaterializedArchiveForPublication(ctx context.Context, source *storage
 		if err != nil {
 			return "", "", fmt.Errorf("open source archive artifact %s: %w", name, err)
 		}
-		destination, err := replaceArchiveArtifactForWrite(targetRoot, name, 0o644, true)
+		destinationName := name
+		if name == runArchiveManifestFileName {
+			// The commit marker becomes visible only after every artifact and
+			// the bounded manifest copy have been flushed successfully.
+			destinationName = manifestTemp
+			if err := syncArchiveMergeDirectories(targetRoot); err != nil {
+				_ = sourceFile.Close()
+				return "", "", err
+			}
+		}
+		destination, err := replaceArchiveArtifactForWrite(targetRoot, destinationName, 0o644, true)
 		if err != nil {
 			_ = sourceFile.Close()
 			return "", "", fmt.Errorf("create private archive artifact %s: %w", name, err)
 		}
-		_, copyErr := copyArchiveArtifactContext(ctx, destination, sourceFile)
+		_, copyErr := copyArchiveArtifactContext(ctx, &archiveOutputFile{file: destination, budget: outputBudget}, sourceFile)
 		sourceCloseErr := sourceFile.Close()
 		if copyErr == nil {
 			copyErr = destination.Sync()
@@ -673,8 +724,22 @@ func stageMaterializedArchiveForPublication(ctx context.Context, source *storage
 			return "", "", destinationCloseErr
 		}
 	}
-	if err := syncArchiveDirectory(targetRoot); err != nil {
+	if err := ctx.Err(); err != nil {
 		return "", "", err
+	}
+	if _, err := inspectArchiveArtifactTarget(targetHandle, runArchiveManifestFileName, true); err != nil {
+		return "", "", err
+	}
+	if err := targetHandle.Rename(manifestTemp, runArchiveManifestFileName); err != nil {
+		return "", "", err
+	}
+	// Persist the newly created run, token and publication directory entries
+	// as well as the manifest entry before advertising this copy as staged.
+	for _, directory := range []string{targetRoot, filepath.Dir(targetRoot), filepath.Dir(filepath.Dir(targetRoot)), outputBudget.root} {
+		if err := syncArchiveMergeDirectory(directory); err != nil {
+			_ = targetHandle.Remove(runArchiveManifestFileName)
+			return "", "", err
+		}
 	}
 	return targetRoot, filepath.Join(targetRoot, runArchiveManifestFileName), nil
 }

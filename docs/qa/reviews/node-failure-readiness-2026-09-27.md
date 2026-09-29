@@ -3403,3 +3403,26 @@ Private evidence lives under
 failures with a surviving leader, PostgreSQL, Redis, KEDA and S3 fixture. They do
 not qualify combined leader/generator loss, independent physical hosts, CSI recovery,
 permanent node/zone loss or managed database replication.
+
+
+## Private publication-copy admission (2026-09-28)
+
+The next slice adds a frozen per-attempt byte/free-space allowance across the
+immutable-cache copy's artifacts and manifest, reusing the shared output fence.
+Regression coverage includes byte rejection, manifest-inclusive charging, free-space
+rejection, cancellation, prior-marker removal and retry from an unchanged source.
+Review also identified a source/destination directory alias that could remove the
+source manifest before copying; a same-inode guard and preservation test are included.
+Review also found a duplicate manifest in the artifact list, exposing the local copy
+marker before later files and charging it twice; the list now places it exactly once
+at the end. Run IDs are validated before staging. The initial regression run reproduced
+byte/free-space bypass and source-alias damage. Its canceled-copy retry assertion also
+needed macOS `/var` versus `/private/var` path normalization; that fixture correction
+is separate from the product findings. The first fixed focused run passed (3.097 seconds). The expanded matrix includes
+nested files and a multi-chunk partial copy; it passed (3.115 seconds), followed
+by three race repetitions (34.987 seconds).
+The draft keeps its manifest temporary until copied artifacts and nested directories
+are durable, then syncs the publication path's new directory entries. It does not
+claim to bound later report generation or aggregate source backlog. The full Go suite passed all 108 test-bearing packages
+(API 388.943 seconds), and documentation checks passed for 69 active Markdown
+files. Scoped re-review found no further issues.
