@@ -4253,3 +4253,9 @@ containers remained healthy.
 After disk space recovered, the full repository
 `go test -p 2 -ldflags='-s -w' ./...` suite passed on the committed
 successor-outcome fix, closing the earlier local full-suite validation gap.
+
+On a later read-only check of the original disposable kind cluster, all three
+nodes were Ready, the controller Deployment was 2/2 Available, and the
+generator, PostgreSQL, Redis, and S3 workloads were Ready. Both controllers
+returned HTTP 200 from their readiness probes. The prior DNS timeout had
+cleared by this observation; its cause and clearing event were not established.
