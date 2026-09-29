@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/internal/archivequota"
 )
 
 // generatorArchiveNamespace is an opened, stable generator directory. All
@@ -33,6 +35,9 @@ func prepareGeneratorArchiveNamespace(generatorID string, create bool) (*generat
 	namespace := ""
 	if generatorID != "" {
 		namespace = sanitizeArchiveNamespace(generatorID)
+		if archivequota.IsReservedName(namespace) {
+			return nil, fmt.Errorf("generator namespace is reserved for archive backlog accounting")
+		}
 		if err := validateArchiveNamespace(namespace); err != nil {
 			return nil, fmt.Errorf("invalid generator archive namespace: %w", err)
 		}

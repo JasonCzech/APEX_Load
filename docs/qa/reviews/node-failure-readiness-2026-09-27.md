@@ -3503,3 +3503,29 @@ Compressed logs with SHA-256 receipts are retained under
 `remaining-e7fgcem4/archive-adjunct-validation`. Docker deployment verification
 remains pending; the running controller is still `4e4d235c`.
 This change does not claim to bound serialization memory or aggregate retained data.
+
+
+## Generator retained-backlog admission (2026-09-28 local time)
+
+The initial regressions reproduced missing aggregate retained-data/configuration
+admission and run-ID reuse of the new reserved bookkeeping name. Generator writes
+now use incremental, durable reservations across processes rather than reserving
+each run's maximum in advance. Existing raw/Parquet/manifest byte and free-space
+checks remain in force; joined completion/discard retires only its own reservation.
+Crash reservations remain charged and normal retention skips the bookkeeping directory.
+
+Review found that a differently capitalized bookkeeping directory on this Mac's
+case-insensitive filesystem was counted as ordinary payload instead of reservation
+metadata. A regression reproduced the undercount; inventory now recognizes the
+bookkeeping inode. A separate generator-name test incorrectly expected a colon to
+survive sanitization; correcting that expectation is a fixture repair. Both initial
+failed logs are preserved. The corrected full affected-package run passed
+(archivequota 9.387 seconds; generatorrpc 37.973 seconds), including independent
+processes, abrupt exit, small/lowered quotas, unknown payload, cancellation,
+replaced identities, bounded inventories and retention protection. Three race
+repetitions passed (archivequota 36.716 seconds; selected generator checks 2.629
+seconds), followed by all 109 Go test-bearing packages (API 389.859 seconds) and
+documentation checks for 69 active Markdown files. Scoped re-review found no further
+issues. Compressed logs with SHA-256 receipts are retained under
+`remaining-e7fgcem4/generator-backlog-validation`. Controller aggregate backlog remains
+unimplemented; no new Docker qualification is claimed yet.

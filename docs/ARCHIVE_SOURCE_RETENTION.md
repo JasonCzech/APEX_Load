@@ -455,3 +455,43 @@ No source data is deleted to make space.
 This bounds metadata output on disk. It does not bound JSON serialization memory,
 streamed PDF/CSV/DOCX exports, aggregate concurrent writers or retained backlog.
 It also does not replace a filesystem or Kubernetes ephemeral-storage quota.
+
+
+## Generator retained-backlog admission
+
+Each generator archive namespace now admits incremental growth against
+`APEXLOAD_GENERATOR_ARCHIVE_BACKLOG_MAX_BYTES` (default 512 GiB, positive integer
+bytes up to 1 PiB). A recorder freezes its setting at creation; invalid configuration
+rejects writer creation. This counts all regular-file payload in that generator's
+namespace, including completed archives, crash leftovers and unknown retained files.
+It is separate from the existing per-run byte, free-space, TTL and archive-count
+limits. Multiple generator namespaces or unrelated scratch users on one volume
+still need a combined storage allocation below that volume's limit.
+
+Writers claim at most 4 MiB at a time under a cross-process file lock, reducing
+the claim when a smaller quota has less room. The claim is durable before writing.
+Its entire amount stays charged until the writer refills or closes, conservatively
+double-counting up to one chunk of already-written data per active recorder.
+Inventory is performed at refill, not on every record, and refuses symbolic links,
+special files, more than 100,000 entries or more than 16 directory levels. Unknown
+or malformed reservation metadata also fails admission. A lower configuration
+applies to new recorders; existing writers retain their frozen limit and reservations.
+Quiesce older writers when enforcing a lower namespace limit immediately. Every
+writer sharing this namespace must support this admission protocol; an older binary
+writing to the same root is not covered during a mixed-version upgrade.
+
+`.apexload-backlog` is reserved bookkeeping, protected from run-ID reuse and ordinary
+retention sweeps. Inventory recognizes its inode even on case-insensitive filesystems.
+Normal completion or joined discard removes only the writer's unchanged reservation.
+A crash or uncertain cleanup leaves the reservation charged; age does not establish
+that its owner stopped. Preserve lock inodes, and quiesce every process using the
+namespace before manually reconciling crash reservations and retained source evidence.
+
+Quota pressure does not delete other completed or unknown archives. The existing
+failed-recorder path still fails the active execution and discards its incomplete
+archive; ordinary generator TTL/count retention remains unchanged. Failure to retire
+a reservation after successful finalization preserves the completed source and logs
+the retained charge. Payload accounting excludes small bookkeeping files, directory
+entries and filesystem allocation overhead. Keep headroom for those costs and set
+the quota below the actual volume or `emptyDir` allocation. Controller source and
+publication backlog admission remains separate implementation work.

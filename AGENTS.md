@@ -78,7 +78,7 @@ pkg/
   importsession/ — Importer-neutral protected policy-governed inspection sessions
   importartifact/ — Content-addressed, encrypted immutable source bundles for governed runners
   fileasset/     — Bounded local file/asset opening for import paths
-  internal/      — Cross-package internal guards: archiveingest, boundedcache, boundedtext, diskspace,
+  internal/      — Cross-package internal guards: archiveingest, archivequota, boundedcache, boundedtext, diskspace,
                    filelock, subprocessguard, zipbounds
 api/
   proto/         — gRPC protobuf definitions (controller ↔ generator)

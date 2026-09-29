@@ -2,6 +2,7 @@ package generatorrpc
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/archivequota"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/internal/diskspace"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -416,6 +418,7 @@ func (w *archiveRecorder) setTerminalMetrics(batch *pb.MetricsBatch) error {
 }
 
 type generatorArchiveByteBudget struct {
+	backlog       *archivequota.Budget
 	mu            sync.Mutex
 	root          string
 	maxBytes      int64
@@ -514,7 +517,15 @@ func (b *generatorArchiveByteBudget) writeTo(destination io.Writer, content []by
 	if b.knownFree < b.minFreeBytes || length > b.knownFree-b.minFreeBytes {
 		return 0, fmt.Errorf("generator archive free space would fall below reserve %d", b.minFreeBytes)
 	}
-	n, err := destination.Write(content)
+	var n int
+	var err error
+	if b.backlog == nil {
+		n, err = destination.Write(content)
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		n, err = b.backlog.Write(ctx, destination, content)
+		cancel()
+	}
 	if n < 0 || n > len(content) {
 		return 0, fmt.Errorf("generator archive writer returned invalid byte count %d", n)
 	}
@@ -694,6 +705,16 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 	if namespace == nil || namespace.root == nil {
 		return nil, fmt.Errorf("generator archive namespace is unavailable")
 	}
+	backlog, err := newGeneratorArchiveBacklog(namespace.root)
+	if err != nil {
+		return nil, err
+	}
+	keepBacklog := false
+	defer func() {
+		if !keepBacklog {
+			_ = closeGeneratorArchiveBacklog(backlog)
+		}
+	}()
 	_, existingErr := namespace.root.Lstat(testID)
 	if existingErr == nil {
 		// No indexed completed archive may reach recorder creation (AssignWork
@@ -703,6 +724,11 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 		staleRoot, staleIdentity, openErr := openGeneratorArchiveRun(namespace, testID, false)
 		if openErr != nil {
 			return nil, fmt.Errorf("open stale archive dir: %w", openErr)
+		}
+		ledgerInfo, ledgerErr := namespace.root.Lstat(archivequota.DirectoryName)
+		if ledgerErr != nil || os.SameFile(staleIdentity, ledgerInfo) {
+			_ = staleRoot.Close()
+			return nil, fmt.Errorf("archive run aliases backlog ledger or ledger is unavailable")
 		}
 		_ = staleRoot.Close()
 		if removeErr := removeGeneratorArchiveRun(namespace, testID, staleIdentity); removeErr != nil {
@@ -718,7 +744,8 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 	}
 	archiveDir := filepath.Join(namespace.path, testID)
 	budget := &generatorArchiveByteBudget{
-		root: archiveDir, maxBytes: configuredGeneratorArchiveMaxBytes(),
+		backlog: backlog,
+		root:    archiveDir, maxBytes: configuredGeneratorArchiveMaxBytes(),
 		minFreeBytes: configuredGeneratorArchiveMinFreeBytes(),
 		sharedFree:   namespace.freeBudget,
 	}
@@ -773,6 +800,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 		return nil, fmt.Errorf("open summaries archive: %w", err)
 	}
 
+	keepBacklog = true
 	return &archiveRecorder{
 		manifest: archiveManifest{
 			SchemaVersion:                archiveSchemaVersion,
@@ -806,6 +834,7 @@ func newArchiveRecorderInNamespace(namespace *generatorArchiveNamespace, testID 
 // incomplete archive directory. A failed archive must not become an untracked
 // on-disk leak or expose a partial manifest to the controller.
 type archiveRecorderCleanup struct {
+	backlog       *archivequota.Budget
 	files         []*os.File
 	namespace     *generatorArchiveNamespace
 	runRoot       *os.Root
@@ -825,6 +854,10 @@ func (w *archiveRecorder) detachCleanupLocked() archiveRecorderCleanup {
 		rootDir:       w.rootDir,
 		ownsNamespace: w.ownsNamespace,
 	}
+	if w.byteBudget != nil {
+		cleanup.backlog = w.byteBudget.backlog
+		w.byteBudget.backlog = nil
+	}
 	w.txFile = nil
 	w.resourceFile = nil
 	w.summaryFile = nil
@@ -841,6 +874,9 @@ func (c archiveRecorderCleanup) run() error {
 				failures = append(failures, err)
 			}
 		}
+	}
+	if err := closeGeneratorArchiveBacklog(c.backlog); err != nil {
+		failures = append(failures, err)
 	}
 	if c.runRoot != nil {
 		if err := c.runRoot.Close(); err != nil && !errors.Is(err, os.ErrClosed) {
@@ -923,6 +959,9 @@ const (
 )
 
 func validateArchiveTestID(testID string) error {
+	if archivequota.IsReservedName(testID) {
+		return fmt.Errorf("test id is reserved for archive backlog accounting")
+	}
 	if testID == "" {
 		return fmt.Errorf("test id is empty")
 	}
@@ -1342,6 +1381,7 @@ func (w *archiveRecorder) Finalize(status string, completedAt time.Time, errStr 
 		return nil, err
 	}
 	w.runRoot = nil
+	w.closeFinalizedBacklog()
 	if w.ownsNamespace {
 		if err := w.namespace.close(); err != nil {
 			// The archive has already been fully synced and verified. A directory
