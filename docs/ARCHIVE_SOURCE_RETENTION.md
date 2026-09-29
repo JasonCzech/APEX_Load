@@ -275,7 +275,12 @@ be resolved by deleting unconfirmed evidence. This option does not enable source
 It does not replicate generator raw files, recover lost execution ownership, or
 qualify physical CSI detach/reattach, permanent-node or zone failures. The local
 cross-process test exercises shared-directory locking and publication after process
-loss; production multi-host storage qualification remains required.
+loss. The opt-in `postgres_integration` test additionally replays publication
+from a fresh process against PostgreSQL and S3-compatible storage, using
+`APEXLOAD_TEST_POSTGRES_URL`, `APEXLOAD_TEST_ARCHIVE_S3=1`, and explicit
+`APEXLOAD_ARCHIVE_ENDPOINT`/bucket/region and AWS test credentials. Both tests
+share a directory on one host; production multi-host storage qualification
+remains required.
 
 ## Controller transfer capacity
 

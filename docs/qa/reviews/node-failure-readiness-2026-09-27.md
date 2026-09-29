@@ -3717,6 +3717,27 @@ cluster is preserved stopped with its volumes. The first restoration wait incorr
 included historical failed pods; readiness was then verified against all desired
 Deployments/StatefulSets, three stable node snapshots, DNS resolution and idle SQL state.
 
-Resumable combined-loss recovery, shared-staging replay and deployed interruption
-qualification remain separate work. This guard deliberately fails closed rather than
-replaying unconfirmed replacement progress.
+Resumable combined-loss recovery, deployed shared-staging replay and deployed
+interruption qualification remain separate work. This guard deliberately fails
+closed rather than replaying unconfirmed replacement progress.
+
+## PostgreSQL/S3 shared-staging process replay (2026-09-29)
+
+Added an opt-in `postgres_integration` regression that uses real PostgreSQL 16,
+S3-compatible object storage, two independent controller processes and one shared
+POSIX staging tree. The first process publishes objects, then an injected catalog
+failure leaves a prepared manifest and durable outbox intent. A second publisher
+times out on the source lock without changing staged bytes. After the first process
+is killed, a fresh process replays the intent and a second fresh process verifies
+idempotence. The test checks that no catalog existed before replay, that the source
+lock inode survived, that S3 materialization matches the committed manifest SHA-256,
+that the outbox cleared, and that the terminal PostgreSQL row stayed COMPLETE.
+
+Review of the initial fixture found that its S3 bucket was absent and adjunct
+preparation was disabled, so it could fail before the intended interruption. The
+test now creates the disposable bucket and requires the exact injected catalog
+error before signaling the crash point. Three consecutive runs passed against
+isolated, disposable PostgreSQL and S3 containers; their private evidence is under
+`artifacts/scalability/2026-09-29/shared-staging-pg-s3-c725ec9930`.
+This is same-host cross-process replay, not a deployed multi-node RWX/CSI or
+physical-node failure qualification. Those release gates remain open.
