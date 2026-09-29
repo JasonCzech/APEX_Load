@@ -4249,3 +4249,7 @@ both controllers remained in CrashLoopBackOff. Restarting kube-proxy and
 CoreDNS did not clear that timeout, so application readiness in the original
 cluster is not claimed. The separate Docker Compose PostgreSQL and Redis
 containers remained healthy.
+
+After disk space recovered, the full repository
+`go test -p 2 -ldflags='-s -w' ./...` suite passed on the committed
+successor-outcome fix, closing the earlier local full-suite validation gap.
