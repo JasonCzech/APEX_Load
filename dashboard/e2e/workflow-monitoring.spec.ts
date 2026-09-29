@@ -71,6 +71,11 @@ test('Monitoring preserves repeated keyboard navigation and calendar context', a
   await page.goto(`/#/monitoring?${scopeQuery(workspace)}`)
   // Refresh the workspace inventory after API fixture creation in an already signed-in page.
   await page.reload()
+  const controlPlane = page.locator('[data-card-id="system-health"]')
+  await expect(controlPlane.locator('.monitor-build-heading')).toBeVisible()
+  await expect(controlPlane.locator('.monitor-build-row')).toHaveCount(3)
+  await expect(controlPlane.locator('.monitor-build-date')).toHaveCount(3)
+  await expect(controlPlane).not.toContainText('0.0.0.0:8080')
   const tabs = page.getByRole('tablist', { name: 'Monitor categories' })
   await tabs.getByRole('tab', { name: 'Overview', exact: true }).focus()
   for (const name of ['Fleet', 'Telemetry', 'Alerts', 'Schedules']) {
@@ -80,6 +85,10 @@ test('Monitoring preserves repeated keyboard navigation and calendar context', a
   await page.getByRole('button', { name: 'Day', exact: true }).click()
   await page.getByRole('button', { name: 'Cron', exact: true }).click()
   await page.getByRole('checkbox', { name: 'Show queued runs', exact: true }).uncheck()
+  await tabs.getByRole('tab', { name: 'Alerts', exact: true }).click()
+  const incidentHistory = page.locator('.monitor-incident-history')
+  await expect(incidentHistory.getByRole('heading', { name: 'Shared SLA incident history' })).toBeVisible()
+  await expect(incidentHistory.getByRole('searchbox', { name: 'Search incidents' })).toBeVisible()
   await tabs.getByRole('tab', { name: 'Telemetry', exact: true }).click()
   await expect(page.getByRole('region', { name: 'Datasource evidence' })).toBeVisible()
   await tabs.getByRole('tab', { name: 'Schedules', exact: true }).click()

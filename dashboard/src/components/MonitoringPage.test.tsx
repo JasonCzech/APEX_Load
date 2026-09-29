@@ -351,6 +351,9 @@ describe('MonitoringPage', () => {
     expect(controllerRow.textContent).toContain('v1.2.3')
     expect(controllerRow.textContent).toContain('Built')
     expect(controllerRow.textContent).toContain('2026')
+    expect(controllerRow.querySelector('.monitor-build-date')?.textContent).toContain(':')
+    expect(systemCard!.querySelector('details.monitor-build-details')).toBeNull()
+    expect(systemCard!.querySelector('.monitor-build-heading')?.textContent).toBe('Versions and build details')
     expect(buildRows[1].textContent).toMatch(/v\d+\.\d+\.\d+/)
     expect(buildRows[1].textContent).not.toContain('Built -')
     expect(buildRows[2].textContent).toContain('v0.1.0')
@@ -380,8 +383,24 @@ describe('MonitoringPage', () => {
     expect(controlPlaneCard!.textContent).toContain('Instance')
     expect(controlPlaneCard!.textContent).toContain('controller-1')
     expect(controlPlaneCard!.textContent).toContain('Address')
-    expect(controlPlaneCard!.textContent).toContain(':8080')
+    expect(controlPlaneCard!.textContent).toContain(window.location.host)
     expect(controlPlaneCard!.textContent).toContain('Restart Controller')
+  })
+
+  it('shows a readable controller instance name and browser-reachable address', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'apexload-controller-0/ab12cd34', status: 'healthy', address: '0.0.0.0:8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [],
+    })
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const controlPlaneCard = container.querySelector<HTMLElement>('[data-card-id="system-health"]')
+    expect(controlPlaneCard?.querySelector('.monitor-row:nth-of-type(8) .monitor-value')?.textContent).toBe('apexload-controller-0')
+    expect(controlPlaneCard?.querySelector('.monitor-row:nth-of-type(9) .monitor-value')?.textContent).toBe(window.location.host)
+    expect(controlPlaneCard?.textContent).not.toContain('0.0.0.0:8080')
   })
 
   it('does not load or show restart controls for non-admin monitoring sessions', async () => {
@@ -2334,6 +2353,8 @@ describe('MonitoringPage', () => {
     const card = container.querySelector('[data-card-id="threshold-alerts"]')
     expect(card?.textContent).toContain('Not configured')
     expect(card?.textContent).toContain('Shared SLA incident history')
+    expect(card?.querySelector('details')).toBeNull()
+    expect(card?.querySelector('#shared-sla-incident-history')).not.toBeNull()
     expect(card?.textContent).not.toContain('No global SLA threshold breaches')
     expect(request).toHaveBeenCalledWith(expect.stringContaining('project_id=project-1'), expect.anything())
   })

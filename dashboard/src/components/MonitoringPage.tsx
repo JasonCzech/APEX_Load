@@ -362,6 +362,24 @@ function fullBuildTimeTitle(buildTime?: string): string | undefined {
   return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
 }
 
+function displayControllerInstanceName(id?: string): string {
+  const value = (id || '').trim()
+  if (!value) return '-'
+  // Generated controller IDs use hostname/unique-id so HA instances remain
+  // distinct. The hostname is the useful operator-facing name.
+  const [name] = value.split('/', 1)
+  return name || value
+}
+
+function displayControllerAddress(address?: string): string {
+  const value = (address || '').trim()
+  if (!value) return '-'
+  if (/^(0\.0\.0\.0|\[::\]|::)?(:\d+)?$/.test(value) && window.location.host) {
+    return window.location.host
+  }
+  return value
+}
+
 interface ComponentBuildRow {
   id: string
   name: string
@@ -1091,22 +1109,22 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Instance</span>
-            <span className="monitor-value">{inventory?.controller.id || '-'}</span>
+            <span className="monitor-value">{displayControllerInstanceName(inventory?.controller.id)}</span>
           </div>
           <div className="monitor-row">
             <span className="monitor-label">Address</span>
-            <span className="monitor-value cell-mono">{inventory?.controller.address || '-'}</span>
+            <span className="monitor-value cell-mono">{displayControllerAddress(inventory?.controller.address)}</span>
           </div>
-          <details className="monitor-build-details"><summary>Versions and build details</summary><div className="monitor-build-grid" aria-label="Component versions and build dates">
+          <div className="monitor-build-details"><div className="monitor-build-heading">Versions and build details</div><div className="monitor-build-grid" aria-label="Component versions and build times">
             {componentBuildRows.map(component => (
               <div key={component.id} className="monitor-build-row">
                 <span className="monitor-build-name">{component.name}</span>
                 <span className="monitor-build-version">{component.version}</span>
-                <span className="monitor-build-date" title={component.buildTime}>Built {component.buildDate}</span>
+                <span className="monitor-build-date" title={component.buildTime}>Built {component.buildTime || component.buildDate}</span>
               </div>
             ))}
           </div>
-          </details>
+          </div>
           {canRestart && restartCapabilities?.supports.controller_workload && (
             <div className="monitor-action-row">
               <button

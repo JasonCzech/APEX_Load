@@ -67,7 +67,8 @@ export default function ThresholdIncidentPanel({ projectId, canManage, onSelectT
    {canManage && <a className="btn btn-secondary btn-sm" href={settingsHref('thresholds')}>Configure policies</a>}
    <button type="button" className="btn btn-secondary btn-sm" disabled={busy || !projectId} onClick={() => void load()}>{busy ? 'Refreshing history…' : 'Refresh history'}</button>
   </div>
-  <details open={!!data?.incidents.length}><summary>Shared SLA incident history</summary>
+  <section className="monitor-incident-history" aria-labelledby="shared-sla-incident-history">
+   <h3 id="shared-sla-incident-history">Shared SLA incident history</h3>
    <div className="monitor-workflow-actions">
     <label>Search incidents<input type="search" value={search} maxLength={200} onChange={event => setSearch(event.target.value)} placeholder="Test, transaction, or metric" /></label>
     <label>Incident status<select value={status} onChange={event => { setOffset(0); setStatus(event.target.value) }}><option value="">All statuses</option><option value="active">Active</option><option value="unacknowledged">Needs acknowledgement</option><option value="acknowledged">Acknowledged</option><option value="resolved">Resolved</option></select></label>
@@ -83,6 +84,6 @@ export default function ThresholdIncidentPanel({ projectId, canManage, onSelectT
    </article>)}</div>
    {data?.incidents.length === 0 && <p>No persisted incidents match these filters.</p>}
    <div className="monitor-workflow-actions"><button type="button" className="btn btn-secondary btn-sm" disabled={busy || offset === 0} onClick={() => setOffset(value => Math.max(0, value - 50))}>Newer incidents</button><span>Page {offset / 50 + 1}</span><button type="button" className="btn btn-secondary btn-sm" disabled={busy || !data || data.incidents.length < 50} onClick={() => setOffset(value => value + 50)}>Older incidents</button></div>
-  </details>
+  </section>
  </div>
 }

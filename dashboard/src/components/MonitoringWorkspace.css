@@ -3,7 +3,7 @@
 .monitoring-grid[data-active-category="alerts"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .monitoring-grid[data-active-category="telemetry"] .monitor-scroll-area { max-height: none; overflow: visible; }
 .monitoring-grid[data-active-category="telemetry"] .monitor-warning-list { background: var(--bg-secondary); border-color: var(--border); }
-.monitor-build-details > summary { cursor: pointer; margin: 8px 0; }
+.monitor-build-heading { margin: 8px 0; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .monitor-advisories { margin-bottom: 20px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); }
 .monitor-advisories h2 { font-size: 16px; margin: 0 0 12px; }
 .monitor-advisories > div { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
@@ -17,6 +17,7 @@ button.run-calendar-more { cursor: pointer; min-height: 32px; padding: 4px 8px; 
 .monitor-workflow-actions input, .monitor-workflow-actions select { color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--border); min-height: 32px; border-radius: 4px; padding: 4px 8px; }
 .monitor-status-note { font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 .monitor-alert-history { display: grid; gap: 12px; }
+.monitor-incident-history > h3 { margin: 8px 0; color: var(--text-secondary); font-size: 13px; }
 .monitor-alert-history article { padding: 12px; border: 1px solid var(--border); border-radius: 8px; overflow-wrap: anywhere; }
 .monitor-alert-history p { margin: 4px 0; }
 .monitor-pack-picker { min-width: 0; border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
