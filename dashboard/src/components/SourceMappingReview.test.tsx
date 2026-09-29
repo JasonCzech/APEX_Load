@@ -39,6 +39,7 @@ vi.mock('./LinkedCodePane', () => ({
     value,
     ariaLabel,
     activeRange,
+    contextLines,
     semanticMode,
     maxHeight,
     wrapLines,
@@ -46,6 +47,7 @@ vi.mock('./LinkedCodePane', () => ({
     value: string
     ariaLabel?: string
     activeRange?: { startLine: number; endLine: number } | null
+    contextLines?: number
     semanticMode?: string
     maxHeight?: string
     wrapLines?: boolean
@@ -57,11 +59,12 @@ vi.mock('./LinkedCodePane', () => ({
       <pre
         aria-label={ariaLabel}
         data-active-range={activeRange ? `${activeRange.startLine}-${activeRange.endLine}` : ''}
+        data-context-lines={contextLines ?? ''}
         data-max-height={maxHeight || ''}
         data-semantic-mode={semanticMode || ''}
         data-wrap-lines={wrapLines === false ? 'false' : 'true'}
       >
-        {activeText || value}
+        {contextLines == null && ariaLabel?.endsWith(' source') ? value : activeText || value}
       </pre>
     )
   },
@@ -211,6 +214,40 @@ describe('SourceMappingReview', () => {
     expect(dslPane.textContent).not.toContain('"name": "Homepage"')
     expect(container.textContent).toContain('actions[1]')
     expect(container.textContent).toContain('native noop')
+  })
+
+  it('shows commented-out source sections in the default code review view', async () => {
+    const commentedSource = [
+      'Action()',
+      '{',
+      '  web_url("Homepage", LAST);',
+      '}',
+      '',
+      '',
+      '',
+      '/*',
+      '// Disabled legacy flow remains reviewable.',
+      'web_url("Old checkout", "URL=http://example.test/old", LAST);',
+      '*/',
+    ].join('\n')
+    const review = {
+      source_files: [{ path: 'Action.c', language: 'c', content: commentedSource }],
+      mappings: [{
+        id: 'homepage', source_file: 'Action.c', start_line: 3, end_line: 3,
+        function: 'web_url', target_path: 'actions[0]', target_name: 'Homepage',
+        target_kind: 'action', status: 'converted',
+      }],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={review as never} script={script} />)
+    })
+    await flushPromises()
+
+    const sourcePane = container.querySelector('pre[aria-label="Action.c source"]')
+    expect(sourcePane?.getAttribute('data-context-lines')).toBe('')
+    expect(sourcePane?.textContent).toContain('// Disabled legacy flow remains reviewable.')
+    expect(sourcePane?.textContent).toContain('web_url("Old checkout"')
   })
 
   it('toggles word wrapping for both native source and generated DSL panes', async () => {

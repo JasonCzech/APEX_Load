@@ -270,7 +270,7 @@ export default function SourceMappingReview({
   const [isTableCollapsed, setIsTableCollapsed] = useState(true)
   const [maximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
   const [destinationView, setDestinationView] = useState<'current' | 'baseline'>('current')
-  const [contextOnly, setContextOnly] = useState(true)
+  const [contextOnly, setContextOnly] = useState(false)
   const [revealRequestId, setRevealRequestId] = useState(1)
   const [noOriginTarget, setNoOriginTarget] = useState('')
   const [showNoOrigin, setShowNoOrigin] = useState(false)

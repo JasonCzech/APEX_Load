@@ -69,6 +69,9 @@ for (const scenario of [
     if (scenario.file === 'transaction-labels.zip') await page.screenshot({ path: testInfo.outputPath('tab-runtime.png'), fullPage: true })
     await page.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
     await expect(page.getByRole('navigation', { name: 'Review mapping navigation' })).toBeVisible()
+    const viewOptions = page.locator('.source-map-view-options')
+    await viewOptions.locator(':scope > summary').click()
+    await expect(viewOptions.getByRole('combobox', { name: 'Comparison scope' })).toHaveValue('full')
     const sourcePane = page.getByRole('region', { name: 'Generated DSL', exact: true })
     if (await sourcePane.count()) {
       await sourcePane.scrollIntoViewIfNeeded()
