@@ -3806,3 +3806,39 @@ the test returned. Both coordinated barrier tests now stop and wait for each
 service before their HTTP server and archive directory close. Twelve repeated
 runs of the two affected tests passed after the cleanup fix; the full suite
 passed after the final configuration-wakeup and cleanup changes.
+
+## Deployed interruption inside the evacuation guard (2026-09-29)
+
+Built the opt-in `apexload_fault_probe` controller from committed tree
+`1b1ffdc5` as a single-platform ARM64 image and loaded its verified digest into
+all three nodes of the preserved fresh Docker Desktop kind cluster. The normal
+controller image and environment were captured before rollout. The original
+three-node kind cluster was stopped intact for this trial; the separate Docker
+Compose controller, generator, Redis, PostgreSQL and registry stayed running.
+
+A 50-VUser, eight-minute HTTP run reached RUNNING with healthy telemetry. KEDA
+had placed its source generator on one worker and its reserved replacement on
+the other; an evacuation dry run showed all 50 VUsers moving across those
+workers. After the real evacuation request, PostgreSQL showed the durable
+version-2 checkpoint while the opt-in controller was paused before replacement
+staging. The leader pod was force-deleted during that pause. A successor took
+execution generation 8 (from 7), changed the run to FAILED with the explicit
+interrupted-evacuation reason, and reported `continuity.armed=false`. The
+independent target counter remained at 41,450 across seven snapshots spanning
+90 seconds after takeover. The old request eventually returned HTTP 409,
+reporting that a replacement generator did not advertise `secret_bundle_v1`.
+That post-interruption response is not evidence that replacement staging
+completed, and the capability diagnostic was not independently confirmed.
+The observed terminal row and flat target counter establish
+the fail-closed outcome for this disposable trial, not resumable evacuation.
+
+The interrupted run had an `ended_at` timestamp but no archive manifest or
+integrity endpoint (both returned 404). Durable partial-result publication for
+takeover failures remains a release gate. This trial did not test simultaneous
+generator loss, a physical node or zone loss, CSI/RWX storage, or PostgreSQL and
+Redis primary failover. Private input, SQL, image, target-counter and restoration
+receipts are under `artifacts/scalability/2026-09-29/guard-interruption-1b1ffdc5`.
+The opt-in Deployment was rolled back to its prior digest with the pause setting
+removed. The fresh cluster was preserved stopped. The original cluster was
+restored with all three nodes and nine desired workload pods ready, working
+controller-side DNS, no active tests, and three stable workload/SQL snapshots.
