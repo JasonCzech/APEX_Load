@@ -77,7 +77,7 @@ import { loadAllTestSummaries } from './testCatalogPagination'
 import { scenarioSeedFromTemplate } from './scenarioTemplateSeed'
 import { duplicateScenarioGroupNameIndexes, scenarioGroupNameAfterScriptSelection } from './scenarioGroupUtils'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
-import { ScenarioCompositionTimeline } from './ScenarioCompositionTimeline'
+import { ScenarioCompositionTimeline, type CompositionTimelineGroup } from './ScenarioCompositionTimeline'
 import TrafficProfileSourcePanel from './TrafficProfileSourcePanel'
 import CSVDrivenSourcePanel from './CSVDrivenSourcePanel'
 import ScenarioDataBindings from './ScenarioDataBindings'
@@ -180,6 +180,7 @@ export type ScenarioStartChoice = ScenarioSourceMode | 'goal' | ''
 const PRODUCTION_REPLAY_SHAPE_ID = 'production-replay'
 const CSV_DRIVEN_SHAPE_ID = 'csv-driven'
 type RunSettingsTab = 'scenario' | 'runtime' | 'infrastructure'
+type ScenarioSettingsSection = 'composition' | 'stages' | 'protection' | 'sla'
 
 const scenarioWizardSteps: Array<{ id: ScenarioWizardStep, label: string }> = [
   { id: 'scripts', label: 'Start' },
@@ -193,6 +194,13 @@ const runSettingsTabs: Array<{ id: RunSettingsTab, label: string }> = [
   { id: 'scenario', label: 'Scenario Settings' },
   { id: 'runtime', label: 'Browser/Script Runtime' },
   { id: 'infrastructure', label: 'Controller/Generator' },
+]
+
+const scenarioSettingsSections: Array<{ id: ScenarioSettingsSection, label: string }> = [
+  { id: 'composition', label: 'Group Load & Timeline' },
+  { id: 'stages', label: 'Advanced Stair-Step Ramp' },
+  { id: 'protection', label: 'Run Protection & Assurance' },
+  { id: 'sla', label: 'SLAs' },
 ]
 
 
@@ -814,11 +822,13 @@ function ScenarioModelPreviewPanel({
   shapeLabel,
   dataPoolLabel,
   validationStatus,
+  compositionGroups,
 }: {
   model: ScenarioModelPreview
   shapeLabel: string
   dataPoolLabel: string
   validationStatus: string
+  compositionGroups?: CompositionTimelineGroup[]
 }) {
   const groupSeries = model.series.filter(series => series.kind === 'group')
   const totalSeries = model.series.find(series => series.kind === 'total')
@@ -828,11 +838,11 @@ function ScenarioModelPreviewPanel({
   const formatTps = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 })
 
   return (
-    <section className="scenario-model-preview-panel">
+    <section className={`scenario-model-preview-panel ${compositionGroups ? 'composition-preview' : ''}`}>
       <div className="scenario-model-preview-header">
         <div>
-          <h4>Model Preview</h4>
-          <p>{includesTps ? (model.showVUsers ? 'Planned TPS targets and VUsers over time, calculated from the current wizard draft.' : model.estimatedPeakVusers !== undefined ? 'Planned adaptive TPS targets. VUser demand is controlled at runtime; the ART-backed VUser figure is a Little’s Law planning estimate.' : 'Planned adaptive TPS targets. VUser demand is determined by the goal controller at runtime.') : (model.showVUsers ? 'Planned VUsers over time by script group, calculated from the current wizard draft.' : 'VUser demand is determined by the goal controller at runtime and cannot be modeled ahead of the run.')}</p>
+          <h4>{compositionGroups ? 'Live scenario preview' : 'Model Preview'}</h4>
+          <p>{compositionGroups ? 'The load curve updates as you edit group timing and demand.' : includesTps ? (model.showVUsers ? 'Planned TPS targets and VUsers over time, calculated from the current wizard draft.' : model.estimatedPeakVusers !== undefined ? 'Planned adaptive TPS targets. VUser demand is controlled at runtime; the ART-backed VUser figure is a Little’s Law planning estimate.' : 'Planned adaptive TPS targets. VUser demand is determined by the goal controller at runtime.') : (model.showVUsers ? 'Planned VUsers over time by script group, calculated from the current wizard draft.' : 'VUser demand is determined by the goal controller at runtime and cannot be modeled ahead of the run.')}</p>
         </div>
         <div className="scenario-model-summary">
           {model.showVUsers && <span><strong>{model.peakVusers}</strong> peak VUsers</span>}
@@ -937,6 +947,13 @@ function ScenarioModelPreviewPanel({
           </span>
         ))}
       </div>
+      {compositionGroups && <div className="scenario-composition-summary" aria-label="Live group summary">
+        {compositionGroups.map((group, index) => <div className="scenario-composition-summary-row" key={`${group.script_id || 'group'}-${index}`}>
+          <span className="scenario-composition-summary-name"><i style={{ background: groupSeries[index]?.color || 'var(--accent)' }} />{group.name || `Group ${index + 1}`}</span>
+          <span>{group.start_offset || '0s'} start</span>
+          <strong>{group.vusers} VUsers</strong>
+        </div>)}
+      </div>}
     </section>
   )
 }
@@ -1048,6 +1065,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const [stageGroupIndex, setStageGroupIndex] = useState(0)
   const [runtimeGroupIndex, setRuntimeGroupIndex] = useState(0)
   const [runSettingsTab, setRunSettingsTab] = useState<RunSettingsTab>('scenario')
+  const [scenarioSettingsSection, setScenarioSettingsSection] = useState<ScenarioSettingsSection>('composition')
   const scriptLibraryDialogRef = useRef<HTMLDivElement | null>(null)
   const scriptLibrarySearchRef = useRef<HTMLInputElement | null>(null)
   const scriptGroupRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -1405,6 +1423,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
   const showScriptLibrary = showForm && wizardStep === 'scripts'
   const showModelPreview = showForm && wizardStep !== 'scripts' && !sourcePending && (wizardStep !== 'source' || Boolean(scenarioStartChoice))
+  const showCompositionPreview = wizardStep === 'run' && runSettingsTab === 'scenario' && form.scenario_mode === 'vuser_driven' && !isSteppedRamp && !isGuidedClosedVUser && !isGoalDriven
 
   const scenarioBindings: ScenarioDataPoolBinding[] = form.data_pools?.length ? form.data_pools.map((binding, index) => index === 0 ? {
     ...binding, pool_id: form.data_pool_id || binding.pool_id, alias: form.data_pool_alias ?? binding.alias,
@@ -3915,7 +3934,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         <section className="scenario-wizard-panel">
           <div className="scenario-wizard-panel-header">
             <h4>Run Settings</h4>
-            <p>Configure VUsers, ramp, duration, mode, goals, stage modeling, browser defaults, and generator assignment.</p>
+            <p>Configure duration, group load, stage modeling, protection, SLAs, browser defaults, and generator assignment.</p>
           </div>
           {renderShapeGuidance()}
           <TabList className="scenario-run-settings-tabs" role="tablist" aria-label="Run settings sections" onKeyDown={handleTabKey}>
@@ -4122,55 +4141,36 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 setLoadModelValidationError('')
               }}
             />
-            <label className="scenario-field">
-              <span>Scenario Mode</span>
-              <select className="settings-input" value={form.scenario_mode} onChange={event => setForm({ ...form, scenario_mode: event.target.value as ScenarioMode })}>
-                <option value="vuser_driven">VUser driven</option>
-                <option value="goal_oriented">Goal oriented</option>
-              </select>
-            </label>
           </div>
-          {formGroups.length > 1 && (
-            <TabList className="scenario-group-tabs" role="tablist" aria-label="Scenario load groups" onKeyDown={handleTabKey}>
-              {formGroups.map((group, index) => {
-                const script = findScriptById(scripts, group.script_id)
-                const groupLabel = group.name || `Group ${index + 1}`
-                return (
-                  <button
-                    key={`${group.script_id || 'group'}-scenario-tab-${index}`}
-                    type="button"
-                    id={`scenario-group-tab-${index}`}
-                    className={`scenario-group-tab ${activeGroupIndex === index ? 'active' : ''}`}
-                    role="tab"
-                    aria-selected={activeGroupIndex === index}
-                    aria-controls="scenario-active-group-panel"
-                    onClick={() => setStageGroupIndex(index)} tabIndex={(activeGroupIndex === index) ? 0 : -1}
-                  >
-                    <strong>{groupLabel}</strong>
-                    <span>{script?.name || 'Unassigned script'} · {group.vusers} VUsers</span>
-                  </button>
-                )
-              })}
-            </TabList>
-		  )}
+          <TabList className="scenario-settings-sections" role="tablist" aria-label="Scenario settings sections" onKeyDown={handleTabKey}>
+            {scenarioSettingsSections.map(section => <button
+              key={section.id}
+              type="button"
+              id={`scenario-settings-${section.id}-tab`}
+              className={`scenario-settings-section-tab ${scenarioSettingsSection === section.id ? 'active' : ''}`}
+              role="tab"
+              aria-selected={scenarioSettingsSection === section.id}
+              aria-controls={`scenario-settings-${section.id}-panel`}
+              onClick={() => setScenarioSettingsSection(section.id)}
+              tabIndex={scenarioSettingsSection === section.id ? 0 : -1}
+            >{section.label}</button>)}
+          </TabList>
+          <div className="scenario-settings-section-panel" id={`scenario-settings-${scenarioSettingsSection}-panel`} role="tabpanel" aria-labelledby={`scenario-settings-${scenarioSettingsSection}-tab`}>
+          {scenarioSettingsSection === 'composition' && <>
 		  <ScenarioCompositionTimeline
 			duration={form.duration}
 			groups={formGroups}
 			onOffsetChange={(index, value) => updateScenarioGroup(index, { start_offset: value })}
-		  />
-		  <div className="scenario-subpanel">
+            selectedGroupIndex={activeGroupIndex}
+            onGroupSelect={setStageGroupIndex}
+          >
             <div className="scenario-assignment-header">
               <div>
                 <h4>Load Per Group</h4>
                 <p>{form.scenario_mode === 'goal_oriented' ? 'Review the current runtime seed estimate. Goal-oriented demand is controlled by throughput and guardrails.' : 'Set the VUser count and simple ramp for each script group participating in this scenario.'}</p>
               </div>
             </div>
-            <div
-              id="scenario-active-group-panel"
-              className="scenario-script-group-list scenario-load-group-panel"
-              role={formGroups.length > 1 ? 'tabpanel' : undefined}
-              aria-labelledby={formGroups.length > 1 ? `scenario-group-tab-${activeGroupIndex}` : undefined}
-            >
+            <div className="scenario-script-group-list scenario-load-group-panel">
                 <div key={`${activeStageGroup.script_id || 'group'}-load-${activeGroupIndex}`} className="scenario-script-group-card">
                   <div className="scenario-script-group-title">
                     <strong>{activeGroupLabel}</strong>
@@ -4232,7 +4232,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   </div>
                 </div>
             </div>
-          </div>
+          </ScenarioCompositionTimeline>
           {form.scenario_mode === 'goal_oriented' && (
             <div className="scenario-subpanel">
               <div className="scenario-assignment-header">
@@ -4247,6 +4247,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               />
             </div>
           )}
+		  </>}
+		  {scenarioSettingsSection === 'sla' && (
 			<TransactionResponseTimeSLASettings
 				defaultMs={goalConfigFromForm(form).transaction_response_time_sla_ms}
 				groups={formGroups.map((group, index) => ({
@@ -4257,7 +4259,15 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 				onDefaultChange={value => setForm(previous => scenarioFormWithGoalField(previous, 'transaction_response_time_sla_ms', value))}
 				onGroupOverrideChange={(index, value) => updateScenarioGroup(index, { transactionResponseTimeSlaMs: value })}
 			/>
+		  )}
+          {scenarioSettingsSection === 'stages' && (
           <div className="scenario-subpanel">
+            {formGroups.length > 1 && <label className="scenario-field">
+              <span>Load group</span>
+              <select className="settings-input" aria-label="Load group for advanced stages" value={activeGroupIndex} onChange={event => setStageGroupIndex(Number(event.target.value))}>
+                {formGroups.map((group, index) => <option key={`${group.script_id || 'group'}-${index}`} value={index}>{group.name || `Group ${index + 1}`}</option>)}
+              </select>
+            </label>}
             {activeProfileMapping && (
               <div className="scenario-shape-guidance">
                 <strong>{selectedShapeId === CSV_DRIVEN_SHAPE_ID ? 'Managed by CSV schedule' : 'Managed by production traffic profile'}</strong>
@@ -4338,8 +4348,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             )}
             </div>
           </div>
+		  )}
+            {scenarioSettingsSection === 'protection' && <>{renderProtectRun()}{renderPreRunAssurance()}</>}
+          </div>
 						</>}
-            <details><summary>Advanced run protection and assurance</summary>{renderProtectRun()}{renderPreRunAssurance()}</details>
+            {(isGoalDriven || isGuidedClosedVUser || isSteppedRamp) && <details><summary>Advanced run protection and assurance</summary>{renderProtectRun()}{renderPreRunAssurance()}</details>}
             </>)}
             {runSettingsTab === 'runtime' && (
               <>
@@ -4691,7 +4704,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             })}
           </div>
 
-		  <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp || isGuidedClosedVUser || isGoalDriven ? 'stepped-ramp-layout' : ''}`}>
+		  <div className={`scenario-builder-workspace ${showModelPreview ? 'with-preview' : ''} ${isSteppedRamp || isGuidedClosedVUser || isGoalDriven ? 'stepped-ramp-layout' : ''} ${showCompositionPreview ? 'scenario-composition-layout' : ''}`}>
             <div className="scenario-builder-main" ref={wizardPanelRef} tabIndex={-1} role="region" aria-label={`Scenario step: ${wizardStep}`}>
               {sourcePending && wizardStep === 'source' && <p role="status" className="scenario-source-pending">{sourcePendingMessage}</p>}
               {renderWizardStep()}
@@ -4705,6 +4718,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   shapeLabel={shapeLabel}
                   dataPoolLabel={dataPoolLabel}
                   validationStatus={goalSizingIncomplete && validationLabel === 'Not validated' ? 'Sizing incomplete' : validationLabel}
+                  compositionGroups={showCompositionPreview ? formGroups : undefined}
                 />
 				{isSteppedRamp && !activeSteppedRampPlan.error && (
 					<div className="stepped-ramp-stage-preview">

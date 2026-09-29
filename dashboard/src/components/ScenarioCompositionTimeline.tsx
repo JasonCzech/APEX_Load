@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import type { LoadStageDraft } from '../types'
 import './ScenarioCompositionTimeline.css'
@@ -17,6 +18,9 @@ type Props = {
   duration: string
   groups: CompositionTimelineGroup[]
   onOffsetChange: (index: number, value: string) => void
+  selectedGroupIndex?: number
+  onGroupSelect?: (index: number) => void
+  children?: ReactNode
 }
 
 function secondsText(seconds: number) {
@@ -32,14 +36,14 @@ function stageWindowSeconds(group: CompositionTimelineGroup, remaining: number) 
   return total > 0 ? Math.min(total, remaining) : remaining
 }
 
-export function ScenarioCompositionTimeline({ duration, groups, onOffsetChange }: Props) {
+export function ScenarioCompositionTimeline({ duration, groups, onOffsetChange, selectedGroupIndex = 0, onGroupSelect, children }: Props) {
   const durationSeconds = Math.max(1, parseDurationToSeconds(duration) || 1)
   return (
     <section className="composition-timeline" aria-label="Scenario composition timeline">
       <div className="composition-timeline-heading">
         <div>
-          <strong>Composition Timeline</strong>
-          <span>Drag a clip to set its active-time start offset. Paused time does not advance this clock.</span>
+          <strong>Group load &amp; timeline</strong>
+          <span>Select a group to edit its load. Drag its clip to change when it starts.</span>
         </div>
         <span>0 → {duration}</span>
       </div>
@@ -54,14 +58,14 @@ export function ScenarioCompositionTimeline({ duration, groups, onOffsetChange }
         const left = (offset / durationSeconds) * 100
         const width = Math.max(1.5, (windowSeconds / durationSeconds) * 100)
         return (
-          <div className="composition-track" key={`${group.script_id || 'group'}-${index}`}>
-            <div className="composition-track-label">
+          <div className={`composition-track ${selectedGroupIndex === index ? 'selected' : ''}`} key={`${group.script_id || 'group'}-${index}`}>
+            <button type="button" className="composition-track-label" aria-pressed={selectedGroupIndex === index} aria-controls={children ? 'scenario-active-group-panel' : undefined} onClick={() => onGroupSelect?.(index)}>
               <strong>{group.name || `Group ${index + 1}`}</strong>
               <span>{group.vusers} VUsers · {group.role || 'load'}</span>
-            </div>
+            </button>
             <div className="composition-track-lane">
               <div className="composition-clip" style={{ left: `${left}%`, width: `${Math.min(width, 100 - left)}%` }}>
-                <span>{group.script_id || 'Choose script'}</span>
+                <span>{group.name || `Group ${index + 1}`}</span>
                 <small>{group.start_offset || '0s'} start{group.ramp_up ? ` · ${group.ramp_up} ramp` : ''}</small>
               </div>
               <input
@@ -72,12 +76,13 @@ export function ScenarioCompositionTimeline({ duration, groups, onOffsetChange }
                 step={1}
                 value={offset}
                 aria-label={`Start offset for ${group.name || `group ${index + 1}`}`}
-                onChange={event => onOffsetChange(index, secondsText(Number(event.target.value)))}
+                onChange={event => { onGroupSelect?.(index); onOffsetChange(index, secondsText(Number(event.target.value))) }}
               />
             </div>
           </div>
         )
       })}
+      {children && <div className="composition-group-editor" id="scenario-active-group-panel">{children}</div>}
     </section>
   )
 }

@@ -7,6 +7,9 @@
   background: var(--bg-card);
 }
 
+.composition-timeline-heading { margin-bottom: .3rem; }
+.composition-timeline-heading strong { color: var(--text-primary); font-size: 1rem; }
+
 .composition-timeline-heading,
 .composition-track {
   display: grid;
@@ -19,7 +22,22 @@
 .composition-track-label {
   display: grid;
   gap: .15rem;
+  width: 100%;
+  padding: .55rem .7rem;
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
 }
+
+.composition-track.selected .composition-track-label {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.composition-track-label:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 .composition-timeline-heading span,
 .composition-track-label span,
@@ -80,6 +98,22 @@
 .composition-track-lane:focus-within {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+.composition-group-editor {
+  display: grid;
+  gap: .7rem;
+  margin-top: .45rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.composition-group-editor .scenario-assignment-header h4 { margin: 0; }
+.composition-group-editor .scenario-assignment-header p { margin: .25rem 0 0; }
+.composition-group-editor .scenario-script-group-card {
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 @media (max-width: 760px) {

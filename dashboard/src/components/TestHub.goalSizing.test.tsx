@@ -261,8 +261,9 @@ describe('TestHub build-from-goal', () => {
       overview: { transactions: 10, avg_response_ms: 3000 },
     }))
     await act(async () => findButton(container, 'Run Settings')?.click())
-    const mode = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Scenario Mode'))?.querySelector('select')
-    expect(mode?.value).toBe('vuser_driven')
+    expect(container.querySelector('[aria-label="Scenario Mode"]')).toBeNull()
+    expect(container.querySelector('.goal-driven-worksheet')).toBeNull()
+    expect(container.querySelector('.composition-timeline')).not.toBeNull()
     confirm.mockRestore()
   })
 

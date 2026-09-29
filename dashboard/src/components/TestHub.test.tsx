@@ -150,6 +150,13 @@ describe('TestHub', () => {
     })
   }
 
+  const clickScenarioSettingsSection = async (text: string) => {
+    const button = Array.from(container.querySelectorAll('.scenario-settings-section-tab')).find(item => item.textContent?.includes(text))
+    expect(button).toBeDefined()
+    if (!button) return
+    await act(async () => { button.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+  }
+
   const wizardStepButton = (text: string) => (
     Array.from(container.querySelectorAll('.scenario-wizard-step')).find(item => item.textContent?.includes(text))
   )
@@ -1345,7 +1352,7 @@ describe('TestHub', () => {
     expect(findControlByLabel<HTMLInputElement>(container, 'Max VUsers', 'input')?.value).toBe('99')
   })
 
-  it('rejects a persistent goal-oriented scenario without a goal or guardrail', async () => {
+  it('uses the mode chosen by the load model without offering a second selector', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
     })
@@ -1358,20 +1365,12 @@ describe('TestHub', () => {
     await act(async () => {
       setInputValue(nameInput, 'Invalid Empty Goal')
     })
-    await chooseLibraryScriptForGroup()
+    await selectManualShapeByName('Goal-Driven Scenario')
     await clickWizardStep('Run Settings')
-
-    const modeSelect = findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')
-    expect(modeSelect).toBeDefined()
-    if (!modeSelect) return
-    await act(async () => {
-      setSelectValue(modeSelect, 'goal_oriented')
-    })
-    await clickButton('Save draft')
-    await flushPromises()
-
-    expect(apiMock.createScenario).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Goal-oriented scenarios require at least one goal or guardrail setting')
+    expect(findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')).toBeUndefined()
+    expect(container.querySelector('.scenario-composition-summary')).toBeNull()
+    expect(container.querySelector('.scenario-model-preview-panel')?.textContent).toContain('Model Preview')
+    expect(container.textContent).toContain('Goal-Driven Scenario Setup')
   })
 
   it('seeds stair-step stages when a stepped-ramp shape is selected manually', async () => {
@@ -1582,14 +1581,31 @@ describe('TestHub', () => {
     ])
     expect(tabs[0].getAttribute('aria-selected')).toBe('true')
     expect(container.textContent).toContain('Load Per Group')
-    expect(container.textContent).toContain('Pre-Run Assurance')
+    expect(container.textContent).toContain('Group load & timeline')
+    expect(container.textContent).toContain('Live scenario preview')
+    expect(findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')).toBeUndefined()
     expect(container.textContent).toContain('Advanced Stair-Step Ramp')
+    expect(container.querySelectorAll('.scenario-settings-section-tab')).toHaveLength(4)
+    expect(container.textContent).not.toContain('Pre-Run Assurance')
     expect(container.textContent).not.toContain('Automatic placement')
 
     const workspace = container.querySelector('.scenario-builder-workspace.with-preview')
     expect(workspace).toBeTruthy()
     expect(workspace?.querySelector('.scenario-builder-main .scenario-run-settings-tabs')).toBeTruthy()
     expect(workspace?.querySelector('.scenario-builder-preview .scenario-model-preview-panel')).toBeTruthy()
+    expect(workspace?.querySelector('.composition-timeline .composition-group-editor')).toBeTruthy()
+    expect(workspace?.querySelector('.scenario-composition-summary-row')).toBeTruthy()
+
+    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
+    expect(container.textContent).toContain('Enable Stages')
+    expect(container.querySelector('.composition-timeline')).toBeNull()
+    await clickScenarioSettingsSection('Run Protection')
+    expect(container.textContent).toContain('Pre-Run Assurance')
+    expect(container.textContent).toContain('Protect the Run')
+    await clickScenarioSettingsSection('SLAs')
+    expect(container.textContent).toContain('Transaction response-time SLA')
+    await clickScenarioSettingsSection('Group Load & Timeline')
+    expect(container.querySelector('.composition-timeline')).toBeTruthy()
 
     await clickRunSettingsTab('Controller/Generator')
 
@@ -1622,6 +1638,7 @@ describe('TestHub', () => {
 
     if (shapeName) await selectManualShapeByName(shapeName)
     await clickWizardStep('Run Settings')
+    if (container.querySelector('.scenario-settings-section-tab')) await clickScenarioSettingsSection('Run Protection')
 
     expect(container.querySelectorAll('[data-testid="protect-the-run"]')).toHaveLength(1)
     expect(container.querySelectorAll('[data-testid="pre-run-assurance"]')).toHaveLength(1)
@@ -1652,7 +1669,7 @@ describe('TestHub', () => {
     expect(Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Script shakeout gate'))?.querySelector('input')?.checked).toBe(true)
   })
 
-  it('shows multi-group Scenario tab load settings in horizontal group tabs', async () => {
+  it('selects multi-group load settings from timeline rows', async () => {
     await act(async () => {
       root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
     })
@@ -1663,13 +1680,13 @@ describe('TestHub', () => {
     await clickButton('Add Group')
     await clickWizardStep('Run Settings')
 
-    const groupTabs = Array.from(container.querySelectorAll('.scenario-group-tab'))
-    expect(groupTabs).toHaveLength(2)
-    expect(groupTabs.map(tab => tab.textContent)).toEqual([
-      'Checkout FlowCheckout Flow · 10 VUsers',
-      'Group 2Unassigned script · 10 VUsers',
+    const groupRows = Array.from(container.querySelectorAll('.composition-track-label'))
+    expect(groupRows).toHaveLength(2)
+    expect(groupRows.map(row => row.textContent)).toEqual([
+      'Checkout Flow10 VUsers · load',
+      'Group 210 VUsers · load',
     ])
-    expect(groupTabs[1].getAttribute('aria-selected')).toBe('true')
+    expect(groupRows[1].getAttribute('aria-pressed')).toBe('true')
 
     const loadPanel = container.querySelector('.scenario-load-group-panel')
     expect(loadPanel?.querySelectorAll('.scenario-script-group-card')).toHaveLength(1)
@@ -1677,13 +1694,26 @@ describe('TestHub', () => {
     expect(loadPanel?.textContent).not.toContain('Group 1')
 
     await act(async () => {
-      groupTabs[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      groupRows[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(container.querySelectorAll('.scenario-load-group-panel .scenario-script-group-card')).toHaveLength(1)
     expect(container.querySelector('.scenario-load-group-panel')?.textContent).toContain('Checkout Flow')
     expect(container.querySelector('.scenario-load-group-panel')?.textContent).not.toContain('Group 2')
-    expect(Array.from(container.querySelectorAll('.scenario-group-tab'))[0].getAttribute('aria-selected')).toBe('true')
+    expect(Array.from(container.querySelectorAll('.composition-track-label'))[0].getAttribute('aria-pressed')).toBe('true')
+
+    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
+    const stageGroup = container.querySelector<HTMLSelectElement>('[aria-label="Load group for advanced stages"]')
+    expect(stageGroup).not.toBeNull()
+    if (!stageGroup) return
+    await act(async () => setSelectValue(stageGroup, '1'))
+    expect(stageGroup.value).toBe('1')
+    await clickButton('Enable Stages')
+    expect(container.querySelector('.scenario-stage-list')).not.toBeNull()
+    await act(async () => setSelectValue(stageGroup, '0'))
+    expect(container.textContent).toContain('Simple ramp is active for this group')
+    await act(async () => setSelectValue(stageGroup, '1'))
+    expect(container.querySelector('.scenario-stage-list')).not.toBeNull()
   })
 
   it('renumbers a generated group name before assigning its script after an earlier group is removed', async () => {
@@ -2621,7 +2651,7 @@ describe('TestHub', () => {
     expect(secondGroupInitSelect?.value).toBe('at_once')
 
     await clickWizardStep('Run Settings')
-    const paymentGroupTab = Array.from(container.querySelectorAll('.scenario-group-tab')).find(tab => tab.textContent?.includes('Payments'))
+    const paymentGroupTab = Array.from(container.querySelectorAll('.composition-track-label')).find(tab => tab.textContent?.includes('Payments'))
     expect(paymentGroupTab).toBeDefined()
     if (!paymentGroupTab) return
 
@@ -3198,10 +3228,11 @@ describe('TestHub', () => {
 
     expect(getDurationFieldByLabel(container, 'Duration')?.input.value).toBe('18')
     expect(getDurationFieldByLabel(container, 'Duration')?.select.value).toBe('m')
+    expect(container.textContent).toContain('Goal Controller')
+    await clickScenarioSettingsSection('Run Protection')
     expect(container.textContent).toContain('Pre-Run Assurance')
     expect(container.textContent).toContain('Script shakeout gate')
     expect(container.textContent).toContain('Snapshot on error')
-    expect(container.textContent).toContain('Goal Controller')
 
     await clickButton('Save draft')
     await flushPromises()
@@ -3647,6 +3678,7 @@ describe('TestHub', () => {
 
     await chooseLibraryScriptForGroup()
     await clickWizardStep('Run Settings')
+    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
 
     const enableStagesButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Enable Stages'))
     expect(enableStagesButton).toBeDefined()
@@ -3701,6 +3733,7 @@ describe('TestHub', () => {
     })
 
     await clickWizardStep('Run Settings')
+    await clickScenarioSettingsSection('Advanced Stair-Step Ramp')
     await clickButton('Enable Stages')
 
     let durationField = getDurationFieldByLabel(container, 'Duration')

@@ -5,6 +5,7 @@ import type { DataPoolImportResult } from '../hooks/api/useScriptApi'
 import { getErrorMessage } from '../utils/errorUtils'
 import ImportDropzone from './ImportDropzone'
 import { dataBindingErrors, scenarioDataRequirements } from './scenarioDataBindingModel'
+import ScenarioScriptData from './ScenarioScriptData'
 
 function PoolPreview({ binding, required, canManage }: { binding: ScenarioDataPoolBinding; required: string[]; canManage: boolean }) {
   const api = useApi()
@@ -70,6 +71,7 @@ export default function ScenarioDataBindings({ bindings, pools, scripts, onChang
   const scriptRefs = useRef(scripts)
   scriptRefs.current = scripts
   const [scriptDetails, setScriptDetails] = useState<{ scope: string; scripts: StoredScript[]; unavailable: number } | null>(null)
+  const [retry, setRetry] = useState(0)
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -81,14 +83,16 @@ export default function ScenarioDataBindings({ bindings, pools, scripts, onChang
       if (!cancelled) setScriptDetails({ scope: scriptScope, scripts: details, unavailable })
     })()
     return () => { cancelled = true }
-  }, [api, scriptScope])
+  }, [api, scriptScope, retry])
   const currentDetails = scriptDetails?.scope === scriptScope ? scriptDetails : null
   const requirements = useMemo(() => scenarioDataRequirements(currentDetails?.scripts || []), [currentDetails])
   const update = (index: number, patch: Partial<ScenarioDataPoolBinding>) => onChange(bindings.map((binding, i) => i === index ? { ...binding, ...patch } : binding))
   return <div className="scenario-data-editor">
     {!currentDetails ? <p role="status">Checking script data references…</p> : currentDetails.unavailable > 0 && <p role="status">Data requirements could not be inspected for {currentDetails.unavailable} scripts. Review them in Scripts before running.</p>}
-    <p>Bindings are shared across scenario groups. Reference a column with <code>{'{{data.customers.email}}'}</code>. Each alias identifies one pool. Script-local data sources must also be reviewed in Scripts.</p>
-    {[...requirements.keys()].filter(alias => !bindings.some(binding => binding.alias === alias)).map(alias => <p key={alias} role="status">Script references <code>{alias}</code>; no scenario pool is attached for it. Check whether the script supplies its own source.</p>)}
+    <p>Bindings are shared across scenario groups. Reference a column with <code>{'{{data.customers.email}}'}</code>. Each alias identifies one pool.</p>
+    {(currentDetails?.scripts || []).flatMap(script => [...scenarioDataRequirements([script]).keys()]
+      .filter(alias => !bindings.some(binding => binding.alias === alias) && !script.script?.data_sources?.some(source => source.name === alias))
+      .map(alias => <p key={`${script.id}:${alias}`} role="status">{script.name} references <code>{alias}</code>, but no script source or scenario pool supplies it.</p>))}
     {dataBindingErrors(bindings).map(error => <p key={error} role="alert" className="settings-error-inline">{error}</p>)}
     {bindings.length === 0 && <label className="scenario-field"><span>Data Pool</span><select value="" onChange={event => { if (event.target.value) onChange([{ pool_id: event.target.value, alias: pools.find(pool => pool.id === event.target.value)?.name.toLowerCase().replace(/\W+/g, '_') || 'data', access_mode: 'read_only', selection_strategy: 'sequential' }]) }}><option value="">No data pool</option>{pools.map(pool => <option key={pool.id} value={pool.id}>{pool.name}</option>)}</select></label>}
     {bindings.map((binding, index) => <fieldset key={index}><legend>Data binding {index + 1}</legend><div className="settings-grid">
@@ -101,5 +105,6 @@ export default function ScenarioDataBindings({ bindings, pools, scripts, onChang
       {binding.pool_id && <PoolPreview canManage={canManage} key={binding.pool_id} binding={binding} required={[...(requirements.get(binding.alias) || [])]} />}
     </fieldset>)}
     <button type="button" className="btn btn-secondary" onClick={() => onChange([...bindings, { pool_id: '', alias: '', access_mode: 'read_only', selection_strategy: 'sequential' }])}>Add data pool binding</button>
+    {!bindings.some(binding => binding.pool_id) && <ScenarioScriptData scripts={scripts} details={currentDetails?.scripts || []} loading={!currentDetails} unavailable={currentDetails?.unavailable || 0} onRetry={() => { setScriptDetails(null); setRetry(value => value + 1) }} />}
   </div>
 }
