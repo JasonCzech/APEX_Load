@@ -497,5 +497,8 @@ addressed for KEDA-owned fleets by an incarnation-bound archive replica hold.
 Pending collection retains the highest source ordinal in the existing
 fleet-scoped KEDA floor after terminal capacity reservations release; resolution,
 exhaustion or publication removes it. Fresh workload identity is required before
-dispatch and while exporting the pending floor. A deployed KEDA downscale trial
-on the reviewed image is still required; the earlier trial ran before this fix.
+dispatch and while exporting the pending floor. A deployed Docker Desktop kind
+trial on reviewed controller `da9d50f5` held a paused ordinal-2 source through
+two terminal observations with KEDA minimum two and HPA desired three; after
+collection resolved and the archive verified, HPA downscaled to two. The trial
+and limits are recorded in the [review ledger](qa/reviews/node-failure-readiness-2026-09-27.md).

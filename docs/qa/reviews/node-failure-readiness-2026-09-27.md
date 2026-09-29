@@ -3915,8 +3915,23 @@ actor; the deployed pre-fix trial remains evidence of that limitation.
 Focused SQLite/API tests cover active and terminal holds, monotonic ordinal
 growth, stale lease and token rejection, workload/fleet isolation, exhaustion,
 KEDA admission failure and the metrics path. An isolated PostgreSQL 16
-integration test passed. A post-fix deployed KEDA source downscale trial
-remains to qualify the behavior end to end. The full `go test -p 2 ./...` suite,
+integration test passed. The full `go test -p 2 ./...` suite,
 schema fingerprint/deletion checks and documentation validation passed after
 the project/test cascade review fixes; no further source finding remained in
 this cycle.
+
+The post-fix Docker Desktop kind trial used controller `da9d50f5` (image digest
+`sha256:6dd27c040514ed82c0dd49c6fcf53962b85941bf574684d40de5b47bb2aa81e9`),
+three kind nodes, PostgreSQL, Redis, and KEDA with a minimum of two generator
+replicas. A 50-VUser HTTP run was stopped while its ordinal-2 source task was
+paused through containerd. Two terminal FAILED observations still had one
+unresolved source, archive hold floor 3, leader KEDA metric 3, HPA desired
+replicas 3, and the ordinal-2 pod present. After the source restarted, the
+second collection retry resolved the intent. The resulting archive verified
+with its single expected source collected; the metric returned to 0 and HPA
+downscaled the fleet to two pods. The earlier `kill -STOP 1` attempt was
+inconclusive because the container's PID 1 did not stop; only the containerd
+pause is counted as fault evidence. The private trial receipt and snapshots
+are under `artifacts/scalability/2026-09-29/archive-floor-da9d50f5`.
+This establishes a same-host KEDA source-retention behavior, not physical
+multi-host node-loss or CSI/RWX qualification.
