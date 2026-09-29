@@ -4,6 +4,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -40,9 +41,15 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 	if err != nil {
 		return nil, err
 	}
+	// Raw and derived output share one incremental namespace reservation. Their
+	// separate per-attempt byte limits still apply.
+	conversion.backlog = budget.backlog
 	archiveDir, err := ensureArchiveRelativeDirectory(rootDir, test.ID, 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("create archive dir: %w", err)
+	}
+	if err := rejectArchiveBacklogDirectoryAlias(rootDir, archiveDir); err != nil {
+		return nil, err
 	}
 	targets := []string{"transactions.jsonl", "resources.jsonl", "interval_summaries.jsonl", runArchiveManifestFileName}
 	if test.ELKCapture != nil {
@@ -132,6 +139,7 @@ func newRunArchiveWriter(test *ManagedTest, provenance RunArchiveProvenance) (*r
 		},
 		region:           strings.TrimSpace(os.Getenv("APEXLOAD_REGION")),
 		rootDir:          archiveDir,
+		captureBudget:    budget,
 		conversionBudget: conversion,
 		manifestPath:     filepath.Join(archiveDir, runArchiveManifestFileName),
 		txFile:           txFile,
@@ -664,6 +672,8 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.stopFlushLoop()
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	defer w.captureBudget.close()
+	defer w.conversionBudget.close()
 	if w.flushErr != nil {
 		// A logical admission failure did not accept the rejected record. Flush
 		// earlier accepted records where possible, preserving a recoverable raw
@@ -725,7 +735,12 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	if err := syncArchiveArtifacts(w.rootDir, w.manifestPath); err != nil {
 		return nil, err
 	}
-	if err := writeArchiveManifestDurable(w.manifestPath, data); err != nil {
+	if err := writeArchiveArtifactDurableWithWriter(w.rootDir, filepath.Base(w.manifestPath), data, 0o644, func(file *os.File, data []byte) (int, error) {
+		if w.captureBudget == nil {
+			return file.Write(data)
+		}
+		return (archiveCaptureFileWriter{file: file, budget: w.captureBudget}).Write(data)
+	}, nil); err != nil {
 		return nil, err
 	}
 	manifestSHA256 := sha256BytesHex(data)
@@ -842,6 +857,19 @@ func writeArchiveArtifactDurable(rootPath, name string, data []byte, perm os.Fil
 }
 
 func writeArchiveArtifactDurableWithBudget(rootPath, name string, data []byte, perm os.FileMode, budget *archiveOutputBudget) error {
+	var ctx context.Context
+	if budget != nil {
+		ctx = budget.ctx
+	}
+	return writeArchiveArtifactDurableWithWriter(rootPath, name, data, perm, func(file *os.File, data []byte) (int, error) {
+		if budget == nil {
+			return file.Write(data)
+		}
+		return (&archiveOutputFile{file: file, budget: budget}).Write(data)
+	}, ctx)
+}
+
+func writeArchiveArtifactDurableWithWriter(rootPath, name string, data []byte, perm os.FileMode, write func(*os.File, []byte) (int, error), ctx context.Context) error {
 	normalized, err := normalizeArchiveArtifactName(name)
 	if err != nil {
 		return err
@@ -873,11 +901,9 @@ func writeArchiveArtifactDurableWithBudget(rootPath, name string, data []byte, p
 			_ = root.Remove(tempName)
 		}
 	}()
-	var writeErr error
-	if budget == nil {
-		_, writeErr = tmp.Write(data)
-	} else {
-		_, writeErr = (&archiveOutputFile{file: tmp, budget: budget}).Write(data)
+	n, writeErr := write(tmp, data)
+	if n != len(data) && writeErr == nil {
+		writeErr = io.ErrShortWrite
 	}
 	if writeErr != nil {
 		_ = tmp.Close()
@@ -890,8 +916,8 @@ func writeArchiveArtifactDurableWithBudget(rootPath, name string, data []byte, p
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	if budget != nil && budget.ctx != nil {
-		if err := budget.ctx.Err(); err != nil {
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
 	}

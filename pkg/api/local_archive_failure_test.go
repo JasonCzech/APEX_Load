@@ -13,7 +13,7 @@ import (
 )
 
 func TestLocalArchiveFailurePersistsWithoutChangingExecution(t *testing.T) {
-	for _, kind := range []string{"capture", "conversion"} {
+	for _, kind := range []string{"capture", "conversion", "backlog"} {
 		for _, outcome := range []string{"COMPLETE", "ABORTED", "FAILED"} {
 			t.Run(kind+outcome, func(t *testing.T) {
 				t.Setenv("APEXLOAD_ARCHIVE_BACKEND", archiveBackendFilesystem)
@@ -22,6 +22,8 @@ func TestLocalArchiveFailurePersistsWithoutChangingExecution(t *testing.T) {
 				t.Setenv(envArchiveConversionMinFreeBytes, "1")
 				if kind == "capture" {
 					t.Setenv(envArchiveCaptureMaxBytes, "4096")
+				} else if kind == "backlog" {
+					t.Setenv(envArchiveBacklogMaxBytes, "8192")
 				} else {
 					t.Setenv(envArchiveConversionMaxBytes, "1")
 				}
@@ -45,14 +47,14 @@ func TestLocalArchiveFailurePersistsWithoutChangingExecution(t *testing.T) {
 				if err := writer.RecordResult(&protocol.Result{ActionName: "accepted"}); err != nil {
 					t.Fatal(err)
 				}
-				if kind == "capture" {
+				if kind == "capture" || kind == "backlog" {
 					for range 100 {
 						err = writer.RecordResult(&protocol.Result{ActionName: strings.Repeat("x", 200)})
 						if err != nil {
 							break
 						}
 					}
-					if !errors.Is(err, errArchiveCaptureLimit) {
+					if kind == "capture" && !errors.Is(err, errArchiveCaptureLimit) {
 						t.Fatal(err)
 					}
 				}

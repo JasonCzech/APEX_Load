@@ -19,6 +19,7 @@ var errArchiveOutputFreeSpace = errors.New("insufficient free space for archive 
 // Failed or removed outputs remain charged; the first write failure is latched.
 // Callers provide their own limits, error labels and optional operation context.
 type archiveOutputBudget struct {
+	backlog                *archiveBacklogBudget
 	mu                     sync.Mutex
 	root                   string
 	remaining, minFree     int64
@@ -103,7 +104,7 @@ func (w *archiveOutputFile) Write(data []byte) (n int, err error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	n, err = w.file.Write(data)
+	n, err = b.backlog.write(ctx, w.file, data)
 	b.remaining -= int64(n)
 	if n < len(data) && err == nil {
 		err = io.ErrShortWrite
@@ -127,4 +128,13 @@ func (w *archiveOutputFile) Open(string) (source.ParquetFile, error) {
 }
 func (w *archiveOutputFile) Create(string) (source.ParquetFile, error) {
 	return nil, errors.New("archive output cannot create another file")
+}
+
+func (b *archiveOutputBudget) close() {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.backlog.close()
 }

@@ -19,7 +19,11 @@ func newArchiveConversionBudget(root string) (*archiveOutputBudget, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &archiveOutputBudget{root: root, remaining: limit, minFree: minFree, limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace}, nil
+	backlog, err := newArchiveBacklogBudget(root)
+	if err != nil {
+		return nil, err
+	}
+	return &archiveOutputBudget{backlog: backlog, root: root, remaining: limit, minFree: minFree, limitErr: errArchiveConversionLimit, freeSpaceErr: errArchiveConversionFreeSpace}, nil
 }
 
 func conversionBudget(root string, budgets []*archiveOutputBudget) (*archiveOutputBudget, error) {

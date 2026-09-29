@@ -22,5 +22,9 @@ func newArchivePublicationBudget(root string) (*archiveOutputBudget, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &archiveOutputBudget{root: root, remaining: limit, minFree: minFree, limitErr: errArchivePublicationLimit, freeSpaceErr: errArchivePublicationFreeSpace}, nil
+	backlog, err := newArchiveBacklogBudget(root)
+	if err != nil {
+		return nil, err
+	}
+	return &archiveOutputBudget{backlog: backlog, root: root, remaining: limit, minFree: minFree, limitErr: errArchivePublicationLimit, freeSpaceErr: errArchivePublicationFreeSpace}, nil
 }

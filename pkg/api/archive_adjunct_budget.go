@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"errors"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
@@ -25,5 +27,17 @@ func newArchiveAdjunctBudget(ctx context.Context, root string) (*archiveOutputBu
 	if err != nil {
 		return nil, err
 	}
-	return &archiveOutputBudget{root: root, remaining: limit, minFree: minFree, limitErr: errArchiveAdjunctLimit, freeSpaceErr: errArchiveAdjunctFreeSpace, ctx: ctx}, nil
+	backlog, err := newArchiveBacklogBudget(root)
+	if err != nil {
+		return nil, err
+	}
+	return &archiveOutputBudget{backlog: backlog, root: root, remaining: limit, minFree: minFree, limitErr: errArchiveAdjunctLimit, freeSpaceErr: errArchiveAdjunctFreeSpace, ctx: ctx}, nil
+}
+
+func newArchiveAdjunctBudgetForRecord(ctx context.Context, record *storage.RunArchiveRecord) (*archiveOutputBudget, error) {
+	root, err := archiveBacklogRootForRecord(record)
+	if err != nil {
+		return nil, err
+	}
+	return newArchiveAdjunctBudget(ctx, root)
 }

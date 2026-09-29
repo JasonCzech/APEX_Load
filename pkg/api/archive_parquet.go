@@ -135,6 +135,9 @@ func writeArchiveParquetFiles(rootDir string, manifest *RunArchiveManifest, budg
 	if err != nil {
 		return err
 	}
+	if len(budgets) == 0 {
+		defer budget.close()
+	}
 	count, err := streamJSONLToParquet(
 		filepath.Join(rootDir, manifest.TransactionsFile),
 		filepath.Join(rootDir, manifest.TransactionsParquetFile),
@@ -185,6 +188,9 @@ func streamJSONLToParquet[In any, Out any](inputPath string, outputPath string, 
 	budget, err := conversionBudget(filepath.Dir(outputPath), budgets)
 	if err != nil {
 		return 0, err
+	}
+	if len(budgets) == 0 {
+		defer budget.close()
 	}
 	input, err := os.Open(inputPath)
 	if err != nil {

@@ -24,6 +24,7 @@ var errArchiveCaptureFreeSpace = errors.New("insufficient free space for control
 // separate free-space guard: bytes accepted by a buffer are not yet on disk.
 // This budget covers raw capture only, not derived reports or retained sources.
 type archiveCaptureBudget struct {
+	backlog   *archiveBacklogBudget
 	mu        sync.Mutex
 	remaining int64
 	minFree   int64
@@ -39,7 +40,11 @@ func newArchiveCaptureBudget(root string) (*archiveCaptureBudget, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &archiveCaptureBudget{root: root, remaining: limit, minFree: minFree}, nil
+	backlog, err := newArchiveBacklogBudget(root)
+	if err != nil {
+		return nil, err
+	}
+	return &archiveCaptureBudget{backlog: backlog, root: root, remaining: limit, minFree: minFree}, nil
 }
 
 func (b *archiveCaptureBudget) reserve(n int64) error {
@@ -101,5 +106,11 @@ func (w archiveCaptureFileWriter) Write(data []byte) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
-	return w.file.Write(data)
+	return w.budget.backlog.write(ctx, w.file, data)
+}
+
+func (b *archiveCaptureBudget) close() {
+	if b != nil {
+		b.backlog.close()
+	}
 }

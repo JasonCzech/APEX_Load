@@ -3529,3 +3529,32 @@ documentation checks for 69 active Markdown files. Scoped re-review found no fur
 issues. Compressed logs with SHA-256 receipts are retained under
 `remaining-e7fgcem4/generator-backlog-validation`. Controller aggregate backlog remains
 unimplemented; no new Docker qualification is claimed yet.
+
+## Controller retained-backlog admission (2026-09-28 local time)
+
+Controller raw capture, distributed merge, Parquet/CSV conversion, private publication
+copies, initial/final manifests and adjunct metadata now share the durable namespace
+quota protocol. Per-operation allowances and free-space gates remain in force.
+Capture/conversion and merge/conversion each share one reservation; joined owners
+release it without deleting source data. Quota rejection preserves terminal execution
+outcomes and recoverable source bytes. Separate collection, reader and object-backend
+namespaces retain their own accounting.
+
+Review found three integration gaps. Atomic replacement leaves a descriptor's original
+temporary name after rename; admission now locates its inode in the anchored parent
+with bounded work. Finalization after a backend change must charge the retained
+namespace, not the newly configured bucket's local root; filesystem, default object
+staging and custom staging regressions reproduced the failure and now pass. Finally,
+source-retention confirmation receipts bypassed quota admission; they now use admitted
+atomic replacement, preserving prior confirmation on rejection and allowing retry.
+The first expanded test build also had a misspelled Parquet fixture field, corrected
+before execution. Failed logs are preserved alongside the verification evidence.
+
+Expanded controller checks passed (3.019 seconds); the backend-change repair and
+broader archive checks passed (6.275 seconds). Three race repetitions passed before
+the receipt addition (65.587 seconds), then the final expanded race set passed three
+repetitions (108.535 seconds). All 109 Go test-bearing packages passed, including API
+407.126 seconds, and documentation checks passed for 69 active Markdown files.
+Scoped re-review found no further issues. Compressed logs with SHA-256 receipts are
+retained under `remaining-e7fgcem4/controller-backlog-validation`. No new Docker
+qualification is claimed; controller `4e4d235c` and generator `1642d920` remain deployed.

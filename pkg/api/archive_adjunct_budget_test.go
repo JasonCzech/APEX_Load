@@ -260,6 +260,7 @@ func TestArchiveAdjunctCancellationAfterPreparationRetainsManifest(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer budget.close()
 	err = runner.persistTestManifestArtifactWithPreparation(run, record, func([]byte) error { cancel(); return nil }, budget)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatal("cancellation lost", err)

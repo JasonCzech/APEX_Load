@@ -330,6 +330,7 @@ func TestArchiveMergeManifestWaitsForDurableArtifactsAndSharesBudget(t *testing.
 
 func TestDistributedArchiveOutputAdmissionPreservesCompletedOutcome(t *testing.T) {
 	for _, tc := range []struct{ name, key, value string }{
+		{"backlog", envArchiveBacklogMaxBytes, "1"},
 		{"merge-bytes", envArchiveMergeMaxBytes, "1"},
 		{"merge-space", envArchiveMergeMinFreeBytes, strconv.FormatInt(1<<50, 10)},
 		{"conversion-bytes", envArchiveConversionMaxBytes, "1"},

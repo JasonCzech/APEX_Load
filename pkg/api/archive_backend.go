@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/internal/archivequota"
 	"github.com/jasonczech/apexload/pkg/storage"
 	"gocloud.dev/blob"
 	_ "gocloud.dev/blob/azureblob"
@@ -906,6 +907,9 @@ func archiveMaterializationRuntime(configured archiveBackendRuntime, record *sto
 }
 
 func validateArchiveRunID(testID string) error {
+	if archivequota.IsReservedName(testID) {
+		return fmt.Errorf("test id is reserved for archive backlog accounting")
+	}
 	if testID == "" {
 		return fmt.Errorf("test id is required")
 	}

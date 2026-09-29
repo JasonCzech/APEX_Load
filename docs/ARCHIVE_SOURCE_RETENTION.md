@@ -494,4 +494,41 @@ a reservation after successful finalization preserves the completed source and l
 the retained charge. Payload accounting excludes small bookkeeping files, directory
 entries and filesystem allocation overhead. Keep headroom for those costs and set
 the quota below the actual volume or `emptyDir` allocation. Controller source and
-publication backlog admission remains separate implementation work.
+publication backlog admission is described below.
+
+## Controller retained-backlog admission
+
+`APEXLOAD_ARCHIVE_BACKLOG_MAX_BYTES` (default 256 GiB, positive integer bytes up to
+1 PiB) bounds aggregate workload payload in each controller archive namespace.
+It counts retained raw files, derived Parquet/CSV, distributed merge output,
+private publication copies and finalization metadata, including incomplete and
+unknown retained payload. Capture, merge, conversion, publication and adjunct
+writers freeze this setting at creation and retain their separate per-attempt
+and free-space checks. Raw capture and its conversion share one incremental
+reservation, as do distributed merge and conversion; small quotas do not require
+reserving each stage's maximum in advance. Initial manifests and source-retention confirmation receipts are charged too.
+
+The controller uses the same durable reservation protocol described above for
+generators. Joined completion releases only that operation's reservation. Capacity
+rejection preserves existing source files and leaves publication recovery retryable;
+local and distributed terminal execution outcomes remain unchanged. Receipt replacement
+is atomic: rejection preserves any prior confirmation and leaves unconfirmed sources
+ineligible for retention cleanup. A partial raw
+file is recoverable evidence, not a completed archive. Uncertain reservation cleanup
+remains charged and is logged. No source is removed to make room.
+
+The scope is one filesystem archive root or one object-backend staging namespace.
+Different backend namespaces are independent, including older namespaces still
+needed for finalization after a configuration change. `_collection` transfer caches,
+`_object_staging` namespaces nested beneath a filesystem root, and `library-imports`
+are excluded from that root's workload accounting. Output writers cannot write into
+those exclusions using a workload reservation. Reader caches, transfer scratch,
+streamed report downloads, serialization memory, filesystem allocation overhead and
+unrelated volume users remain separate costs. Configure these independent limits
+below the combined volume allocation, with headroom; the default is not a claim
+that a smaller Docker `emptyDir` can hold 256 GiB.
+
+All writers sharing a namespace must run the reservation-aware version. Quiesce
+older binaries before enabling the bound or lowering it for an immediate limit.
+Preserve `.apexload-backlog` and its lock inode. Reconcile crash reservations only
+with all writers stopped and their retained source evidence accounted for.

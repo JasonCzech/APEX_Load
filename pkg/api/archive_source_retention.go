@@ -162,17 +162,12 @@ func markPublishedArchiveSource(record *storage.RunArchiveRecord) error {
 	if err != nil {
 		return err
 	}
-	file, err := replaceArchiveArtifactForWrite(record.ArchivePath, archiveSourceReceiptName, 0o600, false)
+	budget, err := newArchiveAdjunctBudgetForRecord(context.Background(), record)
 	if err != nil {
 		return err
 	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	syncErr := file.Sync()
-	closeErr := file.Close()
-	return errors.Join(syncErr, closeErr, syncArchiveDirectory(record.ArchivePath))
+	defer budget.close()
+	return writeArchiveArtifactDurableWithBudget(record.ArchivePath, archiveSourceReceiptName, data, 0o600, budget)
 }
 
 func validatePublishedArchiveSourceRecord(record *storage.RunArchiveRecord) error {

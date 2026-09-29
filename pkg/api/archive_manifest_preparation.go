@@ -13,10 +13,11 @@ type archiveManifestPreparationStore interface {
 }
 
 func (tr *TestRunner) persistArchiveFinalizationArtifacts(ctx context.Context, job *storage.ArchiveFinalizationJob, test *ManagedTest) error {
-	budget, err := newArchiveAdjunctBudget(ctx, resolveArchiveRoot())
+	budget, err := newArchiveAdjunctBudgetForRecord(ctx, &job.ArchiveRecord)
 	if err != nil {
 		return err
 	}
+	defer budget.close()
 	preparer, ok := tr.archiveStore.(archiveManifestPreparationStore)
 	if !ok || tr.archiveFinalizationOutbox() == nil {
 		return tr.persistTestManifestArtifactWithPreparation(test, &job.ArchiveRecord, nil, budget)

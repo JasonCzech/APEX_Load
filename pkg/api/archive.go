@@ -879,6 +879,7 @@ var archiveErrorWhitespacePattern = regexp.MustCompile(`\s+`)
 var archiveSnapshotLeadingTemplateBasePattern = regexp.MustCompile(`^\{\{\s*(?:var|param)\.[^{}]+\s*\}\}\s*(.*)$`)
 
 type runArchiveWriter struct {
+	captureBudget       *archiveCaptureBudget
 	conversionBudget    *archiveOutputBudget
 	mu                  sync.Mutex
 	manifest            RunArchiveManifest

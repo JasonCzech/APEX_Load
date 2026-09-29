@@ -59,6 +59,9 @@ func materializeDeclaredCSVExports(root string, manifest *RunArchiveManifest, bu
 	if err != nil {
 		return err
 	}
+	if len(budgets) == 0 {
+		defer budget.close()
+	}
 	provenance := manifest.InitialProvenance
 	if provenance == nil {
 		provenance = &manifest.Provenance

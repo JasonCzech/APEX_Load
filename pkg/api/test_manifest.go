@@ -794,10 +794,11 @@ func (tr *TestRunner) persistTestManifestArtifactWithPreparation(test *ManagedTe
 	}
 	if budget == nil {
 		var err error
-		budget, err = newArchiveAdjunctBudget(context.Background(), resolveArchiveRoot())
+		budget, err = newArchiveAdjunctBudgetForRecord(context.Background(), record)
 		if err != nil {
 			return err
 		}
+		defer budget.close()
 	}
 	archiveManifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {

@@ -640,6 +640,7 @@ func stageMaterializedArchiveForPublication(ctx context.Context, source *storage
 	if err != nil {
 		return "", "", err
 	}
+	defer outputBudget.close()
 	outputBudget.ctx = ctx
 	names, err := archivePublicationArtifactNames(ctx, source)
 	if err != nil {

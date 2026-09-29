@@ -28,7 +28,11 @@ func newArchiveMergeBudget(root string) (*archiveOutputBudget, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &archiveOutputBudget{root: root, remaining: limit, minFree: minFree, limitErr: errArchiveMergeLimit, freeSpaceErr: errArchiveMergeFreeSpace}, nil
+	backlog, err := newArchiveBacklogBudget(root)
+	if err != nil {
+		return nil, err
+	}
+	return &archiveOutputBudget{backlog: backlog, root: root, remaining: limit, minFree: minFree, limitErr: errArchiveMergeLimit, freeSpaceErr: errArchiveMergeFreeSpace}, nil
 }
 
 func mergeBudget(root string, budgets []*archiveOutputBudget) (*archiveOutputBudget, error) {
