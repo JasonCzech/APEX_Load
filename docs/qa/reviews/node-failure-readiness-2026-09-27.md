@@ -3842,3 +3842,19 @@ The opt-in Deployment was rolled back to its prior digest with the pause setting
 removed. The fresh cluster was preserved stopped. The original cluster was
 restored with all three nodes and nine desired workload pods ready, working
 controller-side DNS, no active tests, and three stable workload/SQL snapshots.
+
+## Interrupted-evacuation archive failure reason (2026-09-29)
+
+The deployed takeover produced an atomic `archive_collection_unconfirmed`
+marker alongside its terminal row but no archive. Review found that recovery
+reconciliation had no verified replacement topology or live generator handles
+from which to attempt collection, and left the generic marker indefinitely.
+The successor now replaces it under the execution lease with the durable
+`remote_collection_failed` reason for this specific interrupted-evacuation
+path. The store checks the exact terminal run incarnation and refuses to
+override a catalog or publication job. If the reason write fails, the
+atomic unconfirmed marker remains; terminality is unchanged. Tests cover the
+specific stored and single-run API reason and the write-failure fallback.
+This makes unavailability explicit but does not fabricate partial results or
+close the separate durable partial-archive release gate. Focused API tests,
+the full `go test ./...` suite, documentation checks and diff review passed.

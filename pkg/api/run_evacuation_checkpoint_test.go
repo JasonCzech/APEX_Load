@@ -167,13 +167,55 @@ func TestRunEvacuationCheckpointRejectedCompletionRemainsUnarmed(t *testing.T) {
 		t.Fatal("failed completion cleared durable guard")
 	}
 	tr.testStore = store
-	restored := &ManagedTest{ID: test.ID, Status: "RUNNING", Assignment: test.Assignment}
+	restored := &ManagedTest{ID: test.ID, Status: "RUNNING", Assignment: test.Assignment,
+		CreatedAt: record.StartTime, ProjectID: record.ProjectID}
 	setContinuityCheckpointLocked(restored, record.ContinuityCheckpoint)
 	if err := tr.reconcileStoredActiveTest(restored); err != nil {
 		t.Fatal(err)
 	}
 	if restored.Status != "FAILED" || !strings.Contains(restored.Error, "during generator evacuation") {
 		t.Fatalf("interrupted outcome: %s %s", restored.Status, restored.Error)
+	}
+	failure, err := store.GetRunArchiveFailure(test.ID)
+	if err != nil || failure.Reason != storage.RunArchiveFailureRemoteCollection || failure.Status != "FAILED" {
+		t.Fatalf("interrupted archive failure = %+v, %v", failure, err)
+	}
+	tr.tests[test.ID] = restored
+	tr.attachRunArchiveFailure(restored)
+	if restored.ArchiveFailure == nil || restored.ArchiveFailure.Reason != storage.RunArchiveFailureRemoteCollection {
+		t.Fatalf("single-run archive failure projection = %+v", restored.ArchiveFailure)
+	}
+}
+
+type unavailableArchiveFailureStore struct{ *storage.SQLiteStore }
+
+func (*unavailableArchiveFailureStore) SaveRunArchiveFailure(*storage.RunArchiveFailure, string, string) (bool, error) {
+	return false, errors.New("injected archive failure store outage")
+}
+
+func TestRunEvacuationCheckpointRecoveryKeepsUnconfirmedMarkerWhenFailureWriteUnavailable(t *testing.T) {
+	tr, store, test, generation, owner, token, previous, next := evacuationCheckpointFixture(t)
+	guard, err := tr.beginRunEvacuationCheckpoint(context.Background(), test, generation, owner, "gen-a", token, previous, next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.GetTest(test.ID)
+	if err != nil || record.ContinuityCheckpoint != guard {
+		t.Fatalf("guard = %+v, %v", record, err)
+	}
+	tr.testStore = &unavailableArchiveFailureStore{store}
+	restored := &ManagedTest{ID: test.ID, Status: "RUNNING", Assignment: test.Assignment,
+		CreatedAt: record.StartTime, ProjectID: record.ProjectID}
+	setContinuityCheckpointLocked(restored, guard)
+	if err := tr.reconcileStoredActiveTest(restored); err != nil {
+		t.Fatal(err)
+	}
+	if restored.Status != "FAILED" {
+		t.Fatalf("terminal status = %q", restored.Status)
+	}
+	failure, err := store.GetRunArchiveFailure(test.ID)
+	if err != nil || failure.Reason != storage.RunArchiveFailureUnconfirmed {
+		t.Fatalf("durable fallback marker = %+v, %v", failure, err)
 	}
 }
 

@@ -22,6 +22,34 @@ func (tr *TestRunner) recordRemoteArchiveFailure(test *ManagedTest, reason strin
 	tr.recordRunArchiveFailure(test, reason)
 }
 
+// Recovery reconciliation runs before the hydrated test enters tr.tests, so
+// recordRunArchiveFailure cannot use its in-memory ownership check. The store
+// independently checks the exact terminal incarnation, leader lease, catalog,
+// and publication job before replacing the atomic unconfirmed marker.
+func (tr *TestRunner) recordInterruptedEvacuationArchiveFailure(test *ManagedTest) {
+	store := tr.archiveFailureStore()
+	if store == nil || test == nil || test.EndedAt == nil {
+		return
+	}
+	leaseName, leaseOwner := "", ""
+	if tr.durableExecutionFence {
+		leaseName, leaseOwner = executionLeaseName, test.executionFence
+		if leaseOwner == "" {
+			return
+		}
+	}
+	failure := &storage.RunArchiveFailure{TestID: test.ID, ProjectID: test.ProjectID,
+		StartTime: test.CreatedAt, EndTime: *test.EndedAt, Status: test.Status,
+		Reason: storage.RunArchiveFailureRemoteCollection}
+	if err := retryDurableTransition(func() error {
+		_, err := store.SaveRunArchiveFailure(failure, leaseName, leaseOwner)
+		return err
+	}); err != nil {
+		// Terminality is already durable; its unconfirmed marker remains visible.
+		slog.Error("failed to persist interrupted evacuation archive failure", "test_id", test.ID, "error", err)
+	}
+}
+
 // Called under the archive fence after local finalization, and again after a
 // successful terminal commit. A failed terminal write keeps the pending signal
 // on the same run for the existing completion retry; the durable unconfirmed

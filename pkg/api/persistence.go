@@ -815,6 +815,13 @@ func (tr *TestRunner) reconcileStoredActiveTest(test *ManagedTest) error {
 		slog.Error("failed to persist recovered test state", "test_id", test.ID, "status", test.Status, "error", err)
 		return err
 	}
+	if interruptedRunEvacuation(test.continuityCheckpoint) {
+		// This successor has no live generator clients or trustworthy completed
+		// replacement topology from which to collect an archive. The terminal
+		// write records an unconfirmed placeholder atomically; replace it with
+		// the observed collection failure while this leader still holds the fence.
+		tr.recordInterruptedEvacuationArchiveFailure(test)
+	}
 	// The hydrated row is deliberately not in tr.tests yet. Release from the
 	// explicit durable binding and retain that slot ID for retry so startup
 	// reconciliation cannot leak capacity merely because map insertion happens
