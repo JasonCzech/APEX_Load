@@ -75,6 +75,10 @@ run_suite() {
 }
 
 # --- Category 3: real client libraries compiled in. No external infrastructure. ---
+run_suite "apexload_fault_probe (evacuation guard pause)" \
+  "nothing (tests a tagged disposable-cluster fault hook)" "true" \
+  go test -tags apexload_fault_probe -run '^TestFaultProbe' -count=1 ./pkg/api
+
 run_suite "kafka_real (franz-go client)" \
   "nothing (compiles the real client)" "true" \
   go test -tags kafka_real -count=1 ./pkg/protocol/kafka ./pkg/dsl

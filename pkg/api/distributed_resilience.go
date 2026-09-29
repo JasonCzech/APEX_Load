@@ -407,6 +407,9 @@ func (b *distributedExecutionBackend) evacuateGenerator(tr *TestRunner, test *Ma
 		closeDialedClients()
 		return impacts, fmt.Errorf("persist evacuation intent before replacement staging: %w", guardErr)
 	}
+	if evacuationGuard != "" {
+		waitAfterEvacuationGuard(executionCtx)
+	}
 
 	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, requireTestExecutionLease, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target, runSupervisionToken)
 	if err != nil {

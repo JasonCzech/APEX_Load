@@ -500,7 +500,7 @@ Everything can be run at once with:
 
 ### Why these are opt-in
 
-Three different reasons, and they are worth keeping straight:
+Four different reasons, and they are worth keeping straight:
 
 1. **Needs a large external corpus** — the LR_Scripts smoke test needs a public
    LoadRunner script corpus that is not vendored into this repository.
@@ -509,13 +509,17 @@ Three different reasons, and they are worth keeping straight:
 3. **Needs a real client library compiled in** — the `*_real` build tags swap the
    in-memory mock adapters for the vendored network clients. These compile and run
    locally; they do not need a broker.
+4. **Needs a deliberately tagged fault build** — `apexload_fault_probe` makes a
+   disposable controller pause after a durable evacuation guard so a deployed
+   interruption can be injected. The hook is absent from release builds.
 
-Only category 3 is cheap enough to be a candidate for the default `go test ./...`
-CI step. Categories 1 and 2 need provisioning, which is why they are gated. CI
+Only category 3 is a candidate for the default `go test ./...` CI step.
+Categories 1 and 2 need provisioning, which is why they are gated. CI
 separately provisions PostgreSQL 16 for scheduler migration and concurrent-startup tests. The
 protected protocol-integration workflow runs the Kafka, Solace, Service Bus, and
 Event Hubs suites against configured infrastructure; other infrastructure- or
-corpus-backed suites remain manual.
+corpus-backed suites remain manual. Category 4 is intentionally excluded from
+ordinary builds even though its unit tests run locally.
 
 ### Environment-variable gates
 
@@ -540,6 +544,7 @@ corpus-backed suites remain manual.
 | Build tag | What it swaps in | Package(s) | How to run |
 |---|---|---|---|
 | `recording_e2e` | Enables a loopback-only CDP attachment hook in test-built controller/agent binaries; normal builds ignore the hook | `pkg/recorder/browser` and dedicated dashboard E2E | `scripts/run-recording-e2e.sh`; see [Recording E2E](E2E_SUITES.md#3-recording-and-replay-suite). The separate Playwright configuration excludes these scenarios from the normal test cycle. |
+| `apexload_fault_probe` | Enables a bounded post-evacuation-guard pause only in a deliberately tagged controller build; standard and enterprise builds compile a no-op. `APEXLOAD_FAULT_HOLD_AFTER_EVACUATION_GUARD` accepts a duration up to two minutes for a disposable cluster trial. | `pkg/api` | `go test -tags apexload_fault_probe -run '^TestFaultProbe' ./pkg/api -count=1`; deploy the tagged binary only to a disposable fault cluster. |
 | `kafka_real` | franz-go network client instead of the in-memory mock broker | `pkg/protocol/kafka`, `pkg/dsl` | `go test -tags kafka_real ./pkg/protocol/kafka ./pkg/dsl -count=1` |
 | `kafka_integration` | Live-broker Kafka tests (also needs `KAFKA_BROKERS`) | `pkg/protocol/kafka` | see the env table above |
 | `jms_solace_real` | Real AMQP adapter instead of the mock | `pkg/protocol/jms` | `make test-jms-solace-real` |
